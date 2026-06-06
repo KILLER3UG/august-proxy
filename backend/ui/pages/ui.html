@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>August Proxy</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/tailwind.generated.css">
+    <link rel="stylesheet" href="/ui/css/styles.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github-dark.min.css">
+</head>
+<body class="min-h-screen transition-colors duration-300" style="background:var(--app-bg);color:var(--app-text)">
+    <div class="dark hidden"></div>
+    <div id="appLayout" class="min-h-screen">
+<!-- @include ../partials/sidebar.html -->
+        <main class="min-w-0 px-4 py-5 md:px-6 md:py-6 lg:px-8">
+<!-- @include ../partials/dashboard-header.html -->
+<!-- @include ../partials/sections/overview.html -->
+<!-- @include ../partials/sections/health.html -->
+<!-- @include ../partials/sections/workbench.html -->
+<!-- @include ../partials/sections/profiles.html -->
+<!-- @include ../partials/sections/traffic.html -->
+<!-- @include ../partials/sections/conversations.html -->
+<!-- @include ../partials/sections/inspector.html -->
+<!-- @include ../partials/sections/thinking.html -->
+<!-- @include ../partials/sections/memory.html -->
+<!-- @include ../partials/sections/august.html -->
+<!-- @include ../partials/sections/mcp.html -->
+<!-- @include ../partials/footer.html -->
+        </main>
+    </div>
+
+<!-- @include ../partials/modals.html -->
+
+<!-- @include ../partials/scripts.html -->
+</body>
+</html>

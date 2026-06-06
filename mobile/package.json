@@ -1,0 +1,29 @@
+{
+  "name": "mobile",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "expo": "~54.0.0",
+    "expo-constants": "~18.0.13",
+    "expo-status-bar": "~3.0.0",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-webview": "13.15.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.0",
+    "typescript": "~5.9.0"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "audit:parity": "node scripts/audit-mobile-parity.js",
+    "audit:visual": "node scripts/audit-mobile-visual.js",
+    "test": "npm run typecheck && npm run audit:parity",
+    "verify": "npm run test && npm run audit:visual"
+  },
+  "private": true
+}

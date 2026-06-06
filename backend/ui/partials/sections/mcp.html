@@ -1,0 +1,140 @@
+            <section id="section-mcp" class="dashboard-section hidden">
+                <div class="surface overflow-hidden rounded-3xl">
+                    <!-- Header -->
+                    <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-700 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="section-icon bg-gradient-to-br from-emerald-500 to-teal-500 text-white">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z"/></svg>
+                            </div>
+                            <div>
+                                <h2 class="text-sm font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">MCP, Skills &amp; Plugins</h2>
+                                <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Manage tool servers, custom skills, plugins, and capability imports</p>
+                            </div>
+                        </div>
+                        <button onclick="restartMcpServersUI()" class="minimal-button rounded-xl px-4 py-2.5 text-xs font-semibold">Restart MCP</button>
+                    </div>
+                    <!-- Sub-tabs -->
+                    <div class="px-5 pt-4 pb-0">
+                        <div class="sub-tabs">
+                            <button class="sub-tab active" onclick="switchSubTab('mcp', 'servers', this)">MCP Servers</button>
+                            <button class="sub-tab" onclick="switchSubTab('mcp', 'skills', this)">Custom Skills</button>
+                            <button class="sub-tab" onclick="switchSubTab('mcp', 'plugins', this)">Plugins &amp; Compat</button>
+                            <button class="sub-tab" onclick="switchSubTab('mcp', 'import', this)">Import</button>
+                            <button class="sub-tab" onclick="switchSubTab('mcp', 'host', this)">Host Files</button>
+                        </div>
+                    </div>
+                    <!-- Tab: MCP Servers -->
+                    <div class="sub-tab-panel active" data-tab-group="mcp" data-tab="servers">
+                        <div class="p-5">
+                            <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+                                <div id="mcpServerList" class="space-y-3">
+                                    <div class="text-sm text-slate-400 dark:text-slate-500 italic">Loading MCP servers...</div>
+                                </div>
+                                <div class="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/50 dark:bg-slate-900/50">
+                                    <h3 class="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">Add or Update Server</h3>
+                                    <div class="mt-4 grid gap-3">
+                                        <label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Name</label>
+                                        <input id="mcpName" class="minimal-input w-full rounded-xl p-2.5 text-xs font-mono" placeholder="github">
+                                        <label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Command</label>
+                                        <input id="mcpCommand" class="minimal-input w-full rounded-xl p-2.5 text-xs font-mono" placeholder="npx">
+                                        <label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Arguments</label>
+                                        <textarea id="mcpArgs" class="minimal-input h-24 w-full rounded-xl p-2.5 text-xs font-mono" placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/app/host_files"></textarea>
+                                        <label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Environment</label>
+                                        <textarea id="mcpEnv" class="minimal-input h-20 w-full rounded-xl p-2.5 text-xs font-mono" placeholder="GITHUB_TOKEN=${env:GITHUB_TOKEN}"></textarea>
+                                        <label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Working Directory</label>
+                                        <input id="mcpCwd" class="minimal-input w-full rounded-xl p-2.5 text-xs font-mono" placeholder="/app">
+                                        <label class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                            <input id="mcpEnabled" type="checkbox" class="h-4 w-4 rounded border-slate-300" checked>
+                                            Enabled
+                                        </label>
+                                        <button onclick="saveMcpServerUI()" class="minimal-button primary rounded-xl px-4 py-2.5 text-xs font-semibold">Save Server</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Tab: Custom Skills -->
+                    <div class="sub-tab-panel" data-tab-group="mcp" data-tab="skills">
+                        <div class="p-5">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Enabled skills are injected into the global context as structured instructions.</p>
+                            <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+                                <div id="skillList" class="space-y-3">
+                                    <div class="text-sm text-slate-400 dark:text-slate-500 italic">Loading skills...</div>
+                                </div>
+                                <div class="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/50 dark:bg-slate-900/50">
+                                    <h3 class="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">Add or Update Skill</h3>
+                                    <div class="mt-4 grid gap-3">
+                                        <label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Name</label>
+                                        <input id="skillName" class="minimal-input w-full rounded-xl p-2.5 text-xs font-mono" placeholder="graphify">
+                                        <label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Trigger</label>
+                                        <input id="skillTrigger" class="minimal-input w-full rounded-xl p-2.5 text-xs font-mono" placeholder="/graphify or when analyzing docs">
+                                        <label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Description</label>
+                                        <input id="skillDescription" class="minimal-input w-full rounded-xl p-2.5 text-xs" placeholder="What this skill helps with">
+                                        <label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Instructions</label>
+                                        <textarea id="skillInstructions" class="minimal-input h-40 w-full rounded-xl p-2.5 text-xs font-mono" placeholder="When this skill applies, do the following..."></textarea>
+                                        <label class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                            <input id="skillEnabled" type="checkbox" class="h-4 w-4 rounded border-slate-300" checked>
+                                            Enabled
+                                        </label>
+                                        <button onclick="saveSkillUI()" class="minimal-button primary rounded-xl px-4 py-2.5 text-xs font-semibold">Save Skill</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Tab: Plugins & Compatibility -->
+                    <div class="sub-tab-panel" data-tab-group="mcp" data-tab="plugins">
+                        <div class="p-5 space-y-6">
+                            <div>
+                                <div class="flex items-center justify-between mb-3">
+                                    <div>
+                                        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200">Proxy Compatibility Tools</h3>
+                                        <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Local replacements for restricted Claude Desktop plugins.</p>
+                                    </div>
+                                    <button onclick="loadCompatibilityUI()" class="minimal-button rounded-xl px-4 py-2.5 text-xs font-semibold">Refresh</button>
+                                </div>
+                                <div id="compatibilityList" class="grid gap-3 md:grid-cols-2">
+                                    <div class="text-sm text-slate-400 dark:text-slate-500 italic">Loading compatibility tools...</div>
+                                </div>
+                            </div>
+                            <div class="border-t border-slate-100 dark:border-slate-800 pt-6">
+                                <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Proxy Plugins</h3>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Local plugin layer for third-party Claude clients.</p>
+                                <div id="pluginList" class="grid gap-3 md:grid-cols-2">
+                                    <div class="text-sm text-slate-400 dark:text-slate-500 italic">No proxy plugins imported yet.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Tab: Import -->
+                    <div class="sub-tab-panel" data-tab-group="mcp" data-tab="import">
+                        <div class="p-5">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Paste a GitHub/raw/http link to a plugin manifest, MCP config, or SKILL.md.</p>
+                            <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+                                <div class="grid gap-3">
+                                    <input id="importCapabilityUrl" class="minimal-input w-full rounded-xl p-3 text-xs font-mono" placeholder="https://github.com/owner/repo or raw SKILL.md / mcp.json">
+                                    <div id="importCapabilityResult" class="hidden rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"></div>
+                                </div>
+                                <div class="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/50 dark:bg-slate-900/50">
+                                    <label class="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                        <input id="importEnableMcp" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-slate-300">
+                                        <span>Enable imported MCP servers immediately</span>
+                                    </label>
+                                    <button onclick="importCapabilityLinkUI()" class="minimal-button primary mt-4 w-full rounded-xl px-4 py-2.5 text-xs font-semibold">Import Link</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Tab: Host Files -->
+                    <div class="sub-tab-panel" data-tab-group="mcp" data-tab="host">
+                        <div class="p-5 space-y-3">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-2">Create safe folders already mounted into the proxy at /app/host_files.</p>
+                            <div id="hostFilesInfo" class="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">Loading...</div>
+                            <div class="flex gap-2">
+                                <input id="hostFolderName" class="minimal-input min-w-0 flex-1 rounded-xl p-2.5 text-xs font-mono" placeholder="new-folder">
+                                <button onclick="createHostFilesFolderUI()" class="minimal-button primary rounded-xl px-4 py-2.5 text-xs font-semibold">Create</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>

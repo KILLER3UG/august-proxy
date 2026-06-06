@@ -1,0 +1,68 @@
+<!-- ═══ AUGUST FULL-SCREEN VOICE OVERLAY ═══ -->
+<div id="augustOverlay" class="august-overlay" aria-hidden="true" role="dialog" aria-labelledby="augustOverlayTitle">
+    <!-- Overlay Top Bar controls (Voice selection + X button) -->
+    <div class="august-header">
+        <!-- Voice selector dropdown -->
+        <div class="august-voice-select-container">
+            <label for="augustVoiceDropdown">Voice:</label>
+            <select id="augustVoiceDropdown" class="august-voice-select" title="Choose voice agent profile">
+                <!-- Populated dynamically via JS -->
+                <option value="default">Default Voice</option>
+            </select>
+        </div>
+        
+        <!-- Close (X) button -->
+        <button id="augustCloseBtn" class="august-close" title="Close overlay" aria-label="Close voice overlay">
+            <svg class="august-close-icon" width="14" height="14" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <line x1="10" y1="10" x2="90" y2="90" stroke="white" stroke-width="14" stroke-linecap="round"/>
+                <line x1="90" y1="10" x2="10" y2="90" stroke="white" stroke-width="14" stroke-linecap="round"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Scrollable Chat History Area -->
+    <div id="augustChatArea" class="august-chat-area" aria-live="polite">
+        <!-- Message bubbles are dynamically inserted here -->
+    </div>
+</div>
+
+<!-- Wake word flash indicator -->
+<div id="augustWakeFlash" class="august-wake-flash">AUGUST</div>
+
+<!-- Mic Container (Floating, animates positioning between bottom-right and bottom-center) -->
+<div id="augustMicContainer" class="august-mic-container is-mini">
+    <!-- Idle state Tooltip -->
+    <div class="august-mic-tooltip">Say "August"</div>
+
+    <!-- The actual interactive Mic Button -->
+    <button id="augustMicBtn" class="august-mic is-idle" title="Click or say 'August' to start" aria-label="Toggle voice control">
+        <!-- Dashed outer ring for active states -->
+        <div class="august-mic-ring"></div>
+
+        <!-- 1. Default Mic Icon SVG (Visible in Idle, Listening, and Paused) -->
+        <svg id="augustMicIcon" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path id="augustMicIconPath" stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+        </svg>
+
+        <!-- 2. Thinking State Indicator (3 bouncing dots) -->
+        <div class="august-mic-dots">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+
+        <!-- 3. Speaking State Indicator (5 dynamic audio visualizer bars) -->
+        <div class="august-mic-bars">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+    </button>
+</div>
+
+<!-- Status Line -->
+<div id="augustStatusLine" class="august-status" aria-live="assertive">
+    Voice Control Off
+</div>

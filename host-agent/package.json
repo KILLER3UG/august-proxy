@@ -1,0 +1,13 @@
+{
+  "name": "claudish-host-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Desktop automation agent for Claudish Proxy",
+  "scripts": {
+    "start": "node index.js",
+    "install-browser": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0"
+  }
+}

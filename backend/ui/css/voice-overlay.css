@@ -1,0 +1,742 @@
+/* ==========================================
+   AUGUST FULL-SCREEN VOICE OVERLAY STYLES
+   ========================================== */
+
+:root {
+  --august-accent: #6366f1;
+  --august-accent-hover: #818cf8;
+  --august-bg: rgba(10, 10, 30, 0.45);
+  --august-bg-fallback: rgba(10, 10, 30, 0.92);
+  --august-border: rgba(255, 255, 255, 0.06);
+  --august-border-hover: rgba(255, 255, 255, 0.12);
+  --august-bubble-user: rgba(255, 255, 255, 0.09);
+  --august-bubble-user-border: rgba(255, 255, 255, 0.07);
+  --august-bubble-assistant: rgba(255, 255, 255, 0.04);
+  --august-bubble-assistant-border: rgba(255, 255, 255, 0.04);
+  --august-chip-bg: rgba(99, 102, 241, 0.15);
+  --august-chip-border: rgba(99, 102, 241, 0.25);
+  --august-chip-text: rgba(165, 170, 255, 0.85);
+  --august-text: rgba(255, 255, 255, 0.92);
+  --august-text-muted: rgba(255, 255, 255, 0.3);
+  --august-text-label-user: rgba(255, 255, 255, 0.3);
+  --august-text-label-assistant: rgba(129, 140, 248, 0.4);
+}
+
+/* Base overlay container */
+.august-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--august-bg-fallback);
+  border: 1px solid var(--august-border);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms ease-out;
+}
+
+@supports (backdrop-filter: blur(40px)) or (-webkit-backdrop-filter: blur(40px)) {
+  .august-overlay {
+    background: var(--august-bg);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+  }
+}
+
+.august-overlay.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.august-overlay.is-closing {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 250ms ease-in;
+}
+
+/* Header & Close controls */
+.august-header {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 10001;
+}
+
+.august-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  outline: none;
+  transition: background 200ms ease, transform 200ms ease;
+}
+
+.august-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  transform: scale(1.08);
+}
+
+.august-close:active {
+  transform: scale(0.95);
+}
+
+.august-close:focus-visible {
+  outline: 2px solid var(--august-accent);
+  outline-offset: 2px;
+}
+
+.august-close-icon {
+  stroke: #ffffff;
+  stroke-width: 14px;
+}
+
+/* Voice Selector Dropdown UI */
+.august-voice-select-container {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 4px 12px;
+  color: var(--august-text);
+  font-size: 12px;
+}
+
+.august-voice-select-container label {
+  color: var(--august-text-muted);
+  margin-right: 6px;
+  user-select: none;
+}
+
+.august-voice-select {
+  background: transparent;
+  border: none;
+  color: var(--august-text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+  padding-right: 18px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right center;
+  background-size: 12px;
+}
+
+.august-voice-select:focus-visible {
+  outline: 1px solid var(--august-accent);
+  border-radius: 4px;
+}
+
+.august-voice-select option {
+  background: #11111e;
+  color: white;
+}
+
+/* Chat container and scroll area */
+.august-chat-area {
+  display: flex;
+  flex-direction: column;
+  width: 90vw;
+  max-width: 660px;
+  height: 100vh;
+  margin: 0 auto;
+  padding: 80px 24px 160px 24px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  box-sizing: border-box;
+}
+
+.august-chat-area::-webkit-scrollbar {
+  width: 6px;
+}
+
+.august-chat-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.august-chat-area::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+/* Message bubbles */
+.august-msg {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 24px;
+  animation: messageSlideUp 250ms ease-out forwards;
+}
+
+@keyframes messageSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.august-msg-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+  user-select: none;
+}
+
+.august-msg-content {
+  padding: 12px 18px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  box-sizing: border-box;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* User Bubble */
+.august-msg.is-user {
+  align-items: flex-end;
+  align-self: flex-end;
+}
+
+.august-msg.is-user .august-msg-label {
+  color: var(--august-text-label-user);
+}
+
+.august-msg.is-user .august-msg-content {
+  background: var(--august-bubble-user);
+  border: 1px solid var(--august-bubble-user-border);
+  border-radius: 18px 18px 4px 18px;
+  color: var(--august-text);
+  max-width: 80%;
+  opacity: 0.92;
+}
+
+.august-msg.is-user.is-interim .august-msg-content {
+  animation: interimPulse 1.5s infinite ease-in-out;
+}
+
+@keyframes interimPulse {
+  0% { opacity: 0.55; }
+  50% { opacity: 0.90; }
+  100% { opacity: 0.55; }
+}
+
+/* Assistant Bubble */
+.august-msg.is-assistant {
+  align-items: flex-start;
+  align-self: flex-start;
+}
+
+.august-msg.is-assistant .august-msg-label {
+  color: var(--august-text-label-assistant);
+}
+
+.august-msg.is-assistant .august-msg-content {
+  background: var(--august-bubble-assistant);
+  border: 1px solid var(--august-bubble-assistant-border);
+  border-radius: 18px 18px 18px 4px;
+  color: rgba(255, 255, 255, 0.88);
+  max-width: 85%;
+}
+
+.august-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 15px;
+  background-color: var(--august-accent);
+  margin-left: 2px;
+  animation: blinkCursor 0.8s infinite steps(1);
+  vertical-align: middle;
+}
+
+@keyframes blinkCursor {
+  50% { opacity: 0; }
+}
+
+/* Action Chips */
+.august-action-chips-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+.august-action-chip {
+  background: var(--august-chip-bg);
+  border: 1px solid var(--august-chip-border);
+  border-radius: 20px;
+  padding: 5px 14px;
+  font-size: 12px;
+  color: var(--august-chip-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  box-sizing: border-box;
+  animation: chipSlideIn 200ms ease-out forwards;
+}
+
+@keyframes chipSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 3-dot bounce spinner in chip */
+.august-chip-spinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: 14px;
+  height: 8px;
+}
+
+.august-chip-spinner span {
+  width: 3.5px;
+  height: 3.5px;
+  background-color: var(--august-chip-text);
+  border-radius: 50%;
+  display: inline-block;
+  animation: dotBounce 0.9s infinite ease-in-out;
+}
+
+.august-chip-spinner span:nth-child(2) { animation-delay: 0.15s; }
+.august-chip-spinner span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes dotBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.august-action-chip.is-done {
+  transition: all 150ms ease;
+}
+
+.august-action-chip.is-done .august-chip-spinner {
+  display: none;
+}
+
+.august-chip-check {
+  display: none;
+  font-weight: bold;
+}
+
+.august-action-chip.is-done .august-chip-check {
+  display: inline;
+}
+
+/* Mic button states & animations */
+.august-mic-container {
+  position: fixed;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Position States: Mini and Overlay */
+.august-mic-container.is-mini {
+  bottom: 24px;
+  right: 24px;
+  transition: bottom 300ms ease, right 300ms ease, left 300ms ease, transform 300ms ease;
+}
+
+.august-mic-container.is-overlay {
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  transition: bottom 300ms ease, right 300ms ease, left 300ms ease, transform 300ms ease;
+}
+
+/* The Mic Button itself */
+.august-mic {
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 200ms ease;
+  box-sizing: border-box;
+}
+
+.august-mic:focus-visible {
+  outline: 2px solid var(--august-accent);
+  outline-offset: 4px;
+}
+
+/* Outer Ring (listening, thinking, speaking) */
+.august-mic-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px dashed rgba(99, 102, 241, 0.3);
+  width: 86px;
+  height: 86px;
+  pointer-events: none;
+  box-sizing: border-box;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+/* State: Idle */
+.august-mic.is-idle {
+  width: 48px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  animation: breathePulse 2.5s infinite ease-in-out;
+}
+
+.august-mic.is-idle:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: scale(1.06);
+}
+
+/* Tooltip (for idle only) */
+.august-mic-tooltip {
+  position: absolute;
+  bottom: 56px;
+  background: rgba(0, 0, 0, 0.85);
+  color: white;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 200ms ease, transform 200ms ease;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.august-mic-container.is-mini:hover .august-mic-tooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@keyframes breathePulse {
+  0%, 100% { transform: scale(1.0); }
+  50% { transform: scale(1.07); }
+}
+
+/* State: Listening */
+.august-mic.is-listening {
+  width: 64px;
+  height: 64px;
+  background: rgba(99, 102, 241, 0.22);
+  border: 2px solid rgba(99, 102, 241, 0.45);
+}
+
+.august-mic.is-listening .august-mic-ring {
+  opacity: 1;
+  animation: rotateRing 3s linear infinite;
+}
+
+/* glow when speech is active/detected */
+.august-mic.is-listening.speech-active {
+  box-shadow: 0 0 50px rgba(99, 102, 241, 0.45);
+}
+
+@keyframes rotateRing {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* State: Paused */
+.august-mic.is-paused {
+  width: 64px;
+  height: 64px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+}
+
+.august-mic.is-paused .august-mic-ring {
+  opacity: 1;
+  animation: none; /* Stops rotating */
+}
+
+/* State: Thinking */
+.august-mic.is-thinking {
+  width: 64px;
+  height: 64px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 2px solid rgba(99, 102, 241, 0.25);
+}
+
+.august-mic.is-thinking .august-mic-ring {
+  opacity: 1;
+  animation: rotateRing 7s linear infinite; /* Slows rotation */
+}
+
+.august-mic-dots {
+  display: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.august-mic.is-thinking .august-mic-dots {
+  display: flex;
+}
+
+.august-mic-dots span {
+  width: 8px;
+  height: 8px;
+  background-color: rgba(165, 170, 255, 0.7);
+  border-radius: 50%;
+  animation: thinkingDot 0.8s infinite ease-in-out alternate;
+}
+
+.august-mic-dots span:nth-child(2) { animation-delay: 0.15s; }
+.august-mic-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes thinkingDot {
+  from { transform: translateY(3px); opacity: 0.3; }
+  to { transform: translateY(-3px); opacity: 1; }
+}
+
+/* State: Speaking */
+.august-mic.is-speaking {
+  width: 64px;
+  height: 64px;
+  background: rgba(99, 102, 241, 0.2);
+  border: 2px solid rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 35px rgba(99, 102, 241, 0.25);
+}
+
+.august-mic-bars {
+  display: none;
+  align-items: flex-end;
+  gap: 3px;
+  height: 24px;
+}
+
+.august-mic.is-speaking .august-mic-bars {
+  display: flex;
+}
+
+.august-mic-bars span {
+  width: 3px;
+  background-color: rgba(165, 170, 255, 0.75);
+  border-radius: 1.5px;
+  animation: speakingBar 0.5s infinite ease-in-out alternate;
+}
+
+/* Random-looking staggered animations for bars */
+.august-mic-bars span:nth-child(1) { height: 12px; animation-duration: 0.45s; }
+.august-mic-bars span:nth-child(2) { height: 20px; animation-duration: 0.38s; animation-delay: 0.1s; }
+.august-mic-bars span:nth-child(3) { height: 16px; animation-duration: 0.52s; animation-delay: 0.05s; }
+.august-mic-bars span:nth-child(4) { height: 24px; animation-duration: 0.41s; animation-delay: 0.15s; }
+.august-mic-bars span:nth-child(5) { height: 10px; animation-duration: 0.48s; animation-delay: 0.08s; }
+
+@keyframes speakingBar {
+  from { height: 4px; }
+  to { height: 100%; }
+}
+
+/* Toggle Icon Visibility */
+.august-mic svg {
+  color: #ffffff;
+  transition: opacity 150ms ease;
+}
+
+.august-mic.is-thinking svg,
+.august-mic.is-speaking svg {
+  display: none;
+}
+
+/* Status Line */
+.august-status {
+  position: fixed;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 11px;
+  color: var(--august-text-muted);
+  letter-spacing: 0.5px;
+  z-index: 10000;
+  pointer-events: none;
+  text-transform: uppercase;
+  text-align: center;
+  transition: opacity 300ms ease;
+}
+
+/* Wake Word Flash */
+.august-wake-flash {
+  position: fixed;
+  bottom: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  color: rgba(165, 170, 255, 0.9);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10001;
+}
+
+.august-wake-flash.flash-active {
+  animation: wakeWordFlash 1.2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+@keyframes wakeWordFlash {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.9);
+  }
+  30% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.1);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) scale(1.05);
+  }
+}
+
+/* ==========================================
+   ACCESSIBILITY & PREFERS-REDUCED-MOTION
+   ========================================== */
+@media (prefers-reduced-motion: reduce) {
+  .august-overlay {
+    transition: none;
+  }
+  .august-overlay.is-closing {
+    transition: none;
+  }
+  .august-msg {
+    animation: none;
+  }
+  .august-action-chip {
+    animation: none;
+  }
+  .august-mic.is-idle {
+    animation: none;
+  }
+  .august-mic.is-listening .august-mic-ring {
+    animation: none;
+  }
+  .august-mic.is-thinking .august-mic-ring {
+    animation: none;
+  }
+  .august-mic-dots span {
+    animation: none;
+    transform: none;
+  }
+  .august-mic-bars span {
+    animation: none;
+    height: 14px !important;
+  }
+  .august-wake-flash.flash-active {
+    animation: none;
+    opacity: 0.9;
+  }
+  .august-cursor {
+    animation: none;
+  }
+}
+
+/* ==========================================
+   RESPONSIVENESS (Mobile below 640px)
+   ========================================== */
+@media (max-width: 640px) {
+  .august-chat-area {
+    width: 95vw;
+    padding: 64px 16px 120px 16px;
+  }
+
+  .august-msg.is-user .august-msg-content {
+    max-width: 92%;
+  }
+
+  .august-msg.is-assistant .august-msg-content {
+    max-width: 92%;
+  }
+
+  /* Close controls smaller */
+  .august-header {
+    top: 16px;
+    right: 16px;
+    gap: 8px;
+  }
+
+  .august-close {
+    width: 32px;
+    height: 32px;
+  }
+
+  .august-close-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  .august-voice-select-container {
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+
+  .august-voice-select {
+    font-size: 11px;
+    padding-right: 14px;
+    background-size: 10px;
+  }
+
+  /* Mic Button size adjustment */
+  .august-mic.is-listening,
+  .august-mic.is-paused,
+  .august-mic.is-thinking,
+  .august-mic.is-speaking {
+    width: 56px !important;
+    height: 56px !important;
+  }
+
+  .august-mic-ring {
+    width: 72px;
+    height: 72px;
+  }
+
+  .august-mic-tooltip {
+    display: none !important; /* Hide tooltip on mobile touch targets */
+  }
+
+  .august-status {
+    bottom: 6px;
+  }
+}

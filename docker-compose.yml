@@ -1,0 +1,37 @@
+services:
+  august-proxy:
+    build: .
+    container_name: august-proxy
+    # ── API Keys ──────────────────────────────────────────────────────────────
+    # Tip: move these to a .env file in this directory and Docker Compose will
+    # auto-load it. That keeps secrets out of this committed file entirely.
+    # Example .env:
+    #   MINIMAX_API_KEY=sk-cp-...
+    #   NVIDIA_API_KEY=nvapi-...
+    # ─────────────────────────────────────────────────────────────────────────
+    environment:
+      - KILOCODE_API_KEY=${KILOCODE_API_KEY}
+      - OPENCODE_API_KEY=${OPENCODE_API_KEY}
+      - OPENCODE_GO_API_KEY=${OPENCODE_GO_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - GATEWAY_API_KEY=${GATEWAY_API_KEY:-your-personal-key-here}
+      - CLINE_API_KEY=${CLINE_API_KEY}
+      # Keys referenced by ${env:VAR} in config.json
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY}
+      - SUPERMEMORY_API_KEY=${SUPERMEMORY_API_KEY}
+    volumes:
+      # Live-mount all source code so changes take effect on container restart (no rebuild needed)
+      - ./backend:/app/backend
+      - ./providers:/app/providers
+      - ./web-dist:/app/web-dist
+      - ./data:/app/data
+      - ./host_files:/app/host_files
+    ports:
+      - "8085:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: always
+    # --- THE CRITICAL FIX ---
+    tty: true
+    stdin_open: true

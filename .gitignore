@@ -1,0 +1,51 @@
+request-log.json
+.env
+# Dependencies (never commit)
+node_modules/
+host-agent/node_modules/
+
+# Vite build output
+web-dist/
+
+# TypeScript build artifacts
+*.tsbuildinfo
+vite.config.d.ts
+vite.config.js
+vitest.config.d.ts
+vitest.config.js
+
+# Runtime data (auto-generated, never commit)
+apps/proxy/src/data/
+data/
+
+# Credentials and secrets
+*client_secret*
+*credentials*
+oauth_states.json
+
+# Debug output
+apps/proxy/src/services/**/debug.txt
+
+# Temp files
+*.tmp
+host-agent/tmp/
+
+# Dropzones / test artifacts
+host_files/dashboard-check/
+host_files/Unit-Test-Dropzone/
+
+# Tests (compiled/generated)
+apps/proxy/tests/
+
+# Generated CSS
+apps/proxy/src/ui/css/tailwind.generated.css
+
+# Claude plan notes
+.claude/plans/
+
+# Rust build artifacts (Cargo target dirs — generated, never commit)
+target/
+apps/desktop/main/target/
+
+# Local Claude / IDE config (per-machine, never commit)
+.claude/settings.local.json

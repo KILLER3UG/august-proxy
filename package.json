@@ -1,0 +1,16 @@
+{
+  "name": "august-proxy",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "start": "node backend/index.js",
+    "launch": "node backend/launch.js",
+    "dev:web": "npm run dev -w web",
+    "build:web": "npm run build -w web",
+    "preview:web": "npm run preview -w web"
+  }
+}

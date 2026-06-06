@@ -1,0 +1,28 @@
+# Not needed for the proxy Docker image
+mobile/
+host-agent/
+desktop/
+voice-assistant/
+web/
+**/node_modules/
+**/target/
+
+# Runtime data — not needed at build time
+host_files/
+request-log.json
+
+# Never send secrets or local config
+.env
+.env.local
+*.pem
+config/*credentials*
+
+# Version control, editor files, OS artifacts
+.git/
+.gitignore
+.claude/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

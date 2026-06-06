@@ -1,0 +1,50 @@
+Progress: resolved 1, reused 0, downloaded 0, added 0
+ΓÇëWARNΓÇë Tarball download average speed 37 KiB/s (size 63 KiB) is below 50 KiB/s: https://registry.npmjs.org/@react-navigation/native/-/native-7.2.5.tgz (GET)
+Progress: resolved 2, reused 0, downloaded 0, added 0
+Progress: resolved 2, reused 0, downloaded 1, added 0
+ΓÇëWARNΓÇë Request took 11268ms: https://registry.npmjs.org/expo-status-bar
+Progress: resolved 3, reused 0, downloaded 1, added 0
+ΓÇëWARNΓÇë Request took 11744ms: https://registry.npmjs.org/react-native-safe-area-context
+Progress: resolved 4, reused 0, downloaded 2, added 0
+ΓÇëWARNΓÇë Tarball download average speed 27 KiB/s (size 48 KiB) is below 50 KiB/s: https://registry.npmjs.org/react-native-safe-area-context/-/react-native-safe-area-context-5.6.2.tgz (GET)
+Progress: resolved 4, reused 0, downloaded 3, added 0
+ΓÇëWARNΓÇë GET https://registry.npmjs.org/react-native error (ECONNRESET). Will retry in 10 seconds. 2 retries left.
+ΓÇëWARNΓÇë Request took 15746ms: https://registry.npmjs.org/@react-navigation%2Fbottom-tabs
+Progress: resolved 5, reused 0, downloaded 3, added 0
+ΓÇëWARNΓÇë Request took 15795ms: https://registry.npmjs.org/@react-navigation%2Fnative-stack
+Progress: resolved 6, reused 0, downloaded 3, added 0
+ΓÇëWARNΓÇë Request took 17069ms: https://registry.npmjs.org/@expo%2Fvector-icons
+ΓÇëWARNΓÇë GET https://registry.npmjs.org/expo error (ECONNRESET). Will retry in 10 seconds. 2 retries left.
+Progress: resolved 7, reused 0, downloaded 3, added 0
+Progress: resolved 7, reused 0, downloaded 4, added 0
+ΓÇëWARNΓÇë Tarball download average speed 14 KiB/s (size 63 KiB) is below 50 KiB/s: https://registry.npmjs.org/@react-navigation/native-stack/-/native-stack-7.16.0.tgz (GET)
+Progress: resolved 7, reused 0, downloaded 5, added 0
+ΓÇëWARNΓÇë Request took 30599ms: https://registry.npmjs.org/@types%2Freact
+Progress: resolved 8, reused 0, downloaded 5, added 0
+ΓÇëWARNΓÇë Tarball download average speed 31 KiB/s (size 76 KiB) is below 50 KiB/s: https://registry.npmjs.org/@types/react/-/react-19.2.15.tgz (GET)
+Progress: resolved 8, reused 0, downloaded 6, added 0
+ΓÇëWARNΓÇë Request took 39453ms: https://registry.npmjs.org/expo
+Progress: resolved 9, reused 0, downloaded 6, added 0
+ΓÇëWARNΓÇë Tarball download average speed 25 KiB/s (size 490 KiB) is below 50 KiB/s: https://registry.npmjs.org/expo/-/expo-55.0.26.tgz (GET)
+Progress: resolved 9, reused 0, downloaded 7, added 0
+ΓÇëWARNΓÇë Tarball download average speed 8 KiB/s (size 483 KiB) is below 50 KiB/s: https://registry.npmjs.org/react-native-screens/-/react-native-screens-4.23.0.tgz (GET)
+Progress: resolved 9, reused 0, downloaded 8, added 0
+ΓÇëWARNΓÇë Request took 78242ms: https://registry.npmjs.org/pnpm
+
+   Γò¡ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓò«
+   Γöé                                         Γöé
+   Γöé   Update available! 10.33.0 ΓåÆ 11.5.0.   Γöé
+   Γöé   Changelog: https://pnpm.io/v/11.5.0   Γöé
+   Γöé    To update, run: pnpm add -g pnpm     Γöé
+   Γöé                                         Γöé
+   Γò░ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓò»
+
+ΓÇëWARNΓÇë Request took 122851ms: https://registry.npmjs.org/react-native
+Progress: resolved 10, reused 0, downloaded 8, added 0
+ΓÇëWARNΓÇë Tarball download average speed 22 KiB/s (size 2456 KiB) is below 50 KiB/s: https://registry.npmjs.org/@expo/vector-icons/-/vector-icons-15.1.1.tgz (GET)
+Progress: resolved 10, reused 0, downloaded 9, added 0
+ΓÇëWARNΓÇë Tarball download average speed 37 KiB/s (size 3973 KiB) is below 50 KiB/s: https://registry.npmjs.org/react-native/-/react-native-0.83.0.tgz (GET)
+Progress: resolved 10, reused 0, downloaded 10, added 0
+ΓÇëWARNΓÇë Request took 324469ms: https://registry.npmjs.org/typescript
+Progress: resolved 11, reused 0, downloaded 10, added 0
+Progress: resolved 11, reused 0, downloaded 11, added 0

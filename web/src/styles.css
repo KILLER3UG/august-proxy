@@ -1,0 +1,113 @@
+/* ── August Proxy UI v2 — design tokens ─────────────────────────── */
+/* Inherits Tailwind v3 utilities + base from tailwind.generated.css. */
+/* This file is imported by main.tsx so Vite picks it up. */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --dt-background: #f8faff;
+    --dt-foreground: #17171a;
+    --dt-card: #ffffff;
+    --dt-card-foreground: #17171a;
+    --dt-muted: #f1f5f9;
+    --dt-muted-foreground: #64748b;
+    --dt-popover: #ffffff;
+    --dt-popover-foreground: #17171a;
+    --dt-primary: #0053fd;
+    --dt-primary-foreground: #ffffff;
+    --dt-secondary: #eff6ff;
+    --dt-secondary-foreground: #1e293b;
+    --dt-accent: #dbeafe;
+    --dt-accent-foreground: #1e3a8a;
+    --dt-border: #e2e8f0;
+    --dt-input: #cbd5e1;
+    --dt-ring: #0053fd;
+    --dt-destructive: #cf2d56;
+    --dt-destructive-foreground: #ffffff;
+    --dt-sidebar: #f3f7ff;
+    --dt-sidebar-foreground: #17171a;
+    --dt-sidebar-primary: #0053fd;
+    --dt-sidebar-primary-foreground: #ffffff;
+    --dt-sidebar-accent: #dbeafe;
+    --dt-sidebar-accent-foreground: #1e3a8a;
+    --dt-sidebar-border: #e2e8f0;
+    --dt-sidebar-ring: #0053fd;
+  }
+
+  .dark {
+    --dt-background: #0a0a0b;
+    --dt-foreground: #f1f5f9;
+    --dt-card: #161618;
+    --dt-card-foreground: #f1f5f9;
+    --dt-muted: #1e1e21;
+    --dt-muted-foreground: #94a3b8;
+    --dt-popover: #1e1e21;
+    --dt-popover-foreground: #f1f5f9;
+    --dt-primary: #4a8aff;
+    --dt-primary-foreground: #0a0a0b;
+    --dt-secondary: #1e3a8a;
+    --dt-secondary-foreground: #dbeafe;
+    --dt-accent: #1e3a8a;
+    --dt-accent-foreground: #dbeafe;
+    --dt-border: #1e1e21;
+    --dt-input: #2a2a2e;
+    --dt-ring: #4a8aff;
+    --dt-destructive: #e75e78;
+    --dt-destructive-foreground: #ffffff;
+    --dt-sidebar: #0a0a0b;
+    --dt-sidebar-foreground: #f1f5f9;
+    --dt-sidebar-primary: #4a8aff;
+    --dt-sidebar-primary-foreground: #0a0a0b;
+    --dt-sidebar-accent: #1e3a8a;
+    --dt-sidebar-accent-foreground: #dbeafe;
+    --dt-sidebar-border: #1e1e21;
+    --dt-sidebar-ring: #4a8aff;
+  }
+
+  html, body, #root { height: 100%; margin: 0; }
+  body {
+    background: var(--dt-background);
+    color: var(--dt-foreground);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer components {
+  .bg-background     { background-color: var(--dt-background); }
+  .bg-foreground     { background-color: var(--dt-foreground); }
+  .bg-card           { background-color: var(--dt-card); }
+  .bg-muted          { background-color: var(--dt-muted); }
+  .bg-popover        { background-color: var(--dt-popover); }
+  .bg-primary        { background-color: var(--dt-primary); }
+  .bg-secondary      { background-color: var(--dt-secondary); }
+  .bg-accent         { background-color: var(--dt-accent); }
+  .bg-destructive    { background-color: var(--dt-destructive); }
+  .bg-sidebar        { background-color: var(--dt-sidebar); }
+  .bg-sidebar-accent { background-color: var(--dt-sidebar-accent); }
+
+  .text-foreground               { color: var(--dt-foreground); }
+  .text-card-foreground          { color: var(--dt-card-foreground); }
+  .text-muted-foreground         { color: var(--dt-muted-foreground); }
+  .text-popover-foreground       { color: var(--dt-popover-foreground); }
+  .text-primary                  { color: var(--dt-primary); }
+  .text-primary-foreground       { color: var(--dt-primary-foreground); }
+  .text-secondary-foreground     { color: var(--dt-secondary-foreground); }
+  .text-accent-foreground        { color: var(--dt-accent-foreground); }
+  .text-destructive              { color: var(--dt-destructive); }
+  .text-destructive-foreground   { color: var(--dt-destructive-foreground); }
+  .text-sidebar-foreground       { color: var(--dt-sidebar-foreground); }
+  .text-sidebar-primary-foreground { color: var(--dt-sidebar-primary-foreground); }
+  .text-sidebar-accent-foreground  { color: var(--dt-sidebar-accent-foreground); }
+
+  .border-border          { border-color: var(--dt-border); }
+  .border-input           { border-color: var(--dt-input); }
+  .border-sidebar-border  { border-color: var(--dt-sidebar-border); }
+
+  .ring-ring { --tw-ring-color: var(--dt-ring); }
+}

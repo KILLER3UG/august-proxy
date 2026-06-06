@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>August Brain App</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#0b0f14; color:#e5edf5; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; background:#0b0f14; }
+    header { position:sticky; top:0; z-index:2; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid #1f2937; background:#0b0f14f2; backdrop-filter: blur(10px); }
+    h1 { margin:0; font-size:18px; font-weight:750; letter-spacing:0; }
+    main { display:grid; gap:14px; padding:14px; max-width:960px; margin:0 auto; }
+    section { border:1px solid #1f2937; border-radius:8px; background:#101720; padding:14px; }
+    h2 { margin:0 0 10px; font-size:13px; color:#9fb2c7; text-transform:uppercase; letter-spacing:0; }
+    input, textarea, select { width:100%; border:1px solid #243244; border-radius:6px; background:#0b1118; color:#e5edf5; padding:10px; font:inherit; }
+    textarea { min-height:92px; resize:vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    button { border:1px solid #2d4056; border-radius:6px; background:#172232; color:#e5edf5; padding:10px 12px; font-weight:650; }
+    button:active { transform: translateY(1px); }
+    .row { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:start; }
+    .grid { display:grid; gap:10px; }
+    .tabs { display:flex; gap:8px; overflow-x:auto; }
+    .tabs button { white-space:nowrap; }
+    .muted { color:#8ea2b8; font-size:12px; }
+    .output { white-space:pre-wrap; overflow:auto; max-height:280px; border:1px solid #243244; border-radius:6px; background:#05080c; padding:10px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size:12px; line-height:1.45; }
+    .item { border:1px solid #243244; border-radius:6px; padding:10px; background:#0c131c; }
+    .hide { display:none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>August Brain</h1>
+    <span id="status" class="muted">connecting</span>
+  </header>
+  <main>
+    <div class="tabs">
+      <button onclick="showTab('terminal')">Terminal</button>
+      <button onclick="showTab('agents')">Agents</button>
+      <button onclick="showTab('memory')">Memory</button>
+      <button onclick="showTab('automations')">Automations</button>
+    </div>
+
+    <section id="terminal">
+      <h2>Terminal</h2>
+      <div class="grid">
+        <textarea id="terminalCommand" spellcheck="false">node -v</textarea>
+        <div class="row">
+          <input id="terminalCwd" placeholder="cwd, optional">
+          <button onclick="runCommand(false)">Run</button>
+        </div>
+        <div class="row">
+          <button onclick="loadApprovals()">Approvals</button>
+          <button onclick="runCommand(true)">Run Approved</button>
+        </div>
+        <pre id="terminalOutput" class="output"></pre>
+      </div>
+    </section>
+
+    <section id="agents" class="hide">
+      <h2>Agents</h2>
+      <div id="agentList" class="grid"></div>
+    </section>
+
+    <section id="memory" class="hide">
+      <h2>Memory</h2>
+      <div class="row">
+        <input id="memoryQuery" placeholder="Search August Brain">
+        <button onclick="searchMemory()">Search</button>
+      </div>
+      <div id="memoryResults" class="grid" style="margin-top:10px"></div>
+    </section>
+
+    <section id="automations" class="hide">
+      <h2>Automations</h2>
+      <div class="grid">
+        <input id="automationName" placeholder="Job name">
+        <input id="automationSchedule" placeholder="manual, @hourly, every 30 minutes">
+        <textarea id="automationTask" placeholder="Task or command"></textarea>
+        <div class="row">
+          <select id="automationType"><option value="memory_event">Memory Event</option><option value="command">Command</option></select>
+          <button onclick="saveAutomation()">Save</button>
+        </div>
+        <div id="automationList" class="grid"></div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const $ = id => document.getElementById(id);
+    function showTab(id) {
+      for (const section of document.querySelectorAll('main > section')) section.classList.add('hide');
+      $(id).classList.remove('hide');
+      if (id === 'agents') loadAgents();
+      if (id === 'automations') loadAutomations();
+    }
+    async function api(path, options) {
+      const res = await fetch(path, options);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      $('status').textContent = 'online';
+      return data;
+    }
+    async function runCommand(approved) {
+      $('terminalOutput').textContent = 'running...';
+      try {
+        const data = await api('/ui/terminal/command', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ command:$('terminalCommand').value, cwd:$('terminalCwd').value || undefined, approved })
+        });
+        $('terminalOutput').textContent = JSON.stringify(data, null, 2);
+      } catch (e) { $('terminalOutput').textContent = e.message; }
+    }
+    async function loadApprovals() {
+      const data = await api('/ui/terminal/sessions');
+      $('terminalOutput').textContent = JSON.stringify(data.approvals || [], null, 2);
+    }
+    async function loadAgents() {
+      const data = await api('/ui/agents');
+      $('agentList').innerHTML = (data.agents || []).map(agent => `<div class="item"><b>${agent.id}</b><div class="muted">${agent.role}</div><div>${agent.goal}</div></div>`).join('');
+    }
+    async function searchMemory() {
+      const data = await api('/ui/memory/search?q=' + encodeURIComponent($('memoryQuery').value));
+      const items = [...(data.core || []), ...(data.semantic || []), ...(data.vector || [])];
+      $('memoryResults').innerHTML = items.map(item => `<div class="item"><b>${item.title || item.key || item.topic}</b><div>${item.summary || item.value || ''}</div></div>`).join('') || '<p class="muted">No matches.</p>';
+    }
+    async function loadAutomations() {
+      const data = await api('/ui/automations');
+      $('automationList').innerHTML = (data.jobs || []).map(job => `<div class="item"><b>${job.name}</b><div class="muted">${job.schedule} · ${job.enabled ? 'enabled' : 'paused'}</div></div>`).join('') || '<p class="muted">No jobs.</p>';
+    }
+    async function saveAutomation() {
+      await api('/ui/automations', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          name:$('automationName').value,
+          schedule:$('automationSchedule').value || 'manual',
+          type:$('automationType').value,
+          task:$('automationTask').value,
+          command:$('automationType').value === 'command' ? $('automationTask').value : '',
+          approved:false
+        })
+      });
+      await loadAutomations();
+    }
+    api('/ui/health').catch(e => $('status').textContent = e.message);
+  </script>
+</body>
+</html>
