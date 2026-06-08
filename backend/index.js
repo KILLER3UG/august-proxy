@@ -427,7 +427,311 @@ const requestHandler = async (req, res) => {
         deleteEnvVar(key);
         return sendJson(res, { status: 'ok', key, deleted: true });
     }
-if (req.url === '/ui/compatibility' && req.method === 'GET') {
+
+    // ── Health detailed route for the new UI ──
+    if (req.url === '/api/health/detailed' && req.method === 'GET') {
+        const claudeProfile = getProfile('claude');
+        const codexProfile = getProfile('codex');
+        const mem = process.memoryUsage();
+        return sendJson(res, {
+            claude: { status: claudeProfile?.apiKey ? 'ok' : 'missing key' },
+            codex: { status: codexProfile?.apiKey ? 'ok' : 'missing key' },
+            uptime: Math.floor(process.uptime()),
+            memory: {
+                used: Math.round(mem.heapUsed / 1024 / 1024),
+                total: Math.round(mem.heapTotal / 1024 / 1024)
+            }
+        });
+    }
+
+    // ── Services endpoint ──
+    if (req.url === '/api/services' && req.method === 'GET') {
+        try {
+            const config = getConfig();
+            const integrations = config.integrations || [];
+            return sendJson(res, { services: integrations });
+        } catch (e) {
+            return sendJson(res, { services: [] });
+        }
+    }
+
+    // ── Overview stats route for the new UI ──
+    if (req.url.startsWith('/api/overview') && req.method === 'GET') {
+        const { listProviders } = require('./providers/provider-registry');
+        const activeProviders = listProviders().filter(p => p.isAvailable()).length;
+        const stats = getStats('day', {});
+        const config = getConfig();
+        const activeProvider = config.activeProvider || 'openai';
+        return sendJson(res, {
+            requests: stats.totalRequests,
+            activity: stats.avgDurationMs,
+            inspector: stats.pendingRequests,
+            errors: stats.errorRequests,
+            cost: {
+                input: stats.totalInputTokens,
+                output: stats.totalOutputTokens,
+                total: stats.estimatedTotalCost
+            },
+            activeConfig: config[activeProvider] || {}
+        });
+    }
+
+    // ── Aggregate models from all active providers ──
+    if (req.url === '/api/models' && req.method === 'GET') {
+        const { listProviders } = require('./providers/provider-registry');
+        const { getProviderConfig } = require('./lib/config');
+        const providers = listProviders();
+        const allModels = [];
+
+        for (const p of providers) {
+            const config = getProviderConfig(p.name) || {};
+            const apiKey = config.apiKey || p.resolveApiKey();
+            const baseUrl = config.baseUrl || p.resolveBaseUrl();
+            const enabled = p.isAvailable() || !!config.apiKey;
+
+            if (!enabled) continue;
+
+            let models = [];
+            // Try live fetch from models endpoint for any provider with a valid base URL and API key
+            try {
+                const { deriveModelsUrl } = require('./lib/models');
+                const modelsUrl = deriveModelsUrl(baseUrl);
+                if (modelsUrl && apiKey) {
+                    const fetchRes = await fetch(modelsUrl, {
+                        headers: { 'Authorization': `Bearer ${apiKey}` },
+                        signal: AbortSignal.timeout(5000)
+                    });
+                    if (fetchRes.ok) {
+                        const data = await fetchRes.json();
+                        const list = data.data || data.models || data || [];
+                        models = list.map(m => ({
+                            id: m.id,
+                            name: m.id,
+                            provider: p.name,
+                            contextWindow: m.context_length || p.getModelProfile(m.id)?.contextWindow || 128000
+                        }));
+                    }
+                }
+            } catch (e) {
+                console.warn(`[Proxy Models] Failed to fetch models for ${p.name}:`, e.message);
+            }
+
+            // Fallback list of known models if fetch failed or for providers without models API (like Anthropic)
+            if (models.length === 0) {
+                let staticModels = [];
+                if (p.name === 'anthropic') {
+                    staticModels = [
+                        { id: 'claude-3-5-sonnet-20241022', contextWindow: 200000 },
+                        { id: 'claude-3-5-haiku-20241022', contextWindow: 200000 },
+                        { id: 'claude-3-opus-20240229', contextWindow: 200000 },
+                        { id: 'claude-sonnet-4-6', contextWindow: 200000 },
+                        { id: 'claude-opus-4-6', contextWindow: 200000 }
+                    ];
+                } else if (p.name === 'openai-api') {
+                    staticModels = [
+                        { id: 'gpt-4o', contextWindow: 128000 },
+                        { id: 'gpt-4o-mini', contextWindow: 128000 },
+                        { id: 'o1', contextWindow: 200000 },
+                        { id: 'o3-mini', contextWindow: 200000 }
+                    ];
+                } else if (p.name === 'gemini') {
+                    staticModels = [
+                        { id: 'gemini-2.5-pro', contextWindow: 2000000 },
+                        { id: 'gemini-2.5-flash', contextWindow: 1000000 },
+                        { id: 'gemini-2.0-flash', contextWindow: 1000000 }
+                    ];
+                } else if (p.name === 'deepseek') {
+                    staticModels = [
+                        { id: 'deepseek-chat', contextWindow: 64000 },
+                        { id: 'deepseek-reasoner', contextWindow: 64000 }
+                    ];
+                } else {
+                    if (p.defaultModel) {
+                        staticModels.push({ id: p.defaultModel, contextWindow: 128000 });
+                    }
+                    if (p.fallbackModels) {
+                        p.fallbackModels.forEach(m => staticModels.push({ id: m, contextWindow: 128000 }));
+                    }
+                }
+                models = staticModels.map(m => ({
+                    id: m.id,
+                    name: m.id,
+                    provider: p.name,
+                    contextWindow: m.contextWindow || 128000
+                }));
+            }
+
+            allModels.push(...models);
+        }
+
+        // Ensure unique model IDs
+        const uniqueModels = Array.from(new Map(allModels.map(m => [m.id, m])).values());
+        return sendJson(res, { models: uniqueModels });
+    }
+
+    // ── Chat Completions proxy for the web UI ──
+    if (req.url === '/api/chat' && req.method === 'POST') {
+        try {
+            const body = await readJsonBody(req);
+            const { model, messages, effort } = body;
+            
+            if (!model) {
+                return sendError(res, new Error('model is required'), 400);
+            }
+            if (!messages || !Array.isArray(messages)) {
+                return sendError(res, new Error('messages array is required'), 400);
+            }
+
+            // Resolve which provider to use
+            const { listProviders } = require('./providers/provider-registry');
+            const { getProviderConfig } = require('./lib/config');
+            const providers = listProviders();
+            let resolvedProvider = null;
+            
+            const lowerModel = model.toLowerCase();
+            // Try explicit match first
+            for (const p of providers) {
+                if (p._modelProfiles && p._modelProfiles[model]) {
+                    resolvedProvider = p;
+                    break;
+                }
+            }
+            if (!resolvedProvider) {
+                for (const p of providers) {
+                    if (lowerModel.startsWith(p.name.toLowerCase()) || p.aliases.some(alias => lowerModel.startsWith(alias.toLowerCase()))) {
+                        resolvedProvider = p;
+                        break;
+                    }
+                }
+            }
+            if (!resolvedProvider) {
+                if (lowerModel.startsWith('claude-')) resolvedProvider = providers.find(p => p.name === 'anthropic');
+                else if (lowerModel.startsWith('gpt-') || lowerModel.startsWith('o1') || lowerModel.startsWith('o3')) resolvedProvider = providers.find(p => p.name === 'openai-api');
+                else if (lowerModel.startsWith('gemini-')) resolvedProvider = providers.find(p => p.name === 'gemini');
+                else if (lowerModel.startsWith('deepseek-')) resolvedProvider = providers.find(p => p.name === 'deepseek');
+            }
+            if (!resolvedProvider) {
+                // Default fallback to active provider or openai
+                const { getActiveProvider } = require('./lib/config');
+                const active = getActiveProvider() || 'openai-api';
+                resolvedProvider = providers.find(p => p.name === active) || providers[0];
+            }
+
+            const pConfig = getProviderConfig(resolvedProvider.name) || {};
+            const apiKey = pConfig.apiKey || resolvedProvider.resolveApiKey();
+            const baseUrl = pConfig.baseUrl || resolvedProvider.resolveBaseUrl();
+
+            if (!apiKey) {
+                return sendError(res, new Error(`API Key for provider '${resolvedProvider.displayName}' is not configured.`), 400);
+            }
+
+            res.writeHead(200, {
+                'Content-Type': 'text/plain; charset=utf-8',
+                'Transfer-Encoding': 'chunked',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive'
+            });
+
+            // Make streaming request to upstream
+            let upstreamUrl = baseUrl;
+            let headers = { 'Content-Type': 'application/json' };
+            let payload = { model, messages: messages.map(m => ({ role: m.role, content: m.content })), stream: true };
+
+            if (resolvedProvider.apiMode === 'anthropic_messages') {
+                // Anthropic Messages API
+                upstreamUrl = baseUrl.endsWith('/messages') ? baseUrl : `${baseUrl}/messages`;
+                headers['x-api-key'] = apiKey;
+                headers['anthropic-version'] = '2023-06-01';
+                payload.max_tokens = 4096;
+                // Add thinking budget if effort is selected and model supports it
+                if (effort) {
+                    payload.thinking = {
+                        type: 'enabled',
+                        budget_tokens: effort === 'low' ? 1024 : effort === 'medium' ? 4096 : effort === 'high' ? 8192 : 16000
+                    };
+                    payload.max_tokens = Math.max(payload.max_tokens, payload.thinking.budget_tokens + 2048);
+                }
+            } else {
+                // OpenAI-compatible Completions API
+                if (!upstreamUrl.endsWith('/chat/completions')) {
+                    upstreamUrl = upstreamUrl.replace(/\/+$/, '') + '/chat/completions';
+                }
+                headers['Authorization'] = `Bearer ${apiKey}`;
+                // Add reasoning_effort if effort is selected and model is o1/o3-mini
+                if (effort && (model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o'))) {
+                    payload.reasoning_effort = effort === 'max' ? 'high' : effort; // OpenAI expects low, medium, high
+                }
+            }
+
+            const upstreamRes = await fetch(upstreamUrl, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(payload),
+                signal: AbortSignal.timeout(300000)
+            });
+
+            if (!upstreamRes.ok) {
+                const errText = await upstreamRes.text();
+                res.write(`⚠️ Upstream Error (${upstreamRes.status}): ${errText}`);
+                res.end();
+                return;
+            }
+
+            const reader = upstreamRes.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
+
+                    if (resolvedProvider.apiMode === 'anthropic_messages') {
+                        if (trimmed.startsWith('data:')) {
+                            try {
+                                const parsed = JSON.parse(trimmed.slice(5).trim());
+                                if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+                                    res.write(parsed.delta.text);
+                                }
+                            } catch {}
+                        }
+                    } else {
+                        if (trimmed.startsWith('data:')) {
+                            const dataStr = trimmed.slice(5).trim();
+                            if (dataStr === '[DONE]') continue;
+                            try {
+                                const parsed = JSON.parse(dataStr);
+                                const content = parsed.choices?.[0]?.delta?.content;
+                                if (content) {
+                                    res.write(content);
+                                }
+                            } catch {}
+                        }
+                    }
+                }
+            }
+            res.end();
+        } catch (e) {
+            console.error('[Proxy /api/chat] Error:', e);
+            if (!res.headersSent) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: e.message }));
+            } else {
+                res.write(`\n\n⚠️ Error: ${e.message}`);
+                res.end();
+            }
+        }
+        return;
+    }
+
+    if (req.url === '/ui/compatibility' && req.method === 'GET') {
         return sendJson(res, getCompatibilityStatus());
     }
 

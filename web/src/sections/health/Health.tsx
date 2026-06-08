@@ -18,7 +18,7 @@ export function Health() {
   const g = useStore($gateway);
   const { data, isLoading, error } = useQuery({
     queryKey: ['health', 'detailed'],
-    queryFn: () => api.get<HealthData>('/health/detailed'),
+    queryFn: () => api.get<HealthData>('/api/health/detailed'),
     refetchInterval: 5_000,
   });
 

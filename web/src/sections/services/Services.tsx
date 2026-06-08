@@ -1,7 +1,9 @@
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/api/client';
 import { SectionHeader } from '@/components/SectionHeader';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { mockServices } from '@/lib/mock';
+import { mockServices, type ServiceConnection } from '@/lib/mock';
 import { cn } from '@/lib/utils';
 
 const ICONS: Record<string, string> = {
@@ -17,6 +19,20 @@ const COLORS: Record<string, string> = {
 };
 
 export function Services() {
+  const { data } = useQuery({
+    queryKey: ['services'],
+    queryFn: async () => {
+      try {
+        const res = await api.get<{ services: ServiceConnection[] }>('/api/services');
+        return res.services ?? [];
+      } catch {
+        return mockServices;
+      }
+    },
+    refetchInterval: 30_000,
+  });
+  const services = data ?? mockServices;
+
   return (
     <div className="p-6 space-y-6">
       <SectionHeader
@@ -24,7 +40,7 @@ export function Services() {
         subtitle="Third-party integrations used by MCP tools. Connect once, use everywhere."
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {mockServices.map((svc) => {
+        {services.map((svc) => {
           const connected = svc.status === 'connected';
           return (
             <Card key={svc.name}>

@@ -33,21 +33,6 @@ export interface Session {
   model: string;
 }
 
-export interface McpServer {
-  name: string;
-  status: 'running' | 'stopped' | 'error';
-  tools: number;
-  uptime: string;
-  version: string;
-}
-
-export interface Skill {
-  name: string;
-  description: string;
-  enabled: boolean;
-  category: 'productivity' | 'developer' | 'research' | 'communication';
-}
-
 export interface MemoryEntry {
   id: string;
   type: 'fact' | 'preference' | 'event' | 'context';
@@ -174,26 +159,6 @@ function makeSessions(): Session[] {
   return arr;
 }
 export const mockSessions: Session[] = makeSessions();
-
-export const mockMcpServers: McpServer[] = [
-  { name: 'workspace-mcp',   status: 'running', tools: 14, uptime: '4h 22m', version: '2.1.0' },
-  { name: 'github-mcp',      status: 'running', tools: 8,  uptime: '4h 22m', version: '1.4.2' },
-  { name: 'slack-mcp',       status: 'stopped', tools: 12, uptime: '—',       version: '0.9.1' },
-  { name: 'filesystem-mcp',  status: 'running', tools: 6,  uptime: '4h 22m', version: '1.0.0' },
-  { name: 'brave-search',    status: 'error',   tools: 3,  uptime: '—',       version: '0.4.0' },
-  { name: 'puppeteer',       status: 'running', tools: 11, uptime: '2h 08m', version: '1.2.0' },
-];
-
-export const mockSkills: Skill[] = [
-  { name: 'code-review',     description: 'Reviews code for correctness and style',     enabled: true,  category: 'developer' },
-  { name: 'summarize',       description: 'Summarizes long documents and threads',      enabled: true,  category: 'productivity' },
-  { name: 'debug-error',     description: 'Analyzes stack traces and proposes fixes',    enabled: true,  category: 'developer' },
-  { name: 'meeting-prep',    description: 'Prepares agendas from calendar + context',   enabled: false, category: 'productivity' },
-  { name: 'web-search',      description: 'Searches the web for current info',          enabled: true,  category: 'research' },
-  { name: 'cite-sources',    description: 'Cites sources for claims in answers',        enabled: true,  category: 'research' },
-  { name: 'compose-email',   description: 'Drafts emails in your voice',                 enabled: true,  category: 'communication' },
-  { name: 'git-blame',       description: 'Looks up blame + history for a file',         enabled: true,  category: 'developer' },
-];
 
 function makeMemory(): MemoryEntry[] {
   const arr: MemoryEntry[] = [];

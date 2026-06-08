@@ -9,6 +9,7 @@ module.exports = {
   envVars: ['MINIMAX_CN_API_KEY', 'MINIMAX_CN_BASE_URL'],
   authType: 'api_key',
   defaultModel: 'minimax-m2.7',
+  fallbackModels: ['minimax-m2.7', 'minimax-m2.5'],
   defaultMaxTokens: 64000,
   signupUrl: 'https://platform.minimaxi.com',
   supportsHealthCheck: false,

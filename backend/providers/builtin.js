@@ -1,7 +1,7 @@
 const { registerProvider } = require('./provider-registry');
 const { ProviderProfile } = require('./provider-profile');
 
-function p(name) { return require('path').join(__dirname, '..', '..', 'providers', name); }
+function p(name) { return require('path').join(__dirname, name); }
 
 function load(name) {
   const mod = require(p(name));

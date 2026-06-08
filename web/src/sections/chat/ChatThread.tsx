@@ -3,7 +3,7 @@
 /* Tool calls render as inline cards. Right rail optional.                  */
 
 import { useState, useRef, useEffect, type KeyboardEvent } from 'react';
-import { Send, Paperclip, Mic, AtSign, Hash, Sparkles, ChevronRight, Wrench, Check, AlertCircle, StopCircle } from 'lucide-react';
+import { Send, Paperclip, Mic, AtSign, Sparkles, ChevronRight, Wrench, Check, AlertCircle, StopCircle, X, File } from 'lucide-react';
 import { cn, formatTimeAgo } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
@@ -23,14 +23,46 @@ export interface ChatMessage {
   thinking?: string;
 }
 
-const MODEL_NAME = 'claude-opus-4-7';
+interface ModelItem {
+  id: string;
+  name: string;
+  provider: string;
+  contextWindow: number;
+}
+
+const TOOLS = [
+  { name: '@web_search', desc: 'Search the web for context' },
+  { name: '@read_file', desc: 'Read a local file contents' },
+  { name: '@run_command', desc: 'Propose shell command execution' },
+  { name: '@fetch_url', desc: 'Fetch web content' },
+];
+
+const COMMANDS = [
+  { name: '/help', desc: 'Show available commands' },
+  { name: '/reset', desc: 'Reset conversation history' },
+  { name: '/clear', desc: 'Clear the chat display' },
+  { name: '/debug', desc: 'Toggle diagnostics mode' },
+  { name: '/model', desc: 'Switch model: /model <name>' },
+  { name: '/provider', desc: 'Switch provider: /provider <name>' },
+];
 
 export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [messages, setMessages] = useState<ChatMessage[]>(() => buildDemoThread(sessionId));
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  const [models, setModels] = useState<ModelItem[]>([]);
+  const [selectedModel, setSelectedModel] = useState<ModelItem | null>(null);
+  const [effort, setEffort] = useState<'low' | 'medium' | 'high' | 'max'>('medium');
+
+  // Composer tools states
+  const [attachments, setAttachments] = useState<{ name: string; size: string }[]>([]);
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [showToolsDropdown, setShowToolsDropdown] = useState(false);
+  const [showCommandsDropdown, setShowCommandsDropdown] = useState(false);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -38,40 +70,122 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   useEffect(() => { setMessages(buildDemoThread(sessionId)); }, [sessionId]);
 
-  const send = () => {
-    const text = input.trim();
-    if (!text || streaming) return;
+  // Load models on mount
+  useEffect(() => {
+    let active = true;
+    const loadModels = async () => {
+      try {
+        const res = await fetch('/api/models');
+        if (res.ok) {
+          const data = await res.json();
+          if (active && data?.models && data.models.length > 0) {
+            setModels(data.models);
+            setSelectedModel(data.models[0]);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load models:', e);
+      }
+    };
+    loadModels();
+    return () => { active = false; };
+  }, []);
+
+  // Remove hardcoded fallback — rely on API only
+  const currentModel = selectedModel || null;
+
+  // Dynamic context usage tracker
+  const maxContext = currentModel?.contextWindow || 128000;
+  const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0) + input.length;
+  const estTokens = Math.ceil(totalChars / 4) + 120;
+  const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
+
+  const send = async () => {
+    let text = input.trim();
+    if (!text && attachments.length === 0) return;
+    if (streaming) return;
+
+    if (attachments.length > 0) {
+      const attachInfo = attachments.map(a => `[File Attachment: ${a.name} (${a.size})]`).join('\\n');
+      text = `${text}\\n\\n${attachInfo}`;
+    }
+
     setInput('');
-    setMessages((m) => [...m, { id: `m${Date.now()}`, role: 'user', content: text, timestamp: new Date().toISOString() }]);
+    setAttachments([]);
+    setShowToolsDropdown(false);
+    setShowCommandsDropdown(false);
+
+    const userMsg: ChatMessage = {
+      id: `m${Date.now()}`,
+      role: 'user',
+      content: text,
+      timestamp: new Date().toISOString()
+    };
+
+    const nextMessages = [...messages, userMsg];
+    setMessages(nextMessages);
     setStreaming(true);
 
-    const callId = `t${Date.now()}`;
-    setTimeout(() => {
-      setMessages((m) => [...m, {
-        id: callId,
-        role: 'tool',
-        content: '',
-        timestamp: new Date().toISOString(),
-        tool: { name: 'web_search', args: JSON.stringify({ query: text.slice(0, 60) }, null, 2), status: 'running' },
-      }]);
-    }, 400);
+    const assistantMsgId = `a${Date.now()}`;
 
-    setTimeout(() => {
-      setMessages((m) => m.map((x) => x.id === callId
-        ? { ...x, tool: { ...x.tool!, status: 'done', duration: 1240, result: 'Found 3 results about "' + text.slice(0, 40) + '".' } }
-        : x));
-    }, 1500);
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: currentModel?.id,
+          messages: nextMessages.map(m => ({ role: m.role, content: m.content })),
+          effort: effort
+        })
+      });
 
-    setTimeout(() => {
-      setMessages((m) => [...m, {
-        id: `a${Date.now()}`,
+      if (!res.ok) {
+        const errMsg = await res.text();
+        setMessages(m => [...m, {
+          id: assistantMsgId,
+          role: 'assistant',
+          content: `⚠️ Failed to get response${currentModel ? ` from ${currentModel.id}` : ''}: ${errMsg}`,
+          timestamp: new Date().toISOString()
+        }]);
+        setStreaming(false);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) {
+        setStreaming(false);
+        return;
+      }
+
+      setMessages(m => [...m, {
+        id: assistantMsgId,
         role: 'assistant',
-        content: `I searched the web for "${text.slice(0, 80)}${text.length > 80 ? '…' : ''}" and found relevant context. The most useful result is from the official docs. Want me to summarize the top three findings, or drill into one specifically?`,
-        timestamp: new Date().toISOString(),
-        thinking: 'User asked a question. Need to: 1) search web for context, 2) summarize findings, 3) present options. The search took 1.2s and returned 3 results. I should keep my response concise.',
+        content: '',
+        timestamp: new Date().toISOString()
       }]);
+
+      let assistantContent = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        assistantContent += chunk;
+        setMessages(prev => prev.map(msg => 
+          msg.id === assistantMsgId ? { ...msg, content: assistantContent } : msg
+        ));
+      }
+    } catch (e: any) {
+      console.error(e);
+      setMessages(m => [...m, {
+        id: assistantMsgId,
+        role: 'assistant',
+        content: `⚠️ Connection error: ${e.message}`,
+        timestamp: new Date().toISOString()
+      }]);
+    } finally {
       setStreaming(false);
-    }, 2500);
+    }
   };
 
   const stop = () => setStreaming(false);
@@ -80,8 +194,79 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
+  // Detect slash commands as user types
+  const handleInputChange = (value: string) => {
+    setInput(value);
+    // Show commands dropdown when text starts with /
+    if (value.startsWith('/')) {
+      setShowCommandsDropdown(true);
+      setShowToolsDropdown(false);
+    } else if (showCommandsDropdown && !value.startsWith('/')) {
+      setShowCommandsDropdown(false);
+    }
+  };
+
+  // Composer features handlers
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    const newAttachments = [...attachments];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const sizeStr = f.size > 1024 * 1024 
+        ? `${(f.size / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.round(f.size / 1024)} KB`;
+      newAttachments.push({ name: f.name, size: sizeStr });
+    }
+    setAttachments(newAttachments);
+    if (e.target) e.target.value = '';
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments(attachments.filter((_, i) => i !== index));
+  };
+
+  const startVoiceInput = () => {
+    if (voiceActive) return;
+    setVoiceActive(true);
+    setTimeout(() => {
+      setInput(prev => {
+        const space = prev.length > 0 && !prev.endsWith(' ') ? ' ' : '';
+        return prev + space + "Let's inspect the system status.";
+      });
+      setVoiceActive(false);
+    }, 2500);
+  };
+
+  const insertText = (text: string) => {
+    const ta = taRef.current;
+    if (!ta) {
+      setInput(prev => prev + text);
+      return;
+    }
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const nextText = input.substring(0, start) + text + input.substring(end);
+    setInput(nextText);
+    setTimeout(() => {
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = start + text.length;
+    }, 50);
+  };
+
+  const [showActionsBubbleId, setShowActionsBubbleId] = useState<string | null>(null);
+
+  const copyMessage = (text: string) => {
+    navigator.clipboard.writeText(text).catch(() => {});
+  };
+
+  const editAndResend = (text: string) => {
+    setInput(text);
+    taRef.current?.focus();
+  };
+
   return (
-    <div className="flex h-full min-h-0">
+    <div className="flex h-full min-h-0 relative">
       <div className="flex-1 flex flex-col min-w-0 bg-background">
         {/* Thread */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
@@ -96,45 +281,157 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         </div>
 
         {/* Composer */}
-        <div className="border-t border-border bg-background px-4 py-3 shrink-0">
-          <div className="max-w-3xl mx-auto">
+        <div className="bg-background px-4 py-3 shrink-0 border-t border-transparent">
+          <div className="max-w-3xl mx-auto relative">
+            
+            {/* Tools Dropdown */}
+            {showToolsDropdown && (
+              <div className="absolute bottom-full mb-2 left-2 z-10 w-64 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-semibold">Mention Tool</div>
+                {TOOLS.map((t) => (
+                  <button
+                    key={t.name}
+                    onClick={() => {
+                      insertText(t.name);
+                      setShowToolsDropdown(false);
+                    }}
+                    className="w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between"
+                  >
+                    <span className="font-mono font-medium text-primary">{t.name}</span>
+                    <span className="text-[10px] text-muted-foreground">{t.desc}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Commands Dropdown — triggered by typing / */}
+            {showCommandsDropdown && (
+              <div className="absolute bottom-full mb-2 left-2 z-10 w-64 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-semibold">Commands & Tools</div>
+                {COMMANDS.filter(c => !input || c.name.startsWith(input)).map((c) => (
+                  <button
+                    key={c.name}
+                    onClick={() => {
+                      insertText(c.name);
+                      setShowCommandsDropdown(false);
+                    }}
+                    className="w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between"
+                  >
+                    <span className="font-mono font-medium text-amber-500">{c.name}</span>
+                    <span className="text-[10px] text-muted-foreground">{c.desc}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className={cn(
-              'rounded-2xl border bg-card shadow-sm transition focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary',
+              'rounded-2xl border bg-card shadow-sm transition focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary relative overflow-hidden',
               'border-border',
             )}>
-              <textarea
-                ref={taRef}
-                value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  // auto-grow
-                  e.target.style.height = 'auto';
-                  e.target.style.height = Math.min(e.target.scrollHeight, 240) + 'px';
-                }}
-                onKeyDown={onKey}
-                placeholder={streaming ? 'August is working…' : `Message ${MODEL_NAME}…`}
-                rows={1}
-                disabled={streaming}
-                className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
-                style={{ minHeight: '40px', maxHeight: '240px' }}
-              />
+              {voiceActive ? (
+                <div className="h-[96px] w-full flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm space-y-2 text-foreground">
+                  <div className="flex items-center gap-1">
+                    <span className="w-1 h-4 bg-primary rounded animate-pulse" />
+                    <span className="w-1 h-6 bg-primary rounded animate-pulse" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1 h-8 bg-primary rounded animate-pulse" style={{ animationDelay: '300ms' }} />
+                    <span className="w-1 h-5 bg-primary rounded animate-pulse" style={{ animationDelay: '450ms' }} />
+                    <span className="w-1 h-3 bg-primary rounded animate-pulse" style={{ animationDelay: '600ms' }} />
+                  </div>
+                  <span className="text-xs font-semibold tracking-wide text-primary animate-pulse">August is listening…</span>
+                </div>
+              ) : (
+                <>
+                  {attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 p-2 bg-muted/20 border-b border-border">
+                      {attachments.map((file, i) => (
+                        <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted border border-border text-[10.5px] font-mono">
+                          <span className="truncate max-w-[150px]">{file.name}</span>
+                          <span className="text-[9px] text-muted-foreground">({file.size})</span>
+                          <button
+                            onClick={() => removeAttachment(i)}
+                            className="p-0.5 hover:bg-background rounded text-muted-foreground hover:text-foreground transition"
+                          >
+                            <X className="size-2.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <textarea
+                    ref={taRef}
+                    value={input}
+                    onChange={(e) => {
+                      handleInputChange(e.target.value);
+                      e.target.style.height = 'auto';
+                      e.target.style.height = Math.min(e.target.scrollHeight, 240) + 'px';
+                    }}
+                    onKeyDown={onKey}
+                    placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${currentModel.id}…` : 'Type a message…')}
+                    rows={1}
+                    disabled={streaming}
+                    className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
+                    style={{ minHeight: '40px', maxHeight: '240px' }}
+                  />
+                </>
+              )}
+
               <div className="flex items-center justify-between px-1.5 pb-1.5">
                 <div className="flex items-center text-muted-foreground">
-                  <ToolBtn Icon={Paperclip} label="Attach file" />
-                  <ToolBtn Icon={AtSign}      label="Mention tool" />
-                  <ToolBtn Icon={Hash}        label="Insert command" />
-                  <ToolBtn Icon={Mic}         label="Voice input" />
+                  <ToolBtn Icon={Paperclip} label="Attach file" onClick={() => fileInputRef.current?.click()} />
+                  <ToolBtn Icon={AtSign}    label="Mention tool" onClick={() => { setShowToolsDropdown(!showToolsDropdown); setShowCommandsDropdown(false); }} />
+                  <ToolBtn Icon={Mic}       label="Voice input" onClick={startVoiceInput} />
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-muted-foreground font-mono hidden sm:inline">
-                    {MODEL_NAME}
-                  </span>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 border border-border bg-muted/40 rounded-lg px-2.5 py-1">
+                    <select
+                      value={currentModel?.id || ''}
+                      onChange={(e) => {
+                        const m = models.find(x => x.id === e.target.value);
+                        if (m) setSelectedModel(m);
+                      }}
+                      className="bg-transparent text-muted-foreground hover:text-foreground text-[10px] font-mono outline-none cursor-pointer max-w-[130px] truncate"
+                    >
+                      {models.length === 0 ? (
+                        <option value="" disabled>no models loaded</option>
+                      ) : (
+                        Object.entries(
+                          models.reduce((acc, m) => {
+                            if (!acc[m.provider]) acc[m.provider] = [];
+                            acc[m.provider].push(m);
+                            return acc;
+                          }, {} as Record<string, ModelItem[]>)
+                        ).map(([provider, list]) => (
+                          <optgroup key={provider} label={provider.toUpperCase()} className="bg-card text-foreground">
+                            {list.map(m => (
+                              <option key={m.id} value={m.id}>
+                                {m.id}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))
+                      )}
+                    </select>
+                    {/* Effort inline dropdown — replaces modal */}
+                    <select
+                      value={effort}
+                      onChange={(e) => setEffort(e.target.value as 'low' | 'medium' | 'high' | 'max')}
+                      className="bg-transparent text-muted-foreground hover:text-foreground text-[10px] font-mono outline-none cursor-pointer max-w-[70px] truncate border-l border-border/40 pl-1.5"
+                      title="Thinking Effort"
+                    >
+                      <option value="low">low</option>
+                      <option value="medium">med</option>
+                      <option value="high">high</option>
+                      <option value="max">max</option>
+                    </select>
+                  </div>
+
                   {streaming ? (
                     <Button onClick={stop} size="sm" variant="outline">
                       <StopCircle className="size-3" /> Stop
                     </Button>
                   ) : (
-                    <Button onClick={send} disabled={!input.trim()} size="sm">
+                    <Button onClick={send} disabled={!input.trim() && attachments.length === 0} size="sm">
                       <Send className="size-3" />
                       Send
                       <kbd className="ml-1 rounded bg-primary-foreground/20 px-1 text-[10px] font-mono">↵</kbd>
@@ -143,31 +440,81 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 </div>
               </div>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1.5 text-center font-mono">
-              {MODEL_NAME} · can make mistakes · ⌘K for commands
-            </p>
+
+            {/* Usage tracker — minimal, no static hint text */}
+            <div className="flex items-center justify-end mt-1 px-1">
+              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
+                <span className="relative w-16 h-1 rounded-full bg-muted overflow-hidden inline-block">
+                  <span
+                    className={cn('absolute inset-y-0 left-0 rounded-full transition-all duration-300', pct > 80 ? 'bg-destructive' : pct > 60 ? 'bg-amber-500' : 'bg-primary')}
+                    style={{ width: `${pct}%` }}
+                  />
+                </span>
+                <span>{pct}%</span>
+              </div>
+            </div>
           </div>
         </div>
+
+        {/* Hidden File Input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileUpload}
+          multiple
+          className="hidden"
+        />
       </div>
     </div>
   );
 }
 
 function MessageBubble({ message }: { message: ChatMessage }) {
+  const [showActions, setShowActions] = useState(false);
+
   if (message.role === 'tool') {
     return <ToolCallCard tool={message.tool!} timestamp={message.timestamp} />;
   }
   const isUser = message.role === 'user';
   return (
-    <div className="w-full">
+    <div
+      className="w-full flex flex-col"
+      onMouseEnter={() => setShowActions(true)}
+      onMouseLeave={() => setShowActions(false)}
+    >
       {message.thinking && <ReasoningBlock text={message.thinking} />}
       {isUser ? (
-        <div className="rounded-xl border border-border/40 bg-[#161618] px-4 py-3 text-sm leading-relaxed text-foreground shadow-sm">
-          <Markdown content={message.content} />
-        </div>
+        <>
+          <div className="rounded-2xl border border-border/40 bg-muted/40 dark:bg-[#161618] px-4 py-2.5 text-sm leading-relaxed text-foreground shadow-sm max-w-[85%] ml-auto">
+            <Markdown content={message.content} />
+          </div>
+          {/* Action buttons below user message */}
+          <div className={`flex items-center gap-0.5 mt-1 mr-1 transition-opacity duration-150 ${showActions ? 'opacity-100' : 'opacity-0'}`}
+            style={{ alignSelf: 'flex-end' }}>
+            <button
+              onClick={() => navigator.clipboard.writeText(message.content)}
+              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition"
+              title="Copy"
+            >
+              <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </button>
+          </div>
+        </>
       ) : (
-        <div className="text-sm leading-relaxed text-foreground/90 space-y-3 max-w-none">
+        <div className="text-sm leading-relaxed text-foreground/90 space-y-3 max-w-none group relative">
           <Markdown content={message.content} />
+          {/* Copy button for assistant messages on hover */}
+          <button
+            onClick={() => navigator.clipboard.writeText(message.content)}
+            className={`absolute top-0 right-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-opacity duration-150 ${showActions ? 'opacity-100' : 'opacity-0'}`}
+            title="Copy"
+          >
+            <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+          </button>
         </div>
       )}
     </div>
@@ -293,9 +640,13 @@ function EmptyState({ onPrompt }: { onPrompt: (p: string) => void }) {
   );
 }
 
-function ToolBtn({ Icon, label }: { Icon: typeof Send; label: string }) {
+function ToolBtn({ Icon, label, onClick }: { Icon: any; label: string; onClick?: () => void }) {
   return (
-    <button aria-label={label} className="p-2 hover:bg-accent rounded-md transition text-muted-foreground hover:text-foreground">
+    <button
+      onClick={onClick}
+      aria-label={label}
+      className="p-2 hover:bg-accent rounded-md transition text-muted-foreground hover:text-foreground"
+    >
       <Icon className="size-3.5" />
     </button>
   );
@@ -323,7 +674,7 @@ interface Block {
 
 function splitBlocks(text: string): Block[] {
   const blocks: Block[] = [];
-  const lines = text.split('\n');
+  const lines = text.split('\\n');
   let i = 0;
 
   while (i < lines.length) {
@@ -340,7 +691,7 @@ function splitBlocks(text: string): Block[] {
       i++; // Skip closing fence
       blocks.push({
         type: 'code',
-        content: codeLines.join('\n'),
+        content: codeLines.join('\\n'),
         items: []
       });
       continue;
@@ -398,7 +749,7 @@ function splitBlocks(text: string): Block[] {
     }
     blocks.push({
       type: 'paragraph',
-      content: paraLines.join('\n'),
+      content: paraLines.join('\\n'),
       items: []
     });
   }
@@ -413,7 +764,7 @@ function renderInline(text: string): React.ReactNode {
 
   while (current) {
     const codeMatch = current.match(/`([^`]+)`/);
-    const boldMatch = current.match(/\*\*([^*]+)\*\*/);
+    const boldMatch = current.match(/\\*\\*([^*]+)\\*\\*/);
 
     if (codeMatch && (!boldMatch || (codeMatch.index !== undefined && boldMatch.index !== undefined && codeMatch.index < boldMatch.index))) {
       const idx = codeMatch.index!;

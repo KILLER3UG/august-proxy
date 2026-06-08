@@ -7,7 +7,6 @@ RUN npm install http-proxy @modelcontextprotocol/sdk officeparser
 RUN git clone https://github.com/olbboy/claudekit-blender-mcp.git /app/claudekit-blender-mcp
 RUN cd /app/claudekit-blender-mcp && npm install && npm run build
 COPY backend/ ./backend/
-COPY providers/ ./providers/
 COPY docs/ ./docs/
 COPY scripts/ ./scripts/
 COPY data/ ./data/

@@ -251,7 +251,7 @@ async function execute(toolName, args) {
     if (status !== 'connected') {
       return {
         error: true,
-        message: 'Host computer agent is not running. Start it on your Windows host: cd host-agent && npm start (listens on port 6312, connectable via host.docker.internal).',
+        message: 'Host computer agent is not running. Start it on your Windows host: cd backend/host-agent && npm start (listens on port 6312, connectable via host.docker.internal).',
         detail: e.message
       };
     }

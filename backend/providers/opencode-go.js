@@ -9,6 +9,7 @@ module.exports = {
   envVars: ['OPENCODE_GO_API_KEY', 'OPENCODE_GO_BASE_URL'],
   authType: 'api_key',
   defaultModel: 'deepseek-v4-flash',
+  fallbackModels: ['deepseek-v4', 'deepseek-v4-flash', 'deepseek-r1', 'qwen-max'],
   defaultMaxTokens: 8192,
   signupUrl: 'https://opencode.ai',
   supportsHealthCheck: true,

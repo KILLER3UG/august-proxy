@@ -9,6 +9,7 @@ module.exports = {
   envVars: ['NVIDIA_API_KEY', 'NVIDIA_BASE_URL'],
   authType: 'api_key',
   defaultModel: 'meta/llama-3.1-405b-instruct',
+  fallbackModels: ['meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct', 'mistralai/mistral-large'],
   defaultMaxTokens: 4096,
   signupUrl: 'https://build.nvidia.com',
   supportsHealthCheck: true,

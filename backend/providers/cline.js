@@ -9,6 +9,7 @@ module.exports = {
   envVars: ['CLINE_API_KEY', 'CLINE_BASE_URL'],
   authType: 'api_key',
   defaultModel: 'minimax-m2.5',
+  fallbackModels: ['minimax-m2.5', 'minimax-m2.7', 'deepseek-v4'],
   defaultMaxTokens: 8192,
   signupUrl: 'https://cline.bot',
   supportsHealthCheck: true,

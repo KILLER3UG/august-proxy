@@ -9,6 +9,7 @@ module.exports = {
   envVars: ['KILOCODE_API_KEY', 'KILOCODE_BASE_URL'],
   authType: 'api_key',
   defaultModel: 'deepseek-v4-flash',
+  fallbackModels: ['deepseek-v4', 'deepseek-r1', 'kilo/kimi-k2', 'kilo/kimi-k2-turbo'],
   defaultMaxTokens: 8192,
   signupUrl: 'https://kilo.ai',
   supportsHealthCheck: true,

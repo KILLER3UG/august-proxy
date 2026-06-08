@@ -2,7 +2,7 @@ request-log.json
 .env
 # Dependencies (never commit)
 node_modules/
-host-agent/node_modules/
+backend/host-agent/node_modules/
 
 # Vite build output
 web-dist/
@@ -28,7 +28,7 @@ apps/proxy/src/services/**/debug.txt
 
 # Temp files
 *.tmp
-host-agent/tmp/
+backend/host-agent/tmp/
 
 # Dropzones / test artifacts
 host_files/dashboard-check/
@@ -49,3 +49,4 @@ apps/desktop/main/target/
 
 # Local Claude / IDE config (per-machine, never commit)
 .claude/settings.local.json
+.hermes/

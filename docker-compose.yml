@@ -23,7 +23,6 @@ services:
     volumes:
       # Live-mount all source code so changes take effect on container restart (no rebuild needed)
       - ./backend:/app/backend
-      - ./providers:/app/providers
       - ./web-dist:/app/web-dist
       - ./data:/app/data
       - ./host_files:/app/host_files

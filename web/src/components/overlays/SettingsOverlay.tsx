@@ -39,7 +39,10 @@ export function SettingsOverlay() {
   const tab = params.get('tab') ?? 'health';
   const g = useStore($gateway);
 
-  const close = () => navigate(-1);
+  const close = () => {
+    const preSettingsPath = sessionStorage.getItem('pre-settings-path') || '/';
+    navigate(preSettingsPath);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };

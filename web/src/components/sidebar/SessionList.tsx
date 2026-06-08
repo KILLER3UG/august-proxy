@@ -43,9 +43,6 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
   return (
     <div className="flex h-full text-xs relative select-none bg-sidebar">
       {/* Absolute positioned divider line between narrow rail and second column */}
-      {!collapsed && (
-        <div className="absolute left-12 top-0 bottom-0 w-[1px] bg-sidebar-border/30" />
-      )}
 
       {/* Left Column: Narrow Navigation Rail (always w-12 / 48px) */}
       <div className="w-12 shrink-0 flex flex-col justify-between py-2.5 bg-[#09090b]">
@@ -131,7 +128,7 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
           className="flex-1 flex flex-col min-w-0 bg-[#0e0e11] text-xs"
         >
           {/* Nav labels */}
-          <div className="py-2.5 px-2 border-b border-sidebar-border/30 flex flex-col gap-0.5">
+          <div className="py-2.5 px-2 flex flex-col gap-0.5">
             <button
               onClick={onNew}
               className="w-full flex items-center justify-between rounded-md px-2.5 py-1.5 text-left text-sidebar-foreground/80 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground transition"

@@ -9,6 +9,7 @@ module.exports = {
   envVars: ['OPENCODE_ZEN_API_KEY', 'OPENCODE_ZEN_BASE_URL'],
   authType: 'api_key',
   defaultModel: 'deepseek-v4-flash',
+  fallbackModels: ['deepseek-v4', 'deepseek-v4-flash', 'deepseek-r1'],
   defaultMaxTokens: 8192,
   signupUrl: 'https://opencode.ai',
   supportsHealthCheck: true,

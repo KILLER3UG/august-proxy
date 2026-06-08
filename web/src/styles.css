@@ -111,3 +111,46 @@
 
   .ring-ring { --tw-ring-color: var(--dt-ring); }
 }
+
+/* ── Custom UI styling overrides ── */
+
+/* 1. Ensure scrollbars in sidebar/main are dark and never white */
+::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-radius: 9999px !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22) !important;
+}
+
+/* 2. Fix the search bar input so that it is not white */
+input[type="text"], input {
+  background-color: var(--dt-muted) !important;
+  color: var(--dt-foreground) !important;
+  border-color: var(--dt-border) !important;
+}
+input::placeholder {
+  color: var(--dt-muted-foreground) !important;
+}
+
+/* 3. Eliminate white lines, outlines, and border highlights */
+.border, .border-t, .border-b, .border-l, .border-r {
+  border-color: var(--dt-border) !important;
+}
+
+/* 4. Disable focus ring blue highlights */
+textarea:focus, input:focus, div:focus-within {
+  outline: none !important;
+  box-shadow: none !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-color: transparent !important;
+}
+

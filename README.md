@@ -10,15 +10,15 @@ This project is structured as a monorepo using npm workspaces:
 august-proxy/
 ├── backend/            # Node.js backend server code
 │   ├── index.js        # Server entrypoint
+│   ├── host-agent/     # Host control daemon
+│   ├── voice-assistant/# Voice assistant logic
+│   ├── providers/      # Registered AI provider modules and profiles
 │   └── ...
 ├── web/                # React SPA frontend source code (Vite + TS)
 │   ├── src/            # React UI components and routing
 │   └── package.json    # Frontend dependencies
 ├── desktop/            # Tauri desktop app
 ├── mobile/             # React Native mobile app
-├── host-agent/         # Host control daemon
-├── voice-assistant/    # Voice assistant logic
-├── providers/          # Registered AI provider modules
 ├── data/               # Persistent database, config, and runtime state
 └── web-dist/           # Compiled frontend SPA build output
 ```

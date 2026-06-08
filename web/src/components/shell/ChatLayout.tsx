@@ -54,7 +54,7 @@ export function ChatLayout() {
         {!isSettings && (
           <aside
             className={cn(
-              'shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex flex-col transition-[width] duration-150',
+              'shrink-0 bg-sidebar text-sidebar-foreground flex flex-col transition-[width] duration-150',
               collapsed ? 'w-12' : 'w-64',
             )}
           >
@@ -65,7 +65,12 @@ export function ChatLayout() {
                 onToggleCollapsed={() => setCollapsed((c) => !c)}
                 onSelect={(s) => navigate(`/c/${s.id}`)}
                 onNew={() => navigate('/')}
-                onNavigate={(p) => navigate(p.startsWith('/') ? p : `/${p}`)}
+                onNavigate={(p) => {
+                  if (p.startsWith('settings') || p.startsWith('/settings')) {
+                    sessionStorage.setItem('pre-settings-path', location.pathname);
+                  }
+                  navigate(p.startsWith('/') ? p : `/${p}`);
+                }}
               />
             </div>
           </aside>
@@ -74,7 +79,10 @@ export function ChatLayout() {
         <div className="flex-1 flex flex-col min-w-0">
           <Titlebar
             session={active}
-            onSettings={() => navigate('/settings')}
+            onSettings={() => {
+              sessionStorage.setItem('pre-settings-path', location.pathname);
+              navigate('/settings');
+            }}
           />
           <main className="flex-1 min-h-0 overflow-hidden">
             <AnimatePresence mode="wait" initial={false}>
@@ -92,13 +100,6 @@ export function ChatLayout() {
           </main>
         </div>
       </div>
-      <Statusbar 
-        session={active} 
-        elapsed={elapsed} 
-        collapsed={collapsed} 
-        onNew={() => navigate('/')}
-        onNavigate={(p) => navigate(p.startsWith('/') ? p : `/${p}`)}
-      />
     </div>
   );
 }
@@ -108,7 +109,7 @@ function Titlebar({ session, onSettings }: {
   onSettings: () => void;
 }) {
   return (
-    <header className="h-12 border-b border-border/40 bg-background flex items-center justify-between px-4 shrink-0 select-none">
+    <header className="h-12 bg-background flex items-center justify-between px-4 shrink-0 select-none">
       <div className="flex items-center gap-2 min-w-0">
         <h1 className="text-[13px] font-medium text-foreground truncate">
           {session?.title ?? 'General Assistance Conversation Started'}
@@ -119,9 +120,6 @@ function Titlebar({ session, onSettings }: {
       <div className="flex items-center gap-3">
         <button className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition" title="Mute/Unmute">
           <Volume2 className="size-4" />
-        </button>
-        <button onClick={onSettings} className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition" title="Settings">
-          <Settings className="size-4" />
         </button>
         <button className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition" title="Toggle Sidebar">
           <Columns className="size-4" />
