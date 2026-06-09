@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const CORE_MEMORY_FILE = path.join(__dirname, '..', '..', 'data', 'august_core_memory.json');
+const CORE_MEMORY_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_core_memory.json');
 
 function getDefaultAugustCoreMemory() {
     return {

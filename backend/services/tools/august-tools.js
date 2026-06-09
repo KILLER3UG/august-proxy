@@ -1115,7 +1115,7 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
 
                 const scriptName = path.join(__dirname, '..', `august_bg_task_${Date.now()}.ps1`);
                 fs.writeFileSync(scriptName, args.script_content, 'utf8');
-                const outLog = path.join(__dirname, '..', '..', 'data', 'august_background.log');
+                const outLog = path.join(__dirname, '..', '..', '..', 'data', 'august_background.log');
                 
                 // Spawn detached powershell process
                 const { spawn } = require('child_process');

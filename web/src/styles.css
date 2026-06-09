@@ -154,3 +154,250 @@ textarea:focus, input:focus, div:focus-within {
   --tw-ring-color: transparent !important;
 }
 
+/* 5. Thinking indicator animations */
+.thinking-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.thinking-label {
+  display: inline-flex;
+}
+
+.thinking-char {
+  animation: charGlow 1.6s infinite ease-in-out;
+  opacity: 0.4;
+}
+
+.thinking-cap {
+  font-size: 1.4em;
+  font-weight: 700;
+}
+
+.thinking-char:nth-child(1) { animation-delay: 0.0s; }
+.thinking-char:nth-child(2) { animation-delay: 0.1s; }
+.thinking-char:nth-child(3) { animation-delay: 0.2s; }
+.thinking-char:nth-child(4) { animation-delay: 0.3s; }
+.thinking-char:nth-child(5) { animation-delay: 0.4s; }
+.thinking-char:nth-child(6) { animation-delay: 0.5s; }
+.thinking-char:nth-child(7) { animation-delay: 0.6s; }
+.thinking-char:nth-child(8) { animation-delay: 0.7s; }
+
+@keyframes charGlow {
+  0%, 100% { opacity: 0.35; }
+  10%      { opacity: 1; transform: scale(1.05); }
+  20%      { opacity: 0.7; }
+  30%      { opacity: 0.35; }
+}
+
+.thinking-dots {
+  display: inline-flex;
+  gap: 1px;
+  margin-left: 1px;
+}
+
+.thinking-dots .dot {
+  animation: dotPulse 1.4s infinite ease-in-out;
+  opacity: 0.3;
+}
+
+.thinking-dots .dot:nth-child(1) { animation-delay: 0s; }
+.thinking-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dotPulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(1); }
+  40%           { opacity: 1; transform: scale(1.2); }
+}
+
+/* Smooth expand/collapse for reasoning block */
+.reasoning-content {
+  transition: max-height 0.2s ease-in-out, opacity 0.2s ease-in-out;
+  overflow: hidden;
+}
+
+/* ── Markdown Content Styling ────────────────────────────────────── */
+.markdown-content {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.markdown-content p {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+}
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content strong,
+.markdown-content b {
+  font-weight: 700 !important;
+  color: var(--dt-foreground) !important;
+}
+
+.markdown-content em,
+.markdown-content i {
+  font-style: italic;
+}
+
+/* Headings */
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: var(--dt-foreground);
+}
+.markdown-content h1 { font-size: 1.25rem; }
+.markdown-content h2 { font-size: 1.125rem; }
+.markdown-content h3 { font-size: 1rem; }
+
+/* Lists */
+.markdown-content ul,
+.markdown-content ol {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  padding-left: 1.25rem;
+}
+.markdown-content ul {
+  list-style-type: disc;
+}
+.markdown-content ol {
+  list-style-type: decimal;
+}
+.markdown-content li {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+/* Code blocks & inline code */
+.markdown-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85em;
+  background-color: var(--dt-muted);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  border: 1px solid rgba(226, 232, 240, 0.1);
+  color: #f59e0b; /* amber-500 equivalent */
+  font-weight: 500;
+}
+.dark .markdown-content code {
+  border-color: rgba(30, 30, 33, 0.5);
+}
+
+.markdown-content pre {
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  background-color: #161618;
+  border: 1px solid rgba(226, 232, 240, 0.1);
+  border-radius: 0.5rem;
+}
+.markdown-content pre code {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+  border: none;
+  color: inherit;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  display: block;
+}
+
+/* Tables */
+.markdown-content table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8125rem;
+}
+.markdown-content th,
+.markdown-content td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--dt-border);
+}
+.markdown-content th {
+  background-color: var(--dt-muted);
+  font-weight: 600;
+  text-align: left;
+}
+.markdown-content tr:nth-child(even) {
+  background-color: rgba(241, 245, 249, 0.3);
+}
+.dark .markdown-content tr:nth-child(even) {
+  background-color: rgba(30, 30, 33, 0.3);
+}
+
+/* Horizontal rule */
+.markdown-content hr {
+  border: 0;
+  border-top: 1px solid var(--dt-border);
+  margin: 1.25rem 0;
+}
+
+/* Blockquotes */
+.markdown-content blockquote {
+  margin: 0.75rem 0;
+  padding-left: 1rem;
+  border-left: 4px solid var(--dt-primary);
+  color: var(--dt-muted-foreground);
+}
+
+/* ── Checkpoint Pills ────────────────────────────────────────────── */
+.checkpoint-pill {
+  position: absolute;
+  right: 50%;
+  transform: translate(50%, -50%);
+  border-radius: 9999px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform 0.2s ease, background-color 0.2s ease, width 0.2s ease, height 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+}
+
+.checkpoint-pill.active {
+  background-color: var(--dt-primary);
+  width: 16px;
+  height: 6px;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.7);
+}
+
+.checkpoint-pill.inactive {
+  background-color: rgba(148, 163, 184, 0.4); /* muted-foreground/40 */
+  width: 8px;
+  height: 4px;
+}
+
+.checkpoint-pill.inactive:hover {
+  background-color: rgba(148, 163, 184, 0.8);
+  transform: translate(50%, -50%) scale(1.35);
+  box-shadow: 0 0 8px rgba(148, 163, 184, 0.5);
+}
+
+.checkpoint-pill.active:hover {
+  transform: translate(50%, -50%) scale(1.25);
+  box-shadow: 0 0 14px rgba(59, 130, 246, 0.9);
+}
+
+@keyframes pillSlideIn {
+  from {
+    opacity: 0;
+    transform: translate(16px, -50%);
+  }
+}
+
+.pill-appear {
+  animation: pillSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+

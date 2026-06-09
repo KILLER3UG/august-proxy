@@ -35,7 +35,7 @@ const {
 } = require('../tools/agent-registry');
 
 const sessions = new Map();
-const WORKBENCH_SESSIONS_FILE = path.join(__dirname, '..', '..', 'data', 'august_workbench_sessions.json');
+const WORKBENCH_SESSIONS_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_workbench_sessions.json');
 
 function loadSessions() {
     if (sessions.size > 0) return;
@@ -62,10 +62,11 @@ function saveSessions() {
         console.warn('Failed to save workbench sessions:', e.message);
     }
 }
-const WORKSPACE_ROOT = path.resolve(__dirname, '..');
-const PROJECT_ROOT = path.resolve(WORKSPACE_ROOT, '..');
+const WORKSPACE_ROOT = path.resolve(__dirname, '..', '..', '..');
+const PROJECT_ROOT = path.resolve(WORKSPACE_ROOT);
 const CONTAINER_PROJECT_ROOT = path.resolve(process.env.AUGUST_PROXY_CONTAINER_ROOT || PROJECT_ROOT);
 const LEGACY_HOST_PROJECT_ROOTS = [
+    'C:\\Users\\rober\\LocalFolders\\august-proxy',
     'C:\\Users\\rober\\LocalFolders\\DockerContainer\\august-proxy'
 ];
 const COMPACT_THRESHOLD = 60;      // compact messages after this many entries
@@ -305,7 +306,7 @@ function toDisplayPath(filePath) {
     return path.relative(WORKSPACE_ROOT, filePath).replace(/\\/g, '/') || '.';
 }
 
-const PROXY_ROOT = path.resolve(__dirname, '..');
+const PROXY_ROOT = path.resolve(__dirname, '..', '..', '..');
 
 function isProxyPath(filePath) {
     if (!filePath) return false;

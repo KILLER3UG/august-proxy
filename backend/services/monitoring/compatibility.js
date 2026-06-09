@@ -5,7 +5,7 @@ const { getCoworkToolDefinitions } = require('../tools/cowork-tools');
 const { getMcpServerStatus } = require('../tools/mcp-client');
 const { getPlugins } = require('../tools/plugins');
 
-const HOST_FILES_HOST_PATH = 'C:\\Users\\rober\\LocalFolders\\DockerContainer\\august-proxy\\host_files';
+const HOST_FILES_HOST_PATH = 'C:\\Users\\rober\\LocalFolders\\august-proxy\\host_files';
 const HOST_FILES_CONTAINER_PATH = '/app/host_files';
 const HOST_FILES_LOCAL_PATH = path.join(__dirname, '..', '..', '..', 'host_files');
 

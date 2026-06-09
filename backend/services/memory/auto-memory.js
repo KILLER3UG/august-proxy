@@ -291,8 +291,8 @@ Respond ONLY with valid JSON in this exact format:
   },
   "semantic_facts": [
     {
-      "key": "project_claudish_proxy",
-      "value": "Claudish Proxy is a persistent shared brain project.",
+      "key": "project_august_proxy",
+      "value": "August Proxy is a persistent shared brain project.",
       "category": "project_info"
     }
   ],

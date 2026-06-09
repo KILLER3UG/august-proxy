@@ -364,7 +364,16 @@ const requestHandler = async (req, res) => {
     }
 
     if (req.url === '/api/config/activeProvider' && req.method === 'GET') {
-        return sendJson(res, { activeProvider: getActiveProvider(), providers: listProviders().map(p => ({ id: p.name, name: p.displayName, apiMode: p.apiMode, isAvailable: p.isAvailable() })) });
+        const { getProviderConfig } = require('./lib/config');
+        return sendJson(res, { 
+            activeProvider: getActiveProvider(), 
+            providers: listProviders().map(p => ({ 
+                id: p.name, 
+                name: p.displayName, 
+                apiMode: p.apiMode, 
+                isAvailable: p.isAvailable() || !!(getProviderConfig(p.name) || {}).apiKey 
+            })) 
+        });
     }
 
     if (req.url.startsWith('/api/config/provider-details') && req.method === 'GET') {
@@ -486,7 +495,7 @@ const requestHandler = async (req, res) => {
         for (const p of providers) {
             const config = getProviderConfig(p.name) || {};
             const apiKey = config.apiKey || p.resolveApiKey();
-            const baseUrl = config.baseUrl || p.resolveBaseUrl();
+            const baseUrl = config.baseUrl || config.targetUrl || p.resolveBaseUrl();
             const enabled = p.isAvailable() || !!config.apiKey;
 
             if (!enabled) continue;
@@ -561,6 +570,31 @@ const requestHandler = async (req, res) => {
                 }));
             }
 
+            // Gather any explicitly configured models from settings
+            const configuredModelIds = new Set();
+            if (config.currentModel) configuredModelIds.add(config.currentModel);
+            if (config.model) configuredModelIds.add(config.model);
+            if (config._upstreamModel) configuredModelIds.add(config._upstreamModel);
+            if (config.contextModelId) configuredModelIds.add(config.contextModelId);
+            if (Array.isArray(config.models)) {
+                config.models.forEach(m => {
+                    if (typeof m === 'string') configuredModelIds.add(m);
+                    else if (m && m.id) configuredModelIds.add(m.id);
+                });
+            }
+
+            // Always ensure configured models are appended to the list
+            for (const mid of configuredModelIds) {
+                if (!models.some(m => m.id === mid)) {
+                    models.push({
+                        id: mid,
+                        name: mid,
+                        provider: p.name,
+                        contextWindow: config.contextWindow || p.getModelProfile(mid)?.contextWindow || 128000
+                    });
+                }
+            }
+
             allModels.push(...models);
         }
 
@@ -573,7 +607,7 @@ const requestHandler = async (req, res) => {
     if (req.url === '/api/chat' && req.method === 'POST') {
         try {
             const body = await readJsonBody(req);
-            const { model, messages, effort } = body;
+            const { model, provider, messages, effort } = body;
             
             if (!model) {
                 return sendError(res, new Error('model is required'), 400);
@@ -588,27 +622,33 @@ const requestHandler = async (req, res) => {
             const providers = listProviders();
             let resolvedProvider = null;
             
-            const lowerModel = model.toLowerCase();
-            // Try explicit match first
-            for (const p of providers) {
-                if (p._modelProfiles && p._modelProfiles[model]) {
-                    resolvedProvider = p;
-                    break;
-                }
+            if (provider) {
+                resolvedProvider = providers.find(p => p.name === provider);
             }
+            
             if (!resolvedProvider) {
+                const lowerModel = model.toLowerCase();
+                // Try explicit match first
                 for (const p of providers) {
-                    if (lowerModel.startsWith(p.name.toLowerCase()) || p.aliases.some(alias => lowerModel.startsWith(alias.toLowerCase()))) {
+                    if (p._modelProfiles && p._modelProfiles[model]) {
                         resolvedProvider = p;
                         break;
                     }
                 }
-            }
-            if (!resolvedProvider) {
-                if (lowerModel.startsWith('claude-')) resolvedProvider = providers.find(p => p.name === 'anthropic');
-                else if (lowerModel.startsWith('gpt-') || lowerModel.startsWith('o1') || lowerModel.startsWith('o3')) resolvedProvider = providers.find(p => p.name === 'openai-api');
-                else if (lowerModel.startsWith('gemini-')) resolvedProvider = providers.find(p => p.name === 'gemini');
-                else if (lowerModel.startsWith('deepseek-')) resolvedProvider = providers.find(p => p.name === 'deepseek');
+                if (!resolvedProvider) {
+                    for (const p of providers) {
+                        if (lowerModel.startsWith(p.name.toLowerCase()) || p.aliases.some(alias => lowerModel.startsWith(alias.toLowerCase()))) {
+                            resolvedProvider = p;
+                            break;
+                        }
+                    }
+                }
+                if (!resolvedProvider) {
+                    if (lowerModel.startsWith('claude-')) resolvedProvider = providers.find(p => p.name === 'anthropic');
+                    else if (lowerModel.startsWith('gpt-') || lowerModel.startsWith('o1') || lowerModel.startsWith('o3')) resolvedProvider = providers.find(p => p.name === 'openai-api');
+                    else if (lowerModel.startsWith('gemini-')) resolvedProvider = providers.find(p => p.name === 'gemini');
+                    else if (lowerModel.startsWith('deepseek-')) resolvedProvider = providers.find(p => p.name === 'deepseek');
+                }
             }
             if (!resolvedProvider) {
                 // Default fallback to active provider or openai
@@ -626,10 +666,10 @@ const requestHandler = async (req, res) => {
             }
 
             res.writeHead(200, {
-                'Content-Type': 'text/plain; charset=utf-8',
-                'Transfer-Encoding': 'chunked',
+                'Content-Type': 'text/event-stream; charset=utf-8',
                 'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive'
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no'
             });
 
             // Make streaming request to upstream
@@ -672,7 +712,7 @@ const requestHandler = async (req, res) => {
 
             if (!upstreamRes.ok) {
                 const errText = await upstreamRes.text();
-                res.write(`⚠️ Upstream Error (${upstreamRes.status}): ${errText}`);
+                res.write(`data: ${JSON.stringify({ type: 'text', content: `⚠️ Upstream Error (${upstreamRes.status}): ${errText}` })}\n`);
                 res.end();
                 return;
             }
@@ -680,8 +720,17 @@ const requestHandler = async (req, res) => {
             const reader = upstreamRes.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
+            let clientDisconnected = false;
+
+            req.on('close', () => {
+                clientDisconnected = true;
+                try {
+                    reader.cancel();
+                } catch (e) {}
+            });
 
             while (true) {
+                if (clientDisconnected) break;
                 const { done, value } = await reader.read();
                 if (done) break;
                 
@@ -697,8 +746,14 @@ const requestHandler = async (req, res) => {
                         if (trimmed.startsWith('data:')) {
                             try {
                                 const parsed = JSON.parse(trimmed.slice(5).trim());
-                                if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-                                    res.write(parsed.delta.text);
+                                if (parsed.type === 'content_block_delta') {
+                                    if (parsed.delta?.type === 'thinking_delta' && parsed.delta.thinking) {
+                                        res.write(`data: ${JSON.stringify({ type: 'thinking', content: parsed.delta.thinking })}\n`);
+                                    } else if (parsed.delta?.type === 'text_delta' && parsed.delta.text) {
+                                        res.write(`data: ${JSON.stringify({ type: 'text', content: parsed.delta.text })}\n`);
+                                    } else if (parsed.delta?.text) {
+                                        res.write(`data: ${JSON.stringify({ type: 'text', content: parsed.delta.text })}\n`);
+                                    }
                                 }
                             } catch {}
                         }
@@ -708,9 +763,13 @@ const requestHandler = async (req, res) => {
                             if (dataStr === '[DONE]') continue;
                             try {
                                 const parsed = JSON.parse(dataStr);
+                                const reasoning = parsed.choices?.[0]?.delta?.reasoning_content;
                                 const content = parsed.choices?.[0]?.delta?.content;
+                                if (reasoning) {
+                                    res.write(`data: ${JSON.stringify({ type: 'thinking', content: reasoning })}\n`);
+                                }
                                 if (content) {
-                                    res.write(content);
+                                    res.write(`data: ${JSON.stringify({ type: 'text', content: content })}\n`);
                                 }
                             } catch {}
                         }
@@ -724,7 +783,7 @@ const requestHandler = async (req, res) => {
                 res.writeHead(500, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: e.message }));
             } else {
-                res.write(`\n\n⚠️ Error: ${e.message}`);
+                res.write(`data: ${JSON.stringify({ type: 'text', content: `\n\n⚠️ Error: ${e.message}` })}\n`);
                 res.end();
             }
         }

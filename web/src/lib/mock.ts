@@ -169,7 +169,6 @@ function makeMemory(): MemoryEntry[] {
     'User refactored the dashboard from vanilla JS to React 19 in June 2026',
     'Active model: claude-opus-4-7 (changed from gpt-5 last week)',
     'User dislikes numbered nav badges in sidebars',
-    'August Proxy repo lives at C:\\Users\\rober\\LocalFolders\\DockerContainer\\august-proxy',
     'User prefers concise responses without bullet fluff',
     'Design language follows Hermes Desktop (shadcn new-york, three-pane shell)',
     'Tailscale magic DNS resolves *.august.local to the dev box',

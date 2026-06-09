@@ -3,8 +3,8 @@ const path = require('path');
 const terminal = require('./terminal-service');
 const { appendRecentEvent, readAugustCoreMemory, writeAugustCoreMemory } = require('../memory/core-memory');
 
-const AUTOMATION_FILE = path.join(__dirname, '..', '..', 'data', 'august_automation_jobs.json');
-const AUTOMATION_LOCK_FILE = path.join(__dirname, '..', '..', 'data', 'august_automation_jobs.tick.lock');
+const AUTOMATION_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_automation_jobs.json');
+const AUTOMATION_LOCK_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_automation_jobs.tick.lock');
 const MAX_RUNS_PER_JOB = 50;
 const DEFAULT_JOB_TIMEOUT_MS = 180000;
 const STALE_LOCK_MS = 5 * 60 * 1000;

@@ -201,8 +201,8 @@ function getBrainDiagnostics() {
         summary,
         files: {
             core: coreInfo,
-            semantic: getFileInfo(path.join(__dirname, '..', '..', 'data', 'august_semantic_memory.json')),
-            vector: getFileInfo(path.join(__dirname, '..', '..', 'data', 'august_infinite_memory.json')),
+            semantic: getFileInfo(path.join(__dirname, '..', '..', '..', 'data', 'august_semantic_memory.json')),
+            vector: getFileInfo(path.join(__dirname, '..', '..', '..', 'data', 'august_infinite_memory.json')),
             graph: getFileInfo(graph.file),
             agentJobs: getFileInfo(getAgentJobsFile())
         },

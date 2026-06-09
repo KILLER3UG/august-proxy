@@ -437,6 +437,30 @@ function getProviderConfig(providerName) {
   if (config[providerName] && typeof config[providerName] === 'object') {
     return config[providerName];
   }
+  
+  // Resolve alias configurations (e.g. anthropic -> claude, openai-codex -> codex)
+  try {
+    const { getProvider } = require('../providers/provider-registry');
+    const profile = getProvider(providerName);
+    if (profile) {
+      if (config[profile.name] && typeof config[profile.name] === 'object') {
+        return config[profile.name];
+      }
+      for (const alias of profile.aliases) {
+        if (config[alias] && typeof config[alias] === 'object') {
+          return config[alias];
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore potential circular dependency or loading errors
+  }
+
+  // Special case: customProvider for custom
+  if (providerName === 'custom' && config.customProvider && typeof config.customProvider === 'object') {
+    return config.customProvider;
+  }
+
   return null;
 }
 

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_AGENT_JOBS_FILE = path.join(__dirname, '..', '..', 'data', 'august_agent_jobs.json');
+const DEFAULT_AGENT_JOBS_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_agent_jobs.json');
 const MAX_JOBS = 300;
 const MAX_EVENTS_PER_JOB = 80;
 

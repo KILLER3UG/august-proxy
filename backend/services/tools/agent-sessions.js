@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const terminal = require('../workbench/terminal-service');
 
-const AGENT_SESSIONS_FILE = path.join(__dirname, '..', '..', 'data', 'august_agent_sessions.json');
+const AGENT_SESSIONS_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_agent_sessions.json');
 const VALID_STATUSES = new Set(['idle', 'running', 'blocked', 'completed', 'cancelled', 'failed']);
 const VALID_TODO_STATUSES = new Set(['pending', 'in_progress', 'completed', 'cancelled']);
 const MAX_EVENTS = 200;

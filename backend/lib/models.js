@@ -239,5 +239,6 @@ module.exports = {
   getDefaultContextWindow,
   saveModelContextWindow,
   loadModelContextWindow,
-  inferFromModelId
+  inferFromModelId,
+  deriveModelsUrl
 };

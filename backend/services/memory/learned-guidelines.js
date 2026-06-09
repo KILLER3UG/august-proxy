@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_GUIDELINES_FILE = path.join(__dirname, '..', '..', 'data', 'august_learned_guidelines.json');
+const DEFAULT_GUIDELINES_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_learned_guidelines.json');
 const MAX_GUIDELINES = 200;
 
 function getGuidelinesFile() {

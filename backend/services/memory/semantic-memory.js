@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const SEMANTIC_FILE = path.join(__dirname, '..', '..', 'data', 'august_semantic_memory.json');
+const SEMANTIC_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_semantic_memory.json');
 
 const VALID_CATEGORIES = new Set([
     'user_preference',

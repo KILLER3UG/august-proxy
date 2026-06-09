@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_GRAPH_FILE = path.join(__dirname, '..', '..', 'data', 'august_graph_memory.json');
+const DEFAULT_GRAPH_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_graph_memory.json');
 const MAX_ENTITIES = 1000;
 const MAX_RELATIONS = 2500;
 const MAX_OBSERVATIONS = 4000;

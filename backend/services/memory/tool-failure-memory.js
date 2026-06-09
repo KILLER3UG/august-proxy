@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_FAILURE_FILE = path.join(__dirname, '..', '..', 'data', 'august_tool_failures.json');
+const DEFAULT_FAILURE_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_tool_failures.json');
 const MAX_FAILURES = 300;
 
 const IGNORED_PATTERNS = [

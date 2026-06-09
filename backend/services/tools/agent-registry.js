@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const AGENTS_FILE = path.join(__dirname, '..', '..', 'data', 'august_agents.json');
+const AGENTS_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_agents.json');
 
 const EDIT_TOOLS = new Set([
     'august__write_file',

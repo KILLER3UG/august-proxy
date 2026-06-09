@@ -20,17 +20,17 @@ const COWORK_TOOL_NAMES = new Set([
 
 const ACCESSIBLE_ROOTS = [
     '/app/host_files',
-    '/app/src'
+    '/app'
 ];
 
 const HOST_PATH_MAPPINGS = [
     {
-        host: 'C:\\Users\\rober\\LocalFolders\\DockerContainer\\august-proxy\\host_files',
+        host: 'C:\\Users\\rober\\LocalFolders\\august-proxy\\host_files',
         local: '/app/host_files'
     },
     {
-        host: 'C:\\Users\\rober\\LocalFolders\\DockerContainer\\august-proxy\\src',
-        local: '/app/src'
+        host: 'C:\\Users\\rober\\LocalFolders\\august-proxy',
+        local: '/app'
     }
 ];
 

@@ -4,8 +4,9 @@ const { upsertEntity, upsertRelation, findEntity, readGraphMemory } = require('.
 // ── Canonical prefix-to-project mapping ──
 // First matching prefix wins. Order matters (more specific first).
 const PREFIX_MAP = [
-    { prefix: 'claudish_proxy_', project: 'claudish-proxy' },
-    { prefix: 'dockercontainer_', project: 'claudish-proxy' },
+    { prefix: 'august_proxy_', project: 'august-proxy' },
+    { prefix: 'claudish_proxy_', project: 'august-proxy' },
+    { prefix: 'dockercontainer_', project: 'august-proxy' },
     { prefix: 'agentic_trading_', project: 'Agentic Trading' },
     { prefix: 'crypto_trading_', project: 'Agentic Trading' },
     { prefix: 'mtp_', project: 'Agentic Trading' },

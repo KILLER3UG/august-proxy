@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const sqliteMemory = require('./sqlite-memory-store');
 
-const VECTOR_DB_FILE = path.join(__dirname, '..', '..', 'data', 'august_infinite_memory.json');
+const VECTOR_DB_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_infinite_memory.json');
 const LOCAL_VECTOR_DIMS = 256;
 const RRF_K = 60;
 const BM25_K1 = 1.2;
