@@ -331,10 +331,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           ? Math.round((Date.now() - thinkingStart) / 100) / 10
           : undefined;
 
+      const finalContent = assistantContent.replace(/(?:\s*\[DONE\]\s*)+$/g, '');
+
       setMessages(prev => prev.map(msg =>
         msg.id === assistantMsgId ? {
           ...msg,
-          content: assistantContent,
+          content: finalContent,
           thinking: thinkingContent || undefined,
           thinkingDuration: finalDuration
         } : msg
@@ -386,26 +388,39 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     setStreaming(false);
   };
 
-  // ── Revert: delete all messages after this index ──
+  // ── Revert: delete user message and all subsequent messages, put text back into chat input ──
   const handleRevert = (index: number) => {
     if (streaming) return;
-    const deleted = messages.length - index - 1;
-    if (deleted <= 0) return;
+
+    let userMsgIndex = -1;
+    if (messages[index].role === 'user') {
+      userMsgIndex = index;
+    } else if (index > 0 && messages[index - 1].role === 'user') {
+      userMsgIndex = index - 1;
+    }
+
+    if (userMsgIndex === -1) return;
+
+    const userMsg = messages[userMsgIndex];
+    const deleted = messages.length - userMsgIndex;
 
     const originalMessages = [...messages];
-    setRevertingIndex(index);
+    const originalInput = input;
+    setRevertingIndex(userMsgIndex);
 
     setTimeout(() => {
-      setMessages(messages.slice(0, index + 1));
+      setInput(userMsg.content);
+      setMessages(messages.slice(0, userMsgIndex));
       setRevertingIndex(null);
 
       toast.success("Conversation reverted", {
-        description: `Removed ${deleted} message${deleted > 1 ? 's' : ''}`,
+        description: `Put prompt back into composer and removed ${deleted} message${deleted > 1 ? 's' : ''}`,
         duration: 5000,
         action: {
           label: "Undo",
           onClick: () => {
             setMessages(originalMessages);
+            setInput(originalInput);
           }
         }
       });
@@ -681,76 +696,84 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         messages={messages}
         scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
       />
-      <div className="flex-1 flex flex-col min-w-0 bg-background h-full overflow-hidden">
-        <AnimatePresence mode="wait" initial={false}>
-          {messages.length === 0 ? (
-            // Centered layout for new session
-            <motion.div
-              key="centered-composer"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-              className="flex-1 flex flex-col justify-center px-6 w-full"
-            >
-              <div className="w-full max-w-3xl mx-auto">
-                {/* Brand / Logo or clean Welcome text */}
-                <div className="text-center mb-8">
+      <div className="flex-1 flex flex-col min-w-0 bg-background h-full overflow-hidden relative">
+        <div className="flex-grow flex flex-col min-h-0 relative justify-center">
+          <AnimatePresence initial={false}>
+            {messages.length === 0 && (
+              <motion.div
+                key="centered-spacer"
+                initial={{ opacity: 0, y: -15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                className="text-center mb-8 shrink-0 px-6 w-full"
+              >
+                <div className="w-full max-w-3xl mx-auto">
                   <h2 className="text-3xl font-semibold tracking-tight text-foreground/90 font-sans">August</h2>
                   <p className="text-xs text-muted-foreground/50 mt-1.5 font-sans">How can I help you code today?</p>
                 </div>
-                {renderComposerContent()}
-              </div>
-            </motion.div>
-          ) : (
-            // Regular layout with messages
-            <motion.div
-              key="thread-and-composer"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.15 }}
-              className="flex-1 flex flex-col min-h-0 overflow-hidden"
-            >
-              {/* Thread */}
-              <div ref={scrollRef} className="flex-1 overflow-y-auto">
-                <div className="max-w-3xl mx-auto px-6 py-8 space-y-5 relative">
-                  {messages.map((m, i) => {
-                    const isReverting = revertingIndex !== null && i > revertingIndex;
-                    return (
-                      <div
-                        key={m.id}
-                        className={cn(
-                          "transition-all duration-300 transform",
-                          isReverting ? "opacity-0 -translate-y-4 pointer-events-none" : "opacity-100 translate-y-0"
-                        )}
-                      >
-                        <MessageBubble
-                          message={m}
-                          isLast={i === messages.length - 1}
-                          streaming={streaming}
-                          onRevert={() => handleRevert(i)}
-                          onEdit={(text) => handleEdit(i, text)}
-                          onRegenerate={() => handleRegenerate(i)}
-                        />
-                      </div>
-                    );
-                  })}
-                  {streaming && (() => {
-                    const lastMsg = messages[messages.length - 1];
-                    if (!lastMsg || lastMsg.role !== 'assistant') return <ThinkingIndicator />;
-                    const parsed = parseThinkingAndContent(lastMsg.content, lastMsg.thinking);
-                    return !parsed.thinking ? <ThinkingIndicator /> : null;
-                  })()}
-                </div>
-              </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-              {/* Composer at the bottom */}
-              <div className="bg-background px-4 py-3 shrink-0 border-t border-border/20">
-                {renderComposerContent()}
+          {messages.length > 0 && (
+            <motion.div
+              key="thread-scroll-view"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
+              ref={scrollRef}
+              className="flex-1 overflow-y-auto"
+              style={{ overflowAnchor: 'none' }}
+            >
+              <div className="max-w-3xl mx-auto px-6 py-8 space-y-5 relative">
+                {messages.map((m, i) => {
+                  const isReverting = revertingIndex !== null && i > revertingIndex;
+                  return (
+                    <div
+                      key={m.id}
+                      className={cn(
+                        "transition-all duration-300 transform",
+                        isReverting ? "opacity-0 -translate-y-4 pointer-events-none" : "opacity-100 translate-y-0"
+                      )}
+                    >
+                      <MessageBubble
+                        message={m}
+                        isLast={i === messages.length - 1}
+                        streaming={streaming}
+                        onRevert={() => handleRevert(i)}
+                        onEdit={(text) => handleEdit(i, text)}
+                        onRegenerate={() => handleRegenerate(i)}
+                      />
+                    </div>
+                  );
+                })}
+                {streaming && (() => {
+                  const lastMsg = messages[messages.length - 1];
+                  if (!lastMsg || lastMsg.role !== 'assistant') return <ThinkingIndicator />;
+                  const parsed = parseThinkingAndContent(lastMsg.content, lastMsg.thinking);
+                  return (!parsed.thinking && !parsed.content) ? <ThinkingIndicator /> : null;
+                })()}
               </div>
             </motion.div>
           )}
-        </AnimatePresence>
+        </div>
+
+        {/* Composer at the bottom / center */}
+        <motion.div
+          layout
+          transition={{ type: "spring", stiffness: 260, damping: 26 }}
+          className={cn(
+            "shrink-0 z-10 w-full",
+            messages.length === 0
+              ? "px-6 pb-20 max-w-3xl mx-auto"
+              : "bg-background px-4 py-3"
+          )}
+        >
+          <div className={cn(messages.length > 0 && "max-w-3xl mx-auto")}>
+            {renderComposerContent()}
+          </div>
+        </motion.div>
 
         {/* Hidden File Input */}
         <input
@@ -790,7 +813,8 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
 
   return (
     <div
-      className="text-xs my-2 select-none"
+      className="text-sm my-2 select-none"
+      style={{ overflowAnchor: 'none' }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -818,25 +842,25 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
               </span>
             )}
           </span>
+          <span className={cn("inline-block ml-1.5 transition-transform duration-200 origin-center select-none font-mono", isOpen && "rotate-90")}>
+            &gt;
+          </span>
         </span>
         {displayDuration && (
           <span className="text-muted-foreground/60 text-[10px] ml-1">
-            {isHovered && '> '}{displayDuration}
+            {displayDuration}
           </span>
         )}
       </button>
 
-      <div
-        className={cn(
-          "overflow-hidden transition-all duration-300 ease-in-out",
-          isOpen ? "max-h-[5000px] opacity-100" : "max-h-0 opacity-0"
-        )}
-      >
-        <div className={cn(
-          "pl-3 border-l border-foreground/15 text-foreground/50 leading-relaxed py-1",
-          isGenerating && "thinking-content-generating"
-        )}>
-          <Markdown content={text} />
+      <div className={cn("grid-transition", isOpen ? "open" : "closed")}>
+        <div className="overflow-hidden">
+          <div className={cn(
+            "pl-3 border-l border-foreground/15 leading-relaxed py-1 thought-content",
+            isGenerating && "thinking-content-generating"
+          )}>
+            <Markdown content={text} />
+          </div>
         </div>
       </div>
     </div>
@@ -867,6 +891,10 @@ function MessageBubble({
   const [copied, setCopied] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
 
+  const [displayedThinking, setDisplayedThinking] = useState('');
+  const [displayedContent, setDisplayedContent] = useState('');
+  const [animationDone, setAnimationDone] = useState(false);
+
   const startEdit = () => {
     setEditText(message.content);
     setEditing(true);
@@ -881,6 +909,70 @@ function MessageBubble({
     setEditing(false);
     setEditText('');
   };
+
+  if (message.role === 'tool') {
+    return <ToolCallCard tool={message.tool!} timestamp={message.timestamp} />;
+  }
+  const isUser = message.role === 'user';
+
+  const parsed = useMemo(() => {
+    if (isUser) return { thinking: '', content: message.content };
+    return parseThinkingAndContent(message.content, message.thinking);
+  }, [message.content, message.thinking, isUser]);
+
+  useEffect(() => {
+    setDisplayedThinking('');
+    setDisplayedContent('');
+    setAnimationDone(false);
+  }, [message.id]);
+
+  useEffect(() => {
+    if (isUser || !isLast || animationDone) {
+      setDisplayedThinking(parsed.thinking);
+      setDisplayedContent(parsed.content);
+      return;
+    }
+
+    let active = true;
+    const intervalTime = 15; // ms between updates
+
+    const run = () => {
+      if (!active) return;
+
+      setDisplayedThinking((prevThinking) => {
+        const targetThinking = parsed.thinking;
+        if (prevThinking.length < targetThinking.length) {
+          const diff = targetThinking.length - prevThinking.length;
+          const step = Math.max(1, Math.min(12, Math.ceil(diff / 4)));
+          return targetThinking.slice(0, prevThinking.length + step);
+        }
+
+        setDisplayedContent((prevContent) => {
+          const targetContent = parsed.content;
+          if (prevContent.length < targetContent.length) {
+            const diff = targetContent.length - prevContent.length;
+            const step = Math.max(1, Math.min(12, Math.ceil(diff / 4)));
+            return targetContent.slice(0, prevContent.length + step);
+          }
+
+          if (!streaming) {
+            setAnimationDone(true);
+          }
+          return prevContent;
+        });
+
+        return prevThinking;
+      });
+
+      setTimeout(run, intervalTime);
+    };
+
+    run();
+
+    return () => {
+      active = false;
+    };
+  }, [parsed.thinking, parsed.content, isLast, isUser, streaming, animationDone]);
 
   const handleCopy = () => {
     const textToCopy = isUser ? message.content : parsed.content;
@@ -903,16 +995,6 @@ function MessageBubble({
     }
   };
 
-  if (message.role === 'tool') {
-    return <ToolCallCard tool={message.tool!} timestamp={message.timestamp} />;
-  }
-  const isUser = message.role === 'user';
-
-  const parsed = useMemo(() => {
-    if (isUser) return { thinking: '', content: message.content };
-    return parseThinkingAndContent(message.content, message.thinking);
-  }, [message.content, message.thinking, isUser]);
-
   return (
     <div
       id={`msg-${message.id}`}
@@ -920,8 +1002,12 @@ function MessageBubble({
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
-      {!isUser && parsed.thinking && (
-        <ReasoningBlock text={parsed.thinking} isGenerating={isLast && streaming && !parsed.content} duration={message.thinkingDuration} />
+      {!isUser && displayedThinking && (
+        <ReasoningBlock 
+          text={displayedThinking} 
+          isGenerating={isLast && (!animationDone || streaming) && !displayedContent} 
+          duration={message.thinkingDuration} 
+        />
       )}
       {isUser ? (
         <>
@@ -1005,7 +1091,7 @@ function MessageBubble({
         </>
       ) : (
         <div className="text-sm leading-relaxed text-foreground/90 space-y-3 max-w-none group relative">
-          <Markdown content={parsed.content} />
+          <Markdown content={displayedContent} />
           {/* Copy button for assistant messages on hover */}
           <button
             onClick={handleCopy}
@@ -1584,32 +1670,6 @@ export function parseThinkingAndContent(rawContent: string, existingThinking?: s
         const extractedThinking = content.slice(openIdx + marker.open.length);
         thinking += (thinking ? '\n' : '') + extractedThinking;
         content = content.slice(0, openIdx);
-      }
-    }
-  }
-
-  // Heuristic if no explicit thinking exists and no explicit markers were found
-  if (!thinking.trim() && content.trim()) {
-    const heuristicTriggers = ["Final Answer:", "Therefore,", "therefore,", "Thus,", "thus,"];
-    let triggerIdx = -1;
-    let selectedTrigger = "";
-    for (const trigger of heuristicTriggers) {
-      const idx = content.indexOf(trigger);
-      if (idx !== -1 && (triggerIdx === -1 || idx < triggerIdx)) {
-        triggerIdx = idx;
-        selectedTrigger = trigger;
-      }
-    }
-
-    if (triggerIdx !== -1) {
-      thinking = content.slice(0, triggerIdx);
-      content = content.slice(triggerIdx); // Include the trigger itself in the final content!
-    } else {
-      // Paragraph splitting fallback
-      const paragraphs = content.split(/\n\s*\n/).filter(p => p.trim());
-      if (paragraphs.length > 1) {
-        thinking = paragraphs.slice(0, -1).join('\n\n');
-        content = paragraphs[paragraphs.length - 1];
       }
     }
   }

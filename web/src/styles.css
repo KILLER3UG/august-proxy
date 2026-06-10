@@ -175,8 +175,8 @@ textarea:focus, input:focus, div:focus-within {
 }
 
 .thinking-cap {
-  font-size: 1.4em;
-  font-weight: 700;
+  font-size: 1em;
+  font-weight: inherit;
 }
 
 .thinking-char:nth-child(1) { animation-delay: 0.0s; }
@@ -215,10 +215,25 @@ textarea:focus, input:focus, div:focus-within {
   40%           { opacity: 1; transform: scale(1.2); }
 }
 
-/* Smooth expand/collapse for reasoning block */
-.reasoning-content {
-  transition: max-height 0.2s ease-in-out, opacity 0.2s ease-in-out;
-  overflow: hidden;
+/* Smooth expand/collapse for reasoning block using CSS Grid */
+.grid-transition {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 300ms cubic-bezier(0.4, 0, 0.2, 1), opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.grid-transition.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.grid-transition.closed {
+  opacity: 0;
+}
+
+.thought-content {
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
 }
 
 /* ── Markdown Content Styling ────────────────────────────────────── */

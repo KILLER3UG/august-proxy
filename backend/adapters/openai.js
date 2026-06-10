@@ -641,36 +641,60 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                     const outTok = data.usage?.completion_tokens || data.usage?.output_tokens || 0;
                     captureTokens(reqId, inTok, outTok);
                     const upstreamMsg = data.choices?.[0]?.message;
-                    const delta = {
-                        role: upstreamMsg?.role,
-                        content: upstreamMsg?.content || ''
-                    };
-                    if (upstreamMsg?.reasoning) delta.reasoning = upstreamMsg.reasoning;
-                    if (upstreamMsg?.reasoning_content) delta.reasoning_content = upstreamMsg.reasoning_content;
-                    // Include tool_calls in the synthesized SSE so the client knows what tools to execute
-                    if (upstreamMsg?.tool_calls && upstreamMsg.tool_calls.length > 0) {
-                        delta.tool_calls = upstreamMsg.tool_calls.map((tc, idx) => ({
-                            index: idx,
-                            id: tc.id,
-                            type: tc.type,
-                            function: { name: tc.function?.name || '', arguments: tc.function?.arguments || '' }
-                        }));
+
+                    // ── Resolve managed tool calls before streaming to client ──
+                    const hasManagedTools = upstreamMsg?.tool_calls?.length > 0 &&
+                        managedLocalToolNames.size > 0 &&
+                        upstreamMsg.tool_calls.some(tc => managedLocalToolNames.has(tc.function?.name));
+
+                    if (hasManagedTools) {
+                        const resolved = await resolveManagedOpenAiToolCalls(data, oReq, cfg, clientToolNames, req.workspacePath);
+                        const resolvedMsg = resolved.choices?.[0]?.message;
+                        const resolvedDelta = {
+                            role: resolvedMsg?.role || 'assistant',
+                            content: resolvedMsg?.content || ''
+                        };
+                        if (resolvedMsg?.reasoning) resolvedDelta.reasoning = resolvedMsg.reasoning;
+                        if (resolvedMsg?.reasoning_content) resolvedDelta.reasoning_content = resolvedMsg.reasoning_content;
+                        const resolvedChunk = {
+                            id: resolved.id || data.id || 'chatcmpl-' + Math.random().toString(36).substr(2, 9),
+                            object: 'chat.completion.chunk',
+                            created: resolved.created || data.created || Math.floor(Date.now() / 1000),
+                            model: requestModel,
+                            choices: [{
+                                index: 0,
+                                delta: resolvedDelta,
+                                finish_reason: resolved.choices?.[0]?.finish_reason || 'stop'
+                            }]
+                        };
+                        res.writeHead(response.status, { 'Content-Type': 'text/event-stream' });
+                        res.write(`data: ${JSON.stringify(resolvedChunk)}\n\n`);
+                        res.write('data: [DONE]\n\n');
+                        res.end();
+                    } else {
+                        // No managed tools — synthesize SSE for JSON passthrough
+                        const delta = {
+                            role: upstreamMsg?.role,
+                            content: upstreamMsg?.content || ''
+                        };
+                        if (upstreamMsg?.reasoning) delta.reasoning = upstreamMsg.reasoning;
+                        if (upstreamMsg?.reasoning_content) delta.reasoning_content = upstreamMsg.reasoning_content;
+                        const chunk = {
+                            id: data.id || 'chatcmpl-' + Math.random().toString(36).substr(2, 9),
+                            object: 'chat.completion.chunk',
+                            created: data.created || Math.floor(Date.now() / 1000),
+                            model: requestModel,
+                            choices: [{
+                                index: 0,
+                                delta: delta,
+                                finish_reason: data.choices?.[0]?.finish_reason || null
+                            }]
+                        };
+                        res.writeHead(response.status, { 'Content-Type': 'text/event-stream' });
+                        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+                        res.write('data: [DONE]\n\n');
+                        res.end();
                     }
-                    const chunk = {
-                        id: data.id || 'chatcmpl-' + Math.random().toString(36).substr(2, 9),
-                        object: 'chat.completion.chunk',
-                        created: data.created || Math.floor(Date.now() / 1000),
-                        model: requestModel,
-                        choices: [{
-                            index: 0,
-                            delta: delta,
-                            finish_reason: data.choices?.[0]?.finish_reason || null
-                        }]
-                    };
-                    res.writeHead(response.status, { 'Content-Type': 'text/event-stream' });
-                    res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-                    res.write(`data: [DONE]\n\n`);
-                    res.end();
                 } catch (e) {
                     requestStatus = 'error';
                     requestError = e.message;
