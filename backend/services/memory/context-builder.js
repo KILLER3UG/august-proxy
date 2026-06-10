@@ -9,7 +9,8 @@ const { graphStats } = require('./graph-memory');
 const AUGUST_PLATFORM = `Platform: August Proxy on Windows PowerShell.
 - Use PowerShell syntax (Get-ChildItem, Select-String, Test-Path) and Windows backslash paths. Do not use bash/sh/zsh/WSL commands.
 - Cross-session memory tools are available: memory_search() to find past conversations, memory_read() for full checkpoints, fact_search() for structured facts, context_read() for user profile, and graph_search()/graph_explore() for entity relations.
-- Save recurring user corrections as learned guidelines via august__add_learned_guideline.`;
+- Save recurring user corrections as learned guidelines via august__add_learned_guideline.
+- Note: "August" or "August Proxy" is the name of this proxy platform. You are still yourself — respond as your actual underlying model identity.`;
 
 const DEFAULT_CONTEXT_MAX_CHARS = 24000;
 
