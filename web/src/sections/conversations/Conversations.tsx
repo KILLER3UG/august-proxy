@@ -1,22 +1,14 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/api/client';
 import { SectionHeader } from '@/components/SectionHeader';
 import { Card, CardContent } from '@/components/ui/card';
 import { Search, Pin, MessageSquare } from 'lucide-react';
 import { formatTimeAgo, cn } from '@/lib/utils';
-import { mockSessions, type Session } from '@/lib/mock';
+import { useStore } from '@nanostores/react';
+import { $sessions, type Session } from '@/store/sessions';
 
 export function Conversations() {
-  const { data } = useQuery({
-    queryKey: ['sessions'],
-    queryFn: async () => {
-      try { return await api.get<{ sessions: Session[] }>('/api/sessions?limit=50'); }
-      catch { return { sessions: mockSessions }; }
-    },
-    refetchInterval: 5_000,
-  });
-  const sessions = data?.sessions ?? mockSessions;
+  const allSessions = useStore($sessions);
+  const sessions = allSessions.filter(s => !s.isArchived);
   const [selected, setSelected] = useState<Session | null>(null);
   const [filter, setFilter] = useState('');
 

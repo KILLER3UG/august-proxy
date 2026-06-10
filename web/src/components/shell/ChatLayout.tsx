@@ -22,7 +22,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Settings, ChevronDown, Volume2, Minus, Square, X, Columns, Home, Plus } from 'lucide-react';
 import { SessionList } from '@/components/sidebar/SessionList';
 import { cn } from '@/lib/utils';
-import { mockSessions, type Session } from '@/lib/mock';
+import { useStore } from '@nanostores/react';
+import { $sessions, createSession, type Session } from '@/store/sessions';
 
 const SESSIONS_COLLAPSED_KEY = 'august-sessions-collapsed';
 
@@ -33,7 +34,31 @@ export function ChatLayout() {
   const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem(SESSIONS_COLLAPSED_KEY) === '1');
   const [elapsed, setElapsed] = useState(0);
 
-  const active = mockSessions.find((s) => s.id === sessionId) ?? mockSessions[0] ?? null;
+  const sessions = useStore($sessions);
+  const active = sessions.find((s) => s.id === sessionId && !s.isArchived) ?? null;
+
+  // Auto redirect from `/` or invalid/archived sessionId to the first non-archived session
+  useEffect(() => {
+    const activeSessions = sessions.filter(s => !s.isArchived);
+    if (location.pathname === '/' || location.pathname === '') {
+      let activeSess = activeSessions[0];
+      if (!activeSess) {
+        activeSess = createSession();
+      }
+      navigate(`/c/${activeSess.id}`, { replace: true });
+    } else if (location.pathname.startsWith('/c/')) {
+      const match = sessions.find(s => s.id === sessionId);
+      if (!match || match.isArchived) {
+        const fallback = activeSessions[0] || createSession();
+        navigate(`/c/${fallback.id}`, { replace: true });
+      }
+    }
+  }, [location.pathname, sessionId, sessions, navigate]);
+
+  const handleNewSession = () => {
+    const newSess = createSession();
+    navigate(`/c/${newSess.id}`);
+  };
 
   useEffect(() => {
     localStorage.setItem(SESSIONS_COLLAPSED_KEY, collapsed ? '1' : '0');
@@ -64,7 +89,7 @@ export function ChatLayout() {
                 collapsed={collapsed}
                 onToggleCollapsed={() => setCollapsed((c) => !c)}
                 onSelect={(s) => navigate(`/c/${s.id}`)}
-                onNew={() => navigate('/')}
+                onNew={handleNewSession}
                 onNavigate={(p) => {
                   if (p.startsWith('settings') || p.startsWith('/settings')) {
                     sessionStorage.setItem('pre-settings-path', location.pathname);

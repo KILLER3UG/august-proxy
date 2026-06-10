@@ -35,6 +35,13 @@ const { registerBuiltinProviders } = require('./providers/builtin');
 const { resolveProvider, resolveActiveProvider } = require('./providers/provider-resolver');
 const { getActiveProvider, setActiveProvider, getProviderConfig, saveProviderConfig, getEnvVars, setEnvVar, deleteEnvVar, getProviderRequiredEnvVars } = require('./lib/config');
 
+// ── New Module Imports: Storage, Tools, MCP OAuth, Cron ──
+const sessionStore = require('./services/storage/session-store');
+const toolRegistry = require('./services/tools/tool-registry');
+const mcpOAuth = require('./services/tools/mcp-oauth');
+const { startCronScheduler, readCronJobs, createCronJobHandler, removeCronJobHandler, runCronJobNowHandler } = require('./services/tools/missing/cron-tools');
+const { registerMissingTools } = require('./services/tools/missing/index');
+
 const UI_PATH = path.join(__dirname, 'ui', 'pages', 'ui.html');
 const UI_ROOT = path.join(__dirname, 'ui');
 const APP_PATH = path.join(__dirname, 'ui', 'pages', 'app.html');
@@ -489,8 +496,18 @@ const requestHandler = async (req, res) => {
     if (req.url === '/api/models' && req.method === 'GET') {
         const { listProviders } = require('./providers/provider-registry');
         const { getProviderConfig } = require('./lib/config');
+        const { inferFromModelId } = require('./lib/models');
         const providers = listProviders();
         const allModels = [];
+
+        function getContextWindowForModel(modelId, providerProfile, contextLengthFromApi) {
+            if (contextLengthFromApi) return contextLengthFromApi;
+            const inferred = inferFromModelId(modelId);
+            if (inferred && inferred.inputTokens) return inferred.inputTokens;
+            const profile = providerProfile ? providerProfile.getModelProfile(modelId) : null;
+            if (profile && profile.contextWindow) return profile.contextWindow;
+            return 128000;
+        }
 
         for (const p of providers) {
             const config = getProviderConfig(p.name) || {};
@@ -517,7 +534,7 @@ const requestHandler = async (req, res) => {
                             id: m.id,
                             name: m.id,
                             provider: p.name,
-                            contextWindow: m.context_length || p.getModelProfile(m.id)?.contextWindow || 128000
+                            contextWindow: getContextWindowForModel(m.id, p, m.context_length)
                         }));
                     }
                 }
@@ -566,7 +583,7 @@ const requestHandler = async (req, res) => {
                     id: m.id,
                     name: m.id,
                     provider: p.name,
-                    contextWindow: m.contextWindow || 128000
+                    contextWindow: getContextWindowForModel(m.id, p, m.contextWindow)
                 }));
             }
 
@@ -590,7 +607,7 @@ const requestHandler = async (req, res) => {
                         id: mid,
                         name: mid,
                         provider: p.name,
-                        contextWindow: config.contextWindow || p.getModelProfile(mid)?.contextWindow || 128000
+                        contextWindow: getContextWindowForModel(mid, p, config.contextWindow)
                     });
                 }
             }
@@ -618,7 +635,7 @@ const requestHandler = async (req, res) => {
 
             // Resolve which provider to use
             const { listProviders } = require('./providers/provider-registry');
-            const { getProviderConfig } = require('./lib/config');
+            const { getProviderConfig, getActiveProvider, setActiveProvider, saveProviderConfig, saveProfile } = require('./lib/config');
             const providers = listProviders();
             let resolvedProvider = null;
             
@@ -651,8 +668,6 @@ const requestHandler = async (req, res) => {
                 }
             }
             if (!resolvedProvider) {
-                // Default fallback to active provider or openai
-                const { getActiveProvider } = require('./lib/config');
                 const active = getActiveProvider() || 'openai-api';
                 resolvedProvider = providers.find(p => p.name === active) || providers[0];
             }
@@ -665,118 +680,98 @@ const requestHandler = async (req, res) => {
                 return sendError(res, new Error(`API Key for provider '${resolvedProvider.displayName}' is not configured.`), 400);
             }
 
-            res.writeHead(200, {
-                'Content-Type': 'text/event-stream; charset=utf-8',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'X-Accel-Buffering': 'no'
-            });
+            // Sync codex profile dynamically in the backend configuration
+            const codexProfile = {
+                targetUrl: baseUrl,
+                apiKey: apiKey,
+                currentModel: model,
+                _upstreamModel: model
+            };
+            saveProfile('codex', codexProfile);
 
-            // Make streaming request to upstream
-            let upstreamUrl = baseUrl;
-            let headers = { 'Content-Type': 'application/json' };
-            let payload = { model, messages: messages.map(m => ({ role: m.role, content: m.content })), stream: true };
-
-            if (resolvedProvider.apiMode === 'anthropic_messages') {
-                // Anthropic Messages API
-                upstreamUrl = baseUrl.endsWith('/messages') ? baseUrl : `${baseUrl}/messages`;
-                headers['x-api-key'] = apiKey;
-                headers['anthropic-version'] = '2023-06-01';
-                payload.max_tokens = 4096;
-                // Add thinking budget if effort is selected and model supports it
-                if (effort) {
-                    payload.thinking = {
-                        type: 'enabled',
-                        budget_tokens: effort === 'low' ? 1024 : effort === 'medium' ? 4096 : effort === 'high' ? 8192 : 16000
-                    };
-                    payload.max_tokens = Math.max(payload.max_tokens, payload.thinking.budget_tokens + 2048);
-                }
-            } else {
-                // OpenAI-compatible Completions API
-                if (!upstreamUrl.endsWith('/chat/completions')) {
-                    upstreamUrl = upstreamUrl.replace(/\/+$/, '') + '/chat/completions';
-                }
-                headers['Authorization'] = `Bearer ${apiKey}`;
-                // Add reasoning_effort if effort is selected and model is o1/o3-mini
-                if (effort && (model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o'))) {
-                    payload.reasoning_effort = effort === 'max' ? 'high' : effort; // OpenAI expects low, medium, high
-                }
+            // Construct the fake request stream
+            const { Readable } = require('stream');
+            const openaiPayload = {
+                model,
+                messages,
+                stream: true
+            };
+            if (effort && (model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o'))) {
+                openaiPayload.reasoning_effort = effort === 'max' ? 'high' : effort;
             }
 
-            const upstreamRes = await fetch(upstreamUrl, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(payload),
-                signal: AbortSignal.timeout(300000)
-            });
+            const fakeReq = Readable.from([JSON.stringify(openaiPayload)]);
+            fakeReq.headers = {
+                ...req.headers,
+                'content-type': 'application/json'
+            };
+            fakeReq.augustClientId = req.augustClientId || 'web-ui';
 
-            if (!upstreamRes.ok) {
-                const errText = await upstreamRes.text();
-                res.write(`data: ${JSON.stringify({ type: 'text', content: `⚠️ Upstream Error (${upstreamRes.status}): ${errText}` })}\n`);
-                res.end();
-                return;
-            }
-
-            const reader = upstreamRes.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let clientDisconnected = false;
-
+            // Propagate close event to fakeReq to support cancellation
             req.on('close', () => {
-                clientDisconnected = true;
-                try {
-                    reader.cancel();
-                } catch (e) {}
+                fakeReq.emit('close');
             });
 
-            while (true) {
-                if (clientDisconnected) break;
-                const { done, value } = await reader.read();
-                if (done) break;
-                
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
+            // Create a request ID for tracking
+            const reqId = startRequest({ clientType: 'codex', endpoint: '/api/chat', model: model });
 
-                for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (!trimmed) continue;
-
-                    if (resolvedProvider.apiMode === 'anthropic_messages') {
-                        if (trimmed.startsWith('data:')) {
-                            try {
-                                const parsed = JSON.parse(trimmed.slice(5).trim());
-                                if (parsed.type === 'content_block_delta') {
-                                    if (parsed.delta?.type === 'thinking_delta' && parsed.delta.thinking) {
-                                        res.write(`data: ${JSON.stringify({ type: 'thinking', content: parsed.delta.thinking })}\n`);
-                                    } else if (parsed.delta?.type === 'text_delta' && parsed.delta.text) {
-                                        res.write(`data: ${JSON.stringify({ type: 'text', content: parsed.delta.text })}\n`);
-                                    } else if (parsed.delta?.text) {
-                                        res.write(`data: ${JSON.stringify({ type: 'text', content: parsed.delta.text })}\n`);
-                                    }
-                                }
-                            } catch {}
-                        }
-                    } else {
+            // Create mockRes to translate standard OpenAI chunks back to simple chunks for web UI
+            const mockRes = {
+                headersSent: false,
+                writeHead(statusCode, headers) {
+                    res.writeHead(statusCode, {
+                        ...headers,
+                        'Content-Type': 'text/event-stream; charset=utf-8',
+                        'Cache-Control': 'no-cache',
+                        'Connection': 'keep-alive',
+                        'X-Accel-Buffering': 'no'
+                    });
+                    this.headersSent = true;
+                },
+                write(chunk) {
+                    const text = chunk.toString();
+                    const lines = text.split('\n');
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed) continue;
                         if (trimmed.startsWith('data:')) {
                             const dataStr = trimmed.slice(5).trim();
-                            if (dataStr === '[DONE]') continue;
+                            if (dataStr === '[DONE]') {
+                                res.write('data: [DONE]\n\n');
+                                continue;
+                            }
                             try {
                                 const parsed = JSON.parse(dataStr);
-                                const reasoning = parsed.choices?.[0]?.delta?.reasoning_content;
+                                const reasoning = parsed.choices?.[0]?.delta?.reasoning_content || parsed.choices?.[0]?.delta?.reasoning;
                                 const content = parsed.choices?.[0]?.delta?.content;
-                                if (reasoning) {
-                                    res.write(`data: ${JSON.stringify({ type: 'thinking', content: reasoning })}\n`);
+                                if (reasoning || content) {
+                                    if (reasoning) {
+                                        res.write(`data: ${JSON.stringify({ type: 'thinking', content: reasoning })}\n\n`);
+                                    }
+                                    if (content) {
+                                        res.write(`data: ${JSON.stringify({ type: 'text', content: content })}\n\n`);
+                                    }
+                                } else {
+                                    res.write(`data: ${dataStr}\n\n`);
                                 }
-                                if (content) {
-                                    res.write(`data: ${JSON.stringify({ type: 'text', content: content })}\n`);
-                                }
-                            } catch {}
+                            } catch (err) {
+                                res.write(`${line}\n\n`);
+                            }
+                        } else {
+                            res.write(`${line}\n`);
                         }
                     }
+                },
+                end(chunk) {
+                    if (chunk) {
+                        this.write(chunk);
+                    }
+                    res.end();
                 }
-            }
-            res.end();
+            };
+
+            // Delegate to the OpenAI adapter
+            await openaiAdapter.handleChatCompletions(fakeReq, mockRes, '/v1/chat/completions', reqId);
         } catch (e) {
             console.error('[Proxy /api/chat] Error:', e);
             if (!res.headersSent) {
@@ -1971,7 +1966,302 @@ const requestHandler = async (req, res) => {
         }
     }
 
-    // Fallback
+    // ── Session Store API (SQLite-backed, replaces JSON) ──
+    const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
+    const reqPath = parsedUrl.pathname;
+
+    // ── Session Store API ──
+    if (reqPath === '/ui/sessions' && req.method === 'GET') {
+        const status = parsedUrl.searchParams.get('status') || undefined;
+        const agent_type = parsedUrl.searchParams.get('agent_type') || undefined;
+        const limit = parseInt(parsedUrl.searchParams.get('limit') || '20');
+        const order = parsedUrl.searchParams.get('order') || 'newest';
+        try {
+            const sessions = sessionStore.listSessions({ status, agent_type, limit, order });
+            return sendJson(res, { sessions });
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    if (reqPath === '/ui/sessions/search' && req.method === 'GET') {
+        const query = parsedUrl.searchParams.get('q');
+        const limit = parseInt(parsedUrl.searchParams.get('limit') || '10');
+        if (!query) return sendJson(res, { error: 'Missing query (q) parameter' }, 400);
+        try {
+            const results = sessionStore.searchSessions(query, { limit });
+            return sendJson(res, { results, count: results.length });
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    if (reqPath.startsWith('/ui/sessions/') && req.method === 'GET') {
+        const parts = reqPath.split('/');
+        const sessionId = decodeURIComponent(parts[3]);
+        const sub = parts[4]; // 'messages' or undefined
+        try {
+            if (sub === 'messages') {
+                const limit = parseInt(parsedUrl.searchParams.get('limit') || '50');
+                const include_inactive = parsedUrl.searchParams.get('include_inactive') === 'true';
+                const messages = sessionStore.getMessages(sessionId, { limit, include_inactive });
+                return sendJson(res, { session_id: sessionId, messages, count: messages.length });
+            }
+            const session = sessionStore.getSession(sessionId);
+            if (!session) return sendJson(res, { error: 'Session not found' }, 404);
+            return sendJson(res, session);
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    // ── Tool Registry API ──
+    if (reqPath === '/ui/tools' && req.method === 'GET') {
+        try {
+            const tools = toolRegistry.list();
+            return sendJson(res, {
+                tools: tools.map(t => ({
+                    name: t.name,
+                    description: t.description,
+                    toolset: t.toolset,
+                    available: t.isAvailable,
+                    permissions: t.permissions,
+                    requiresEnv: t.requiresEnv,
+                    emoji: t.emoji
+                })),
+                toolsets: toolRegistry.getToolsets(),
+                generation: toolRegistry.getGeneration()
+            });
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    if (reqPath === '/ui/tools/definitions' && req.method === 'GET') {
+        try {
+            const format = parsedUrl.searchParams.get('format') || 'openai';
+            const defs = toolRegistry.getDefinitions(format);
+            return sendJson(res, { definitions: defs, count: defs.length });
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    if (reqPath === '/ui/tools/dispatch' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+            try {
+                const { name, args, ctx } = JSON.parse(body);
+                const result = await toolRegistry.dispatch(name, args || {}, ctx || {});
+                return sendJson(res, result);
+            } catch (e) {
+                return sendError(res, e, 500);
+            }
+        });
+        return;
+    }
+
+    // ── MCP OAuth ──
+    if (reqPath === '/ui/mcp-oauth/start' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+            try {
+                const { serverName, authUrl, options } = JSON.parse(body);
+                const result = await mcpOAuth.startOAuthFlow(serverName, authUrl, options);
+                return sendJson(res, result);
+            } catch (e) {
+                return sendError(res, e, 500);
+            }
+        });
+        return;
+    }
+
+    if (reqPath === '/ui/mcp-oauth/status' && req.method === 'GET') {
+        const serverName = parsedUrl.searchParams.get('server');
+        if (!serverName) return sendJson(res, { error: 'server parameter required' }, 400);
+        try {
+            const headers = mcpOAuth.getAuthHeaders(serverName);
+            const hasAuth = headers && headers.Authorization;
+            return sendJson(res, { server: serverName, authenticated: !!hasAuth });
+        } catch (e) {
+            return sendJson(res, { server: serverName, authenticated: false, error: e.message });
+        }
+    }
+
+    if (reqPath === '/ui/mcp-oauth/clear' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            try {
+                const { serverName } = JSON.parse(body);
+                mcpOAuth.clearAuth(serverName);
+                return sendJson(res, { success: true });
+            } catch (e) {
+                return sendError(res, e, 500);
+            }
+        });
+        return;
+    }
+
+    // ── MCP OAuth callback receiver (handles redirect from provider) ──
+    if (reqPath.startsWith('/ui/mcp-oauth/callback') && req.method === 'GET') {
+        try {
+            return mcpOAuth.handleAuthCallback(req, res);
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    // ── Cron Job Management ──
+    if (reqPath === '/ui/cron' && req.method === 'GET') {
+        try {
+            const jobs = readCronJobs();
+            return sendJson(res, { jobs, count: jobs.length });
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    if (reqPath === '/ui/cron' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+            try {
+                const jobData = JSON.parse(body);
+                const result = await createCronJobHandler(jobData);
+                return sendJson(res, result);
+            } catch (e) {
+                return sendError(res, e, 500);
+            }
+        });
+        return;
+    }
+
+    if (reqPath === '/ui/cron/run' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+            try {
+                const { name } = JSON.parse(body);
+                const result = await runCronJobNowHandler({ name });
+                return sendJson(res, { result });
+            } catch (e) {
+                return sendError(res, e, 500);
+            }
+        });
+        return;
+    }
+
+    if (reqPath.startsWith('/ui/cron/') && req.method === 'DELETE') {
+        const name = decodeURIComponent(reqPath.split('/').pop());
+        try {
+            const result = await removeCronJobHandler({ name });
+            return sendJson(res, result);
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    // ── Skills V2 (Standardized Skill Management) ──
+    if (reqPath === '/ui/skills-v2' && req.method === 'GET') {
+        let skills = [];
+        try { skills = require('./services/tools/skills').getSkills(); } catch (e) {}
+        return sendJson(res, { skills, count: skills.length });
+    }
+
+    if (reqPath === '/ui/skills-v2/install' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+            try {
+                const { url, name, instructions } = JSON.parse(body);
+                if (url) {
+                    const result = await require('./services/tools/skill-importer').importSkillFromLink(url);
+                    return sendJson(res, result);
+                }
+                if (name && instructions) {
+                    require('./services/tools/skills').saveSkill({ name, body: instructions, enabled: true });
+                    return sendJson(res, { success: true, name });
+                }
+                return sendJson(res, { error: 'Provide either url or name+instructions' }, 400);
+            } catch (e) {
+                return sendError(res, e, 500);
+            }
+        });
+        return;
+    }
+
+    // ── Model Catalog API ──
+    if (reqPath === '/ui/models/catalog' && req.method === 'GET') {
+        try {
+            const catalog = require('./services/catalog/model-catalog');
+            const provider = parsedUrl.searchParams.get('provider') || undefined;
+            const capability = parsedUrl.searchParams.get('capability') || undefined;
+            const query = parsedUrl.searchParams.get('q') || undefined;
+
+            let results;
+            if (query) results = catalog.search(query);
+            else results = catalog.list({ provider, capability, deprecated: false });
+
+            return sendJson(res, { models: results.map(m => m.toJSON()), count: results.length });
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    if (reqPath === '/ui/models/capabilities' && req.method === 'GET') {
+        try {
+            const catalog = require('./services/catalog/model-catalog');
+            return sendJson(res, { capabilities: catalog.getCapabilities() });
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    if (reqPath === '/ui/models/estimate-cost' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+            try {
+                const { modelId, inputTokens, outputTokens } = JSON.parse(body);
+                const catalog = require('./services/catalog/model-catalog');
+                const model = catalog.get(modelId);
+                if (!model) return sendJson(res, { error: 'Unknown model' }, 404);
+                const cost = model.estimateCost(inputTokens || 0, outputTokens || 0);
+                return sendJson(res, { model: model.id, cost });
+            } catch (e) {
+                return sendError(res, e, 500);
+            }
+        });
+        return;
+    }
+
+    // ── Model aliases endpoint ──
+    if (reqPath === '/ui/models/aliases' && req.method === 'GET') {
+        try {
+            const catalog = require('./services/catalog/model-catalog');
+            const models = catalog.getAll();
+            const modelAliases = models.filter(m => m.aliases && m.aliases.length > 0)
+                .flatMap(m => m.aliases.map(a => ({ alias: a, resolvesTo: m.id, provider: m.provider })));
+            return sendJson(res, { aliases: modelAliases });
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    // ── Provider options (for dashboard dropdowns) ──
+    if (reqPath === '/ui/providers/options' && req.method === 'GET') {
+        try {
+            const providers = listProviders();
+            return sendJson(res, { providers, count: providers.length });
+        } catch (e) {
+            return sendJson(res, { providers: [], count: 0, error: e.message });
+        }
+    }
+
+    // ── Fallback
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not Found' }));
 };
@@ -2005,6 +2295,44 @@ const claudeProfile = getProfile('claude');
 startMcpServers(claudeProfile?.apiKey || '').catch(e => {
     console.error('[bridge] Failed to start MCP servers:', e);
 });
+
+// ── Initialize Session Store (SQLite) ──
+(async () => {
+    try {
+        await sessionStore.init();
+        await sessionStore.migrateFromJson();
+        console.log('[SessionStore] Ready —', sessionStore.pruneSessions(60), 'old sessions pruned');
+    } catch (e) {
+        console.error('[SessionStore] Init failed (non-fatal):', e.message);
+    }
+})();
+
+// ── Register missing tools in the tool registry ──
+try {
+    registerMissingTools(toolRegistry);
+    const registered = toolRegistry.list();
+    console.log(`[ToolRegistry] Registered ${registered.length} tools across ${toolRegistry.getToolsets().length} toolsets`);
+} catch (e) {
+    console.error('[ToolRegistry] Failed to register missing tools:', e.message);
+}
+
+// ── Initialize Model Catalog ──
+try {
+    const catalog = require('./services/catalog/model-catalog');
+    catalog.init();
+    const count = catalog.saveToJson();
+    console.log(`[ModelCatalog] Initialized with ${count} models`);
+} catch (e) {
+    console.warn('[ModelCatalog] Init skipped:', e.message);
+}
+
+// ── Start Cron Scheduler ──
+try {
+    startCronScheduler();
+    console.log('[Cron] Scheduler started');
+} catch (e) {
+    console.warn('[Cron] Scheduler start skipped:', e.message);
+}
 
 
 

@@ -3,7 +3,7 @@
 
 import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { X, Heart, Link2, Users, Database, Plug, Bot } from 'lucide-react';
+import { X, Heart, Link2, Users, Database, Plug, Bot, Archive as ArchiveIcon } from 'lucide-react';
 import { Backdrop } from '@/components/overlays/Backdrop';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -15,6 +15,7 @@ import { Services } from '@/sections/services/Services';
 import { Mcp } from '@/sections/mcp/Mcp';
 import { Memory } from '@/sections/memory/Memory';
 import { August } from '@/sections/august/August';
+import { Archive } from '@/sections/archive/Archive';
 
 interface TabItem {
   key: string;
@@ -30,6 +31,7 @@ const TABS: TabItem[] = [
   { key: 'services',  label: 'Services',    Icon: Link2,     Component: Services },
   { key: 'mcp',       label: 'MCP & Skills',Icon: Plug,      Component: Mcp },
   { key: 'memory',    label: 'Memory',      Icon: Database,  Component: Memory },
+  { key: 'archive',   label: 'Archive',     Icon: ArchiveIcon, Component: Archive },
   { key: 'advanced',  label: 'August console', Icon: Bot,    Component: August, advanced: true },
 ];
 

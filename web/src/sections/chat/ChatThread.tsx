@@ -29,6 +29,7 @@ export interface ChatMessage {
     result?: string;
   };
   thinking?: string;
+  thinkingDuration?: number;
 }
 
 interface ModelItem {
@@ -106,26 +107,49 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     try { localStorage.setItem(storageKey, JSON.stringify(messages)); } catch {}
   }, [messages, storageKey]);
 
-  // Load models on mount
+  // Load models and config on mount to sync selected model with backend
   useEffect(() => {
     let active = true;
-    const loadModels = async () => {
+    const loadModelsAndConfig = async () => {
       try {
-        const res = await fetch('/api/models');
-        if (res.ok) {
-          const data = await res.json();
-          if (active && data?.models && data.models.length > 0) {
-            setModels(data.models);
-            setSelectedModel(data.models[0]);
+        const [modelsRes, configRes] = await Promise.all([
+          fetch('/api/models'),
+          fetch('/ui/config/safe')
+        ]);
+
+        let loadedModels: ModelItem[] = [];
+        let activeModelId: string | null = null;
+
+        if (modelsRes.ok) {
+          const data = await modelsRes.json();
+          if (data?.models) {
+            loadedModels = data.models;
+          }
+        }
+
+        if (configRes.ok) {
+          const config = await configRes.json();
+          const activeProvider = config?.activeProvider || 'opencode-go';
+          const pConfig = config?.[activeProvider] || {};
+          activeModelId = pConfig.model || pConfig._upstreamModel || pConfig.currentModel || null;
+        }
+
+        if (active) {
+          if (loadedModels.length > 0) {
+            setModels(loadedModels);
+            const matched = activeModelId
+              ? loadedModels.find(m => m.id === activeModelId || m.id.toLowerCase() === activeModelId.toLowerCase())
+              : null;
+            setSelectedModel(matched || loadedModels[0]);
           }
         }
       } catch (e) {
-        console.error('Failed to load models:', e);
+        console.error('Failed to load models or config:', e);
       } finally {
         if (active) setModelsLoading(false);
       }
     };
-    loadModels();
+    loadModelsAndConfig();
     return () => { active = false; };
   }, []);
 
@@ -144,6 +168,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const assistantMsgId = `a${Date.now()}`;
     const abortController = new AbortController();
     abortRef.current = abortController;
+
+    const thinkingStart = Date.now();
+    let thinkingEnd: number | null = null;
 
     setMessages(m => [...m, {
       id: assistantMsgId,
@@ -205,20 +232,40 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             const data = line.slice(6);
             try {
               const parsed = JSON.parse(data);
-              if (parsed.type === 'thinking') thinkingContent += parsed.content || '';
-              else if (parsed.type === 'text' || parsed.type === 'content') assistantContent += parsed.content || '';
-              else if (parsed.thinking) thinkingContent += parsed.thinking;
-              else if (parsed.reasoning_content) thinkingContent += parsed.reasoning_content;
-              else if (parsed.choices && parsed.choices[0]?.delta?.reasoning_content) {
+              if (parsed.type === 'thinking') {
+                thinkingContent += parsed.content || '';
+              } else if (parsed.type === 'text' || parsed.type === 'content') {
+                if (!thinkingEnd && thinkingContent.trim()) {
+                  thinkingEnd = Date.now();
+                }
+                assistantContent += parsed.content || '';
+              } else if (parsed.thinking) {
+                thinkingContent += parsed.thinking;
+              } else if (parsed.reasoning_content) {
+                thinkingContent += parsed.reasoning_content;
+              } else if (parsed.choices && parsed.choices[0]?.delta?.reasoning_content) {
                 thinkingContent += parsed.choices[0].delta.reasoning_content;
-              } else assistantContent += parsed.content || data;
-            } catch { assistantContent += data; }
+              } else {
+                if (!thinkingEnd && thinkingContent.trim()) {
+                  thinkingEnd = Date.now();
+                }
+                assistantContent += parsed.content || data;
+              }
+            } catch {
+              if (!thinkingEnd && thinkingContent.trim()) {
+                thinkingEnd = Date.now();
+              }
+              assistantContent += data;
+            }
           } else {
             const thinkMatch = line.match(/<thinking>([\s\S]*?)<\/thinking>/);
             if (thinkMatch) {
               thinkingContent += thinkMatch[1];
               assistantContent += line.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
             } else {
+              if (!thinkingEnd && thinkingContent.trim()) {
+                thinkingEnd = Date.now();
+              }
               assistantContent += line;
             }
           }
@@ -244,22 +291,46 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           const data = buffer.slice(6);
           try {
             const parsed = JSON.parse(data);
-            if (parsed.type === 'thinking') thinkingContent += parsed.content || '';
-            else if (parsed.thinking) thinkingContent += parsed.thinking;
-            else if (parsed.reasoning_content) thinkingContent += parsed.reasoning_content;
-            else assistantContent += parsed.content || data;
-          } catch { assistantContent += data; }
+            if (parsed.type === 'thinking') {
+              thinkingContent += parsed.content || '';
+            } else if (parsed.thinking) {
+              thinkingContent += parsed.thinking;
+            } else if (parsed.reasoning_content) {
+              thinkingContent += parsed.reasoning_content;
+            } else {
+              if (!thinkingEnd && thinkingContent.trim()) {
+                thinkingEnd = Date.now();
+              }
+              assistantContent += parsed.content || data;
+            }
+          } catch {
+            if (!thinkingEnd && thinkingContent.trim()) {
+              thinkingEnd = Date.now();
+            }
+            assistantContent += data;
+          }
         } else {
+          if (!thinkingEnd && thinkingContent.trim()) {
+            thinkingEnd = Date.now();
+          }
           assistantContent += buffer;
         }
-        setMessages(prev => prev.map(msg =>
-          msg.id === assistantMsgId ? {
-            ...msg,
-            content: assistantContent,
-            thinking: thinkingContent || undefined
-          } : msg
-        ));
       }
+
+      const finalDuration = thinkingEnd && thinkingStart 
+        ? Math.round((thinkingEnd - thinkingStart) / 100) / 10 
+        : thinkingContent.trim() 
+          ? Math.round((Date.now() - thinkingStart) / 100) / 10
+          : undefined;
+
+      setMessages(prev => prev.map(msg =>
+        msg.id === assistantMsgId ? {
+          ...msg,
+          content: assistantContent,
+          thinking: thinkingContent || undefined,
+          thinkingDuration: finalDuration
+        } : msg
+      ));
     } catch (e: any) {
       if (e?.name === 'AbortError') return;
       console.error(e);
@@ -569,7 +640,29 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     models={models}
                     loading={modelsLoading}
                     selected={selectedModel}
-                    onSelect={setSelectedModel}
+                    onSelect={async (m) => {
+                      if (!m) return;
+                      setSelectedModel(m);
+                      try {
+                        await Promise.all([
+                          fetch('/api/config/activeProvider', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ provider: m.provider })
+                          }),
+                          fetch('/api/config/provider-details', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              provider: m.provider,
+                              config: { currentModel: m.id, _upstreamModel: m.id }
+                            })
+                          })
+                        ]);
+                      } catch (e) {
+                        console.error('Failed to update backend model config:', e);
+                      }
+                    }}
                   />
                   <EffortDropdown
                     value={effort}
@@ -624,8 +717,24 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 // ----------------------------------------------------
 // [NEW/REFACTORED] ReasoningBlock
 // ----------------------------------------------------
-function ReasoningBlock({ text, isGenerating }: { text: string; isGenerating?: boolean }) {
+function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGenerating?: boolean; duration?: number }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!isGenerating) return;
+    const start = Date.now();
+    const interval = setInterval(() => {
+      setElapsed((Date.now() - start) / 1000);
+    }, 100);
+    return () => clearInterval(interval);
+  }, [isGenerating]);
+
+  const displayDuration = isGenerating
+    ? elapsed.toFixed(1) + 's'
+    : duration
+      ? duration.toFixed(1) + 's'
+      : null;
 
   return (
     <div className="text-xs font-mono my-2 select-none">
@@ -634,29 +743,31 @@ function ReasoningBlock({ text, isGenerating }: { text: string; isGenerating?: b
         className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition py-1"
       >
         <span className="font-semibold flex items-center">
-          {isGenerating ? (
-            <span className="thinking-text flex items-center">
-              <span className="thinking-label">
-                <span className="thinking-char thinking-cap" style={{ animationDelay: '0ms' }}>T</span>
-                <span className="thinking-char" style={{ animationDelay: '100ms' }}>h</span>
-                <span className="thinking-char" style={{ animationDelay: '200ms' }}>i</span>
-                <span className="thinking-char" style={{ animationDelay: '300ms' }}>n</span>
-                <span className="thinking-char" style={{ animationDelay: '400ms' }}>k</span>
-                <span className="thinking-char" style={{ animationDelay: '500ms' }}>i</span>
-                <span className="thinking-char" style={{ animationDelay: '600ms' }}>n</span>
-                <span className="thinking-char" style={{ animationDelay: '700ms' }}>g</span>
-              </span>
+          <span className="thinking-text flex items-center">
+            <span className="thinking-label">
+              <span className="thinking-char thinking-cap" style={{ animationDelay: '0ms' }}>T</span>
+              <span className="thinking-char" style={{ animationDelay: '100ms' }}>h</span>
+              <span className="thinking-char" style={{ animationDelay: '200ms' }}>i</span>
+              <span className="thinking-char" style={{ animationDelay: '300ms' }}>n</span>
+              <span className="thinking-char" style={{ animationDelay: '400ms' }}>k</span>
+              <span className="thinking-char" style={{ animationDelay: '500ms' }}>i</span>
+              <span className="thinking-char" style={{ animationDelay: '600ms' }}>n</span>
+              <span className="thinking-char" style={{ animationDelay: '700ms' }}>g</span>
+            </span>
+            {isGenerating && (
               <span className="thinking-dots">
                 <span className="dot" style={{ animationDelay: '0ms' }}>.</span>
                 <span className="dot" style={{ animationDelay: '200ms' }}>.</span>
                 <span className="dot" style={{ animationDelay: '400ms' }}>.</span>
               </span>
-            </span>
-          ) : (
-            "Thinking"
-          )}
+            )}
+          </span>
         </span>
-        <ChevronRight className={cn("size-3 transition-transform duration-200", isOpen && "rotate-90")} />
+        {displayDuration && (
+          <span className="text-muted-foreground/60 text-[10px] ml-1 font-mono">
+            &gt; {displayDuration}
+          </span>
+        )}
       </button>
 
       <div
@@ -665,8 +776,11 @@ function ReasoningBlock({ text, isGenerating }: { text: string; isGenerating?: b
           isOpen ? "max-h-[5000px] opacity-100" : "max-h-0 opacity-0"
         )}
       >
-        <div className="pl-3 border-l border-foreground/15 text-foreground/60 leading-relaxed whitespace-pre-wrap py-1">
-          {text}
+        <div className={cn(
+          "pl-3 border-l border-foreground/15 text-foreground/70 leading-relaxed py-1",
+          isGenerating && "thinking-content-generating"
+        )}>
+          <Markdown content={text} />
         </div>
       </div>
     </div>
@@ -751,7 +865,7 @@ function MessageBubble({
       onMouseLeave={() => setShowActions(false)}
     >
       {!isUser && parsed.thinking && (
-        <ReasoningBlock text={parsed.thinking} isGenerating={isLast && streaming} />
+        <ReasoningBlock text={parsed.thinking} isGenerating={isLast && streaming && !parsed.content} duration={message.thinkingDuration} />
       )}
       {isUser ? (
         <>
@@ -1377,6 +1491,11 @@ function buildDemoThread(sessionId: string | null): ChatMessage[] {
       ? 'The user wants a full React 19 + Tauri 2 refactor. I need to assess the current codebase size, identify key pain points (like the Providers tab bug), and plan a phased migration. Starting with codebase inspection...'
       : m.role === 'assistant' && m.id === 'm3'
       ? 'Found 12 vanilla JS sections, no build step, and a hoisting bug in the Providers tab. The bug is a ReferenceError in init.js caused by loadProviderList being hoisted incorrectly — easy fix but requires careful testing since there are no unit tests.'
+      : undefined,
+    thinkingDuration: m.role === 'assistant' && m.id === 'm2'
+      ? 3.4
+      : m.role === 'assistant' && m.id === 'm3'
+      ? 1.2
       : undefined,
   }));
 }

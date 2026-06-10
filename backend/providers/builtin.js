@@ -33,6 +33,16 @@ function registerBuiltinProviders() {
   load('cline.js');
   load('custom.js');
   load('nvidia.js');
+  load('kimi-coding.js');
+  load('alibaba.js');
+  load('stepfun.js');
+  load('arcee.js');
+  load('nous.js');
+  load('gmi.js');
+  load('zai.js');
+  load('xiaomi.js');
+  load('ai-gateway.js');
+  load('ollama-cloud.js');
 
   // Register bookmarks from config as user providers
   registerBookmarkProviders();

@@ -45,6 +45,55 @@ module.exports = {
                 BLENDER_HOST: 'host.docker.internal',
                 BLENDER_PORT: '9876'
             }
+        },
+        // ── Builtin MCP Servers (disabled by default) ──
+        {
+            name: 'linear',
+            enabled: false,
+            source: 'builtin',
+            description: 'Linear project management — issues, sprints, teams',
+            command: 'npx',
+            args: ['@opencontext-inc/mcp-linear'],
+            auth: { type: 'oauth', provider: 'linear' },
+            timeoutMs: 30000
+        },
+        {
+            name: 'n8n',
+            enabled: false,
+            source: 'builtin',
+            description: 'n8n workflow automation',
+            command: 'npx',
+            args: ['@n8n/n8n-mcp-server'],
+            timeoutMs: 30000
+        },
+        {
+            name: 'github',
+            enabled: false,
+            source: 'builtin',
+            description: 'GitHub API integration — repos, PRs, issues, search',
+            command: 'npx',
+            args: ['@modelcontextprotocol/server-github'],
+            env: { GITHUB_TOKEN: '${env:GITHUB_TOKEN}' },
+            timeoutMs: 30000
+        },
+        {
+            name: 'brave-search',
+            enabled: false,
+            source: 'builtin',
+            description: 'Web search using Brave Search API',
+            command: 'npx',
+            args: ['@modelcontextprotocol/server-brave-search'],
+            env: { BRAVE_API_KEY: '${env:BRAVE_API_KEY}' },
+            timeoutMs: 30000
+        },
+        {
+            name: 'playwright',
+            enabled: false,
+            source: 'builtin',
+            description: 'Browser automation via Playwright',
+            command: 'npx',
+            args: ['@playwright/mcp'],
+            timeoutMs: 60000
         }
     ]
 };

@@ -59,6 +59,8 @@ function inferFromModelId(modelId) {
   if (KNOWN_MODELS[id]) return { ...KNOWN_MODELS[id] };
 
   // Check for known family patterns
+  if (id.includes('gemini-2.5-pro')) return { inputTokens: 2000000, outputTokens: 8192 };
+  if (id.includes('gemini-2.5-flash')) return { inputTokens: 1000000, outputTokens: 8192 };
   if (id.includes('gemini-2.0')) return { inputTokens: 1048576, outputTokens: 8192 };
   if (id.includes('gemini-1.5-pro')) return { inputTokens: 2097152, outputTokens: 8192 };
   if (id.includes('gemini-1.5-flash')) return { inputTokens: 1048576, outputTokens: 8192 };
@@ -68,7 +70,10 @@ function inferFromModelId(modelId) {
   if (id.includes('llama-3.1')) return { inputTokens: 131072, outputTokens: 8192 };
   if (id.includes('llama-3')) return { inputTokens: 8192, outputTokens: 4096 }; // llama-3 (not 3.1+)
   if (id.includes('llama3')) return { inputTokens: 8192, outputTokens: 4096 };
-  if (id.includes('deepseek')) return { inputTokens: 1048576, outputTokens: 8192 };
+  if (id.includes('deepseek-reasoner')) return { inputTokens: 64000, outputTokens: 8192 };
+  if (id.includes('deepseek-chat')) return { inputTokens: 128000, outputTokens: 8192 };
+  if (id.includes('deepseek-r1')) return { inputTokens: 128000, outputTokens: 8192 };
+  if (id.includes('deepseek')) return { inputTokens: 128000, outputTokens: 8192 };
   if (id.includes('qwen-2.5')) return { inputTokens: 131072, outputTokens: 8192 };
   if (id.includes('qwen')) return { inputTokens: 32768, outputTokens: 4096 };
   if (id.includes('mixtral')) return { inputTokens: 32768, outputTokens: 4096 };
@@ -83,8 +88,10 @@ function inferFromModelId(modelId) {
   if (id.includes('ling-')) return { inputTokens: 256000, outputTokens: 4096 };
   if (id.includes('hy3')) return { inputTokens: 256000, outputTokens: 4096 };
   if (id.includes('gpt-4o')) return { inputTokens: 128000, outputTokens: 16384 };
-  if (id.includes('gpt-4')) return { inputTokens: 8192, outputTokens: 4096 };
-  if (id.includes('claude-3')) return { inputTokens: 200000, outputTokens: 8192 };
+  if (id.includes('gpt-4')) return { inputTokens: 128000, outputTokens: 8192 };
+  if (id.includes('o1')) return { inputTokens: 200000, outputTokens: 8192 };
+  if (id.includes('o3')) return { inputTokens: 200000, outputTokens: 8192 };
+  if (id.includes('claude')) return { inputTokens: 200000, outputTokens: 8192 };
 
   // Pattern inference: look for explicit context size in name
   const contextMatch = id.match(/[-/](\d+)(k|m)\b/);

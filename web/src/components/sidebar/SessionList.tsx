@@ -3,12 +3,30 @@
 /* Middle: search, PINNED, SESSIONS (count)                                */
 /* Bottom: ⌂ + ⚙ ⏵ ⟳ + status                                  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
-import { Plus, Search, Pin, MessageSquare, Wrench, Package, Home, MoreHorizontal, Settings, Columns } from 'lucide-react';
+import { 
+  Plus, Search, Pin, MessageSquare, Wrench, Package, Home, 
+  MoreHorizontal, Settings, Columns, Folder as FolderIcon, FolderOpen, 
+  FolderPlus, ChevronRight, ChevronDown, Edit3, Trash2, Archive 
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { mockSessions, type Session } from '@/lib/mock';
-import { fadeUp, stagger, hoverScale } from '@/lib/motion';
+import { fadeUp, hoverScale } from '@/lib/motion';
+import { useStore } from '@nanostores/react';
+import { 
+  $sessions, 
+  $folders, 
+  renameSession, 
+  deleteSession, 
+  archiveSession, 
+  moveSessionToFolder, 
+  createFolder, 
+  renameFolder, 
+  deleteFolder, 
+  toggleFolderCollapse,
+  type Session, 
+  type Folder 
+} from '@/store/sessions';
 
 const SESSIONS_KEY = 'august-pinned-sessions';
 const STORAGE = (() => {
@@ -28,8 +46,12 @@ interface Props {
 export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, onNew, onNavigate }: Props) {
   const [filter, setFilter] = useState('');
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set(STORAGE));
+  const [uncategorizedCollapsed, setUncategorizedCollapsed] = useState(() => localStorage.getItem('august-uncategorized-collapsed') === '1');
 
-  const visible = mockSessions.filter((s) => !filter || s.title.toLowerCase().includes(filter.toLowerCase()));
+  const sessions = useStore($sessions);
+  const folders = useStore($folders);
+
+  const visible = sessions.filter((s) => !s.isArchived && (!filter || s.title.toLowerCase().includes(filter.toLowerCase())));
   const pinned  = visible.filter((s) => pinnedIds.has(s.id));
   const others  = visible.filter((s) => !pinnedIds.has(s.id));
 
@@ -40,10 +62,34 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
     localStorage.setItem(SESSIONS_KEY, JSON.stringify([...next]));
   };
 
+  const handleCreateFolder = () => {
+    const name = prompt('Enter folder name:');
+    if (name && name.trim()) {
+      createFolder(name.trim());
+    }
+  };
+
+  const handleRenameFolder = (id: string, currentName: string) => {
+    const name = prompt('Rename folder:', currentName);
+    if (name && name.trim() && name.trim() !== currentName) {
+      renameFolder(id, name.trim());
+    }
+  };
+
+  const handleDeleteFolder = (id: string) => {
+    if (confirm('Are you sure you want to delete this folder? All sessions inside will be moved to uncategorized.')) {
+      deleteFolder(id);
+    }
+  };
+
+  const toggleUncategorizedCollapse = () => {
+    const next = !uncategorizedCollapsed;
+    setUncategorizedCollapsed(next);
+    localStorage.setItem('august-uncategorized-collapsed', next ? '1' : '0');
+  };
+
   return (
     <div className="flex h-full text-xs relative select-none bg-sidebar">
-      {/* Absolute positioned divider line between narrow rail and second column */}
-
       {/* Left Column: Narrow Navigation Rail (always w-12 / 48px) */}
       <div className="w-12 shrink-0 flex flex-col justify-between py-2.5 bg-[#09090b]">
         {/* Top group */}
@@ -170,16 +216,11 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
           </div>
 
           {/* Scrollable sessions area */}
-          <motion.div
-            variants={stagger(0.025, 0.05)}
-            initial="initial"
-            animate="animate"
-            className="flex-1 overflow-y-auto px-2 pb-2 space-y-4"
-          >
+          <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-4">
             <Section
               title="PINNED"
               count={pinned.length}
-              empty="Shift-click a chat to pin - drag to reorder"
+              empty="Shift-click a chat to pin"
             >
               <LayoutGroup id="pinned-sessions">
                 <AnimatePresence initial={false}>
@@ -189,72 +230,308 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
                       session={s}
                       active={activeId === s.id}
                       pinned
+                      folders={folders}
                       onClick={() => onSelect(s)}
                       onTogglePin={() => togglePin(s.id)}
+                      onRename={(newTitle) => renameSession(s.id, newTitle)}
+                      onArchive={() => {
+                        archiveSession(s.id);
+                        if (activeId === s.id) {
+                          const fallback = sessions.find(x => x.id !== s.id && !x.isArchived);
+                          if (fallback) onSelect(fallback);
+                        }
+                      }}
+                      onMoveToFolder={(fId) => moveSessionToFolder(s.id, fId)}
+                      onDelete={() => {
+                        if (confirm('Are you sure you want to permanently delete this chat?')) {
+                          deleteSession(s.id);
+                          if (activeId === s.id) {
+                            const fallback = sessions.find(x => x.id !== s.id && !x.isArchived);
+                            if (fallback) onSelect(fallback);
+                          }
+                        }
+                      }}
                     />
                   ))}
                 </AnimatePresence>
               </LayoutGroup>
             </Section>
 
-            <Section title="SESSIONS" count={others.length}>
-              <LayoutGroup id="all-sessions">
-                <AnimatePresence initial={false}>
-                  {others.map((s) => (
-                    <SessionRow
-                      key={s.id}
-                      session={s}
-                      active={activeId === s.id}
-                      pinned={false}
-                      onClick={() => onSelect(s)}
-                      onTogglePin={() => togglePin(s.id)}
-                    />
-                  ))}
-                </AnimatePresence>
-              </LayoutGroup>
+            <Section 
+              title="SESSIONS" 
+              count={others.length}
+              onNewFolder={handleCreateFolder}
+            >
+              <div className="space-y-2.5">
+                {/* Collapsible Folders */}
+                {folders.map((folder) => {
+                  const folderSessions = others.filter(s => s.folderId === folder.id);
+                  const isCollapsed = folder.isCollapsed ?? false;
+                  
+                  return (
+                    <div key={folder.id} className="space-y-0.5">
+                      <FolderHeader
+                        folder={folder}
+                        count={folderSessions.length}
+                        onToggleCollapse={() => toggleFolderCollapse(folder.id)}
+                        onRename={() => handleRenameFolder(folder.id, folder.name)}
+                        onDelete={() => handleDeleteFolder(folder.id)}
+                      />
+                      
+                      {!isCollapsed && (
+                        <div className="pl-2.5 border-l border-border/10 ml-3.5 space-y-0.5">
+                          {folderSessions.map((s) => (
+                            <SessionRow
+                              key={s.id}
+                              session={s}
+                              active={activeId === s.id}
+                              pinned={false}
+                              folders={folders}
+                              onClick={() => onSelect(s)}
+                              onTogglePin={() => togglePin(s.id)}
+                              onRename={(newTitle) => renameSession(s.id, newTitle)}
+                              onArchive={() => {
+                                archiveSession(s.id);
+                                if (activeId === s.id) {
+                                  const fallback = sessions.find(x => x.id !== s.id && !x.isArchived);
+                                  if (fallback) onSelect(fallback);
+                                }
+                              }}
+                              onMoveToFolder={(fId) => moveSessionToFolder(s.id, fId)}
+                              onDelete={() => {
+                                if (confirm('Are you sure you want to permanently delete this chat?')) {
+                                  deleteSession(s.id);
+                                  if (activeId === s.id) {
+                                    const fallback = sessions.find(x => x.id !== s.id && !x.isArchived);
+                                    if (fallback) onSelect(fallback);
+                                  }
+                                }
+                              }}
+                            />
+                          ))}
+                          {folderSessions.length === 0 && (
+                            <p className="py-1 text-[10px] text-muted-foreground/30 italic pl-1.5">Empty folder</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Uncategorized Sessions (Other Chats) */}
+                {(() => {
+                  const uncategorizedSessions = others.filter(s => !s.folderId);
+                  
+                  return (
+                    <div className="space-y-0.5">
+                      <UncategorizedHeader
+                        count={uncategorizedSessions.length}
+                        isCollapsed={uncategorizedCollapsed}
+                        onToggleCollapse={toggleUncategorizedCollapse}
+                      />
+                      
+                      {!uncategorizedCollapsed && (
+                        <div className="pl-2.5 border-l border-border/10 ml-3.5 space-y-0.5">
+                          {uncategorizedSessions.map((s) => (
+                            <SessionRow
+                              key={s.id}
+                              session={s}
+                              active={activeId === s.id}
+                              pinned={false}
+                              folders={folders}
+                              onClick={() => onSelect(s)}
+                              onTogglePin={() => togglePin(s.id)}
+                              onRename={(newTitle) => renameSession(s.id, newTitle)}
+                              onArchive={() => {
+                                archiveSession(s.id);
+                                if (activeId === s.id) {
+                                  const fallback = sessions.find(x => x.id !== s.id && !x.isArchived);
+                                  if (fallback) onSelect(fallback);
+                                }
+                              }}
+                              onMoveToFolder={(fId) => moveSessionToFolder(s.id, fId)}
+                              onDelete={() => {
+                                if (confirm('Are you sure you want to permanently delete this chat?')) {
+                                  deleteSession(s.id);
+                                  if (activeId === s.id) {
+                                    const fallback = sessions.find(x => x.id !== s.id && !x.isArchived);
+                                    if (fallback) onSelect(fallback);
+                                  }
+                                }
+                              }}
+                            />
+                          ))}
+                          {uncategorizedSessions.length === 0 && (
+                            <p className="py-1 text-[10px] text-muted-foreground/30 italic pl-1.5">No other chats</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
             </Section>
-          </motion.div>
+          </div>
         </motion.div>
       )}
     </div>
   );
 }
 
-function Section({ title, count, empty, children }: { title: string; count: number; empty?: string; children?: React.ReactNode }) {
+function Section({ title, count, empty, onNewFolder, children }: { 
+  title: string; 
+  count: number; 
+  empty?: string; 
+  onNewFolder?: () => void;
+  children?: React.ReactNode 
+}) {
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5 px-2">
         <div className="flex items-center gap-1.5">
-          <h3 className="text-[9px] uppercase tracking-wider text-muted-foreground/75 font-semibold">{title}</h3>
-          <span className="text-[9px] text-muted-foreground/50 font-mono">{count}</span>
+          <h3 className="text-[9.5px] uppercase tracking-wider text-muted-foreground/75 font-bold">{title}</h3>
+          <span className="text-[9.5px] text-muted-foreground/50 font-mono">({count})</span>
         </div>
-        {title === 'SESSIONS' && (
-          <button className="text-muted-foreground/50 hover:text-foreground">
-            <Columns className="size-2.5" />
+        {title === 'SESSIONS' && onNewFolder && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); onNewFolder(); }} 
+            className="text-muted-foreground/50 hover:text-foreground p-0.5 rounded transition hover:bg-white/5"
+            title="Create Folder"
+          >
+            <FolderPlus className="size-3" />
           </button>
         )}
       </div>
-      {count === 0
-        ? <p className="px-2 py-1 text-[10px] text-muted-foreground/50 italic">{empty ?? 'No items'}</p>
+      {count === 0 && title === 'PINNED'
+        ? <p className="px-2 py-1 text-[10px] text-muted-foreground/40 italic">{empty ?? 'No items'}</p>
         : <div className="space-y-0.5">{children}</div>
       }
     </div>
   );
 }
 
-function SessionRow({ session, active, pinned, onClick, onTogglePin }: {
+function FolderHeader({ folder, count, onToggleCollapse, onRename, onDelete }: {
+  folder: Folder;
+  count: number;
+  onToggleCollapse: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  
+  return (
+    <div 
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="flex items-center justify-between py-1 px-1.5 rounded-md hover:bg-white/5 cursor-pointer group text-sidebar-foreground/80 font-medium"
+      onClick={onToggleCollapse}
+    >
+      <div className="flex items-center gap-1.5 min-w-0">
+        {folder.isCollapsed ? <ChevronRight className="size-3 text-muted-foreground/60" /> : <ChevronDown className="size-3 text-muted-foreground/60" />}
+        {folder.isCollapsed ? <FolderIcon className="size-3.5 text-muted-foreground/70 shrink-0" /> : <FolderOpen className="size-3.5 text-muted-foreground/70 shrink-0" />}
+        <span className="truncate text-[11px] font-semibold text-foreground/85">{folder.name}</span>
+        <span className="text-[9.5px] text-muted-foreground/50 font-mono">({count})</span>
+      </div>
+      
+      {isHovered && (
+        <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+          <button 
+            onClick={onRename} 
+            className="p-0.5 hover:bg-white/10 rounded text-muted-foreground hover:text-foreground"
+            title="Rename Folder"
+          >
+            <Edit3 className="size-2.5" />
+          </button>
+          <button 
+            onClick={onDelete} 
+            className="p-0.5 hover:bg-white/10 rounded text-destructive hover:text-destructive-foreground"
+            title="Delete Folder"
+          >
+            <Trash2 className="size-2.5" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UncategorizedHeader({ count, isCollapsed, onToggleCollapse }: {
+  count: number;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
+}) {
+  return (
+    <div 
+      className="flex items-center justify-between py-1 px-1.5 rounded-md hover:bg-white/5 cursor-pointer text-sidebar-foreground/80 font-medium"
+      onClick={onToggleCollapse}
+    >
+      <div className="flex items-center gap-1.5 min-w-0">
+        {isCollapsed ? <ChevronRight className="size-3 text-muted-foreground/60" /> : <ChevronDown className="size-3 text-muted-foreground/60" />}
+        <MessageSquare className="size-3.5 text-muted-foreground/70 shrink-0" />
+        <span className="truncate text-[11px] font-semibold text-foreground/85">Other Chats</span>
+        <span className="text-[9.5px] text-muted-foreground/50 font-mono">({count})</span>
+      </div>
+    </div>
+  );
+}
+
+function SessionRow({ 
+  session, active, pinned, folders, onClick, onTogglePin, onRename, onArchive, onMoveToFolder, onDelete 
+}: {
   session: Session;
   active: boolean;
   pinned: boolean;
+  folders: Folder[];
   onClick: () => void;
   onTogglePin: () => void;
+  onRename: (title: string) => void;
+  onArchive: () => void;
+  onMoveToFolder: (folderId: string | null) => void;
+  onDelete: () => void;
 }) {
+  const [showMenu, setShowMenu] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(session.title);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClose = () => setShowMenu(false);
+    window.addEventListener('click', handleClose);
+    return () => window.removeEventListener('click', handleClose);
+  }, [showMenu]);
+
+  const handleSaveRename = () => {
+    if (editTitle.trim() && editTitle.trim() !== session.title) {
+      onRename(editTitle.trim());
+    }
+    setIsEditing(false);
+  };
+
+  if (isEditing) {
+    return (
+      <div className="w-full px-2 py-1 flex items-center gap-1.5 bg-white/5 rounded-md">
+        <input
+          autoFocus
+          value={editTitle}
+          onChange={(e) => setEditTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSaveRename();
+            if (e.key === 'Escape') { setEditTitle(session.title); setIsEditing(false); }
+          }}
+          onBlur={handleSaveRename}
+          onClick={(e) => e.stopPropagation()}
+          className="bg-[#09090b] border border-border/80 px-1.5 py-0.5 rounded text-[11px] w-full outline-none text-foreground"
+        />
+      </div>
+    );
+  }
+
   return (
     <motion.div
       layout="position"
       variants={fadeUp}
       exit={{ opacity: 0, x: -4, transition: { duration: 0.12, ease: [0.16, 1, 0.3, 1] } }}
-      className={cn('group relative rounded-md', active ? 'bg-white/5' : 'hover:bg-sidebar-accent/20')}
+      className={cn('group relative rounded-md border border-transparent', active ? 'bg-white/5 border-white/5' : 'hover:bg-sidebar-accent/20')}
     >
       {active && (
         <motion.span
@@ -267,16 +544,21 @@ function SessionRow({ session, active, pinned, onClick, onTogglePin }: {
       <button
         onClick={onClick}
         onContextMenu={(e) => { e.preventDefault(); onTogglePin(); }}
-        className="relative w-full text-left px-2 py-1.5 flex items-center gap-1.5"
-        title="Shift-click to pin"
+        className="relative w-full text-left px-2 py-1.5 flex items-center gap-1.5 pr-12 min-w-0"
+        title="Right click or use three-dots menu to pin"
       >
         <span className="text-muted-foreground/60 text-[10px] shrink-0">•</span>
         {pinned && <Pin className="size-2.5 text-muted-foreground/60 shrink-0" />}
-        <p className={cn('truncate flex-1 text-[11.5px]', active ? 'text-foreground font-medium' : 'text-foreground/75')}>
+        <p className={cn('truncate flex-1 text-[11.5px]', active ? 'text-foreground font-semibold' : 'text-foreground/75')}>
           {session.title}
         </p>
       </button>
-      <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition flex items-center gap-0.5 bg-background/80 backdrop-blur rounded px-0.5">
+
+      {/* Floating kebab menu triggers */}
+      <div 
+        onClick={(e) => e.stopPropagation()} 
+        className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition flex items-center gap-0.5 bg-background/90 border border-border/30 backdrop-blur rounded px-0.5 z-40"
+      >
         <motion.button
           onClick={onTogglePin}
           whileHover={hoverScale.whileHover}
@@ -284,17 +566,91 @@ function SessionRow({ session, active, pinned, onClick, onTogglePin }: {
           className="p-0.5 hover:bg-white/10 rounded"
           aria-label={pinned ? 'Unpin' : 'Pin'}
         >
-          <Pin className={cn('size-2.5', pinned && 'text-primary')} />
+          <Pin className={cn('size-2.5 text-muted-foreground/70 hover:text-foreground', pinned && 'text-primary')} />
         </motion.button>
         <motion.button
+          onClick={() => setShowMenu(!showMenu)}
           whileHover={hoverScale.whileHover}
           whileTap={hoverScale.whileTap}
           className="p-0.5 hover:bg-white/10 rounded"
-          aria-label="More"
+          aria-label="More options"
         >
-          <MoreHorizontal className="size-2.5 text-muted-foreground" />
+          <MoreHorizontal className="size-2.5 text-muted-foreground/70 hover:text-foreground" />
         </motion.button>
       </div>
+
+      {/* Kebab action dropdown */}
+      {showMenu && (
+        <div 
+          className="absolute right-1 top-7 z-50 w-36 bg-[#18181b] border border-border/60 rounded-md shadow-2xl py-1 text-[11px] animate-in fade-in slide-in-from-top-1 duration-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button 
+            onClick={() => { onTogglePin(); setShowMenu(false); }} 
+            className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-foreground/90 transition"
+          >
+            <Pin className="size-3 text-muted-foreground" />
+            {pinned ? 'Unpin Chat' : 'Pin Chat'}
+          </button>
+          
+          <button 
+            onClick={() => { setIsEditing(true); setShowMenu(false); }} 
+            className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-foreground/90 transition"
+          >
+            <Edit3 className="size-3 text-muted-foreground" />
+            Rename Chat
+          </button>
+
+          {/* Move to folder submenu */}
+          <div className="relative group/sub">
+            <button 
+              className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center justify-between gap-1.5 text-foreground/90 transition"
+            >
+              <span className="flex items-center gap-1.5">
+                <FolderIcon className="size-3 text-muted-foreground" />
+                Move to Folder
+              </span>
+              <ChevronRight className="size-2.5 text-muted-foreground" />
+            </button>
+            <div className="absolute left-full top-0 ml-0.5 hidden group-hover/sub:block w-32 bg-[#18181b] border border-border/60 rounded-md shadow-2xl py-1 z-50 animate-in fade-in slide-in-from-left-1 duration-100">
+              <button 
+                onClick={() => { onMoveToFolder(null); setShowMenu(false); }}
+                className={cn("w-full text-left px-2.5 py-1 hover:bg-white/5 truncate transition", !session.folderId ? "text-primary font-medium" : "text-foreground/80")}
+              >
+                No Folder
+              </button>
+              {folders.map(f => (
+                <button 
+                  key={f.id}
+                  onClick={() => { onMoveToFolder(f.id); setShowMenu(false); }}
+                  className={cn("w-full text-left px-2.5 py-1 hover:bg-white/5 truncate transition", session.folderId === f.id ? "text-primary font-medium" : "text-foreground/80")}
+                  title={f.name}
+                >
+                  {f.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button 
+            onClick={() => { onArchive(); setShowMenu(false); }} 
+            className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-amber-500 hover:text-amber-400 transition"
+          >
+            <Archive className="size-3 text-amber-500/80" />
+            Archive Chat
+          </button>
+          
+          <div className="h-[1px] bg-border/40 my-1" />
+          
+          <button 
+            onClick={() => { onDelete(); setShowMenu(false); }} 
+            className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-destructive hover:text-destructive/90 transition"
+          >
+            <Trash2 className="size-3 text-destructive/80" />
+            Delete Chat
+          </button>
+        </div>
+      )}
     </motion.div>
   );
 }
