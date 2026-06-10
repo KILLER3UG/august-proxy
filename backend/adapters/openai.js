@@ -151,51 +151,76 @@ function extractUsageTokens(usage, contextLabel) {
 
 // ── Main handler for /v1/chat/completions and /v1/responses ──
 async function handleChatCompletions(req, res, cleanPath, reqId) {
-    const clientId = req.augustClientId || 'unknown';
-    let body = '';
-    let bodyComplete = false;
-    const bodyTimeout = setTimeout(() => {
-        if (bodyComplete) return;
-        bodyComplete = true;
-        captureError(reqId, 'Request body timed out before completion.');
-        endRequest(reqId, { status: 'error', model: 'unknown', error: 'Request body timeout' });
-        if (!res.headersSent) {
-            res.writeHead(408, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: { message: 'Request body timeout' } }));
-        }
-    }, 30000);
-    req.on('data', chunk => { body += chunk; });
-    req.on('error', err => {
-        if (bodyComplete) return;
-        bodyComplete = true;
-        clearTimeout(bodyTimeout);
-        captureError(reqId, err);
-        endRequest(reqId, { status: 'error', model: 'unknown', error: err.message });
-        if (!res.headersSent) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: { message: err.message } }));
-        }
-    });
-    req.on('end', async () => {
-        if (bodyComplete) return;
-        bodyComplete = true;
-        clearTimeout(bodyTimeout);
+    return new Promise((resolve) => {
+        const clientId = req.augustClientId || 'unknown';
+        let body = '';
+        let bodyComplete = false;
 
-        // ── Per-request tracking — endRequest must fire exactly once ──
-        let requestModel = 'unknown';
-        let requestStatus = 'success';
-        let requestError = null;
-        let _endCalled = false;
-        function finishRequest() {
-            if (_endCalled) return;
-            _endCalled = true;
-            endRequest(reqId, {
-                status: requestStatus,
-                model: requestModel,
-                error: requestError
-                // tokens are read automatically from requestDetails by endRequest
-            });
+        const abortCtrl = new AbortController();
+        const handleAbort = () => {
+            abortCtrl.abort();
+        };
+        req.on('close', handleAbort);
+        if (req.signal) {
+            if (req.signal.aborted) {
+                abortCtrl.abort();
+            } else {
+                req.signal.addEventListener('abort', handleAbort);
+            }
         }
+
+        const bodyTimeout = setTimeout(() => {
+            if (bodyComplete) return;
+            bodyComplete = true;
+            captureError(reqId, 'Request body timed out before completion.');
+            endRequest(reqId, { status: 'error', model: 'unknown', error: 'Request body timeout' });
+            if (!res.headersSent) {
+                res.writeHead(408, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: { message: 'Request body timeout' } }));
+            }
+            req.off('close', handleAbort);
+            if (req.signal) req.signal.removeEventListener('abort', handleAbort);
+            resolve();
+        }, 30000);
+
+        req.on('data', chunk => { body += chunk; });
+        req.on('error', err => {
+            if (bodyComplete) return;
+            bodyComplete = true;
+            clearTimeout(bodyTimeout);
+            captureError(reqId, err);
+            endRequest(reqId, { status: 'error', model: 'unknown', error: err.message });
+            if (!res.headersSent) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: { message: err.message } }));
+            }
+            req.off('close', handleAbort);
+            if (req.signal) req.signal.removeEventListener('abort', handleAbort);
+            resolve();
+        });
+
+        req.on('end', async () => {
+            if (bodyComplete) return;
+            bodyComplete = true;
+            clearTimeout(bodyTimeout);
+
+            // ── Per-request tracking — endRequest must fire exactly once ──
+            let requestModel = 'unknown';
+            let requestStatus = 'success';
+            let requestError = null;
+            let _endCalled = false;
+            function finishRequest() {
+                if (_endCalled) return;
+                _endCalled = true;
+                req.off('close', handleAbort);
+                if (req.signal) req.signal.removeEventListener('abort', handleAbort);
+                endRequest(reqId, {
+                    status: requestStatus,
+                    model: requestModel,
+                    error: requestError
+                });
+                resolve();
+            }
 
         try {
             console.log(`[Proxy Body]: ${cleanPath} (${body.length} bytes)`);
@@ -396,6 +421,10 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             const maxAttempts = 3;
             while (attempts < maxAttempts) {
                 attempts++;
+                const fetchSignal = typeof AbortSignal.any === 'function'
+                    ? AbortSignal.any([abortCtrl.signal, AbortSignal.timeout(300000)])
+                    : abortCtrl.signal;
+
                 response = await fetch(cfg.targetUrl, {
                     method: 'POST',
                     headers: {
@@ -403,7 +432,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                         'Authorization': `Bearer ${cfg.apiKey}`
                     },
                     body: JSON.stringify(oReq),
-                    signal: AbortSignal.timeout(300000)
+                    signal: fetchSignal
                 });
                 if (!isRetryableStatus(response.status) || attempts >= maxAttempts) {
                     break;
@@ -426,13 +455,15 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                         requestError = buildFriendlyRateLimitMessage(response.status, rawBody, attempts);
                     }
                     res.writeHead(response.status, { 'Content-Type': 'application/json' });
-                    return res.end(response.status === 429 ? JSON.stringify({
+                    res.end(response.status === 429 ? JSON.stringify({
                         type: 'error',
                         error: {
                             type: 'rate_limit_error',
                             message: requestError
                         }
                     }) : rawBody);
+                    finishRequest();
+                    return;
                 }
                 try {
                     const standardData = upstreamIsStream ? parseSSEToJSON(rawBody) : JSON.parse(rawBody);
@@ -584,68 +615,65 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 } else {
                     const reader = response.body.getReader();
                     let accumulatedText = '';
-                    (async () => {
-                        try {
-                            while (true) {
-                                const { done, value } = await reader.read();
-                                if (done) break;
-                                const chunk = Buffer.from(value);
-                                accumulatedText += chunk.toString();
-                                res.write(chunk);
-                            }
-                            // Stream ended — check for managed tool calls
-                            try {
-                                const parsed = parseSSEToJSON(accumulatedText);
-                                captureResponse(reqId, parsed);
-                                const inTok  = parsed.usage?.prompt_tokens     || parsed.usage?.input_tokens     || 0;
-                                const outTok = parsed.usage?.completion_tokens || parsed.usage?.output_tokens || 0;
-                                captureTokens(reqId, inTok, outTok);
-
-                                const upstreamMsg = parsed.choices?.[0]?.message;
-                                const hasManagedTools = upstreamMsg?.tool_calls?.length > 0 &&
-                                    managedLocalToolNames.size > 0 &&
-                                    upstreamMsg.tool_calls.some(tc => managedLocalToolNames.has(tc.function?.name));
-
-                                if (hasManagedTools) {
-                                    // Already forwarded raw SSE — but some SSE may contain tool_calls.
-                                    // Resolve and re-stream the final answer.
-                                    const resolved = await resolveManagedOpenAiToolCalls(parsed, oReq, cfg, clientToolNames, req.workspacePath, (evt) => {
-                                        try { res.write(`data: ${JSON.stringify(evt)}\n\n`); } catch (e) {}
-                                    });
-                                    const resolvedMsg = resolved.choices?.[0]?.message;
-                                    const resolvedDelta = {
-                                        role: resolvedMsg?.role || 'assistant',
-                                        content: resolvedMsg?.content || ''
-                                    };
-                                    if (resolvedMsg?.reasoning) resolvedDelta.reasoning = resolvedMsg.reasoning;
-                                    if (resolvedMsg?.reasoning_content) resolvedDelta.reasoning_content = resolvedMsg.reasoning_content;
-                                    const resolvedChunk = {
-                                        id: resolved.id || parsed.id || 'chatcmpl-' + Math.random().toString(36).substr(2, 9),
-                                        object: 'chat.completion.chunk',
-                                        created: resolved.created || parsed.created || Math.floor(Date.now() / 1000),
-                                        model: requestModel,
-                                        choices: [{
-                                            index: 0,
-                                            delta: resolvedDelta,
-                                            finish_reason: resolved.choices?.[0]?.finish_reason || 'stop'
-                                        }]
-                                    };
-                                    res.write(`data: ${JSON.stringify(resolvedChunk)}\n\n`);
-                                }
-                            } catch (e) {
-                                console.warn('[Proxy SSE Parse Warning]: Failed to reconstruct OpenAI response for capture:', e.message);
-                            }
-                            res.end();
-                            finishRequest();
-                        } catch (err) {
-                            console.error('[Proxy Stream Error]:', err);
-                            requestStatus = 'error';
-                            requestError = err.message;
-                            res.end();
-                            finishRequest();
+                    try {
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            const chunk = Buffer.from(value);
+                            accumulatedText += chunk.toString();
+                            res.write(chunk);
                         }
-                    })();
-                    return; // finishRequest is called inside the async IIFE
+                        // Stream ended — check for managed tool calls
+                        try {
+                            const parsed = parseSSEToJSON(accumulatedText);
+                            captureResponse(reqId, parsed);
+                            const inTok  = parsed.usage?.prompt_tokens     || parsed.usage?.input_tokens     || 0;
+                            const outTok = parsed.usage?.completion_tokens || parsed.usage?.output_tokens || 0;
+                            captureTokens(reqId, inTok, outTok);
+
+                            const upstreamMsg = parsed.choices?.[0]?.message;
+                            const hasManagedTools = upstreamMsg?.tool_calls?.length > 0 &&
+                                managedLocalToolNames.size > 0 &&
+                                upstreamMsg.tool_calls.some(tc => managedLocalToolNames.has(tc.function?.name));
+
+                            if (hasManagedTools) {
+                                // Already forwarded raw SSE — but some SSE may contain tool_calls.
+                                // Resolve and re-stream the final answer.
+                                const resolved = await resolveManagedOpenAiToolCalls(parsed, oReq, cfg, clientToolNames, req.workspacePath, (evt) => {
+                                    try { res.write(`data: ${JSON.stringify(evt)}\n\n`); } catch (e) {}
+                                }, abortCtrl.signal);
+                                const resolvedMsg = resolved.choices?.[0]?.message;
+                                const resolvedDelta = {
+                                    role: resolvedMsg?.role || 'assistant',
+                                    content: resolvedMsg?.content || ''
+                                };
+                                if (resolvedMsg?.reasoning) resolvedDelta.reasoning = resolvedMsg.reasoning;
+                                if (resolvedMsg?.reasoning_content) resolvedDelta.reasoning_content = resolvedMsg.reasoning_content;
+                                const resolvedChunk = {
+                                    id: resolved.id || parsed.id || 'chatcmpl-' + Math.random().toString(36).substr(2, 9),
+                                    object: 'chat.completion.chunk',
+                                    created: resolved.created || parsed.created || Math.floor(Date.now() / 1000),
+                                    model: requestModel,
+                                    choices: [{
+                                        index: 0,
+                                        delta: resolvedDelta,
+                                        finish_reason: resolved.choices?.[0]?.finish_reason || 'stop'
+                                    }]
+                                };
+                                res.write(`data: ${JSON.stringify(resolvedChunk)}\n\n`);
+                            }
+                        } catch (e) {
+                            console.warn('[Proxy SSE Parse Warning]: Failed to reconstruct OpenAI response for capture:', e.message);
+                        }
+                        res.end();
+                        finishRequest();
+                    } catch (err) {
+                        console.error('[Proxy Stream Error]:', err);
+                        requestStatus = 'error';
+                        requestError = err.message;
+                        res.end();
+                        finishRequest();
+                    }
                 }
             } else if (!upstreamIsStream && clientWantsStream) {
                 // Provider returned JSON but client expects SSE (Codex)
@@ -658,6 +686,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                     res.writeHead(response.status, { 'Content-Type': 'text/event-stream' });
                     res.write(`data: ${JSON.stringify({ type: 'error', error: { message: requestError } })}\n\n`);
                     res.end();
+                    finishRequest();
                     return;
                 }
                 try {
@@ -676,7 +705,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                     if (hasManagedTools) {
                         const resolved = await resolveManagedOpenAiToolCalls(data, oReq, cfg, clientToolNames, req.workspacePath, (evt) => {
                             try { res.write(`data: ${JSON.stringify(evt)}\n\n`); } catch (e) {}
-                        });
+                        }, abortCtrl.signal);
                         const resolvedMsg = resolved.choices?.[0]?.message;
                         const resolvedDelta = {
                             role: resolvedMsg?.role || 'assistant',
@@ -773,7 +802,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 try {
                     let parsed = JSON.parse(rawBody);
                     if (managedLocalToolNames.size > 0) {
-                        parsed = await resolveManagedOpenAiToolCalls(parsed, oReq, cfg, clientToolNames, req.workspacePath);
+                        parsed = await resolveManagedOpenAiToolCalls(parsed, oReq, cfg, clientToolNames, req.workspacePath, null, abortCtrl.signal);
                     }
                     captureResponse(reqId, parsed);
                     const { inputTokens: inTok, outputTokens: outTok } = extractUsageTokens(parsed.usage, 'JSON passthrough');
@@ -804,6 +833,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             finishRequest(); // no-op if already called by streaming path
         }
     });
+  });
 }
 
 function isOpenAiToolResultError(content) {
@@ -859,7 +889,7 @@ async function fallbackClientFailedToolsOpenAi(oReq) {
 }
 
 // ── Helper to resolve managed tools recursively (up to 4 attempts) ──
-async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToolNames, workspacePath = null, onToolEvent = null) {
+async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToolNames, workspacePath = null, onToolEvent = null, parentSignal = null) {
     let parsed = initialParsed;
     const requestPayload = {
         ...oReq,
@@ -867,6 +897,10 @@ async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToo
     };
 
     for (let attempt = 0; attempt < 4; attempt++) {
+        if (parentSignal && parentSignal.aborted) {
+            throw new Error('Request aborted by client');
+        }
+
         const choice = parsed.choices?.[0];
         const msg = choice?.message;
         const toolCalls = msg?.tool_calls || [];
@@ -891,6 +925,10 @@ async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToo
         const toolResults = await executeManagedOpenAiToolCalls(managedToolCalls, requestPayload.tools, requestPayload.messages, workspacePath, onToolEvent);
         toolResults.forEach(res => requestPayload.messages.push(res));
 
+        const fetchSignal = parentSignal
+            ? (typeof AbortSignal.any === 'function' ? AbortSignal.any([parentSignal, AbortSignal.timeout(300000)]) : parentSignal)
+            : AbortSignal.timeout(300000);
+
         const response = await fetch(cfg.targetUrl, {
             method: 'POST',
             headers: {
@@ -898,7 +936,7 @@ async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToo
                 'Authorization': `Bearer ${cfg.apiKey}`
             },
             body: JSON.stringify(requestPayload),
-            signal: AbortSignal.timeout(300000)
+            signal: fetchSignal
         });
 
         const rawBody = await response.text();

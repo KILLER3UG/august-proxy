@@ -14,11 +14,20 @@ class WebSocketMockResponse {
         this.requestId = requestId;
         this.signal = signal;
         this.headersSent = false;
+        this.statusCode = 200;
+        this.isEventStream = false;
         this.buffer = '';
     }
 
     writeHead(statusCode, headers) {
         this.headersSent = true;
+        this.statusCode = statusCode;
+        if (headers) {
+            const contentTypeKey = Object.keys(headers).find(k => k.toLowerCase() === 'content-type');
+            if (contentTypeKey) {
+                this.isEventStream = headers[contentTypeKey].includes('text/event-stream');
+            }
+        }
     }
 
     write(chunk) {
@@ -26,6 +35,11 @@ class WebSocketMockResponse {
             throw new Error('Request aborted by client');
         }
         if (this.ws.readyState !== 1 /* OPEN */) return;
+
+        if (this.statusCode >= 400 && !this.isEventStream) {
+            this.buffer += chunk.toString();
+            return;
+        }
 
         this.buffer += chunk.toString();
         
@@ -53,23 +67,47 @@ class WebSocketMockResponse {
     }
 
     end(chunk) {
-        if (chunk) this.write(chunk);
-        
-        const line = this.buffer.trim();
-        if (line && line.startsWith('data:')) {
-            const dataStr = line.slice(5).trim();
-            if (dataStr !== '[DONE]') {
-                try {
-                    const parsed = JSON.parse(dataStr);
-                    this.ws.send(JSON.stringify({ ...parsed, requestId: this.requestId }));
-                } catch {
-                    this.ws.send(JSON.stringify({ type: 'text', requestId: this.requestId, content: dataStr }));
-                }
+        if (chunk) {
+            if (this.statusCode >= 400 && !this.isEventStream) {
+                this.buffer += chunk.toString();
+            } else {
+                this.write(chunk);
             }
         }
+        
+        if (this.statusCode >= 400 && !this.isEventStream) {
+            const body = this.buffer.trim();
+            let errorMessage = body;
+            if (body) {
+                try {
+                    const parsed = JSON.parse(body);
+                    errorMessage = parsed.error?.message || parsed.message || parsed.error || body;
+                } catch (e) {
+                    // Keep raw body
+                }
+            } else {
+                errorMessage = `Upstream Error: status code ${this.statusCode}`;
+            }
+            if (this.ws.readyState === 1 /* OPEN */) {
+                this.ws.send(JSON.stringify({ type: 'error', requestId: this.requestId, message: errorMessage }));
+            }
+        } else {
+            const line = this.buffer.trim();
+            if (line && line.startsWith('data:')) {
+                const dataStr = line.slice(5).trim();
+                if (dataStr !== '[DONE]') {
+                    try {
+                        const parsed = JSON.parse(dataStr);
+                        this.ws.send(JSON.stringify({ ...parsed, requestId: this.requestId }));
+                    } catch {
+                        this.ws.send(JSON.stringify({ type: 'text', requestId: this.requestId, content: dataStr }));
+                    }
+                }
+            }
 
-        if (this.ws.readyState === 1 /* OPEN */) {
-            this.ws.send(JSON.stringify({ type: 'done', requestId: this.requestId }));
+            if (this.ws.readyState === 1 /* OPEN */) {
+                this.ws.send(JSON.stringify({ type: 'done', requestId: this.requestId }));
+            }
         }
     }
 }

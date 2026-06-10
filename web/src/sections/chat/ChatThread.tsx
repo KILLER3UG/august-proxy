@@ -403,6 +403,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   break;
                 case 'error':
                   console.error('[WS] Chat error:', parsed.message);
+                  assistantContent += `\n\n⚠️ Error: ${parsed.message || 'Unknown error'}`;
+                  done = true;
                   break;
                 default:
                   // Some adapters send the raw field directly
@@ -448,7 +450,23 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             }
             if (!done) {
               // Premature close without 'done' — try reconnect
-              resolve({ success: false, aborted: abortController.signal.aborted });
+              // Check if we have received any content. If so, do not retry or fallback, just show partial and complete.
+              const hasContent = assistantContent.trim() !== '' ||
+                                 thinkingContent.trim() !== '' ||
+                                 (toolResults && toolResults.length > 0);
+              if (hasContent) {
+                assistantContent += '\n\n[Connection lost. Showing partial response.]';
+                setMessages(prev => prev.map(msg =>
+                  msg.id === assistantMsgId ? {
+                    ...msg,
+                    content: assistantContent
+                  } : msg
+                ));
+                // Resolve success: true to prevent retry loop and fallback
+                resolve({ success: true, aborted: false });
+              } else {
+                resolve({ success: false, aborted: abortController.signal.aborted });
+              }
             }
           };
 
@@ -1202,10 +1220,10 @@ function MessageBubble({
       onMouseLeave={() => setShowActions(false)}
     >
       {!isUser && displayedThinking && (
-        <ReasoningBlock 
-          text={displayedThinking} 
-          isGenerating={isLast && (!animationDone || streaming)} 
-          duration={message.thinkingDuration} 
+        <ReasoningBlock
+          text={displayedThinking}
+          isGenerating={isLast && (!animationDone || streaming)}
+          duration={message.thinkingDuration}
         />
       )}
       {!isUser && message.clarify && !message.clarify.answer && onClarifyAnswer && (

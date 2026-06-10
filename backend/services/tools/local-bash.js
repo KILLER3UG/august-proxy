@@ -68,7 +68,7 @@ function getManagedBashToolDefinitions() {
   ];
 }
 
-async function executeManagedBashTool(toolName, args, workspacePath = null) {
+async function executeManagedBashTool(toolName, args, workspacePath = null, onProgress = null) {
   const localName = normalizeBashToolName(toolName);
   if (localName !== 'bash') {
     throw new Error(`Unknown bash tool: ${toolName}`);
@@ -112,6 +112,19 @@ async function executeManagedBashTool(toolName, args, workspacePath = null) {
       }
       resolve(result);
     });
+
+    if (onProgress) {
+      if (child.stdout) {
+        child.stdout.on('data', (data) => {
+          onProgress(data.toString());
+        });
+      }
+      if (child.stderr) {
+        child.stderr.on('data', (data) => {
+          onProgress(data.toString());
+        });
+      }
+    }
   });
 }
 

@@ -493,7 +493,7 @@ function formatManagedToolResult(toolName, result) {
     return JSON.stringify(result);
 }
 
-async function executeManagedProxyTool(toolName, args, workspacePath = null) {
+async function executeManagedProxyTool(toolName, args, workspacePath = null, onProgress = null) {
     if (isManagedWebToolName(toolName)) {
         const localName = getManagedWebLocalToolName(toolName);
         logActivity('WEB', `${toolName} executed locally`);
@@ -509,7 +509,7 @@ async function executeManagedProxyTool(toolName, args, workspacePath = null) {
     }
     if (isManagedBashToolName(toolName)) {
         logActivity('BASH', `${toolName} executed locally`);
-        return executeManagedBashTool(toolName, args || {}, workspacePath);
+        return executeManagedBashTool(toolName, args || {}, workspacePath, onProgress);
     }
     if (isMcpToolName(toolName)) {
         return executeMcpToolCall(toolName, args || {});
@@ -548,7 +548,16 @@ async function executeManagedOpenAiToolCalls(toolCalls, knownTools, messages, wo
 
         const startTime = Date.now();
         try {
-            const result = await executeManagedProxyTool(toolName, parsedArgs, workspacePath);
+            const result = await executeManagedProxyTool(toolName, parsedArgs, workspacePath, (progressText) => {
+                if (onToolEvent) {
+                    onToolEvent({
+                        type: 'tool_progress',
+                        name: toolName,
+                        id: tc.id,
+                        preview: progressText
+                    });
+                }
+            });
             const duration = Date.now() - startTime;
             if (onToolEvent) onToolEvent({ type: 'tool_result', name: toolName, id: tc.id, summary: String(result).substring(0, 2000), status: 'done', duration });
             return {
