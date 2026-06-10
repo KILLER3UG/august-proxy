@@ -300,15 +300,12 @@ textarea:focus, input:focus, div:focus-within {
 .markdown-content code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.85em;
-  background-color: var(--dt-muted);
+  background-color: rgba(100, 150, 255, 0.06);
   padding: 0.125rem 0.25rem;
   border-radius: 0.25rem;
-  border: 1px solid rgba(226, 232, 240, 0.1);
-  color: #f59e0b; /* amber-500 equivalent */
+  border: 1px solid rgba(100, 150, 255, 0.12);
+  color: #a8c4ff;
   font-weight: 500;
-}
-.dark .markdown-content code {
-  border-color: rgba(30, 30, 33, 0.5);
 }
 
 .markdown-content pre {

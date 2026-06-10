@@ -68,7 +68,7 @@ function getManagedBashToolDefinitions() {
   ];
 }
 
-async function executeManagedBashTool(toolName, args, workspacePath = null, onProgress = null) {
+async function executeManagedBashTool(toolName, args, workspacePath = null, onProgress = null, parentSignal = null) {
   const localName = normalizeBashToolName(toolName);
   if (localName !== 'bash') {
     throw new Error(`Unknown bash tool: ${toolName}`);
@@ -93,6 +93,28 @@ async function executeManagedBashTool(toolName, args, workspacePath = null, onPr
   );
 
   return new Promise((resolve) => {
+    let resolved = false;
+    const safeResolve = (val) => {
+      if (resolved) return;
+      resolved = true;
+      if (parentSignal) {
+        parentSignal.removeEventListener('abort', onAbort);
+      }
+      resolve(val);
+    };
+
+    const onAbort = () => {
+      try {
+        child.kill('SIGINT');
+      } catch (e) {}
+      safeResolve({ stdout: '', stderr: 'Command aborted by user.', exitCode: 130 });
+    };
+
+    if (parentSignal && parentSignal.aborted) {
+      safeResolve({ stdout: '', stderr: 'Command aborted by user.', exitCode: 130 });
+      return;
+    }
+
     const child = exec(command, {
       cwd: workspacePath || '/app',
       timeout: timeoutMs,
@@ -110,8 +132,12 @@ async function executeManagedBashTool(toolName, args, workspacePath = null, onPr
       if (stderr && stderr.length > MAX_OUTPUT_CHARS) {
         result.stderr += '\n... (output truncated)';
       }
-      resolve(result);
+      safeResolve(result);
     });
+
+    if (parentSignal) {
+      parentSignal.addEventListener('abort', onAbort);
+    }
 
     if (onProgress) {
       if (child.stdout) {

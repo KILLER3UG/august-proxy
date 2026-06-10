@@ -160,7 +160,13 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
         const handleAbort = () => {
             abortCtrl.abort();
         };
-        req.on('close', handleAbort);
+        // Only wire 'close' on a real HTTP req. The WS fakeReq is a one-shot
+        // Readable.from([...]) that emits 'close' immediately after the body
+        // chunk is consumed — long before the upstream fetch completes. When a
+        // proper req.signal is supplied, we rely solely on that for abort.
+        if (!req.signal) {
+            req.on('close', handleAbort);
+        }
         if (req.signal) {
             if (req.signal.aborted) {
                 abortCtrl.abort();
@@ -222,7 +228,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 resolve();
             }
 
-        try {
+            try {
             console.log(`[Proxy Body]: ${cleanPath} (${body.length} bytes)`);
 
             const cfg = getOpenAiCompatibleProfile();
@@ -421,19 +427,27 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             const maxAttempts = 3;
             while (attempts < maxAttempts) {
                 attempts++;
-                const fetchSignal = typeof AbortSignal.any === 'function'
-                    ? AbortSignal.any([abortCtrl.signal, AbortSignal.timeout(300000)])
-                    : abortCtrl.signal;
+                let fetchSignal = abortCtrl.signal;
+                let timeoutId = null;
+                if (typeof AbortSignal.any === 'function') {
+                    fetchSignal = AbortSignal.any([abortCtrl.signal, AbortSignal.timeout(300000)]);
+                } else {
+                    timeoutId = setTimeout(() => abortCtrl.abort(), 300000);
+                }
 
-                response = await fetch(cfg.targetUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${cfg.apiKey}`
-                    },
-                    body: JSON.stringify(oReq),
-                    signal: fetchSignal
-                });
+                try {
+                    response = await fetch(cfg.targetUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${cfg.apiKey}`
+                        },
+                        body: JSON.stringify(oReq),
+                        signal: fetchSignal
+                    });
+                } finally {
+                    if (timeoutId) clearTimeout(timeoutId);
+                }
                 if (!isRetryableStatus(response.status) || attempts >= maxAttempts) {
                     break;
                 }
@@ -822,18 +836,18 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 res.writeHead(response.status, { 'Content-Type': 'application/json' });
                 res.end(rawBody);
             }
-        } catch (e) {
-            requestStatus = 'error';
-            requestError = e.message;
-            console.error('OpenAI Adapter Error:', e);
-            captureError(reqId, e);
-            if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: { message: 'Proxy Error: ' + e.message } }));
-        } finally {
-            finishRequest(); // no-op if already called by streaming path
-        }
+            } catch (e) {
+                requestStatus = 'error';
+                requestError = e.message;
+                console.error('OpenAI Adapter Error:', e);
+                captureError(reqId, e);
+                if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: { message: 'Proxy Error: ' + e.message } }));
+            } finally {
+                finishRequest(); // no-op if already called by streaming path
+            }
+        });
     });
-  });
 }
 
 function isOpenAiToolResultError(content) {
@@ -922,22 +936,38 @@ async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToo
             tool_calls: toolCalls
         });
 
-        const toolResults = await executeManagedOpenAiToolCalls(managedToolCalls, requestPayload.tools, requestPayload.messages, workspacePath, onToolEvent);
+        const toolResults = await executeManagedOpenAiToolCalls(managedToolCalls, requestPayload.tools, requestPayload.messages, workspacePath, onToolEvent, parentSignal);
         toolResults.forEach(res => requestPayload.messages.push(res));
 
-        const fetchSignal = parentSignal
-            ? (typeof AbortSignal.any === 'function' ? AbortSignal.any([parentSignal, AbortSignal.timeout(300000)]) : parentSignal)
-            : AbortSignal.timeout(300000);
+        const localAbortCtrl = new AbortController();
+        const onParentAbort = () => localAbortCtrl.abort();
+        if (parentSignal) {
+            if (parentSignal.aborted) {
+                throw new Error('Request aborted by client');
+            }
+            parentSignal.addEventListener('abort', onParentAbort);
+        }
+        const timeoutId = setTimeout(() => {
+            localAbortCtrl.abort();
+        }, 300000);
 
-        const response = await fetch(cfg.targetUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${cfg.apiKey}`
-            },
-            body: JSON.stringify(requestPayload),
-            signal: fetchSignal
-        });
+        let response;
+        try {
+            response = await fetch(cfg.targetUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${cfg.apiKey}`
+                },
+                body: JSON.stringify(requestPayload),
+                signal: localAbortCtrl.signal
+            });
+        } finally {
+            clearTimeout(timeoutId);
+            if (parentSignal) {
+                parentSignal.removeEventListener('abort', onParentAbort);
+            }
+        }
 
         const rawBody = await response.text();
         if (!response.ok) {

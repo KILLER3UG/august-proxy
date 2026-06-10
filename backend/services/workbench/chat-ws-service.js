@@ -3,6 +3,18 @@ const openaiAdapter = require('../../adapters/openai');
 const { getProviderConfig, getActiveProvider, saveProfile } = require('../../lib/config');
 const { startRequest, endRequest } = require('../../lib/logger');
 
+/* ── safeSend ───────────────────────────────────────────────────────────
+ * Safely sends a JSON string payload to a WebSocket client. Wraps ws.send
+ * in a try-catch to ignore closed sockets.                               */
+function safeSend(ws, payload) {
+    if (ws.readyState !== 1 /* OPEN */) return;
+    try {
+        ws.send(typeof payload === 'string' ? payload : JSON.stringify(payload));
+    } catch (e) {
+        // Socket closed or write failed mid-send - ignore
+    }
+}
+
 /* ── WebSocketMockResponse ───────────────────────────────────────────────
  * Mimics the HTTP response interface (writeHead / write / end) so existing
  * adapter functions (openai.js, anthropic.js) can stream over a WebSocket
@@ -53,14 +65,14 @@ class WebSocketMockResponse {
             if (line.startsWith('data:')) {
                 const dataStr = line.slice(5).trim();
                 if (dataStr === '[DONE]') {
-                    this.ws.send(JSON.stringify({ type: 'done', requestId: this.requestId }));
+                    safeSend(this.ws, { type: 'done', requestId: this.requestId });
                     continue;
                 }
                 try {
                     const parsed = JSON.parse(dataStr);
-                    this.ws.send(JSON.stringify({ ...parsed, requestId: this.requestId }));
+                    safeSend(this.ws, { ...parsed, requestId: this.requestId });
                 } catch {
-                    this.ws.send(JSON.stringify({ type: 'text', requestId: this.requestId, content: dataStr }));
+                    safeSend(this.ws, { type: 'text', requestId: this.requestId, content: dataStr });
                 }
             }
         }
@@ -88,9 +100,7 @@ class WebSocketMockResponse {
             } else {
                 errorMessage = `Upstream Error: status code ${this.statusCode}`;
             }
-            if (this.ws.readyState === 1 /* OPEN */) {
-                this.ws.send(JSON.stringify({ type: 'error', requestId: this.requestId, message: errorMessage }));
-            }
+            safeSend(this.ws, { type: 'error', requestId: this.requestId, message: errorMessage });
         } else {
             const line = this.buffer.trim();
             if (line && line.startsWith('data:')) {
@@ -98,16 +108,14 @@ class WebSocketMockResponse {
                 if (dataStr !== '[DONE]') {
                     try {
                         const parsed = JSON.parse(dataStr);
-                        this.ws.send(JSON.stringify({ ...parsed, requestId: this.requestId }));
+                        safeSend(this.ws, { ...parsed, requestId: this.requestId });
                     } catch {
-                        this.ws.send(JSON.stringify({ type: 'text', requestId: this.requestId, content: dataStr }));
+                        safeSend(this.ws, { type: 'text', requestId: this.requestId, content: dataStr });
                     }
                 }
             }
 
-            if (this.ws.readyState === 1 /* OPEN */) {
-                this.ws.send(JSON.stringify({ type: 'done', requestId: this.requestId }));
-            }
+            safeSend(this.ws, { type: 'done', requestId: this.requestId });
         }
     }
 }
@@ -117,15 +125,10 @@ class WebSocketMockResponse {
  * Manages keepalive, message dispatch, and lifecycle for one WS client.  */
 function handleChatConnection(ws) {
     let abortController = null;
-    let currentRequestId = null;
 
     // ── Keepalive ping every 30s ──
     const pingInterval = setInterval(() => {
-        if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'ping' }));
-        } else {
-            clearInterval(pingInterval);
-        }
+        safeSend(ws, { type: 'ping' });
     }, 30000);
 
     ws.on('message', async (data) => {
@@ -141,21 +144,20 @@ function handleChatConnection(ws) {
 
                 const { requestId, payload } = msg;
                 if (!requestId || !payload) {
-                    ws.send(JSON.stringify({ type: 'error', requestId, message: 'requestId and payload required' }));
+                    safeSend(ws, { type: 'error', requestId, message: 'requestId and payload required' });
                     return;
                 }
 
-                currentRequestId = requestId;
                 abortController = new AbortController();
 
                 const { model, messages, provider, effort, workspacePath } = payload;
 
                 if (!model) {
-                    ws.send(JSON.stringify({ type: 'error', requestId, message: 'model is required' }));
+                    safeSend(ws, { type: 'error', requestId, message: 'model is required' });
                     return;
                 }
                 if (!messages || !Array.isArray(messages)) {
-                    ws.send(JSON.stringify({ type: 'error', requestId, message: 'messages array is required' }));
+                    safeSend(ws, { type: 'error', requestId, message: 'messages array is required' });
                     return;
                 }
 
@@ -202,7 +204,7 @@ function handleChatConnection(ws) {
                 const baseUrl = pConfig.baseUrl || resolvedProvider.resolveBaseUrl();
 
                 if (!apiKey) {
-                    ws.send(JSON.stringify({ type: 'error', requestId, message: `API Key for provider '${resolvedProvider.displayName}' is not configured.` }));
+                    safeSend(ws, { type: 'error', requestId, message: `API Key for provider '${resolvedProvider.displayName}' is not configured.` });
                     return;
                 }
 
@@ -238,9 +240,7 @@ function handleChatConnection(ws) {
                 } catch (e) {
                     if (e.name === 'AbortError') return; // intentional cancellation
                     console.error('[ChatWS] Error:', e.message);
-                    if (ws.readyState === 1) {
-                        ws.send(JSON.stringify({ type: 'error', requestId, message: e.message }));
-                    }
+                    safeSend(ws, { type: 'error', requestId, message: e.message });
                 } finally {
                     endRequest(reqId);
                 }

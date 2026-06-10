@@ -493,7 +493,7 @@ function formatManagedToolResult(toolName, result) {
     return JSON.stringify(result);
 }
 
-async function executeManagedProxyTool(toolName, args, workspacePath = null, onProgress = null) {
+async function executeManagedProxyTool(toolName, args, workspacePath = null, onProgress = null, parentSignal = null) {
     if (isManagedWebToolName(toolName)) {
         const localName = getManagedWebLocalToolName(toolName);
         logActivity('WEB', `${toolName} executed locally`);
@@ -509,7 +509,7 @@ async function executeManagedProxyTool(toolName, args, workspacePath = null, onP
     }
     if (isManagedBashToolName(toolName)) {
         logActivity('BASH', `${toolName} executed locally`);
-        return executeManagedBashTool(toolName, args || {}, workspacePath, onProgress);
+        return executeManagedBashTool(toolName, args || {}, workspacePath, onProgress, parentSignal);
     }
     if (isMcpToolName(toolName)) {
         return executeMcpToolCall(toolName, args || {});
@@ -517,7 +517,7 @@ async function executeManagedProxyTool(toolName, args, workspacePath = null, onP
     throw new Error(`Unsupported managed proxy tool: ${toolName}`);
 }
 
-async function executeManagedOpenAiToolCalls(toolCalls, knownTools, messages, workspacePath = null, onToolEvent = null) {
+async function executeManagedOpenAiToolCalls(toolCalls, knownTools, messages, workspacePath = null, onToolEvent = null, parentSignal = null) {
     const executeOne = async (tc) => {
         const toolName = tc.function?.name;
         if (!toolName) {
@@ -557,7 +557,7 @@ async function executeManagedOpenAiToolCalls(toolCalls, knownTools, messages, wo
                         preview: progressText
                     });
                 }
-            });
+            }, parentSignal);
             const duration = Date.now() - startTime;
             if (onToolEvent) onToolEvent({ type: 'tool_result', name: toolName, id: tc.id, summary: String(result).substring(0, 2000), status: 'done', duration });
             return {
