@@ -167,7 +167,13 @@ function zodTypeToJson(field) {
 
 function register(opts) {
   if (_tools.has(opts.name)) {
-    throw new Error(`Tool "${opts.name}" is already registered. Use override=true to replace.`);
+    if (opts.override) {
+      _tools.delete(opts.name);
+      const ts = _toolsets.get(opts.toolset);
+      if (ts) ts.delete(opts.name);
+    } else {
+      throw new Error(`Tool "${opts.name}" is already registered. Use override=true to replace.`);
+    }
   }
   const entry = new ToolEntry(opts);
   _tools.set(opts.name, entry);

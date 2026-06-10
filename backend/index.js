@@ -43,6 +43,10 @@ const toolRegistry = require('./services/tools/tool-registry');
 const mcpOAuth = require('./services/tools/mcp-oauth');
 const { startCronScheduler, readCronJobs, createCronJobHandler, removeCronJobHandler, runCronJobNowHandler } = require('./services/tools/missing/cron-tools');
 const { registerMissingTools } = require('./services/tools/missing/index');
+const { registerBrowserTools, cleanup: cleanupBrowserTools } = require('./services/tools/browser-tools');
+const { registerVisionTools } = require('./services/tools/vision-tools');
+const { registerDelegateTools } = require('./services/tools/delegate-tools');
+const { registerExecuteTools } = require('./services/tools/execute-tools');
 
 const UI_PATH = path.join(__dirname, 'ui', 'pages', 'ui.html');
 const UI_ROOT = path.join(__dirname, 'ui');
@@ -2382,6 +2386,49 @@ try {
 } catch (e) {
     console.error('[ToolRegistry] Failed to register missing tools:', e.message);
 }
+
+// ── Register browser tools ──
+try {
+    registerBrowserTools(toolRegistry);
+    console.log('[BrowserTools] Registered browser tools (browser_navigate, browser_snapshot, browser_click, browser_type, browser_scroll, browser_back, browser_press, browser_console, browser_get_images, browser_vision)');
+} catch (e) {
+    console.error('[BrowserTools] Failed to register browser tools:', e.message);
+}
+
+// ── Register vision tools ──
+try {
+    registerVisionTools(toolRegistry);
+    console.log('[VisionTools] Registered vision tools (august__vision_analyze)');
+} catch (e) {
+    console.error('[VisionTools] Failed to register vision tools:', e.message);
+}
+
+// ── Register delegate tools ──
+try {
+    registerDelegateTools(toolRegistry);
+    console.log('[DelegateTools] Registered delegate tools (august__delegate_task)');
+} catch (e) {
+    console.error('[DelegateTools] Failed to register delegate tools:', e.message);
+}
+
+// ── Register execute tools ──
+try {
+    registerExecuteTools(toolRegistry);
+    console.log('[ExecuteTools] Registered execute tools (august__execute_code)');
+} catch (e) {
+    console.error('[ExecuteTools] Failed to register execute tools:', e.message);
+}
+
+// ── Cleanup browser sessions on exit ──
+process.on('exit', () => {
+    cleanupBrowserTools().catch(() => {});
+});
+process.on('SIGINT', () => {
+    cleanupBrowserTools().catch(() => {}).finally(() => process.exit(0));
+});
+process.on('SIGTERM', () => {
+    cleanupBrowserTools().catch(() => {}).finally(() => process.exit(0));
+});
 
 // ── Initialize Model Catalog ──
 try {
