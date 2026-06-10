@@ -1,5 +1,6 @@
 const http = require('http');
 const https = require('https');
+const { WebSocketServer } = require('ws');
 const fs = require('fs');
 const path = require('path');
 const { getConfig, saveConfig, getProfile, saveProfile, getBookmarks, saveBookmark, deleteBookmark } = require('./lib/config');
@@ -27,6 +28,7 @@ const memoryProviders = require('./services/memory/memory-providers');
 const agentRegistry = require('./services/tools/agent-registry');
 const agentSessions = require('./services/tools/agent-sessions');
 const terminalService = require('./services/workbench/terminal-service');
+const chatWsService = require('./services/workbench/chat-ws-service');
 const automationJobs = require('./services/workbench/automation-jobs');
 const memoryGovernance = require('./services/memory/memory-governance');
 const hostAgent = require('./lib/host-agent');
@@ -2322,12 +2324,28 @@ registerBuiltinProviders();
 
 console.log(`--- AI Adapter Active on Port ${LISTEN_PORT} ---`);
 
+// ── WebSocket server (noServer mode — upgrades are routed manually) ──
+const wss = new WebSocketServer({ noServer: true });
+
 server.listen(LISTEN_PORT, '0.0.0.0', () => {
     console.log('[bridge] Server is listening...');
 });
 
 server.on('upgrade', (req, socket, head) => {
-    if (terminalService.handleTerminalUpgrade(req, socket, head)) return;
+    const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
+    if (url.pathname === '/ui/terminal/connect') {
+        const terminalId = url.searchParams.get('id');
+        wss.handleUpgrade(req, socket, head, (ws) => {
+            terminalService.handleTerminalConnection(ws, terminalId);
+        });
+        return;
+    }
+    if (url.pathname === '/api/chat/ws') {
+        wss.handleUpgrade(req, socket, head, (ws) => {
+            chatWsService.handleChatConnection(ws);
+        });
+        return;
+    }
     socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
     socket.destroy();
 });

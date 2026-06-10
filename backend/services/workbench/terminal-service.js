@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -55,8 +54,8 @@ function appendBuffer(session, text) {
     if (session.buffer.length > BUFFER_LIMIT) {
         session.buffer = session.buffer.slice(session.buffer.length - BUFFER_LIMIT);
     }
-    for (const socket of session.sockets) {
-        sendWsText(socket, text);
+    for (const ws of session.sockets) {
+        try { ws.send(text); } catch (e) { /* socket closed */ }
     }
 }
 
@@ -105,8 +104,8 @@ function createTerminalSession({ title = 'Terminal', cwd, command, args, approve
         session.status = 'exited';
         session.updatedAt = new Date().toISOString();
         appendBuffer(session, `\n[terminal exited with code ${code}]\n`);
-        for (const socket of session.sockets) {
-            try { socket.end(); } catch (e) {}
+        for (const ws of session.sockets) {
+            try { ws.close(); } catch (e) {}
         }
         session.sockets.clear();
     });
@@ -231,105 +230,30 @@ function closeTerminalSession(terminalId) {
     const session = getTerminalSession(terminalId);
     if (!session) return false;
     try { session.process.kill(); } catch (e) {}
-    for (const socket of session.sockets) {
-        try { socket.end(); } catch (e) {}
+    for (const ws of session.sockets) {
+        try { ws.close(); } catch (e) {}
     }
     sessions.delete(terminalId);
     return true;
 }
 
-function acceptKey(key) {
-    return crypto
-        .createHash('sha1')
-        .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
-        .digest('base64');
-}
-
-function sendWsText(socket, text) {
-    if (!socket || socket.destroyed) return;
-    const payload = Buffer.from(String(text || ''), 'utf8');
-    const header = [];
-    header.push(0x81);
-    if (payload.length < 126) {
-        header.push(payload.length);
-    } else if (payload.length < 65536) {
-        header.push(126, (payload.length >> 8) & 255, payload.length & 255);
-    } else {
-        header.push(127, 0, 0, 0, 0, (payload.length >> 24) & 255, (payload.length >> 16) & 255, (payload.length >> 8) & 255, payload.length & 255);
-    }
-    socket.write(Buffer.concat([Buffer.from(header), payload]));
-}
-
-function decodeWsFrames(buffer) {
-    const messages = [];
-    let offset = 0;
-    while (offset + 2 <= buffer.length) {
-        const first = buffer[offset];
-        const second = buffer[offset + 1];
-        const opcode = first & 0x0f;
-        const masked = Boolean(second & 0x80);
-        let length = second & 0x7f;
-        offset += 2;
-        if (length === 126) {
-            if (offset + 2 > buffer.length) break;
-            length = buffer.readUInt16BE(offset);
-            offset += 2;
-        } else if (length === 127) {
-            if (offset + 8 > buffer.length) break;
-            length = Number(buffer.readBigUInt64BE(offset));
-            offset += 8;
-        }
-        const mask = masked ? buffer.slice(offset, offset + 4) : null;
-        if (masked) offset += 4;
-        if (offset + length > buffer.length) break;
-        const payload = buffer.slice(offset, offset + length);
-        offset += length;
-        if (opcode === 8) break;
-        if (opcode !== 1) continue;
-        if (mask) {
-            for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i % 4];
-        }
-        messages.push(payload.toString('utf8'));
-    }
-    return messages;
-}
-
-function handleTerminalUpgrade(req, socket) {
-    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-    if (url.pathname !== '/ui/terminal/connect') return false;
-    const terminalId = url.searchParams.get('id');
+function handleTerminalConnection(ws, terminalId) {
     const session = getTerminalSession(terminalId);
     if (!session) {
-        socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-        socket.destroy();
-        return true;
+        ws.close(4004, 'Terminal session not found');
+        return;
     }
-    const key = req.headers['sec-websocket-key'];
-    if (!key) {
-        socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
-        socket.destroy();
-        return true;
-    }
-    socket.write([
-        'HTTP/1.1 101 Switching Protocols',
-        'Upgrade: websocket',
-        'Connection: Upgrade',
-        `Sec-WebSocket-Accept: ${acceptKey(key)}`,
-        '\r\n'
-    ].join('\r\n'));
-    session.sockets.add(socket);
-    sendWsText(socket, session.buffer);
-    socket.on('data', chunk => {
-        for (const message of decodeWsFrames(Buffer.from(chunk))) {
-            const result = writeTerminalInput(terminalId, message, { approved: session.approvedInteractive });
-            if (result.status === 'approval_required') {
-                sendWsText(socket, `\n[approval required: ${result.requestId}]\n`);
-            }
+    session.sockets.add(ws);
+    try { ws.send(session.buffer); } catch (e) { /* ignore */ }
+    ws.on('message', (data) => {
+        const message = data.toString();
+        const result = writeTerminalInput(terminalId, message, { approved: session.approvedInteractive });
+        if (result.status === 'approval_required') {
+            try { ws.send(`\n[approval required: ${result.requestId}]\n`); } catch (e) { /* ignore */ }
         }
     });
-    socket.on('close', () => session.sockets.delete(socket));
-    socket.on('error', () => session.sockets.delete(socket));
-    return true;
+    ws.on('close', () => session.sockets.delete(ws));
+    ws.on('error', () => session.sockets.delete(ws));
 }
 
 module.exports = {
@@ -337,7 +261,7 @@ module.exports = {
     closeTerminalSession,
     createTerminalSession,
     dangerousReason,
-    handleTerminalUpgrade,
+    handleTerminalConnection,
     isDangerousCommand,
     listTerminalApprovals,
     listTerminalSessions,

@@ -45,10 +45,10 @@ export function ToolCallItem({ tool }: { tool: ToolEntry }) {
   );
 
   const isRunning = tool.status === 'running';
-  const label = tool.context ? `${tool.name}(${tool.context})` : tool.name;
+  const label = tool.name;
 
   return (
-    <div className="w-full border border-border rounded-xl overflow-hidden transition-all duration-200 bg-background text-xs" data-slot="tool-block">
+    <div className="text-xs text-muted-foreground w-full py-0.5" data-slot="tool-block">
       <DisclosureRow
         onToggle={hasBody ? () => setUserOverride(!open) : undefined}
         open={open && hasBody}
@@ -67,7 +67,7 @@ export function ToolCallItem({ tool }: { tool: ToolEntry }) {
               isRunning && 'shimmer text-foreground/55'
             )}
           >
-            <span className="thinking-text">
+            <span className={cn('thinking-text', isRunning && 'animating')}>
               <span className="thinking-label">
                 {Array.from(label).map((ch, i) => (
                   <span
@@ -98,7 +98,7 @@ export function ToolCallItem({ tool }: { tool: ToolEntry }) {
       </DisclosureRow>
 
       {open && hasBody && (
-        <div className="mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1 pl-4">
+        <div className="pl-3 border-l border-foreground/15 ml-2.5 mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1">
           {tool.context && <Section label="context">{tool.context}</Section>}
 
           {tool.preview && tool.status === 'running' && (

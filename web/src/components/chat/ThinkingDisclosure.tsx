@@ -82,7 +82,7 @@ export function ThinkingDisclosure({
               pending && 'shimmer text-foreground/55'
             )}
           >
-            <span className="thinking-text">
+            <span className={cn('thinking-text', pending && 'animating')}>
               <span className="thinking-label">
                 <span className="thinking-char thinking-cap" style={{ animationDelay: '0ms' }}>{label[0]}</span>
                 {label.slice(1).split('').map((ch, i) => (

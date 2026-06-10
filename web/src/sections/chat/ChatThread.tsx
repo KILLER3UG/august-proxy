@@ -197,6 +197,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const estTokens = Math.ceil(totalChars / 4) + 120;
   const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
 
+  // ── WebSocket chat client ─────────────────────────────────────────
+  // Tries WS first. On connect failure, falls back to HTTP POST.
+  // Uses per-turn connection — clean and simple.
   const generateAIResponse = async (chatHistory: ChatMessage[]) => {
     setStreaming(true);
 
@@ -214,6 +217,27 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       timestamp: new Date().toISOString()
     }]);
 
+    // ── Try WebSocket first ──
+    const wsSucceeded = await tryWebSocketChat(
+      chatHistory, assistantMsgId, abortController,
+      (val: number | null) => { thinkingEnd = val; },
+      thinkingStart
+    );
+    if (wsSucceeded) {
+      // Merge final thinking duration
+      const finalDuration = thinkingEnd
+        ? Math.round((thinkingEnd - thinkingStart) / 100) / 10
+        : undefined;
+      setMessages(prev => prev.map(msg =>
+        msg.id === assistantMsgId && msg.thinking
+          ? { ...msg, thinkingDuration: finalDuration }
+          : msg
+      ));
+      setStreaming(false);
+      return;
+    }
+
+    // ── Fallback: HTTP POST ──
     try {
       const res = await fetch('/api/chat', {
         signal: abortController.signal,
@@ -240,166 +264,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         return;
       }
 
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) {
-        setStreaming(false);
-        return;
-      }
-
-      let assistantContent = '';
-      let thinkingContent = '';
-      let buffer = '';
-      let toolResults: ChatMessage['tools'] = [];
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        // Process complete newline-delimited lines from the buffer
-        let lineStart = 0;
-        let newlineIdx: number;
-        while ((newlineIdx = buffer.indexOf('\n', lineStart)) >= 0) {
-          const line = buffer.slice(lineStart, newlineIdx).trim();
-          lineStart = newlineIdx + 1;
-          if (!line || line.startsWith(':')) continue;
-
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.type === 'thinking') {
-                thinkingContent += parsed.content || '';
-              } else if (parsed.type === 'text' || parsed.type === 'content') {
-                if (!thinkingEnd && thinkingContent.trim()) {
-                  thinkingEnd = Date.now();
-                }
-                assistantContent += parsed.content || '';
-              } else if (parsed.type === 'tool_call') {
-                // Start tracking a new tool execution
-                toolResults = [...(toolResults || []), {
-                  name: parsed.name,
-                  context: parsed.context || '',
-                  id: parsed.id,
-                  status: parsed.status || 'running',
-                  summary: '',
-                  error: '',
-                  startedAt: Date.now(),
-                }];
-              } else if (parsed.type === 'tool_result') {
-                // Update the tool with its result
-                toolResults = (toolResults || []).map(t =>
-                  t.id === parsed.id ? {
-                    ...t,
-                    ...(parsed.summary ? { summary: parsed.summary } : {}),
-                    ...(parsed.error ? { error: parsed.error } : {}),
-                    status: parsed.status || 'done',
-                    duration: parsed.duration,
-                  } : t
-                );
-              } else if (parsed.type === 'tool_progress') {
-                // Streaming preview update while tool is running
-                toolResults = (toolResults || []).map(t =>
-                  t.id === parsed.id ? { ...t, preview: (t.preview || '') + (parsed.preview || '') } : t
-                );
-              } else if (parsed.thinking) {
-                thinkingContent += parsed.thinking;
-              } else if (parsed.reasoning_content) {
-                thinkingContent += parsed.reasoning_content;
-              } else if (parsed.choices && parsed.choices[0]?.delta?.reasoning_content) {
-                thinkingContent += parsed.choices[0].delta.reasoning_content;
-              } else {
-                if (!thinkingEnd && thinkingContent.trim()) {
-                  thinkingEnd = Date.now();
-                }
-                assistantContent += parsed.content || data;
-              }
-            } catch {
-              if (!thinkingEnd && thinkingContent.trim()) {
-                thinkingEnd = Date.now();
-              }
-              assistantContent += data;
-            }
-          } else {
-            const thinkMatch = line.match(/<thinking>([\s\S]*?)<\/thinking>/);
-            if (thinkMatch) {
-              thinkingContent += thinkMatch[1];
-              assistantContent += line.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
-            } else {
-              if (!thinkingEnd && thinkingContent.trim()) {
-                thinkingEnd = Date.now();
-              }
-              assistantContent += line;
-            }
-          }
-        }
-        buffer = buffer.slice(lineStart);
-
-        setMessages(prev => prev.map(msg =>
-          msg.id === assistantMsgId ? {
-            ...msg,
-            content: assistantContent,
-            thinking: thinkingContent || undefined,
-            tools: toolResults && toolResults.length > 0 ? toolResults : undefined
-          } : msg
-        ));
-      }
-
-      // Flush any remaining buffer content after stream ends
-      if (buffer.trim()) {
-        const thinkMatch = buffer.match(/<thinking>([\s\S]*?)<\/thinking>/);
-        if (thinkMatch) {
-          thinkingContent += thinkMatch[1];
-          assistantContent += buffer.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
-        } else if (buffer.startsWith('data: ')) {
-          const data = buffer.slice(6);
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.type === 'thinking') {
-              thinkingContent += parsed.content || '';
-            } else if (parsed.thinking) {
-              thinkingContent += parsed.thinking;
-            } else if (parsed.reasoning_content) {
-              thinkingContent += parsed.reasoning_content;
-            } else {
-              if (!thinkingEnd && thinkingContent.trim()) {
-                thinkingEnd = Date.now();
-              }
-              assistantContent += parsed.content || data;
-            }
-          } catch {
-            if (!thinkingEnd && thinkingContent.trim()) {
-              thinkingEnd = Date.now();
-            }
-            assistantContent += data;
-          }
-        } else {
-          if (!thinkingEnd && thinkingContent.trim()) {
-            thinkingEnd = Date.now();
-          }
-          assistantContent += buffer;
-        }
-      }
-
-      const finalDuration = thinkingEnd && thinkingStart 
-        ? Math.round((thinkingEnd - thinkingStart) / 100) / 10 
-        : thinkingContent.trim() 
-          ? Math.round((Date.now() - thinkingStart) / 100) / 10
-          : undefined;
-
-      const finalContent = assistantContent.replace(/(?:\s*\[DONE\]\s*)+$/g, '');
-
-      setMessages(prev => prev.map(msg =>
-        msg.id === assistantMsgId ? {
-          ...msg,
-          content: finalContent,
-          thinking: thinkingContent || undefined,
-          thinkingDuration: finalDuration
-        } : msg
-      ));
+      await readSSEStream(res, assistantMsgId, abortController, thinkingStart);
     } catch (e: any) {
-      if (e?.name === 'AbortError') return;
+      if (e?.name === 'AbortError') { setStreaming(false); return; }
       console.error(e);
       setMessages(prev => prev.map(msg =>
         msg.id === assistantMsgId ? {
@@ -407,9 +274,325 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           content: `⚠️ Connection error: ${e.message}`
         } : msg
       ));
-    } finally {
-      setStreaming(false);
     }
+    setStreaming(false);
+  };
+
+  // ── WebSocket helper ─────────────────────────────────────────────
+  // Returns true if WS successfully completed the turn.
+  const WS_RECONNECT_MAX = 3;
+  const WS_RECONNECT_BASE_MS = 1000;
+
+  const tryWebSocketChat = async (
+    chatHistory: ChatMessage[],
+    assistantMsgId: string,
+    abortController: AbortController,
+    setThinkingEnd: (v: number | null) => void,
+    thinkingStart: number
+  ): Promise<boolean> => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/chat/ws`;
+
+    let ws: WebSocket | null = null;
+    let assistantContent = '';
+    let thinkingContent = '';
+    let toolResults: ChatMessage['tools'] = [];
+    let wsThinkingEnd: number | null = null;
+    let done = false;
+    let aborted = false;
+
+    for (let attempt = 0; attempt < WS_RECONNECT_MAX; attempt++) {
+      if (attempt > 0) {
+        await new Promise(r => setTimeout(r, WS_RECONNECT_BASE_MS * Math.pow(2, attempt - 1)));
+      }
+
+      if (abortController.signal.aborted) { aborted = true; break; }
+
+      try {
+        const result = await new Promise<{ success: boolean; aborted: boolean }>((resolve) => {
+          const socket = new WebSocket(wsUrl);
+          ws = socket;
+          let opened = false;
+          let requestId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+          const cleanup = () => {
+            if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+              socket.close();
+            }
+          };
+
+          socket.onopen = () => {
+            opened = true;
+            if (abortController.signal.aborted) {
+              socket.close();
+              resolve({ success: false, aborted: true });
+              return;
+            }
+            // Send chat.start
+            socket.send(JSON.stringify({
+              type: 'chat.start',
+              requestId,
+              payload: {
+                model: currentModel?.id,
+                provider: currentModel?.provider,
+                messages: chatHistory.map(m => ({ role: m.role, content: m.content })),
+                effort: effort,
+                workspacePath: workspacePath
+              }
+            }));
+          };
+
+          socket.onmessage = (event) => {
+            try {
+              const parsed = JSON.parse(event.data);
+
+              // Respond to server pings
+              if (parsed.type === 'ping') {
+                socket.send(JSON.stringify({ type: 'pong', requestId }));
+                return;
+              }
+
+              // Only process events matching our requestId
+              if (parsed.requestId && parsed.requestId !== requestId) return;
+
+              switch (parsed.type) {
+                case 'thinking':
+                  thinkingContent += parsed.content || '';
+                  if (wsThinkingEnd === null && thinkingContent.trim()) {
+                    wsThinkingEnd = Date.now();
+                    setThinkingEnd(wsThinkingEnd);
+                  }
+                  break;
+                case 'text':
+                case 'content':
+                  if (wsThinkingEnd === null && thinkingContent.trim()) {
+                    wsThinkingEnd = Date.now();
+                    setThinkingEnd(wsThinkingEnd);
+                  }
+                  assistantContent += parsed.content || '';
+                  break;
+                case 'tool_call':
+                  toolResults = [...(toolResults || []), {
+                    name: parsed.name,
+                    context: parsed.context || '',
+                    id: parsed.id || `tc_${Date.now()}`,
+                    status: parsed.status || 'running',
+                    summary: '',
+                    error: '',
+                    startedAt: Date.now(),
+                  }];
+                  break;
+                case 'tool_result':
+                  toolResults = (toolResults || []).map(t =>
+                    t.id === parsed.id ? {
+                      ...t,
+                      ...(parsed.summary ? { summary: parsed.summary } : {}),
+                      ...(parsed.error ? { error: parsed.error } : {}),
+                      status: parsed.status || 'done',
+                      duration: parsed.duration,
+                    } : t
+                  );
+                  break;
+                case 'tool_progress':
+                  toolResults = (toolResults || []).map(t =>
+                    t.id === parsed.id ? { ...t, preview: (t.preview || '') + (parsed.preview || '') } : t
+                  );
+                  break;
+                case 'done':
+                  done = true;
+                  break;
+                case 'error':
+                  console.error('[WS] Chat error:', parsed.message);
+                  break;
+                default:
+                  // Some adapters send the raw field directly
+                  if (parsed.thinking) {
+                    thinkingContent += parsed.thinking;
+                  } else if (parsed.reasoning_content) {
+                    thinkingContent += parsed.reasoning_content;
+                  } else if (parsed.choices && parsed.choices[0]?.delta?.reasoning_content) {
+                    thinkingContent += parsed.choices[0].delta.reasoning_content;
+                  } else if (parsed.content) {
+                    assistantContent += parsed.content;
+                  }
+              }
+
+              // Update UI
+              setMessages(prev => prev.map(msg =>
+                msg.id === assistantMsgId ? {
+                  ...msg,
+                  content: assistantContent,
+                  thinking: thinkingContent || undefined,
+                  tools: toolResults && toolResults.length > 0 ? toolResults : undefined
+                } : msg
+              ));
+
+              if (done || parsed.type === 'done') {
+                cleanup();
+                resolve({ success: true, aborted: false });
+              }
+            } catch (e) {
+              // Non-JSON message — ignore
+            }
+          };
+
+          socket.onerror = () => {
+            // Connection-level error, close will fire next
+          };
+
+          socket.onclose = () => {
+            if (!opened) {
+              // Connection never established — fallback
+              resolve({ success: false, aborted: false });
+              return;
+            }
+            if (!done) {
+              // Premature close without 'done' — try reconnect
+              resolve({ success: false, aborted: abortController.signal.aborted });
+            }
+          };
+
+          // Abort controller: close socket
+          abortController.signal.addEventListener('abort', () => {
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({ type: 'chat.abort' }));
+            }
+            cleanup();
+            resolve({ success: false, aborted: true });
+          }, { once: true });
+        });
+
+        if (result.success) return true;
+        if (result.aborted) return false;
+        // Otherwise: reconnect attempt
+      } catch {
+        // Connection error, will retry
+      }
+    }
+
+    return false; // All WS attempts failed, signal HTTP fallback
+  };
+
+  // ── SSE stream reader (HTTP fallback) ────────────────────────────
+  // Extracted from the original generateAIResponse body
+  const readSSEStream = async (
+    res: Response,
+    assistantMsgId: string,
+    abortController: AbortController,
+    thinkingStart: number
+  ) => {
+    const reader = res.body?.getReader();
+    const decoder = new TextDecoder();
+    if (!reader) return;
+
+    let assistantContent = '';
+    let thinkingContent = '';
+    let buffer = '';
+    let toolResults: ChatMessage['tools'] = [];
+    let thinkingEnd: number | null = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let lineStart = 0;
+      let newlineIdx: number;
+      while ((newlineIdx = buffer.indexOf('\n', lineStart)) >= 0) {
+        const line = buffer.slice(lineStart, newlineIdx).trim();
+        lineStart = newlineIdx + 1;
+        if (!line || line.startsWith(':')) continue;
+
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === 'thinking') {
+              thinkingContent += parsed.content || '';
+            } else if (parsed.type === 'text' || parsed.type === 'content') {
+              if (!thinkingEnd && thinkingContent.trim()) { thinkingEnd = Date.now(); }
+              assistantContent += parsed.content || '';
+            } else if (parsed.type === 'tool_call') {
+              toolResults = [...(toolResults || []), {
+                name: parsed.name, context: parsed.context || '', id: parsed.id,
+                status: parsed.status || 'running', summary: '', error: '', startedAt: Date.now(),
+              }];
+            } else if (parsed.type === 'tool_result') {
+              toolResults = (toolResults || []).map(t =>
+                t.id === parsed.id ? { ...t, ...(parsed.summary ? { summary: parsed.summary } : {}), ...(parsed.error ? { error: parsed.error } : {}), status: parsed.status || 'done', duration: parsed.duration } : t
+              );
+            } else if (parsed.type === 'tool_progress') {
+              toolResults = (toolResults || []).map(t =>
+                t.id === parsed.id ? { ...t, preview: (t.preview || '') + (parsed.preview || '') } : t
+              );
+            } else if (parsed.thinking) {
+              thinkingContent += parsed.thinking;
+            } else if (parsed.reasoning_content) {
+              thinkingContent += parsed.reasoning_content;
+            } else if (parsed.choices && parsed.choices[0]?.delta?.reasoning_content) {
+              thinkingContent += parsed.choices[0].delta.reasoning_content;
+            } else {
+              if (!thinkingEnd && thinkingContent.trim()) { thinkingEnd = Date.now(); }
+              assistantContent += parsed.content || data;
+            }
+          } catch {
+            if (!thinkingEnd && thinkingContent.trim()) { thinkingEnd = Date.now(); }
+            assistantContent += data;
+          }
+        } else {
+          const thinkMatch = line.match(/<thinking>([\s\S]*?)<\/thinking>/);
+          if (thinkMatch) {
+            thinkingContent += thinkMatch[1];
+            assistantContent += line.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
+          } else {
+            if (!thinkingEnd && thinkingContent.trim()) { thinkingEnd = Date.now(); }
+            assistantContent += line;
+          }
+        }
+      }
+      buffer = buffer.slice(lineStart);
+
+      setMessages(prev => prev.map(msg =>
+        msg.id === assistantMsgId ? {
+          ...msg,
+          content: assistantContent,
+          thinking: thinkingContent || undefined,
+          tools: toolResults && toolResults.length > 0 ? toolResults : undefined
+        } : msg
+      ));
+    }
+
+    // Flush remaining buffer
+    if (buffer.trim()) {
+      const thinkMatch = buffer.match(/<thinking>([\s\S]*?)<\/thinking>/);
+      if (thinkMatch) {
+        thinkingContent += thinkMatch[1];
+        assistantContent += buffer.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
+      } else if (buffer.startsWith('data: ')) {
+        const data = buffer.slice(6);
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.type === 'thinking') thinkingContent += parsed.content || '';
+          else if (parsed.thinking) thinkingContent += parsed.thinking;
+          else if (parsed.reasoning_content) thinkingContent += parsed.reasoning_content;
+          else { if (!thinkingEnd && thinkingContent.trim()) thinkingEnd = Date.now(); assistantContent += parsed.content || data; }
+        } catch { assistantContent += data; }
+      } else {
+        assistantContent += buffer;
+      }
+    }
+
+    const finalDuration = thinkingEnd
+      ? Math.round((thinkingEnd - thinkingStart) / 100) / 10
+      : thinkingContent.trim()
+        ? Math.round((Date.now() - thinkingStart) / 100) / 10
+        : undefined;
+
+    const finalContent = assistantContent.replace(/(?:\s*\[DONE\]\s*)+$/g, '');
+
+    setMessages(prev => prev.map(msg =>
+      msg.id === assistantMsgId ? { ...msg, content: finalContent, thinking: thinkingContent || undefined, thinkingDuration: finalDuration } : msg
+    ));
   };
 
   const send = async () => {
@@ -1021,7 +1204,7 @@ function MessageBubble({
       {!isUser && displayedThinking && (
         <ReasoningBlock 
           text={displayedThinking} 
-          isGenerating={isLast && (!animationDone || streaming) && !displayedContent} 
+          isGenerating={isLast && (!animationDone || streaming)} 
           duration={message.thinkingDuration} 
         />
       )}
@@ -1150,7 +1333,7 @@ function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool
   const [open, setOpen] = useState(false);
   const hasBody = !!(tool.args || tool.result);
   return (
-    <div className="w-full border border-border rounded-xl overflow-hidden transition-all duration-200 bg-background text-xs" data-slot="tool-block">
+    <div className="text-xs text-muted-foreground w-full py-0.5" data-slot="tool-block">
       <DisclosureRow
         onToggle={hasBody ? () => setOpen(!open) : undefined}
         open={open}
@@ -1169,7 +1352,7 @@ function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool
               tool.status === 'running' && 'shimmer text-foreground/55'
             )}
           >
-            <span className="thinking-text">
+            <span className={cn('thinking-text', tool.status === 'running' && 'animating')}>
               <span className="thinking-label">
                 {Array.from(tool.name).map((ch, i) => (
                   <span
