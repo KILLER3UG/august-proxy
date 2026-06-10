@@ -195,7 +195,7 @@ async function executeManagedOpenAiToolCalls(toolCalls, knownTools, messages, wo
         const syntheticCall = { function: { name: toolName, arguments: tc.function?.arguments || '{}' } };
         const validation = validateToolArguments(syntheticCall, knownTools, messages);
         if (!validation.valid) {
-            if (onToolEvent) onToolEvent({ type: 'tool_call', name: toolName, args: validation.error, id: tc.id, status: 'error' });
+            if (onToolEvent) onToolEvent({ type: 'tool_result', name: toolName, id: tc.id, error: validation.error, status: 'error', duration: 0 });
             console.warn(`[Proxy Validator]: OpenAI tool '${toolName}' rejected:`, validation.error);
             return {
                 tool_call_id: tc.id,
@@ -205,13 +205,17 @@ async function executeManagedOpenAiToolCalls(toolCalls, knownTools, messages, wo
         }
 
         const parsedArgs = parseOpenAiToolArgs(tc);
-        if (onToolEvent) onToolEvent({ type: 'tool_call', name: toolName, args: parsedArgs, id: tc.id, status: 'running' });
+        // Format args as concise context string like "path=test.txt, limit=10"
+        const contextStr = parsedArgs && typeof parsedArgs === 'object'
+            ? Object.entries(parsedArgs).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ')
+            : '';
+        if (onToolEvent) onToolEvent({ type: 'tool_call', name: toolName, context: contextStr, id: tc.id, status: 'running' });
 
         const startTime = Date.now();
         try {
             const result = await executeManagedProxyTool(toolName, parsedArgs, workspacePath);
             const duration = Date.now() - startTime;
-            if (onToolEvent) onToolEvent({ type: 'tool_result', name: toolName, id: tc.id, result: String(result).substring(0, 2000), status: 'done', duration });
+            if (onToolEvent) onToolEvent({ type: 'tool_result', name: toolName, id: tc.id, summary: String(result).substring(0, 2000), status: 'done', duration });
             return {
                 tool_call_id: tc.id,
                 role: 'tool',
@@ -219,7 +223,7 @@ async function executeManagedOpenAiToolCalls(toolCalls, knownTools, messages, wo
             };
         } catch (e) {
             const duration = Date.now() - startTime;
-            if (onToolEvent) onToolEvent({ type: 'tool_result', name: toolName, id: tc.id, result: `Error: ${e.message}`, status: 'error', duration });
+            if (onToolEvent) onToolEvent({ type: 'tool_result', name: toolName, id: tc.id, error: e.message, status: 'error', duration });
             recordToolFailure({
                 toolName,
                 args: parsedArgs,

@@ -33,11 +33,14 @@ export interface ChatMessage {
   };
   tools?: Array<{
     name: string;
-    args: Record<string, unknown>;
+    context?: string;
     id: string;
     status: 'running' | 'done' | 'error';
-    result?: string;
+    summary?: string;
+    error?: string;
+    preview?: string;
     duration?: number;
+    startedAt?: number;
   }>;
   thinking?: string;
   thinkingDuration?: number;
@@ -260,14 +263,28 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 // Start tracking a new tool execution
                 toolResults = [...(toolResults || []), {
                   name: parsed.name,
-                  args: parsed.args || {},
+                  context: parsed.context || '',
                   id: parsed.id,
                   status: parsed.status || 'running',
+                  summary: '',
+                  error: '',
+                  startedAt: Date.now(),
                 }];
               } else if (parsed.type === 'tool_result') {
                 // Update the tool with its result
                 toolResults = (toolResults || []).map(t =>
-                  t.id === parsed.id ? { ...t, result: parsed.result, status: parsed.status || 'done', duration: parsed.duration } : t
+                  t.id === parsed.id ? {
+                    ...t,
+                    ...(parsed.summary ? { summary: parsed.summary } : {}),
+                    ...(parsed.error ? { error: parsed.error } : {}),
+                    status: parsed.status || 'done',
+                    duration: parsed.duration,
+                  } : t
+                );
+              } else if (parsed.type === 'tool_progress') {
+                // Streaming preview update while tool is running
+                toolResults = (toolResults || []).map(t =>
+                  t.id === parsed.id ? { ...t, preview: (t.preview || '') + (parsed.preview || '') } : t
                 );
               } else if (parsed.thinking) {
                 thinkingContent += parsed.thinking;
@@ -890,70 +907,132 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
   );
 }
 
-// ── Tool execution block ──
+// ── Tool execution block (Hermes-style) ──
 function ToolBlock({ tools }: { tools: NonNullable<ChatMessage['tools']> }) {
-  const [isOpen, setIsOpen] = useState(true);
-
   return (
-    <div className="mb-3 rounded-lg border border-border/30 bg-muted/20 text-sm">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 w-full px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition"
-      >
-        <svg
-          className={cn("size-3 transition-transform", isOpen && "rotate-90")}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-        <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-        </svg>
-        Tools
-        <span className="ml-auto text-[10px] text-muted-foreground/60">{tools.length} tool call{tools.length !== 1 ? 's' : ''}</span>
-      </button>
-      <div className={cn("grid transition-all duration-200", isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0")}>
-        <div className="overflow-hidden">
-          <div className="px-3 pb-2 flex flex-col gap-2">
-            {tools.map((tool, idx) => (
-              <div key={tool.id || idx} className="rounded-md border border-border/20 bg-background/50 p-2.5 text-xs">
-                <div className="flex items-center gap-1.5 mb-1">
-                  {tool.status === 'running' ? (
-                    <span className="size-2 rounded-full bg-yellow-400 animate-pulse" />
-                  ) : tool.status === 'error' ? (
-                    <span className="size-2 rounded-full bg-red-500" />
-                  ) : (
-                    <span className="size-2 rounded-full bg-green-500" />
-                  )}
-                  <code className="text-[11px] font-semibold text-foreground">{tool.name}</code>
-                  {tool.duration !== undefined && (
-                    <span className="text-[10px] text-muted-foreground/60 ml-auto">
-                      {tool.duration}ms
-                    </span>
-                  )}
-                </div>
-                {tool.args && Object.keys(tool.args).length > 0 && (
-                  <div className="mb-1 rounded bg-muted/30 p-1.5 font-mono text-[10px] text-muted-foreground leading-relaxed overflow-x-auto max-h-24 overflow-y-auto">
-                    {JSON.stringify(tool.args, null, 1)}
-                  </div>
-                )}
-                {tool.result && (
-                  <div className="rounded bg-muted/30 p-1.5 font-mono text-[10px] text-muted-foreground leading-relaxed overflow-x-auto max-h-32 overflow-y-auto whitespace-pre-wrap">
-                    {tool.result.length > 500 ? tool.result.slice(0, 500) + '...' : tool.result}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+    <div className="mb-3 flex flex-col gap-1.5">
+      {tools.map((tool) => (
+        <ToolCallItem key={tool.id} tool={tool} />
+      ))}
     </div>
   );
+}
+
+function ToolCallItem({ tool }: { tool: NonNullable<ChatMessage['tools']>[0] }) {
+  const [userOverride, setUserOverride] = useState<boolean | null>(null);
+  const open = userOverride ?? tool.status === 'error';
+  const hasBody = !!(tool.context || tool.preview || tool.summary || tool.error);
+
+  // Live elapsed timer
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (tool.status !== 'running') return;
+    const id = window.setInterval(() => setNow(() => Date.now()), 500);
+    return () => window.clearInterval(id);
+  }, [tool.status]);
+
+  const hasTimestamps = !!(tool.duration !== undefined || tool.startedAt);
+  const elapsed = hasTimestamps
+    ? fmtElapsed(tool.duration !== undefined ? tool.duration : (tool.startedAt ? Date.now() - tool.startedAt : 0))
+    : null;
+
+  const STATUS_TONE = {
+    running: 'border-primary/40 bg-primary/[0.04]',
+    done: 'border-border bg-muted/20',
+    error: 'border-destructive/50 bg-destructive/[0.04]',
+  } as const;
+
+  return (
+    <div className={`rounded-md border overflow-hidden ${STATUS_TONE[tool.status]}`}>
+      <button
+        onClick={() => hasBody && setUserOverride(!open)}
+        disabled={!hasBody}
+        className="flex items-center gap-1.5 w-full px-2.5 py-1.5 text-xs hover:bg-foreground/2 disabled:cursor-default transition"
+      >
+        {hasBody ? (
+          <svg className={`size-3 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        ) : (
+          <span className="size-3 shrink-0" />
+        )}
+
+        <svg className={`size-3 shrink-0 ${tool.status === 'running' ? 'text-primary' : tool.status === 'error' ? 'text-destructive' : 'text-primary/80'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+        </svg>
+
+        <span className="font-mono font-medium shrink-0">{tool.name}</span>
+
+        {tool.context && (
+          <span className="font-mono text-muted-foreground truncate min-w-0 flex-1 text-[10px]">
+            {tool.context}
+          </span>
+        )}
+
+        {tool.status === 'running' && (
+          <span className="inline-block size-2 rounded-full bg-primary animate-pulse shrink-0" title="running" />
+        )}
+        {tool.status === 'done' && (
+          <svg className="size-3 shrink-0 text-primary/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        )}
+        {tool.status === 'error' && (
+          <svg className="size-3 shrink-0 text-destructive" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+          </svg>
+        )}
+
+        {elapsed && (
+          <span className="font-mono text-[10px] text-muted-foreground/60 tabular-nums shrink-0">
+            {elapsed}
+          </span>
+        )}
+      </button>
+
+      {open && hasBody && (
+        <div className="border-t border-border/60 px-3 py-2 space-y-2 text-xs font-mono">
+          {tool.context && (
+            <div className="flex gap-3">
+              <span className="text-[10px] text-muted-foreground/60 shrink-0 w-16 pt-0.5">context</span>
+              <div className="flex-1 min-w-0 text-muted-foreground">{tool.context}</div>
+            </div>
+          )}
+          {tool.preview && tool.status === 'running' && (
+            <div className="flex gap-3">
+              <span className="text-[10px] text-muted-foreground/60 shrink-0 w-16 pt-0.5">streaming</span>
+              <div className="flex-1 min-w-0 text-muted-foreground whitespace-pre-wrap">
+                {tool.preview}
+                <span className="inline-block w-1.5 h-3 align-middle bg-foreground/40 ml-0.5 animate-pulse" />
+              </div>
+            </div>
+          )}
+          {tool.summary && (
+            <div className="flex gap-3">
+              <span className="text-[10px] text-muted-foreground/60 shrink-0 w-16 pt-0.5">result</span>
+              <div className="flex-1 min-w-0 text-foreground/90 whitespace-pre-wrap break-words">{tool.summary}</div>
+            </div>
+          )}
+          {tool.error && (
+            <div className="flex gap-3">
+              <span className="text-[10px] text-destructive shrink-0 w-16 pt-0.5">error</span>
+              <div className="flex-1 min-w-0 text-destructive whitespace-pre-wrap">{tool.error}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function fmtElapsed(ms: number): string {
+  const sec = Math.max(0, ms) / 1000;
+  if (sec < 1) return `${Math.round(ms)}ms`;
+  if (sec < 10) return `${sec.toFixed(1)}s`;
+  if (sec < 60) return `${Math.round(sec)}s`;
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return s ? `${m}m ${s}s` : `${m}m`;
 }
 
 // ----------------------------------------------------
