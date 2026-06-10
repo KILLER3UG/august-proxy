@@ -95,3 +95,10 @@ pub fn restart_proxy(state: State<'_, BackendProcess>) -> String {
     // The next poll cycle (or the webview's manual retry) will respawn.
     "restarted".into()
 }
+
+#[tauri::command]
+pub fn select_directory() -> Option<String> {
+    rfd::FileDialog::new()
+        .pick_folder()
+        .map(|path| path.to_string_lossy().to_string().replace('\\', "/"))
+}

@@ -229,7 +229,8 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 model: cfg._upstreamModel || cfg.currentModel,
                 targetUrl: cfg.targetUrl,
                 includeWindowsContext: true,
-                clientId: clientId
+                clientId: clientId,
+                workspacePath: req.workspacePath
             };
             const existingSystemIdx = oReq.messages.findIndex(m => m.role === 'system');
             if (existingSystemIdx >= 0) {
@@ -720,7 +721,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 try {
                     let parsed = JSON.parse(rawBody);
                     if (managedLocalToolNames.size > 0) {
-                        parsed = await resolveManagedOpenAiToolCalls(parsed, oReq, cfg, clientToolNames);
+                        parsed = await resolveManagedOpenAiToolCalls(parsed, oReq, cfg, clientToolNames, req.workspacePath);
                     }
                     captureResponse(reqId, parsed);
                     const { inputTokens: inTok, outputTokens: outTok } = extractUsageTokens(parsed.usage, 'JSON passthrough');
@@ -806,7 +807,7 @@ async function fallbackClientFailedToolsOpenAi(oReq) {
 }
 
 // ── Helper to resolve managed tools recursively (up to 4 attempts) ──
-async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToolNames) {
+async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToolNames, workspacePath = null) {
     let parsed = initialParsed;
     const requestPayload = {
         ...oReq,
@@ -835,7 +836,7 @@ async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToo
             tool_calls: toolCalls
         });
 
-        const toolResults = await executeManagedOpenAiToolCalls(managedToolCalls, requestPayload.tools, requestPayload.messages);
+        const toolResults = await executeManagedOpenAiToolCalls(managedToolCalls, requestPayload.tools, requestPayload.messages, workspacePath);
         toolResults.forEach(res => requestPayload.messages.push(res));
 
         const response = await fetch(cfg.targetUrl, {

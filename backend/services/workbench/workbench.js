@@ -293,17 +293,17 @@ function mapHostPath(inputPath) {
     return raw;
 }
 
-function resolveAnyPath(inputPath) {
-    if (!inputPath || typeof inputPath !== 'string') return WORKSPACE_ROOT;
+function resolveAnyPath(inputPath, workspacePath = null) {
+    if (!inputPath || typeof inputPath !== 'string') return workspacePath || WORKSPACE_ROOT;
     const mapped = mapHostPath(inputPath);
     const resolved = path.isAbsolute(mapped)
         ? path.resolve(mapped)
-        : path.resolve(PROJECT_ROOT, mapped);
+        : path.resolve(workspacePath || PROJECT_ROOT, mapped);
     return resolved;
 }
 
-function toDisplayPath(filePath) {
-    return path.relative(WORKSPACE_ROOT, filePath).replace(/\\/g, '/') || '.';
+function toDisplayPath(filePath, workspacePath = null) {
+    return path.relative(workspacePath || WORKSPACE_ROOT, filePath).replace(/\\/g, '/') || '.';
 }
 
 const PROXY_ROOT = path.resolve(__dirname, '..', '..', '..');

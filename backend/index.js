@@ -460,6 +460,54 @@ const requestHandler = async (req, res) => {
         });
     }
 
+    // ── Workspace Files list route for explorer ──
+    if (req.url.startsWith('/api/workspace/files') && req.method === 'GET') {
+        try {
+            const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
+            const dirPath = url.searchParams.get('path');
+            if (!dirPath) {
+                return sendJson(res, { files: [] });
+            }
+            const resolvedPath = path.resolve(dirPath);
+            if (!fs.existsSync(resolvedPath)) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ error: 'Directory does not exist' }));
+            }
+            const stat = fs.statSync(resolvedPath);
+            if (!stat.isDirectory()) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ error: 'Path is not a directory' }));
+            }
+
+            const items = fs.readdirSync(resolvedPath, { withFileTypes: true });
+            const files = [];
+            for (const item of items) {
+                if (item.name === '.git' || item.name === 'node_modules' || item.name === '.gemini') continue;
+                const fullPath = path.join(resolvedPath, item.name);
+                try {
+                    const s = fs.statSync(fullPath);
+                    files.push({
+                        name: item.name,
+                        path: fullPath.replace(/\\/g, '/'),
+                        isDir: item.isDirectory(),
+                        sizeBytes: s.size
+                    });
+                } catch (e) {
+                    // Ignore files that fail stat (e.g. permission issues)
+                }
+            }
+            files.sort((a, b) => {
+                if (a.isDir && !b.isDir) return -1;
+                if (!a.isDir && b.isDir) return 1;
+                return a.name.localeCompare(b.name);
+            });
+            return sendJson(res, { files });
+        } catch (e) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: e.message }));
+        }
+    }
+
     // ── Services endpoint ──
     if (req.url === '/api/services' && req.method === 'GET') {
         try {
@@ -624,7 +672,7 @@ const requestHandler = async (req, res) => {
     if (req.url === '/api/chat' && req.method === 'POST') {
         try {
             const body = await readJsonBody(req);
-            const { model, provider, messages, effort } = body;
+            const { model, provider, messages, effort, workspacePath } = body;
             
             if (!model) {
                 return sendError(res, new Error('model is required'), 400);
@@ -706,6 +754,7 @@ const requestHandler = async (req, res) => {
                 'content-type': 'application/json'
             };
             fakeReq.augustClientId = req.augustClientId || 'web-ui';
+            fakeReq.workspacePath = workspacePath;
 
             // Propagate close event to fakeReq to support cancellation
             req.on('close', () => {

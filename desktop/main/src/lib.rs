@@ -32,6 +32,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             backend::restart_proxy,
             backend::proxy_status,
+            backend::select_directory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

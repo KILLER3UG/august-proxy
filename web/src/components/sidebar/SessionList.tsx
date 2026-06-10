@@ -3,7 +3,7 @@
 /* Middle: search, PINNED, SESSIONS (count)                                */
 /* Bottom: ⌂ + ⚙ ⏵ ⟳ + status                                  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { 
   Plus, Search, Pin, MessageSquare, Wrench, Package, Home, 
@@ -24,9 +24,11 @@ import {
   renameFolder, 
   deleteFolder, 
   toggleFolderCollapse,
+  updateSessionWorkspace,
   type Session, 
   type Folder 
 } from '@/store/sessions';
+import { toast } from 'sonner';
 
 const SESSIONS_KEY = 'august-pinned-sessions';
 const STORAGE = (() => {
@@ -50,6 +52,50 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
 
   const sessions = useStore($sessions);
   const folders = useStore($folders);
+
+  const handleFolderUploadClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+
+    let selectedPath: string | null = null;
+    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI__ !== undefined;
+
+    if (isTauri) {
+      try {
+        selectedPath = await (window as any).__TAURI__.core.invoke('select_directory');
+      } catch (err) {
+        console.error('Failed to open Tauri directory dialog:', err);
+      }
+    } else {
+      selectedPath = prompt('Enter absolute path to workspace folder (e.g. C:/projects/my-app):');
+    }
+
+    if (!selectedPath) return;
+    selectedPath = selectedPath.trim();
+    if (!selectedPath) return;
+
+    // Normalize Windows backslashes
+    const normalizedPath = selectedPath.replace(/\\/g, '/');
+    const folderName = normalizedPath.split('/').pop() || 'workspace';
+
+    const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
+
+    try {
+      const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Directory does not exist or is not readable');
+      }
+
+      toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
+
+      if (activeId) {
+        updateSessionWorkspace(activeId, normalizedPath);
+        window.dispatchEvent(new CustomEvent('august-open-right-sidebar'));
+      }
+    } catch (err: any) {
+      toast.error(`Access failed: ${err.message}`, { id: toastId });
+    }
+  };
 
   const visible = sessions.filter((s) => !s.isArchived && (!filter || s.title.toLowerCase().includes(filter.toLowerCase())));
   const pinned  = visible.filter((s) => pinnedIds.has(s.id));
@@ -261,6 +307,7 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
               title="SESSIONS" 
               count={others.length}
               onNewFolder={handleCreateFolder}
+              onUploadFolder={handleFolderUploadClick}
             >
               <div className="space-y-2.5">
                 {/* Collapsible Folders */}
@@ -378,11 +425,12 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
   );
 }
 
-function Section({ title, count, empty, onNewFolder, children }: { 
+function Section({ title, count, empty, onNewFolder, onUploadFolder, children }: { 
   title: string; 
   count: number; 
   empty?: string; 
   onNewFolder?: () => void;
+  onUploadFolder?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   children?: React.ReactNode 
 }) {
   return (
@@ -392,14 +440,23 @@ function Section({ title, count, empty, onNewFolder, children }: {
           <h3 className="text-[9.5px] uppercase tracking-wider text-muted-foreground/75 font-bold">{title}</h3>
           <span className="text-[9.5px] text-muted-foreground/50 font-mono">({count})</span>
         </div>
-        {title === 'SESSIONS' && onNewFolder && (
-          <button 
-            onClick={(e) => { e.stopPropagation(); onNewFolder(); }} 
-            className="text-muted-foreground/50 hover:text-foreground p-0.5 rounded transition hover:bg-white/5"
-            title="Create Folder"
-          >
-            <FolderPlus className="size-3" />
-          </button>
+        {title === 'SESSIONS' && onNewFolder && onUploadFolder && (
+          <div className="flex items-center gap-1">
+            <button 
+              onClick={onUploadFolder} 
+              className="text-muted-foreground/50 hover:text-foreground p-0.5 rounded transition hover:bg-white/5"
+              title="Open Workspace Folder"
+            >
+              <FolderPlus className="size-3" />
+            </button>
+            <button 
+              onClick={(e) => { e.stopPropagation(); onNewFolder(); }} 
+              className="text-muted-foreground/50 hover:text-foreground p-0.5 rounded transition hover:bg-white/5"
+              title="Create Sidebar Folder"
+            >
+              <Plus className="size-3" />
+            </button>
+          </div>
         )}
       </div>
       {count === 0 && title === 'PINNED'

@@ -9,6 +9,9 @@ import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
 import { marked } from 'marked';
 import { toast } from 'sonner';
+import { useStore } from '@nanostores/react';
+import { $sessions } from '@/store/sessions';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // Configure marked to support GitHub Flavored Markdown and breaks
 marked.use({
@@ -57,6 +60,10 @@ const COMMANDS = [
 ];
 
 export function ChatThread({ sessionId }: { sessionId: string | null }) {
+  const sessions = useStore($sessions);
+  const activeSession = useMemo(() => sessions.find(s => s.id === sessionId), [sessions, sessionId]);
+  const workspacePath = activeSession?.workspacePath || null;
+
   const storageKey = sessionId ? `chat_messages_${sessionId}` : null;
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     if (storageKey) {
@@ -188,7 +195,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           model: currentModel?.id,
           provider: currentModel?.provider,
           messages: chatHistory.map(m => ({ role: m.role, content: m.content })),
-          effort: effort
+          effort: effort,
+          workspacePath: workspacePath
         })
       });
 
@@ -481,7 +489,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }
     const start = ta.selectionStart;
     const end = ta.selectionEnd;
-    const nextText = input.substring(0, start) + text + input.substring(end);
+    const nextText = ta.value.substring(0, start) + text + ta.value.substring(end);
     setInput(nextText);
     setTimeout(() => {
       ta.focus();
@@ -489,217 +497,260 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }, 50);
   };
 
+  useEffect(() => {
+    const handleInsertText = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        insertText(customEvent.detail);
+      }
+    };
+    window.addEventListener('august-insert-composer-text', handleInsertText);
+    return () => window.removeEventListener('august-insert-composer-text', handleInsertText);
+  }, []);
+  const renderComposerContent = () => {
+    return (
+      <div className="max-w-3xl mx-auto relative">
+        {/* Tools Dropdown */}
+        {showToolsDropdown && (
+          <div className="absolute bottom-full mb-2 left-2 z-10 w-64 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+            <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-semibold">Mention Tool</div>
+            {TOOLS.map((t) => (
+              <button
+                key={t.name}
+                onClick={() => {
+                  insertText(t.name);
+                  setShowToolsDropdown(false);
+                }}
+                className="w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between"
+              >
+                <span className="font-mono font-medium text-primary">{t.name}</span>
+                <span className="text-[10px] text-muted-foreground">{t.desc}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Commands Dropdown — triggered by typing / */}
+        {showCommandsDropdown && (
+          <div className="absolute bottom-full mb-2 left-2 z-10 w-64 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+            <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-semibold">Commands & Tools</div>
+            {COMMANDS.filter(c => !input || c.name.startsWith(input)).map((c) => (
+              <button
+                key={c.name}
+                onClick={() => {
+                  insertText(c.name);
+                  setShowCommandsDropdown(false);
+                }}
+                className="w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between"
+              >
+                <span className="font-mono font-medium text-amber-500">{c.name}</span>
+                <span className="text-[10px] text-muted-foreground">{c.desc}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className={cn(
+          'rounded-2xl border bg-card shadow-sm transition focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary overflow-visible',
+          'border-border',
+        )}>
+          {voiceActive ? (
+            <div className="h-[96px] w-full flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm space-y-2 text-foreground">
+              <div className="flex items-center gap-1">
+                <span className="w-1 h-4 bg-primary rounded animate-pulse" />
+                <span className="w-1 h-6 bg-primary rounded animate-pulse" style={{ animationDelay: '150ms' }} />
+                <span className="w-1 h-8 bg-primary rounded animate-pulse" style={{ animationDelay: '300ms' }} />
+                <span className="w-1 h-5 bg-primary rounded animate-pulse" style={{ animationDelay: '450ms' }} />
+                <span className="w-1 h-3 bg-primary rounded animate-pulse" style={{ animationDelay: '600ms' }} />
+              </div>
+              <span className="text-xs font-semibold tracking-wide text-primary animate-pulse">August is listening…</span>
+            </div>
+          ) : (
+            <>
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 p-2 bg-muted/20 border-b border-border">
+                  {attachments.map((file, i) => (
+                    <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted border border-border text-[10.5px] font-mono">
+                      <span className="truncate max-w-[150px]">{file.name}</span>
+                      <span className="text-[9px] text-muted-foreground">({file.size})</span>
+                      <button
+                        onClick={() => removeAttachment(i)}
+                        className="p-0.5 hover:bg-background rounded text-muted-foreground hover:text-foreground transition"
+                      >
+                        <X className="size-2.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <textarea
+                ref={taRef}
+                value={input}
+                onChange={(e) => {
+                  handleInputChange(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = Math.min(e.target.scrollHeight, 240) + 'px';
+                }}
+                onKeyDown={onKey}
+                placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${currentModel.id}…` : 'Type a message…')}
+                rows={1}
+                disabled={streaming}
+                className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
+                style={{ minHeight: '40px', maxHeight: '240px' }}
+              />
+            </>
+          )}
+
+          <div className="flex items-center justify-between px-1.5 pb-1.5">
+            <div className="flex items-center text-muted-foreground">
+              <ToolBtn Icon={Paperclip} label="Attach file" onClick={() => fileInputRef.current?.click()} />
+              <ToolBtn Icon={AtSign}    label="Mention tool" onClick={() => { setShowToolsDropdown(!showToolsDropdown); setShowCommandsDropdown(false); }} />
+              <ToolBtn Icon={Mic}       label="Voice input" onClick={startVoiceInput} />
+            </div>
+            <div className="flex items-center gap-2">
+              <ModelDropdown
+                models={models}
+                loading={modelsLoading}
+                selected={selectedModel}
+                onSelect={async (m) => {
+                  if (!m) return;
+                  setSelectedModel(m);
+                  try {
+                    await Promise.all([
+                      fetch('/api/config/activeProvider', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ provider: m.provider })
+                      }),
+                      fetch('/api/config/provider-details', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          provider: m.provider,
+                          config: { currentModel: m.id, _upstreamModel: m.id }
+                        })
+                      })
+                    ]);
+                  } catch (e) {
+                    console.error('Failed to update backend model config:', e);
+                  }
+                }}
+              />
+              <EffortDropdown
+                value={effort}
+                onChange={setEffort}
+              />
+
+              {streaming ? (
+                <Button onClick={stop} size="sm" variant="outline">
+                  <StopCircle className="size-3" /> Stop
+                </Button>
+              ) : (
+                <Button onClick={send} disabled={!input.trim() && attachments.length === 0} size="sm">
+                  <Send className="size-3" />
+                  Send
+                  <kbd className="ml-1 rounded bg-primary-foreground/20 px-1 text-[10px] font-mono">↵</kbd>
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Usage tracker — minimal, no static hint text */}
+        <div className="flex items-center justify-end mt-1 px-1">
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
+            <span className="relative w-16 h-1 rounded-full bg-muted overflow-hidden inline-block">
+              <span
+                className={cn('absolute inset-y-0 left-0 rounded-full transition-all duration-300', pct > 80 ? 'bg-destructive' : pct > 60 ? 'bg-amber-500' : 'bg-primary')}
+                style={{ width: `${pct}%` }}
+              />
+            </span>
+            <span>{pct}%</span>
+            <span className="text-muted-foreground/50">·</span>
+            <span className="text-muted-foreground/70">{estTokens.toLocaleString()} / {maxContext.toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="flex h-full min-h-0 relative">
+    <div className="flex h-full min-h-0 relative w-full">
       <ChatCheckpoints
         messages={messages}
         scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
       />
-      <div className="flex-1 flex flex-col min-w-0 bg-background">
-        {/* Thread */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto">
+      <div className="flex-1 flex flex-col min-w-0 bg-background h-full overflow-hidden">
+        <AnimatePresence mode="wait" initial={false}>
           {messages.length === 0 ? (
-            <EmptyState onPrompt={(p) => setInput(p)} />
+            // Centered layout for new session
+            <motion.div
+              key="centered-composer"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="flex-1 flex flex-col justify-center px-6 w-full"
+            >
+              <div className="w-full max-w-3xl mx-auto">
+                {/* Brand / Logo or clean Welcome text */}
+                <div className="text-center mb-8">
+                  <h2 className="text-3xl font-semibold tracking-tight text-foreground/90 font-sans">August</h2>
+                  <p className="text-xs text-muted-foreground/50 mt-1.5 font-sans">How can I help you code today?</p>
+                </div>
+                {renderComposerContent()}
+              </div>
+            </motion.div>
           ) : (
-            <div className="max-w-3xl mx-auto px-6 py-8 space-y-5 relative">
-              {messages.map((m, i) => {
-                const isReverting = revertingIndex !== null && i > revertingIndex;
-                return (
-                  <div
-                    key={m.id}
-                    className={cn(
-                      "transition-all duration-300 transform",
-                      isReverting ? "opacity-0 -translate-y-4 pointer-events-none" : "opacity-100 translate-y-0"
-                    )}
-                  >
-                    <MessageBubble
-                      message={m}
-                      isLast={i === messages.length - 1}
-                      streaming={streaming}
-                      onRevert={() => handleRevert(i)}
-                      onEdit={(text) => handleEdit(i, text)}
-                      onRegenerate={() => handleRegenerate(i)}
-                    />
-                  </div>
-                );
-              })}
-              {streaming && (() => {
-                const lastMsg = messages[messages.length - 1];
-                if (!lastMsg || lastMsg.role !== 'assistant') return <ThinkingIndicator />;
-                const parsed = parseThinkingAndContent(lastMsg.content, lastMsg.thinking);
-                return !parsed.thinking ? <ThinkingIndicator /> : null;
-              })()}
-            </div>
+            // Regular layout with messages
+            <motion.div
+              key="thread-and-composer"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.15 }}
+              className="flex-1 flex flex-col min-h-0 overflow-hidden"
+            >
+              {/* Thread */}
+              <div ref={scrollRef} className="flex-1 overflow-y-auto">
+                <div className="max-w-3xl mx-auto px-6 py-8 space-y-5 relative">
+                  {messages.map((m, i) => {
+                    const isReverting = revertingIndex !== null && i > revertingIndex;
+                    return (
+                      <div
+                        key={m.id}
+                        className={cn(
+                          "transition-all duration-300 transform",
+                          isReverting ? "opacity-0 -translate-y-4 pointer-events-none" : "opacity-100 translate-y-0"
+                        )}
+                      >
+                        <MessageBubble
+                          message={m}
+                          isLast={i === messages.length - 1}
+                          streaming={streaming}
+                          onRevert={() => handleRevert(i)}
+                          onEdit={(text) => handleEdit(i, text)}
+                          onRegenerate={() => handleRegenerate(i)}
+                        />
+                      </div>
+                    );
+                  })}
+                  {streaming && (() => {
+                    const lastMsg = messages[messages.length - 1];
+                    if (!lastMsg || lastMsg.role !== 'assistant') return <ThinkingIndicator />;
+                    const parsed = parseThinkingAndContent(lastMsg.content, lastMsg.thinking);
+                    return !parsed.thinking ? <ThinkingIndicator /> : null;
+                  })()}
+                </div>
+              </div>
+
+              {/* Composer at the bottom */}
+              <div className="bg-background px-4 py-3 shrink-0 border-t border-border/20">
+                {renderComposerContent()}
+              </div>
+            </motion.div>
           )}
-        </div>
-
-        {/* Composer */}
-        <div className="bg-background px-4 py-3 shrink-0 border-t border-transparent">
-          <div className="max-w-3xl mx-auto relative">
-            
-            {/* Tools Dropdown */}
-            {showToolsDropdown && (
-              <div className="absolute bottom-full mb-2 left-2 z-10 w-64 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
-                <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-semibold">Mention Tool</div>
-                {TOOLS.map((t) => (
-                  <button
-                    key={t.name}
-                    onClick={() => {
-                      insertText(t.name);
-                      setShowToolsDropdown(false);
-                    }}
-                    className="w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between"
-                  >
-                    <span className="font-mono font-medium text-primary">{t.name}</span>
-                    <span className="text-[10px] text-muted-foreground">{t.desc}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Commands Dropdown — triggered by typing / */}
-            {showCommandsDropdown && (
-              <div className="absolute bottom-full mb-2 left-2 z-10 w-64 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
-                <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-semibold">Commands & Tools</div>
-                {COMMANDS.filter(c => !input || c.name.startsWith(input)).map((c) => (
-                  <button
-                    key={c.name}
-                    onClick={() => {
-                      insertText(c.name);
-                      setShowCommandsDropdown(false);
-                    }}
-                    className="w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between"
-                  >
-                    <span className="font-mono font-medium text-amber-500">{c.name}</span>
-                    <span className="text-[10px] text-muted-foreground">{c.desc}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className={cn(
-              'rounded-2xl border bg-card shadow-sm transition focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary overflow-visible',
-              'border-border',
-            )}>
-              {voiceActive ? (
-                <div className="h-[96px] w-full flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm space-y-2 text-foreground">
-                  <div className="flex items-center gap-1">
-                    <span className="w-1 h-4 bg-primary rounded animate-pulse" />
-                    <span className="w-1 h-6 bg-primary rounded animate-pulse" style={{ animationDelay: '150ms' }} />
-                    <span className="w-1 h-8 bg-primary rounded animate-pulse" style={{ animationDelay: '300ms' }} />
-                    <span className="w-1 h-5 bg-primary rounded animate-pulse" style={{ animationDelay: '450ms' }} />
-                    <span className="w-1 h-3 bg-primary rounded animate-pulse" style={{ animationDelay: '600ms' }} />
-                  </div>
-                  <span className="text-xs font-semibold tracking-wide text-primary animate-pulse">August is listening…</span>
-                </div>
-              ) : (
-                <>
-                  {attachments.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 p-2 bg-muted/20 border-b border-border">
-                      {attachments.map((file, i) => (
-                        <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted border border-border text-[10.5px] font-mono">
-                          <span className="truncate max-w-[150px]">{file.name}</span>
-                          <span className="text-[9px] text-muted-foreground">({file.size})</span>
-                          <button
-                            onClick={() => removeAttachment(i)}
-                            className="p-0.5 hover:bg-background rounded text-muted-foreground hover:text-foreground transition"
-                          >
-                            <X className="size-2.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <textarea
-                    ref={taRef}
-                    value={input}
-                    onChange={(e) => {
-                      handleInputChange(e.target.value);
-                      e.target.style.height = 'auto';
-                      e.target.style.height = Math.min(e.target.scrollHeight, 240) + 'px';
-                    }}
-                    onKeyDown={onKey}
-                    placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${currentModel.id}…` : 'Type a message…')}
-                    rows={1}
-                    disabled={streaming}
-                    className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
-                    style={{ minHeight: '40px', maxHeight: '240px' }}
-                  />
-                </>
-              )}
-
-              <div className="flex items-center justify-between px-1.5 pb-1.5">
-                <div className="flex items-center text-muted-foreground">
-                  <ToolBtn Icon={Paperclip} label="Attach file" onClick={() => fileInputRef.current?.click()} />
-                  <ToolBtn Icon={AtSign}    label="Mention tool" onClick={() => { setShowToolsDropdown(!showToolsDropdown); setShowCommandsDropdown(false); }} />
-                  <ToolBtn Icon={Mic}       label="Voice input" onClick={startVoiceInput} />
-                </div>
-                <div className="flex items-center gap-2">
-                  <ModelDropdown
-                    models={models}
-                    loading={modelsLoading}
-                    selected={selectedModel}
-                    onSelect={async (m) => {
-                      if (!m) return;
-                      setSelectedModel(m);
-                      try {
-                        await Promise.all([
-                          fetch('/api/config/activeProvider', {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ provider: m.provider })
-                          }),
-                          fetch('/api/config/provider-details', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              provider: m.provider,
-                              config: { currentModel: m.id, _upstreamModel: m.id }
-                            })
-                          })
-                        ]);
-                      } catch (e) {
-                        console.error('Failed to update backend model config:', e);
-                      }
-                    }}
-                  />
-                  <EffortDropdown
-                    value={effort}
-                    onChange={setEffort}
-                  />
-
-                  {streaming ? (
-                    <Button onClick={stop} size="sm" variant="outline">
-                      <StopCircle className="size-3" /> Stop
-                    </Button>
-                  ) : (
-                    <Button onClick={send} disabled={!input.trim() && attachments.length === 0} size="sm">
-                      <Send className="size-3" />
-                      Send
-                      <kbd className="ml-1 rounded bg-primary-foreground/20 px-1 text-[10px] font-mono">↵</kbd>
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Usage tracker — minimal, no static hint text */}
-            <div className="flex items-center justify-end mt-1 px-1">
-              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
-                <span className="relative w-16 h-1 rounded-full bg-muted overflow-hidden inline-block">
-                  <span
-                    className={cn('absolute inset-y-0 left-0 rounded-full transition-all duration-300', pct > 80 ? 'bg-destructive' : pct > 60 ? 'bg-amber-500' : 'bg-primary')}
-                    style={{ width: `${pct}%` }}
-                  />
-                </span>
-                <span>{pct}%</span>
-                <span className="text-muted-foreground/50">·</span>
-                <span className="text-muted-foreground/70">{estTokens.toLocaleString()} / {maxContext.toLocaleString()}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        </AnimatePresence>
 
         {/* Hidden File Input */}
         <input
@@ -720,6 +771,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGenerating?: boolean; duration?: number }) {
   const [isOpen, setIsOpen] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
 
   useEffect(() => {
     if (!isGenerating) return;
@@ -737,13 +789,17 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
       : null;
 
   return (
-    <div className="text-xs font-mono my-2 select-none">
+    <div
+      className="text-xs my-2 select-none"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition py-1"
       >
         <span className="font-semibold flex items-center">
-          <span className="thinking-text flex items-center">
+          <span className={cn("thinking-text flex items-center", isGenerating && "animating")}>
             <span className="thinking-label">
               <span className="thinking-char thinking-cap" style={{ animationDelay: '0ms' }}>T</span>
               <span className="thinking-char" style={{ animationDelay: '100ms' }}>h</span>
@@ -764,8 +820,8 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
           </span>
         </span>
         {displayDuration && (
-          <span className="text-muted-foreground/60 text-[10px] ml-1 font-mono">
-            &gt; {displayDuration}
+          <span className="text-muted-foreground/60 text-[10px] ml-1">
+            {isHovered && '> '}{displayDuration}
           </span>
         )}
       </button>
@@ -777,7 +833,7 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
         )}
       >
         <div className={cn(
-          "pl-3 border-l border-foreground/15 text-foreground/70 leading-relaxed py-1",
+          "pl-3 border-l border-foreground/15 text-foreground/50 leading-relaxed py-1",
           isGenerating && "thinking-content-generating"
         )}>
           <Markdown content={text} />
@@ -1025,7 +1081,7 @@ function ThinkingIndicator() {
   return (
     <div className="flex gap-3">
       <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono pt-1">
-        <span className="thinking-text">
+        <span className="thinking-text animating">
           <span className="thinking-label">
             <span className="thinking-char thinking-cap" style={{ animationDelay: '0ms' }}>A</span>
             <span className="thinking-char" style={{ animationDelay: '100ms' }}>u</span>
@@ -1481,7 +1537,7 @@ function EffortDropdown({ value, onChange }: {
 }
 
 function buildDemoThread(sessionId: string | null): ChatMessage[] {
-  if (sessionId && sessionId !== 'demo' && !sessionId.startsWith('sess_')) return [];
+  if (sessionId !== 'demo') return [];
   return mockChatThread.map((m) => ({
     id: m.id,
     role: m.role,

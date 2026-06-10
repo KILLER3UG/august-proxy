@@ -158,7 +158,7 @@ function formatManagedToolResult(toolName, result) {
     return JSON.stringify(result);
 }
 
-async function executeManagedProxyTool(toolName, args) {
+async function executeManagedProxyTool(toolName, args, workspacePath = null) {
     if (isManagedWebToolName(toolName)) {
         const localName = (toolName === 'WebSearch' || toolName === 'web_search' || toolName === 'mcp__workspace__web_search') ? 'web_search' : 'web_fetch';
         logActivity('WEB', `${toolName} executed locally`);
@@ -170,11 +170,11 @@ async function executeManagedProxyTool(toolName, args) {
     }
     if (isAugustToolName(toolName)) {
         logActivity('AUGUST', `${toolName} executed locally`);
-        return executeAugustToolCall(toolName, args);
+        return executeAugustToolCall(toolName, args, false, workspacePath);
     }
     if (isManagedBashToolName(toolName)) {
         logActivity('BASH', `${toolName} executed locally`);
-        return executeManagedBashTool(toolName, args || {});
+        return executeManagedBashTool(toolName, args || {}, workspacePath);
     }
     if (isMcpToolName(toolName)) {
         return executeMcpToolCall(toolName, args);
@@ -182,7 +182,7 @@ async function executeManagedProxyTool(toolName, args) {
     throw new Error(`Unsupported managed proxy tool: ${toolName}`);
 }
 
-async function executeManagedOpenAiToolCalls(toolCalls, knownTools, messages) {
+async function executeManagedOpenAiToolCalls(toolCalls, knownTools, messages, workspacePath = null) {
     const executeOne = async (tc) => {
         const toolName = tc.function?.name;
         if (!toolName) {
@@ -206,7 +206,7 @@ async function executeManagedOpenAiToolCalls(toolCalls, knownTools, messages) {
         const parsedArgs = parseOpenAiToolArgs(tc);
 
         try {
-            const result = await executeManagedProxyTool(toolName, parsedArgs);
+            const result = await executeManagedProxyTool(toolName, parsedArgs, workspacePath);
             return {
                 tool_call_id: tc.id,
                 role: 'tool',

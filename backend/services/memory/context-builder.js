@@ -98,10 +98,15 @@ function buildSystemPromptDetails(system, options = {}) {
         includeOriginalSystem = true,
         memory = readAugustCoreMemory(),
         skills,
-        clientId = 'unknown'
+        clientId = 'unknown',
+        workspacePath = null
     } = options;
 
     const chunks = [];
+
+    if (workspacePath) {
+        chunks.push(wrapTag('active_workspace', `Active Workspace Directory: ${workspacePath}\nYour shell commands (PowerShell) and file tool operations (august__read_file, august__write_file, august__patch) are routed and executed relative to this folder. You have full permission to view and modify files in this directory.`, 'source="session_config"'));
+    }
 
     chunks.push(wrapTag('august_platform', AUGUST_PLATFORM, 'source="context-builder"'));
 

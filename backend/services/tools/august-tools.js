@@ -704,7 +704,7 @@ function getAugustToolDefinitions() {
     return AUGUST_TOOLS;
 }
 
-async function executeAugustToolCall(toolName, args, bypassConfirmation = false) {
+async function executeAugustToolCall(toolName, args, bypassConfirmation = false, workspacePath = null) {
     try {
         switch (toolName) {
             case 'august__bash': {
@@ -723,7 +723,11 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
                            `To cancel, tell me to stop.`;
                 }
                 // Executing in PowerShell explicitly
-                const { stdout, stderr } = await execPromise(args.command, { shell: 'powershell.exe' });
+                const execOpts = { shell: 'powershell.exe' };
+                if (workspacePath) {
+                    execOpts.cwd = workspacePath;
+                }
+                const { stdout, stderr } = await execPromise(args.command, execOpts);
                 if (stderr && stderr.trim().length > 0) {
                     return `[Executed with Warnings/Errors]\n${stderr}\n[Output]\n${stdout}`;
                 }
@@ -732,7 +736,7 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
 
             case 'august__read_file': {
                 const { resolveAnyPath, toDisplayPath } = require('../workbench/workbench');
-                const readPath = resolveAnyPath(args.path);
+                const readPath = resolveAnyPath(args.path, workspacePath);
 
                 // ── Permission check ──
                 const pathViolation = checkPathPermission(readPath);
@@ -750,7 +754,7 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
                 } catch (e) { /* ignore */ }
 
                 return {
-                    path: toDisplayPath(readPath),
+                    path: toDisplayPath(readPath, workspacePath),
                     length: text.length,
                     truncated: text.length > maxChars,
                     content: text.slice(0, maxChars)
@@ -759,7 +763,7 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
 
             case 'august__write_file': {
                 const { resolveAnyPath, toDisplayPath } = require('../workbench/workbench');
-                const writePath = resolveAnyPath(args.path);
+                const writePath = resolveAnyPath(args.path, workspacePath);
 
                 // ── Permission check ──
                 const pathViolation = checkPathPermission(writePath);
@@ -802,7 +806,7 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
 
                 const result = {
                     status: 'written',
-                    path: toDisplayPath(writePath),
+                    path: toDisplayPath(writePath, workspacePath),
                     bytes: Buffer.byteLength(String(args.content || ''), 'utf8')
                 };
                 if (staleWarning) {
@@ -821,7 +825,7 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
                 const affectedPaths = [];
                 if (mode === 'replace') {
                     if (!args.path) throw new Error("path is required for replace mode");
-                    affectedPaths.push(resolveAnyPath(args.path));
+                    affectedPaths.push(resolveAnyPath(args.path, workspacePath));
                 } else if (mode === 'patch') {
                     if (!args.patch) throw new Error("patch is required for patch mode");
                     const parsed = parseV4APatch(args.patch);
@@ -829,9 +833,9 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
                         return { error: parsed.error };
                     }
                     for (const op of parsed.operations) {
-                        affectedPaths.push(resolveAnyPath(op.file_path));
+                        affectedPaths.push(resolveAnyPath(op.file_path, workspacePath));
                         if (op.new_path) {
-                            affectedPaths.push(resolveAnyPath(op.new_path));
+                            affectedPaths.push(resolveAnyPath(op.new_path, workspacePath));
                         }
                     }
                 } else {
@@ -851,7 +855,7 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
                     if (oldMtime !== undefined && fs.existsSync(p)) {
                         const currentMtime = fs.statSync(p).mtimeMs;
                         if (currentMtime !== oldMtime) {
-                            staleWarnings.push(`Warning: ${toDisplayPath(p)} was modified since you last read it (external edit or concurrent agent).`);
+                            staleWarnings.push(`Warning: ${toDisplayPath(p, workspacePath)} was modified since you last read it (external edit or concurrent agent).`);
                         }
                     }
                 }
@@ -860,12 +864,12 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
                 // File operations interface
                 const fileOps = {
                     read_file_raw(filePath) {
-                        const p = resolveAnyPath(filePath);
+                        const p = resolveAnyPath(filePath, workspacePath);
                         if (!fs.existsSync(p)) return { error: "File not found" };
                         return { content: fs.readFileSync(p, 'utf8'), error: null };
                     },
                     write_file(filePath, content) {
-                        const p = resolveAnyPath(filePath);
+                        const p = resolveAnyPath(filePath, workspacePath);
                         const dir = path.dirname(p);
                         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
                         fs.writeFileSync(p, content, 'utf8');
@@ -875,15 +879,15 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
                         return { error: null };
                     },
                     delete_file(filePath) {
-                        const p = resolveAnyPath(filePath);
+                        const p = resolveAnyPath(filePath, workspacePath);
                         if (fs.existsSync(p)) {
                             fs.unlinkSync(p);
                         }
                         return { error: null };
                     },
                     move_file(filePath, newPath) {
-                        const p = resolveAnyPath(filePath);
-                        const np = resolveAnyPath(newPath);
+                        const p = resolveAnyPath(filePath, workspacePath);
+                        const np = resolveAnyPath(newPath, workspacePath);
                         const dir = path.dirname(np);
                         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
                         fs.renameSync(p, np);
@@ -930,8 +934,8 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
                             return `Validation failed:\n${parsed.error}`;
                         }
                         for (const op of parsed.operations) {
-                            op.file_path = resolveAnyPath(op.file_path);
-                            if (op.new_path) op.new_path = resolveAnyPath(op.new_path);
+                            op.file_path = resolveAnyPath(op.file_path, workspacePath);
+                            if (op.new_path) op.new_path = resolveAnyPath(op.new_path, workspacePath);
                         }
                         const { validateOperations } = require('../../lib/patch-parser');
                         const valErrors = validateOperations(parsed.operations, fileOps);
@@ -970,7 +974,7 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
 
                     const result = {
                         success: true,
-                        files_modified: [toDisplayPath(resolveAnyPath(args.path))],
+                        files_modified: [toDisplayPath(resolveAnyPath(args.path, workspacePath), workspacePath)],
                         diff: `# Updated: ${args.path}`
                     };
                     if (warningMsg) result._warning = warningMsg;
@@ -979,8 +983,8 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
                     const parsed = parseV4APatch(args.patch);
                     if (parsed.error) return { error: parsed.error };
                     for (const op of parsed.operations) {
-                        op.file_path = resolveAnyPath(op.file_path);
-                        if (op.new_path) op.new_path = resolveAnyPath(op.new_path);
+                        op.file_path = resolveAnyPath(op.file_path, workspacePath);
+                        if (op.new_path) op.new_path = resolveAnyPath(op.new_path, workspacePath);
                     }
                     const applyResult = applyV4AOperations(parsed.operations, fileOps);
                     if (!applyResult.success) {
@@ -991,12 +995,12 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false)
                         files_modified: applyResult.files_modified.map(p => {
                             if (p.includes(' -> ')) {
                                 const parts = p.split(' -> ');
-                                return `${toDisplayPath(resolveAnyPath(parts[0]))} -> ${toDisplayPath(resolveAnyPath(parts[1]))}`;
+                                return `${toDisplayPath(resolveAnyPath(parts[0], workspacePath), workspacePath)} -> ${toDisplayPath(resolveAnyPath(parts[1], workspacePath), workspacePath)}`;
                             }
-                            return toDisplayPath(resolveAnyPath(p));
+                            return toDisplayPath(resolveAnyPath(p, workspacePath), workspacePath);
                         }),
-                        files_created: applyResult.files_created.map(p => toDisplayPath(resolveAnyPath(p))),
-                        files_deleted: applyResult.files_deleted.map(p => toDisplayPath(resolveAnyPath(p))),
+                        files_created: applyResult.files_created.map(p => toDisplayPath(resolveAnyPath(p, workspacePath), workspacePath)),
+                        files_deleted: applyResult.files_deleted.map(p => toDisplayPath(resolveAnyPath(p, workspacePath), workspacePath)),
                         diff: applyResult.diff
                     };
                     if (warningMsg) result._warning = warningMsg;

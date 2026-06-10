@@ -21,6 +21,7 @@ import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Settings, ChevronDown, Volume2, Minus, Square, X, Columns, Home, Plus } from 'lucide-react';
 import { SessionList } from '@/components/sidebar/SessionList';
+import { WorkspacePanel } from '@/sections/chat/WorkspacePanel';
 import { cn } from '@/lib/utils';
 import { useStore } from '@nanostores/react';
 import { $sessions, createSession, type Session } from '@/store/sessions';
@@ -32,7 +33,18 @@ export function ChatLayout() {
   const location = useLocation();
   const { sessionId } = useParams<{ sessionId?: string }>();
   const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem(SESSIONS_COLLAPSED_KEY) === '1');
+  const [showRightSidebar, setShowRightSidebar] = useState<boolean>(() => localStorage.getItem('august-show-right-sidebar') === '1');
   const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    localStorage.setItem('august-show-right-sidebar', showRightSidebar ? '1' : '0');
+  }, [showRightSidebar]);
+
+  useEffect(() => {
+    const handleOpen = () => setShowRightSidebar(true);
+    window.addEventListener('august-open-right-sidebar', handleOpen);
+    return () => window.removeEventListener('august-open-right-sidebar', handleOpen);
+  }, []);
 
   const sessions = useStore($sessions);
   const active = sessions.find((s) => s.id === sessionId && !s.isArchived) ?? null;
@@ -108,30 +120,39 @@ export function ChatLayout() {
               sessionStorage.setItem('pre-settings-path', location.pathname);
               navigate('/settings');
             }}
+            onToggleRightSidebar={() => setShowRightSidebar(s => !s)}
           />
-          <main className="flex-1 min-h-0 overflow-hidden">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div
-                key={location.pathname}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{    opacity: 0, y: -4 }}
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                className="h-full"
-              >
-                <Outlet />
-              </motion.div>
-            </AnimatePresence>
-          </main>
+          <div className="flex-1 flex min-h-0 overflow-hidden">
+            <main className="flex-1 min-h-0 overflow-hidden">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={location.pathname}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{    opacity: 0, y: -4 }}
+                  transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                  className="h-full"
+                >
+                  <Outlet />
+                </motion.div>
+              </AnimatePresence>
+            </main>
+            {showRightSidebar && !isSettings && (
+              <aside className="w-80 border-l border-border/40 bg-[#0e0e11] shrink-0 overflow-y-auto flex flex-col">
+                <WorkspacePanel sessionId={active?.id || null} />
+              </aside>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function Titlebar({ session, onSettings }: {
+function Titlebar({ session, onSettings, onToggleRightSidebar }: {
   session: Session | null;
   onSettings: () => void;
+  onToggleRightSidebar: () => void;
 }) {
   return (
     <header className="h-12 bg-background flex items-center justify-between px-4 shrink-0 select-none">
@@ -146,7 +167,11 @@ function Titlebar({ session, onSettings }: {
         <button className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition" title="Mute/Unmute">
           <Volume2 className="size-4" />
         </button>
-        <button className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition" title="Toggle Sidebar">
+        <button 
+          onClick={onToggleRightSidebar}
+          className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition" 
+          title="Toggle Workspace Explorer"
+        >
           <Columns className="size-4" />
         </button>
 

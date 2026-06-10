@@ -10,6 +10,7 @@ export interface Session {
   model: string;
   folderId?: string | null;
   isArchived?: boolean;
+  workspacePath?: string | null;
 }
 
 export interface Folder {
@@ -212,4 +213,10 @@ export function toggleFolderCollapse(id: string) {
   const updated = $folders.get().map(f => f.id === id ? { ...f, isCollapsed: !f.isCollapsed } : f);
   $folders.set(updated);
   saveFoldersToStorage(updated);
+}
+
+export function updateSessionWorkspace(id: string, path: string | null) {
+  const updated = $sessions.get().map(s => s.id === id ? { ...s, workspacePath: path } : s);
+  $sessions.set(updated);
+  saveSessionsToStorage(updated);
 }

@@ -166,8 +166,12 @@ textarea:focus, input:focus, div:focus-within {
 }
 
 .thinking-char {
+  opacity: 0.6;
+  transition: opacity 0.3s ease;
+}
+
+.thinking-text.animating .thinking-char {
   animation: charGlow 1.6s infinite ease-in-out;
-  opacity: 0.4;
 }
 
 .thinking-cap {
@@ -412,21 +416,16 @@ textarea:focus, input:focus, div:focus-within {
 }
 
 .thinking-content-generating {
-  -webkit-mask-image: linear-gradient(
-    90deg,
-    rgba(0, 0, 0, 0.4) 0%,
-    rgba(0, 0, 0, 1) 50%,
-    rgba(0, 0, 0, 0.4) 100%
-  );
-  mask-image: linear-gradient(
-    90deg,
-    rgba(0, 0, 0, 0.4) 0%,
-    rgba(0, 0, 0, 1) 50%,
-    rgba(0, 0, 0, 0.4) 100%
-  );
-  -webkit-mask-size: 300% 100%;
-  mask-size: 300% 100%;
-  animation: maskSweep 2.5s infinite linear;
+  animation: thoughtPulse 1.8s infinite ease-in-out;
+}
+
+@keyframes thoughtPulse {
+  0%, 100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.75;
+  }
 }
 
 

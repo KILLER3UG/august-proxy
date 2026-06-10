@@ -68,7 +68,7 @@ function getManagedBashToolDefinitions() {
   ];
 }
 
-async function executeManagedBashTool(toolName, args) {
+async function executeManagedBashTool(toolName, args, workspacePath = null) {
   const localName = normalizeBashToolName(toolName);
   if (localName !== 'bash') {
     throw new Error(`Unknown bash tool: ${toolName}`);
@@ -94,7 +94,7 @@ async function executeManagedBashTool(toolName, args) {
 
   return new Promise((resolve) => {
     const child = exec(command, {
-      cwd: '/app',
+      cwd: workspacePath || '/app',
       timeout: timeoutMs,
       maxBuffer: MAX_OUTPUT_CHARS * 2,
       shell: '/bin/bash'
