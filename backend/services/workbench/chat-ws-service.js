@@ -70,6 +70,49 @@ class WebSocketMockResponse {
                 }
                 try {
                     const parsed = JSON.parse(dataStr);
+                    // ── Normalize to typed events ──
+                    // Handle proxy-typed events (already normalized by adapter)
+                    if (parsed.type === 'thinking' || parsed.type === 'text' || parsed.type === 'content' ||
+                        parsed.type === 'tool_call' || parsed.type === 'tool_result' || parsed.type === 'tool_progress' ||
+                        parsed.type === 'done' || parsed.type === 'error') {
+                        safeSend(this.ws, { ...parsed, requestId: this.requestId });
+                        continue;
+                    }
+                    // Handle OpenAI streaming chunks: { choices: [{ delta: { content, reasoning_content } }] }
+                    const delta = parsed.choices?.[0]?.delta;
+                    if (delta) {
+                        if (delta.reasoning_content || delta.reasoning) {
+                            safeSend(this.ws, { type: 'thinking', requestId: this.requestId, content: delta.reasoning_content || delta.reasoning });
+                        }
+                        if (delta.content) {
+                            safeSend(this.ws, { type: 'text', requestId: this.requestId, content: delta.content });
+                        }
+                        // finish_reason chunk with no content — ignore (done event sent at end)
+                        continue;
+                    }
+                    // Handle Anthropic native SSE events
+                    const evType = parsed.type;
+                    if (evType === 'content_block_delta') {
+                        const d = parsed.delta;
+                        if (d?.type === 'text_delta' && d.text) {
+                            safeSend(this.ws, { type: 'text', requestId: this.requestId, content: d.text });
+                        } else if (d?.type === 'thinking_delta' && d.thinking) {
+                            safeSend(this.ws, { type: 'thinking', requestId: this.requestId, content: d.thinking });
+                        } else if (d?.type === 'input_json_delta') {
+                            // tool arg streaming — ignore for now
+                        }
+                        continue;
+                    }
+                    if (evType === 'content_block_start' || evType === 'content_block_stop' ||
+                        evType === 'message_start' || evType === 'message_delta' || evType === 'message_stop' ||
+                        evType === 'ping') {
+                        // Lifecycle events — nothing to display
+                        if (evType === 'message_stop') {
+                            safeSend(this.ws, { type: 'done', requestId: this.requestId });
+                        }
+                        continue;
+                    }
+                    // Fallback: forward as-is with requestId
                     safeSend(this.ws, { ...parsed, requestId: this.requestId });
                 } catch {
                     safeSend(this.ws, { type: 'text', requestId: this.requestId, content: dataStr });
@@ -108,7 +151,25 @@ class WebSocketMockResponse {
                 if (dataStr !== '[DONE]') {
                     try {
                         const parsed = JSON.parse(dataStr);
-                        safeSend(this.ws, { ...parsed, requestId: this.requestId });
+                        // Reuse same normalization as write()
+                        const delta = parsed.choices?.[0]?.delta;
+                        if (delta) {
+                            if (delta.reasoning_content || delta.reasoning) {
+                                safeSend(this.ws, { type: 'thinking', requestId: this.requestId, content: delta.reasoning_content || delta.reasoning });
+                            }
+                            if (delta.content) {
+                                safeSend(this.ws, { type: 'text', requestId: this.requestId, content: delta.content });
+                            }
+                        } else if (parsed.type === 'content_block_delta') {
+                            const d = parsed.delta;
+                            if (d?.type === 'text_delta' && d.text) {
+                                safeSend(this.ws, { type: 'text', requestId: this.requestId, content: d.text });
+                            } else if (d?.type === 'thinking_delta' && d.thinking) {
+                                safeSend(this.ws, { type: 'thinking', requestId: this.requestId, content: d.thinking });
+                            }
+                        } else if (parsed.type && !['content_block_start', 'content_block_stop', 'message_start', 'message_delta', 'message_stop', 'ping'].includes(parsed.type)) {
+                            safeSend(this.ws, { ...parsed, requestId: this.requestId });
+                        }
                     } catch {
                         safeSend(this.ws, { type: 'text', requestId: this.requestId, content: dataStr });
                     }

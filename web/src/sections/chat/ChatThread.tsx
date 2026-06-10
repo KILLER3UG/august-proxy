@@ -406,17 +406,26 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   assistantContent += `\n\n⚠️ Error: ${parsed.message || 'Unknown error'}`;
                   done = true;
                   break;
-                default:
-                  // Some adapters send the raw field directly
-                  if (parsed.thinking) {
+                default: {
+                  // Raw OpenAI/Anthropic streaming chunk — extract fields directly
+                  const delta = parsed.choices?.[0]?.delta;
+                  if (delta?.reasoning_content) {
+                    thinkingContent += delta.reasoning_content;
+                  } else if (delta?.content) {
+                    if (wsThinkingEnd === null && thinkingContent.trim()) {
+                      wsThinkingEnd = Date.now();
+                      setThinkingEnd(wsThinkingEnd);
+                    }
+                    assistantContent += delta.content;
+                  } else if (parsed.thinking) {
                     thinkingContent += parsed.thinking;
                   } else if (parsed.reasoning_content) {
                     thinkingContent += parsed.reasoning_content;
-                  } else if (parsed.choices && parsed.choices[0]?.delta?.reasoning_content) {
-                    thinkingContent += parsed.choices[0].delta.reasoning_content;
                   } else if (parsed.content) {
                     assistantContent += parsed.content;
                   }
+                  break;
+                }
               }
 
               // Update UI
