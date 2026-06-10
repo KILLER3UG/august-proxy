@@ -14,6 +14,7 @@ import { $sessions } from '@/store/sessions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
 import { ToolCallItem as ToolCallItemComp } from '@/components/chat/ToolCallItem';
+import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import { HoistedTodoPanel } from '@/components/chat/HoistedTodoPanel';
 
@@ -862,11 +863,11 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
 // ── Tool execution block ──
 function ToolBlock({ tools }: { tools: NonNullable<ChatMessage['tools']> }) {
   return (
-    <div className="mb-3 flex flex-col gap-1.5">
+    <>
       {tools.map((tool) => (
         <ToolCallItemComp key={tool.id} tool={tool} />
       ))}
-    </div>
+    </>
   );
 }
 
@@ -1146,49 +1147,67 @@ function MessageBubble({
 }
 
 function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool']>; timestamp: string }) {
+  const [open, setOpen] = useState(false);
+  const hasBody = !!(tool.args || tool.result);
   return (
-    <div className="group flex gap-3 my-2" data-slot="tool-card">
-      <div className="shrink-0">
-        <div className="size-8 rounded-full bg-muted text-muted-foreground grid place-items-center ring-1 ring-border">
-          <Wrench className="size-4" />
-        </div>
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1.5 text-xs">
-          <span className="font-mono font-semibold text-foreground">{tool.name}</span>
-          {tool.status === 'running' && (
-            <span className="text-[10px] text-amber-600 inline-flex items-center gap-1">
-              <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" /> running
+    <div className="my-1 text-xs text-muted-foreground" data-slot="tool-block">
+      <DisclosureRow
+        onToggle={hasBody ? () => setOpen(!open) : undefined}
+        open={open}
+        trailing={
+          tool.duration !== undefined && (
+            <span className="font-mono text-[10px] text-muted-foreground/60 tabular-nums shrink-0">
+              {tool.duration}ms
             </span>
-          )}
-          {tool.status === 'done' && (
-            <span className="text-[10px] text-primary inline-flex items-center gap-1">
-              <Check className="size-2.5" /> {tool.duration}ms
+          )
+        }
+      >
+        <span className="flex min-w-0 items-baseline gap-1.5">
+          <span
+            className={cn(
+              'text-xs font-medium leading-5',
+              tool.status === 'running' && 'shimmer text-foreground/55'
+            )}
+          >
+            <span className="thinking-text">
+              <span className="thinking-label">
+                {Array.from(tool.name).map((ch, i) => (
+                  <span
+                    key={i}
+                    className={cn('thinking-char', i === 0 && 'thinking-cap')}
+                    style={{ animationDelay: `${i * 100}ms` }}
+                  >
+                    {ch}
+                  </span>
+                ))}
+              </span>
+              {tool.status === 'running' && (
+                <span className="thinking-dots">
+                  <span className="dot" style={{ animationDelay: '0ms' }}>.</span>
+                  <span className="dot" style={{ animationDelay: '200ms' }}>.</span>
+                  <span className="dot" style={{ animationDelay: '400ms' }}>.</span>
+                </span>
+              )}
             </span>
-          )}
-          {tool.status === 'error' && (
-            <span className="text-[10px] text-destructive inline-flex items-center gap-1">
-              <AlertCircle className="size-2.5" /> error
-            </span>
-          )}
-          <span className="text-[10px] text-muted-foreground ml-auto">{formatTimeAgo(timestamp)}</span>
-        </div>
-        <div className="rounded-xl border border-border bg-muted/30 overflow-hidden text-xs">
+          </span>
+          {tool.status === 'done' && <span className="text-primary/80 text-[10px]">done</span>}
+          {tool.status === 'error' && <span className="text-destructive text-[10px]">error</span>}
+        </span>
+      </DisclosureRow>
+      {open && hasBody && (
+        <div className="mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1">
           {tool.args && (
-            <details className="border-b border-border" open>
-              <summary className="px-3 py-1.5 bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground transition flex items-center gap-1 select-none">
-                <ChevronRight className="size-3 transition group-open:rotate-90" /> arguments
-              </summary>
-              <pre className="px-3 py-2 font-mono whitespace-pre-wrap bg-background/60 text-[11px]">{tool.args}</pre>
-            </details>
+            <pre className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[11px] text-muted-foreground/70 break-words leading-relaxed border-l border-border/30 ml-2.5">
+              {tool.args}
+            </pre>
           )}
           {tool.result && (
-            <div className="px-3 py-2 font-mono whitespace-pre-wrap text-[11px] text-foreground/80 break-words leading-relaxed">
+            <div className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[11px] text-foreground/80 break-words leading-relaxed border-l border-border/30 ml-2.5">
               {tool.result}
             </div>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

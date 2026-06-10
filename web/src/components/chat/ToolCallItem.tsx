@@ -1,5 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
-import { ChevronDown, ChevronRight, Zap, Check, AlertCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 
@@ -18,27 +17,12 @@ export interface ToolEntry {
   searchHits?: Array<{ title: string; url: string; snippet?: string }>;
 }
 
-const STATUS_TONE: Record<ToolEntry['status'], string> = {
-  running: 'border-primary/40 bg-primary/[0.04]',
-  done: 'border-border bg-muted/20',
-  error: 'border-destructive/50 bg-destructive/[0.04]',
-};
-
-const BULLET_TONE: Record<ToolEntry['status'], string> = {
-  running: 'text-primary',
-  done: 'text-primary/80',
-  error: 'text-destructive',
-};
-
-const TICK_MS = 500;
-
 /**
- * ToolCallItem — renders one tool call as a collapsible card.
- * 
- * Collapsible tool call card with status icons, inline diffs, search results:
- *   ▸ ● read_file(path=/foo)                         2.3s
- * 
- * Uses lucide-react icons, live elapsed timer, inline diffs, and search results.
+ * ToolCallItem — renders one tool call like the Thinking disclosure.
+ *
+ * Uses DisclosureRow + char-glow animation (thinking-text) instead of
+ * a bordered card. The tool name animates while running, same as the
+ * "Thinking" label in ThinkingDisclosure.
  */
 export function ToolCallItem({ tool }: { tool: ToolEntry }) {
   const [userOverride, setUserOverride] = useState<boolean | null>(null);
@@ -47,7 +31,7 @@ export function ToolCallItem({ tool }: { tool: ToolEntry }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (tool.status !== 'running') return;
-    const id = window.setInterval(() => setNow(() => Date.now()), TICK_MS);
+    const id = window.setInterval(() => setNow(() => Date.now()), 500);
     return () => window.clearInterval(id);
   }, [tool.status]);
 
@@ -60,50 +44,61 @@ export function ToolCallItem({ tool }: { tool: ToolEntry }) {
     tool.context || tool.preview || tool.summary || tool.error || tool.inline_diff || tool.searchHits
   );
 
-  const Chevron = open ? ChevronDown : ChevronRight;
+  const isRunning = tool.status === 'running';
+  const label = tool.context ? `${tool.name}(${tool.context})` : tool.name;
 
   return (
-    <div className={`rounded-md border overflow-hidden ${STATUS_TONE[tool.status]}`} data-slot="tool-block">
-      <button
-        onClick={() => hasBody && setUserOverride(!open)}
-        disabled={!hasBody}
-        className="flex items-center gap-1.5 w-full px-2.5 py-1.5 text-xs hover:bg-foreground/2 disabled:cursor-default transition"
+    <div className="text-xs text-muted-foreground my-0.5" data-slot="tool-block">
+      <DisclosureRow
+        onToggle={hasBody ? () => setUserOverride(!open) : undefined}
+        open={open && hasBody}
+        trailing={
+          elapsed && (
+            <span className="font-mono text-[10px] text-muted-foreground/60 tabular-nums shrink-0">
+              {elapsed}
+            </span>
+          )
+        }
       >
-        {hasBody ? (
-          <Chevron className="size-3 shrink-0 text-muted-foreground" />
-        ) : (
-          <span className="size-3 shrink-0" />
-        )}
-
-        <Zap className={`size-3 shrink-0 ${BULLET_TONE[tool.status]}`} />
-
-        <span className="font-mono font-medium shrink-0">{tool.name}</span>
-
-        {tool.context && (
-          <span className="font-mono text-muted-foreground truncate min-w-0 flex-1 text-[10px]">
-            {tool.context}
+        <span className="flex min-w-0 items-baseline gap-1.5">
+          <span
+            className={cn(
+              'text-xs font-medium leading-5',
+              isRunning && 'shimmer text-foreground/55'
+            )}
+          >
+            <span className="thinking-text">
+              <span className="thinking-label">
+                {Array.from(label).map((ch, i) => (
+                  <span
+                    key={i}
+                    className={cn('thinking-char', i === 0 && 'thinking-cap')}
+                    style={{ animationDelay: `${i * 100}ms` }}
+                  >
+                    {ch}
+                  </span>
+                ))}
+              </span>
+              {isRunning && (
+                <span className="thinking-dots">
+                  <span className="dot" style={{ animationDelay: '0ms' }}>.</span>
+                  <span className="dot" style={{ animationDelay: '200ms' }}>.</span>
+                  <span className="dot" style={{ animationDelay: '400ms' }}>.</span>
+                </span>
+              )}
+            </span>
           </span>
-        )}
-
-        {tool.status === 'running' && (
-          <span className="inline-block size-2 rounded-full bg-primary animate-pulse shrink-0" title="running" />
-        )}
-        {tool.status === 'error' && (
-          <AlertCircle className="size-3 shrink-0 text-destructive" aria-label="error" />
-        )}
-        {tool.status === 'done' && (
-          <Check className="size-3 shrink-0 text-primary/80" aria-label="done" />
-        )}
-
-        {elapsed && (
-          <span className="font-mono text-[10px] text-muted-foreground/60 tabular-nums shrink-0">
-            {elapsed}
-          </span>
-        )}
-      </button>
+          {tool.status === 'done' && (
+            <span className="text-primary/80 text-[10px]">done</span>
+          )}
+          {tool.status === 'error' && (
+            <span className="text-destructive text-[10px]">error</span>
+          )}
+        </span>
+      </DisclosureRow>
 
       {open && hasBody && (
-        <div className="border-t border-border/60 px-3 py-2 space-y-2 text-xs font-mono">
+        <div className="mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1 pl-4">
           {tool.context && <Section label="context">{tool.context}</Section>}
 
           {tool.preview && tool.status === 'running' && (
@@ -174,7 +169,7 @@ function Section({
   tone?: 'error';
 }) {
   return (
-    <div className="flex gap-3">
+    <div className="flex gap-3 mt-1.5">
       <span
         className={`text-[10px] shrink-0 w-16 pt-0.5 ${
           tone === 'error' ? 'text-destructive' : 'text-muted-foreground/60'
