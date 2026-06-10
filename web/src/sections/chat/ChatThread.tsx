@@ -31,6 +31,14 @@ export interface ChatMessage {
     duration?: number;
     result?: string;
   };
+  tools?: Array<{
+    name: string;
+    args: Record<string, unknown>;
+    id: string;
+    status: 'running' | 'done' | 'error';
+    result?: string;
+    duration?: number;
+  }>;
   thinking?: string;
   thinkingDuration?: number;
 }
@@ -222,6 +230,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       let assistantContent = '';
       let thinkingContent = '';
       let buffer = '';
+      let toolResults: ChatMessage['tools'] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -247,6 +256,19 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   thinkingEnd = Date.now();
                 }
                 assistantContent += parsed.content || '';
+              } else if (parsed.type === 'tool_call') {
+                // Start tracking a new tool execution
+                toolResults = [...(toolResults || []), {
+                  name: parsed.name,
+                  args: parsed.args || {},
+                  id: parsed.id,
+                  status: parsed.status || 'running',
+                }];
+              } else if (parsed.type === 'tool_result') {
+                // Update the tool with its result
+                toolResults = (toolResults || []).map(t =>
+                  t.id === parsed.id ? { ...t, result: parsed.result, status: parsed.status || 'done', duration: parsed.duration } : t
+                );
               } else if (parsed.thinking) {
                 thinkingContent += parsed.thinking;
               } else if (parsed.reasoning_content) {
@@ -284,7 +306,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           msg.id === assistantMsgId ? {
             ...msg,
             content: assistantContent,
-            thinking: thinkingContent || undefined
+            thinking: thinkingContent || undefined,
+            tools: toolResults && toolResults.length > 0 ? toolResults : undefined
           } : msg
         ));
       }
@@ -867,8 +890,74 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
   );
 }
 
+// ── Tool execution block ──
+function ToolBlock({ tools }: { tools: NonNullable<ChatMessage['tools']> }) {
+  const [isOpen, setIsOpen] = useState(true);
+
+  return (
+    <div className="mb-3 rounded-lg border border-border/30 bg-muted/20 text-sm">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 w-full px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition"
+      >
+        <svg
+          className={cn("size-3 transition-transform", isOpen && "rotate-90")}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+        <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+        </svg>
+        Tools
+        <span className="ml-auto text-[10px] text-muted-foreground/60">{tools.length} tool call{tools.length !== 1 ? 's' : ''}</span>
+      </button>
+      <div className={cn("grid transition-all duration-200", isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0")}>
+        <div className="overflow-hidden">
+          <div className="px-3 pb-2 flex flex-col gap-2">
+            {tools.map((tool, idx) => (
+              <div key={tool.id || idx} className="rounded-md border border-border/20 bg-background/50 p-2.5 text-xs">
+                <div className="flex items-center gap-1.5 mb-1">
+                  {tool.status === 'running' ? (
+                    <span className="size-2 rounded-full bg-yellow-400 animate-pulse" />
+                  ) : tool.status === 'error' ? (
+                    <span className="size-2 rounded-full bg-red-500" />
+                  ) : (
+                    <span className="size-2 rounded-full bg-green-500" />
+                  )}
+                  <code className="text-[11px] font-semibold text-foreground">{tool.name}</code>
+                  {tool.duration !== undefined && (
+                    <span className="text-[10px] text-muted-foreground/60 ml-auto">
+                      {tool.duration}ms
+                    </span>
+                  )}
+                </div>
+                {tool.args && Object.keys(tool.args).length > 0 && (
+                  <div className="mb-1 rounded bg-muted/30 p-1.5 font-mono text-[10px] text-muted-foreground leading-relaxed overflow-x-auto max-h-24 overflow-y-auto">
+                    {JSON.stringify(tool.args, null, 1)}
+                  </div>
+                )}
+                {tool.result && (
+                  <div className="rounded bg-muted/30 p-1.5 font-mono text-[10px] text-muted-foreground leading-relaxed overflow-x-auto max-h-32 overflow-y-auto whitespace-pre-wrap">
+                    {tool.result.length > 500 ? tool.result.slice(0, 500) + '...' : tool.result}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ----------------------------------------------------
-// [NEW/REFACTORED] MessageBubble
+// MessageBubble
 // ----------------------------------------------------
 function MessageBubble({
   message,
@@ -1008,6 +1097,9 @@ function MessageBubble({
           isGenerating={isLast && (!animationDone || streaming) && !displayedContent} 
           duration={message.thinkingDuration} 
         />
+      )}
+      {!isUser && message.tools && message.tools.length > 0 && (
+        <ToolBlock tools={message.tools} />
       )}
       {isUser ? (
         <>

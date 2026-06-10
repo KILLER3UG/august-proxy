@@ -614,7 +614,9 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                                 if (hasManagedTools) {
                                     // Already forwarded raw SSE — but some SSE may contain tool_calls.
                                     // Resolve and re-stream the final answer.
-                                    const resolved = await resolveManagedOpenAiToolCalls(parsed, oReq, cfg, clientToolNames, req.workspacePath);
+                                    const resolved = await resolveManagedOpenAiToolCalls(parsed, oReq, cfg, clientToolNames, req.workspacePath, (evt) => {
+                                        try { res.write(`data: ${JSON.stringify(evt)}\n\n`); } catch (e) {}
+                                    });
                                     const resolvedMsg = resolved.choices?.[0]?.message;
                                     const resolvedDelta = {
                                         role: resolvedMsg?.role || 'assistant',
@@ -677,7 +679,9 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                         upstreamMsg.tool_calls.some(tc => managedLocalToolNames.has(tc.function?.name));
 
                     if (hasManagedTools) {
-                        const resolved = await resolveManagedOpenAiToolCalls(data, oReq, cfg, clientToolNames, req.workspacePath);
+                        const resolved = await resolveManagedOpenAiToolCalls(data, oReq, cfg, clientToolNames, req.workspacePath, (evt) => {
+                            try { res.write(`data: ${JSON.stringify(evt)}\n\n`); } catch (e) {}
+                        });
                         const resolvedMsg = resolved.choices?.[0]?.message;
                         const resolvedDelta = {
                             role: resolvedMsg?.role || 'assistant',
@@ -860,7 +864,7 @@ async function fallbackClientFailedToolsOpenAi(oReq) {
 }
 
 // ── Helper to resolve managed tools recursively (up to 4 attempts) ──
-async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToolNames, workspacePath = null) {
+async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToolNames, workspacePath = null, onToolEvent = null) {
     let parsed = initialParsed;
     const requestPayload = {
         ...oReq,
@@ -889,7 +893,7 @@ async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToo
             tool_calls: toolCalls
         });
 
-        const toolResults = await executeManagedOpenAiToolCalls(managedToolCalls, requestPayload.tools, requestPayload.messages, workspacePath);
+        const toolResults = await executeManagedOpenAiToolCalls(managedToolCalls, requestPayload.tools, requestPayload.messages, workspacePath, onToolEvent);
         toolResults.forEach(res => requestPayload.messages.push(res));
 
         const response = await fetch(cfg.targetUrl, {
