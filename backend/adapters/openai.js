@@ -589,37 +589,66 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 } else {
                     const reader = response.body.getReader();
                     let accumulatedText = '';
-                    function pump() {
-                        reader.read().then(({ done, value }) => {
-                            if (done) {
-                                // Reconstruct full response to capture it for debug UI
-                                try {
-                                    const parsed = parseSSEToJSON(accumulatedText);
-                                    captureResponse(reqId, parsed);
-                                    const inTok  = parsed.usage?.prompt_tokens     || parsed.usage?.input_tokens     || 0;
-                                    const outTok = parsed.usage?.completion_tokens || parsed.usage?.output_tokens || 0;
-                                    captureTokens(reqId, inTok, outTok);
-                                } catch (e) {
-                                    console.warn('[Proxy SSE Parse Warning]: Failed to reconstruct OpenAI response for capture:', e.message);
-                                }
-                                res.end();
-                                finishRequest(); // ← request is now done
-                                return;
+                    (async () => {
+                        try {
+                            while (true) {
+                                const { done, value } = await reader.read();
+                                if (done) break;
+                                const chunk = Buffer.from(value);
+                                accumulatedText += chunk.toString();
+                                res.write(chunk);
                             }
-                            const chunk = Buffer.from(value);
-                            accumulatedText += chunk.toString();
-                            res.write(chunk);
-                            pump();
-                        }).catch(err => {
+                            // Stream ended — check for managed tool calls
+                            try {
+                                const parsed = parseSSEToJSON(accumulatedText);
+                                captureResponse(reqId, parsed);
+                                const inTok  = parsed.usage?.prompt_tokens     || parsed.usage?.input_tokens     || 0;
+                                const outTok = parsed.usage?.completion_tokens || parsed.usage?.output_tokens || 0;
+                                captureTokens(reqId, inTok, outTok);
+
+                                const upstreamMsg = parsed.choices?.[0]?.message;
+                                const hasManagedTools = upstreamMsg?.tool_calls?.length > 0 &&
+                                    managedLocalToolNames.size > 0 &&
+                                    upstreamMsg.tool_calls.some(tc => managedLocalToolNames.has(tc.function?.name));
+
+                                if (hasManagedTools) {
+                                    // Already forwarded raw SSE — but some SSE may contain tool_calls.
+                                    // Resolve and re-stream the final answer.
+                                    const resolved = await resolveManagedOpenAiToolCalls(parsed, oReq, cfg, clientToolNames, req.workspacePath);
+                                    const resolvedMsg = resolved.choices?.[0]?.message;
+                                    const resolvedDelta = {
+                                        role: resolvedMsg?.role || 'assistant',
+                                        content: resolvedMsg?.content || ''
+                                    };
+                                    if (resolvedMsg?.reasoning) resolvedDelta.reasoning = resolvedMsg.reasoning;
+                                    if (resolvedMsg?.reasoning_content) resolvedDelta.reasoning_content = resolvedMsg.reasoning_content;
+                                    const resolvedChunk = {
+                                        id: resolved.id || parsed.id || 'chatcmpl-' + Math.random().toString(36).substr(2, 9),
+                                        object: 'chat.completion.chunk',
+                                        created: resolved.created || parsed.created || Math.floor(Date.now() / 1000),
+                                        model: requestModel,
+                                        choices: [{
+                                            index: 0,
+                                            delta: resolvedDelta,
+                                            finish_reason: resolved.choices?.[0]?.finish_reason || 'stop'
+                                        }]
+                                    };
+                                    res.write(`data: ${JSON.stringify(resolvedChunk)}\n\n`);
+                                }
+                            } catch (e) {
+                                console.warn('[Proxy SSE Parse Warning]: Failed to reconstruct OpenAI response for capture:', e.message);
+                            }
+                            res.end();
+                            finishRequest();
+                        } catch (err) {
                             console.error('[Proxy Stream Error]:', err);
                             requestStatus = 'error';
                             requestError = err.message;
                             res.end();
                             finishRequest();
-                        });
-                    }
-                    pump();
-                    return; // finishRequest is called inside pump's done handler
+                        }
+                    })();
+                    return; // finishRequest is called inside the async IIFE
                 }
             } else if (!upstreamIsStream && clientWantsStream) {
                 // Provider returned JSON but client expects SSE (Codex)
