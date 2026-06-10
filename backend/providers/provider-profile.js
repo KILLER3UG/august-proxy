@@ -63,12 +63,23 @@ class ProviderProfile {
 
   getModelProfile(modelId) {
     if (!modelId || typeof modelId !== 'string') return null;
-    const lower = modelId.toLowerCase().trim();
+    let lower = modelId.toLowerCase().trim();
+    // Strip provider prefix if present (e.g., opencode-go/claudekit -> claudekit)
+    const slashIdx = lower.indexOf('/');
+    const colonIdx = lower.indexOf(':');
+    const sep = slashIdx >= 0 ? slashIdx : colonIdx >= 0 ? colonIdx : -1;
+    const baseModel = sep >= 0 ? lower.slice(sep + 1) : lower;
+
+    if (this._modelProfiles[baseModel]) return { ...this._modelProfiles[baseModel] };
     if (this._modelProfiles[lower]) return { ...this._modelProfiles[lower] };
+
     const keys = Object.keys(this._modelProfiles).sort((a, b) => b.length - a.length);
     for (const key of keys) {
       if (key === '*') continue;
-      if (lower.startsWith(key)) return { ...this._modelProfiles[key] };
+      const lowerKey = key.toLowerCase();
+      if (baseModel.startsWith(lowerKey) || lower.startsWith(lowerKey)) {
+        return { ...this._modelProfiles[key] };
+      }
     }
     return this._modelProfiles['*'] ? { ...this._modelProfiles['*'] } : null;
   }

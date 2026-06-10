@@ -283,8 +283,23 @@ function handleChatConnection(ws) {
                     messages,
                     stream: true,
                 };
-                if (effort && (model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o'))) {
-                    openaiPayload.reasoning_effort = effort === 'max' ? 'high' : effort;
+                
+                const { resolveModelProfile } = require('../../lib/model-profiles');
+                const globalProfile = resolveModelProfile(model);
+                const provProfile = resolvedProvider ? resolvedProvider.getModelProfile(model) : null;
+                const supportsThinking = !!(provProfile?.supportsThinking || globalProfile?.supportsThinking);
+                const supportsReasoning = !!(provProfile?.supportsReasoning || provProfile?.supportsThinking || globalProfile?.supportsReasoning || globalProfile?.supportsThinking);
+
+                if (effort) {
+                    if (supportsThinking) {
+                        // Claude 3.7 / Thinking Budget models
+                        const budgetMap = { low: 1024, medium: 2048, high: 4096, max: 8192 };
+                        openaiPayload.thinking = { type: 'enabled', budget_tokens: budgetMap[effort] || 2048 };
+                        openaiPayload.temperature = 1;
+                    } else if (supportsReasoning) {
+                        // OpenAI o1/o3 reasoning effort models
+                        openaiPayload.reasoning_effort = effort === 'max' ? 'high' : effort;
+                    }
                 }
 
                 const fakeReq = Readable.from([JSON.stringify(openaiPayload)]);

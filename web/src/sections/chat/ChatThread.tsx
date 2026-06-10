@@ -69,6 +69,15 @@ interface ModelItem {
   provider: string;
   contextWindow: number;
   isFree?: boolean;
+  supportsReasoning?: boolean;
+  supportsThinking?: boolean;
+}
+
+export function getModelDisplayName(id: string): string {
+  const slashIdx = id.indexOf('/');
+  const colonIdx = id.indexOf(':');
+  const sep = slashIdx >= 0 ? slashIdx : colonIdx >= 0 ? colonIdx : -1;
+  return sep >= 0 ? id.slice(sep + 1) : id;
 }
 
 const TOOLS = [
@@ -143,50 +152,48 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [messages, storageKey]);
 
   // Load models and config on mount to sync selected model with backend
-  useEffect(() => {
-    let active = true;
-    const loadModelsAndConfig = async () => {
-      try {
-        const [modelsRes, configRes] = await Promise.all([
-          fetch('/api/models'),
-          fetch('/ui/config/safe')
-        ]);
+  const handleRefreshModels = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setModelsLoading(true);
+    try {
+      const [modelsRes, configRes] = await Promise.all([
+        fetch('/api/models'),
+        fetch('/ui/config/safe')
+      ]);
 
-        let loadedModels: ModelItem[] = [];
-        let activeModelId: string | null = null;
+      let loadedModels: ModelItem[] = [];
+      let activeModelId: string | null = null;
 
-        if (modelsRes.ok) {
-          const data = await modelsRes.json();
-          if (data?.models) {
-            loadedModels = data.models;
-          }
+      if (modelsRes.ok) {
+        const data = await modelsRes.json();
+        if (data?.models) {
+          loadedModels = data.models;
         }
-
-        if (configRes.ok) {
-          const config = await configRes.json();
-          const activeProvider = config?.activeProvider || 'opencode-go';
-          const pConfig = config?.[activeProvider] || {};
-          activeModelId = pConfig.model || pConfig._upstreamModel || pConfig.currentModel || null;
-        }
-
-        if (active) {
-          if (loadedModels.length > 0) {
-            setModels(loadedModels);
-            const matched = activeModelId
-              ? loadedModels.find(m => m.id === activeModelId || m.id.toLowerCase() === activeModelId.toLowerCase())
-              : null;
-            setSelectedModel(matched || loadedModels[0]);
-          }
-        }
-      } catch (e) {
-        console.error('Failed to load models or config:', e);
-      } finally {
-        if (active) setModelsLoading(false);
       }
-    };
-    loadModelsAndConfig();
-    return () => { active = false; };
+
+      if (configRes.ok) {
+        const config = await configRes.json();
+        const activeProvider = config?.activeProvider || 'opencode-go';
+        const pConfig = config?.[activeProvider] || {};
+        activeModelId = pConfig.model || pConfig._upstreamModel || pConfig.currentModel || null;
+      }
+
+      if (loadedModels.length > 0) {
+        setModels(loadedModels);
+        const matched = activeModelId
+          ? loadedModels.find(m => m.id === activeModelId || m.id.toLowerCase() === activeModelId.toLowerCase())
+          : null;
+        setSelectedModel(matched || loadedModels[0]);
+      }
+    } catch (e) {
+      console.error('Failed to load models or config:', e);
+    } finally {
+      setModelsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    handleRefreshModels();
+  }, [handleRefreshModels]);
 
   // Remove hardcoded fallback — rely on API only
   const currentModel = selectedModel || null;
@@ -895,6 +902,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 models={models}
                 loading={modelsLoading}
                 selected={selectedModel}
+                onRefresh={() => handleRefreshModels(true)}
                 onSelect={async (m) => {
                   if (!m) return;
                   setSelectedModel(m);
@@ -919,10 +927,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   }
                 }}
               />
-              <EffortDropdown
-                value={effort}
-                onChange={setEffort}
-              />
+              {selectedModel?.supportsReasoning && (
+                <EffortDropdown
+                  value={effort}
+                  onChange={setEffort}
+                />
+              )}
 
               {streaming ? (
                 <Button onClick={stop} size="sm" variant="outline">
@@ -1622,12 +1632,25 @@ function ToolBtn({ Icon, label, onClick }: { Icon: any; label: string; onClick?:
   );
 }
 
+/* ── Context Window Formatter Helper ────────────────────────────── */
+export function formatContextWindow(num?: number): string {
+  if (!num) return '128k';
+  if (num >= 1000000) {
+    return `${(num / 1000000).toFixed(0)}M`;
+  }
+  if (num >= 1000) {
+    return `${(num / 1000).toFixed(0)}k`;
+  }
+  return String(num);
+}
+
 /* ── Custom Model Dropdown ────────────────────────────────────────── */
-function ModelDropdown({ models, loading, selected, onSelect }: {
+function ModelDropdown({ models, loading, selected, onSelect, onRefresh }: {
   models: ModelItem[];
   loading?: boolean;
   selected: ModelItem | null;
   onSelect: (m: ModelItem | null) => void;
+  onRefresh?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
@@ -1637,14 +1660,6 @@ function ModelDropdown({ models, loading, selected, onSelect }: {
   const searchRef = useRef<HTMLInputElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [scrollEnd, setScrollEnd] = useState(false);
-
-  // Strip provider prefix from model IDs (e.g. "opencode-go/claude-opus-4-7" → "claude-opus-4-7")
-  const displayName = (id: string) => {
-    const slashIdx = id.indexOf('/');
-    const colonIdx = id.indexOf(':');
-    const sep = slashIdx >= 0 ? slashIdx : colonIdx >= 0 ? colonIdx : -1;
-    return sep >= 0 ? id.slice(sep + 1) : id;
-  };
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -1670,7 +1685,7 @@ function ModelDropdown({ models, loading, selected, onSelect }: {
   const filtered = searchQuery.trim()
     ? models.filter(m =>
         m.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        displayName(m.id).toLowerCase().includes(searchQuery.toLowerCase()) ||
+        getModelDisplayName(m.id).toLowerCase().includes(searchQuery.toLowerCase()) ||
         m.provider.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : models;
@@ -1685,7 +1700,7 @@ function ModelDropdown({ models, loading, selected, onSelect }: {
     const sorted = [...list].sort((a, b) => {
       if (a.isFree && !b.isFree) return -1;
       if (!a.isFree && b.isFree) return 1;
-      return displayName(a.id).localeCompare(displayName(b.id));
+      return getModelDisplayName(a.id).localeCompare(getModelDisplayName(b.id));
     });
     const isSearching = searchQuery.trim().length > 0;
     const isExpanded = expandedProviders.has(provider);
@@ -1699,122 +1714,160 @@ function ModelDropdown({ models, loading, selected, onSelect }: {
       <button
         onClick={() => setOpen(!open)}
         className={cn(
-          'flex items-center gap-1 text-xs font-mono outline-none cursor-pointer truncate max-w-[150px]',
-          'text-muted-foreground hover:text-foreground transition',
-          'bg-muted/40 border border-border rounded-lg px-2 py-1',
+          'flex items-center gap-1.5 text-xs font-mono outline-none cursor-pointer shrink-0',
+          'text-muted-foreground hover:text-foreground transition-all duration-200',
+          'bg-muted/40 border border-border rounded-lg px-2.5 py-1',
         )}
         title={selected?.id || 'Select model'}
       >
-        <span className="truncate">{selected ? displayName(selected.id) : 'model'}</span>
-        <svg className="size-3 shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        {selected && (
+          <span className="text-[10px] bg-primary/10 text-primary border border-primary/20 px-1 py-0.5 rounded uppercase font-semibold tracking-wider scale-90 origin-left shrink-0">
+            {selected.provider === 'openai-api' ? 'openai' : selected.provider}
+          </span>
+        )}
+        <span className="truncate max-w-[200px] font-medium text-foreground transition-all duration-200">{selected ? getModelDisplayName(selected.id) : 'model'}</span>
+        <svg className="size-3 shrink-0 opacity-60 ml-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
 
-      {open && (
-        <div className="absolute bottom-full mb-1 right-0 z-50 min-w-[220px] max-w-[300px] bg-card border border-border rounded-lg shadow-2xl overflow-hidden">
-          {/* Search bar */}
-          <div className="px-1.5 pt-1.5 pb-0.5 bg-card">
-            <div className="flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 border border-border/50">
-              <svg className="size-2.5 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-              </svg>
-              <input
-                ref={searchRef}
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search…"
-                className="bg-transparent text-xs font-mono outline-none w-full placeholder:text-muted-foreground/50 text-foreground py-0.5"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="p-0.5 rounded hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground transition"
-                >
-                  <svg className="size-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="relative">
-            {/* Top fade indicator */}
-            <div className={cn(
-              'absolute top-0 left-0 right-0 h-5 z-10 pointer-events-none transition-opacity',
-              'bg-gradient-to-b from-card to-transparent',
-              scrollTop > 4 ? 'opacity-100' : 'opacity-0'
-            )} />
-            {/* Bottom fade indicator */}
-            <div className={cn(
-              'absolute bottom-0 left-0 right-0 h-5 z-10 pointer-events-none transition-opacity',
-              'bg-gradient-to-t from-card to-transparent',
-              scrollEnd ? 'opacity-0' : 'opacity-100'
-            )} />
-
-            <div
-              ref={listRef}
-              onScroll={onScroll}
-              className="max-h-[240px] overflow-y-auto py-0.5"
-            >
-              {grouped.length === 0 && !loading ? (
-                <div className="px-3 py-4 text-xs text-muted-foreground text-center">
-                  {searchQuery.trim() ? `No results for "${searchQuery.trim()}"` : 'no models loaded'}
-                </div>
-              ) : loading && grouped.length === 0 ? (
-                <div className="px-3 py-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                  <svg className="size-3 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="31.4 31.4" />
-                  </svg>
-                  loading models…
-                </div>
-              ) : (
-                grouped.map(({ provider, visible, isExpanded, total, showCollapse }) => (
-                  <div key={provider}>
-                    <div className="px-2 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground/50 font-semibold sticky top-0 bg-card/95 backdrop-blur z-20">
-                      {provider}
-                    </div>
-                    {visible.map(m => (
-                      <button
-                        key={m.id}
-                        onClick={() => { onSelect(m); setOpen(false); }}
-                        className={cn(
-                          'w-full text-left px-2 py-1 text-xs font-mono transition flex items-center gap-1.5',
-                          selected?.id === m.id
-                            ? 'text-primary bg-primary/10'
-                            : 'text-foreground/80 hover:bg-muted hover:text-foreground'
-                        )}
-                      >
-                        {m.isFree && (
-                          <span className="text-[8px] text-green-500 font-semibold uppercase shrink-0">FREE</span>
-                        )}
-                        <span>{displayName(m.id)}</span>
-                      </button>
-                    ))}
-                    {showCollapse && (
-                      <button
-                        onClick={() => {
-                          setExpandedProviders(prev => {
-                            const next = new Set(prev);
-                            if (isExpanded) next.delete(provider);
-                            else next.add(provider);
-                            return next;
-                          });
-                        }}
-                        className="w-full text-left px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition"
-                      >
-                        {isExpanded ? '▲ Show less' : '▼ Show ' + (total - 5) + ' more'}
-                      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.97 }}
+            transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            className="absolute bottom-full mb-1 right-0 z-50 min-w-[240px] max-w-[320px] bg-card border border-border rounded-lg shadow-2xl overflow-hidden origin-bottom-right"
+          >
+            {/* Search bar */}
+            <div className="px-1.5 pt-1.5 pb-0.5 bg-card">
+              <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 border border-border/50">
+                <svg className="size-2.5 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                </svg>
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search…"
+                  className="bg-transparent text-xs font-mono outline-none w-full placeholder:text-muted-foreground/50 text-foreground py-0.5"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="p-0.5 rounded hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground transition"
+                  >
+                    <svg className="size-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                )}
+                {onRefresh && (
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      await onRefresh();
+                    }}
+                    className={cn(
+                      "p-0.5 rounded hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground transition",
+                      loading && "animate-spin"
                     )}
-                  </div>
-                ))
-              )}
+                    title="Refresh models list"
+                    disabled={loading}
+                  >
+                    <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+                    </svg>
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+
+            <div className="relative">
+              {/* Top fade indicator */}
+              <div className={cn(
+                'absolute top-0 left-0 right-0 h-5 z-10 pointer-events-none transition-opacity',
+                'bg-gradient-to-b from-card to-transparent',
+                scrollTop > 4 ? 'opacity-100' : 'opacity-0'
+              )} />
+              {/* Bottom fade indicator */}
+              <div className={cn(
+                'absolute bottom-0 left-0 right-0 h-5 z-10 pointer-events-none transition-opacity',
+                'bg-gradient-to-t from-card to-transparent',
+                scrollEnd ? 'opacity-0' : 'opacity-100'
+              )} />
+
+              <div
+                ref={listRef}
+                onScroll={onScroll}
+                className="max-h-[240px] overflow-y-auto py-0.5"
+              >
+                {loading && grouped.length === 0 ? (
+                  <div className="px-2 py-1 space-y-1">
+                    <div className="skeleton-row h-5 w-20 rounded bg-muted/40 my-1" />
+                    <div className="skeleton-row h-7 w-full rounded bg-muted/40 animate-pulse" />
+                    <div className="skeleton-row h-7 w-full rounded bg-muted/40 animate-pulse" />
+                    <div className="skeleton-row h-7 w-full rounded bg-muted/40 animate-pulse" />
+                    <div className="skeleton-row h-5 w-24 rounded bg-muted/40 my-1" />
+                    <div className="skeleton-row h-7 w-full rounded bg-muted/40 animate-pulse" />
+                    <div className="skeleton-row h-7 w-full rounded bg-muted/40 animate-pulse" />
+                  </div>
+                ) : grouped.length === 0 ? (
+                  <div className="px-3 py-4 text-xs text-muted-foreground text-center">
+                    {searchQuery.trim() ? `No results for "${searchQuery.trim()}"` : 'no models loaded'}
+                  </div>
+                ) : (
+                  grouped.map(({ provider, visible, isExpanded, total, showCollapse }) => (
+                    <div key={provider}>
+                      <div className="px-2 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground/50 font-semibold sticky top-0 bg-card/95 backdrop-blur z-20 flex justify-between items-center">
+                        <span>{provider}</span>
+                        <span className="text-[9px] lowercase font-mono">({total} models)</span>
+                      </div>
+                      {visible.map(m => (
+                        <button
+                          key={m.id}
+                          onClick={() => { onSelect(m); setOpen(false); }}
+                          className={cn(
+                            'w-full text-left px-2 py-1 text-xs font-mono transition-all duration-150 flex items-center gap-1.5',
+                            selected?.id === m.id
+                              ? 'text-primary bg-primary/10 font-semibold'
+                              : 'text-foreground/80 hover:bg-muted hover:text-foreground'
+                          )}
+                        >
+                          {m.isFree && (
+                            <span className="text-[8px] text-green-500 font-semibold uppercase shrink-0">FREE</span>
+                          )}
+                          <span className="truncate">{getModelDisplayName(m.id)}</span>
+                          <span className="ml-auto text-[10px] text-muted-foreground/60 shrink-0 font-sans border border-border/40 rounded px-1.5 py-0.2 bg-muted/20">
+                            {formatContextWindow(m.contextWindow)}
+                          </span>
+                        </button>
+                      ))}
+                      {showCollapse && (
+                        <button
+                          onClick={() => {
+                            setExpandedProviders(prev => {
+                              const next = new Set(prev);
+                              if (isExpanded) next.delete(provider);
+                              else next.add(provider);
+                              return next;
+                            });
+                          }}
+                          className="w-full text-left px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition"
+                        >
+                          {isExpanded ? '▲ Show less' : '▼ Show ' + (total - 5) + ' more'}
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1835,48 +1888,64 @@ function EffortDropdown({ value, onChange }: {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const options: { value: 'low' | 'medium' | 'high' | 'max'; label: string }[] = [
-    { value: 'low', label: 'low' },
-    { value: 'medium', label: 'med' },
-    { value: 'high', label: 'high' },
-    { value: 'max', label: 'max' },
+  const options: { value: 'low' | 'medium' | 'high' | 'max'; label: string; desc: string }[] = [
+    { value: 'low', label: 'low', desc: 'Short thinking, fast response' },
+    { value: 'medium', label: 'med', desc: 'Balanced thinking & speed' },
+    { value: 'high', label: 'high', desc: 'Thorough reasoning' },
+    { value: 'max', label: 'max', desc: 'Full depth, maximum reasoning' },
   ];
+
+  const currentOpt = options.find(o => o.value === value) || options[1];
 
   return (
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
         className={cn(
-          'flex items-center gap-1 text-[10px] font-mono outline-none cursor-pointer',
-          'text-muted-foreground hover:text-foreground transition',
+          'flex items-center gap-1.5 text-xs font-mono outline-none cursor-pointer',
+          'text-muted-foreground hover:text-foreground transition-all duration-200',
           'bg-muted/40 border border-border rounded-lg px-2.5 py-1',
         )}
         title="Thinking Effort"
       >
-        <span>{value === 'medium' ? 'med' : value}</span>
+        <span className="text-[10px] font-medium text-foreground transition-all duration-200">
+          {currentOpt.value === 'medium' ? 'med' : currentOpt.value}
+        </span>
         <svg className="size-2.5 shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
 
-      {open && (
-        <div className="absolute bottom-full mb-1.5 right-0 z-50 min-w-[100px] bg-card border border-border rounded-xl shadow-2xl py-1">
-          {options.map(opt => (
-            <button
-              key={opt.value}
-              onClick={() => { onChange(opt.value); setOpen(false); }}
-              className={cn(
-                'w-full text-left px-3 py-1.5 text-[11px] font-mono transition',
-                value === opt.value
-                  ? 'text-primary bg-primary/10'
-                  : 'text-foreground/80 hover:bg-muted hover:text-foreground'
-              )}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.97 }}
+            transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            className="absolute bottom-full mb-1.5 right-0 z-50 min-w-[200px] bg-card border border-border rounded-xl shadow-2xl py-1 origin-bottom-right"
+          >
+            <div className="px-2.5 py-1 text-[10px] text-muted-foreground uppercase tracking-widest font-semibold border-b border-border/50 mb-1">
+              Reasoning Effort
+            </div>
+            {options.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => { onChange(opt.value); setOpen(false); }}
+                className={cn(
+                  'w-full text-left px-3 py-1.5 text-[11px] font-sans transition-all duration-150 flex flex-col gap-0.5',
+                  value === opt.value
+                    ? 'text-primary bg-primary/10 font-semibold'
+                    : 'text-foreground/80 hover:bg-muted hover:text-foreground'
+                )}
+              >
+                <span className="font-mono font-medium">{opt.label}</span>
+                <span className="text-[10px] text-muted-foreground">{opt.desc}</span>
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -488,4 +488,23 @@ textarea:focus, input:focus, div:focus-within {
   border-radius: 0.375rem;
 }
 
+/* Shimmer skeleton row for model loading */
+.skeleton-row {
+  background: linear-gradient(
+    90deg,
+    var(--dt-muted) 25%,
+    rgba(148, 163, 184, 0.12) 50%,
+    var(--dt-muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.5s infinite linear;
+}
 
+@keyframes skeletonShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

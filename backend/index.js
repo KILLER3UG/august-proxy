@@ -666,7 +666,21 @@ const requestHandler = async (req, res) => {
                 }
             }
 
-            allModels.push(...models);
+            // Map the resolved properties (supportsReasoning, supportsThinking) to the models
+            const { resolveModelProfile } = require('./lib/model-profiles');
+            const mappedModels = models.map(m => {
+                const provProfile = p.getModelProfile(m.id);
+                const globalProfile = resolveModelProfile(m.id);
+                const supportsThinking = !!(provProfile?.supportsThinking || globalProfile?.supportsThinking);
+                const supportsReasoning = !!(provProfile?.supportsReasoning || provProfile?.supportsThinking || globalProfile?.supportsReasoning || globalProfile?.supportsThinking);
+                return {
+                    ...m,
+                    supportsReasoning,
+                    supportsThinking
+                };
+            });
+
+            allModels.push(...mappedModels);
         }
 
         // Ensure unique model IDs
@@ -750,8 +764,20 @@ const requestHandler = async (req, res) => {
                 messages,
                 stream: true
             };
-            if (effort && (model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o'))) {
-                openaiPayload.reasoning_effort = effort === 'max' ? 'high' : effort;
+            const { resolveModelProfile } = require('./lib/model-profiles');
+            const globalProfile = resolveModelProfile(model);
+            const provProfile = resolvedProvider ? resolvedProvider.getModelProfile(model) : null;
+            const supportsThinking = !!(provProfile?.supportsThinking || globalProfile?.supportsThinking);
+            const supportsReasoning = !!(provProfile?.supportsReasoning || provProfile?.supportsThinking || globalProfile?.supportsReasoning || globalProfile?.supportsThinking);
+
+            if (effort) {
+                if (supportsThinking) {
+                    const budgetMap = { low: 1024, medium: 2048, high: 4096, max: 8192 };
+                    openaiPayload.thinking = { type: 'enabled', budget_tokens: budgetMap[effort] || 2048 };
+                    openaiPayload.temperature = 1;
+                } else if (supportsReasoning) {
+                    openaiPayload.reasoning_effort = effort === 'max' ? 'high' : effort;
+                }
             }
 
             const fakeReq = Readable.from([JSON.stringify(openaiPayload)]);
