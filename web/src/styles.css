@@ -443,4 +443,52 @@ textarea:focus, input:focus, div:focus-within {
   }
 }
 
+/* ── Utilities ── */
+
+/* Break long words/tool context anywhere */
+.wrap-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Shimmer text for pending/streaming state (ThinkingDisclosure) */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--dt-muted-foreground) 0%,
+    var(--dt-foreground) 50%,
+    var(--dt-muted-foreground) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmerMove 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmerMove {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* 🔽 Consistent text styling for DisclosureRow tool call headers */
+[data-slot="tool-block"] .font-mono {
+  font-size: 0.75rem; /* 12px */
+  line-height: 1.25rem;
+}
+
+/* 🔽 Clarify tool spacing */
+[data-slot="clarify-inline"] [data-choice] {
+  outline: none;
+}
+[data-slot="clarify-inline"] [data-choice]:focus-visible {
+  outline: 2px solid var(--dt-primary);
+  outline-offset: -2px;
+  border-radius: 0.375rem;
+}
+
 

@@ -1,9 +1,9 @@
-/* ── Chat thread — Hermes Desktop style ──────────────────────────────── */
+/* ── Chat thread ─────────────────────────────────────────────────────── */
 /* The main view. User/assistant messages with proper avatars + bubbles.  */
 /* Tool calls render as inline cards. Right rail optional.                  */
 
 import { useState, useRef, useEffect, useMemo, useCallback, type KeyboardEvent } from 'react';
-import { Send, Paperclip, Mic, AtSign, Sparkles, ChevronRight, Wrench, Check, AlertCircle, StopCircle, X } from 'lucide-react';
+import { Send, Paperclip, Mic, AtSign, Sparkles, ChevronRight, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2 } from 'lucide-react';
 import { cn, formatTimeAgo } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,10 @@ import { toast } from 'sonner';
 import { useStore } from '@nanostores/react';
 import { $sessions } from '@/store/sessions';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
+import { ToolCallItem as ToolCallItemComp } from '@/components/chat/ToolCallItem';
+import { ClarifyTool } from '@/components/chat/ClarifyTool';
+import { HoistedTodoPanel } from '@/components/chat/HoistedTodoPanel';
 
 // Configure marked to support GitHub Flavored Markdown and breaks
 marked.use({
@@ -44,6 +48,18 @@ export interface ChatMessage {
   }>;
   thinking?: string;
   thinkingDuration?: number;
+  /** Hoisted todo panel */
+  todos?: Array<{
+    id: string;
+    content: string;
+    status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  }>;
+  /** Inline clarify/question */
+  clarify?: {
+    question: string;
+    choices?: string[];
+    answer?: string;
+  };
 }
 
 interface ModelItem {
@@ -829,198 +845,27 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 }
 
 // ----------------------------------------------------
-// [NEW/REFACTORED] ReasoningBlock
+// ThinkingDisclosure — auto-open while streaming
 // ----------------------------------------------------
 function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGenerating?: boolean; duration?: number }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [isHovered, setIsHovered] = useState(false);
-
-  useEffect(() => {
-    if (!isGenerating) return;
-    const start = Date.now();
-    const interval = setInterval(() => {
-      setElapsed((Date.now() - start) / 1000);
-    }, 100);
-    return () => clearInterval(interval);
-  }, [isGenerating]);
-
-  const displayDuration = isGenerating
-    ? elapsed.toFixed(1) + 's'
-    : duration
-      ? duration.toFixed(1) + 's'
-      : null;
-
   return (
-    <div
-      className="text-sm my-2 select-none"
-      style={{ overflowAnchor: 'none' }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition py-1"
-      >
-        <span className="font-semibold flex items-center">
-          <span className={cn("thinking-text flex items-center", isGenerating && "animating")}>
-            <span className="thinking-label">
-              <span className="thinking-char thinking-cap" style={{ animationDelay: '0ms' }}>T</span>
-              <span className="thinking-char" style={{ animationDelay: '100ms' }}>h</span>
-              <span className="thinking-char" style={{ animationDelay: '200ms' }}>i</span>
-              <span className="thinking-char" style={{ animationDelay: '300ms' }}>n</span>
-              <span className="thinking-char" style={{ animationDelay: '400ms' }}>k</span>
-              <span className="thinking-char" style={{ animationDelay: '500ms' }}>i</span>
-              <span className="thinking-char" style={{ animationDelay: '600ms' }}>n</span>
-              <span className="thinking-char" style={{ animationDelay: '700ms' }}>g</span>
-            </span>
-            {isGenerating && (
-              <span className="thinking-dots">
-                <span className="dot" style={{ animationDelay: '0ms' }}>.</span>
-                <span className="dot" style={{ animationDelay: '200ms' }}>.</span>
-                <span className="dot" style={{ animationDelay: '400ms' }}>.</span>
-              </span>
-            )}
-          </span>
-          <span className={cn("inline-block ml-1.5 transition-transform duration-200 origin-center select-none font-mono", isOpen && "rotate-90")}>
-            &gt;
-          </span>
-        </span>
-        {displayDuration && (
-          <span className="text-muted-foreground/60 text-[10px] ml-1">
-            {displayDuration}
-          </span>
-        )}
-      </button>
-
-      <div className={cn("grid-transition", isOpen ? "open" : "closed")}>
-        <div className="overflow-hidden">
-          <div className={cn(
-            "pl-3 border-l border-foreground/15 leading-relaxed py-1 thought-content",
-            isGenerating && "thinking-content-generating"
-          )}>
-            <Markdown content={text} />
-          </div>
+    <div className="my-1" style={{ overflowAnchor: 'none' }}>
+      <ThinkingDisclosure pending={isGenerating} duration={duration}>
+        <div className="pl-3 border-l border-foreground/15 leading-relaxed py-1 thought-content">
+          <Markdown content={text} />
         </div>
-      </div>
+      </ThinkingDisclosure>
     </div>
   );
 }
 
-// ── Tool execution block (Hermes-style) ──
+// ── Tool execution block ──
 function ToolBlock({ tools }: { tools: NonNullable<ChatMessage['tools']> }) {
   return (
     <div className="mb-3 flex flex-col gap-1.5">
       {tools.map((tool) => (
-        <ToolCallItem key={tool.id} tool={tool} />
+        <ToolCallItemComp key={tool.id} tool={tool} />
       ))}
-    </div>
-  );
-}
-
-function ToolCallItem({ tool }: { tool: NonNullable<ChatMessage['tools']>[0] }) {
-  const [userOverride, setUserOverride] = useState<boolean | null>(null);
-  const open = userOverride ?? tool.status === 'error';
-  const hasBody = !!(tool.context || tool.preview || tool.summary || tool.error);
-
-  // Live elapsed timer
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (tool.status !== 'running') return;
-    const id = window.setInterval(() => setNow(() => Date.now()), 500);
-    return () => window.clearInterval(id);
-  }, [tool.status]);
-
-  const hasTimestamps = !!(tool.duration !== undefined || tool.startedAt);
-  const elapsed = hasTimestamps
-    ? fmtElapsed(tool.duration !== undefined ? tool.duration : (tool.startedAt ? Date.now() - tool.startedAt : 0))
-    : null;
-
-  const STATUS_TONE = {
-    running: 'border-primary/40 bg-primary/[0.04]',
-    done: 'border-border bg-muted/20',
-    error: 'border-destructive/50 bg-destructive/[0.04]',
-  } as const;
-
-  return (
-    <div className={`rounded-md border overflow-hidden ${STATUS_TONE[tool.status]}`}>
-      <button
-        onClick={() => hasBody && setUserOverride(!open)}
-        disabled={!hasBody}
-        className="flex items-center gap-1.5 w-full px-2.5 py-1.5 text-xs hover:bg-foreground/2 disabled:cursor-default transition"
-      >
-        {hasBody ? (
-          <svg className={`size-3 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        ) : (
-          <span className="size-3 shrink-0" />
-        )}
-
-        <svg className={`size-3 shrink-0 ${tool.status === 'running' ? 'text-primary' : tool.status === 'error' ? 'text-destructive' : 'text-primary/80'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-        </svg>
-
-        <span className="font-mono font-medium shrink-0">{tool.name}</span>
-
-        {tool.context && (
-          <span className="font-mono text-muted-foreground truncate min-w-0 flex-1 text-[10px]">
-            {tool.context}
-          </span>
-        )}
-
-        {tool.status === 'running' && (
-          <span className="inline-block size-2 rounded-full bg-primary animate-pulse shrink-0" title="running" />
-        )}
-        {tool.status === 'done' && (
-          <svg className="size-3 shrink-0 text-primary/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        )}
-        {tool.status === 'error' && (
-          <svg className="size-3 shrink-0 text-destructive" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
-          </svg>
-        )}
-
-        {elapsed && (
-          <span className="font-mono text-[10px] text-muted-foreground/60 tabular-nums shrink-0">
-            {elapsed}
-          </span>
-        )}
-      </button>
-
-      {open && hasBody && (
-        <div className="border-t border-border/60 px-3 py-2 space-y-2 text-xs font-mono">
-          {tool.context && (
-            <div className="flex gap-3">
-              <span className="text-[10px] text-muted-foreground/60 shrink-0 w-16 pt-0.5">context</span>
-              <div className="flex-1 min-w-0 text-muted-foreground">{tool.context}</div>
-            </div>
-          )}
-          {tool.preview && tool.status === 'running' && (
-            <div className="flex gap-3">
-              <span className="text-[10px] text-muted-foreground/60 shrink-0 w-16 pt-0.5">streaming</span>
-              <div className="flex-1 min-w-0 text-muted-foreground whitespace-pre-wrap">
-                {tool.preview}
-                <span className="inline-block w-1.5 h-3 align-middle bg-foreground/40 ml-0.5 animate-pulse" />
-              </div>
-            </div>
-          )}
-          {tool.summary && (
-            <div className="flex gap-3">
-              <span className="text-[10px] text-muted-foreground/60 shrink-0 w-16 pt-0.5">result</span>
-              <div className="flex-1 min-w-0 text-foreground/90 whitespace-pre-wrap break-words">{tool.summary}</div>
-            </div>
-          )}
-          {tool.error && (
-            <div className="flex gap-3">
-              <span className="text-[10px] text-destructive shrink-0 w-16 pt-0.5">error</span>
-              <div className="flex-1 min-w-0 text-destructive whitespace-pre-wrap">{tool.error}</div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -1045,6 +890,7 @@ function MessageBubble({
   onRevert,
   onEdit,
   onRegenerate,
+  onClarifyAnswer,
 }: {
   message: ChatMessage;
   isLast?: boolean;
@@ -1052,6 +898,7 @@ function MessageBubble({
   onRevert?: () => void;
   onEdit?: (text: string) => void;
   onRegenerate?: () => void;
+  onClarifyAnswer?: (answer: string) => void;
 }) {
   const [showActions, setShowActions] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -1177,6 +1024,16 @@ function MessageBubble({
           duration={message.thinkingDuration} 
         />
       )}
+      {!isUser && message.clarify && !message.clarify.answer && onClarifyAnswer && (
+        <ClarifyTool
+          question={message.clarify.question}
+          choices={message.clarify.choices}
+          onSubmit={onClarifyAnswer}
+        />
+      )}
+      {!isUser && message.todos && message.todos.length > 0 && (
+        <HoistedTodoPanel todos={message.todos} />
+      )}
       {!isUser && message.tools && message.tools.length > 0 && (
         <ToolBlock tools={message.tools} />
       )}
@@ -1290,7 +1147,7 @@ function MessageBubble({
 
 function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool']>; timestamp: string }) {
   return (
-    <div className="group flex gap-3 my-2">
+    <div className="group flex gap-3 my-2" data-slot="tool-card">
       <div className="shrink-0">
         <div className="size-8 rounded-full bg-muted text-muted-foreground grid place-items-center ring-1 ring-border">
           <Wrench className="size-4" />
@@ -1326,7 +1183,9 @@ function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool
             </details>
           )}
           {tool.result && (
-            <div className="px-3 py-2 font-mono whitespace-pre-wrap text-[11px]">{tool.result}</div>
+            <div className="px-3 py-2 font-mono whitespace-pre-wrap text-[11px] text-foreground/80 break-words leading-relaxed">
+              {tool.result}
+            </div>
           )}
         </div>
       </div>
