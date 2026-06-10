@@ -11,7 +11,7 @@ const pConfig = getProfile('codex') || {};
 console.log('Backend online. Testing tool execution flow...\n');
 
 // Test 1: Verify tool definitions are injected
-const { getProxyOpenAiToolDefinitions } = require('./adapters/openai-tools');
+const { getProxyOpenAiToolDefinitions } = require('./adapters/proxy-tools');
 const defs = getProxyOpenAiToolDefinitions();
 const names = defs.map(d => d.function?.name || d.name);
 console.log(`Tool definitions injected: ${names.length}`);
@@ -20,7 +20,7 @@ console.log(`  Has august__bash: ${names.includes('august__bash')}`);
 console.log(`  Has bash/mcp__workspace__bash: ${names.includes('bash') || names.includes('mcp__workspace__bash')}`);
 
 // Test 2: Check isProxyManagedLocalToolName
-const { isProxyManagedLocalToolName } = require('./adapters/openai-tools');
+const { isProxyManagedLocalToolName } = require('./adapters/proxy-tools');
 console.log(`\nisProxyManagedLocalToolName('august__recall'): ${isProxyManagedLocalToolName('august__recall')}`);
 console.log(`isProxyManagedLocalToolName('august__bash'): ${isProxyManagedLocalToolName('august__bash')}`);
 console.log(`isProxyManagedLocalToolName('bash'): ${isProxyManagedLocalToolName('bash')}`);

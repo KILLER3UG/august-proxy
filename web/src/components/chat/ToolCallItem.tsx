@@ -48,7 +48,7 @@ export function ToolCallItem({ tool }: { tool: ToolEntry }) {
   const label = tool.context ? `${tool.name}(${tool.context})` : tool.name;
 
   return (
-    <div className="text-xs text-muted-foreground my-0.5" data-slot="tool-block">
+    <div className="w-full border border-border rounded-xl overflow-hidden transition-all duration-200 bg-background text-xs" data-slot="tool-block">
       <DisclosureRow
         onToggle={hasBody ? () => setUserOverride(!open) : undefined}
         open={open && hasBody}

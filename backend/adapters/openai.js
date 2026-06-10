@@ -4,11 +4,6 @@ const { applySelfHealToMessages } = require('../services/workbench/selfheal');
 const { getModelContextWindow, saveModelContextWindow, loadModelContextWindow } = require('../lib/models');
 const { estimateTokens, formatTokenCount } = require('../lib/tokens');
 const { buildFriendlyRateLimitMessage, getRetryDelayMs, isRetryableStatus } = require('../lib/upstream');
-const { getMcpToolDefinitions, isMcpToolName, executeMcpToolCall } = require('../services/tools/mcp-client');
-const { getAugustToolDefinitions, isAugustToolName, executeAugustToolCall } = require('../services/tools/august-tools');
-const { getCoworkToolDefinitions, isCoworkToolName, executeCoworkToolCall } = require('../services/tools/cowork-tools');
-const { executeManagedWebTool } = require('../services/tools/local-web');
-const { validateToolArguments, buildValidationErrorToolMessage } = require('../services/workbench/validator');
 const { LlmAdapterBase } = require('./base');
 const { buildSystemPromptText } = require('../services/memory/context-builder');
 const {
@@ -22,7 +17,7 @@ const {
     formatManagedToolResult,
     executeManagedProxyTool,
     executeManagedOpenAiToolCalls
-} = require('./openai-tools');
+} = require('./proxy-tools');
 
 const adapterBase = new LlmAdapterBase({ profileName: 'codex', logPrefix: 'OpenAI' });
 

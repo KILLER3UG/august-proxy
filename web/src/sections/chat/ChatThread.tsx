@@ -1150,7 +1150,7 @@ function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool
   const [open, setOpen] = useState(false);
   const hasBody = !!(tool.args || tool.result);
   return (
-    <div className="my-1 text-xs text-muted-foreground" data-slot="tool-block">
+    <div className="w-full border border-border rounded-xl overflow-hidden transition-all duration-200 bg-background text-xs" data-slot="tool-block">
       <DisclosureRow
         onToggle={hasBody ? () => setOpen(!open) : undefined}
         open={open}

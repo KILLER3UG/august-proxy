@@ -4,11 +4,7 @@ const { applySelfHealToMessages } = require('../services/workbench/selfheal');
 const { getModelContextWindow, saveModelContextWindow, loadModelContextWindow } = require('../lib/models');
 const { estimateTokens, formatTokenCount } = require('../lib/tokens');
 const { buildFriendlyRateLimitMessage, getRetryDelayMs, isRetryableStatus } = require('../lib/upstream');
-const { getMcpToolDefinitions, isMcpToolName, executeMcpToolCall } = require('../services/tools/mcp-client');
-const { getAugustToolDefinitions, isAugustToolName, executeAugustToolCall } = require('../services/tools/august-tools');
-const { getCoworkToolDefinitions, isCoworkToolName, executeCoworkToolCall } = require('../services/tools/cowork-tools');
 const { executeManagedWebTool } = require('../services/tools/local-web');
-const { isManagedBashToolName, executeManagedBashTool } = require('../services/tools/local-bash');
 const { validateToolArguments, buildValidationErrorToolMessage } = require('../services/workbench/validator');
 const { recordToolFailure } = require('../services/memory/tool-failure-memory');
 const { getBrainConfig } = require('../services/memory/brain-orchestrator');
@@ -27,16 +23,20 @@ const {
     openAiToAnthropicToolDefinition,
     anthropicToOpenAiToolDefinition,
     getCanonicalCoworkAnthropicTools,
-    getCanonicalManagedOpenAiWebTools,
-    getProxyOpenAiToolDefinitions,
+    getCanonicalManagedAnthropicOpenAiWebTools: getCanonicalManagedOpenAiWebTools,
+    getProxyOpenAiToolDefinitionsForAnthropic: getProxyOpenAiToolDefinitions,
     getToolDefinitionName,
     appendMissingAnthropicTools,
     appendMissingOpenAiTools,
     isProxyManagedLocalToolName,
     rememberManagedLocalToolDefinitions,
     buildClientToolGuidance,
-    isBrowserAutomationToolName
-} = require('./anthropic-tools');
+    isBrowserAutomationToolName,
+    getManagedWebLocalToolName,
+    formatManagedWebResult,
+    formatManagedToolResult,
+    executeManagedProxyTool
+} = require('./proxy-tools');
 
 const CLAUDE_PUBLIC_MODEL_ALIAS = 'claude-opus-4-6';
 const KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES = new Set([
@@ -247,88 +247,6 @@ function shouldInjectAugustReminder(messages) {
     const toolTurns = countToolResultTurns(messages);
     // Inject August personality reminder every 16 turns
     return toolTurns > 0 && toolTurns % 16 === 0;
-}
-
-function getManagedWebLocalToolName(toolName) {
-    return (
-        toolName === 'WebSearch' ||
-        toolName === 'web_search' ||
-        toolName === 'mcp__workspace__web_search'
-    ) ? 'web_search' : 'web_fetch';
-}
-
-function formatManagedWebResult(result) {
-    if (!result || typeof result !== 'object') {
-        return String(result || '');
-    }
-
-    if (Array.isArray(result.results)) {
-        const lines = [
-            `Search query: ${result.query || ''}`.trim(),
-            `Result count: ${result.count ?? result.results.length}`
-        ].filter(Boolean);
-
-        result.results.forEach((item, index) => {
-            lines.push(`[${index + 1}] ${item.title || 'Untitled'}`);
-            if (item.url) lines.push(`URL: ${item.url}`);
-            if (item.snippet) lines.push(`Snippet: ${item.snippet}`);
-        });
-
-        return lines.join('\n');
-    }
-
-    if (result.url || result.content) {
-        return [
-            `Title: ${result.title || ''}`.trim(),
-            `URL: ${result.url || ''}`.trim(),
-            result.status ? `Status: ${result.status}` : '',
-            '',
-            result.content || ''
-        ].filter(Boolean).join('\n');
-    }
-
-    return JSON.stringify(result);
-}
-
-function formatManagedToolResult(toolName, result) {
-    if (isManagedWebToolName(toolName)) {
-        return formatManagedWebResult(result);
-    }
-    if (isManagedBashToolName(toolName)) {
-        if (!result || typeof result !== 'object') return String(result || '');
-        const lines = [];
-        if (result.stdout) lines.push(result.stdout);
-        if (result.stderr) lines.push(`STDERR:\n${result.stderr}`);
-        if (result.exitCode) lines.push(`Exit code: ${result.exitCode}`);
-        return lines.join('\n') || '(no output)';
-    }
-    if (typeof result === 'string') return result;
-    if (result === undefined || result === null) return '';
-    return JSON.stringify(result);
-}
-
-async function executeManagedProxyTool(toolName, args) {
-    if (isManagedWebToolName(toolName)) {
-        const localName = getManagedWebLocalToolName(toolName);
-        logActivity('WEB', `${toolName} executed locally`);
-        return executeManagedWebTool(localName, args || {});
-    }
-    if (isCoworkToolName(toolName)) {
-        logActivity('COWORK', `${toolName} executed by proxy compatibility layer`);
-        return executeCoworkToolCall(toolName, args || {});
-    }
-    if (isAugustToolName(toolName)) {
-        logActivity('AUGUST', `${toolName} executed locally`);
-        return executeAugustToolCall(toolName, args || {});
-    }
-    if (isManagedBashToolName(toolName)) {
-        logActivity('BASH', `${toolName} executed locally`);
-        return executeManagedBashTool(toolName, args || {});
-    }
-    if (isMcpToolName(toolName)) {
-        return executeMcpToolCall(toolName, args || {});
-    }
-    throw new Error(`Unsupported managed proxy tool: ${toolName}`);
 }
 
 function extractToolResultText(content) {
