@@ -3,7 +3,7 @@
 /* Tool calls render as inline cards. Right rail optional.                  */
 
 import { useState, useRef, useEffect, useMemo, useCallback, type KeyboardEvent } from 'react';
-import { Send, Paperclip, Mic, AtSign, Sparkles, ChevronRight, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2 } from 'lucide-react';
+import { Send, Paperclip, Mic, AtSign, Sparkles, ChevronRight, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug } from 'lucide-react';
 import { cn, formatTimeAgo } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import { useStore } from '@nanostores/react';
 import { $sessions } from '@/store/sessions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
-import { ToolCallItem as ToolCallItemComp } from '@/components/chat/ToolCallItem';
+import { ToolCallItem as ToolCallItemComp, getToolIcon } from '@/components/chat/ToolCallItem';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import { HoistedTodoPanel } from '@/components/chat/HoistedTodoPanel';
@@ -23,6 +23,24 @@ marked.use({
   gfm: true,
   breaks: true
 });
+
+export interface MessageBlock {
+  id: string;
+  type: 'thinking' | 'tool_call' | 'command' | 'final_output';
+  content?: string;
+  tool?: {
+    id: string;
+    name: string;
+    context?: string;
+    args?: string;
+    preview?: string;
+    summary?: string;
+    error?: string;
+    status: 'running' | 'done' | 'error';
+    duration?: number;
+    startedAt?: number;
+  };
+}
 
 export interface ChatMessage {
   id: string;
@@ -61,6 +79,7 @@ export interface ChatMessage {
     choices?: string[];
     answer?: string;
   };
+  blocks?: MessageBlock[];
 }
 
 interface ModelItem {
@@ -285,6 +304,91 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     setStreaming(false);
   };
 
+  function appendBlockEvent(
+    prevBlocks: MessageBlock[],
+    event: {
+      type: 'thinking' | 'text' | 'content' | 'tool_call' | 'tool_progress' | 'tool_result';
+      content?: string;
+      name?: string;
+      id?: string;
+      context?: string;
+      preview?: string;
+      summary?: string;
+      error?: string;
+      status?: 'running' | 'done' | 'error';
+      duration?: number;
+    }
+  ): MessageBlock[] {
+    const blocks = [...prevBlocks];
+    const lastBlock = blocks[blocks.length - 1];
+
+    if (event.type === 'thinking') {
+      const text = event.content || '';
+      if (lastBlock && lastBlock.type === 'thinking') {
+        lastBlock.content = (lastBlock.content || '') + text;
+      } else {
+        blocks.push({
+          id: `b_think_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          type: 'thinking',
+          content: text
+        });
+      }
+    } else if (event.type === 'text' || event.type === 'content') {
+      const text = event.content || '';
+      if (lastBlock && lastBlock.type === 'final_output') {
+        lastBlock.content = (lastBlock.content || '') + text;
+      } else {
+        blocks.push({
+          id: `b_out_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          type: 'final_output',
+          content: text
+        });
+      }
+    } else if (event.type === 'tool_call') {
+      const isCommand = event.name?.startsWith('@run_command') || event.name?.startsWith('run_command');
+      blocks.push({
+        id: `b_tool_${event.id || Date.now()}`,
+        type: isCommand ? 'command' : 'tool_call',
+        tool: {
+          id: event.id || `tc_${Date.now()}`,
+          name: event.name || 'tool',
+          context: event.context || '',
+          status: event.status || 'running',
+          startedAt: Date.now()
+        }
+      });
+    } else if (event.type === 'tool_progress') {
+      const targetIdx = blocks.findIndex(b => b.tool && b.tool.id === event.id);
+      if (targetIdx !== -1) {
+        const target = { ...blocks[targetIdx] };
+        if (target.tool) {
+          target.tool = {
+            ...target.tool,
+            preview: (target.tool.preview || '') + (event.preview || '')
+          };
+        }
+        blocks[targetIdx] = target;
+      }
+    } else if (event.type === 'tool_result') {
+      const targetIdx = blocks.findIndex(b => b.tool && b.tool.id === event.id);
+      if (targetIdx !== -1) {
+        const target = { ...blocks[targetIdx] };
+        if (target.tool) {
+          target.tool = {
+            ...target.tool,
+            status: event.status || 'done',
+            summary: event.summary || '',
+            error: event.error || '',
+            duration: event.duration
+          };
+        }
+        blocks[targetIdx] = target;
+      }
+    }
+
+    return blocks;
+  }
+
   // ── WebSocket helper ─────────────────────────────────────────────
   // Returns true if WS successfully completed the turn.
   const WS_RECONNECT_MAX = 3;
@@ -304,6 +408,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     let assistantContent = '';
     let thinkingContent = '';
     let toolResults: ChatMessage['tools'] = [];
+    let streamBlocks: MessageBlock[] = [];
     let wsThinkingEnd: number | null = null;
     let done = false;
     let aborted = false;
@@ -365,6 +470,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               switch (parsed.type) {
                 case 'thinking':
                   thinkingContent += parsed.content || '';
+                  streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.content || '' });
                   if (wsThinkingEnd === null && thinkingContent.trim()) {
                     wsThinkingEnd = Date.now();
                     setThinkingEnd(wsThinkingEnd);
@@ -377,6 +483,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     setThinkingEnd(wsThinkingEnd);
                   }
                   assistantContent += parsed.content || '';
+                  streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: parsed.content || '' });
                   break;
                 case 'tool_call':
                   toolResults = [...(toolResults || []), {
@@ -388,6 +495,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     error: '',
                     startedAt: Date.now(),
                   }];
+                  streamBlocks = appendBlockEvent(streamBlocks, {
+                    type: 'tool_call',
+                    name: parsed.name,
+                    id: parsed.id,
+                    context: parsed.context,
+                    status: parsed.status
+                  });
                   break;
                 case 'tool_result':
                   toolResults = (toolResults || []).map(t =>
@@ -399,11 +513,24 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                       duration: parsed.duration,
                     } : t
                   );
+                  streamBlocks = appendBlockEvent(streamBlocks, {
+                    type: 'tool_result',
+                    id: parsed.id,
+                    status: parsed.status,
+                    summary: parsed.summary,
+                    error: parsed.error,
+                    duration: parsed.duration
+                  });
                   break;
                 case 'tool_progress':
                   toolResults = (toolResults || []).map(t =>
                     t.id === parsed.id ? { ...t, preview: (t.preview || '') + (parsed.preview || '') } : t
                   );
+                  streamBlocks = appendBlockEvent(streamBlocks, {
+                    type: 'tool_progress',
+                    id: parsed.id,
+                    preview: parsed.preview
+                  });
                   break;
                 case 'done':
                   done = true;
@@ -411,6 +538,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 case 'error':
                   console.error('[WS] Chat error:', parsed.message);
                   assistantContent += `\n\n⚠️ Error: ${parsed.message || 'Unknown error'}`;
+                  streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: `\n\n⚠️ Error: ${parsed.message || 'Unknown error'}` });
                   done = true;
                   break;
                 default: {
@@ -418,18 +546,23 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   const delta = parsed.choices?.[0]?.delta;
                   if (delta?.reasoning_content) {
                     thinkingContent += delta.reasoning_content;
+                    streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: delta.reasoning_content });
                   } else if (delta?.content) {
                     if (wsThinkingEnd === null && thinkingContent.trim()) {
                       wsThinkingEnd = Date.now();
                       setThinkingEnd(wsThinkingEnd);
                     }
                     assistantContent += delta.content;
+                    streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: delta.content });
                   } else if (parsed.thinking) {
                     thinkingContent += parsed.thinking;
+                    streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.thinking });
                   } else if (parsed.reasoning_content) {
                     thinkingContent += parsed.reasoning_content;
+                    streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.reasoning_content });
                   } else if (parsed.content) {
                     assistantContent += parsed.content;
+                    streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: parsed.content });
                   }
                   break;
                 }
@@ -441,7 +574,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   ...msg,
                   content: assistantContent,
                   thinking: thinkingContent || undefined,
-                  tools: toolResults && toolResults.length > 0 ? toolResults : undefined
+                  tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
+                  blocks: streamBlocks
                 } : msg
               ));
 
@@ -523,6 +657,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     let thinkingContent = '';
     let buffer = '';
     let toolResults: ChatMessage['tools'] = [];
+    let streamBlocks: MessageBlock[] = [];
     let thinkingEnd: number | null = null;
 
     while (true) {
@@ -543,44 +678,62 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             const parsed = JSON.parse(data);
             if (parsed.type === 'thinking') {
               thinkingContent += parsed.content || '';
+              streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.content || '' });
             } else if (parsed.type === 'text' || parsed.type === 'content') {
               if (!thinkingEnd && thinkingContent.trim()) { thinkingEnd = Date.now(); }
               assistantContent += parsed.content || '';
+              streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: parsed.content || '' });
             } else if (parsed.type === 'tool_call') {
               toolResults = [...(toolResults || []), {
                 name: parsed.name, context: parsed.context || '', id: parsed.id,
                 status: parsed.status || 'running', summary: '', error: '', startedAt: Date.now(),
               }];
+              streamBlocks = appendBlockEvent(streamBlocks, {
+                type: 'tool_call', name: parsed.name, id: parsed.id, context: parsed.context, status: parsed.status
+              });
             } else if (parsed.type === 'tool_result') {
               toolResults = (toolResults || []).map(t =>
                 t.id === parsed.id ? { ...t, ...(parsed.summary ? { summary: parsed.summary } : {}), ...(parsed.error ? { error: parsed.error } : {}), status: parsed.status || 'done', duration: parsed.duration } : t
               );
+              streamBlocks = appendBlockEvent(streamBlocks, {
+                type: 'tool_result', id: parsed.id, status: parsed.status, summary: parsed.summary, error: parsed.error, duration: parsed.duration
+              });
             } else if (parsed.type === 'tool_progress') {
               toolResults = (toolResults || []).map(t =>
                 t.id === parsed.id ? { ...t, preview: (t.preview || '') + (parsed.preview || '') } : t
               );
+              streamBlocks = appendBlockEvent(streamBlocks, {
+                type: 'tool_progress', id: parsed.id, preview: parsed.preview
+              });
             } else if (parsed.thinking) {
               thinkingContent += parsed.thinking;
+              streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.thinking });
             } else if (parsed.reasoning_content) {
               thinkingContent += parsed.reasoning_content;
+              streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.reasoning_content });
             } else if (parsed.choices && parsed.choices[0]?.delta?.reasoning_content) {
               thinkingContent += parsed.choices[0].delta.reasoning_content;
+              streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.choices[0].delta.reasoning_content });
             } else {
               if (!thinkingEnd && thinkingContent.trim()) { thinkingEnd = Date.now(); }
               assistantContent += parsed.content || data;
+              streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: parsed.content || data });
             }
           } catch {
             if (!thinkingEnd && thinkingContent.trim()) { thinkingEnd = Date.now(); }
             assistantContent += data;
+            streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: data });
           }
         } else {
           const thinkMatch = line.match(/<thinking>([\s\S]*?)<\/thinking>/);
           if (thinkMatch) {
             thinkingContent += thinkMatch[1];
             assistantContent += line.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
+            streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: line });
           } else {
             if (!thinkingEnd && thinkingContent.trim()) { thinkingEnd = Date.now(); }
             assistantContent += line;
+            streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: line });
           }
         }
       }
@@ -591,7 +744,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           ...msg,
           content: assistantContent,
           thinking: thinkingContent || undefined,
-          tools: toolResults && toolResults.length > 0 ? toolResults : undefined
+          tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
+          blocks: streamBlocks
         } : msg
       ));
     }
@@ -602,17 +756,32 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       if (thinkMatch) {
         thinkingContent += thinkMatch[1];
         assistantContent += buffer.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
+        streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: buffer });
       } else if (buffer.startsWith('data: ')) {
         const data = buffer.slice(6);
         try {
           const parsed = JSON.parse(data);
-          if (parsed.type === 'thinking') thinkingContent += parsed.content || '';
-          else if (parsed.thinking) thinkingContent += parsed.thinking;
-          else if (parsed.reasoning_content) thinkingContent += parsed.reasoning_content;
-          else { if (!thinkingEnd && thinkingContent.trim()) thinkingEnd = Date.now(); assistantContent += parsed.content || data; }
-        } catch { assistantContent += data; }
+          if (parsed.type === 'thinking') {
+            thinkingContent += parsed.content || '';
+            streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.content || '' });
+          } else if (parsed.thinking) {
+            thinkingContent += parsed.thinking;
+            streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.thinking });
+          } else if (parsed.reasoning_content) {
+            thinkingContent += parsed.reasoning_content;
+            streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.reasoning_content });
+          } else {
+            if (!thinkingEnd && thinkingContent.trim()) thinkingEnd = Date.now();
+            assistantContent += parsed.content || data;
+            streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: parsed.content || data });
+          }
+        } catch {
+          assistantContent += data;
+          streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: data });
+        }
       } else {
         assistantContent += buffer;
+        streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: buffer });
       }
     }
 
@@ -624,8 +793,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     const finalContent = assistantContent.replace(/(?:\s*\[DONE\]\s*)+$/g, '');
 
+    const cleanedBlocks = streamBlocks.map((block, idx) => {
+      if (idx === streamBlocks.length - 1 && block.type === 'final_output' && block.content) {
+        return {
+          ...block,
+          content: block.content.replace(/(?:\s*\[DONE\]\s*)+$/g, '')
+        };
+      }
+      return block;
+    });
+
     setMessages(prev => prev.map(msg =>
-      msg.id === assistantMsgId ? { ...msg, content: finalContent, thinking: thinkingContent || undefined, thinkingDuration: finalDuration } : msg
+      msg.id === assistantMsgId ? { ...msg, content: finalContent, thinking: thinkingContent || undefined, thinkingDuration: finalDuration, blocks: cleanedBlocks } : msg
     ));
   };
 
@@ -1127,9 +1306,7 @@ function MessageBubble({
   const [copied, setCopied] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
 
-  const [displayedThinking, setDisplayedThinking] = useState('');
-  const [displayedContent, setDisplayedContent] = useState('');
-  const [animationDone, setAnimationDone] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
 
   const startEdit = () => {
     setEditText(message.content);
@@ -1151,67 +1328,13 @@ function MessageBubble({
   }
   const isUser = message.role === 'user';
 
-  const parsed = useMemo(() => {
-    if (isUser) return { thinking: '', content: message.content };
-    return parseThinkingAndContent(message.content, message.thinking);
-  }, [message.content, message.thinking, isUser]);
-
-  useEffect(() => {
-    setDisplayedThinking('');
-    setDisplayedContent('');
-    setAnimationDone(false);
-  }, [message.id]);
-
-  useEffect(() => {
-    if (isUser || !isLast || animationDone) {
-      setDisplayedThinking(parsed.thinking);
-      setDisplayedContent(parsed.content);
-      return;
-    }
-
-    let active = true;
-    const intervalTime = 15; // ms between updates
-
-    const run = () => {
-      if (!active) return;
-
-      setDisplayedThinking((prevThinking) => {
-        const targetThinking = parsed.thinking;
-        if (prevThinking.length < targetThinking.length) {
-          const diff = targetThinking.length - prevThinking.length;
-          const step = Math.max(1, Math.min(12, Math.ceil(diff / 4)));
-          return targetThinking.slice(0, prevThinking.length + step);
-        }
-
-        setDisplayedContent((prevContent) => {
-          const targetContent = parsed.content;
-          if (prevContent.length < targetContent.length) {
-            const diff = targetContent.length - prevContent.length;
-            const step = Math.max(1, Math.min(12, Math.ceil(diff / 4)));
-            return targetContent.slice(0, prevContent.length + step);
-          }
-
-          if (!streaming) {
-            setAnimationDone(true);
-          }
-          return prevContent;
-        });
-
-        return prevThinking;
-      });
-
-      setTimeout(run, intervalTime);
-    };
-
-    run();
-
-    return () => {
-      active = false;
-    };
-  }, [parsed.thinking, parsed.content, isLast, isUser, streaming, animationDone]);
+  const displayBlocks = useMemo(() => {
+    if (isUser) return [];
+    return getDisplayBlocks(message.blocks, message.thinking, message.tools, message.content);
+  }, [message.blocks, message.thinking, message.tools, message.content, isUser]);
 
   const handleCopy = () => {
-    const textToCopy = isUser ? message.content : parsed.content;
+    const textToCopy = message.content;
     navigator.clipboard.writeText(textToCopy)
       .then(() => {
         setCopied(true);
@@ -1238,13 +1361,6 @@ function MessageBubble({
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
-      {!isUser && displayedThinking && (
-        <ReasoningBlock
-          text={displayedThinking}
-          isGenerating={isLast && (!animationDone || streaming)}
-          duration={message.thinkingDuration}
-        />
-      )}
       {!isUser && message.clarify && !message.clarify.answer && onClarifyAnswer && (
         <ClarifyTool
           question={message.clarify.question}
@@ -1254,9 +1370,6 @@ function MessageBubble({
       )}
       {!isUser && message.todos && message.todos.length > 0 && (
         <HoistedTodoPanel todos={message.todos} />
-      )}
-      {!isUser && message.tools && message.tools.length > 0 && (
-        <ToolBlock tools={message.tools} />
       )}
       {isUser ? (
         <>
@@ -1339,28 +1452,71 @@ function MessageBubble({
           </div>
         </>
       ) : (
-        <div className="text-sm leading-relaxed text-foreground/90 space-y-3 max-w-none group relative">
-          <Markdown content={displayedContent} />
-          {/* Copy button for assistant messages on hover */}
-          <button
-            onClick={handleCopy}
-            className={cn(
-              "absolute top-0 right-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-opacity duration-150",
-              showActions ? "opacity-100" : "opacity-0"
+        <>
+          <div className="flex flex-col w-full gap-2">
+            {showRaw ? (
+              <div className="p-3 bg-muted/40 rounded-xl border border-border/50 text-xs font-mono text-muted-foreground whitespace-pre-wrap overflow-x-auto leading-relaxed">
+                {JSON.stringify(message, null, 2)}
+              </div>
+            ) : (
+              displayBlocks.map((block, index) => {
+                if (block.type === 'thinking') {
+                  return (
+                    <ReasoningBlock
+                      key={block.id || `think_${index}`}
+                      text={block.content || ''}
+                      isGenerating={isLast && streaming && index === displayBlocks.length - 1}
+                      duration={message.thinkingDuration}
+                    />
+                  );
+                } else if (block.type === 'tool_call' || block.type === 'command') {
+                  if (!block.tool) return null;
+                  return (
+                    <div key={block.id || `tool_${index}`} className="my-1">
+                      <ToolCallItemComp tool={block.tool} />
+                    </div>
+                  );
+                } else if (block.type === 'final_output') {
+                  if (!block.content) return null;
+                  return (
+                    <div key={block.id || `out_${index}`} className="text-sm leading-relaxed text-foreground/90 space-y-3 max-w-none">
+                      <Markdown content={block.content} />
+                    </div>
+                  );
+                }
+                return null;
+              })
             )}
-            title="Copy"
-          >
-            <div className={cn("transition-transform duration-200", copied ? "scale-110 text-green-500" : "scale-100")}>
-              {copied ? (
-                <Check className="size-3" />
-              ) : (
-                <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                </svg>
-              )}
-            </div>
-          </button>
-        </div>
+          </div>
+          {/* Action buttons below assistant message */}
+          <div className={cn(
+            "flex items-center gap-0.5 mt-1 transition-opacity duration-150 self-start",
+            showActions ? "opacity-100" : "opacity-0"
+          )}>
+            <button
+              onClick={handleCopy}
+              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition relative"
+              title="Copy"
+            >
+              <div className={cn("transition-transform duration-200", copied ? "scale-110 text-green-500" : "scale-100")}>
+                {copied ? (
+                  <Check className="size-3" />
+                ) : (
+                  <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                )}
+              </div>
+            </button>
+            <button
+              onClick={() => setShowRaw(!showRaw)}
+              className={cn("p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition", showRaw && "text-primary")}
+              title="Toggle raw data"
+            >
+              <Bug className="size-3" />
+            </button>
+          </div>
+        </>
       )}
     </div>
   );
@@ -1369,6 +1525,7 @@ function MessageBubble({
 function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool']>; timestamp: string }) {
   const [open, setOpen] = useState(false);
   const hasBody = !!(tool.args || tool.result);
+  const ToolIcon = getToolIcon(tool.name);
   return (
     <div className="text-xs text-muted-foreground w-full py-0.5" data-slot="tool-block">
       <DisclosureRow
@@ -1382,7 +1539,8 @@ function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool
           )
         }
       >
-        <span className="flex min-w-0 items-baseline gap-1.5">
+        <span className="flex min-w-0 items-center gap-2">
+          <ToolIcon className="size-3.5 shrink-0 text-primary" />
           <span
             className={cn(
               'text-xs font-medium leading-5',
@@ -1972,33 +2130,142 @@ function buildDemoThread(sessionId: string | null): ChatMessage[] {
 
 /* ── Custom Markdown & Inline Style Renderer ───────────────────────── */
 
-export function parseThinkingAndContent(rawContent: string, existingThinking?: string): { thinking: string; content: string } {
-  let thinking = existingThinking || '';
-  let content = rawContent || '';
+export function parseSequentialText(text: string): { type: 'thinking' | 'final_output'; content: string }[] {
+  const blocks: { type: 'thinking' | 'final_output'; content: string }[] = [];
+  let currentIndex = 0;
 
-  // Check for explicit markers
-  const openMarkers = [
+  const markers = [
     { open: '<thinking>', close: '</thinking>' },
     { open: '<think>', close: '</think>' },
     { open: '[THINK]', close: '[/THINK]' },
     { open: '[REASONING]', close: '[/REASONING]' }
   ];
 
-  for (const marker of openMarkers) {
-    const openIdx = content.indexOf(marker.open);
-    if (openIdx !== -1) {
-      const closeIdx = content.indexOf(marker.close, openIdx + marker.open.length);
-      if (closeIdx !== -1) {
-        // Complete tag found
-        const extractedThinking = content.slice(openIdx + marker.open.length, closeIdx);
-        thinking += (thinking ? '\n' : '') + extractedThinking;
-        content = content.slice(0, openIdx) + content.slice(closeIdx + marker.close.length);
-      } else {
-        // Incomplete tag (still streaming)
-        const extractedThinking = content.slice(openIdx + marker.open.length);
-        thinking += (thinking ? '\n' : '') + extractedThinking;
-        content = content.slice(0, openIdx);
+  while (currentIndex < text.length) {
+    let earliestOpenIdx = -1;
+    let selectedMarker = null;
+
+    for (const marker of markers) {
+      const idx = text.indexOf(marker.open, currentIndex);
+      if (idx !== -1 && (earliestOpenIdx === -1 || idx < earliestOpenIdx)) {
+        earliestOpenIdx = idx;
+        selectedMarker = marker;
       }
+    }
+
+    if (earliestOpenIdx === -1) {
+      const remaining = text.slice(currentIndex);
+      if (remaining) {
+        blocks.push({ type: 'final_output', content: remaining });
+      }
+      break;
+    }
+
+    if (earliestOpenIdx > currentIndex) {
+      const preceding = text.slice(currentIndex, earliestOpenIdx);
+      if (preceding) {
+        blocks.push({ type: 'final_output', content: preceding });
+      }
+    }
+
+    const openMarkerLength = selectedMarker!.open.length;
+    const contentStartIdx = earliestOpenIdx + openMarkerLength;
+    const closeIdx = text.indexOf(selectedMarker!.close, contentStartIdx);
+
+    if (closeIdx !== -1) {
+      const thinkingContent = text.slice(contentStartIdx, closeIdx);
+      blocks.push({ type: 'thinking', content: thinkingContent });
+      currentIndex = closeIdx + selectedMarker!.close.length;
+    } else {
+      const thinkingContent = text.slice(contentStartIdx);
+      blocks.push({ type: 'thinking', content: thinkingContent });
+      currentIndex = text.length;
+    }
+  }
+
+  return blocks;
+}
+
+export function getDisplayBlocks(
+  blocks?: MessageBlock[],
+  thinking?: string,
+  tools?: ChatMessage['tools'],
+  content?: string
+): MessageBlock[] {
+  try {
+    const result: MessageBlock[] = [];
+    if (blocks && blocks.length > 0) {
+      for (const block of blocks) {
+        if (block.type === 'final_output' && block.content) {
+          const parsed = parseSequentialText(block.content);
+          for (const sub of parsed) {
+            result.push({
+              id: `${block.id}_sub_${sub.type}_${Math.random().toString(36).slice(2, 6)}`,
+              type: sub.type,
+              content: sub.content
+            });
+          }
+        } else {
+          result.push(block);
+        }
+      }
+      if (result.length > 0) return result;
+    }
+
+    // Fallback: build blocks from thinking, tools, and content
+    const resultFallback: MessageBlock[] = [];
+    if (thinking && thinking.trim()) {
+      resultFallback.push({
+        id: `fallback_think_${Date.now()}`,
+        type: 'thinking',
+        content: thinking.trim()
+      });
+    }
+
+    if (tools && tools.length > 0) {
+      for (const tool of tools) {
+        const isCommand = tool.name.startsWith('@run_command') || tool.name.startsWith('run_command');
+        resultFallback.push({
+          id: `fallback_tool_${tool.id}`,
+          type: isCommand ? 'command' : 'tool_call',
+          tool: tool
+        });
+      }
+    }
+
+    if (content && content.trim()) {
+      const parsed = parseSequentialText(content);
+      for (const sub of parsed) {
+        resultFallback.push({
+          id: `fallback_content_sub_${sub.type}_${Math.random().toString(36).slice(2, 6)}`,
+          type: sub.type,
+          content: sub.content
+        });
+      }
+    }
+
+    if (resultFallback.length > 0) return resultFallback;
+  } catch (err) {
+    console.error('Failed to parse blocks, falling back:', err);
+  }
+
+  return [{
+    id: `fallback_raw_${Date.now()}`,
+    type: 'final_output',
+    content: content || ''
+  }];
+}
+
+export function parseThinkingAndContent(rawContent: string, existingThinking?: string): { thinking: string; content: string } {
+  const blocks = parseSequentialText(rawContent);
+  let thinking = existingThinking || '';
+  let content = '';
+
+  for (const block of blocks) {
+    if (block.type === 'thinking') {
+      thinking += (thinking ? '\n' : '') + block.content;
+    } else {
+      content += block.content;
     }
   }
 
