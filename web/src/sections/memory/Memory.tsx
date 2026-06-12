@@ -5,7 +5,7 @@ import { SectionHeader } from '@/components/SectionHeader';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Brain, FileText, Heart, Calendar, Layers, Database, Sparkles, BookOpen, ChevronDown, ChevronRight, Activity, AlertTriangle, Clock } from 'lucide-react';
-import { cn, formatDuration } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 interface SemanticFact {
   key: string;

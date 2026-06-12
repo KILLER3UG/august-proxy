@@ -15,7 +15,7 @@ export interface GatewayHealth {
 
 async function poll() {
   try {
-    const res = await fetch('/health');
+    const res = await fetch('/ui/health');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = (await res.json()) as GatewayHealth;
     $gateway.set({ status: 'open', port: data.port ?? 0, uptime: data.uptime ?? 0 });

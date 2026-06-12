@@ -17,6 +17,7 @@ import { ToolCallItem as ToolCallItemComp, getToolIcon } from '@/components/chat
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import { HoistedTodoPanel } from '@/components/chat/HoistedTodoPanel';
+import { Statusbar } from '@/components/shell/Statusbar';
 
 // Configure marked to support GitHub Flavored Markdown and breaks
 marked.use({
@@ -102,17 +103,7 @@ const VARIANT_TAGS: ReadonlyArray<readonly [RegExp, string]> = [
 
 const titleCase = (text: string): string => text.replace(/\b\w/g, c => c.toUpperCase()).trim();
 
-function prettifyBase(base: string): string {
-  if (/^claude-/i.test(base)) return titleCase(base.replace(/^claude-/i, '').replace(/-/g, ' '));
-  if (/^gpt-/i.test(base)) return base.replace(/^gpt-/i, 'GPT-');
-  if (/^gemini-/i.test(base)) return base.replace(/^gemini-/i, 'Gemini ').replace(/-/g, ' ');
-  if (/^deepseek-/i.test(base)) return titleCase(base.replace(/^deepseek-/i, 'DeepSeek '));
-  if (/^llama-/i.test(base)) return titleCase(base.replace(/^llama-/i, 'Llama '));
-  if (/^qwen-/i.test(base) || /^qwq-/i.test(base)) return titleCase(base.replace(/-/g, ' '));
-  if (/^mistral-/i.test(base)) return titleCase(base.replace(/^mistral-/i, 'Mistral '));
-  if (/^minimax-/i.test(base)) return titleCase(base.replace(/^minimax-/i, 'MiniMax '));
-  return titleCase(base.replace(/-/g, ' '));
-}
+const prettifyBase = (base: string): string => base || 'No model';
 
 export function modelDisplayParts(id: string): { name: string; tag: string } {
   const slashIdx = id.indexOf('/');

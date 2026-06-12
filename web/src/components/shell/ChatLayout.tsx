@@ -22,7 +22,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Settings, ChevronDown, Volume2, Minus, Square, X, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose } from 'lucide-react';
 import { SessionList } from '@/components/sidebar/SessionList';
 import { WorkspacePanel } from '@/sections/chat/WorkspacePanel';
-import { Statusbar } from './Statusbar';
 import { useStore } from '@nanostores/react';
 import { $sessions, createSession, type Session } from '@/store/sessions';
 
@@ -159,7 +158,6 @@ export function ChatLayout() {
           </div>
         </div>
       </div>
-      <Statusbar />
     </div>
   );
 }

@@ -734,8 +734,15 @@ const requestHandler = async (req, res) => {
             }
             
             if (!resolvedProvider) {
+                const { getProviderHint } = require('./providers/provider-hints');
+                const hintedProvider = getProviderHint(model);
+                if (hintedProvider) {
+                    resolvedProvider = providers.find(p => p.name === hintedProvider);
+                }
+            }
+            
+            if (!resolvedProvider) {
                 const lowerModel = model.toLowerCase();
-                // Try explicit match first
                 for (const p of providers) {
                     if (p._modelProfiles && p._modelProfiles[model]) {
                         resolvedProvider = p;
@@ -743,19 +750,52 @@ const requestHandler = async (req, res) => {
                     }
                 }
                 if (!resolvedProvider) {
+                    // Prefer specific model-profile matches over wildcard matches.
+                    let wildcardMatch = null;
+                    let bestSpecificMatch = null;
+                    let bestSpecificLength = -1;
                     for (const p of providers) {
-                        if (lowerModel.startsWith(p.name.toLowerCase()) || p.aliases.some(alias => lowerModel.startsWith(alias.toLowerCase()))) {
+                        if (!p.getModelProfile) continue;
+                        const mp = p.getModelProfile(model);
+                        if (!mp) continue;
+                        if (p._modelProfiles && p._modelProfiles[model]) {
                             resolvedProvider = p;
                             break;
                         }
+                        const lowerModel = model.toLowerCase();
+                        const matchingKeys = Object.keys(p._modelProfiles || {})
+                            .filter(k => k !== '*' && lowerModel.startsWith(k.toLowerCase()))
+                            .sort((a, b) => b.length - a.length);
+                        if (matchingKeys.length > 0) {
+                            const keyLength = matchingKeys[0].length;
+                            if (!bestSpecificMatch || keyLength > bestSpecificLength) {
+                                bestSpecificMatch = p;
+                                bestSpecificLength = keyLength;
+                            } else if (keyLength === bestSpecificLength) {
+                                bestSpecificMatch = p;
+                            }
+                        } else if (!wildcardMatch && p._modelProfiles && p._modelProfiles['*']) {
+                            wildcardMatch = p;
+                        }
+                    }
+                    if (!resolvedProvider) resolvedProvider = bestSpecificMatch || wildcardMatch;
+                }
+            }
+            if (!resolvedProvider) {
+                const lowerModel = model.toLowerCase();
+                for (const p of providers) {
+                    if (lowerModel.startsWith(p.name.toLowerCase()) || p.aliases.some(alias => lowerModel.startsWith(alias.toLowerCase()))) {
+                        resolvedProvider = p;
+                        break;
                     }
                 }
-                if (!resolvedProvider) {
-                    if (lowerModel.startsWith('claude-')) resolvedProvider = providers.find(p => p.name === 'anthropic');
-                    else if (lowerModel.startsWith('gpt-') || lowerModel.startsWith('o1') || lowerModel.startsWith('o3')) resolvedProvider = providers.find(p => p.name === 'openai-api');
-                    else if (lowerModel.startsWith('gemini-')) resolvedProvider = providers.find(p => p.name === 'gemini');
-                    else if (lowerModel.startsWith('deepseek-')) resolvedProvider = providers.find(p => p.name === 'deepseek');
-                }
+            }
+            if (!resolvedProvider) {
+                const lowerModel = model.toLowerCase();
+                if (lowerModel.startsWith('claude-')) resolvedProvider = providers.find(p => p.name === 'anthropic');
+                else if (lowerModel.startsWith('gpt-') || lowerModel.startsWith('o1') || lowerModel.startsWith('o3')) resolvedProvider = providers.find(p => p.name === 'openai-api');
+                else if (lowerModel.startsWith('gemini-')) resolvedProvider = providers.find(p => p.name === 'gemini');
+                else if (lowerModel.startsWith('deepseek-')) resolvedProvider = providers.find(p => p.name === 'deepseek');
             }
             if (!resolvedProvider) {
                 const active = getActiveProvider() || 'openai-api';

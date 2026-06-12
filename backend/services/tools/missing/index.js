@@ -19,6 +19,7 @@ let _imageGenTools = null;
 let _cronTools = null;
 let _sessionTools = null;
 let _codeReviewTools = null;
+let _externalTools = null;
 
 function loadModule(name) {
   try {
@@ -57,6 +58,11 @@ function ensureSessionTools() {
 function ensureCodeReviewTools() {
   if (!_codeReviewTools) _codeReviewTools = loadModule('code-review-tools');
   return _codeReviewTools;
+}
+
+function ensureExternalTools() {
+  if (!_externalTools) _externalTools = loadModule('external-tools');
+  return _externalTools;
 }
 
 // ── Combined Tool Definitions ──
@@ -100,7 +106,8 @@ function registerMissingTools(registry) {
     { name: 'image-gen-tools', loader: ensureImageGenTools },
     { name: 'cron-tools', loader: ensureCronTools },
     { name: 'session-tools', loader: ensureSessionTools },
-    { name: 'code-review-tools', loader: ensureCodeReviewTools }
+    { name: 'code-review-tools', loader: ensureCodeReviewTools },
+    { name: 'external-tools', loader: ensureExternalTools }
   ];
 
   let totalRegistered = 0;
@@ -113,23 +120,28 @@ function registerMissingTools(registry) {
     'image-gen-tools': 'registerImageGenTools',
     'cron-tools': 'registerCronTools',
     'session-tools': 'registerSessionTools',
-    'code-review-tools': 'registerCodeReviewTools'
+    'code-review-tools': 'registerCodeReviewTools',
+    'external-tools': 'registerExternalTools'
   };
 
   for (const mod of modules) {
     try {
       const loaded = mod.loader();
-      if (loaded && loaded.toolDefinitions && loaded.toolDefinitions.length > 0) {
-        const registerFnName = registerFnMap[mod.name];
-        const registerFn = registerFnName ? loaded[registerFnName] : null;
+      const registerFnName = registerFnMap[mod.name];
+      const registerFn = registerFnName ? loaded[registerFnName] : null;
 
-        if (typeof registerFn === 'function') {
-          registerFn(registryObj);
-        } else {
-          // Fallback: register directly via registry.registerMany
-          registryObj.registerMany(loaded.toolDefinitions);
-        }
-        totalRegistered += loaded.toolDefinitions.length;
+      if (typeof registerFn === 'function') {
+        const before = registryObj.list ? registryObj.list().length : 0;
+        registerFn(registryObj);
+        const after = registryObj.list ? registryObj.list().length : 0;
+        totalRegistered += Math.max(0, after - before);
+      } else if (loaded && loaded.toolDefinitions && loaded.toolDefinitions.length > 0) {
+        const before = registryObj.list ? registryObj.list().length : 0;
+        registryObj.registerMany(loaded.toolDefinitions);
+        const after = registryObj.list ? registryObj.list().length : 0;
+        totalRegistered += Math.max(0, after - before);
+      } else {
+        throw new Error('No register function or toolDefinitions found');
       }
     } catch (e) {
       errors.push(`${mod.name}: ${e.message}`);

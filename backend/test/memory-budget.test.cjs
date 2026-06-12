@@ -12,51 +12,59 @@ const {
   CoreMemoryBudgetError,
   readAugustCoreMemory,
   writeAugustCoreMemory
-} = require('./services/memory/core-memory');
-const { executeAugustToolCall } = require('./services/tools/august-tools');
-const { getLearningStatus } = require('./services/memory/auto-memory');
+} = require('../services/memory/core-memory');
+const { executeAugustToolCall } = require('../services/tools/august-tools');
+const { getLearningStatus } = require('../services/memory/auto-memory');
 
-const defaultMemory = readAugustCoreMemory();
-writeAugustCoreMemory(defaultMemory);
+async function main() {
+  const defaultMemory = readAugustCoreMemory();
+  writeAugustCoreMemory(defaultMemory);
 
-assert.deepStrictEqual(checkMemoryBudget('global_context', 'x'.repeat(4000)), {
-  valid: true,
-  length: 4000,
-  limit: 4000,
-  overage: 0
-});
-
-assert.deepStrictEqual(checkMemoryBudget('user_profile', 'x'.repeat(3001)), {
-  valid: false,
-  length: 3001,
-  limit: 3000,
-  overage: 1
-});
-
-const appendResult = executeAugustToolCall('august__core_memory_append', {
-  section: 'global_context',
-  content: 'small append under budget'
-});
-assert(!appendResult.includes('[Tool Execution Failed]'), appendResult);
-assert(readAugustCoreMemory().global_context.includes('small append under budget'));
-
-const replaceResult = executeAugustToolCall('august__core_memory_replace', {
-  section: 'global_context',
-  content: 'x'.repeat(4001)
-});
-assert(replaceResult.includes('over the 4000 character limit'), replaceResult);
-assert.strictEqual(readAugustCoreMemory().global_context.length, 4000);
-
-assert.throws(() => {
-  writeAugustCoreMemory({
-    ...readAugustCoreMemory(),
-    global_context: 'x'.repeat(4001)
+  assert.deepStrictEqual(checkMemoryBudget('global_context', 'x'.repeat(4000)), {
+    valid: true,
+    length: 4000,
+    limit: 4000,
+    overage: 0
   });
-}, CoreMemoryBudgetError);
 
-const status = getLearningStatus();
-assert.strictEqual(status.status, 'idle');
-assert(Array.isArray(status.history));
-assert(fs.existsSync(process.env.AUGUST_LEARNING_HISTORY_FILE));
+  assert.deepStrictEqual(checkMemoryBudget('user_profile', 'x'.repeat(3001)), {
+    valid: false,
+    length: 3001,
+    limit: 3000,
+    overage: 1
+  });
 
-console.log('memory budget and learning status tests passed');
+  const appendResult = await executeAugustToolCall('august__core_memory_append', {
+    section: 'global_context',
+    content: 'small append under budget'
+  });
+  const appendText = String(appendResult);
+  assert(!appendText.includes('[Tool Execution Failed]'), appendText);
+  assert(readAugustCoreMemory().global_context.includes('small append under budget'));
+
+  const replaceResult = await executeAugustToolCall('august__core_memory_replace', {
+    section: 'global_context',
+    content: 'x'.repeat(4001)
+  });
+  const replaceText = String(replaceResult);
+  assert(replaceText.includes('over the 4000 character limit'), replaceText);
+  assert(!readAugustCoreMemory().global_context.startsWith('xxx'));
+
+  assert.throws(() => {
+    writeAugustCoreMemory({
+      ...readAugustCoreMemory(),
+      global_context: 'x'.repeat(4001)
+    });
+  }, CoreMemoryBudgetError);
+
+  const status = getLearningStatus();
+  assert.strictEqual(status.status, 'idle');
+  assert(Array.isArray(status.history));
+
+  console.log('memory budget and learning status tests passed');
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

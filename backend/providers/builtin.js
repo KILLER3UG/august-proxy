@@ -45,6 +45,11 @@ function registerBuiltinProviders() {
   load('ollama-cloud.js');
   load('tokenrouter.js');
 
+  // Providers from Hermes Agent and OpenCode not yet in August Proxy
+  for (const provider of require('./missing-providers')) {
+    registerProvider(provider);
+  }
+
   // Register bookmarks from config as user providers
   registerBookmarkProviders();
 }
