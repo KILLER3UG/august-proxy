@@ -3,7 +3,7 @@
 /* Tool calls render as inline cards. Right rail optional.                  */
 
 import { useState, useRef, useEffect, useMemo, useCallback, type KeyboardEvent } from 'react';
-import { Send, Paperclip, Mic, AtSign, Sparkles, ChevronRight, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug } from 'lucide-react';
+import { Send, Paperclip, Mic, AtSign, Sparkles, ChevronRight, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw } from 'lucide-react';
 import { cn, formatTimeAgo, fmtElapsed } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import { ToolCallItem as ToolCallItemComp, getToolIcon } from '@/components/chat
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import { HoistedTodoPanel } from '@/components/chat/HoistedTodoPanel';
+import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { Statusbar } from '@/components/shell/Statusbar';
 
@@ -1037,9 +1038,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // ── Regenerate: remove assistant response, re-send user message ──
   const handleRegenerate = async (index: number) => {
     if (streaming) return;
-    const msg = messages[index];
+    // Find the user message before this assistant message
+    let userIndex = index;
+    for (let i = index; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        userIndex = i;
+        break;
+      }
+    }
+    const msg = messages[userIndex];
     if (!msg || msg.role !== 'user') return;
-    const trimmed = messages.slice(0, index + 1);
+    const trimmed = messages.slice(0, userIndex + 1);
     setMessages(trimmed);
     await generateAIResponse(trimmed);
   };
@@ -1241,7 +1250,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   e.target.style.height = Math.min(e.target.scrollHeight, 240) + 'px';
                 }}
                 onKeyDown={onKey}
-                placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${currentModel.id}…` : 'Type a message…')}
+                placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${getModelDisplayName(currentModel.id)}…` : 'Type a message…')}
                 rows={1}
                 disabled={streaming}
                 className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
@@ -1501,6 +1510,7 @@ function MessageBubble({
   const [editText, setEditText] = useState('');
   const [copied, setCopied] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
 
   const [showRaw, setShowRaw] = useState(false);
 
@@ -1548,6 +1558,23 @@ function MessageBubble({
         setIsRegenerating(false);
       }
     }
+  };
+
+  const handleSpeak = () => {
+    if (speaking) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    const text = message.content;
+    if (!text) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+    setSpeaking(true);
   };
 
   return (
@@ -1675,7 +1702,7 @@ function MessageBubble({
                 } else if (block.type === 'final_output') {
                   if (!block.content) return null;
                   return (
-                    <div key={block.id || `out_${index}`} className="text-sm leading-relaxed text-foreground/90 space-y-3 max-w-none">
+                    <div key={block.id || `out_${index}`} className="text-base leading-relaxed text-foreground/90 space-y-3 max-w-none">
                       <Markdown content={block.content} />
                     </div>
                   );
@@ -1683,12 +1710,29 @@ function MessageBubble({
                 return null;
               })
             )}
+            {isLast && streaming && <WorkingIndicator className="mt-2" />}
           </div>
           {/* Action buttons below assistant message */}
           <div className={cn(
             "flex items-center gap-0.5 mt-1 transition-opacity duration-150 self-start",
             showActions ? "opacity-100" : "opacity-0"
           )}>
+            <button
+              onClick={handleSpeak}
+              className={cn(
+                "p-1 rounded transition",
+                speaking
+                  ? "bg-primary/10 text-primary hover:bg-primary/20"
+                  : "hover:bg-muted text-muted-foreground hover:text-foreground"
+              )}
+              title={speaking ? "Pause reading" : "Read aloud"}
+            >
+              {speaking ? (
+                <Pause className="size-3" />
+              ) : (
+                <Play className="size-3" />
+              )}
+            </button>
             <button
               onClick={handleCopy}
               className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition relative"
@@ -1704,6 +1748,18 @@ function MessageBubble({
                 )}
               </div>
             </button>
+            {isLast && (
+              <button
+                onClick={handleRegenClick}
+                disabled={streaming || isRegenerating}
+                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
+                title="Retry / Regenerate"
+              >
+                <RefreshCw
+                  className={cn("size-3", isRegenerating && "animate-spin")}
+                />
+              </button>
+            )}
             <button
               onClick={() => setShowRaw(!showRaw)}
               className={cn("p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition", showRaw && "text-primary")}
@@ -2070,18 +2126,18 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
       <button
         onClick={() => setOpen(!open)}
         className={cn(
-          'flex items-center gap-1.5 text-xs font-mono outline-none cursor-pointer shrink-0',
+          'flex items-center gap-1.5 text-xs font-sans outline-none cursor-pointer shrink-0',
           'text-muted-foreground hover:text-foreground transition-all duration-200',
           'bg-muted/30 hover:bg-muted/50 rounded-md px-2 py-1',
         )}
-        title={selected?.id || 'Select model'}
+        title={selected ? getModelDisplayName(selected.id || selected.name || '') : 'Select model'}
       >
         {selected && (
           <span className="text-[10px] bg-primary/10 text-primary px-1 py-0.5 rounded uppercase font-semibold tracking-wider scale-90 origin-left shrink-0">
             {selected.provider === 'openai-api' ? 'openai' : selected.provider}
           </span>
         )}
-        <span className="truncate max-w-[200px] font-medium text-foreground transition-all duration-200">{selected ? getModelDisplayName(selected.id) : 'model'}</span>
+        <span className="truncate max-w-[200px] font-medium text-foreground transition-all duration-200">{selected ? getModelDisplayName(selected.id || selected.name || '') : 'model'}</span>
         <svg className={cn("size-3 shrink-0 opacity-60 ml-0.5 transition-transform duration-200", open && "rotate-180")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />
         </svg>

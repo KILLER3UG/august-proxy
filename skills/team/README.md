@@ -11,10 +11,13 @@ skills/team/<agent_id>/<skill_name>/SKILL.md
 Examples:
 
 ```text
+skills/team/project_manager/team-run-plan/SKILL.md
 skills/team/frontend_dev/react-ui-audit/SKILL.md
 skills/team/backend_dev/api-contract-review/SKILL.md
-skills/team/qa_tester/playwright-regression/SKILL.md
-skills/team/deployment/frontend-deploy/SKILL.md
+skills/team/backend_dev/node-service-change/SKILL.md
+skills/team/qa_tester/evidence-regression/SKILL.md
+skills/team/documentation/release-notes/SKILL.md
+skills/team/deployment/docker-release/SKILL.md
 ```
 
 Each `SKILL.md` uses normal August skill frontmatter:

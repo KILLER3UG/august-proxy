@@ -156,6 +156,10 @@ function deriveModelsUrl(providerUrl) {
   if (/generativelanguage\.googleapis\.com/i.test(normalized) && /\/openai$/i.test(normalized)) {
     return `${normalized}/models`;
   }
+  // Special case: KiloCode uses /models not /v1/models
+  if (/kilo\.ai/i.test(normalized)) {
+    return `${normalized}/models`;
+  }
   if (!/\/v\d+$/i.test(normalized) && !/\/api\/v\d+$/i.test(normalized)) normalized += '/v1';
   return `${normalized}/models`;
 }

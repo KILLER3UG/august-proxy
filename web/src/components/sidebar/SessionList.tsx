@@ -243,6 +243,7 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
                       <FolderHeader
                         folder={folder}
                         count={folderSessions.length}
+                        hasActiveSession={folderSessions.some(s => sessionStates[s.id] === 'working')}
                         onToggleCollapse={() => toggleFolderCollapse(folder.id)}
                         onNewSession={() => onNewInFolder?.(folder.id)}
                         onRename={() => handleRenameFolder(folder.id, folder.name)}
