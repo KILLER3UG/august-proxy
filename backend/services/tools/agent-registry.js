@@ -24,6 +24,38 @@ const DELEGATE_TOOLS = new Set([
     'august__spawn_subagent'
 ]);
 
+const TEAM_AGENT_IDS = new Set([
+    'project_manager',
+    'frontend_dev',
+    'backend_dev',
+    'qa_tester',
+    'documentation',
+    'deployment'
+]);
+
+const FULL_TEAM_PERMISSIONS = {
+    read: 'allow',
+    search: 'allow',
+    web: 'allow',
+    edit: 'allow',
+    shell: 'allow',
+    memory_write: 'allow',
+    delegate: 'allow'
+};
+
+const FULL_TEAM_TOOLS = [
+    'read',
+    'search',
+    'web',
+    'edit',
+    'shell',
+    'memory',
+    'delegate',
+    'mcp',
+    'cowork',
+    'computer'
+];
+
 const DEFAULT_AGENTS = {
     build: {
         id: 'build',
@@ -48,21 +80,13 @@ const DEFAULT_AGENTS = {
         id: 'project_manager',
         role: 'Project Manager',
         mode: 'primary',
-        goal: 'Plan, route, and coordinate the specialized team without directly mutating files or running deploy commands.',
+        goal: 'Plan, route, coordinate, and execute approved work using the full proxy toolset.',
         scopes: ['project', 'frontend', 'backend', 'qa', 'docs', 'deploy'],
         memory_enabled: true,
         allow_delegation: true,
         can_cross_load_team_skills: true,
-        permissions: {
-            read: 'allow',
-            search: 'allow',
-            web: 'allow',
-            edit: 'deny',
-            shell: 'deny',
-            memory_write: 'deny',
-            delegate: 'ask'
-        },
-        tools: ['read', 'search', 'web', 'delegate']
+        permissions: FULL_TEAM_PERMISSIONS,
+        tools: FULL_TEAM_TOOLS
     },
     frontend_dev: {
         id: 'frontend_dev',
@@ -71,17 +95,9 @@ const DEFAULT_AGENTS = {
         goal: 'Handle React, TypeScript, Vite, Tailwind, UI components, browser behavior, and frontend tests.',
         scopes: ['frontend'],
         memory_enabled: true,
-        allow_delegation: false,
-        permissions: {
-            read: 'allow',
-            search: 'allow',
-            web: 'allow',
-            edit: 'ask',
-            shell: 'ask',
-            memory_write: 'deny',
-            delegate: 'deny'
-        },
-        tools: ['read', 'search', 'web', 'edit']
+        allow_delegation: true,
+        permissions: FULL_TEAM_PERMISSIONS,
+        tools: FULL_TEAM_TOOLS
     },
     backend_dev: {
         id: 'backend_dev',
@@ -90,17 +106,9 @@ const DEFAULT_AGENTS = {
         goal: 'Handle Node services, provider adapters, tool registries, workbench backend logic, API routes, and backend tests.',
         scopes: ['backend'],
         memory_enabled: true,
-        allow_delegation: false,
-        permissions: {
-            read: 'allow',
-            search: 'allow',
-            web: 'allow',
-            edit: 'ask',
-            shell: 'ask',
-            memory_write: 'deny',
-            delegate: 'deny'
-        },
-        tools: ['read', 'search', 'web', 'edit']
+        allow_delegation: true,
+        permissions: FULL_TEAM_PERMISSIONS,
+        tools: FULL_TEAM_TOOLS
     },
     qa_tester: {
         id: 'qa_tester',
@@ -109,17 +117,9 @@ const DEFAULT_AGENTS = {
         goal: 'Review behavior, write or run verification steps, inspect tests, and report concrete evidence of pass/fail results.',
         scopes: ['qa'],
         memory_enabled: true,
-        allow_delegation: false,
-        permissions: {
-            read: 'allow',
-            search: 'allow',
-            web: 'allow',
-            edit: 'ask',
-            shell: 'ask',
-            memory_write: 'deny',
-            delegate: 'deny'
-        },
-        tools: ['read', 'search', 'web', 'edit']
+        allow_delegation: true,
+        permissions: FULL_TEAM_PERMISSIONS,
+        tools: FULL_TEAM_TOOLS
     },
     documentation: {
         id: 'documentation',
@@ -128,17 +128,9 @@ const DEFAULT_AGENTS = {
         goal: 'Update README, docs, setup guides, API notes, and user-facing change summaries.',
         scopes: ['docs'],
         memory_enabled: true,
-        allow_delegation: false,
-        permissions: {
-            read: 'allow',
-            search: 'allow',
-            web: 'allow',
-            edit: 'ask',
-            shell: 'deny',
-            memory_write: 'deny',
-            delegate: 'deny'
-        },
-        tools: ['read', 'search', 'web', 'edit']
+        allow_delegation: true,
+        permissions: FULL_TEAM_PERMISSIONS,
+        tools: FULL_TEAM_TOOLS
     },
     deployment: {
         id: 'deployment',
@@ -147,17 +139,9 @@ const DEFAULT_AGENTS = {
         goal: 'Prepare and execute approved build, preview, release, Docker, or deployment steps for a scoped target.',
         scopes: ['deploy', 'frontend', 'backend'],
         memory_enabled: true,
-        allow_delegation: false,
-        permissions: {
-            read: 'allow',
-            search: 'allow',
-            web: 'allow',
-            edit: 'ask',
-            shell: 'ask',
-            memory_write: 'deny',
-            delegate: 'deny'
-        },
-        tools: ['read', 'search', 'web', 'edit', 'shell']
+        allow_delegation: true,
+        permissions: FULL_TEAM_PERMISSIONS,
+        tools: FULL_TEAM_TOOLS
     },
     plan: {
         id: 'plan',
@@ -335,6 +319,9 @@ function saveAgent(agent) {
 module.exports = {
     AGENTS_FILE,
     DEFAULT_AGENTS,
+    FULL_TEAM_PERMISSIONS,
+    FULL_TEAM_TOOLS,
+    TEAM_AGENT_IDS,
     canCrossLoadTeamSkills,
     deriveChildAgentPermissions,
     evaluateAgentTool,

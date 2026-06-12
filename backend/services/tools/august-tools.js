@@ -683,28 +683,6 @@ const AUGUST_TOOLS = [
             }
         }
     },
-    {
-        type: 'function',
-        function: {
-            name: 'august__scan_brain',
-            description: 'Scans all tiers of August\'s memory (Core Memory, Semantic Facts, and Infinite Vector DB Checkpoints) for matching keywords. Use this to quickly retrieve everything the assistant knows about a user profile, active project, setup rule, or past conversation topics in a single turn.',
-            parameters: {
-                type: 'object',
-                properties: {
-                    query: {
-                        type: 'string',
-                        description: 'The keyword, topic, or phrase to search for across all memory tiers.'
-                    },
-                    category: {
-                        type: 'string',
-                        enum: ['user_preference', 'user_detail', 'project_info', 'workflow_rule', 'session_temp'],
-                        description: 'Optional category filter to limit semantic fact results.'
-                    }
-                },
-                required: ['query']
-            }
-        }
-    },
     ...MEMORY_TOOLS
 ];
 
@@ -1687,74 +1665,8 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                 ].join('\n');
             }
 
-            case 'august__scan_brain': {
-                const { query, category } = args;
-                const results = [];
-                results.push(`=== Unified Brain Scan for "${query}" ===\n`);
-
-                // 1. Core Memory Scan
-                const coreMem = readAugustCoreMemory();
-                const coreMatches = [];
-                
-                if (coreMem.user_profile && coreMem.user_profile.toLowerCase().includes(query.toLowerCase())) {
-                    coreMatches.push(`- User Profile match: "${coreMem.user_profile.slice(0, 300)}..."`);
-                }
-                if (coreMem.global_context && coreMem.global_context.toLowerCase().includes(query.toLowerCase())) {
-                    coreMatches.push(`- Global Context match: "${coreMem.global_context.slice(0, 300)}..."`);
-                }
-                if (Array.isArray(coreMem.active_projects)) {
-                    for (const proj of coreMem.active_projects) {
-                        if (proj.name.toLowerCase().includes(query.toLowerCase()) || (proj.summary && proj.summary.toLowerCase().includes(query.toLowerCase()))) {
-                            coreMatches.push(`- Active Project "${proj.name}": ${proj.summary || ''} (${proj.status || 'unknown'})`);
-                        }
-                    }
-                }
-                if (Array.isArray(coreMem.learned_guidelines)) {
-                    for (const rule of coreMem.learned_guidelines) {
-                        if (rule.toLowerCase().includes(query.toLowerCase())) {
-                            coreMatches.push(`- Learned Guideline: "${rule}"`);
-                        }
-                    }
-                }
-                if (Array.isArray(coreMem.conversation_checkpoints)) {
-                    for (const cp of coreMem.conversation_checkpoints) {
-                        if ((cp.topic && cp.topic.toLowerCase().includes(query.toLowerCase())) || cp.summary.toLowerCase().includes(query.toLowerCase())) {
-                            coreMatches.push(`- Conversation Checkpoint [${cp.timestamp || 'unknown'}]: ${cp.topic ? cp.topic + ': ' : ''}${cp.summary}`);
-                        }
-                    }
-                }
-                
-                if (coreMatches.length > 0) {
-                    results.push(`## Core Memory Matches:\n${coreMatches.join('\n')}\n`);
-                } else {
-                    results.push(`## Core Memory Matches:\n- None found.\n`);
-                }
-
-                // 2. Semantic Facts Scan
-                const smScan = require('../memory/semantic-memory');
-                let semanticMatches = smScan.searchFacts(query);
-                if (category) {
-                    semanticMatches = semanticMatches.filter(f => f.category === category);
-                }
-                if (semanticMatches.length > 0) {
-                    const factList = semanticMatches.map(f => `- [${f.category}] ${f.key}: ${f.value} (from ${f.source || 'unknown'})`).join('\n');
-                    results.push(`## Semantic Memory Facts:\n${factList}\n`);
-                } else {
-                    results.push(`## Semantic Memory Facts:\n- None found.\n`);
-                }
-
-                // 3. Infinite Memory (Vector DB Checkpoints)
-                const vDb = require('../memory/vector-db');
-                const vectorMatches = vDb.searchCheckpointsByText(query, 5);
-                if (vectorMatches.length > 0) {
-                    const vList = vectorMatches.map(r => `- Date: ${r.timestamp}\n  Topic: ${r.topic}\n  Summary: ${r.summary}\n  Relevance Score: ${(r.score * 100).toFixed(1)}%`).join('\n\n');
-                    results.push(`## Infinite Memory Vector DB:\n${vList}\n`);
-                } else {
-                    results.push(`## Infinite Memory Vector DB:\n- None found.\n`);
-                }
-
-                return results.join('\n');
-            }
+            case 'august__scan_brain':
+                return handleMemoryTool(toolName, args);
 
             case 'august__memory_topics':
             case 'august__memory_search':
@@ -1762,6 +1674,13 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
             case 'august__fact_search':
             case 'august__context_read':
             case 'august__graph_explore':
+            case 'august__scan_brain':
+            case 'august__memory_pack':
+            case 'august__brain_edit':
+            case 'august__brain_commit':
+            case 'august__memory_retention':
+            case 'august__memory_retention_apply':
+            case 'august__model_observation':
                 return handleMemoryTool(toolName, args);
 
             default:

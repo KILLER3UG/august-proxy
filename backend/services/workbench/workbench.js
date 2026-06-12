@@ -32,6 +32,7 @@ const {
     evaluateAgentTool,
     getAgent,
     getAgents,
+    TEAM_AGENT_IDS,
     renderAgentContext
 } = require('../tools/agent-registry');
 const { renderTeamSkillsForSystem } = require('../tools/skills');
@@ -868,6 +869,7 @@ function listAgentRegistry(parentAgentId = 'build') {
             mode: agent.mode,
             goal: agent.goal,
             scopes: agent.scopes || ['project'],
+            team: TEAM_AGENT_IDS.has(agent.id),
             teamSkills: getTeamSkills(agent.id).map(skill => ({
                 name: skill.name,
                 description: skill.description,
@@ -1283,7 +1285,7 @@ function buildSystemPrompt(session) {
         '=== AGENT REGISTRY ===',
         `Current agent: ${activeAgent.id} (${activeAgent.role}). Goal: ${activeAgent.goal}`,
         'When delegating, choose an agent intentionally: project_manager for planning/coordination, frontend_dev for React/Vite/Tailwind UI work, backend_dev for Node/API/tool/backend work, qa_tester for verification, documentation for docs, deployment for scoped deploy/build/release work, explore for read-only codebase investigation, plan for architecture/planning, general for bounded side work.',
-        'For a scoped deployment, prefer deployment with scope=frontend for frontend-only deploy or scope=backend for backend-only deploy. The selected agent still inherits the parent permission policy and must wait for approval before edits, shell commands, or deployment mutations.',
+        'For a scoped deployment, prefer deployment with scope=frontend for frontend-only deploy or scope=backend for backend-only deploy. Team agents have access to the full August toolset, but edits, shell commands, memory writes, delegation, and deployment mutations still require an approved plan.',
         'Child agents inherit the parent permission policy. The most restrictive permission wins: deny beats ask; ask beats allow.',
         renderAgentContext()
     ].join('\n');

@@ -20,17 +20,13 @@ const { createHostFilesFolder, getCompatibilityStatus } = require('./services/mo
 const { importCapabilityLink } = require('./services/tools/link-importer');
 const { importSkillFromLink } = require('./services/tools/skill-importer');
 const { getCapabilityHealth } = require('./services/monitoring/health');
-const { getBrainDiagnostics } = require('./services/memory/brain-diagnostics');
-const { listMemoryItems, searchMemory, updateMemoryItem } = require('./services/memory/memory-lifecycle');
+const { handleMemoryRoutes } = require('./routes/memory-routes');
 const { answerWorkbenchBtw, approveWorkbenchPlan, createWorkbenchSession, getWorkbenchGoalStatus, getWorkbenchSession, listAgentRegistry, listProxyCapabilities, listWorkbenchSessions, resetWorkbenchSession, sendWorkbenchMessageStream, updateWorkbenchGoal } = require('./services/workbench/workbench');
-const sqliteMemoryStore = require('./services/memory/sqlite-memory-store');
-const memoryProviders = require('./services/memory/memory-providers');
 const agentRegistry = require('./services/tools/agent-registry');
 const agentSessions = require('./services/tools/agent-sessions');
 const terminalService = require('./services/workbench/terminal-service');
 const chatWsService = require('./services/workbench/chat-ws-service');
 const automationJobs = require('./services/workbench/automation-jobs');
-const memoryGovernance = require('./services/memory/memory-governance');
 const hostAgent = require('./lib/host-agent');
 const { listProviders, getProvider } = require('./providers/provider-registry');
 const { registerBuiltinProviders } = require('./providers/builtin');
@@ -361,6 +357,8 @@ const requestHandler = async (req, res) => {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
         return res.end('Not Found');
     }
+
+    if (handleMemoryRoutes(req, res, req.url)) return;
 
     if (req.url === '/ui/config' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -936,10 +934,6 @@ const requestHandler = async (req, res) => {
         return sendJson(res, getCapabilityHealth());
     }
 
-    if (req.url === '/ui/brain/diagnostics' && req.method === 'GET') {
-        return sendJson(res, getBrainDiagnostics());
-    }
-
     if (req.url === '/ui/brain/policy' && req.method === 'GET') {
         const { getBrainConfig, planBrainTurn } = require('./services/memory/brain-orchestrator');
         const { graphStats } = require('./services/memory/graph-memory');
@@ -964,49 +958,6 @@ const requestHandler = async (req, res) => {
                 agentJobs: listAgentJobs({ status: 'all', limit: 1 }).count
             }
         });
-    }
-
-    if (req.url.startsWith('/ui/brain/failures') && req.method === 'GET') {
-        const { readFailureMemory } = require('./services/memory/tool-failure-memory');
-        const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-        const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit') || 50)));
-        return sendJson(res, { failures: readFailureMemory().slice(-limit).reverse() });
-    }
-
-    if (req.url.startsWith('/ui/brain/guidelines') && req.method === 'GET') {
-        const { listLearnedGuidelines } = require('./services/memory/learned-guidelines');
-        const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-        return sendJson(res, { guidelines: listLearnedGuidelines({ status: url.searchParams.get('status') || 'pending' }) });
-    }
-
-    if (req.url === '/ui/brain/guidelines/status' && req.method === 'POST') {
-        try {
-            const { setLearnedGuidelineStatus, listLearnedGuidelines } = require('./services/memory/learned-guidelines');
-            const body = await readJsonBody(req);
-            const updated = setLearnedGuidelineStatus(body.id || body.id_or_text, body.status);
-            if (!updated) throw new Error('Guideline not found');
-            return sendJson(res, { updated, guidelines: listLearnedGuidelines({ status: body.nextListStatus || 'pending' }) });
-        } catch (e) {
-            return sendError(res, e, 400);
-        }
-    }
-
-    if (req.url.startsWith('/ui/brain/graph') && req.method === 'GET') {
-        const { graphStats, searchGraph } = require('./services/memory/graph-memory');
-        const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-        return sendJson(res, {
-            stats: graphStats(),
-            results: searchGraph(url.searchParams.get('q') || '', { limit: url.searchParams.get('limit') || 12 })
-        });
-    }
-
-    if (req.url === '/ui/brain/graph/index' && req.method === 'POST') {
-        try {
-            const { indexCoreMemory } = require('./services/memory/graph-memory');
-            return sendJson(res, indexCoreMemory());
-        } catch (e) {
-            return sendError(res, e, 500);
-        }
     }
 
     if (req.url === '/ui/workbench/session' && req.method === 'POST') {
@@ -1259,79 +1210,6 @@ const requestHandler = async (req, res) => {
         } catch (e) {
             return sendError(res, e, 400);
         }
-    }
-
-    if (req.url === '/ui/memory/items' && req.method === 'GET') {
-        return sendJson(res, { items: listMemoryItems() });
-    }
-
-    if (req.url === '/ui/memory/items' && req.method === 'PATCH') {
-        try {
-            return sendJson(res, updateMemoryItem(await readJsonBody(req)));
-        } catch (e) {
-            return sendError(res, e, 400);
-        }
-    }
-
-    if (req.url.startsWith('/ui/memory/search') && req.method === 'GET') {
-        const url = new URL(req.url, `http://${req.headers.host}`);
-        return sendJson(res, searchMemory(url.searchParams.get('q') || ''));
-    }
-
-    if (req.url === '/ui/memory/store/status' && req.method === 'GET') {
-        return sendJson(res, sqliteMemoryStore.getMemoryStoreStatus());
-    }
-
-    if (req.url === '/ui/memory/store/rebuild' && req.method === 'POST') {
-        try {
-            const { readVectorEntries, syncSqliteMemoryStore } = require('./services/memory/vector-db');
-            const result = syncSqliteMemoryStore();
-            return sendJson(res, { ...result, vectorEntries: readVectorEntries().length, status: sqliteMemoryStore.getMemoryStoreStatus() });
-        } catch (e) {
-            return sendError(res, e, 500);
-        }
-    }
-
-    if (req.url.startsWith('/ui/memory/providers') && req.method === 'GET') {
-        const url = new URL(req.url, `http://${req.headers.host}`);
-        const query = url.searchParams.get('q') || '';
-        return sendJson(res, {
-            providers: memoryProviders.listMemoryProviders(),
-            recalled: query ? memoryProviders.prefetchAll(query) : []
-        });
-    }
-
-    if (req.url.startsWith('/ui/memory/provider-events') && req.method === 'GET') {
-        const url = new URL(req.url, `http://${req.headers.host}`);
-        return sendJson(res, {
-            events: sqliteMemoryStore.listProviderEvents({ limit: url.searchParams.get('limit') || 25 })
-        });
-    }
-
-    if (req.url.startsWith('/ui/memory/governance') && req.method === 'GET') {
-        const url = new URL(req.url, `http://${req.headers.host}`);
-        return sendJson(res, memoryGovernance.searchGovernanceTargets(url.searchParams.get('q') || ''));
-    }
-
-    if (req.url === '/ui/memory/governance' && req.method === 'POST') {
-        try {
-            return sendJson(res, memoryGovernance.applyMemoryGovernance(await readJsonBody(req)));
-        } catch (e) {
-            return sendError(res, e, 400);
-        }
-    }
-
-    if (req.url === '/ui/memory/vector' && req.method === 'GET') {
-        const { readVectorEntries } = require('./services/memory/vector-db');
-        const entries = readVectorEntries().map(e => ({
-            id: e.id,
-            topic: e.topic,
-            summary: e.summary,
-            timestamp: e.timestamp,
-            metadata: e.metadata,
-            tags: e.tags
-        }));
-        return sendJson(res, { entries, count: entries.length });
     }
 
     if (req.url === '/ui/agents' && req.method === 'GET') {
@@ -1634,66 +1512,6 @@ const requestHandler = async (req, res) => {
         const detail = getRequestDetail(reqId);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify(detail || { error: 'Not found' }));
-    }
-
-    if (req.url === '/ui/memory' && req.method === 'GET') {
-        const { readAugustCoreMemory } = require('./services/tools/august-tools');
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify(readAugustCoreMemory()));
-    }
-
-    if (req.url === '/ui/memory/learning-status' && req.method === 'GET') {
-        const { getLearningStatus } = require('./services/memory/auto-memory');
-        return sendJson(res, getLearningStatus());
-    }
-
-    if (req.url.startsWith('/ui/memory/preview') && req.method === 'GET') {
-        const url = new URL(req.url, `http://${req.headers.host}`);
-        const profileName = url.searchParams.get('profile') || 'claude';
-        const profile = getProfile(profileName);
-        const model = profileName === 'claude'
-            ? (profile?._upstreamModel || profile?.currentModel)
-            : profile?.currentModel;
-        const contextMaxChars = Number(url.searchParams.get('maxChars') || getConfig().memoryContextMaxChars || DEFAULT_CONTEXT_MAX_CHARS);
-        const details = buildSystemPromptDetails(null, {
-            model,
-            targetUrl: profile?.targetUrl,
-            includeWindowsContext: profileName !== 'claude',
-            contextMaxChars
-        });
-        return sendJson(res, {
-            profile: profileName,
-            model,
-            targetUrl: profile?.targetUrl,
-            length: details.length,
-            prompt: details.prompt,
-        });
-    }
-
-    if (req.url === '/ui/memory' && req.method === 'POST') {
-        try {
-            const data = await readJsonBody(req);
-            const { readAugustCoreMemory, writeAugustCoreMemory } = require('./services/tools/august-tools');
-            const { checkMemoryBudget } = require('./services/memory/core-memory');
-            const memory = readAugustCoreMemory();
-
-            if (data.global_context !== undefined) {
-                const budget = checkMemoryBudget('global_context', data.global_context);
-                if (!budget.valid) return sendError(res, new Error(`global_context exceeds ${budget.limit} characters (${budget.length}/${budget.limit}, over by ${budget.overage}). Compact it before saving.`), 400);
-                memory.global_context = data.global_context;
-            }
-            if (data.user_profile !== undefined) {
-                const budget = checkMemoryBudget('user_profile', data.user_profile);
-                if (!budget.valid) return sendError(res, new Error(`user_profile exceeds ${budget.limit} characters (${budget.length}/${budget.limit}, over by ${budget.overage}). Compact it before saving.`), 400);
-                memory.user_profile = data.user_profile;
-            }
-
-            writeAugustCoreMemory(memory);
-            return sendJson(res, { status: 'ok', memory: readAugustCoreMemory() });
-        } catch (e) {
-            if (e.name === 'CoreMemoryBudgetError') return sendError(res, e, 400);
-            return sendError(res, e, 500);
-        }
     }
 
     if (req.url === '/ui/models' && req.method === 'GET') {

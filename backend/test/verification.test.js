@@ -16,6 +16,7 @@ function request(pathname) {
       port: url.port,
       path: `${url.pathname}${url.search}`,
       method: 'GET',
+      timeout: 15000,
     }, (res) => {
       let data = '';
       res.setEncoding('utf8');
@@ -25,6 +26,9 @@ function request(pathname) {
         const body = contentType.includes('application/json') ? JSON.parse(data) : data;
         resolve({ status: res.statusCode, body });
       });
+    });
+    req.on('timeout', () => {
+      req.destroy(new Error(`request timed out: ${pathname}`));
     });
     req.on('error', reject);
     req.end();
@@ -39,9 +43,9 @@ async function waitForServer(child) {
       throw new Error(`backend exited early with code ${child.exitCode}`);
     }
     try {
-      const res = await request('/api/models');
+      const res = await request('/ui/models/catalog');
       if (res.status === 200) return;
-      lastError = new Error(`GET /api/models returned ${res.status}`);
+      lastError = new Error(`GET /ui/models/catalog returned ${res.status}`);
     } catch (err) {
       lastError = err;
     }
@@ -63,7 +67,7 @@ function stopBackend(child) {
 
     child.once('exit', finish);
     if (process.platform === 'win32') {
-      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+      spawn('cmd.exe', ['/c', 'taskkill', '/F', '/PID', String(child.pid)], { stdio: 'ignore' });
     } else {
       try {
         process.kill(-child.pid, 'SIGTERM');
@@ -97,8 +101,8 @@ test.before(async () => {
 
 test.after(() => stopBackend(backendChild));
 
-test('backend /api/models returns a usable model list for the frontend', async () => {
-  const { status, body } = await request('/api/models');
+test('backend model catalog returns a usable model list for the frontend', async () => {
+  const { status, body } = await request('/ui/models/catalog');
   assert.equal(status, 200);
   assert.ok(Array.isArray(body.models), 'body.models should be an array');
   assert.ok(body.models.length > 0, 'body.models should not be empty');

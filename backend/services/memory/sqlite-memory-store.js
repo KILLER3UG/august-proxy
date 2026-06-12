@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const SQLITE_MEMORY_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_brain.sqlite');
+const SQLITE_MEMORY_FILE = process.env.AUGUST_BRAIN_SQLITE_FILE || path.join(__dirname, '..', '..', '..', 'data', 'august_brain.sqlite');
 const SQLITE_TIMEOUT_MS = 10000;
 const SQLITE_BUSY_RETRIES = 2;
 
@@ -218,6 +218,89 @@ CREATE TABLE IF NOT EXISTS automation_runs (
     output TEXT,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS schema_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_facts (
+    id TEXT PRIMARY KEY,
+    fact_key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    category TEXT NOT NULL,
+    source TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    ttl TEXT,
+    confidence REAL DEFAULT 0.75,
+    metadata_json TEXT,
+    lifecycle_status TEXT DEFAULT 'active',
+    trust REAL DEFAULT 0.75,
+    provenance_json TEXT
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_facts_fts USING fts5(
+    id UNINDEXED,
+    fact_key,
+    value,
+    category,
+    metadata,
+    content
+);
+CREATE TABLE IF NOT EXISTS memory_proposals (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    action TEXT NOT NULL,
+    memory_type TEXT NOT NULL,
+    target_id TEXT,
+    target_type TEXT,
+    target_key TEXT,
+    before_json TEXT,
+    after_json TEXT,
+    metadata_json TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_retention_decisions (
+    id TEXT PRIMARY KEY,
+    memory_type TEXT NOT NULL,
+    target_id TEXT,
+    target_key TEXT,
+    score INTEGER,
+    recommendation TEXT NOT NULL,
+    reasons_json TEXT,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS model_observations (
+    id TEXT PRIMARY KEY,
+    model_id TEXT,
+    provider TEXT,
+    observation_type TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    details_json TEXT,
+    related_memory_json TEXT,
+    source TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_usage (
+    id TEXT PRIMARY KEY,
+    memory_type TEXT NOT NULL,
+    target_id TEXT,
+    target_key TEXT,
+    access_count INTEGER NOT NULL DEFAULT 1,
+    last_accessed_at TEXT NOT NULL,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memories_lifecycle ON memories(lifecycle_status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_memory_facts_category ON memory_facts(category, lifecycle_status);
+CREATE INDEX IF NOT EXISTS idx_memory_proposals_status ON memory_proposals(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_model_observations_model ON model_observations(model_id, created_at);
 `);
     } catch (error) {
         if (isSqliteCorruption(error)) {
@@ -260,6 +343,89 @@ CREATE TABLE IF NOT EXISTS automation_runs (
     output TEXT,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS schema_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_facts (
+    id TEXT PRIMARY KEY,
+    fact_key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    category TEXT NOT NULL,
+    source TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    ttl TEXT,
+    confidence REAL DEFAULT 0.75,
+    metadata_json TEXT,
+    lifecycle_status TEXT DEFAULT 'active',
+    trust REAL DEFAULT 0.75,
+    provenance_json TEXT
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_facts_fts USING fts5(
+    id UNINDEXED,
+    fact_key,
+    value,
+    category,
+    metadata,
+    content
+);
+CREATE TABLE IF NOT EXISTS memory_proposals (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    action TEXT NOT NULL,
+    memory_type TEXT NOT NULL,
+    target_id TEXT,
+    target_type TEXT,
+    target_key TEXT,
+    before_json TEXT,
+    after_json TEXT,
+    metadata_json TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_retention_decisions (
+    id TEXT PRIMARY KEY,
+    memory_type TEXT NOT NULL,
+    target_id TEXT,
+    target_key TEXT,
+    score INTEGER,
+    recommendation TEXT NOT NULL,
+    reasons_json TEXT,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS model_observations (
+    id TEXT PRIMARY KEY,
+    model_id TEXT,
+    provider TEXT,
+    observation_type TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    details_json TEXT,
+    related_memory_json TEXT,
+    source TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_usage (
+    id TEXT PRIMARY KEY,
+    memory_type TEXT NOT NULL,
+    target_id TEXT,
+    target_key TEXT,
+    access_count INTEGER NOT NULL DEFAULT 1,
+    last_accessed_at TEXT NOT NULL,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memories_lifecycle ON memories(lifecycle_status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_memory_facts_category ON memory_facts(category, lifecycle_status);
+CREATE INDEX IF NOT EXISTS idx_memory_proposals_status ON memory_proposals(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_model_observations_model ON model_observations(model_id, created_at);
 `);
             } catch (retryError) {
                 return false;
@@ -320,6 +486,492 @@ function normalizeEntry(entry = {}) {
             ttl: metadata.ttl || null,
         }
     };
+}
+
+function factIdFor(category, key) {
+    return `fact_${Buffer.from(`${category || 'unknown'}:${key || ''}`).toString('base64url').slice(0, 36)}`;
+}
+
+function normalizeFact(fact = {}) {
+    const metadata = fact.metadata && typeof fact.metadata === 'object' ? fact.metadata : {};
+    const provenance = fact.provenance && typeof fact.provenance === 'object' ? fact.provenance : {};
+    const key = String(fact.key || fact.factKey || fact.fact_key || 'unknown').trim();
+    const category = String(fact.category || metadata.category || 'user_preference').trim();
+    const createdAt = fact.created_at || fact.createdAt || provenance.createdAt || fact.created || new Date().toISOString();
+    const updatedAt = fact.updated_at || fact.updatedAt || provenance.updatedAt || fact.updated || new Date().toISOString();
+    return {
+        id: fact.id || factIdFor(category, key),
+        factKey: key,
+        value: String(fact.value || ''),
+        category,
+        source: fact.source || provenance.source || metadata.source || '',
+        createdAt,
+        updatedAt,
+        ttl: fact.ttl || provenance.ttl || null,
+        confidence: Number.isFinite(Number(fact.confidence ?? provenance.confidence ?? metadata.confidence)) ? Number(fact.confidence ?? provenance.confidence ?? metadata.confidence) : 0.75,
+        metadata,
+        lifecycleStatus: fact.lifecycleStatus || fact.lifecycle_status || metadata.lifecycleStatus || 'active',
+        trust: Number.isFinite(Number(fact.trust ?? metadata.trust)) ? Number(fact.trust ?? metadata.trust) : 0.75,
+        provenance: {
+            ...provenance,
+            source: fact.source || provenance.source || metadata.source || '',
+            createdAt,
+            updatedAt,
+            confidence: Number.isFinite(Number(provenance.confidence ?? metadata.confidence)) ? Number(provenance.confidence ?? metadata.confidence) : 0.75,
+            pinned: metadata.pinned === true,
+            ttl: fact.ttl || provenance.ttl || null,
+        }
+    };
+}
+
+function normalizeFactRow(row) {
+    return {
+        id: row.id,
+        key: row.fact_key,
+        factKey: row.fact_key,
+        value: row.value,
+        category: row.category,
+        source: row.source,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        ttl: row.ttl,
+        confidence: row.confidence,
+        metadata: safeJson(row.metadata_json, {}),
+        lifecycleStatus: row.lifecycle_status,
+        trust: row.trust,
+        provenance: safeJson(row.provenance_json, {})
+    };
+}
+
+function upsertMemoryFact(fact = {}) {
+    if (!ensureMemorySchema()) return { ok: false, driver: getDriverName() };
+    const item = normalizeFact(fact);
+    const now = new Date().toISOString();
+    const writeItem = () => {
+        runPrepared(
+            `INSERT INTO memory_facts
+                (id, fact_key, value, category, source, created_at, updated_at, ttl, confidence, metadata_json, lifecycle_status, trust, provenance_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+                fact_key=excluded.fact_key,
+                value=excluded.value,
+                category=excluded.category,
+                source=excluded.source,
+                updated_at=excluded.updated_at,
+                ttl=excluded.ttl,
+                confidence=excluded.confidence,
+                metadata_json=excluded.metadata_json,
+                lifecycle_status=excluded.lifecycle_status,
+                trust=excluded.trust,
+                provenance_json=excluded.provenance_json`,
+            [
+                item.id,
+                item.factKey,
+                item.value,
+                item.category,
+                item.source,
+                item.createdAt,
+                now,
+                item.ttl,
+                item.confidence,
+                json(item.metadata),
+                item.lifecycleStatus,
+                item.trust,
+                json(item.provenance)
+            ]
+        );
+        runPrepared('DELETE FROM memory_facts_fts WHERE id = ?', [item.id]);
+        runPrepared(
+            'INSERT INTO memory_facts_fts (id, fact_key, value, category, metadata, content) VALUES (?, ?, ?, ?, ?, ?)',
+            [item.id, item.factKey, item.value, item.category, json(item.metadata), `${item.factKey}\n${item.value}\n${item.category}\n${item.source}`]
+        );
+    };
+    try {
+        writeItem();
+        return { ok: true, driver: getDriverName(), id: item.id };
+    } catch (error) {
+        if (isSqliteCorruption(error)) {
+            quarantineSqliteStore('corrupt');
+            if (ensureMemorySchema()) {
+                try {
+                    writeItem();
+                    return { ok: true, driver: getDriverName(), id: item.id, repaired: true };
+                } catch (retryError) {
+                    return { ok: false, driver: getDriverName(), id: item.id, error: sqliteErrorMessage(retryError) };
+                }
+            }
+        }
+        return { ok: false, driver: getDriverName(), id: item.id, error: sqliteErrorMessage(error) };
+    }
+}
+
+function listMemoryFacts({ limit = 100 } = {}) {
+    if (!ensureMemorySchema()) return [];
+    try {
+        return allSql(
+            `SELECT id, fact_key, value, category, source, created_at, updated_at, ttl, confidence, metadata_json, lifecycle_status, trust, provenance_json
+             FROM memory_facts
+             ORDER BY updated_at DESC
+             LIMIT ?`,
+            [Math.max(1, Math.min(500, Number(limit) || 100))]
+        ).map(normalizeFactRow);
+    } catch (error) {
+        if (isSqliteCorruption(error)) {
+            quarantineSqliteStore('corrupt');
+            ensureMemorySchema();
+        }
+        return [];
+    }
+}
+
+function searchMemoryFacts(query, { limit = 50 } = {}) {
+    if (!ensureMemorySchema()) return [];
+    const q = String(query || '').trim();
+    if (!q) return listMemoryFacts({ limit });
+    const match = buildFtsQuery(q);
+    if (!match) return [];
+    try {
+        const rows = allSql(
+            `SELECT memory_facts_fts.id AS id,
+                    memory_facts.fact_key AS fact_key,
+                    memory_facts.value AS value,
+                    memory_facts.category AS category,
+                    memory_facts.source AS source,
+                    memory_facts.created_at AS created_at,
+                    memory_facts.updated_at AS updated_at,
+                    memory_facts.ttl AS ttl,
+                    memory_facts.confidence AS confidence,
+                    memory_facts.metadata_json AS metadata_json,
+                    memory_facts.lifecycle_status AS lifecycle_status,
+                    memory_facts.trust AS trust,
+                    memory_facts.provenance_json AS provenance_json,
+                    bm25(memory_facts_fts) AS rank
+             FROM memory_facts_fts
+             JOIN memory_facts ON memory_facts.id = memory_facts_fts.id
+             WHERE memory_facts_fts MATCH ?
+             ORDER BY rank
+             LIMIT ?`,
+            [match, Math.max(1, Math.min(200, Number(limit) || 50))]
+        );
+        return rows.map(normalizeFactRow);
+    } catch (error) {
+        if (isSqliteCorruption(error)) {
+            quarantineSqliteStore('corrupt');
+            ensureMemorySchema();
+        }
+        return [];
+    }
+}
+
+function deleteMemoryFact(idOrKey) {
+    if (!idOrKey || !ensureMemorySchema()) return false;
+    try {
+        const rows = allSql('SELECT id FROM memory_facts WHERE id = ? OR fact_key = ?', [idOrKey, idOrKey]);
+        let deleted = 0;
+        for (const row of rows) {
+            runPrepared('DELETE FROM memory_facts_fts WHERE id = ?', [row.id]);
+            runPrepared('DELETE FROM memory_facts WHERE id = ?', [row.id]);
+            deleted++;
+        }
+        return deleted > 0;
+    } catch (error) {
+        if (isSqliteCorruption(error)) {
+            quarantineSqliteStore('corrupt');
+            ensureMemorySchema();
+        }
+        return false;
+    }
+}
+
+function updateMemoryLifecycle(id, updates = {}) {
+    if (!id || !ensureMemorySchema()) return false;
+    const assignments = [];
+    const params = [];
+    if (updates.lifecycleStatus !== undefined) {
+        assignments.push('lifecycle_status = ?');
+        params.push(String(updates.lifecycleStatus));
+    }
+    if (updates.trust !== undefined) {
+        assignments.push('trust = ?');
+        params.push(Math.max(0, Math.min(1, Number(updates.trust) || 0.75)));
+    }
+    if (updates.metadata !== undefined) {
+        assignments.push('metadata_json = ?');
+        params.push(json(updates.metadata));
+    }
+    assignments.push('updated_at = ?');
+    params.push(new Date().toISOString());
+    params.push(id);
+    try {
+        runPrepared(`UPDATE memories SET ${assignments.join(', ')} WHERE id = ?`, params);
+        return true;
+    } catch (error) {
+        if (isSqliteCorruption(error)) {
+            quarantineSqliteStore('corrupt');
+            ensureMemorySchema();
+        }
+        return false;
+    }
+}
+
+function setSchemaMeta(key, value) {
+    if (!key || !ensureMemorySchema()) return false;
+    const now = new Date().toISOString();
+    runPrepared(
+        'INSERT INTO schema_meta (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
+        [key, JSON.stringify(value), now]
+    );
+    return true;
+}
+
+function getSchemaMeta(key) {
+    if (!key || !ensureMemorySchema()) return null;
+    const row = allSql('SELECT value FROM schema_meta WHERE key = ?', [key])[0];
+    if (!row) return null;
+    try {
+        return JSON.parse(row.value);
+    } catch (e) {
+        return row.value;
+    }
+}
+
+function listSchemaMeta() {
+    if (!ensureMemorySchema()) return {};
+    return allSql('SELECT key, value, updated_at FROM schema_meta ORDER BY key').reduce((acc, row) => {
+        try {
+            acc[row.key] = { value: JSON.parse(row.value), updatedAt: row.updated_at };
+        } catch (e) {
+            acc[row.key] = { value: row.value, updatedAt: row.updated_at };
+        }
+        return acc;
+    }, {});
+}
+
+function createMemoryProposal(input = {}) {
+    if (!ensureMemorySchema()) return null;
+    const now = new Date().toISOString();
+    const id = `prop_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const title = String(input.title || input.action || 'Brain edit proposal').trim();
+    const action = String(input.action || 'update_memory').trim();
+    const memoryType = String(input.memoryType || input.memory_type || 'memory').trim();
+    if (!title || !action || !memoryType) throw new Error('title, action, and memory_type are required');
+    runPrepared(
+        `INSERT INTO memory_proposals
+            (id, title, description, action, memory_type, target_id, target_type, target_key, before_json, after_json, metadata_json, status, created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+            id,
+            title,
+            input.description || '',
+            action,
+            memoryType,
+            input.targetId || input.target_id || null,
+            input.targetType || input.target_type || null,
+            input.targetKey || input.target_key || null,
+            json(input.before || input.before_json || {}),
+            json(input.after || input.after_json || {}),
+            json(input.metadata || input.metadata_json || {}),
+            input.status || 'pending',
+            input.createdBy || input.created_by || 'system',
+            now,
+            now
+        ]
+    );
+    return getMemoryProposal(id);
+}
+
+function normalizeProposal(row) {
+    return {
+        ...row,
+        before: safeJson(row.before_json, {}),
+        after: safeJson(row.after_json, {}),
+        metadata: safeJson(row.metadata_json, {})
+    };
+}
+
+function getMemoryProposal(id) {
+    if (!id || !ensureMemorySchema()) return null;
+    const row = allSql('SELECT * FROM memory_proposals WHERE id = ?', [id])[0];
+    return row ? normalizeProposal(row) : null;
+}
+
+function listMemoryProposals({ status = 'pending', limit = 100 } = {}) {
+    if (!ensureMemorySchema()) return [];
+    const params = [];
+    const where = status && status !== 'all' ? 'WHERE status = ?' : '';
+    if (status && status !== 'all') params.push(status);
+    params.push(Math.max(1, Math.min(500, Number(limit) || 100)));
+    return allSql(
+        `SELECT * FROM memory_proposals ${where} ORDER BY updated_at DESC LIMIT ?`,
+        params
+    ).map(normalizeProposal);
+}
+
+function updateMemoryProposal(id, updates = {}) {
+    if (!id || !ensureMemorySchema()) return null;
+    const assignments = [];
+    const params = [];
+    for (const key of ['status', 'description', 'metadata_json']) {
+        if (updates[key] !== undefined) {
+            assignments.push(`${key} = ?`);
+            params.push(key === 'metadata_json' ? json(updates[key]) : updates[key]);
+        }
+    }
+    if (updates.after !== undefined) {
+        assignments.push('after_json = ?');
+        params.push(json(updates.after));
+    }
+    assignments.push('updated_at = ?');
+    params.push(new Date().toISOString());
+    params.push(id);
+    runPrepared(`UPDATE memory_proposals SET ${assignments.join(', ')} WHERE id = ?`, params);
+    return getMemoryProposal(id);
+}
+
+function recordModelObservation(input = {}) {
+    if (!ensureMemorySchema()) return { ok: false, driver: getDriverName() };
+    const now = new Date().toISOString();
+    const id = `obs_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const summary = String(input.summary || input.observation || '').trim();
+    if (!summary) throw new Error('summary is required');
+    try {
+        runPrepared(
+            `INSERT INTO model_observations
+                (id, model_id, provider, observation_type, summary, details_json, related_memory_json, source, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                id,
+                input.modelId || input.model_id || '',
+                input.provider || '',
+                input.observationType || input.observation_type || 'note',
+                summary,
+                json(input.details || input.details_json || {}),
+                json(input.relatedMemory || input.related_memory || {}),
+                input.source || 'model',
+                now,
+                now
+            ]
+        );
+        return { ok: true, id, driver: getDriverName() };
+    } catch (error) {
+        return { ok: false, id, driver: getDriverName(), error: sqliteErrorMessage(error) };
+    }
+}
+
+function listModelObservations({ limit = 50, modelId } = {}) {
+    if (!ensureMemorySchema()) return [];
+    const params = [];
+    const where = modelId ? 'WHERE model_id = ?' : '';
+    if (modelId) params.push(modelId);
+    params.push(Math.max(1, Math.min(500, Number(limit) || 50)));
+    return allSql(
+        `SELECT id, model_id, provider, observation_type, summary, details_json, related_memory_json, source, created_at, updated_at
+         FROM model_observations
+         ${where}
+         ORDER BY created_at DESC
+         LIMIT ?`,
+        params
+    ).map(row => ({
+        id: row.id,
+        modelId: row.model_id,
+        provider: row.provider,
+        observationType: row.observation_type,
+        summary: row.summary,
+        details: safeJson(row.details_json, {}),
+        relatedMemory: safeJson(row.related_memory_json, {}),
+        source: row.source,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+    }));
+}
+
+function recordMemoryUsage(input = {}) {
+    if (!ensureMemorySchema()) return { ok: false, driver: getDriverName() };
+    const memoryType = String(input.memoryType || input.memory_type || 'memory').trim();
+    const targetId = input.targetId || input.target_id || '';
+    const targetKey = input.targetKey || input.target_key || '';
+    if (!memoryType) throw new Error('memory_type is required');
+    const id = `usage_${Buffer.from(`${memoryType}:${targetId || targetKey || 'global'}`).toString('base64url').slice(0, 36)}`;
+    const now = new Date().toISOString();
+    try {
+        runPrepared(
+            `INSERT INTO memory_usage
+                (id, memory_type, target_id, target_key, access_count, last_accessed_at, metadata_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+                access_count = access_count + 1,
+                last_accessed_at = excluded.last_accessed_at,
+                metadata_json = excluded.metadata_json,
+                updated_at = excluded.updated_at`,
+            [id, memoryType, targetId || null, targetKey || null, 1, now, json(input.metadata || input.metadata_json || {}), now, now]
+        );
+        return { ok: true, id, driver: getDriverName() };
+    } catch (error) {
+        return { ok: false, id, driver: getDriverName(), error: sqliteErrorMessage(error) };
+    }
+}
+
+function listMemoryUsage({ limit = 100 } = {}) {
+    if (!ensureMemorySchema()) return [];
+    return allSql(
+        `SELECT id, memory_type, target_id, target_key, access_count, last_accessed_at, metadata_json, created_at, updated_at
+         FROM memory_usage
+         ORDER BY last_accessed_at DESC
+         LIMIT ?`,
+        [Math.max(1, Math.min(500, Number(limit) || 100))]
+    ).map(row => ({
+        id: row.id,
+        memoryType: row.memory_type,
+        targetId: row.target_id,
+        targetKey: row.target_key,
+        accessCount: row.access_count,
+        lastAccessedAt: row.last_accessed_at,
+        metadata: safeJson(row.metadata_json, {}),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+    }));
+}
+
+function listRetentionDecisions({ limit = 100 } = {}) {
+    if (!ensureMemorySchema()) return [];
+    return allSql(
+        `SELECT id, memory_type, target_id, target_key, score, recommendation, reasons_json, metadata_json, created_at
+         FROM memory_retention_decisions
+         ORDER BY created_at DESC
+         LIMIT ?`,
+        [Math.max(1, Math.min(500, Number(limit) || 100))]
+    ).map(row => ({
+        id: row.id,
+        memoryType: row.memory_type,
+        targetId: row.target_id,
+        targetKey: row.target_key,
+        score: row.score,
+        recommendation: row.recommendation,
+        reasons: safeJson(row.reasons_json, []),
+        metadata: safeJson(row.metadata_json, {})
+    }));
+}
+
+function recordRetentionDecision(input = {}) {
+    if (!ensureMemorySchema()) return { ok: false, driver: getDriverName() };
+    const id = `ret_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    runPrepared(
+        `INSERT INTO memory_retention_decisions
+            (id, memory_type, target_id, target_key, score, recommendation, reasons_json, metadata_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+            id,
+            input.memoryType || input.memory_type || 'memory',
+            input.targetId || input.target_id || null,
+            input.targetKey || input.target_key || null,
+            Number.isFinite(Number(input.score)) ? Math.round(Number(input.score)) : null,
+            input.recommendation || 'review',
+            json(Array.isArray(input.reasons) ? input.reasons : []),
+            json(input.metadata || input.metadata_json || {}),
+            new Date().toISOString()
+        ]
+    );
+    return { ok: true, id, driver: getDriverName() };
 }
 
 function upsertMemory(entry) {
@@ -648,13 +1300,31 @@ function getMemoryStoreStatus() {
 
 module.exports = {
     SQLITE_MEMORY_FILE,
+    createMemoryProposal,
     deleteMemory,
+    deleteMemoryFact,
     deleteProviderEvent,
+    getMemoryProposal,
     getMemoryStoreStatus,
+    getSchemaMeta,
+    listMemoryFacts,
+    listMemoryProposals,
+    listMemoryUsage,
+    listModelObservations,
     listProviderEvents,
+    listRetentionDecisions,
+    listSchemaMeta,
     listSqliteMemories,
+    recordMemoryUsage,
+    recordModelObservation,
     recordProviderEvent,
+    recordRetentionDecision,
+    searchMemoryFacts,
     searchMemoryFts,
+    setSchemaMeta,
     syncVectorEntries,
-    upsertMemory
+    updateMemoryLifecycle,
+    updateMemoryProposal,
+    upsertMemory,
+    upsertMemoryFact
 };

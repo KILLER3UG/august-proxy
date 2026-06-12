@@ -2,6 +2,10 @@ const { hybridSearchEntries, readVectorEntries, saveCheckpointWithEmbedding, sea
 const { searchGraph, graphStats } = require('../memory/graph-memory');
 const semanticMemory = require('../memory/semantic-memory');
 const { readAugustCoreMemory } = require('../memory/core-memory');
+const { buildMemorySnapshot, buildModelMemoryPack, searchBrain } = require('../memory/memory-service');
+const { commitBrainEdit, createBrainEditProposal } = require('../memory/brain-edit-service');
+const { applyRetentionDecision, generateRetentionPlan } = require('../memory/retention-service');
+const { recordModelObservation, listModelObservations } = require('../memory/model-observation-service');
 
 // ── Tool Definitions ──
 
@@ -88,6 +92,130 @@ const MEMORY_TOOLS = [
           depth: { type: 'number', description: 'How many hops to traverse. Defaults to 1.' }
         },
         required: ['entity_id']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'august__scan_brain',
+      description: 'Scan the organized August brain and return a compact structured snapshot. Prefer this over raw context_read when you need cross-session memory, sqlite facts, proposals, retention, model observations, and graph/vector status.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Optional focus query for graph search and result filtering.' },
+          includeRaw: { type: 'boolean', description: 'Include raw core memory object. Defaults to false.' },
+          limits: { type: 'object', description: 'Optional per-section limits to keep the scan readable.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'august__memory_pack',
+      description: 'Return a model-readable memory pack for the active model. Use before a task when you need durable context but want to avoid dumping the whole brain.',
+      parameters: {
+        type: 'object',
+        properties: {
+          modelId: { type: 'string', description: 'Model id, without provider prefix when possible.' },
+          provider: { type: 'string', description: 'Provider name.' },
+          query: { type: 'string', description: 'Optional focus query.' },
+          maxChars: { type: 'number', description: 'Target max chars for downstream context. Defaults to 6000.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'august__brain_edit',
+      description: 'Propose a safe brain edit without mutating memory. Use this when a model infers a durable fact, guideline, cleanup, merge, or model observation. Review the returned proposal before committing.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Short human-readable title.' },
+          description: { type: 'string', description: 'Why this edit is useful.' },
+          action: { type: 'string', enum: ['set_fact', 'delete_fact', 'update_core', 'update_guideline', 'archive_memory', 'pin_memory', 'unpin_memory', 'keep_memory', 'delete_memory', 'merge_memory', 'upsert_model_observation'], description: 'Edit action to propose.' },
+          memoryType: { type: 'string', description: 'Target memory type: core, semantic, sqlite, sqlite-fact, vector, guideline, model-observation.' },
+          targetId: { type: 'string', description: 'Target id for sqlite, vector, or guideline edits.' },
+          targetKey: { type: 'string', description: 'Target key for core or semantic edits.' },
+          targetType: { type: 'string', description: 'Target type for core edits: project, integration, event, checkpoint.' },
+          after: { type: 'object', description: 'Patch, fact, guideline, observation, or target state to apply if committed.' },
+          metadata: { type: 'object', description: 'Optional actor/model/source metadata.' }
+        },
+        required: ['title', 'action', 'memoryType', 'after']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'august__brain_commit',
+      description: 'Commit a pending august__brain_edit proposal by id. Only use after reviewing the proposal.',
+      parameters: {
+        type: 'object',
+        properties: {
+          proposalId: { type: 'string', description: 'Proposal id returned by august__brain_edit.' },
+          actor: { type: 'string', description: 'Optional actor, usually model or user.' },
+          force: { type: 'boolean', description: 'Allow recommitting a non-pending proposal. Defaults to false.' }
+        },
+        required: ['proposalId']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'august__memory_retention',
+      description: 'Score the brain for keep/review/remove/merge recommendations. Use before cleanup or when deciding whether to store a new fact.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Optional focus query.' },
+          limit: { type: 'number', description: 'Candidate limit. Defaults to 80.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'august__memory_retention_apply',
+      description: 'Apply an approved keep/review/remove/merge decision to memory. Use only after reviewing the retention recommendation.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['keep', 'review', 'remove', 'merge'], description: 'Approved action.' },
+          memoryType: { type: 'string', description: 'Memory type: core, semantic, sqlite, sqlite-fact, vector, guideline.' },
+          targetId: { type: 'string', description: 'Target id.' },
+          targetKey: { type: 'string', description: 'Target key.' },
+          type: { type: 'string', description: 'Core memory type if applicable.' },
+          score: { type: 'number', description: 'Retention score.' },
+          reasons: { type: 'array', items: { type: 'string' }, description: 'Reasons for the decision.' },
+          actor: { type: 'string', description: 'Actor applying the decision.' },
+          mergeTarget: { type: 'string', description: 'Target to merge into, if action is merge.' }
+        },
+        required: ['action', 'memoryType']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'august__model_observation',
+      description: 'Record a useful model observation, failure pattern, or memory behavior note so future models can learn from it.',
+      parameters: {
+        type: 'object',
+        properties: {
+          modelId: { type: 'string', description: 'Model id, without provider prefix when possible.' },
+          provider: { type: 'string', description: 'Provider name.' },
+          observationType: { type: 'string', description: 'Example: tool_failure, memory_success, context_gap, prompt_behavior.' },
+          summary: { type: 'string', description: 'Concise observation.' },
+          details: { type: 'object', description: 'Structured details.' },
+          relatedMemory: { type: 'object', description: 'Related memory ids/keys if any.' }
+        },
+        required: ['summary']
       }
     }
   }
@@ -284,6 +412,81 @@ async function handleMemoryTool(toolName, args) {
       }
 
       return lines.join('\n') || 'Entity found but no relations or observations.';
+    }
+
+    case 'august__scan_brain': {
+      const snapshot = buildMemorySnapshot({
+        query: args.query || '',
+        includeRaw: args.includeRaw === true,
+        ...(args.limits || {})
+      });
+      return JSON.stringify({
+        generatedAt: snapshot.generatedAt,
+        counts: snapshot.counts,
+        core: {
+          rendered: snapshot.core.rendered,
+          items: snapshot.core.items
+        },
+        semanticFacts: snapshot.semantic.facts,
+        sqliteFacts: snapshot.sqlite.facts,
+        sqliteMemories: snapshot.sqlite.memories,
+        vectorEntries: snapshot.vector.entries,
+        graph: snapshot.graph,
+        learnedGuidelines: snapshot.guidelines.items,
+        modelObservations: snapshot.modelObservations.items,
+        providers: snapshot.providers,
+        schema: snapshot.sqlite.schema
+      }, null, 2);
+    }
+
+    case 'august__memory_pack': {
+      const pack = buildModelMemoryPack({
+        modelId: args.modelId || args.model_id || '',
+        provider: args.provider || '',
+        query: args.query || '',
+        maxChars: args.maxChars
+      });
+      return JSON.stringify(pack, null, 2);
+    }
+
+    case 'august__brain_edit': {
+      const proposal = createBrainEditProposal(args);
+      return JSON.stringify({
+        status: 'proposal_created',
+        proposal,
+        next: 'review the proposal, then call august__brain_commit({ proposalId })'
+      }, null, 2);
+    }
+
+    case 'august__brain_commit': {
+      const proposalId = String(args.proposalId || '').trim();
+      if (!proposalId) return 'proposalId is required.';
+      const result = commitBrainEdit(proposalId, {
+        actor: args.actor || 'model',
+        force: args.force === true
+      });
+      return JSON.stringify(result, null, 2);
+    }
+
+    case 'august__memory_retention': {
+      const plan = generateRetentionPlan({
+        query: args.query || '',
+        limit: args.limit || 80
+      });
+      return JSON.stringify(plan, null, 2);
+    }
+
+    case 'august__memory_retention_apply': {
+      const result = applyRetentionDecision(args);
+      return JSON.stringify(result, null, 2);
+    }
+
+    case 'august__model_observation': {
+      const observation = recordModelObservation(args);
+      return JSON.stringify({
+        status: 'recorded',
+        observation
+      }, null, 2);
     }
 
     default:
