@@ -358,7 +358,7 @@ const requestHandler = async (req, res) => {
         return res.end('Not Found');
     }
 
-    if (handleMemoryRoutes(req, res, req.url)) return;
+    if (await handleMemoryRoutes(req, res, req.url)) return;
 
     if (req.url === '/ui/config' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });

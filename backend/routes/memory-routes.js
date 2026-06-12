@@ -60,7 +60,10 @@ async function handleMemoryRoutes(req, res, rawUrl) {
     const requestUrl = new URL(rawUrl, 'http://localhost');
     req.url = requestUrl;
     const path = requestUrl.pathname;
-    if (!path.startsWith('/ui/memory') && !path.startsWith('/ui/brain')) return false;
+    if (!path.startsWith('/ui/memory') && !path.startsWith('/ui/brain')) {
+        req.url = rawUrl;
+        return false;
+    }
 
     if (routeAny(req, res, '/ui/memory/items', async () => {
         if (req.method === 'GET') {

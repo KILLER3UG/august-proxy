@@ -68,12 +68,14 @@ class ModelEntry {
   toJSON() {
     return {
       id: this.id,
+      name: this.displayName,
       provider: this.provider,
       displayName: this.displayName,
       contextWindow: this.contextWindow,
       maxOutput: this.maxOutput,
       inputCostPer1M: this.inputCostPer1M,
       outputCostPer1M: this.outputCostPer1M,
+      isFree: this.inputCostPer1M === 0 && this.outputCostPer1M === 0,
       supportsVision: this.supportsVision,
       supportsThinking: this.supportsThinking,
       supportsReasoning: this.supportsReasoning,

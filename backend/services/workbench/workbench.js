@@ -533,6 +533,32 @@ function getAllTools() {
             }
         },
         {
+            name: 'august__run_team',
+            description: 'Run one or more team agents in parallel or sequence. Use team_roles/agent_ids to select roles, or exclude_team_roles/exclude_agent_ids to run all team agents except specific ones. Mutations still require an approved Workbench plan.',
+            input_schema: {
+                type: 'object',
+                properties: {
+                    goal: { type: 'string', description: 'Overall goal for the team run.' },
+                    task: { type: 'string', description: 'Optional default task for each selected agent when task_by_agent is not provided.' },
+                    task_by_agent: {
+                        type: 'object',
+                        description: 'Optional per-agent task overrides keyed by agent id, such as frontend_dev, backend_dev, qa_tester, documentation, deployment, or project_manager.',
+                        additionalProperties: { type: 'string' }
+                    },
+                    team_roles: { type: 'array', items: { type: 'string', enum: ['project_manager', 'frontend_dev', 'backend_dev', 'qa_tester', 'documentation', 'deployment'] }, description: 'Optional selected team agents. Defaults to all team agents when omitted.' },
+                    agent_ids: { type: 'array', items: { type: 'string' }, description: 'Alias for team_roles.' },
+                    exclude_team_roles: { type: 'array', items: { type: 'string', enum: ['project_manager', 'frontend_dev', 'backend_dev', 'qa_tester', 'documentation', 'deployment'] }, description: 'Team agents to skip.' },
+                    exclude_agent_ids: { type: 'array', items: { type: 'string' }, description: 'Alias for exclude_team_roles.' },
+                    parent_agent_id: { type: 'string', description: 'Optional parent agent override for permission inheritance. Defaults to the current session agent.' },
+                    parent_job_id: { type: 'string', description: 'Optional parent durable job id when a team run delegates child jobs.' },
+                    depth: { type: 'number', description: 'Current delegation depth. The proxy enforces the configured max depth.' },
+                    scope: { type: 'string', enum: ['project', 'frontend', 'backend', 'qa', 'docs', 'deploy'], description: 'Optional work scope passed to selected agents when they do not have a narrower scope.' },
+                    parallel: { type: 'boolean', description: 'Run selected team agents in parallel. Defaults to true.' }
+                },
+                required: ['goal']
+            }
+        },
+        {
             name: 'august__list_agent_jobs',
             description: 'List durable sub-agent jobs spawned by AI Workbench, including running, completed, and failed jobs.',
             input_schema: {
@@ -1107,6 +1133,84 @@ async function executeSubAgent(session, args, toolContext = {}) {
     };
 }
 
+function normalizeTeamRunAgents(args = {}) {
+    const includeInput = Array.isArray(args.team_roles) && args.team_roles.length
+        ? args.team_roles
+        : Array.isArray(args.agent_ids) && args.agent_ids.length
+            ? args.agent_ids
+            : null;
+    const excludeInput = [
+        ...(Array.isArray(args.exclude_team_roles) ? args.exclude_team_roles : []),
+        ...(Array.isArray(args.exclude_agent_ids) ? args.exclude_agent_ids : [])
+    ];
+    const excluded = new Set(excludeInput.map(String).filter(Boolean));
+    const allTeamAgents = Array.from(TEAM_AGENT_IDS).sort();
+    const selected = includeInput
+        ? includeInput.map(String).filter(id => TEAM_AGENT_IDS.has(id) && !excluded.has(id))
+        : allTeamAgents.filter(id => !excluded.has(id));
+    return {
+        allTeamAgents,
+        excludedAgents: Array.from(excluded).filter(id => allTeamAgents.includes(id)),
+        selectedAgents: selected.map(id => ({ id, agent: getAgent(id) }))
+    };
+}
+
+async function executeTeamRun(session, args, toolContext = {}) {
+    const goal = String(args.goal || '').trim();
+    if (!goal) return { status: 'error', message: 'No goal provided for team run.' };
+    const { allTeamAgents, excludedAgents, selectedAgents } = normalizeTeamRunAgents(args);
+    if (!selectedAgents.length) {
+        return {
+            status: 'blocked',
+            message: 'No team agents selected. Use team_roles/agent_ids to include agents, or remove the agents from exclude_team_roles/exclude_agent_ids.',
+            allTeamAgents,
+            excludedAgents
+        };
+    }
+
+    const parentAgentId = resolveAgentId(args.parent_agent_id || session?.agentId || 'build', 'build');
+    const taskByAgent = args.task_by_agent && typeof args.task_by_agent === 'object' ? args.task_by_agent : {};
+    const defaultTask = String(args.task || '').trim() || goal;
+    const makeTask = agent => {
+        const custom = taskByAgent[agent.id] || taskByAgent[agent.role] || taskByAgent[agent.id.toLowerCase()];
+        return custom
+            ? `${goal}\n\nYour focused assignment: ${custom}`
+            : `${goal}\n\nYour focused assignment as ${agent.role}: apply your role goal, report concrete findings, and stop before any mutation that is not covered by an approved Workbench plan.`;
+    };
+
+    const runAgent = async ({ id, agent }) => executeSubAgent(session, {
+        agent_id: id,
+        parent_agent_id: parentAgentId,
+        parent_job_id: args.parent_job_id,
+        depth: args.depth ?? toolContext.depth ?? 0,
+        scope: args.scope || agent.scopes?.[0],
+        task: makeTask(agent)
+    }, toolContext);
+
+    const startedAt = new Date().toISOString();
+    const results = args.parallel === false
+        ? []
+        : await Promise.all(selectedAgents.map(async ({ id, agent }) => ({ id, role: agent.role, result: await runAgent({ id, agent }) })));
+
+    if (args.parallel === false) {
+        for (const { id, agent } of selectedAgents) {
+            results.push({ id, role: agent.role, result: await runAgent({ id, agent }) });
+        }
+    }
+
+    return {
+        status: 'ok',
+        goal,
+        startedAt,
+        completedAt: new Date().toISOString(),
+        parallel: args.parallel !== false,
+        allTeamAgents,
+        excludedAgents,
+        selectedAgents: selectedAgents.map(({ id, agent }) => ({ id, role: agent.role, scope: agent.scopes?.[0] || 'project' })),
+        results
+    };
+}
+
 function summarizeMutationArgs(toolName, args = {}) {
     const summary = {};
     const pathFields = ['path', 'file_path', 'source', 'destination'];
@@ -1168,6 +1272,7 @@ async function executeWorkbenchTool(session, toolUse, toolContext = {}) {
         else if (name === 'august__replace_text' || name === 'workbench_replace_text') result = replaceText(args);
         else if (name === 'august__run_command' || name === 'workbench_run_command') result = await runCommand(args);
         else if (name === 'august__spawn_subagent' || name === 'workbench_spawn_subagent') result = await executeSubAgent(session, args, toolContext);
+        else if (name === 'august__run_team' || name === 'workbench_run_team') result = await executeTeamRun(session, args, toolContext);
         else if (name === 'august__generate_session_title') {
             const firstUserMsg = session.messages?.find(m => m.role === 'user');
             if (!firstUserMsg) throw new Error('No user messages to generate a title from.');
@@ -1285,6 +1390,7 @@ function buildSystemPrompt(session) {
         '=== AGENT REGISTRY ===',
         `Current agent: ${activeAgent.id} (${activeAgent.role}). Goal: ${activeAgent.goal}`,
         'When delegating, choose an agent intentionally: project_manager for planning/coordination, frontend_dev for React/Vite/Tailwind UI work, backend_dev for Node/API/tool/backend work, qa_tester for verification, documentation for docs, deployment for scoped deploy/build/release work, explore for read-only codebase investigation, plan for architecture/planning, general for bounded side work.',
+        'To run a coordinated team, use august__run_team with team_roles/agent_ids for selected agents or exclude_team_roles/exclude_agent_ids to skip agents such as deployment.',
         'For a scoped deployment, prefer deployment with scope=frontend for frontend-only deploy or scope=backend for backend-only deploy. Team agents have access to the full August toolset, but edits, shell commands, memory writes, delegation, and deployment mutations still require an approved plan.',
         'Child agents inherit the parent permission policy. The most restrictive permission wins: deny beats ask; ask beats allow.',
         renderAgentContext()

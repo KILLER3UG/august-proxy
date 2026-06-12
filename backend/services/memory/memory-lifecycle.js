@@ -1,4 +1,4 @@
-const { readAugustCoreMemory, writeAugustCoreMemory } = require('../tools/august-tools');
+const { readAugustCoreMemory, writeAugustCoreMemory } = require('./core-memory');
 const { readVectorEntries, searchTextEntries } = require('./vector-db');
 const { factCount, searchFacts } = require('./semantic-memory');
 const { decorateMemoryQuality, scoreMemoryQuality } = require('./memory-quality');

@@ -1,4 +1,4 @@
-const { readAugustCoreMemory } = require('../tools/august-tools');
+const { readAugustCoreMemory } = require('./core-memory');
 const { renderSkillCatalog } = require('../tools/skills');
 const { renderPluginCatalog } = require('../tools/plugins');
 const { getDisplayName } = require('../../lib/client-identity');
