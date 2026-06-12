@@ -73,10 +73,13 @@ interface GraphStats {
 }
 
 interface SearchResult {
-  id: string;
+  provider: string;
+  type: string;
+  title: string;
   text: string;
   score: number;
-  source?: string;
+  key?: string;
+  quality?: { score: number; confidence: number; label: string };
 }
 
 interface BrainDiagnostics {
@@ -486,12 +489,15 @@ export function Memory() {
                 <Card key={i}>
                   <CardContent className="p-3">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-xs text-foreground/80 flex-1">{r.text}</p>
-                      <Badge variant="outline" className="shrink-0 text-[9px]">{(r.score * 100).toFixed(0)}%</Badge>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[9px] shrink-0">{r.provider}</Badge>
+                          <span className="text-xs font-medium text-foreground truncate">{r.title}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{r.text}</p>
+                      </div>
+                      <Badge variant="outline" className="shrink-0 text-[9px]">{r.score}</Badge>
                     </div>
-                    {r.source && (
-                      <p className="text-[10px] text-muted-foreground font-mono mt-1">source: {r.source}</p>
-                    )}
                   </CardContent>
                 </Card>
               ))}

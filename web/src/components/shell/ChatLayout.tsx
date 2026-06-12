@@ -24,6 +24,8 @@ import { SessionList } from '@/components/sidebar/SessionList';
 import { WorkspacePanel } from '@/sections/chat/WorkspacePanel';
 import { useStore } from '@nanostores/react';
 import { $sessions, createSession, type Session } from '@/store/sessions';
+import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 const SESSIONS_COLLAPSED_KEY = 'august-sessions-collapsed';
 
@@ -170,6 +172,28 @@ function Titlebar({ session, sidebarCollapsed, onToggleSidebar, showRightSidebar
   onSettings: () => void;
   onToggleRightSidebar: () => void;
 }) {
+  const [speaking, setSpeaking] = useState(false);
+
+  const speakLatest = () => {
+    if (speaking) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    const lastMessage = sessionStorage.getItem('august_last_assistant_message');
+    if (!lastMessage) {
+      toast.info('No message to read');
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(lastMessage);
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+    setSpeaking(true);
+  };
+
   return (
     <header className="h-12 bg-background flex items-center justify-between shrink-0 select-none">
       <div className="flex items-center min-w-0">
@@ -189,7 +213,14 @@ function Titlebar({ session, sidebarCollapsed, onToggleSidebar, showRightSidebar
       </div>
 
       <div className="flex items-center gap-3">
-        <button className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition" title="Mute/Unmute">
+        <button
+          onClick={speakLatest}
+          className={cn(
+            "p-1 hover:bg-accent rounded transition",
+            speaking ? "text-primary animate-pulse" : "text-muted-foreground hover:text-foreground"
+          )}
+          title={speaking ? "Stop reading" : "Read latest response"}
+        >
           <Volume2 className="size-4" />
         </button>
         <button 

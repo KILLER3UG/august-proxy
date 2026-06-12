@@ -115,7 +115,8 @@ function searchBrain(query, options = {}) {
     const lifecycle = searchMemory(q, { limit: options.limit || 8 });
     const sqliteFacts = sqliteStore.searchMemoryFacts(q, { limit: options.limit || 8 });
     const sqliteMemories = sqliteStore.searchMemoryFts(q, { limit: options.limit || 8 });
-    const graph = q ? graphMemory.searchGraph(q, { limit: options.limit || 8 }) : [];
+    const graphResult = q ? graphMemory.searchGraph(q, { limit: options.limit || 8 }) : { entities: [], relations: [], observations: [] };
+    const graphEntities = graphResult.entities || [];
     const results = [
         ...(lifecycle.core || []).map(item => normalizeSearchResult(
             'core',
@@ -152,11 +153,11 @@ function searchBrain(query, options = {}) {
             item.summary,
             { id: item.id, score: item.ftsRank ? 1 / item.ftsRank : 0 }
         )),
-        ...graph.map(item => normalizeSearchResult(
+        ...graphEntities.map(item => normalizeSearchResult(
             'graph',
             item.type || 'entity',
-            item.title || item.name || item.id,
-            item.text || item.summary || item.description || '',
+            item.name || item.id,
+            item.aliases?.join(', ') || '',
             { id: item.id, score: item.score || 0 }
         ))
     ].sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
@@ -171,7 +172,7 @@ function searchBrain(query, options = {}) {
             vector: lifecycle.vector?.length || 0,
             sqliteFacts: sqliteFacts.length,
             sqliteMemories: sqliteMemories.length,
-            graph
+            graph: graphEntities.length
         }
     };
 }

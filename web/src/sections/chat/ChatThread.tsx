@@ -930,6 +930,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     setMessages(prev => prev.map(msg =>
       msg.id === assistantMsgId ? { ...msg, content: finalContent, thinking: thinkingContent || undefined, thinkingDuration: finalDuration, blocks: cleanedBlocks } : msg
     ));
+    // Save latest assistant message for TTS
+    if (finalContent) {
+      try { sessionStorage.setItem('august_last_assistant_message', finalContent); } catch {}
+    }
   };
 
   const send = async () => {
@@ -1064,14 +1068,51 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   const startVoiceInput = () => {
     if (voiceActive) return;
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      toast.error('Speech recognition not supported in this browser');
+      return;
+    }
     setVoiceActive(true);
-    setTimeout(() => {
-      setInput(prev => {
-        const space = prev.length > 0 && !prev.endsWith(' ') ? ' ' : '';
-        return prev + space + "Let's inspect the system status.";
-      });
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    let finalTranscript = '';
+
+    recognition.onresult = (event: any) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interim += event.results[i][0].transcript;
+        }
+      }
+      if (finalTranscript || interim) {
+        setInput(prev => {
+          const space = prev.length > 0 && !prev.endsWith(' ') ? ' ' : '';
+          return prev + space + finalTranscript + interim;
+        });
+      }
+    };
+
+    recognition.onend = () => {
       setVoiceActive(false);
-    }, 2500);
+      if (!finalTranscript) {
+        toast.info('No speech detected');
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      setVoiceActive(false);
+      if (event.error !== 'no-speech') {
+        toast.error(`Speech error: ${event.error}`);
+      }
+    };
+
+    recognition.start();
   };
 
   const insertText = (text: string) => {
