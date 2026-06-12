@@ -43,6 +43,7 @@ function registerBuiltinProviders() {
   load('xiaomi.js');
   load('ai-gateway.js');
   load('ollama-cloud.js');
+  load('tokenrouter.js');
 
   // Register bookmarks from config as user providers
   registerBookmarkProviders();

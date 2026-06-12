@@ -616,5 +616,7 @@ module.exports = {
     formatManagedToolResult,
     executeManagedProxyTool,
     executeManagedOpenAiToolCalls,
+    getMcpToolDefinitions,
+    getAugustToolDefinitions,
     isManagedToolParallelSafe
 };

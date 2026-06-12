@@ -67,8 +67,8 @@ export function ChatLayout() {
     }
   }, [location.pathname, sessionId, sessions, navigate]);
 
-  const handleNewSession = () => {
-    const newSess = createSession();
+  const handleNewSession = (folderId?: string | null) => {
+    const newSess = createSession(folderId ?? null);
     navigate(`/c/${newSess.id}`);
   };
 
@@ -101,7 +101,8 @@ export function ChatLayout() {
                 collapsed={collapsed}
                 onToggleCollapsed={() => setCollapsed((c) => !c)}
                 onSelect={(s) => navigate(`/c/${s.id}`)}
-                onNew={handleNewSession}
+                onNew={() => handleNewSession()}
+                onNewInFolder={(folderId) => handleNewSession(folderId)}
                 onNavigate={(p) => {
                   if (p.startsWith('settings') || p.startsWith('/settings')) {
                     sessionStorage.setItem('pre-settings-path', location.pathname);

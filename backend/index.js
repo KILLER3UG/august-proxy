@@ -186,6 +186,11 @@ function normalizeOpenAIBaseUrl(baseUrl) {
     if (/^https:\/\/api\.minimax\.io\/anthropic$/i.test(normalized)) {
         return 'https://api.minimax.io/v1';
     }
+    // Special case: Google AI Studio's OpenAI-compat base already ends in /openai
+    // Adding /v1 would break all downstream URLs (chat/completions, models, etc.)
+    if (/generativelanguage\.googleapis\.com/i.test(normalized) && /\/openai$/i.test(normalized)) {
+        return normalized;
+    }
     if (!/\/v\d+$/i.test(normalized) && !/\/api\/v\d+$/i.test(normalized)) normalized += '/v1';
     return normalized;
 }
@@ -616,9 +621,19 @@ const requestHandler = async (req, res) => {
                     ];
                 } else if (p.name === 'gemini') {
                     staticModels = [
+                        // Gemini 2.5 — flagship
                         { id: 'gemini-2.5-pro', contextWindow: 2000000 },
+                        { id: 'gemini-2.5-pro-preview-06-05', contextWindow: 2000000 },
                         { id: 'gemini-2.5-flash', contextWindow: 1000000 },
-                        { id: 'gemini-2.0-flash', contextWindow: 1000000 }
+                        { id: 'gemini-2.5-flash-preview-05-20', contextWindow: 1000000 },
+                        // Gemini 2.0
+                        { id: 'gemini-2.0-flash', contextWindow: 1000000 },
+                        { id: 'gemini-2.0-flash-lite', contextWindow: 1000000 },
+                        // Gemma open models (served via AI Studio)
+                        { id: 'gemma-3-27b-it', contextWindow: 131072 },
+                        { id: 'gemma-3-12b-it', contextWindow: 131072 },
+                        { id: 'gemma-3-4b-it', contextWindow: 131072 },
+                        { id: 'gemma-3-1b-it', contextWindow: 32768 },
                     ];
                 } else if (p.name === 'deepseek') {
                     staticModels = [

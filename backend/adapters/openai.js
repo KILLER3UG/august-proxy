@@ -105,6 +105,59 @@ function translateResponsesInput(oReq) {
     oReq.messages = messages;
 }
 
+function writeOpenAiSSEHeaders(res, status = 200) {
+    if (!res.headersSent) {
+        res.writeHead(status, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        });
+    }
+}
+
+function writeOpenAiSSEError(res, status, message) {
+    if (res.writableEnded) return;
+    writeOpenAiSSEHeaders(res, status);
+    res.write(`data: ${JSON.stringify({ type: 'error', error: { message } })}\n\n`);
+    res.end();
+}
+
+function buildOpenAiSynthesizedChunk(parsed, requestModel, finishReason = null) {
+    const choice = parsed?.choices?.[0] || {};
+    const msg = choice.message || {};
+    const delta = {
+        role: msg.role || 'assistant',
+        content: msg.content || ''
+    };
+    if (msg.reasoning) delta.reasoning = msg.reasoning;
+    if (msg.reasoning_content) delta.reasoning_content = msg.reasoning_content;
+    return {
+        id: parsed.id || 'chatcmpl-' + Math.random().toString(36).substr(2, 9),
+        object: 'chat.completion.chunk',
+        created: parsed.created || Math.floor(Date.now() / 1000),
+        model: requestModel,
+        choices: [{
+            index: 0,
+            delta,
+            finish_reason: finishReason ?? choice.finish_reason ?? null
+        }]
+    };
+}
+
+function emitOpenAiMessageContent(msg, onToolEvent, streamFirstTurn, attempt) {
+    if (!onToolEvent || !msg) return;
+    if (attempt > 0 || streamFirstTurn) {
+        const reasoning = msg.reasoning_content || msg.reasoning;
+        if (reasoning) {
+            onToolEvent({ type: 'thinking', content: reasoning });
+        }
+        if (msg.content) {
+            onToolEvent({ type: 'text', content: msg.content });
+        }
+    }
+}
+
 function looksLikeProviderAlias(model) {
     const value = String(model || '').trim().toLowerCase();
     return value.startsWith('claude-') || value.startsWith('gpt-');
@@ -621,74 +674,70 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             // ── Streaming handling ──
 
             if (upstreamIsStream && clientWantsStream) {
-                // Forward SSE directly; accumulate body copy to extract usage when done.
-                res.writeHead(response.status, { 'Content-Type': 'text/event-stream' });
-                if (!response.body) {
+                // Buffer the upstream stream and normalize it ourselves. some providers
+                // ignore stream:false, so forwarding raw SSE would leak delta.tool_calls.
+                const rawBody = await response.text();
+                if (!response.ok) {
+                    requestStatus = 'error';
+                    requestError = response.status === 429
+                        ? buildFriendlyRateLimitMessage(response.status, rawBody, attempts)
+                        : `Upstream Error (${response.status}): ${rawBody}`;
+                    writeOpenAiSSEError(res, response.status, requestError);
+                    finishRequest();
+                    return;
+                }
+
+                try {
+                    const parsed = parseSSEToJSON(rawBody);
+                    captureResponse(reqId, parsed);
+                    const inTok  = parsed.usage?.prompt_tokens     || parsed.usage?.input_tokens     || 0;
+                    const outTok = parsed.usage?.completion_tokens || parsed.usage?.output_tokens || 0;
+                    captureTokens(reqId, inTok, outTok);
+
+                    const upstreamMsg = parsed.choices?.[0]?.message;
+                    const hasManagedTools = upstreamMsg?.tool_calls?.length > 0 &&
+                        managedLocalToolNames.size > 0 &&
+                        upstreamMsg.tool_calls.some(tc => managedLocalToolNames.has(tc.function?.name));
+
+                    writeOpenAiSSEHeaders(res, response.status);
+                    if (hasManagedTools) {
+                        const resolved = await resolveManagedOpenAiToolCalls(parsed, oReq, cfg, clientToolNames, req.workspacePath, (evt) => {
+                            try { res.write(`data: ${JSON.stringify(evt)}\n\n`); } catch (e) {}
+                        }, abortCtrl.signal, true);
+                        const resolvedMsg = resolved.choices?.[0]?.message;
+                        const resolvedDelta = {
+                            role: resolvedMsg?.role || 'assistant',
+                            content: resolvedMsg?.content || ''
+                        };
+                        if (resolvedMsg?.reasoning) resolvedDelta.reasoning = resolvedMsg.reasoning;
+                        if (resolvedMsg?.reasoning_content) resolvedDelta.reasoning_content = resolvedMsg.reasoning_content;
+                        const resolvedChunk = {
+                            id: resolved.id || parsed.id || 'chatcmpl-' + Math.random().toString(36).substr(2, 9),
+                            object: 'chat.completion.chunk',
+                            created: resolved.created || parsed.created || Math.floor(Date.now() / 1000),
+                            model: requestModel,
+                            choices: [{
+                                index: 0,
+                                delta: resolvedDelta,
+                                finish_reason: resolved.choices?.[0]?.finish_reason || 'stop'
+                            }]
+                        };
+                        res.write(`data: ${JSON.stringify(resolvedChunk)}\n\n`);
+                    } else {
+                        const chunk = buildOpenAiSynthesizedChunk(parsed, requestModel);
+                        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+                    }
+                    res.write('data: [DONE]\n\n');
                     res.end();
                     finishRequest();
-                } else {
-                    const reader = response.body.getReader();
-                    let accumulatedText = '';
-                    try {
-                        while (true) {
-                            const { done, value } = await reader.read();
-                            if (done) break;
-                            const chunk = Buffer.from(value);
-                            accumulatedText += chunk.toString();
-                            res.write(chunk);
-                        }
-                        // Stream ended — check for managed tool calls
-                        try {
-                            const parsed = parseSSEToJSON(accumulatedText);
-                            captureResponse(reqId, parsed);
-                            const inTok  = parsed.usage?.prompt_tokens     || parsed.usage?.input_tokens     || 0;
-                            const outTok = parsed.usage?.completion_tokens || parsed.usage?.output_tokens || 0;
-                            captureTokens(reqId, inTok, outTok);
-
-                            const upstreamMsg = parsed.choices?.[0]?.message;
-                            const hasManagedTools = upstreamMsg?.tool_calls?.length > 0 &&
-                                managedLocalToolNames.size > 0 &&
-                                upstreamMsg.tool_calls.some(tc => managedLocalToolNames.has(tc.function?.name));
-
-                            if (hasManagedTools) {
-                                // Already forwarded raw SSE — but some SSE may contain tool_calls.
-                                // Resolve and re-stream the final answer.
-                                const resolved = await resolveManagedOpenAiToolCalls(parsed, oReq, cfg, clientToolNames, req.workspacePath, (evt) => {
-                                    try { res.write(`data: ${JSON.stringify(evt)}\n\n`); } catch (e) {}
-                                }, abortCtrl.signal);
-                                const resolvedMsg = resolved.choices?.[0]?.message;
-                                const resolvedDelta = {
-                                    role: resolvedMsg?.role || 'assistant',
-                                    content: resolvedMsg?.content || ''
-                                };
-                                if (resolvedMsg?.reasoning) resolvedDelta.reasoning = resolvedMsg.reasoning;
-                                if (resolvedMsg?.reasoning_content) resolvedDelta.reasoning_content = resolvedMsg.reasoning_content;
-                                const resolvedChunk = {
-                                    id: resolved.id || parsed.id || 'chatcmpl-' + Math.random().toString(36).substr(2, 9),
-                                    object: 'chat.completion.chunk',
-                                    created: resolved.created || parsed.created || Math.floor(Date.now() / 1000),
-                                    model: requestModel,
-                                    choices: [{
-                                        index: 0,
-                                        delta: resolvedDelta,
-                                        finish_reason: resolved.choices?.[0]?.finish_reason || 'stop'
-                                    }]
-                                };
-                                res.write(`data: ${JSON.stringify(resolvedChunk)}\n\n`);
-                            }
-                        } catch (e) {
-                            console.warn('[Proxy SSE Parse Warning]: Failed to reconstruct OpenAI response for capture:', e.message);
-                        }
-                        res.end();
-                        finishRequest();
-                    } catch (err) {
-                        console.error('[Proxy Stream Error]:', err);
-                        requestStatus = 'error';
-                        requestError = err.message;
-                        res.end();
-                        finishRequest();
-                    }
+                } catch (err) {
+                    console.error('[Proxy Stream Error]:', err);
+                    requestStatus = 'error';
+                    requestError = err.message;
+                    writeOpenAiSSEError(res, res.headersSent ? 200 : response.status, err.message);
+                    finishRequest();
                 }
+                return;
             } else if (!upstreamIsStream && clientWantsStream) {
                 // Provider returned JSON but client expects SSE (Codex)
                 const rawBody = await response.text();
@@ -717,9 +766,10 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                         upstreamMsg.tool_calls.some(tc => managedLocalToolNames.has(tc.function?.name));
 
                     if (hasManagedTools) {
+                        writeOpenAiSSEHeaders(res, response.status);
                         const resolved = await resolveManagedOpenAiToolCalls(data, oReq, cfg, clientToolNames, req.workspacePath, (evt) => {
                             try { res.write(`data: ${JSON.stringify(evt)}\n\n`); } catch (e) {}
-                        }, abortCtrl.signal);
+                        }, abortCtrl.signal, true);
                         const resolvedMsg = resolved.choices?.[0]?.message;
                         const resolvedDelta = {
                             role: resolvedMsg?.role || 'assistant',
@@ -738,10 +788,11 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                                 finish_reason: resolved.choices?.[0]?.finish_reason || 'stop'
                             }]
                         };
-                        res.writeHead(response.status, { 'Content-Type': 'text/event-stream' });
                         res.write(`data: ${JSON.stringify(resolvedChunk)}\n\n`);
                         res.write('data: [DONE]\n\n');
                         res.end();
+                        finishRequest();
+                        return;
                     } else {
                         // No managed tools — synthesize SSE for JSON passthrough
                         const delta = {
@@ -761,16 +812,19 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                                 finish_reason: data.choices?.[0]?.finish_reason || null
                             }]
                         };
-                        res.writeHead(response.status, { 'Content-Type': 'text/event-stream' });
+                        writeOpenAiSSEHeaders(res, response.status);
                         res.write(`data: ${JSON.stringify(chunk)}\n\n`);
                         res.write('data: [DONE]\n\n');
                         res.end();
+                        finishRequest();
+                        return;
                     }
                 } catch (e) {
                     requestStatus = 'error';
                     requestError = e.message;
-                    res.writeHead(response.status, { 'Content-Type': 'application/json' });
-                    res.end(rawBody);
+                    writeOpenAiSSEError(res, res.headersSent ? 200 : response.status, e.message);
+                    finishRequest();
+                    return;
                 }
             } else if (upstreamIsStream && !clientWantsStream) {
                 // Upstream returned SSE but client expects JSON — parse and aggregate
@@ -816,6 +870,8 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 try {
                     let parsed = JSON.parse(rawBody);
                     if (managedLocalToolNames.size > 0) {
+                        // No active response stream here: onToolEvent is null, so streamFirstTurn
+                        // defaults true but has no effect.
                         parsed = await resolveManagedOpenAiToolCalls(parsed, oReq, cfg, clientToolNames, req.workspacePath, null, abortCtrl.signal);
                     }
                     captureResponse(reqId, parsed);
@@ -841,8 +897,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 requestError = e.message;
                 console.error('OpenAI Adapter Error:', e);
                 captureError(reqId, e);
-                if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: { message: 'Proxy Error: ' + e.message } }));
+                writeOpenAiSSEError(res, res.headersSent ? 200 : 500, 'Proxy Error: ' + e.message);
             } finally {
                 finishRequest(); // no-op if already called by streaming path
             }
@@ -903,7 +958,7 @@ async function fallbackClientFailedToolsOpenAi(oReq) {
 }
 
 // ── Helper to resolve managed tools recursively (up to 4 attempts) ──
-async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToolNames, workspacePath = null, onToolEvent = null, parentSignal = null) {
+async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToolNames, workspacePath = null, onToolEvent = null, parentSignal = null, streamFirstTurn = true) {
     let parsed = initialParsed;
     const requestPayload = {
         ...oReq,
@@ -929,6 +984,8 @@ async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToo
             console.warn('[Proxy Tools]: Mixed managed and unmanaged OpenAI tool_calls detected. Returning raw tool_calls response to client.');
             return parsed;
         }
+
+        emitOpenAiMessageContent(msg, onToolEvent, streamFirstTurn, attempt);
 
         requestPayload.messages.push({
             role: 'assistant',

@@ -151,6 +151,11 @@ function deriveModelsUrl(providerUrl) {
     .replace(/\/anthropic$/i, '');
   if (!normalized) return '';
   if (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
+  // Special case: Google AI Studio's OpenAI-compat path already ends in /openai
+  // which is the correct base — do NOT append /v1 or it becomes …/openai/v1/models
+  if (/generativelanguage\.googleapis\.com/i.test(normalized) && /\/openai$/i.test(normalized)) {
+    return `${normalized}/models`;
+  }
   if (!/\/v\d+$/i.test(normalized) && !/\/api\/v\d+$/i.test(normalized)) normalized += '/v1';
   return `${normalized}/models`;
 }

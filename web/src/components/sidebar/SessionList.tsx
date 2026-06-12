@@ -42,10 +42,11 @@ interface Props {
   onToggleCollapsed: () => void;
   onSelect: (s: Session) => void;
   onNew: () => void;
+  onNewInFolder?: (folderId: string) => void;
   onNavigate: (path: string) => void;
 }
 
-export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, onNew, onNavigate }: Props) {
+export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, onNew, onNewInFolder, onNavigate }: Props) {
   const [filter, setFilter] = useState('');
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set(STORAGE));
   const [uncategorizedCollapsed, setUncategorizedCollapsed] = useState(() => localStorage.getItem('august-uncategorized-collapsed') === '1');
@@ -321,6 +322,7 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
                         folder={folder}
                         count={folderSessions.length}
                         onToggleCollapse={() => toggleFolderCollapse(folder.id)}
+                        onNewSession={() => onNewInFolder?.(folder.id)}
                         onRename={() => handleRenameFolder(folder.id, folder.name)}
                         onDelete={() => handleDeleteFolder(folder.id)}
                       />
@@ -467,10 +469,11 @@ function Section({ title, count, empty, onNewFolder, onUploadFolder, children }:
   );
 }
 
-function FolderHeader({ folder, count, onToggleCollapse, onRename, onDelete }: {
+function FolderHeader({ folder, count, onToggleCollapse, onNewSession, onRename, onDelete }: {
   folder: Folder;
   count: number;
   onToggleCollapse: () => void;
+  onNewSession: () => void;
   onRename: () => void;
   onDelete: () => void;
 }) {
@@ -492,6 +495,13 @@ function FolderHeader({ folder, count, onToggleCollapse, onRename, onDelete }: {
       
       {isHovered && (
         <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+          <button 
+            onClick={onNewSession} 
+            className="p-0.5 hover:bg-white/10 rounded text-muted-foreground hover:text-foreground"
+            title={`New session in ${folder.name}`}
+          >
+            <Plus className="size-2.5" />
+          </button>
           <button 
             onClick={onRename} 
             className="p-0.5 hover:bg-white/10 rounded text-muted-foreground hover:text-foreground"

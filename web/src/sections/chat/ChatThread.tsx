@@ -99,6 +99,21 @@ export function getModelDisplayName(id: string): string {
   return sep >= 0 ? id.slice(sep + 1) : id;
 }
 
+export function isLikelyReasoningModel(id: string): boolean {
+  const lower = id.toLowerCase();
+  return (
+    lower.includes('o1') ||
+    lower.includes('o3') ||
+    lower.includes('reasoner') ||
+    lower.includes('thinking') ||
+    lower.includes('claude-3-7') ||
+    lower.includes('claude-sonnet-4') ||
+    lower.includes('qwen3') ||
+    lower.includes('qwq') ||
+    lower.includes('minimax-m2')
+  );
+}
+
 const TOOLS = [
   { name: '@web_search', desc: 'Search the web for context' },
   { name: '@read_file', desc: 'Read a local file contents' },
@@ -133,9 +148,24 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [models, setModels] = useState<ModelItem[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(true);
-  const [selectedModel, setSelectedModel] = useState<ModelItem | null>(null);
-  const [effort, setEffort] = useState<'low' | 'medium' | 'high' | 'max'>('medium');
+  const [modelsLoading, setModelsLoading] = useState(false);
+  // Initialise instantly from localStorage so the button renders without any network wait
+  const [selectedModel, setSelectedModel] = useState<ModelItem | null>(() => {
+    try {
+      const saved = localStorage.getItem('august_last_model');
+      if (saved) return JSON.parse(saved) as ModelItem;
+    } catch {}
+    return null;
+  });
+  const [effort, setEffort] = useState<'low' | 'medium' | 'high' | 'max'>(() => {
+    try {
+      const saved = localStorage.getItem('august_last_effort');
+      if (saved && ['low', 'medium', 'high', 'max'].includes(saved)) {
+        return saved as 'low' | 'medium' | 'high' | 'max';
+      }
+    } catch {}
+    return 'medium';
+  });
   const [revertingIndex, setRevertingIndex] = useState<number | null>(null);
 
   // Composer tools states
@@ -170,41 +200,75 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     try { localStorage.setItem(storageKey, JSON.stringify(messages)); } catch {}
   }, [messages, storageKey]);
 
-  // Load models and config on mount to sync selected model with backend
+  // Persist effort choice to localStorage on every change
+  useEffect(() => {
+    try { localStorage.setItem('august_last_effort', effort); } catch {}
+  }, [effort]);
+
+  // Track whether the user manually changed the model so we don't override it when the full list loads
+  const userSelectedRef = useRef<string | null>(null);
+
+  // ── Two-phase model loading ───────────────────────────────────────
+  // Phase 1 (instant): read config only — fast, small payload.
+  //   Sets selectedModel immediately so the button renders with the right label.
+  // Phase 2 (background): fetch full model list — may be slow (5s per provider).
+  //   Merges the list into state; only updates selectedModel if the user hasn't
+  //   manually picked something in the meantime.
   const handleRefreshModels = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setModelsLoading(true);
+    setModelsLoading(true);
+
+    // ── Phase 1: quick config fetch ──
+    if (!isRefresh) {
+      try {
+        const configRes = await fetch('/ui/config/safe');
+        if (configRes.ok) {
+          const config = await configRes.json();
+          const activeProvider = config?.activeProvider || 'opencode-go';
+          const pConfig = config?.[activeProvider] || {};
+          const activeModelId: string | null = pConfig.model || pConfig._upstreamModel || pConfig.currentModel || null;
+          if (activeModelId && !userSelectedRef.current) {
+            // Build a lightweight placeholder so the button shows the correct label instantly
+            const placeholder: ModelItem = {
+              id: activeModelId,
+              name: activeModelId,
+              provider: activeProvider,
+              contextWindow: 128000,
+              supportsReasoning: isLikelyReasoningModel(activeModelId),
+              supportsThinking: isLikelyReasoningModel(activeModelId),
+            };
+            setSelectedModel(prev => {
+              // Only override localStorage value if the config model differs
+              if (prev && prev.id === activeModelId) return prev;
+              return placeholder;
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('[Models] Config fetch failed, using localStorage fallback:', e);
+      }
+    }
+
+    // ── Phase 2: full model list (background) ──
     try {
-      const [modelsRes, configRes] = await Promise.all([
-        fetch('/api/models'),
-        fetch('/ui/config/safe')
-      ]);
-
-      let loadedModels: ModelItem[] = [];
-      let activeModelId: string | null = null;
-
+      const modelsRes = await fetch('/api/models');
       if (modelsRes.ok) {
         const data = await modelsRes.json();
-        if (data?.models) {
-          loadedModels = data.models;
+        const loadedModels: ModelItem[] = data?.models || [];
+        if (loadedModels.length > 0) {
+          setModels(loadedModels);
+          // Only update selected model if the user hasn't manually chosen one
+          setSelectedModel(prev => {
+            const targetId = userSelectedRef.current || prev?.id || null;
+            if (!targetId) return loadedModels[0];
+            const matched = loadedModels.find(
+              m => m.id === targetId || m.id.toLowerCase() === targetId.toLowerCase()
+            );
+            return matched || prev || loadedModels[0];
+          });
         }
       }
-
-      if (configRes.ok) {
-        const config = await configRes.json();
-        const activeProvider = config?.activeProvider || 'opencode-go';
-        const pConfig = config?.[activeProvider] || {};
-        activeModelId = pConfig.model || pConfig._upstreamModel || pConfig.currentModel || null;
-      }
-
-      if (loadedModels.length > 0) {
-        setModels(loadedModels);
-        const matched = activeModelId
-          ? loadedModels.find(m => m.id === activeModelId || m.id.toLowerCase() === activeModelId.toLowerCase())
-          : null;
-        setSelectedModel(matched || loadedModels[0]);
-      }
     } catch (e) {
-      console.error('Failed to load models or config:', e);
+      console.error('[Models] Full list fetch failed:', e);
     } finally {
       setModelsLoading(false);
     }
@@ -536,9 +600,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   done = true;
                   break;
                 case 'error':
-                  console.error('[WS] Chat error:', parsed.message);
-                  assistantContent += `\n\n⚠️ Error: ${parsed.message || 'Unknown error'}`;
-                  streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: `\n\n⚠️ Error: ${parsed.message || 'Unknown error'}` });
+                  const errMsg = parsed.message || parsed.error?.message || parsed.error || 'Unknown error';
+                  console.error('[WS] Chat error:', errMsg);
+                  assistantContent += `\n\n⚠️ Error: ${errMsg}`;
+                  streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: `\n\n⚠️ Error: ${errMsg}` });
                   done = true;
                   break;
                 default: {
@@ -1085,6 +1150,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 onSelect={async (m) => {
                   if (!m) return;
                   setSelectedModel(m);
+                  // Remember the user's explicit choice so background full-list load doesn't override it
+                  userSelectedRef.current = m.id;
+                  // Persist for instant restore on next page load
+                  try { localStorage.setItem('august_last_model', JSON.stringify(m)); } catch {}
                   try {
                     await Promise.all([
                       fetch('/api/config/activeProvider', {

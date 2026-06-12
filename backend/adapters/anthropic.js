@@ -20,6 +20,8 @@ const {
     sanitizeAnthropicToolDefinition,
     dedupeAndCanonicalizeAnthropicTools,
     getCanonicalManagedAnthropicWebTools,
+    getMcpToolDefinitions,
+    getAugustToolDefinitions,
     openAiToAnthropicToolDefinition,
     anthropicToOpenAiToolDefinition,
     getCanonicalCoworkAnthropicTools,
@@ -508,7 +510,7 @@ function sanitizeMessagesForOpenAIUpstream(messages, backendModel, targetUrl) {
     });
 }
 
-async function executeManagedToolCalls(toolCalls, knownTools, requestPayload) {
+async function executeManagedToolCalls(toolCalls, knownTools, requestPayload, workspacePath = null, onToolEvent = null, parentSignal = null) {
     const executeOne = async (toolCall) => {
         const toolName = toolCall?.function?.name;
 
@@ -517,15 +519,27 @@ async function executeManagedToolCalls(toolCalls, knownTools, requestPayload) {
         // We pass 'messages' to allow the validator to enforce the plan.md gate.
         const validation = validateToolArguments(toolCall, knownTools, requestPayload ? requestPayload.messages : []);
         if (!validation.valid) {
+            if (onToolEvent) onToolEvent({ type: 'tool_result', name: toolName, id: toolCall.id, error: validation.error, status: 'error', duration: 0 });
             console.warn(`[Proxy Validator]: Tool call '${toolName}' rejected:`, validation.error);
             return buildValidationErrorToolMessage(toolCall.id, toolName, validation.error);
         }
 
         const parsedArgs = parseOpenAiToolArgs(toolCall);
+        const contextStr = parsedArgs && typeof parsedArgs === 'object'
+            ? Object.entries(parsedArgs).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ')
+            : '';
+        if (onToolEvent) onToolEvent({ type: 'tool_call', name: toolName, context: contextStr, id: toolCall.id, status: 'running' });
 
+        const startTime = Date.now();
         try {
             let result;
-            result = await executeManagedProxyTool(toolName, parsedArgs);
+            result = await executeManagedProxyTool(toolName, parsedArgs, workspacePath, (progressText) => {
+                if (onToolEvent) {
+                    onToolEvent({ type: 'tool_progress', name: toolName, id: toolCall.id, preview: progressText });
+                }
+            }, parentSignal);
+            const duration = Date.now() - startTime;
+            if (onToolEvent) onToolEvent({ type: 'tool_result', name: toolName, id: toolCall.id, summary: String(result).substring(0, 2000), status: 'done', duration });
 
             return {
                 role: 'tool',
@@ -533,6 +547,8 @@ async function executeManagedToolCalls(toolCalls, knownTools, requestPayload) {
                 content: formatManagedToolResult(toolName, result)
             };
         } catch (e) {
+            const duration = Date.now() - startTime;
+            if (onToolEvent) onToolEvent({ type: 'tool_result', name: toolName, id: toolCall.id, error: e.message, status: 'error', duration });
             recordToolFailure({
                 toolName,
                 args: parsedArgs,
@@ -553,7 +569,7 @@ async function executeManagedToolCalls(toolCalls, knownTools, requestPayload) {
     });
 }
 
-async function resolveManagedWebToolCalls(initialData, oReq, cfg) {
+async function resolveManagedWebToolCalls(initialData, oReq, cfg, clientToolNames = new Set(), workspacePath = null, onToolEvent = null, parentSignal = null, streamFirstTurn = true) {
     let data = initialData;
     let requestPayload = {
         ...oReq,
@@ -561,13 +577,17 @@ async function resolveManagedWebToolCalls(initialData, oReq, cfg) {
     };
 
     for (let attempt = 0; attempt < 4; attempt++) {
+        if (parentSignal && parentSignal.aborted) {
+            throw new Error('Request aborted by client');
+        }
+
         const choice = data?.choices?.[0];
         const message = choice?.message;
         const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
         if (toolCalls.length === 0) return data;
 
         const managedToolCalls = toolCalls.filter(tc =>
-            isProxyManagedLocalToolName(tc?.function?.name)
+            isProxyManagedLocalToolName(tc?.function?.name) && !clientToolNames.has(tc?.function?.name)
         );
         if (managedToolCalls.length === 0) return data;
 
@@ -575,6 +595,8 @@ async function resolveManagedWebToolCalls(initialData, oReq, cfg) {
             console.warn('[Proxy Tools]: Mixed managed and unmanaged tool calls detected. Returning raw tool calls to client.');
             return data;
         }
+
+        emitOpenAiMessageContentForAnthropic(message, onToolEvent, streamFirstTurn, attempt);
 
         requestPayload.messages.push({
             role: 'assistant',
@@ -584,12 +606,24 @@ async function resolveManagedWebToolCalls(initialData, oReq, cfg) {
             reasoning_details: message?.reasoning_details,
             tool_calls: toolCalls
         });
-        requestPayload.messages.push(...await executeManagedToolCalls(managedToolCalls, requestPayload.tools, requestPayload));
+        requestPayload.messages.push(...await executeManagedToolCalls(managedToolCalls, requestPayload.tools, requestPayload, workspacePath, onToolEvent, parentSignal));
 
         const outgoingPayload = {
             ...requestPayload,
             messages: sanitizeMessagesForOpenAIUpstream(requestPayload.messages, requestPayload.model, cfg.targetUrl)
         };
+
+        const localAbortCtrl = new AbortController();
+        const onParentAbort = () => localAbortCtrl.abort();
+        if (parentSignal) {
+            if (parentSignal.aborted) {
+                throw new Error('Request aborted by client');
+            }
+            parentSignal.addEventListener('abort', onParentAbort);
+        }
+        const timeoutId = setTimeout(() => {
+            localAbortCtrl.abort();
+        }, 300000);
 
         const response = await fetch(cfg.targetUrl, {
             method: 'POST',
@@ -598,7 +632,12 @@ async function resolveManagedWebToolCalls(initialData, oReq, cfg) {
                 'Authorization': `Bearer ${cfg.apiKey}`
             },
             body: JSON.stringify(outgoingPayload),
-            signal: AbortSignal.timeout(300000)
+            signal: localAbortCtrl.signal
+        }).finally(() => {
+            clearTimeout(timeoutId);
+            if (parentSignal) {
+                parentSignal.removeEventListener('abort', onParentAbort);
+            }
         });
 
         const rawBody = await response.text();
@@ -1061,7 +1100,7 @@ function normalizeAnthropicToolsForNativeUpstream(upstreamReq, ctx) {
     return upstreamReq;
 }
 
-async function executeManagedAnthropicToolUses(toolUses, knownTools, requestPayload) {
+async function executeManagedAnthropicToolUses(toolUses, knownTools, requestPayload, workspacePath = null, onToolEvent = null, parentSignal = null) {
     const executeOne = async (toolUse) => {
         const toolName = toolUse?.name;
 
@@ -1075,6 +1114,7 @@ async function executeManagedAnthropicToolUses(toolUses, knownTools, requestPayl
         };
         const validation = validateToolArguments(syntheticCall, knownTools, requestPayload ? requestPayload.messages : []);
         if (!validation.valid) {
+            if (onToolEvent) onToolEvent({ type: 'tool_result', name: toolName, id: toolUse.id, error: validation.error, status: 'error', duration: 0 });
             console.warn(`[Proxy Validator]: Anthropic tool_use '${toolName}' rejected:`, validation.error);
             return {
                 type: 'tool_result',
@@ -1086,17 +1126,30 @@ async function executeManagedAnthropicToolUses(toolUses, knownTools, requestPayl
         }
 
         const parsedArgs = toolUse?.input || {};
+        const contextStr = parsedArgs && typeof parsedArgs === 'object'
+            ? Object.entries(parsedArgs).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ')
+            : '';
+        if (onToolEvent) onToolEvent({ type: 'tool_call', name: toolName, context: contextStr, id: toolUse.id, status: 'running' });
 
+        const startTime = Date.now();
         try {
             let result;
-            result = await executeManagedProxyTool(toolName, parsedArgs);
+            result = await executeManagedProxyTool(toolName, parsedArgs, workspacePath, (progressText) => {
+                if (onToolEvent) {
+                    onToolEvent({ type: 'tool_progress', name: toolName, id: toolUse.id, preview: progressText });
+                }
+            }, parentSignal);
 
+            const duration = Date.now() - startTime;
+            if (onToolEvent) onToolEvent({ type: 'tool_result', name: toolName, id: toolUse.id, summary: String(result).substring(0, 2000), status: 'done', duration });
             return {
                 type: 'tool_result',
                 tool_use_id: toolUse.id,
                 content: formatManagedToolResult(toolName, result)
             };
         } catch (e) {
+            const duration = Date.now() - startTime;
+            if (onToolEvent) onToolEvent({ type: 'tool_result', name: toolName, id: toolUse.id, error: e.message, status: 'error', duration });
             recordToolFailure({
                 toolName,
                 args: parsedArgs,
@@ -1122,7 +1175,7 @@ async function executeManagedAnthropicToolUses(toolUses, knownTools, requestPayl
  * in order to intercept and execute managed local tool calls (web search / fetch).
  * This ensures Claude Desktop receives proper streaming SSE events.
  */
-function sendSimulatedAnthropicStream(res, parsed, clientFacingModel) {
+function sendSimulatedAnthropicStream(res, parsed, clientFacingModel, preludeEvents = []) {
     const msgId = parsed.id || 'msg_' + Math.random().toString(36).substring(2, 14);
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -1141,8 +1194,27 @@ function sendSimulatedAnthropicStream(res, parsed, clientFacingModel) {
         }
     })}\n\n`);
 
+    let index = 0;
+    for (const evt of preludeEvents || []) {
+        if (!evt || typeof evt !== 'object') continue;
+        if (evt.type === 'thinking') {
+            streamAnthropicContentBlock(res, { type: 'thinking', thinking: evt.content || evt.thinking || '' }, index++);
+        } else if (evt.type === 'text') {
+            streamAnthropicContentBlock(res, { type: 'text', text: evt.content || evt.text || '' }, index++);
+        } else if (evt.type === 'tool_use') {
+            streamAnthropicContentBlock(res, {
+                type: 'tool_use',
+                id: evt.id || 'toolu_' + Math.random().toString(36).substring(2, 14),
+                name: evt.name,
+                input: normalizeToolUseInput(evt.input ?? evt.arguments)
+            }, index++);
+        } else {
+            res.write(`data: ${JSON.stringify(evt)}\n\n`);
+        }
+    }
+
     const blocks = Array.isArray(parsed.content) ? parsed.content : [];
-    blocks.forEach((block, index) => {
+    blocks.forEach((block, blockIndex) => {
         // 2. content_block_start
         res.write(`event: content_block_start\ndata: ${JSON.stringify({
             type: 'content_block_start', index,
@@ -1182,6 +1254,7 @@ function sendSimulatedAnthropicStream(res, parsed, clientFacingModel) {
         res.write(`event: content_block_stop\ndata: ${JSON.stringify({
             type: 'content_block_stop', index
         })}\n\n`);
+        index++;
     });
 
     // 5. message_delta
@@ -1196,7 +1269,143 @@ function sendSimulatedAnthropicStream(res, parsed, clientFacingModel) {
     res.end();
 }
 
-async function resolveManagedAnthropicToolUses(initialParsed, upstreamReq, cfg) {
+function writeAnthropicSSEHeaders(res) {
+    if (!res.headersSent) {
+        res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        });
+    }
+}
+
+function streamAnthropicContentBlock(res, block, index) {
+    res.write(`event: content_block_start\ndata: ${JSON.stringify({
+        type: 'content_block_start', index,
+        content_block: {
+            type: block.type,
+            ...(block.type === 'text' ? { text: '' } : {}),
+            ...(block.type === 'thinking' ? { thinking: '' } : {}),
+            ...(block.type === 'tool_use' ? { id: block.id, name: block.name, input: {} } : {})
+        }
+    })}\n\n`);
+
+    if (block.type === 'thinking') {
+        res.write(`event: content_block_delta\ndata: ${JSON.stringify({
+            type: 'content_block_delta', index,
+            delta: { type: 'thinking_delta', thinking: block.thinking || '' }
+        })}\n\n`);
+    } else if (block.type === 'tool_use') {
+        res.write(`event: content_block_delta\ndata: ${JSON.stringify({
+            type: 'content_block_delta', index,
+            delta: { type: 'input_json_delta', partial_json: JSON.stringify(block.input || {}) }
+        })}\n\n`);
+    } else {
+        res.write(`event: content_block_delta\ndata: ${JSON.stringify({
+            type: 'content_block_delta', index,
+            delta: { type: 'text_delta', text: block.text || '' }
+        })}\n\n`);
+    }
+
+    res.write(`event: content_block_stop\ndata: ${JSON.stringify({
+        type: 'content_block_stop', index
+    })}\n\n`);
+}
+
+function streamAnthropicContentBlocks(res, parsed, startIndex = 0) {
+    const blocks = Array.isArray(parsed?.content) ? parsed.content : [];
+    let index = startIndex;
+    blocks.forEach(block => {
+        if (!block || typeof block !== 'object') return;
+        streamAnthropicContentBlock(res, block, index++);
+    });
+    return index - startIndex;
+}
+
+function streamAnthropicMessageStart(res, parsed, clientFacingModel) {
+    res.write(`event: message_start\ndata: ${JSON.stringify({
+        type: 'message_start',
+        message: {
+            id: parsed?.id || 'msg_' + Math.random().toString(36).substring(2, 14),
+            type: 'message',
+            role: 'assistant',
+            content: [],
+            model: clientFacingModel,
+            stop_reason: null,
+            stop_sequence: null,
+            usage: { input_tokens: parsed?.usage?.input_tokens || 0, output_tokens: 0 }
+        }
+    })}\n\n`);
+}
+
+function streamAnthropicMessageEnd(res, parsed) {
+    res.write(`event: message_delta\ndata: ${JSON.stringify({
+        type: 'message_delta',
+        delta: { stop_reason: parsed?.stop_reason || 'end_turn', stop_sequence: null },
+        usage: { output_tokens: parsed?.usage?.output_tokens || 0 }
+    })}\n\n`);
+    res.write(`event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`);
+}
+
+function streamAnthropicErrorAndEnd(res, errorMsg, blockIndex) {
+    writeAnthropicSSEHeaders(res);
+    streamAnthropicContentBlock(res, {
+        type: 'text',
+        text: `⚠️ Bridge Error: ${errorMsg}`
+    }, blockIndex);
+    streamAnthropicMessageEnd(res, { stop_reason: 'end_turn', usage: { output_tokens: 0 } });
+    res.end();
+}
+
+function normalizeToolUseInput(input) {
+    if (input === undefined || input === null) return {};
+    if (typeof input === 'string') {
+        try { return JSON.parse(input); } catch (e) { return {}; }
+    }
+    if (typeof input === 'object') return input;
+    return {};
+}
+
+function emitOpenAiMessageContentForAnthropic(message, onToolEvent, streamFirstTurn, attempt) {
+    if (!onToolEvent || !message) return;
+    if (attempt > 0 || streamFirstTurn) {
+        const reasoning = message.reasoning_content || message.reasoning;
+        if (reasoning) onToolEvent({ type: 'thinking', content: reasoning });
+        if (message.content) onToolEvent({ type: 'text', content: message.content });
+        for (const toolCall of message.tool_calls || []) {
+            onToolEvent({
+                type: 'tool_use',
+                id: getAnthropicId(toolCall.id),
+                name: toolCall.function?.name,
+                input: normalizeToolUseInput(toolCall.function?.arguments)
+            });
+        }
+    }
+}
+
+function emitAnthropicContentBlocks(content, onToolEvent, streamFirstTurn, attempt) {
+    if (!onToolEvent || !Array.isArray(content) || !(attempt > 0 || streamFirstTurn)) return;
+    for (const block of content) {
+        if (!block || typeof block !== 'object') continue;
+        if (block.type === 'thinking') onToolEvent({ type: 'thinking', content: block.thinking || '' });
+        if (block.type === 'text') onToolEvent({ type: 'text', content: block.text || '' });
+        if (block.type === 'tool_use') {
+            onToolEvent({
+                type: 'tool_use',
+                id: block.id,
+                name: block.name,
+                input: normalizeToolUseInput(block.input)
+            });
+        }
+    }
+}
+
+function writeAnthropicToolEvent(res, evt) {
+    try { res.write(`data: ${JSON.stringify(evt)}\n\n`); } catch (e) {}
+}
+
+async function resolveManagedAnthropicToolUses(initialParsed, upstreamReq, cfg, clientToolNames = new Set(), workspacePath = null, onToolEvent = null, parentSignal = null, streamFirstTurn = true) {
     let parsed = initialParsed;
     const requestPayload = {
         ...upstreamReq,
@@ -1204,12 +1413,16 @@ async function resolveManagedAnthropicToolUses(initialParsed, upstreamReq, cfg) 
     };
 
     for (let attempt = 0; attempt < 4; attempt++) {
+        if (parentSignal && parentSignal.aborted) {
+            throw new Error('Request aborted by client');
+        }
+
         const content = Array.isArray(parsed?.content) ? parsed.content : [];
         const toolUses = content.filter(block => block?.type === 'tool_use');
         if (toolUses.length === 0) return parsed;
 
         const managedToolUses = toolUses.filter(toolUse =>
-            isProxyManagedLocalToolName(toolUse?.name)
+            isProxyManagedLocalToolName(toolUse?.name) && !clientToolNames.has(toolUse?.name)
         );
         if (managedToolUses.length === 0) return parsed;
 
@@ -1218,20 +1431,39 @@ async function resolveManagedAnthropicToolUses(initialParsed, upstreamReq, cfg) 
             return parsed;
         }
 
+        emitAnthropicContentBlocks(content, onToolEvent, streamFirstTurn, attempt);
+
         requestPayload.messages.push({
             role: 'assistant',
             content
         });
         requestPayload.messages.push({
             role: 'user',
-            content: await executeManagedAnthropicToolUses(managedToolUses, requestPayload.tools, requestPayload)
+            content: await executeManagedAnthropicToolUses(managedToolUses, requestPayload.tools, requestPayload, workspacePath, onToolEvent, parentSignal)
         });
+
+        const localAbortCtrl = new AbortController();
+        const onParentAbort = () => localAbortCtrl.abort();
+        if (parentSignal) {
+            if (parentSignal.aborted) {
+                throw new Error('Request aborted by client');
+            }
+            parentSignal.addEventListener('abort', onParentAbort);
+        }
+        const timeoutId = setTimeout(() => {
+            localAbortCtrl.abort();
+        }, 300000);
 
         const response = await fetch(cfg.targetUrl, {
             method: 'POST',
             headers: buildAnthropicHeaders(cfg.apiKey),
             body: JSON.stringify(requestPayload),
-            signal: AbortSignal.timeout(300000)
+            signal: localAbortCtrl.signal
+        }).finally(() => {
+            clearTimeout(timeoutId);
+            if (parentSignal) {
+                parentSignal.removeEventListener('abort', onParentAbort);
+            }
         });
 
         const rawBody = await response.text();
@@ -1523,6 +1755,18 @@ function translateOpenAIResponse(openaiData, requestModel, ctx) {
 async function handleMessages(req, res, cleanPath, reqId) {
     const clientId = req.augustClientId || 'unknown';
     let body = '';
+    const abortCtrl = new AbortController();
+    const handleAbort = () => abortCtrl.abort();
+    if (!req.signal) {
+        req.on('close', handleAbort);
+    }
+    if (req.signal) {
+        if (req.signal.aborted) {
+            abortCtrl.abort();
+        } else {
+            req.signal.addEventListener('abort', handleAbort);
+        }
+    }
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {
 
@@ -1597,12 +1841,26 @@ async function handleMessages(req, res, cleanPath, reqId) {
                 const maxAttempts = 3;
                 while (attempts < maxAttempts) {
                     attempts++;
-                    response = await fetch(cfg.targetUrl, {
-                        method: 'POST',
-                        headers: buildAnthropicHeaders(cfg.apiKey),
-                        body: JSON.stringify(upstreamReq),
-                        signal: AbortSignal.timeout(300000)
-                    });
+                    const localAbortCtrl = new AbortController();
+                    const onParentAbort = () => localAbortCtrl.abort();
+                    if (abortCtrl.signal.aborted) {
+                        throw new Error('Request aborted by client');
+                    }
+                    abortCtrl.signal.addEventListener('abort', onParentAbort);
+                    const timeoutId = setTimeout(() => {
+                        localAbortCtrl.abort();
+                    }, 300000);
+                    try {
+                        response = await fetch(cfg.targetUrl, {
+                            method: 'POST',
+                            headers: buildAnthropicHeaders(cfg.apiKey),
+                            body: JSON.stringify(upstreamReq),
+                            signal: localAbortCtrl.signal
+                        });
+                    } finally {
+                        clearTimeout(timeoutId);
+                        abortCtrl.signal.removeEventListener('abort', onParentAbort);
+                    }
                     if (!isRetryableStatus(response.status) || attempts >= maxAttempts) {
                         break;
                     }
@@ -1683,8 +1941,53 @@ async function handleMessages(req, res, cleanPath, reqId) {
                     try {
                         let parsed = JSON.parse(clientBody);
                         if (ctx.managedLocalToolNames.size > 0) {
-                            parsed = await resolveManagedAnthropicToolUses(parsed, upstreamReq, cfg);
-                            parsed.model = clientFacingModel;
+                            if (clientWantsStream) {
+                                writeAnthropicSSEHeaders(res);
+                                streamAnthropicMessageStart(res, parsed, clientFacingModel);
+                                let blockIndex = 0;
+                                blockIndex += streamAnthropicContentBlocks(res, parsed, blockIndex);
+
+                                const onToolEvent = (evt) => {
+                                    if (!evt || typeof evt !== 'object') return;
+                                    if (evt.type === 'thinking') {
+                                        streamAnthropicContentBlock(res, { type: 'thinking', thinking: evt.content || evt.thinking || '' }, blockIndex++);
+                                    } else if (evt.type === 'text') {
+                                        streamAnthropicContentBlock(res, { type: 'text', text: evt.content || evt.text || '' }, blockIndex++);
+                                    } else if (evt.type === 'tool_use') {
+                                        streamAnthropicContentBlock(res, {
+                                            type: 'tool_use',
+                                            id: evt.id || 'toolu_' + Math.random().toString(36).substring(2, 14),
+                                            name: evt.name,
+                                            input: normalizeToolUseInput(evt.input ?? evt.arguments)
+                                        }, blockIndex++);
+                                    } else {
+                                        writeAnthropicToolEvent(res, evt);
+                                    }
+                                };
+
+                                try {
+                                    parsed = await resolveManagedAnthropicToolUses(parsed, upstreamReq, cfg, clientToolNames, null, onToolEvent, abortCtrl.signal, false);
+                                    parsed.model = clientFacingModel;
+                                    captureResponse(reqId, parsed);
+                                    captureTokens(reqId, parsed.usage?.input_tokens || 0, parsed.usage?.output_tokens || 0);
+                                    blockIndex += streamAnthropicContentBlocks(res, parsed, blockIndex);
+                                    streamAnthropicMessageEnd(res, parsed);
+                                    res.end();
+
+                                    if (parsed.stop_reason === 'end_turn') {
+                                        console.log('[Auto-Memory] end_turn detected, launching extraction...');
+                                        const { extractAndSaveMemories } = require('../services/memory/auto-memory');
+                                        extractAndSaveMemories(aReq.messages, parsed, cfg, upstreamModel, clientId).catch(e => console.warn('[Auto-Memory] Extraction failed:', e.message));
+                                    }
+                                    return;
+                                } catch (e) {
+                                    streamAnthropicErrorAndEnd(res, e.message, blockIndex);
+                                    return;
+                                }
+                            } else {
+                                parsed = await resolveManagedAnthropicToolUses(parsed, upstreamReq, cfg, clientToolNames, null, null, abortCtrl.signal);
+                                parsed.model = clientFacingModel;
+                            }
                         }
                         // Capture BEFORE normalizing so thinking blocks are preserved in the debug UI
                         captureResponse(reqId, parsed);
@@ -1736,15 +2039,29 @@ async function handleMessages(req, res, cleanPath, reqId) {
             const maxAttempts = 3;
             while (attempts < maxAttempts) {
                 attempts++;
-                response = await fetch(cfg.targetUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${cfg.apiKey}`
-                    },
-                    body: JSON.stringify(oReq),
-                    signal: AbortSignal.timeout(300000)
-                });
+                const localAbortCtrl = new AbortController();
+                const onParentAbort = () => localAbortCtrl.abort();
+                if (abortCtrl.signal.aborted) {
+                    throw new Error('Request aborted by client');
+                }
+                abortCtrl.signal.addEventListener('abort', onParentAbort);
+                const timeoutId = setTimeout(() => {
+                    localAbortCtrl.abort();
+                }, 300000);
+                try {
+                    response = await fetch(cfg.targetUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${cfg.apiKey}`
+                        },
+                        body: JSON.stringify(oReq),
+                        signal: localAbortCtrl.signal
+                    });
+                } finally {
+                    clearTimeout(timeoutId);
+                    abortCtrl.signal.removeEventListener('abort', onParentAbort);
+                }
                 if (isRetryableStatus(response.status) && attempts < maxAttempts) {
                     const delayMs = getRetryDelayMs(response, attempts);
                     console.warn(`[Proxy Retry]: OpenAI-compatible upstream returned ${response.status}. Retrying in ${delayMs}ms (attempt ${attempts}/${maxAttempts})`);
@@ -1772,9 +2089,6 @@ async function handleMessages(req, res, cleanPath, reqId) {
                 if (data.data && data.data.choices) data = data.data;
             }
 
-            if (ctx.managedLocalToolNames.size > 0) {
-                data = await resolveManagedWebToolCalls(data, oReq, cfg);
-            }
             console.log('[Proxy Debug Claude OpenAI Upstream]:', JSON.stringify({
                 upstreamModel: data?.model || null,
                 publicModel: requestModel,
@@ -1797,6 +2111,13 @@ async function handleMessages(req, res, cleanPath, reqId) {
             }
             console.log(`[Proxy Upstream]: usage in=${upInputTokens} out=${upOutputTokens}, reasoning=${!!(upChoice?.message?.reasoning || upChoice?.message?.reasoning_content)}`);
 
+            const preludeEvents = [];
+            if (ctx.managedLocalToolNames.size > 0) {
+                data = await resolveManagedWebToolCalls(data, oReq, cfg, new Set((aReq.tools || []).map(t => t.name || t.function?.name).filter(Boolean)), null, (evt) => {
+                    preludeEvents.push(evt);
+                }, abortCtrl.signal, true);
+            }
+
             const aRes = translateOpenAIResponse(data, clientFacingModel, ctx);
 
             // --- AUTO-MEMORY BACKGROUND EXTRACTION (OpenAI translation path) ---
@@ -1806,7 +2127,7 @@ async function handleMessages(req, res, cleanPath, reqId) {
             }
 
             if (aReq.stream === true) {
-                sendSimulatedAnthropicStream(res, aRes, clientFacingModel);
+                sendSimulatedAnthropicStream(res, aRes, clientFacingModel, preludeEvents);
             } else {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify(aRes));

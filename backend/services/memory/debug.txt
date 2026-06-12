@@ -76,3 +76,29 @@ TypeError: fetch failed
 TypeError: fetch failed
     at node:internal/deps/undici/undici:14976:13
     at async extractAndSaveMemories (/app/src/utils/memory/auto-memory.js:366:24)
+2026-06-11T23:29:30.052Z LOG: [Auto-Memory] Raw user message content: [{"type":"text","text":"verify native streaming"}]
+2026-06-11T23:29:30.053Z LOG: [Auto-Memory] Starting extraction... (1 user msgs, 19 chars assistant text, model=claude-opus-4-6)
+2026-06-11T23:29:30.059Z LOG: [Auto-Memory] Using Anthropic-native format -> http://127.0.0.1/v1/messages
+2026-06-11T23:29:30.063Z WARN: [Auto-Memory] Background extraction failed: response.json is not a function
+2026-06-11T23:29:30.063Z ERROR: response.json is not a function
+TypeError: response.json is not a function
+    at extractAndSaveMemories (C:\Users\rober\LocalFolders\august-proxy\backend\services\memory\auto-memory.js:381:41)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+2026-06-11T23:30:41.137Z LOG: [Auto-Memory] Raw user message content: [{"type":"text","text":"verify native streaming"}]
+2026-06-11T23:30:41.137Z LOG: [Auto-Memory] Starting extraction... (1 user msgs, 19 chars assistant text, model=claude-opus-4-6)
+2026-06-11T23:30:41.141Z LOG: [Auto-Memory] Using Anthropic-native format -> http://127.0.0.1/v1/messages
+2026-06-11T23:30:41.147Z WARN: [Auto-Memory] Background extraction failed: response.json is not a function
+2026-06-11T23:30:41.147Z ERROR: response.json is not a function
+TypeError: response.json is not a function
+    at extractAndSaveMemories (C:\Users\rober\LocalFolders\august-proxy\backend\services\memory\auto-memory.js:381:41)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+2026-06-11T23:33:00.532Z LOG: [Auto-Memory] Raw user message content: [{"type":"text","text":"verify native json"}]
+2026-06-11T23:33:00.533Z LOG: [Auto-Memory] Skipped: assistant response too short or empty
+2026-06-11T23:33:45.141Z LOG: [Auto-Memory] Raw user message content: [{"type":"text","text":"verify native streaming"}]
+2026-06-11T23:33:45.143Z LOG: [Auto-Memory] Starting extraction... (1 user msgs, 19 chars assistant text, model=claude-opus-4-6)
+2026-06-11T23:33:45.147Z LOG: [Auto-Memory] Using Anthropic-native format -> http://127.0.0.1/v1/messages
+2026-06-11T23:33:45.150Z WARN: [Auto-Memory] Background extraction failed: response.json is not a function
+2026-06-11T23:33:45.152Z ERROR: response.json is not a function
+TypeError: response.json is not a function
+    at extractAndSaveMemories (C:\Users\rober\LocalFolders\august-proxy\backend\services\memory\auto-memory.js:381:41)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)

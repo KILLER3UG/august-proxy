@@ -109,7 +109,8 @@ export const mockProviders: Provider[] = [
   { id: 'nvidia-nim',       name: 'NVIDIA NIM (alt)',   apiMode: 'openai_chat',        isAvailable: true },
   { id: 'openrouter-2',     name: 'OpenRouter (alt)',   apiMode: 'openai_chat',        isAvailable: true },
   { id: 'minimax-2',        name: 'minimax (alt)',      apiMode: 'openai_chat',        isAvailable: true },
-  { id: 'opencode-2',       name: 'opencode (alt)',     apiMode: 'openai_chat',        isAvailable: true },
+  { id: 'opencode-2',        name: 'opencode (alt)',     apiMode: 'openai_chat',        isAvailable: true },
+  { id: 'tokenrouter',       name: 'Token Router',       apiMode: 'openai_chat',        isAvailable: true },
 ];
 
 function makeRequests(): RequestLog[] {
