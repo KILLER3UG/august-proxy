@@ -672,7 +672,11 @@ const AUGUST_TOOLS = [
                 properties: {
                     name: {
                         type: 'string',
-                        description: 'The exact name of the skill to load, as listed in the skill_catalog section of the system prompt.'
+                        description: 'The exact name of the skill to load, as listed in the skill_catalog or team_skills section of the system prompt.'
+                    },
+                    agent_id: {
+                        type: 'string',
+                        description: 'Optional team agent owner. Use this when loading a skill from the team_skills section for a specific agent.'
                     }
                 },
                 required: ['name']
@@ -1667,14 +1671,16 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
             }
 
             case 'august__load_skill': {
-                const { getEnabledSkills } = require('./skills');
-                const skill = getEnabledSkills().find(s => s.name === args.name);
+                const { getSkillsForAgent } = require('./skills');
+                const agentId = String(args.agent_id || '').trim();
+                const skill = (agentId ? getSkillsForAgent(agentId) : getSkillsForAgent('')).find(s => s.name === args.name);
                 if (!skill) {
-                    const available = getEnabledSkills().map(s => `"${s.name}"`).join(', ');
-                    return `Skill "${args.name}" not found. Available skills: ${available}`;
+                    const available = (agentId ? getSkillsForAgent(agentId) : getSkillsForAgent('')).map(s => `"${s.name}"${s.ownerAgentId ? ` (owned by ${s.ownerAgentId})` : ''}`).join(', ');
+                    return `Skill "${args.name}" not found for agent ${agentId || 'global'}. Available skills: ${available}`;
                 }
                 return [
                     `## Skill: ${skill.name}`,
+                    skill.ownerAgentId ? `**Owner agent:** ${skill.ownerAgentId}` : '**Owner agent:** global',
                     skill.description ? `\n${skill.description}` : '',
                     skill.trigger ? `\n**Trigger:** ${skill.trigger}` : '',
                     `\n### Instructions\n\n${skill.instructions}`

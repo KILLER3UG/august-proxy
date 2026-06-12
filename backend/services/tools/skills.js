@@ -6,6 +6,7 @@ const { getConfig, saveConfig } = require('../../lib/config');
 const SKILL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 const SKILLS_DIR = path.join(os.homedir(), '.august', 'skills');
 const PROJECT_SKILLS_DIR = path.join(__dirname, '..', '..', '..', 'skills');
+const TEAM_SKILLS_DIR = path.join(PROJECT_SKILLS_DIR, 'team');
 
 let _skillsCache = null;
 
@@ -44,7 +45,7 @@ function normalizeSkill(raw) {
     };
 }
 
-function parseSkillMd(filePath) {
+function parseSkillMd(filePath, ownerAgentId = '') {
     try {
         const text = fs.readFileSync(filePath, 'utf8');
         const match = text.match(/^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/);
@@ -64,8 +65,11 @@ function parseSkillMd(filePath) {
         if (!body) return null;
 
         const stat = fs.statSync(filePath);
+        const owner = String(ownerAgentId || frontmatter.owner || '').trim();
         return {
             name: frontmatter.name || path.basename(path.dirname(filePath)),
+            owner,
+            ownerAgentId: owner,
             enabled: frontmatter.disabled !== 'true',
             description: frontmatter.description || '',
             trigger: frontmatter.trigger || '',
@@ -119,6 +123,36 @@ function discoverSkills() {
     return _skillsCache;
 }
 
+function discoverTeamSkills() {
+    if (!fs.existsSync(TEAM_SKILLS_DIR)) return [];
+
+    const skills = [];
+    try {
+        const ownerEntries = fs.readdirSync(TEAM_SKILLS_DIR, { withFileTypes: true });
+        ownerEntries.forEach(ownerEntry => {
+            if (!ownerEntry.isDirectory()) return;
+            const ownerAgentId = ownerEntry.name.trim();
+            if (!SKILL_NAME_PATTERN.test(ownerAgentId)) return;
+
+            const skillEntries = fs.readdirSync(path.join(TEAM_SKILLS_DIR, ownerAgentId), { withFileTypes: true });
+            skillEntries.forEach(skillEntry => {
+                if (!skillEntry.isDirectory()) return;
+                const skillMdPath = path.join(TEAM_SKILLS_DIR, ownerAgentId, skillEntry.name, 'SKILL.md');
+                if (fs.existsSync(skillMdPath)) {
+                    const parsed = parseSkillMd(skillMdPath, ownerAgentId);
+                    if (parsed) {
+                        parsed.source = 'team';
+                        parsed.scope = ownerAgentId;
+                        skills.push(parsed);
+                    }
+                }
+            });
+        });
+    } catch {}
+
+    return skills;
+}
+
 function invalidateCache() {
     _skillsCache = null;
 }
@@ -159,6 +193,18 @@ function getEnabledSkills() {
     return getSkills().filter(s => s.enabled);
 }
 
+function getTeamSkills(agentId = '') {
+    const owner = String(agentId || '').trim();
+    const skills = discoverTeamSkills().filter(s => s.enabled !== false);
+    return owner ? skills.filter(s => s.ownerAgentId === owner) : skills;
+}
+
+function getSkillsForAgent(agentId = '') {
+    const owner = String(agentId || '').trim();
+    if (!owner) return getEnabledSkills();
+    return [...getEnabledSkills(), ...getTeamSkills(owner)];
+}
+
 function saveSkill(data) {
     const normalized = normalizeSkill(data);
     const skillDir = path.join(SKILLS_DIR, normalized.name);
@@ -182,7 +228,12 @@ function deleteSkill(name) {
     return { deleted: false };
 }
 
-function loadSkillInstructions(name) {
+function loadSkillInstructions(name, agentId = '') {
+    const owner = String(agentId || '').trim();
+    if (owner) {
+        const teamSkill = getTeamSkills(owner).find(s => s.name === name);
+        if (teamSkill) return teamSkill.instructions;
+    }
     const skill = getEnabledSkills().find(s => s.name === name);
     if (!skill) return null;
     return skill.instructions;
@@ -192,22 +243,41 @@ function renderSkillCatalog(skills) {
     const list = skills || getEnabledSkills();
     if (!list || list.length === 0) return '';
     return list.map(skill =>
-        `<skill name="${escapeXml(skill.name)}" trigger="${escapeXml(skill.trigger || '')}">${escapeXml(skill.description || '')}</skill>`
+        `<skill name="${escapeXml(skill.name)}" trigger="${escapeXml(skill.trigger || '')}" owner="${escapeXml(skill.ownerAgentId || skill.owner || '')}">${escapeXml(skill.description || '')}</skill>`
     ).join('\n');
+}
+
+function renderTeamSkillCatalog(agentId) {
+    const skills = getTeamSkills(agentId);
+    if (!skills.length) return '';
+    return `<team_skills owner="${escapeXml(agentId || '')}">\n` +
+        skills.map(skill =>
+            `<skill name="${escapeXml(skill.name)}" trigger="${escapeXml(skill.trigger || '')}" owner="${escapeXml(skill.ownerAgentId || skill.owner || '')}" scope="${escapeXml(skill.scope || skill.ownerAgentId || '')}">${escapeXml(skill.description || '')}</skill>`
+        ).join('\n') +
+        '\n</team_skills>';
 }
 
 function renderSkillsForSystem(skills) {
     return renderSkillCatalog(skills);
 }
 
+function renderTeamSkillsForSystem(agentId) {
+    return renderTeamSkillCatalog(agentId);
+}
+
 module.exports = {
     deleteSkill,
+    discoverTeamSkills,
     getEnabledSkills,
     getSkills,
+    getSkillsForAgent,
+    getTeamSkills,
     loadSkillInstructions,
     normalizeSkill,
     renderSkillCatalog,
     renderSkillsForSystem,
+    renderTeamSkillCatalog,
+    renderTeamSkillsForSystem,
     saveSkill,
     escapeXml,
     invalidateCache,

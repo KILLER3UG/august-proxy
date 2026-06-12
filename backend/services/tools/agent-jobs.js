@@ -62,10 +62,12 @@ function listAgentJobs(options = {}) {
     const store = readAgentJobs();
     const status = String(options.status || '').trim();
     const sessionId = String(options.sessionId || '').trim();
+    const scope = String(options.scope || '').trim();
     const limit = Math.max(1, Math.min(100, Number(options.limit || 50)));
     const jobs = store.jobs
         .filter(job => !status || status === 'all' || job.status === status)
         .filter(job => !sessionId || job.sessionId === sessionId)
+        .filter(job => !scope || job.scope === scope)
         .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
         .slice(0, limit);
     return {
@@ -88,6 +90,7 @@ function createAgentJob(input = {}) {
         parentAgentId: input.parentAgentId || null,
         provider: input.provider || null,
         model: input.model || null,
+        scope: input.scope || null,
         task: summarizeText(input.task, 2400),
         status: input.status || 'running',
         createdAt: now,

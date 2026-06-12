@@ -1985,6 +1985,10 @@ When a request passes through the `/v1/` routes, the proxy injects its own tools
 
 **Injection into August's system prompt:** The `<august_subagent_config>` context block is injected alongside `<august_personality>` and `<august_global_context>`. It shows August its current strategy, scores, and how many patterns have been observed — prompting it to call `august__learn_subagent` when appropriate.
 
+#### Team Agent Skills
+
+Specialized team agents can own private skill packs under `skills/team/<agent_id>/<skill_name>/SKILL.md`. The Workbench prompt includes only the skills owned by the active agent, and `august__load_skill` accepts an optional `agent_id` to load one of those owned skills. Shared proxy skills remain in `~/.august/skills` and the project-level `skills/` folder.
+
 #### Hybrid Infinite Memory (`auto-memory.js` & `vector-db.js`)
 At the end of a successful conversation turn, the proxy triggers an asynchronous background extraction task in `auto-memory.js`. It strips reasoning `<think>` tags and issues a single, unified extraction request to the LLM. This request extracts/updates key facts and provides a comprehensive conversation summary in one step to minimize LLM overhead.
 Memory is persisted in three distinct layers:

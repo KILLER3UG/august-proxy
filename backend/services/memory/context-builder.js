@@ -88,7 +88,7 @@ function renderCapabilitiesBlock(skills) {
     const lines = [];
     if (skillCatalog) lines.push(skillCatalog);
     if (pluginCatalog) lines.push(pluginCatalog);
-    lines.push('To load a skill, call august__load_skill with the skill name.');
+    lines.push('To load a skill, call august__load_skill with the skill name. For team skills, pass agent_id equal to the owning team agent.');
     lines.push('To import a new capability from GitHub, use august__find_skill_sources or august__preview_skill_import first, then get explicit user approval before august__import_skill.');
     lines.push('Imported skills are shared through the proxy-global catalog for all clients on the next request.');
     return lines.join('\n\n');
@@ -97,48 +97,53 @@ function renderCapabilitiesBlock(skills) {
 function buildSystemPromptDetails(system, options = {}) {
     const {
         includeOriginalSystem = true,
+        includeMemory = true,
         memory = readAugustCoreMemory(),
         skills,
         clientId = 'unknown',
         workspacePath = null
     } = options;
+    // Legacy name: this controls all proxy-added context, not only memory.
+    const includeProxyContext = options.includeProxyContext ?? includeMemory;
 
     const chunks = [];
 
-    if (workspacePath) {
-        chunks.push(wrapTag('active_workspace', `Active Workspace Directory: ${workspacePath}\nYour shell commands (PowerShell) and file tool operations (august__read_file, august__write_file, august__patch) are routed and executed relative to this folder. You have full permission to view and modify files in this directory.`, 'source="session_config"'));
-    }
+    if (includeProxyContext) {
+        if (workspacePath) {
+            chunks.push(wrapTag('active_workspace', `Active Workspace Directory: ${workspacePath}\nYour shell commands (PowerShell) and file tool operations (august__read_file, august__write_file, august__patch) are routed and executed relative to this folder. You have full permission to view and modify files in this directory.`, 'source="session_config"'));
+        }
 
-    chunks.push(wrapTag('august_platform', AUGUST_PLATFORM, 'source="context-builder"'));
+        chunks.push(wrapTag('august_platform', AUGUST_PLATFORM, 'source="context-builder"'));
 
-    const slimContext = buildSlimCoreContext(memory);
-    chunks.push(wrapTag('august_core_context', slimContext, 'source="august_core_memory.json" tools="context_read memory_search fact_search graph_search"'));
+        const slimContext = buildSlimCoreContext(memory);
+        chunks.push(wrapTag('august_core_context', slimContext, 'source="august_core_memory.json" tools="context_read memory_search fact_search graph_search"'));
 
-    const learnedGuidelines = getActiveGuidelineTexts(memory.learned_guidelines);
-    if (learnedGuidelines.length > 0) {
-        const activeGuidelines = learnedGuidelines.slice(-15);
-        const guidelinesText = activeGuidelines.map(g => `- ${g}`).join('\n');
-        chunks.push(wrapTag('august_learned_guidelines', `Dynamically learned instructions from previous turns - adhere to them:\n${guidelinesText}`, 'source="august_core_memory.json" field="learned_guidelines"'));
-    }
+        const learnedGuidelines = getActiveGuidelineTexts(memory.learned_guidelines);
+        if (learnedGuidelines.length > 0) {
+            const activeGuidelines = learnedGuidelines.slice(-15);
+            const guidelinesText = activeGuidelines.map(g => `- ${g}`).join('\n');
+            chunks.push(wrapTag('august_learned_guidelines', `Dynamically learned instructions from previous turns - adhere to them:\n${guidelinesText}`, 'source="august_core_memory.json" field="learned_guidelines"'));
+        }
 
-    const memoryCount = countAllMemoryEntries();
-    chunks.push(wrapTag('august_memory_tools', `Memory: ${memoryCount.checkpoints} checkpoints, ${memoryCount.facts} semantic facts, ${memoryCount.entities} graph entities, ${memoryCount.observations} observations.\nUse memory_topics() to browse, memory_search() to find sessions, fact_search() for facts, graph_search() for relations, or context_read() for full profile.`, 'source="memory-layers"'));
+        const memoryCount = countAllMemoryEntries();
+        chunks.push(wrapTag('august_memory_tools', `Memory: ${memoryCount.checkpoints} checkpoints, ${memoryCount.facts} semantic facts, ${memoryCount.entities} graph entities, ${memoryCount.observations} observations.\nUse memory_topics() to browse, memory_search() to find sessions, fact_search() for facts, graph_search() for relations, or context_read() for full profile.`, 'source="memory-layers"'));
 
-    const graph = graphStats();
-    if ((graph.counts.entities || 0) > 0 || (graph.counts.observations || 0) > 0) {
-        chunks.push(wrapTag('august_graph_memory', `Graph: ${graph.counts.entities} entities, ${graph.counts.relations} relations, ${graph.counts.observations} observations. Use graph_search() or graph_explore().`, 'source="august_graph_memory.json" tools="august__graph_recall august__graph_explore"'));
-    }
+        const graph = graphStats();
+        if ((graph.counts.entities || 0) > 0 || (graph.counts.observations || 0) > 0) {
+            chunks.push(wrapTag('august_graph_memory', `Graph: ${graph.counts.entities} entities, ${graph.counts.relations} relations, ${graph.counts.observations} observations. Use graph_search() or graph_explore().`, 'source="august_graph_memory.json" tools="august__graph_recall august__graph_explore"'));
+        }
 
-    chunks.push(wrapTag('august_agent_registry', renderAgentContext(), 'source="august_agents.json" permission_model="inherit_parent_denies"'));
+        chunks.push(wrapTag('august_agent_registry', renderAgentContext(), 'source="august_agents.json" permission_model="inherit_parent_denies"'));
 
-    const capabilitiesText = renderCapabilitiesBlock(skills);
-    if (capabilitiesText.trim()) {
-        chunks.push(wrapTag('august_capabilities', capabilitiesText, 'source="config"'));
-    }
+        const capabilitiesText = renderCapabilitiesBlock(skills);
+        if (capabilitiesText.trim()) {
+            chunks.push(wrapTag('august_capabilities', capabilitiesText, 'source="config"'));
+        }
 
-    const displayName = getDisplayName(clientId);
-    if (clientId !== 'unknown') {
-        chunks.push(wrapTag('client_identity', `Client: ${displayName} (${clientId}). Facts learned from other clients available via semantic memory.`));
+        const displayName = getDisplayName(clientId);
+        if (clientId !== 'unknown') {
+            chunks.push(wrapTag('client_identity', `Client: ${displayName} (${clientId}). Facts learned from other clients available via semantic memory.`));
+        }
     }
 
     if (includeOriginalSystem) {

@@ -27,12 +27,15 @@ const {
     listAgentJobs
 } = require('../tools/agent-jobs');
 const {
+    canCrossLoadTeamSkills,
     deriveChildAgentPermissions,
     evaluateAgentTool,
     getAgent,
     getAgents,
     renderAgentContext
 } = require('../tools/agent-registry');
+const { renderTeamSkillsForSystem } = require('../tools/skills');
+const { getTeamSkills } = require('../tools/skills');
 
 const sessions = new Map();
 const WORKBENCH_SESSIONS_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_workbench_sessions.json');
@@ -514,14 +517,15 @@ function getAllTools() {
         },
         {
             name: 'august__spawn_subagent',
-            description: 'Spawn a focused sub-agent to complete a specific task independently. Choose explore for read-only codebase questions, plan for architecture/planning, or general for bounded research. The child inherits the parent agent permissions and approval policy.',
+            description: 'Spawn a focused sub-agent to complete a specific task independently. Choose explore for read-only codebase questions, plan for architecture/planning, frontend_dev for React/Vite/Tailwind UI work, backend_dev for Node/API/tool/backend work, qa_tester for verification, documentation for docs, deployment for scoped deploy/build/release work, or project_manager for coordination. The child inherits the parent agent permissions and approval policy.',
             input_schema: {
                 type: 'object',
                 properties: {
-                    agent_id: { type: 'string', enum: ['build', 'plan', 'explore', 'general', 'coordinator'], description: 'Agent profile. Defaults to general for delegated work. Use coordinator only for approved hierarchical decomposition.' },
+                    agent_id: { type: 'string', enum: ['build', 'plan', 'explore', 'general', 'coordinator', 'project_manager', 'frontend_dev', 'backend_dev', 'qa_tester', 'documentation', 'deployment'], description: 'Agent profile. Defaults to general for delegated work. Use coordinator only for approved hierarchical decomposition.' },
                     parent_agent_id: { type: 'string', description: 'Optional parent agent override for permission inheritance. Defaults to the current session agent.' },
                     parent_job_id: { type: 'string', description: 'Optional parent durable job id when a sub-agent delegates a child job.' },
                     depth: { type: 'number', description: 'Current delegation depth. The proxy enforces the configured max depth.' },
+                    scope: { type: 'string', enum: ['project', 'frontend', 'backend', 'qa', 'docs', 'deploy'], description: 'Optional work scope. Example: use deployment with scope=frontend for frontend-only deploy.' },
                     task: { type: 'string', description: 'The specific task for the sub-agent to complete. Be precise about what to do and what to report back.' }
                 },
                 required: ['task']
@@ -863,7 +867,16 @@ function listAgentRegistry(parentAgentId = 'build') {
             role: agent.role,
             mode: agent.mode,
             goal: agent.goal,
+            scopes: agent.scopes || ['project'],
+            teamSkills: getTeamSkills(agent.id).map(skill => ({
+                name: skill.name,
+                description: skill.description,
+                trigger: skill.trigger,
+                ownerAgentId: skill.ownerAgentId,
+                scope: skill.scope
+            })),
             memoryEnabled: agent.memory_enabled !== false,
+            canCrossLoadTeamSkills: agent.can_cross_load_team_skills === true,
             allowDelegation: agent.allow_delegation === true,
             tools: agent.tools || [],
             permissions: agent.permissions || {},
@@ -988,6 +1001,10 @@ async function executeSubAgent(session, args, toolContext = {}) {
         };
     }
 
+    const scope = String(args.scope || childAgent.scopes?.[0] || 'project').trim();
+    const scopeNote = childAgent.scopes && childAgent.scopes.length ? ` This agent's registered scopes are: ${childAgent.scopes.join(', ')}.` : '';
+    const teamSkillGuide = renderTeamSkillsForSystem(childAgentId);
+
     const job = createAgentJob({
         sessionId: session?.id || null,
         parentJobId: args.parent_job_id || toolContext.parentJobId || null,
@@ -996,6 +1013,7 @@ async function executeSubAgent(session, args, toolContext = {}) {
         parentAgentId,
         provider: session?.provider,
         model,
+        scope,
         task,
         status: 'running'
     });
@@ -1004,6 +1022,7 @@ async function executeSubAgent(session, args, toolContext = {}) {
     const subPrompt = [
         'You are a focused sub-agent spawned by the main AI Workbench agent.',
         `Sub-agent profile: ${childAgent.id} (${childAgent.role}). Goal: ${childAgent.goal}`,
+        `Work scope: ${scope}.${scopeNote}`,
         `Parent agent profile: ${parentAgentId}. Your effective inherited permissions are: ${Object.entries(inheritedPermissions).map(([key, value]) => `${key}:${value}`).join(', ')}.`,
         `Durable job id: ${job.id}. Current delegation depth: ${depth}. Max delegation depth: ${maxDepth}.`,
         'Your task is: ' + task,
@@ -1012,6 +1031,7 @@ async function executeSubAgent(session, args, toolContext = {}) {
         'A mutation means writing/editing/deleting/moving files, running shell commands, changing memory, launching background tasks, or controlling the host desktop.',
         'If a mutation is required and approval is not active, stop and report the exact plan the parent should submit for user approval.',
         'If you are a coordinator and delegation is allowed, spawn child sub-agents only for clearly separate subtasks and include parent_job_id plus depth+1.',
+        teamSkillGuide ? `=== TEAM SKILLS OWNED BY THIS AGENT ===\n${teamSkillGuide}\nTo load one of these skills, call august__load_skill with the skill name and agent_id=${childAgentId}.` : '',
         'For exploration tasks, report concrete evidence: exact files read, commands/tools used, key findings, and any limits or uncertainty.',
         'Do not claim comprehensive understanding unless the evidence supports it. Todo or task-list updates are internal state, not project file updates.',
         'Keep your response concise and actionable.'
@@ -1078,6 +1098,7 @@ async function executeSubAgent(session, args, toolContext = {}) {
         task,
         agentId: childAgentId,
         parentAgentId,
+        scope,
         depth,
         inheritedPermissions,
         result: subResult || '(no text output)'
@@ -1135,7 +1156,7 @@ async function executeWorkbenchTool(session, toolUse, toolContext = {}) {
         else if (name === 'august__describe_environment' || name === 'workbench_describe_environment') result = describeWorkbenchEnvironment(session);
         else if (name === 'august__list_proxy_capabilities' || name === 'workbench_list_proxy_capabilities') result = listProxyCapabilities();
         else if (name === 'august__list_agent_registry' || name === 'workbench_list_agent_registry') result = listAgentRegistry(args.parent_agent_id || session?.agentId || 'build');
-        else if (name === 'august__list_agent_jobs') result = listAgentJobs({ status: args.status || 'all', sessionId: args.session_id, limit: args.limit });
+        else if (name === 'august__list_agent_jobs') result = listAgentJobs({ status: args.status || 'all', sessionId: args.session_id, scope: args.scope, limit: args.limit });
         else if (name === 'august__get_agent_job') {
             const job = getAgentJob(args.id);
             result = job || { status: 'not_found', id: args.id };
@@ -1161,6 +1182,21 @@ async function executeWorkbenchTool(session, toolUse, toolContext = {}) {
             result = { status: 'todos_updated', count: session.todos.length };
         }
         else if (name.startsWith('computer_')) result = await hostAgent.execute(name, args);
+        else if (name === 'august__load_skill' || name === 'workbench_load_skill') {
+            const toolName = name.startsWith('workbench_') ? 'august__load_skill' : name;
+            const currentAgent = resolveAgentId(toolContext.agentId || session?.agentId || 'build', 'build');
+            const requestedOwner = String(args.agent_id || '').trim();
+            if (requestedOwner && requestedOwner !== currentAgent && !canCrossLoadTeamSkills(currentAgent)) {
+                result = {
+                    status: 'blocked',
+                    message: `Team skill owner mismatch. Agent ${currentAgent} cannot load a skill owned by ${requestedOwner}.`
+                };
+            } else {
+                const scopedArgs = { ...args };
+                if (!scopedArgs.agent_id && currentAgent !== 'build') scopedArgs.agent_id = currentAgent;
+                result = await executeAugustToolCall(toolName, scopedArgs, true);
+            }
+        }
         else if (isMcpToolName(name)) result = await executeMcpToolCall(name, args);
         else if (isAugustToolName(name)) result = await executeAugustToolCall(name, args, true);
         else if (name.startsWith('workbench_') && isAugustToolName(name.replace('workbench_', 'august__'))) {
@@ -1246,10 +1282,13 @@ function buildSystemPrompt(session) {
         '',
         '=== AGENT REGISTRY ===',
         `Current agent: ${activeAgent.id} (${activeAgent.role}). Goal: ${activeAgent.goal}`,
-        'When delegating, choose an agent intentionally: explore for read-only codebase investigation, plan for architecture/planning, general for bounded side work.',
+        'When delegating, choose an agent intentionally: project_manager for planning/coordination, frontend_dev for React/Vite/Tailwind UI work, backend_dev for Node/API/tool/backend work, qa_tester for verification, documentation for docs, deployment for scoped deploy/build/release work, explore for read-only codebase investigation, plan for architecture/planning, general for bounded side work.',
+        'For a scoped deployment, prefer deployment with scope=frontend for frontend-only deploy or scope=backend for backend-only deploy. The selected agent still inherits the parent permission policy and must wait for approval before edits, shell commands, or deployment mutations.',
         'Child agents inherit the parent permission policy. The most restrictive permission wins: deny beats ask; ask beats allow.',
         renderAgentContext()
     ].join('\n');
+
+    const teamSkillGuide = renderTeamSkillsForSystem(activeAgent.id);
 
     const hardRule = [
         '',
@@ -1283,7 +1322,8 @@ function buildSystemPrompt(session) {
         brainPlan.systemAdditions,
         hardRule,
         toolGuide,
-        agentGuide
+        agentGuide,
+        teamSkillGuide
     ].filter(Boolean).join('\n\n');
 }
 

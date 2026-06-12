@@ -30,6 +30,20 @@ function writeLearnedGuidelines(items) {
     fs.writeFileSync(filePath, JSON.stringify(items.slice(-MAX_GUIDELINES), null, 2));
 }
 
+function addHistory(item, entry) {
+    item.history = Array.isArray(item.history) ? item.history : [];
+    item.history.push({
+        action: entry.action || 'change',
+        status: entry.status || item.status,
+        previousStatus: entry.previousStatus || null,
+        reason: entry.reason || '',
+        actor: entry.actor || 'system',
+        confidence: entry.confidence ?? item.confidence ?? null,
+        at: new Date().toISOString()
+    });
+    item.history = item.history.slice(-20);
+}
+
 function newGuidelineId() {
     return `guide_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -43,6 +57,7 @@ function upsertLearnedGuideline(text, { source = 'auto_memory', confidence = 0.6
     const now = new Date().toISOString();
 
     if (existing) {
+        const previousStatus = existing.status;
         existing.lastSeenAt = now;
         existing.count = Number(existing.count || 1) + 1;
         existing.confidence = Math.max(Number(existing.confidence || 0), Number(confidence || 0));
@@ -51,6 +66,7 @@ function upsertLearnedGuideline(text, { source = 'auto_memory', confidence = 0.6
         } else if (status === 'active') {
             existing.status = 'active';
         }
+        addHistory(existing, { action: 'upsert', status: existing.status, previousStatus, confidence: existing.confidence });
         writeLearnedGuidelines(items);
         return existing;
     }
@@ -64,7 +80,15 @@ function upsertLearnedGuideline(text, { source = 'auto_memory', confidence = 0.6
         count: 1,
         createdAt: now,
         lastSeenAt: now,
-        lastUsedAt: null
+        lastUsedAt: null,
+        history: [{
+            action: 'create',
+            status,
+            previousStatus: null,
+            confidence,
+            actor: 'system',
+            at: now
+        }]
     };
     items.push(item);
     writeLearnedGuidelines(items);
@@ -77,7 +101,7 @@ function listLearnedGuidelines({ status } = {}) {
     return items.filter(item => item.status === status);
 }
 
-function setLearnedGuidelineStatus(idOrText, status) {
+function setLearnedGuidelineStatus(idOrText, status, { reason = '', actor = 'system' } = {}) {
     if (!['pending', 'active', 'rejected', 'archived'].includes(status)) {
         throw new Error('status must be one of pending, active, rejected, archived');
     }
@@ -86,10 +110,39 @@ function setLearnedGuidelineStatus(idOrText, status) {
     const item = items.find(entry => String(entry.id || '').toLowerCase() === needle ||
         normalizeGuidelineText(entry.text).toLowerCase() === needle);
     if (!item) return null;
+    const previousStatus = item.status;
     item.status = status;
     item.updatedAt = new Date().toISOString();
+    item.lastUsedAt = status === 'active' ? item.updatedAt : item.lastUsedAt;
+    addHistory(item, { action: 'status_change', status, previousStatus, reason, actor, confidence: item.confidence });
     writeLearnedGuidelines(items);
     return item;
+}
+
+function rollbackLearnedGuideline(idOrText, { reason = '', actor = 'system' } = {}) {
+    const needle = normalizeGuidelineText(idOrText).toLowerCase();
+    const items = readLearnedGuidelines();
+    const item = items.find(entry => String(entry.id || '').toLowerCase() === needle ||
+        normalizeGuidelineText(entry.text).toLowerCase() === needle);
+    if (!item) return null;
+    const history = Array.isArray(item.history) ? item.history : [];
+    const previous = history.slice(0, -1).reverse().find(entry => entry.status && entry.status !== item.status);
+    if (!previous) throw new Error('No previous guideline status is available for rollback');
+    const previousStatus = item.status;
+    item.status = previous.status;
+    if (previous.confidence !== null && previous.confidence !== undefined) item.confidence = previous.confidence;
+    item.updatedAt = new Date().toISOString();
+    item.lastUsedAt = item.status === 'active' ? item.updatedAt : item.lastUsedAt;
+    addHistory(item, { action: 'rollback', status: item.status, previousStatus, reason, actor, confidence: item.confidence });
+    writeLearnedGuidelines(items);
+    return item;
+}
+
+function getLearnedGuidelineHistory(idOrText) {
+    const needle = normalizeGuidelineText(idOrText).toLowerCase();
+    const item = readLearnedGuidelines().find(entry => String(entry.id || '').toLowerCase() === needle ||
+        normalizeGuidelineText(entry.text).toLowerCase() === needle);
+    return item ? { id: item.id, text: item.text, history: item.history || [] } : null;
 }
 
 function getActiveGuidelineTexts(legacyGuidelines = []) {

@@ -275,6 +275,7 @@ function normalizeEntry(entry = {}) {
         ? entry.tags
         : (Array.isArray(metadata.tags) ? metadata.tags : []);
     const timestamp = entry.timestamp || new Date().toISOString();
+    const updatedAt = entry.updated_at || entry.updatedAt || metadata.updatedAt || timestamp;
     const id = entry.id || `mem_${Buffer.from(`${entry.topic || ''}\n${entry.summary || ''}\n${timestamp}`).toString('base64url').slice(0, 28)}`;
     return {
         id,
@@ -282,7 +283,16 @@ function normalizeEntry(entry = {}) {
         summary: String(entry.summary || '').trim(),
         timestamp,
         embeddingSource: entry.embeddingSource || metadata.embeddingSource || '',
-        metadata,
+        metadata: {
+            ...metadata,
+            updatedAt,
+            lastUsedAt: metadata.lastUsedAt || '',
+            ttl: metadata.ttl || null,
+            sourceSessionId: metadata.sourceSessionId || '',
+            sourceMessageId: metadata.sourceMessageId || '',
+            sourceType: metadata.sourceType || '',
+            pinned: metadata.pinned === true,
+        },
         tags,
         content: [
             entry.topic,
@@ -294,7 +304,21 @@ function normalizeEntry(entry = {}) {
             tags.join(' ')
         ].filter(Boolean).join('\n'),
         lifecycleStatus: entry.lifecycleStatus || metadata.lifecycleStatus || 'active',
-        trust: Number.isFinite(Number(entry.trust ?? metadata.trust)) ? Number(entry.trust ?? metadata.trust) : 0.75
+        trust: Number.isFinite(Number(entry.trust ?? metadata.trust)) ? Number(entry.trust ?? metadata.trust) : 0.75,
+        updatedAt,
+        lastUsedAt: metadata.lastUsedAt || '',
+        ttl: metadata.ttl || null,
+        provenance: {
+            source: metadata.source || entry.embeddingSource || '',
+            sourceSessionId: metadata.sourceSessionId || '',
+            sourceMessageId: metadata.sourceMessageId || '',
+            sourceType: metadata.sourceType || '',
+            confidence: Number.isFinite(Number(metadata.confidence)) ? Number(metadata.confidence) : 0.75,
+            pinned: metadata.pinned === true,
+            updatedAt,
+            lastUsedAt: metadata.lastUsedAt || '',
+            ttl: metadata.ttl || null,
+        }
     };
 }
 

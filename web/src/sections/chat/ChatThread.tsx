@@ -116,26 +116,28 @@ const prettifyBase = (base: string): string => {
   return titleCase(base.replace(/-/g, ' '));
 };
 
+function stripProviderPrefix(id: string): string {
+  const sepIdx = id.search(/[/:]/);
+  return sepIdx >= 0 ? id.slice(sepIdx + 1) : id;
+}
+
 export function modelDisplayParts(id: string): { name: string; tag: string } {
-  const slashIdx = id.indexOf('/');
-  const colonIdx = id.indexOf(':');
-  const sep = slashIdx >= 0 ? slashIdx : colonIdx >= 0 ? colonIdx : -1;
-  let base = sep >= 0 ? id.slice(sep + 1) : id;
-  let tag = '';
+  const sepIdx = id.search(/[/:]/);
+  const base = stripProviderPrefix(id);
+  let cleaned = base;
 
   for (const [pattern, label] of VARIANT_TAGS) {
-    if (pattern.test(base)) {
-      tag = label;
-      base = base.replace(pattern, '');
-      break;
+    if (pattern.test(cleaned)) {
+      cleaned = cleaned.replace(pattern, '');
+      return { name: prettifyBase(cleaned) || id, tag: sepIdx >= 0 ? `${id.slice(0, sepIdx)}:${label}` : label };
     }
   }
 
-  return { name: prettifyBase(base) || id || 'No model', tag };
+  return { name: prettifyBase(cleaned) || id, tag: sepIdx >= 0 ? id.slice(0, sepIdx) : '' };
 }
 
 export function getModelDisplayName(id: string): string {
-  return modelDisplayParts(id).name;
+  return stripProviderPrefix(id);
 }
 
 export function isLikelyReasoningModel(id: string): boolean {

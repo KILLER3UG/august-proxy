@@ -1,8 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 
-const SEMANTIC_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_semantic_memory.json');
-
 const VALID_CATEGORIES = new Set([
     'user_preference',
     'user_detail',
@@ -10,6 +8,8 @@ const VALID_CATEGORIES = new Set([
     'workflow_rule',
     'session_temp'
 ]);
+
+const { normalizeProvenance } = require('./memory-quality');
 
 const DEFAULT_TTL_DAYS = {
     user_preference: null,
@@ -19,13 +19,22 @@ const DEFAULT_TTL_DAYS = {
     session_temp: 1
 };
 
+function getSemanticMemoryFile() {
+    return process.env.AUGUST_SEMANTIC_MEMORY_FILE || path.join(__dirname, '..', '..', '..', 'data', 'august_semantic_memory.json');
+}
+
 function readDB() {
-    if (!fs.existsSync(SEMANTIC_FILE)) {
-        fs.writeFileSync(SEMANTIC_FILE, JSON.stringify([]));
+    const semanticFile = getSemanticMemoryFile();
+    const semanticDir = path.dirname(semanticFile);
+    if (semanticDir && !fs.existsSync(semanticDir)) {
+        fs.mkdirSync(semanticDir, { recursive: true });
+    }
+    if (!fs.existsSync(semanticFile)) {
+        fs.writeFileSync(semanticFile, JSON.stringify([]));
         return [];
     }
     try {
-        const data = JSON.parse(fs.readFileSync(SEMANTIC_FILE, 'utf8'));
+        const data = JSON.parse(fs.readFileSync(semanticFile, 'utf8'));
         return Array.isArray(data) ? data : [];
     } catch (e) {
         return [];
@@ -33,31 +42,53 @@ function readDB() {
 }
 
 function writeDB(data) {
-    fs.writeFileSync(SEMANTIC_FILE, JSON.stringify(data, null, 2));
+    const semanticFile = getSemanticMemoryFile();
+    const semanticDir = path.dirname(semanticFile);
+    if (semanticDir && !fs.existsSync(semanticDir)) {
+        fs.mkdirSync(semanticDir, { recursive: true });
+    }
+    fs.writeFileSync(semanticFile, JSON.stringify(data, null, 2));
 }
 
 function isExpired(fact) {
     return fact.ttl && new Date(fact.ttl) < new Date();
 }
 
-function setFact(key, value, category = 'user_preference', ttlDays = null, source = 'unknown') {
+function setFact(key, value, category = 'user_preference', ttlDays = null, source = 'unknown', options = {}) {
     if (!key || typeof key !== 'string') throw new Error('key is required');
     if (!VALID_CATEGORIES.has(category)) throw new Error(`Invalid category: ${category}. Must be one of: ${[...VALID_CATEGORIES].join(', ')}`);
 
+    const legacyOptions = typeof source === 'object' ? source : {};
+    const provenanceSource = (typeof source === 'string' ? source : null) || options.source || legacyOptions.source || 'unknown';
     const db = readDB();
     const existingIndex = db.findIndex(f => f.key === key);
-    const now = new Date().toISOString();
 
     const ttl = ttlDays !== null && ttlDays > 0
         ? new Date(Date.now() + ttlDays * 86400000).toISOString()
         : (ttlDays === 0 ? new Date(0).toISOString() : null);
 
-    const fact = { key, value, category, source, created: now, updated: now, ttl };
+    const provenance = normalizeProvenance({
+        ...legacyOptions,
+        ...options,
+        source: provenanceSource,
+        ttl,
+    });
+    const fact = {
+        key,
+        value,
+        category,
+        source: provenance.source,
+        created: provenance.createdAt,
+        updated: provenance.updatedAt,
+        ttl: provenance.ttl,
+        confidence: provenance.confidence,
+        provenance,
+    };
 
     if (existingIndex >= 0) {
-        fact.created = db[existingIndex].created;
-        fact.updated = now;
-        db[existingIndex] = fact;
+        fact.created = db[existingIndex].created || provenance.createdAt;
+        fact.updated = provenance.updatedAt;
+        db[existingIndex] = { ...db[existingIndex], ...fact };
     } else {
         db.push(fact);
     }
@@ -82,7 +113,7 @@ function searchFacts(query) {
     if (terms.length === 0) return [];
     return readDB().filter(f => {
         if (isExpired(f)) return false;
-        const haystack = `${f.key} ${f.value} ${f.category}`.toLowerCase();
+        const haystack = `${f.key} ${f.value} ${f.category} ${f.provenance?.source || ''}`.toLowerCase();
         return terms.some(t => haystack.includes(t));
     });
 }

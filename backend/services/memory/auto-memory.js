@@ -633,7 +633,12 @@ Respond ONLY with valid JSON in this exact format:
                             fact.value,
                             fact.category || 'user_preference',
                             null,
-                            sourceId
+                            sourceId,
+                            {
+                                sourceType: 'auto_memory_semantic_fact',
+                                sourceSessionId: clientId || '',
+                                confidence: 0.65,
+                            }
                         );
                         savedSemanticFacts.push({ key: saved.key, value: saved.value, category: saved.category });
                         semCount++;

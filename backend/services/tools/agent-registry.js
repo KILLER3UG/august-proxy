@@ -30,6 +30,7 @@ const DEFAULT_AGENTS = {
         role: 'Primary Builder',
         mode: 'primary',
         goal: 'Implement approved changes using the full proxy toolset.',
+        scopes: ['project'],
         memory_enabled: true,
         allow_delegation: true,
         permissions: {
@@ -42,6 +43,121 @@ const DEFAULT_AGENTS = {
             delegate: 'ask'
         },
         tools: ['read', 'search', 'web', 'edit', 'shell', 'memory', 'delegate']
+    },
+    project_manager: {
+        id: 'project_manager',
+        role: 'Project Manager',
+        mode: 'primary',
+        goal: 'Plan, route, and coordinate the specialized team without directly mutating files or running deploy commands.',
+        scopes: ['project', 'frontend', 'backend', 'qa', 'docs', 'deploy'],
+        memory_enabled: true,
+        allow_delegation: true,
+        can_cross_load_team_skills: true,
+        permissions: {
+            read: 'allow',
+            search: 'allow',
+            web: 'allow',
+            edit: 'deny',
+            shell: 'deny',
+            memory_write: 'deny',
+            delegate: 'ask'
+        },
+        tools: ['read', 'search', 'web', 'delegate']
+    },
+    frontend_dev: {
+        id: 'frontend_dev',
+        role: 'Frontend Developer',
+        mode: 'subagent',
+        goal: 'Handle React, TypeScript, Vite, Tailwind, UI components, browser behavior, and frontend tests.',
+        scopes: ['frontend'],
+        memory_enabled: true,
+        allow_delegation: false,
+        permissions: {
+            read: 'allow',
+            search: 'allow',
+            web: 'allow',
+            edit: 'ask',
+            shell: 'ask',
+            memory_write: 'deny',
+            delegate: 'deny'
+        },
+        tools: ['read', 'search', 'web', 'edit']
+    },
+    backend_dev: {
+        id: 'backend_dev',
+        role: 'Backend Developer',
+        mode: 'subagent',
+        goal: 'Handle Node services, provider adapters, tool registries, workbench backend logic, API routes, and backend tests.',
+        scopes: ['backend'],
+        memory_enabled: true,
+        allow_delegation: false,
+        permissions: {
+            read: 'allow',
+            search: 'allow',
+            web: 'allow',
+            edit: 'ask',
+            shell: 'ask',
+            memory_write: 'deny',
+            delegate: 'deny'
+        },
+        tools: ['read', 'search', 'web', 'edit']
+    },
+    qa_tester: {
+        id: 'qa_tester',
+        role: 'QA Tester',
+        mode: 'subagent',
+        goal: 'Review behavior, write or run verification steps, inspect tests, and report concrete evidence of pass/fail results.',
+        scopes: ['qa'],
+        memory_enabled: true,
+        allow_delegation: false,
+        permissions: {
+            read: 'allow',
+            search: 'allow',
+            web: 'allow',
+            edit: 'ask',
+            shell: 'ask',
+            memory_write: 'deny',
+            delegate: 'deny'
+        },
+        tools: ['read', 'search', 'web', 'edit']
+    },
+    documentation: {
+        id: 'documentation',
+        role: 'Documentation Writer',
+        mode: 'subagent',
+        goal: 'Update README, docs, setup guides, API notes, and user-facing change summaries.',
+        scopes: ['docs'],
+        memory_enabled: true,
+        allow_delegation: false,
+        permissions: {
+            read: 'allow',
+            search: 'allow',
+            web: 'allow',
+            edit: 'ask',
+            shell: 'deny',
+            memory_write: 'deny',
+            delegate: 'deny'
+        },
+        tools: ['read', 'search', 'web', 'edit']
+    },
+    deployment: {
+        id: 'deployment',
+        role: 'Deployment Engineer',
+        mode: 'subagent',
+        goal: 'Prepare and execute approved build, preview, release, Docker, or deployment steps for a scoped target.',
+        scopes: ['deploy', 'frontend', 'backend'],
+        memory_enabled: true,
+        allow_delegation: false,
+        permissions: {
+            read: 'allow',
+            search: 'allow',
+            web: 'allow',
+            edit: 'ask',
+            shell: 'ask',
+            memory_write: 'deny',
+            delegate: 'deny'
+        },
+        tools: ['read', 'search', 'web', 'edit', 'shell']
     },
     plan: {
         id: 'plan',
@@ -143,6 +259,10 @@ function getAgent(id = 'build') {
     return getAgents().find(agent => agent.id === id) || DEFAULT_AGENTS.build;
 }
 
+function canCrossLoadTeamSkills(agentId = 'build') {
+    return getAgent(agentId).can_cross_load_team_skills === true;
+}
+
 function classifyTool(toolName) {
     const name = String(toolName || '').replace(/^workbench_/, 'august__');
     if (DELEGATE_TOOLS.has(name) || /spawn_subagent|delegate/i.test(name)) return 'delegate';
@@ -194,7 +314,8 @@ function renderAgentContext() {
             const perms = Object.entries(agent.permissions || {})
                 .map(([key, value]) => `${key}:${value}`)
                 .join(', ');
-            return `- ${agent.id} (${agent.mode}): ${agent.role}. Goal: ${agent.goal}. Permissions: ${perms}`;
+            const scopes = Array.isArray(agent.scopes) ? agent.scopes.join(', ') : 'project';
+            return `- ${agent.id} (${agent.mode}): ${agent.role}. Scopes: ${scopes}. Goal: ${agent.goal}. Permissions: ${perms}`;
         })
         .join('\n');
 }
@@ -214,6 +335,7 @@ function saveAgent(agent) {
 module.exports = {
     AGENTS_FILE,
     DEFAULT_AGENTS,
+    canCrossLoadTeamSkills,
     deriveChildAgentPermissions,
     evaluateAgentTool,
     getAgent,

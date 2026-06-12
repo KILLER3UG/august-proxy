@@ -1,0 +1,77 @@
+[
+  {
+    "id": "learned_guideline_surfaces",
+    "description": "A durable learned guideline should appear only when memory is enabled.",
+    "originalSystem": "You are a coding assistant.",
+    "memory": {
+      "user_profile": "User prefers terse, lowercase, no-apostrophe responses.",
+      "global_context": "- August Proxy is the local AI gateway project.\n- The project uses sqlite for durable memory and localStorage for the UI session cache.",
+      "active_projects": [
+        {
+          "name": "August Proxy",
+          "status": "active",
+          "summary": "Local AI gateway with memory, learned guidelines, tools, and provider routing."
+        }
+      ],
+      "learned_guidelines": [
+        "Use Windows PowerShell syntax in terminal guidance.",
+        "Do not replace a removed element with a spinner or placeholder."
+      ]
+    },
+    "expectedTokens": [
+      "Dynamically learned instructions",
+      "Use Windows PowerShell syntax",
+      "August Proxy",
+      "sqlite for durable memory"
+    ],
+    "expectedMinimum": 3
+  },
+  {
+    "id": "semantic_project_context_surfaces",
+    "description": "Project memory should be visible in the prompt when memory is enabled.",
+    "originalSystem": "You are a helpful assistant.",
+    "memory": {
+      "user_profile": "User works on August Proxy.",
+      "global_context": "- August Proxy improves continuity by storing memories and learned guidelines.",
+      "active_projects": [
+        {
+          "name": "August Proxy",
+          "status": "active",
+          "summary": "Memory eval harness should prove memory-on is better than memory-off."
+        }
+      ],
+      "learned_guidelines": []
+    },
+    "expectedTokens": [
+      "Context:",
+      "August Proxy",
+      "Memory eval harness"
+    ],
+    "expectedMinimum": 2
+  },
+  {
+    "id": "memory_off_omits_august_context",
+    "description": "The memory-off prompt should keep client instructions but omit August memory blocks.",
+    "originalSystem": "You are a coding assistant.",
+    "memory": {
+      "user_profile": "User prefers concise replies.",
+      "global_context": "- August Proxy should measure memory quality.",
+      "active_projects": [
+        {
+          "name": "August Proxy",
+          "status": "active",
+          "summary": "Use evals before changing auto-learning behavior."
+        }
+      ],
+      "learned_guidelines": [
+        "Never overwrite a user preference without review."
+      ]
+    },
+    "expectedTokens": [
+      "You are a coding assistant.",
+      "Dynamically learned instructions",
+      "August Proxy"
+    ],
+    "expectedMinimum": 1
+  }
+]

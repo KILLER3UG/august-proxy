@@ -9,7 +9,7 @@ const anthropicAdapter = require('./adapters/anthropic');
 const openaiAdapter = require('./adapters/openai');
 const { getMcpServerStatus, restartMcpServers, startMcpServers } = require('./services/tools/mcp-client');
 const { deleteMcpServer, getMcpServersForUi, saveCustomMcpServer, setMcpServerEnabled } = require('./services/tools/mcp-registry');
-const { deleteSkill, getSkills, saveSkill } = require('./services/tools/skills');
+const { deleteSkill, getSkills, getTeamSkills, saveSkill } = require('./services/tools/skills');
 const { deletePlugin, getPlugins, setPluginEnabled } = require('./services/tools/plugins');
 const { readJsonBody, sendError, sendJson } = require('./lib/http-utils');
 const { redactForDisplay } = require('./lib/redact');
@@ -1248,6 +1248,19 @@ const requestHandler = async (req, res) => {
         }
     }
 
+    if (req.url === '/ui/team-skills' && req.method === 'GET') {
+        return sendJson(res, { skills: getTeamSkills(), count: getTeamSkills().length });
+    }
+
+    if (req.url.startsWith('/ui/team-skills/') && req.method === 'GET') {
+        try {
+            const agentId = decodeURIComponent(req.url.split('/').pop());
+            return sendJson(res, { agentId, skills: getTeamSkills(agentId), count: getTeamSkills(agentId).length });
+        } catch (e) {
+            return sendError(res, e, 400);
+        }
+    }
+
     if (req.url === '/ui/memory/items' && req.method === 'GET') {
         return sendJson(res, { items: listMemoryItems() });
     }
@@ -1358,6 +1371,7 @@ const requestHandler = async (req, res) => {
             return sendJson(res, jobs.listAgentJobs({
                 status: url.searchParams.get('status') || 'all',
                 sessionId: url.searchParams.get('sessionId') || '',
+                scope: url.searchParams.get('scope') || '',
                 limit: url.searchParams.get('limit') || 50
             }));
         } catch (e) {

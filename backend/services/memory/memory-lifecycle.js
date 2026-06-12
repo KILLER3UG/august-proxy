@@ -1,6 +1,7 @@
 const { readAugustCoreMemory, writeAugustCoreMemory } = require('../tools/august-tools');
 const { readVectorEntries, searchTextEntries } = require('./vector-db');
 const { factCount, searchFacts } = require('./semantic-memory');
+const { decorateMemoryQuality, scoreMemoryQuality } = require('./memory-quality');
 
 const ALLOWED_STATUSES = new Set(['active', 'stale', 'archived']);
 
@@ -44,7 +45,7 @@ function itemText(type, value, key) {
 function decorateItem(type, key, value) {
     const text = itemText(type, value, key);
     const score = scoreMemoryText(text);
-    return {
+    return decorateMemoryQuality({
         type,
         key: String(key),
         title: type === 'integration' ? key : (value.name || value.topic || `${type} ${Number(key) + 1}`),
@@ -55,11 +56,12 @@ function decorateItem(type, key, value) {
         confidence: clampConfidence(value.confidence === undefined ? 0.75 : value.confidence),
         source: value.source || '',
         updatedAt: value.updated_at || value.updatedAt || value.timestamp || '',
+        metadata: value.metadata || {},
         injection: {
             score,
             reason: explainInjection(text, value)
         }
-    };
+    });
 }
 
 function listMemoryItems(memory = readAugustCoreMemory()) {
@@ -133,7 +135,10 @@ function searchMemory(query, { limit = 8 } = {}) {
             value: fact.value,
             category: fact.category,
             source: fact.source,
-            updated: fact.updated
+            updated: fact.updated,
+            confidence: fact.confidence,
+            provenance: fact.provenance,
+            quality: fact.provenance ? scoreMemoryQuality(fact) : undefined
         }))
         .slice(0, limit);
 
