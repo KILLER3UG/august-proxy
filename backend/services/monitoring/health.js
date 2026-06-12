@@ -86,15 +86,16 @@ function getCapabilityHealth() {
         });
     });
 
+    const brainContext = promptDetails?.globalContext;
     checks.push({
         id: 'august-brain',
         area: 'memory',
         label: 'August Brain injection',
-        status: promptDetails.globalContext.compacted ? 'warn' : 'ok',
-        detail: promptDetails.globalContext.compacted
-            ? `Compacted ${promptDetails.globalContext.fullLength} to ${promptDetails.globalContext.finalLength} chars.`
-            : `${promptDetails.globalContext.finalLength} chars injected.`,
-        action: promptDetails.globalContext.compacted ? 'Review lifecycle pins or raise the Brain Limit if needed.' : ''
+        status: brainContext?.compacted ? 'warn' : 'ok',
+        detail: brainContext?.compacted
+            ? `Compacted ${brainContext.fullLength} to ${brainContext.finalLength} chars.`
+            : brainContext ? `${brainContext.finalLength} chars injected.` : 'Not initialized yet.',
+        action: brainContext?.compacted ? 'Review lifecycle pins or raise the Brain Limit if needed.' : ''
     });
 
     brain.checks
@@ -118,7 +119,7 @@ function getCapabilityHealth() {
             { label: 'Overall', value: summary.overall, status: summary.overall },
             { label: 'Enabled MCP', value: mcpServers.filter(server => server.enabled !== false).length, status: 'ok' },
             { label: 'Proxy Plugins', value: plugins.length, status: plugins.length ? 'ok' : 'warn' },
-            { label: 'Brain Limit', value: contextMaxChars, status: promptDetails.globalContext.compacted ? 'warn' : 'ok' },
+            { label: 'Brain Limit', value: contextMaxChars, status: promptDetails?.globalContext?.compacted ? 'warn' : 'ok' },
             { label: 'Vector DB', value: brain.counts.vectorEntries, status: brain.counts.vectorEntries ? 'ok' : 'warn' },
             { label: 'Semantic Facts', value: brain.counts.semanticFacts, status: brain.counts.semanticFacts ? 'ok' : 'warn' }
         ],

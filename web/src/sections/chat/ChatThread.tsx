@@ -17,6 +17,7 @@ import { ToolCallItem as ToolCallItemComp, getToolIcon } from '@/components/chat
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import { HoistedTodoPanel } from '@/components/chat/HoistedTodoPanel';
+import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { Statusbar } from '@/components/shell/Statusbar';
 
 // Configure marked to support GitHub Flavored Markdown and breaks
@@ -103,7 +104,17 @@ const VARIANT_TAGS: ReadonlyArray<readonly [RegExp, string]> = [
 
 const titleCase = (text: string): string => text.replace(/\b\w/g, c => c.toUpperCase()).trim();
 
-const prettifyBase = (base: string): string => base || 'No model';
+const prettifyBase = (base: string): string => {
+  if (/^claude-/i.test(base)) return titleCase(base.replace(/^claude-/i, '').replace(/-/g, ' '));
+  if (/^gpt-/i.test(base)) return base.replace(/^gpt-/i, 'GPT-');
+  if (/^gemini-/i.test(base)) return base.replace(/^gemini-/i, 'Gemini ').replace(/-/g, ' ');
+  if (/^deepseek-/i.test(base)) return titleCase(base.replace(/^deepseek-/i, 'DeepSeek '));
+  if (/^llama-/i.test(base)) return titleCase(base.replace(/^llama-/i, 'Llama '));
+  if (/^qwen-/i.test(base) || /^qwq-/i.test(base)) return titleCase(base.replace(/-/g, ' '));
+  if (/^mistral-/i.test(base)) return titleCase(base.replace(/^mistral-/i, 'Mistral '));
+  if (/^minimax-/i.test(base)) return titleCase(base.replace(/^minimax-/i, 'MiniMax '));
+  return titleCase(base.replace(/-/g, ' '));
+};
 
 export function modelDisplayParts(id: string): { name: string; tag: string } {
   const slashIdx = id.indexOf('/');
@@ -177,6 +188,20 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [streaming, setStreaming] = useState(false);
   const [models, setModels] = useState<ModelItem[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [hiddenModels, setHiddenModels] = useState<Set<string>>(loadHiddenModels);
+  const [showModelVisibility, setShowModelVisibility] = useState(false);
+
+  const toggleModelVisibility = (modelId: string) => {
+    setHiddenModels(prev => {
+      const next = new Set(prev);
+      if (next.has(modelId)) next.delete(modelId);
+      else next.add(modelId);
+      saveHiddenModels(next);
+      return next;
+    });
+  };
+
+  const visibleModels = useMemo(() => models.filter(m => !hiddenModels.has(m.id)), [models, hiddenModels]);
   // Initialise instantly from localStorage so the button renders without any network wait
   const [selectedModel, setSelectedModel] = useState<ModelItem | null>(() => {
     try {
@@ -1177,9 +1202,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             <div className="flex items-center gap-2">
               <ModelDropdown
                 models={models}
+                visibleModels={visibleModels}
                 loading={modelsLoading}
                 selected={selectedModel}
                 onRefresh={() => handleRefreshModels(true)}
+                onEditModels={() => setShowModelVisibility(true)}
                 onSelect={async (m) => {
                   if (!m) return;
                   setSelectedModel(m);
@@ -1346,6 +1373,20 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           onChange={handleFileUpload}
           multiple
           className="hidden"
+        />
+
+        {/* Model Visibility Modal */}
+        <ModelVisibilityModal
+          open={showModelVisibility}
+          onClose={() => setShowModelVisibility(false)}
+          models={models}
+          loading={modelsLoading}
+          hiddenModels={hiddenModels}
+          onToggleModel={toggleModelVisibility}
+          onNavigate={(p) => {
+            window.location.href = p;
+          }}
+          onRefreshModels={() => handleRefreshModels(true)}
         />
       </div>
     </div>
@@ -1911,12 +1952,14 @@ export function formatContextWindow(num?: number): string {
 }
 
 /* ── Custom Model Dropdown ────────────────────────────────────────── */
-function ModelDropdown({ models, loading, selected, onSelect, onRefresh }: {
+function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onRefresh, onEditModels }: {
   models: ModelItem[];
+  visibleModels: ModelItem[];
   loading?: boolean;
   selected: ModelItem | null;
   onSelect: (m: ModelItem | null) => void;
   onRefresh?: () => void;
+  onEditModels?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
@@ -1949,12 +1992,12 @@ function ModelDropdown({ models, loading, selected, onSelect, onRefresh }: {
   };
 
   const filtered = searchQuery.trim()
-    ? models.filter(m =>
+    ? visibleModels.filter(m =>
         m.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
         getModelDisplayName(m.id).toLowerCase().includes(searchQuery.toLowerCase()) ||
         m.provider.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : models;
+    : visibleModels;
 
   const grouped = Object.entries(
     filtered.reduce((acc, m) => {
@@ -2135,6 +2178,18 @@ function ModelDropdown({ models, loading, selected, onSelect, onRefresh }: {
                   ))
                 )}
               </div>
+
+              {/* Edit models link */}
+              {onEditModels && (
+                <div className="px-2 py-1.5 border-t border-border/20">
+                  <button
+                    onClick={() => { onEditModels(); setOpen(false); }}
+                    className="w-full text-left px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition"
+                  >
+                    Edit models
+                  </button>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
