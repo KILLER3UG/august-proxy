@@ -240,6 +240,20 @@ async function startServer(config) {
 }
 
 async function startMcpServers(minimaxApiKey) {
+    if (process.env.AUGUST_PROXY_SKIP_MCP_STARTUP === '1') {
+        for (const config of getMcpServers()) {
+            updateStatus(config.name, {
+                status: 'skipped',
+                enabled: config.enabled !== false,
+                source: config.source,
+                command: config.command || config.url || '',
+                args: config.args || [],
+                toolCount: 0,
+                error: null
+            });
+        }
+        return;
+    }
     if (!Client || !StdioClientTransport) {
         return;
     }

@@ -385,12 +385,19 @@ const requestHandler = async (req, res) => {
         const { getProviderConfig } = require('./lib/config');
         return sendJson(res, { 
             activeProvider: getActiveProvider(), 
-            providers: listProviders().map(p => ({ 
-                id: p.name, 
-                name: p.displayName, 
-                apiMode: p.apiMode, 
-                isAvailable: p.isAvailable() || !!(getProviderConfig(p.name) || {}).apiKey 
-            })) 
+            providers: listProviders().map(p => {
+                const cfg = getProviderConfig(p.name) || {};
+                const key = cfg.apiKey || '';
+                const hasKey = !!(p.isAvailable() || key);
+                const redacted = key ? key.slice(0, 3) + '••••••••' + key.slice(-4) : null;
+                return { 
+                    id: p.name, 
+                    name: p.displayName, 
+                    apiMode: p.apiMode, 
+                    isAvailable: hasKey,
+                    redactedKey: redacted
+                };
+            })
         });
     }
 
@@ -1581,6 +1588,11 @@ const requestHandler = async (req, res) => {
         return res.end(JSON.stringify(readAugustCoreMemory()));
     }
 
+    if (req.url === '/ui/memory/learning-status' && req.method === 'GET') {
+        const { getLearningStatus } = require('./services/memory/auto-memory');
+        return sendJson(res, getLearningStatus());
+    }
+
     if (req.url.startsWith('/ui/memory/preview') && req.method === 'GET') {
         const url = new URL(req.url, `http://${req.headers.host}`);
         const profileName = url.searchParams.get('profile') || 'claude';
@@ -1605,19 +1617,29 @@ const requestHandler = async (req, res) => {
     }
 
     if (req.url === '/ui/memory' && req.method === 'POST') {
-        let body = '';
-        req.on('data', chunk => { body += chunk; });
-        req.on('end', () => {
-            const data = JSON.parse(body);
+        try {
+            const data = await readJsonBody(req);
             const { readAugustCoreMemory, writeAugustCoreMemory } = require('./services/tools/august-tools');
+            const { checkMemoryBudget } = require('./services/memory/core-memory');
             const memory = readAugustCoreMemory();
-            if (data.global_context !== undefined) memory.global_context = data.global_context;
-            if (data.user_profile !== undefined) memory.user_profile = data.user_profile;
+
+            if (data.global_context !== undefined) {
+                const budget = checkMemoryBudget('global_context', data.global_context);
+                if (!budget.valid) return sendError(res, new Error(`global_context exceeds ${budget.limit} characters (${budget.length}/${budget.limit}, over by ${budget.overage}). Compact it before saving.`), 400);
+                memory.global_context = data.global_context;
+            }
+            if (data.user_profile !== undefined) {
+                const budget = checkMemoryBudget('user_profile', data.user_profile);
+                if (!budget.valid) return sendError(res, new Error(`user_profile exceeds ${budget.limit} characters (${budget.length}/${budget.limit}, over by ${budget.overage}). Compact it before saving.`), 400);
+                memory.user_profile = data.user_profile;
+            }
+
             writeAugustCoreMemory(memory);
-            res.writeHead(200);
-            res.end('OK');
-        });
-        return;
+            return sendJson(res, { status: 'ok', memory: readAugustCoreMemory() });
+        } catch (e) {
+            if (e.name === 'CoreMemoryBudgetError') return sendError(res, e, 400);
+            return sendError(res, e, 500);
+        }
     }
 
     if (req.url === '/ui/models' && req.method === 'GET') {

@@ -1,7 +1,23 @@
 const fs = require('fs');
 const path = require('path');
 
-const CORE_MEMORY_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_core_memory.json');
+const CORE_MEMORY_LIMITS = {
+    user_profile: 3000,
+    global_context: 4000
+};
+
+function getCoreMemoryFile() {
+    return process.env.AUGUST_CORE_MEMORY_FILE || path.join(__dirname, '..', '..', '..', 'data', 'august_core_memory.json');
+}
+
+class CoreMemoryBudgetError extends Error {
+    constructor(section, details) {
+        super(`${section} core memory exceeds the ${details.limit} character limit (${details.length}/${details.limit}, over by ${details.overage}). Compact it with august__core_memory_replace before writing.`);
+        this.name = 'CoreMemoryBudgetError';
+        this.section = section;
+        this.details = details;
+    }
+}
 
 function getDefaultAugustCoreMemory() {
     return {
@@ -59,20 +75,47 @@ function normalizeAugustCoreMemory(raw) {
 }
 
 function readAugustCoreMemory() {
-    if (!fs.existsSync(CORE_MEMORY_FILE)) {
+    const memoryFile = getCoreMemoryFile();
+    if (!fs.existsSync(memoryFile)) {
         const defaultMemory = getDefaultAugustCoreMemory();
-        fs.writeFileSync(CORE_MEMORY_FILE, JSON.stringify(defaultMemory, null, 2));
+        fs.writeFileSync(memoryFile, JSON.stringify(defaultMemory, null, 2));
         return defaultMemory;
     }
     try {
-        return normalizeAugustCoreMemory(JSON.parse(fs.readFileSync(CORE_MEMORY_FILE, 'utf8')));
+        return normalizeAugustCoreMemory(JSON.parse(fs.readFileSync(memoryFile, 'utf8')));
     } catch (e) {
         return normalizeAugustCoreMemory({ error: "Failed to parse core memory." });
     }
 }
 
+function checkMemoryBudget(section, text) {
+    const limit = CORE_MEMORY_LIMITS[section];
+    const value = String(text || '');
+    if (limit === undefined) {
+        return { valid: false, length: value.length, limit: 0, overage: 0, error: `Unsupported core memory section: ${section}` };
+    }
+    const length = value.length;
+    return {
+        valid: length <= limit,
+        length,
+        limit,
+        overage: Math.max(0, length - limit)
+    };
+}
+
+function validateCoreMemoryBudgets(memory) {
+    const normalized = normalizeAugustCoreMemory(memory);
+    for (const section of ['user_profile', 'global_context']) {
+        const result = checkMemoryBudget(section, normalized[section]);
+        if (!result.valid) throw new CoreMemoryBudgetError(section, result);
+    }
+    return { valid: true };
+}
+
 function writeAugustCoreMemory(data) {
-    fs.writeFileSync(CORE_MEMORY_FILE, JSON.stringify(normalizeAugustCoreMemory(data), null, 2));
+    const normalized = normalizeAugustCoreMemory(data);
+    validateCoreMemoryBudgets(normalized);
+    fs.writeFileSync(getCoreMemoryFile(), JSON.stringify(normalized, null, 2));
 }
 
 function renderAugustCoreMemory(memoryInput) {
@@ -163,8 +206,12 @@ function appendCheckpoint(memory, checkpoint) {
     return normalized;
 }
 
-module.exports = {
-    CORE_MEMORY_FILE,
+const coreMemoryExports = {
+    CORE_MEMORY_LIMITS,
+    CoreMemoryBudgetError,
+    getCoreMemoryFile,
+    checkMemoryBudget,
+    validateCoreMemoryBudgets,
     getDefaultAugustCoreMemory,
     normalizeAugustCoreMemory,
     readAugustCoreMemory,
@@ -175,3 +222,11 @@ module.exports = {
     appendRecentEvent,
     appendCheckpoint
 };
+
+Object.defineProperty(coreMemoryExports, 'CORE_MEMORY_FILE', {
+    enumerable: true,
+    configurable: true,
+    get: getCoreMemoryFile
+});
+
+module.exports = coreMemoryExports;

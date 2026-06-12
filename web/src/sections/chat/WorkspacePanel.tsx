@@ -172,9 +172,16 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
     <div className="flex flex-col h-full bg-[#0e0e11] text-xs">
       {/* Header */}
       <div className="p-3 border-b border-border/40 flex items-center justify-between shrink-0 bg-[#09090b]">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           <FolderGit2 className="size-4 text-amber-500/80" />
-          <span className="font-semibold text-foreground/80 tracking-wide">WORKSPACE</span>
+          <div className="flex flex-col">
+            <span className="font-semibold text-foreground/80 text-[11px]">Workspace Explorer</span>
+            {workspacePath && (
+              <span className="text-[9px] text-muted-foreground/50 font-mono truncate max-w-[180px]" title={workspacePath}>
+                {workspacePath.split(/[/\\]/).pop()}
+              </span>
+            )}
+          </div>
         </div>
         {workspacePath && (
           <button
@@ -191,9 +198,8 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
       <div className="p-3 border-b border-border/10 bg-[#0e0e11] shrink-0">
         {workspacePath ? (
           <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Active Folder</span>
-            <span className="font-mono text-[10px] text-foreground/85 truncate" title={workspacePath}>
-              {workspacePath.split(/[/\\]/).pop()}
+            <span className="text-[10px] text-muted-foreground/50 font-mono truncate" title={workspacePath}>
+              {workspacePath}
             </span>
           </div>
         ) : (

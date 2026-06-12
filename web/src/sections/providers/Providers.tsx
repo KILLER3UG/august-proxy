@@ -1,11 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { SectionHeader } from '@/components/SectionHeader';
 import { PageLoader } from '@/components/PageLoader';
-import { Eye, EyeOff, ChevronDown, ChevronRight, Save } from 'lucide-react';
+import { Eye, EyeOff, ChevronDown, ChevronRight, Save, Check, Key } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -14,6 +12,7 @@ interface Provider {
   name: string;
   apiMode: string;
   isAvailable: boolean;
+  redactedKey: string | null;
 }
 interface ActiveProviderData {
   activeProvider: string;
@@ -90,87 +89,104 @@ export function Providers() {
         }
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Available providers</CardTitle>
-        </CardHeader>
-        <CardContent className="divide-y divide-border">
-          {sorted.map((p) => {
-            const isExpanded = expandedId === p.id;
-            return (
-              <div key={p.id}>
-                {/* Provider row — clickable, hover highlight, no separator between row and expand */}
-                <button
-                  onClick={() => toggleExpand(p.id)}
-                  className="w-full flex items-center justify-between py-2.5 hover:bg-muted/50 rounded-md px-2 -mx-2 transition text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className={`inline-block size-1.5 rounded-full ${p.isAvailable ? 'bg-primary' : 'bg-muted-foreground/40'}`} />
-                    <span className="text-sm">{p.name}</span>
-                    <span className="text-[10px] text-muted-foreground font-mono">{p.apiMode}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {p.id === data.activeProvider && <Badge variant="success">active</Badge>}
-                    {p.isAvailable
-                      ? <Badge variant="outline">ready</Badge>
-                      : <Badge variant="secondary">no key</Badge>}
-                    {isExpanded ? <ChevronDown className="size-3 text-muted-foreground" /> : <ChevronRight className="size-3 text-muted-foreground" />}
-                  </div>
-                </button>
+      <div className="space-y-1">
+        <p className="text-[11px] font-medium text-muted-foreground px-1 pb-1">Available providers</p>
+        {sorted.map((p) => {
+          const isExpanded = expandedId === p.id;
+          return (
+            <div
+              key={p.id}
+              className={cn(
+                'rounded-lg transition-colors',
+                isExpanded
+                  ? 'bg-primary/[0.04] ring-1 ring-primary/20'
+                  : 'hover:bg-muted/40'
+              )}
+            >
+              <button
+                onClick={() => toggleExpand(p.id)}
+                className="w-full flex items-center justify-between px-3 py-2.5 text-left"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={cn(
+                    'inline-block size-1.5 rounded-full shrink-0',
+                    p.isAvailable ? 'bg-primary' : 'bg-muted-foreground/30'
+                  )} />
+                  <span className="text-sm font-medium">{p.name}</span>
+                  <span className="text-[10px] text-muted-foreground font-mono">{p.apiMode}</span>
+                  {p.id === data.activeProvider && (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                      <Check className="size-2.5" /> active
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {p.isAvailable && p.redactedKey ? (
+                    <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[140px]">
+                      {p.redactedKey}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/60">
+                      <Key className="size-2.5" /> no key
+                    </span>
+                  )}
+                  {isExpanded
+                    ? <ChevronDown className="size-3 text-muted-foreground" />
+                    : <ChevronRight className="size-3 text-muted-foreground" />}
+                </div>
+              </button>
 
-                {/* Expanded API key entry — no borders/lines separating from parent row */}
-                {isExpanded && (
-                  <div className="px-2 pb-3 space-y-2">
+              {isExpanded && (
+                <div className="px-3 pb-3 pt-1 space-y-2.5">
+                  <div className="relative pt-2.5">
+                    <label className="block text-[10px] text-muted-foreground mb-1 font-medium">API Key</label>
                     <div className="relative">
-                      <label className="block text-[10px] text-muted-foreground mb-1 font-medium">API Key</label>
-                      <div className="relative">
-                        <input
-                          type={showKeyFor[p.id] ? 'text' : 'password'}
-                          value={apiKeys[p.id] ?? ''}
-                          onChange={(e) => setApiKeys(prev => ({ ...prev, [p.id]: e.target.value }))}
-                          placeholder={p.isAvailable ? 'Key already configured (override)' : 'Enter API key…'}
-                          className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition"
-                        />
-                        <button
-                          onClick={() => setShowKeyFor(prev => ({ ...prev, [p.id]: !prev[p.id] }))}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        >
-                          {showKeyFor[p.id] ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-                        </button>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-muted-foreground mb-1 font-medium">Base URL (optional)</label>
                       <input
-                        type="text"
-                        value={baseUrls[p.id] ?? ''}
-                        onChange={(e) => setBaseUrls(prev => ({ ...prev, [p.id]: e.target.value }))}
-                        placeholder="https://api.example.com"
+                        type={showKeyFor[p.id] ? 'text' : 'password'}
+                        value={apiKeys[p.id] ?? ''}
+                        onChange={(e) => setApiKeys(prev => ({ ...prev, [p.id]: e.target.value }))}
+                        placeholder={p.isAvailable ? 'Key already configured (override)' : 'Enter API key…'}
                         className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition"
                       />
-                    </div>
-                    <div className="flex items-center gap-2 pt-1">
-                      <Button
-                        size="sm"
-                        onClick={() => handleSave(p.id, p.name)}
-                        disabled={saving === p.id || (!apiKeys[p.id] && !baseUrls[p.id])}
+                      <button
+                        onClick={() => setShowKeyFor(prev => ({ ...prev, [p.id]: !prev[p.id] }))}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                       >
-                        <Save className="size-3 mr-1" />
-                        {saving === p.id ? 'Saving…' : 'Save'}
-                      </Button>
-                      {saveMsg && saveMsg.id === p.id && (
-                        <span className={cn('text-[10px]', saveMsg.type === 'ok' ? 'text-primary' : 'text-destructive')}>
-                          {saveMsg.text}
-                        </span>
-                      )}
+                        {showKeyFor[p.id] ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                      </button>
                     </div>
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
+                  <div>
+                    <label className="block text-[10px] text-muted-foreground mb-1 font-medium">Base URL (optional)</label>
+                    <input
+                      type="text"
+                      value={baseUrls[p.id] ?? ''}
+                      onChange={(e) => setBaseUrls(prev => ({ ...prev, [p.id]: e.target.value }))}
+                      placeholder="https://api.example.com"
+                      className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <Button
+                      size="sm"
+                      onClick={() => handleSave(p.id, p.name)}
+                      disabled={saving === p.id || (!apiKeys[p.id] && !baseUrls[p.id])}
+                    >
+                      <Save className="size-3 mr-1" />
+                      {saving === p.id ? 'Saving…' : 'Save'}
+                    </Button>
+                    {saveMsg && saveMsg.id === p.id && (
+                      <span className={cn('text-[10px]', saveMsg.type === 'ok' ? 'text-primary' : 'text-destructive')}>
+                        {saveMsg.text}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

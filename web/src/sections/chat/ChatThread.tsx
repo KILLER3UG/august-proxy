@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { marked } from 'marked';
 import { toast } from 'sonner';
 import { useStore } from '@nanostores/react';
-import { $sessions } from '@/store/sessions';
+import { $sessions, setSessionStatus, clearSessionStatus } from '@/store/sessions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
 import { ToolCallItem as ToolCallItemComp, getToolIcon } from '@/components/chat/ToolCallItem';
@@ -92,11 +92,48 @@ interface ModelItem {
   supportsThinking?: boolean;
 }
 
-export function getModelDisplayName(id: string): string {
+const VARIANT_TAGS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/-fast$/i, 'Fast'],
+  [/-thinking$/i, 'Thinking'],
+  [/-preview$/i, 'Preview'],
+  [/-latest$/i, 'Latest'],
+  [/-free$/i, 'Free'],
+];
+
+const titleCase = (text: string): string => text.replace(/\b\w/g, c => c.toUpperCase()).trim();
+
+function prettifyBase(base: string): string {
+  if (/^claude-/i.test(base)) return titleCase(base.replace(/^claude-/i, '').replace(/-/g, ' '));
+  if (/^gpt-/i.test(base)) return base.replace(/^gpt-/i, 'GPT-');
+  if (/^gemini-/i.test(base)) return base.replace(/^gemini-/i, 'Gemini ').replace(/-/g, ' ');
+  if (/^deepseek-/i.test(base)) return titleCase(base.replace(/^deepseek-/i, 'DeepSeek '));
+  if (/^llama-/i.test(base)) return titleCase(base.replace(/^llama-/i, 'Llama '));
+  if (/^qwen-/i.test(base) || /^qwq-/i.test(base)) return titleCase(base.replace(/-/g, ' '));
+  if (/^mistral-/i.test(base)) return titleCase(base.replace(/^mistral-/i, 'Mistral '));
+  if (/^minimax-/i.test(base)) return titleCase(base.replace(/^minimax-/i, 'MiniMax '));
+  return titleCase(base.replace(/-/g, ' '));
+}
+
+export function modelDisplayParts(id: string): { name: string; tag: string } {
   const slashIdx = id.indexOf('/');
   const colonIdx = id.indexOf(':');
   const sep = slashIdx >= 0 ? slashIdx : colonIdx >= 0 ? colonIdx : -1;
-  return sep >= 0 ? id.slice(sep + 1) : id;
+  let base = sep >= 0 ? id.slice(sep + 1) : id;
+  let tag = '';
+
+  for (const [pattern, label] of VARIANT_TAGS) {
+    if (pattern.test(base)) {
+      tag = label;
+      base = base.replace(pattern, '');
+      break;
+    }
+  }
+
+  return { name: prettifyBase(base) || id || 'No model', tag };
+}
+
+export function getModelDisplayName(id: string): string {
+  return modelDisplayParts(id).name;
 }
 
 export function isLikelyReasoningModel(id: string): boolean {
@@ -292,6 +329,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // Uses per-turn connection — clean and simple.
   const generateAIResponse = async (chatHistory: ChatMessage[]) => {
     setStreaming(true);
+    if (sessionId) setSessionStatus(sessionId, 'working');
 
     const assistantMsgId = `a${Date.now()}`;
     const abortController = new AbortController();
@@ -324,6 +362,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           : msg
       ));
       setStreaming(false);
+      if (sessionId) clearSessionStatus(sessionId);
       return;
     }
 
@@ -351,12 +390,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           } : msg
         ));
         setStreaming(false);
+        if (sessionId) clearSessionStatus(sessionId);
         return;
       }
 
       await readSSEStream(res, assistantMsgId, abortController, thinkingStart);
     } catch (e: any) {
-      if (e?.name === 'AbortError') { setStreaming(false); return; }
+      if (e?.name === 'AbortError') { setStreaming(false); if (sessionId) clearSessionStatus(sessionId); return; }
       console.error(e);
       setMessages(prev => prev.map(msg =>
         msg.id === assistantMsgId ? {
@@ -366,6 +406,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       ));
     }
     setStreaming(false);
+    if (sessionId) clearSessionStatus(sessionId);
   };
 
   function appendBlockEvent(
@@ -904,6 +945,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     abortRef.current?.abort();
     abortRef.current = null;
     setStreaming(false);
+    if (sessionId) clearSessionStatus(sessionId);
   };
 
   // ── Revert: delete user message and all subsequent messages, put text back into chat input ──
@@ -1222,83 +1264,89 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
       />
       <div className="flex-1 flex flex-col min-w-0 bg-background h-full overflow-hidden relative">
-        <div className="flex-grow flex flex-col min-h-0 relative justify-center">
-          <AnimatePresence initial={false}>
-            {messages.length === 0 && (
+        <div className="flex-grow flex flex-col min-h-0 relative">
+          <AnimatePresence initial={false} mode="wait">
+            {messages.length === 0 ? (
               <motion.div
-                key="centered-spacer"
-                initial={{ opacity: 0, y: -15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
+                key="centered-layout"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, y: 20 }}
                 transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-                className="text-center mb-8 shrink-0 px-6 w-full"
+                className="flex-1 flex flex-col items-center justify-center px-6"
               >
-                <div className="w-full max-w-3xl mx-auto">
-                  <h2 className="text-3xl font-semibold tracking-tight text-foreground/90 font-sans">August</h2>
-                  <p className="text-xs text-muted-foreground/50 mt-1.5 font-sans">How can I help you code today?</p>
+                <div className="w-full max-w-3xl">
+                  <h2 className="text-3xl font-semibold tracking-tight text-foreground/90 font-sans text-center mb-8">
+                    August
+                  </h2>
+                  <div className="w-full">
+                    {renderComposerContent()}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground/40 text-center mt-3 font-sans">
+                    How can I help you code today?
+                  </p>
                 </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="thread-scroll-view"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col min-h-0"
+              >
+                <div
+                  ref={scrollRef}
+                  className="flex-1 overflow-y-auto"
+                  style={{ overflowAnchor: 'none' }}
+                >
+                  <div className="max-w-3xl mx-auto px-6 py-8 space-y-5 relative">
+                    {messages.map((m, i) => {
+                      const isReverting = revertingIndex !== null && i > revertingIndex;
+                      return (
+                        <div
+                          key={m.id}
+                          className={cn(
+                            "transition-all duration-300 transform",
+                            isReverting ? "opacity-0 -translate-y-4 pointer-events-none" : "opacity-100 translate-y-0"
+                          )}
+                        >
+                          <MessageBubble
+                            message={m}
+                            isLast={i === messages.length - 1}
+                            streaming={streaming}
+                            onRevert={() => handleRevert(i)}
+                            onEdit={(text) => handleEdit(i, text)}
+                            onRegenerate={() => handleRegenerate(i)}
+                          />
+                        </div>
+                      );
+                    })}
+                    {streaming && (() => {
+                      const lastMsg = messages[messages.length - 1];
+                      if (!lastMsg || lastMsg.role !== 'assistant') return <ThinkingIndicator />;
+                      const parsed = parseThinkingAndContent(lastMsg.content, lastMsg.thinking);
+                      return (!parsed.thinking && !parsed.content) ? <ThinkingIndicator /> : null;
+                    })()}
+                  </div>
+                </div>
+
+                {/* Composer at the bottom when there are messages */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                  className="shrink-0 z-10 w-full bg-background px-4 py-3"
+                >
+                  <div className="max-w-3xl mx-auto">
+                    {renderComposerContent()}
+                  </div>
+                </motion.div>
               </motion.div>
             )}
           </AnimatePresence>
-
-          {messages.length > 0 && (
-            <motion.div
-              key="thread-scroll-view"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2 }}
-              ref={scrollRef}
-              className="flex-1 overflow-y-auto"
-              style={{ overflowAnchor: 'none' }}
-            >
-              <div className="max-w-3xl mx-auto px-6 py-8 space-y-5 relative">
-                {messages.map((m, i) => {
-                  const isReverting = revertingIndex !== null && i > revertingIndex;
-                  return (
-                    <div
-                      key={m.id}
-                      className={cn(
-                        "transition-all duration-300 transform",
-                        isReverting ? "opacity-0 -translate-y-4 pointer-events-none" : "opacity-100 translate-y-0"
-                      )}
-                    >
-                      <MessageBubble
-                        message={m}
-                        isLast={i === messages.length - 1}
-                        streaming={streaming}
-                        onRevert={() => handleRevert(i)}
-                        onEdit={(text) => handleEdit(i, text)}
-                        onRegenerate={() => handleRegenerate(i)}
-                      />
-                    </div>
-                  );
-                })}
-                {streaming && (() => {
-                  const lastMsg = messages[messages.length - 1];
-                  if (!lastMsg || lastMsg.role !== 'assistant') return <ThinkingIndicator />;
-                  const parsed = parseThinkingAndContent(lastMsg.content, lastMsg.thinking);
-                  return (!parsed.thinking && !parsed.content) ? <ThinkingIndicator /> : null;
-                })()}
-              </div>
-            </motion.div>
-          )}
         </div>
-
-        {/* Composer at the bottom / center */}
-        <motion.div
-          layout
-          transition={{ type: "spring", stiffness: 260, damping: 26 }}
-          className={cn(
-            "shrink-0 z-10 w-full",
-            messages.length === 0
-              ? "px-6 pb-20 max-w-3xl mx-auto"
-              : "bg-background px-4 py-3"
-          )}
-        >
-          <div className={cn(messages.length > 0 && "max-w-3xl mx-auto")}>
-            {renderComposerContent()}
-          </div>
-        </motion.div>
 
         {/* Hidden File Input */}
         <input
@@ -1943,12 +1991,12 @@ function ModelDropdown({ models, loading, selected, onSelect, onRefresh }: {
         className={cn(
           'flex items-center gap-1.5 text-xs font-mono outline-none cursor-pointer shrink-0',
           'text-muted-foreground hover:text-foreground transition-all duration-200',
-          'bg-muted/40 border border-border rounded-lg px-2.5 py-1',
+          'bg-muted/30 hover:bg-muted/50 rounded-md px-2 py-1',
         )}
         title={selected?.id || 'Select model'}
       >
         {selected && (
-          <span className="text-[10px] bg-primary/10 text-primary border border-primary/20 px-1 py-0.5 rounded uppercase font-semibold tracking-wider scale-90 origin-left shrink-0">
+          <span className="text-[10px] bg-primary/10 text-primary px-1 py-0.5 rounded uppercase font-semibold tracking-wider scale-90 origin-left shrink-0">
             {selected.provider === 'openai-api' ? 'openai' : selected.provider}
           </span>
         )}
@@ -1965,11 +2013,11 @@ function ModelDropdown({ models, loading, selected, onSelect, onRefresh }: {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-full mb-1 right-0 z-50 min-w-[240px] max-w-[320px] bg-card border border-border rounded-lg shadow-2xl overflow-hidden origin-bottom-right"
+            className="absolute bottom-full mb-1 right-0 z-50 min-w-[240px] max-w-[320px] bg-[#18181b] rounded-lg shadow-2xl overflow-hidden origin-bottom-right"
           >
             {/* Search bar */}
-            <div className="px-1.5 pt-1.5 pb-0.5 bg-card">
-              <div className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 border border-border/50">
+            <div className="px-1.5 pt-1.5 pb-0.5 bg-[#18181b]">
+              <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1">
                 <svg className="size-2.5 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
                 </svg>
@@ -2016,13 +2064,13 @@ function ModelDropdown({ models, loading, selected, onSelect, onRefresh }: {
               {/* Top fade indicator */}
               <div className={cn(
                 'absolute top-0 left-0 right-0 h-5 z-10 pointer-events-none transition-opacity',
-                'bg-gradient-to-b from-card to-transparent',
+                'bg-gradient-to-b from-[#18181b] to-transparent',
                 scrollTop > 4 ? 'opacity-100' : 'opacity-0'
               )} />
               {/* Bottom fade indicator */}
               <div className={cn(
                 'absolute bottom-0 left-0 right-0 h-5 z-10 pointer-events-none transition-opacity',
-                'bg-gradient-to-t from-card to-transparent',
+                'bg-gradient-to-t from-[#18181b] to-transparent',
                 scrollEnd ? 'opacity-0' : 'opacity-100'
               )} />
 
@@ -2033,13 +2081,13 @@ function ModelDropdown({ models, loading, selected, onSelect, onRefresh }: {
               >
                 {loading && grouped.length === 0 ? (
                   <div className="px-2 py-1 space-y-1">
-                    <div className="skeleton-row h-5 w-20 rounded bg-muted/40 my-1" />
-                    <div className="skeleton-row h-7 w-full rounded bg-muted/40 animate-pulse" />
-                    <div className="skeleton-row h-7 w-full rounded bg-muted/40 animate-pulse" />
-                    <div className="skeleton-row h-7 w-full rounded bg-muted/40 animate-pulse" />
-                    <div className="skeleton-row h-5 w-24 rounded bg-muted/40 my-1" />
-                    <div className="skeleton-row h-7 w-full rounded bg-muted/40 animate-pulse" />
-                    <div className="skeleton-row h-7 w-full rounded bg-muted/40 animate-pulse" />
+                    <div className="skeleton-row h-4 w-20 rounded my-1" />
+                    <div className="skeleton-row h-7 w-full rounded" />
+                    <div className="skeleton-row h-7 w-full rounded" />
+                    <div className="skeleton-row h-7 w-full rounded" />
+                    <div className="skeleton-row h-4 w-24 rounded my-1" />
+                    <div className="skeleton-row h-7 w-full rounded" />
+                    <div className="skeleton-row h-7 w-full rounded" />
                   </div>
                 ) : grouped.length === 0 ? (
                   <div className="px-3 py-4 text-xs text-muted-foreground text-center">
@@ -2048,30 +2096,35 @@ function ModelDropdown({ models, loading, selected, onSelect, onRefresh }: {
                 ) : (
                   grouped.map(({ provider, visible, isExpanded, total, showCollapse }) => (
                     <div key={provider}>
-                      <div className="px-2 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground/50 font-semibold sticky top-0 bg-card/95 backdrop-blur z-20 flex justify-between items-center">
+                      <div className="px-2 py-1 text-[10px] uppercase tracking-widest text-muted-foreground/50 font-semibold sticky top-0 bg-[#18181b]/95 backdrop-blur z-20 flex justify-between items-center">
                         <span>{provider}</span>
-                        <span className="text-[9px] lowercase font-mono">({total} models)</span>
+                        <span className="text-[9px] lowercase font-mono text-muted-foreground/40">({total})</span>
                       </div>
-                      {visible.map(m => (
-                        <button
-                          key={m.id}
-                          onClick={() => { onSelect(m); setOpen(false); }}
-                          className={cn(
-                            'w-full text-left px-2 py-1 text-xs font-mono transition-all duration-150 flex items-center gap-1.5',
-                            selected?.id === m.id
-                              ? 'text-primary bg-primary/10 font-semibold'
-                              : 'text-foreground/80 hover:bg-muted hover:text-foreground'
-                          )}
-                        >
-                          {m.isFree && (
-                            <span className="text-[8px] text-green-500 font-semibold uppercase shrink-0">FREE</span>
-                          )}
-                          <span className="truncate">{getModelDisplayName(m.id)}</span>
-                          <span className="ml-auto text-[10px] text-muted-foreground/60 shrink-0 font-sans border border-border/40 rounded px-1.5 py-0.2 bg-muted/20">
-                            {formatContextWindow(m.contextWindow)}
-                          </span>
-                        </button>
-                      ))}
+                      {visible.map(m => {
+                        const { name, tag } = modelDisplayParts(m.id);
+                        return (
+                          <button
+                            key={m.id}
+                            onClick={() => { onSelect(m); setOpen(false); }}
+                            className={cn(
+                              'w-full text-left px-2.5 py-1.5 text-xs transition-all duration-150 flex items-center gap-2 rounded-md mx-1',
+                              selected?.id === m.id
+                                ? 'text-primary bg-primary/10 font-semibold'
+                                : 'text-foreground/80 hover:bg-white/5 hover:text-foreground'
+                            )}
+                          >
+                            <span className="truncate flex-1 font-sans">
+                              {name}
+                              {tag && (
+                                <span className="ml-1.5 text-[10px] text-muted-foreground/50 font-normal">{tag}</span>
+                              )}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground/40 shrink-0 tabular-nums">
+                              {formatContextWindow(m.contextWindow)}
+                            </span>
+                          </button>
+                        );
+                      })}
                       {showCollapse && (
                         <button
                           onClick={() => {
@@ -2082,7 +2135,7 @@ function ModelDropdown({ models, loading, selected, onSelect, onRefresh }: {
                               return next;
                             });
                           }}
-                          className="w-full text-left px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition"
+                          className="w-full text-left px-2.5 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-white/5 transition"
                         >
                           {isExpanded ? '▲ Show less' : '▼ Show ' + (total - 5) + ' more'}
                         </button>
@@ -2116,10 +2169,10 @@ function EffortDropdown({ value, onChange }: {
   }, []);
 
   const options: { value: 'low' | 'medium' | 'high' | 'max'; label: string; desc: string }[] = [
-    { value: 'low', label: 'low', desc: 'Short thinking, fast response' },
-    { value: 'medium', label: 'med', desc: 'Balanced thinking & speed' },
-    { value: 'high', label: 'high', desc: 'Thorough reasoning' },
-    { value: 'max', label: 'max', desc: 'Full depth, maximum reasoning' },
+    { value: 'low', label: 'Low', desc: 'Short thinking, fast response' },
+    { value: 'medium', label: 'Med', desc: 'Balanced thinking & speed' },
+    { value: 'high', label: 'High', desc: 'Thorough reasoning' },
+    { value: 'max', label: 'Max', desc: 'Full depth, maximum reasoning' },
   ];
 
   const currentOpt = options.find(o => o.value === value) || options[1];
@@ -2129,14 +2182,14 @@ function EffortDropdown({ value, onChange }: {
       <button
         onClick={() => setOpen(!open)}
         className={cn(
-          'flex items-center gap-1.5 text-xs font-mono outline-none cursor-pointer',
+          'flex items-center gap-1.5 text-xs outline-none cursor-pointer',
           'text-muted-foreground hover:text-foreground transition-all duration-200',
-          'bg-muted/40 border border-border rounded-lg px-2.5 py-1',
+          'bg-muted/30 hover:bg-muted/50 rounded-md px-2 py-1',
         )}
         title="Thinking Effort"
       >
         <span className="text-[10px] font-medium text-foreground transition-all duration-200">
-          {currentOpt.value === 'medium' ? 'med' : currentOpt.value}
+          {currentOpt.label}
         </span>
         <svg className="size-2.5 shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />
@@ -2150,9 +2203,9 @@ function EffortDropdown({ value, onChange }: {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-full mb-1.5 right-0 z-50 min-w-[200px] bg-card border border-border rounded-xl shadow-2xl py-1 origin-bottom-right"
+            className="absolute bottom-full mb-1.5 right-0 z-50 min-w-[200px] bg-[#18181b] rounded-lg shadow-2xl py-1 origin-bottom-right"
           >
-            <div className="px-2.5 py-1 text-[10px] text-muted-foreground uppercase tracking-widest font-semibold border-b border-border/50 mb-1">
+            <div className="px-2.5 py-1 text-[10px] text-muted-foreground/50 uppercase tracking-widest font-semibold mb-0.5">
               Reasoning Effort
             </div>
             {options.map(opt => (
@@ -2160,14 +2213,14 @@ function EffortDropdown({ value, onChange }: {
                 key={opt.value}
                 onClick={() => { onChange(opt.value); setOpen(false); }}
                 className={cn(
-                  'w-full text-left px-3 py-1.5 text-[11px] font-sans transition-all duration-150 flex flex-col gap-0.5',
+                  'w-full text-left px-2.5 py-1.5 text-[11px] transition-all duration-150 flex flex-col gap-0.5 rounded-md mx-1',
                   value === opt.value
                     ? 'text-primary bg-primary/10 font-semibold'
-                    : 'text-foreground/80 hover:bg-muted hover:text-foreground'
+                    : 'text-foreground/80 hover:bg-white/5 hover:text-foreground'
                 )}
               >
-                <span className="font-mono font-medium">{opt.label}</span>
-                <span className="text-[10px] text-muted-foreground">{opt.desc}</span>
+                <span className="font-sans font-medium">{opt.label}</span>
+                <span className="text-[10px] text-muted-foreground/50">{opt.desc}</span>
               </button>
             ))}
           </motion.div>

@@ -11,6 +11,10 @@
     "launch": "node backend/launch.js",
     "dev:web": "npm run dev -w web",
     "build:web": "npm run build -w web",
-    "preview:web": "npm run preview -w web"
+    "preview:web": "npm run preview -w web",
+    "test:backend": "node --test backend/test/verification.test.js",
+    "test:frontend": "npm run test -w web",
+    "test:verify": "npm run test:backend && npm run test:frontend",
+    "test": "npm run test:verify"
   }
 }

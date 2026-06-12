@@ -4,8 +4,8 @@ import { api } from '@/api/client';
 import { SectionHeader } from '@/components/SectionHeader';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Brain, FileText, Heart, Calendar, Layers, Database, Sparkles, BookOpen, ChevronDown, ChevronRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Brain, FileText, Heart, Calendar, Layers, Database, Sparkles, BookOpen, ChevronDown, ChevronRight, Activity, AlertTriangle, Clock } from 'lucide-react';
+import { cn, formatDuration } from '@/lib/utils';
 
 interface SemanticFact {
   key: string;
@@ -36,7 +36,36 @@ interface MemoryItem {
   updated_at?: string;
 }
 
-type Tab = 'system' | 'facts' | 'vector' | 'items';
+interface LearningRun {
+  status: 'idle' | 'learning' | 'evolved' | 'skipped' | 'failed';
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  topic?: string | null;
+  summary?: string | null;
+  reason?: string | null;
+  warning?: string | null;
+  error?: string | null;
+  addedFacts?: unknown[];
+  deletedFacts?: unknown[];
+  semanticFacts?: unknown[];
+  guidelinesQueued?: unknown[];
+  checkpointSaved?: boolean;
+  partial?: boolean;
+  fallbackReason?: string | null;
+}
+
+interface LearningStatus {
+  status: LearningRun['status'];
+  lastStartedAt?: string | null;
+  lastEndedAt?: string | null;
+  lastDurationMs?: number;
+  lastReason?: string | null;
+  lastError?: string | null;
+  history?: LearningRun[];
+}
+
+type Tab = 'system' | 'facts' | 'vector' | 'items' | 'learning';
 
 export function Memory() {
   const [tab, setTab] = useState<Tab>('facts');
@@ -95,15 +124,32 @@ export function Memory() {
     refetchInterval: 15_000,
   });
 
+  const learningQuery = useQuery<LearningStatus>({
+    queryKey: ['memory-learning-status'],
+    queryFn: async () => {
+      try {
+        return await api.get<LearningStatus>('/ui/memory/learning-status');
+      } catch {
+        return { status: 'idle', history: [] };
+      }
+    },
+    refetchInterval: 1500,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+
   const facts = factsQuery.data?.facts ?? [];
   const vectorEntries = vectorQuery.data?.entries ?? [];
   const items = itemsQuery.data ?? [];
+  const learning = learningQuery.data ?? { status: 'idle', history: [] };
+  const learningRuns = learning.history ?? [];
   const systemPrompt = systemQuery.data?.prompt;
 
   const tabs = [
     { id: 'facts' as Tab, label: 'Semantic Facts', count: facts.length, icon: Brain },
     { id: 'vector' as Tab, label: 'Vector DB', count: vectorEntries.length, icon: Database },
     { id: 'items' as Tab, label: 'Core Memory', count: items.length, icon: Layers },
+    { id: 'learning' as Tab, label: 'Learning Log', count: learningRuns.length, icon: Activity },
     { id: 'system' as Tab, label: 'System Prompt', icon: BookOpen },
   ];
 
@@ -111,7 +157,7 @@ export function Memory() {
     <div className="p-6 space-y-6">
       <SectionHeader
         title="Memory"
-        subtitle={`${facts.length} semantic facts · ${vectorEntries.length} vector entries · ${items.length} core items`}
+        subtitle={`${facts.length} semantic facts · ${vectorEntries.length} vector entries · ${items.length} core items · ${learningRuns.length} learning runs`}
       />
 
       {/* Tab navigation */}
@@ -239,6 +285,80 @@ export function Memory() {
         </div>
       )}
 
+      {/* Learning Log Tab */}
+      {tab === 'learning' && (
+        <div className="space-y-3">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Activity className={cn('size-3.5 shrink-0', learning.status === 'learning' ? 'text-amber-500 animate-pulse' : learning.status === 'failed' ? 'text-destructive' : learning.status === 'evolved' ? 'text-emerald-500' : 'text-muted-foreground')} />
+                    <h3 className="text-sm font-semibold text-foreground">Self-evolving memory engine</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    status: <span className="font-mono">{learning.status}</span>
+                    {learning.lastReason && <span> · {learning.lastReason}</span>}
+                    {learning.lastDurationMs !== undefined && <span> · last run {formatDuration(learning.lastDurationMs)}</span>}
+                  </p>
+                </div>
+                <Badge variant={learning.status === 'failed' ? 'destructive' : learning.status === 'evolved' ? 'success' : learning.status === 'learning' || learning.lastReason?.includes('budget') ? 'warning' : 'outline'}>
+                  {learning.status}
+                </Badge>
+              </div>
+              {(learning.lastError || learningRuns[0]?.warning) && (
+                <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-200">
+                  <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                  <span>{learning.lastError || learningRuns[0]?.warning}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {learningRuns.length === 0 ? (
+            <Card>
+              <CardContent className="p-6 text-center text-sm text-muted-foreground">No learning runs yet. Start a conversation to trigger background memory extraction.</CardContent>
+            </Card>
+          ) : (
+            learningRuns.map((run, i) => (
+              <Card key={`${run.startedAt}-${i}`}>
+                <CardContent className="p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant={run.status === 'failed' ? 'destructive' : run.status === 'evolved' ? 'success' : run.status === 'skipped' && run.reason?.includes('budget') ? 'warning' : 'outline'}>{run.status}</Badge>
+                        {run.topic && <span className="text-xs font-semibold text-foreground">{run.topic}</span>}
+                        {run.partial && <Badge variant="warning">partial</Badge>}
+                      </div>
+                      {run.summary && <p className="text-xs text-muted-foreground mt-1">{run.summary}</p>}
+                      {(run.reason || run.warning || run.error) && (
+                        <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                          {run.reason || run.warning || run.error}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground font-mono">
+                        <Clock className="size-3" />
+                        <span>{new Date(run.startedAt).toLocaleString()}</span>
+                        <span>·</span>
+                        <span>{formatDuration(run.durationMs)}</span>
+                        {run.fallbackReason && <><span>·</span><span title={run.fallbackReason}>fallback</span></>}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-1 text-[10px]">
+                      <Badge variant="outline">+{run.addedFacts?.length ?? 0} Core Facts</Badge>
+                      {run.deletedFacts?.length ? <Badge variant="outline">-{run.deletedFacts.length} Core Facts</Badge> : null}
+                      <Badge variant="outline">+{run.semanticFacts?.length ?? 0} Semantic</Badge>
+                      <Badge variant="outline">+{run.guidelinesQueued?.length ?? 0} Rules</Badge>
+                      {run.checkpointSaved && <Badge variant="outline">checkpoint</Badge>}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+      )}
+
       {/* System Prompt Tab */}
       {tab === 'system' && (
         <Card>
@@ -258,4 +378,13 @@ export function Memory() {
       )}
     </div>
   );
+}
+
+function formatDuration(ms: number): string {
+  if (!ms || ms < 1000) return `${ms || 0}ms`;
+  const sec = ms / 1000;
+  if (sec < 60) return `${sec.toFixed(1)}s`;
+  const min = Math.floor(sec / 60);
+  const rest = Math.round(sec % 60);
+  return `${min}m ${rest}s`;
 }

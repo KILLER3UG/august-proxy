@@ -13,6 +13,21 @@ export interface Session {
   workspacePath?: string | null;
 }
 
+export type SessionStatus = 'idle' | 'working' | 'awaiting' | 'error';
+
+export const $sessionStates = atom<Record<string, SessionStatus>>({});
+
+export function setSessionStatus(id: string, status: SessionStatus) {
+  const prev = $sessionStates.get();
+  $sessionStates.set({ ...prev, [id]: status });
+}
+
+export function clearSessionStatus(id: string) {
+  const prev = { ...$sessionStates.get() };
+  delete prev[id];
+  $sessionStates.set(prev);
+}
+
 export interface Folder {
   id: string;
   name: string;

@@ -6,8 +6,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { 
-  Plus, Search, Pin, MessageSquare, Wrench, Package, Home, 
-  MoreHorizontal, Settings, Columns, Folder as FolderIcon, FolderOpen, 
+  Plus, Search, Pin, MessageSquare, Wrench, Package,
+  MoreHorizontal, Settings, Folder as FolderIcon, FolderOpen, 
   FolderPlus, ChevronRight, ChevronDown, Edit3, Trash2, Archive 
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -16,6 +16,7 @@ import { useStore } from '@nanostores/react';
 import { 
   $sessions, 
   $folders, 
+  $sessionStates,
   renameSession, 
   deleteSession, 
   archiveSession, 
@@ -26,7 +27,8 @@ import {
   toggleFolderCollapse,
   updateSessionWorkspace,
   type Session, 
-  type Folder 
+  type Folder,
+  type SessionStatus,
 } from '@/store/sessions';
 import { toast } from 'sonner';
 
@@ -53,6 +55,7 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
 
   const sessions = useStore($sessions);
   const folders = useStore($folders);
+  const sessionStates = useStore($sessionStates);
 
   const handleFolderUploadClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
@@ -136,118 +139,36 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
   };
 
   return (
-    <div className="flex h-full text-xs relative select-none bg-sidebar">
-      {/* Left Column: Narrow Navigation Rail (always w-12 / 48px) */}
-      <div className="w-12 shrink-0 flex flex-col justify-between py-2.5 bg-[#09090b]">
-        {/* Top group */}
-        <div className="flex flex-col items-center gap-3 w-full">
-          {/* Toggle button */}
-          <button
-            onClick={onToggleCollapsed}
-            className="p-1.5 hover:bg-sidebar-accent/50 rounded-md text-muted-foreground hover:text-foreground transition"
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            <Columns className="size-4" />
-          </button>
-
-          {/* Nav Icons */}
+    <div className="flex h-full text-xs relative select-none bg-[#0e0e11]">
+      <div className="flex-1 flex flex-col min-w-0 text-xs">
+        {/* Nav items */}
+        <div className="py-2.5 px-2 flex flex-col gap-0.5">
           <button
             onClick={onNew}
-            className={cn(
-              "p-1.5 hover:bg-sidebar-accent/50 rounded-md transition",
-              !activeId ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-muted-foreground hover:text-foreground"
-            )}
-            title="New session"
+            className="w-full flex items-center justify-between rounded-md px-2.5 py-1.5 text-left text-sidebar-foreground/80 hover:bg-white/5 hover:text-foreground transition"
           >
-            <Plus className="size-4" />
+            <span className="flex items-center gap-2"><Plus className="size-3.5" /> New session</span>
+            <kbd className="text-[9px] text-muted-foreground font-mono bg-muted/20 px-1 py-0.5 rounded border border-border/20">ctrl N</kbd>
           </button>
           <button
             onClick={() => onNavigate('/settings?tab=mcp')}
-            className="p-1.5 hover:bg-sidebar-accent/50 rounded-md text-muted-foreground hover:text-foreground transition"
-            title="Skills & Tools"
+            className="w-full text-left rounded-md px-2.5 py-1.5 text-sidebar-foreground/80 hover:bg-white/5 hover:text-foreground transition flex items-center gap-2"
           >
-            <Wrench className="size-4" />
+            <Wrench className="size-3.5" /> Skills & Tools
           </button>
           <button
             onClick={() => onNavigate('/settings?tab=services')}
-            className="p-1.5 hover:bg-sidebar-accent/50 rounded-md text-muted-foreground hover:text-foreground transition"
-            title="Messaging"
+            className="w-full text-left rounded-md px-2.5 py-1.5 text-sidebar-foreground/80 hover:bg-white/5 hover:text-foreground transition flex items-center gap-2"
           >
-            <MessageSquare className="size-4" />
+            <MessageSquare className="size-3.5" /> Messaging
           </button>
           <button
             onClick={() => onNavigate('/dashboard')}
-            className="p-1.5 hover:bg-sidebar-accent/50 rounded-md text-muted-foreground hover:text-foreground transition"
-            title="Artifacts"
+            className="w-full text-left rounded-md px-2.5 py-1.5 text-sidebar-foreground/80 hover:bg-white/5 hover:text-foreground transition flex items-center gap-2"
           >
-            <Package className="size-4" />
+            <Package className="size-3.5" /> Artifacts
           </button>
         </div>
-
-        {/* Bottom group */}
-        <div className="flex flex-col items-center gap-2 mb-1 w-full">
-          <button
-            onClick={() => onNavigate('/')}
-            className="p-1.5 hover:bg-sidebar-accent/50 rounded-md text-muted-foreground hover:text-foreground transition"
-            title="Home"
-          >
-            <Home className="size-4" />
-          </button>
-          <button
-            onClick={onNew}
-            className="p-1.5 hover:bg-sidebar-accent/50 rounded-md text-muted-foreground hover:text-foreground transition"
-            title="New"
-          >
-            <Plus className="size-4" />
-          </button>
-          <button
-            onClick={() => onNavigate('/settings')}
-            className="p-1.5 hover:bg-sidebar-accent/50 rounded-md text-muted-foreground hover:text-foreground transition"
-            title="Settings"
-          >
-            <Settings className="size-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Right Column: Expanded Panel (visible only when not collapsed, flex-1) */}
-      {!collapsed && (
-        <motion.div
-          key="expanded-panel"
-          initial={{ opacity: 0, x: -6 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{    opacity: 0, x: -4 }}
-          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-          className="flex-1 flex flex-col min-w-0 bg-[#0e0e11] text-xs"
-        >
-          {/* Nav labels */}
-          <div className="py-2.5 px-2 flex flex-col gap-0.5">
-            <button
-              onClick={onNew}
-              className="w-full flex items-center justify-between rounded-md px-2.5 py-1.5 text-left text-sidebar-foreground/80 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground transition"
-            >
-              <span>New session</span>
-              <kbd className="text-[9px] text-muted-foreground font-mono bg-muted/20 px-1 py-0.5 rounded border border-border/20">ctrl N</kbd>
-            </button>
-            <button
-              onClick={() => onNavigate('/settings?tab=mcp')}
-              className="w-full text-left rounded-md px-2.5 py-1.5 text-sidebar-foreground/80 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground transition"
-            >
-              Skills & Tools
-            </button>
-            <button
-              onClick={() => onNavigate('/settings?tab=services')}
-              className="w-full text-left rounded-md px-2.5 py-1.5 text-sidebar-foreground/80 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground transition"
-            >
-              Messaging
-            </button>
-            <button
-              onClick={() => onNavigate('/dashboard')}
-              className="w-full text-left rounded-md px-2.5 py-1.5 text-sidebar-foreground/80 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground transition"
-            >
-              Artifacts
-            </button>
-          </div>
 
           {/* Search input */}
           <div className="px-2 py-2">
@@ -277,6 +198,7 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
                       session={s}
                       active={activeId === s.id}
                       pinned
+                      status={sessionStates[s.id]}
                       folders={folders}
                       onClick={() => onSelect(s)}
                       onTogglePin={() => togglePin(s.id)}
@@ -328,13 +250,14 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
                       />
                       
                       {!isCollapsed && (
-                        <div className="pl-2.5 border-l border-border/10 ml-3.5 space-y-0.5">
+                        <div className="pl-2.5 ml-3.5 space-y-0.5">
                           {folderSessions.map((s) => (
                             <SessionRow
                               key={s.id}
                               session={s}
                               active={activeId === s.id}
                               pinned={false}
+                              status={sessionStates[s.id]}
                               folders={folders}
                               onClick={() => onSelect(s)}
                               onTogglePin={() => togglePin(s.id)}
@@ -380,13 +303,14 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
                       />
                       
                       {!uncategorizedCollapsed && (
-                        <div className="pl-2.5 border-l border-border/10 ml-3.5 space-y-0.5">
+                        <div className="pl-2.5 ml-3.5 space-y-0.5">
                           {uncategorizedSessions.map((s) => (
                             <SessionRow
                               key={s.id}
                               session={s}
                               active={activeId === s.id}
                               pinned={false}
+                              status={sessionStates[s.id]}
                               folders={folders}
                               onClick={() => onSelect(s)}
                               onTogglePin={() => togglePin(s.id)}
@@ -421,8 +345,18 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
               </div>
             </Section>
           </div>
-        </motion.div>
-      )}
+
+          {/* Settings at bottom */}
+          <div className="px-2 pb-2 pt-1 border-t border-border/20">
+            <button
+              onClick={() => onNavigate('/settings')}
+              className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sidebar-foreground/60 hover:bg-white/5 hover:text-foreground transition"
+            >
+              <Settings className="size-3.5" />
+              <span>Settings</span>
+            </button>
+          </div>
+      </div>
     </div>
   );
 }
@@ -439,8 +373,8 @@ function Section({ title, count, empty, onNewFolder, onUploadFolder, children }:
     <div>
       <div className="flex items-center justify-between mb-1.5 px-2">
         <div className="flex items-center gap-1.5">
-          <h3 className="text-[9.5px] uppercase tracking-wider text-muted-foreground/75 font-bold">{title}</h3>
-          <span className="text-[9.5px] text-muted-foreground/50 font-mono">({count})</span>
+          <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/75 font-bold">{title}</h3>
+          <span className="text-[10px] text-muted-foreground/50 font-mono">({count})</span>
         </div>
         {title === 'SESSIONS' && onNewFolder && onUploadFolder && (
           <div className="flex items-center gap-1">
@@ -487,37 +421,48 @@ function FolderHeader({ folder, count, onToggleCollapse, onNewSession, onRename,
       onClick={onToggleCollapse}
     >
       <div className="flex items-center gap-1.5 min-w-0">
-        {folder.isCollapsed ? <ChevronRight className="size-3 text-muted-foreground/60" /> : <ChevronDown className="size-3 text-muted-foreground/60" />}
+        <span className={cn(
+          "size-1 rounded-full shrink-0 transition-colors",
+          folder.isCollapsed ? "bg-muted-foreground/40" : "bg-primary"
+        )} />
         {folder.isCollapsed ? <FolderIcon className="size-3.5 text-muted-foreground/70 shrink-0" /> : <FolderOpen className="size-3.5 text-muted-foreground/70 shrink-0" />}
-        <span className="truncate text-[11px] font-semibold text-foreground/85">{folder.name}</span>
-        <span className="text-[9.5px] text-muted-foreground/50 font-mono">({count})</span>
+        <span className="truncate text-[12px] font-semibold text-foreground/85">{folder.name}</span>
+        <span className="text-[10px] text-muted-foreground/50 font-mono">({count})</span>
       </div>
-      
-      {isHovered && (
-        <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-          <button 
-            onClick={onNewSession} 
-            className="p-0.5 hover:bg-white/10 rounded text-muted-foreground hover:text-foreground"
-            title={`New session in ${folder.name}`}
-          >
-            <Plus className="size-2.5" />
-          </button>
-          <button 
-            onClick={onRename} 
-            className="p-0.5 hover:bg-white/10 rounded text-muted-foreground hover:text-foreground"
-            title="Rename Folder"
-          >
-            <Edit3 className="size-2.5" />
-          </button>
-          <button 
-            onClick={onDelete} 
-            className="p-0.5 hover:bg-white/10 rounded text-destructive hover:text-destructive-foreground"
-            title="Delete Folder"
-          >
-            <Trash2 className="size-2.5" />
-          </button>
-        </div>
-      )}
+      <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+        {isHovered && (
+          <>
+            <button 
+              onClick={onNewSession} 
+              className="p-0.5 hover:bg-white/10 rounded text-muted-foreground hover:text-foreground"
+              title={`New session in ${folder.name}`}
+            >
+              <Plus className="size-2.5" />
+            </button>
+            <button 
+              onClick={onRename} 
+              className="p-0.5 hover:bg-white/10 rounded text-muted-foreground hover:text-foreground"
+              title="Rename Folder"
+            >
+              <Edit3 className="size-2.5" />
+            </button>
+            <button 
+              onClick={onDelete} 
+              className="p-0.5 hover:bg-white/10 rounded text-destructive hover:text-destructive-foreground"
+              title="Delete Folder"
+            >
+              <Trash2 className="size-2.5" />
+            </button>
+          </>
+        )}
+        <span className={cn(
+          "size-3.5 flex items-center justify-center rounded transition-all duration-150",
+          folder.isCollapsed ? "rotate-0 text-muted-foreground/60" : "rotate-90 text-muted-foreground/60",
+          !isHovered && "opacity-60"
+        )}>
+          <ChevronRight className="size-3" />
+        </span>
+      </div>
     </div>
   );
 }
@@ -529,25 +474,36 @@ function UncategorizedHeader({ count, isCollapsed, onToggleCollapse }: {
 }) {
   return (
     <div 
-      className="flex items-center justify-between py-1 px-1.5 rounded-md hover:bg-white/5 cursor-pointer text-sidebar-foreground/80 font-medium"
+      className="flex items-center justify-between py-1 px-1.5 rounded-md hover:bg-white/5 cursor-pointer group text-sidebar-foreground/80 font-medium"
       onClick={onToggleCollapse}
     >
       <div className="flex items-center gap-1.5 min-w-0">
-        {isCollapsed ? <ChevronRight className="size-3 text-muted-foreground/60" /> : <ChevronDown className="size-3 text-muted-foreground/60" />}
+        <span className={cn(
+          "size-1 rounded-full shrink-0 transition-colors",
+          isCollapsed ? "bg-muted-foreground/40" : "bg-primary"
+        )} />
         <MessageSquare className="size-3.5 text-muted-foreground/70 shrink-0" />
-        <span className="truncate text-[11px] font-semibold text-foreground/85">Other Chats</span>
-        <span className="text-[9.5px] text-muted-foreground/50 font-mono">({count})</span>
+        <span className="truncate text-[12px] font-semibold text-foreground/85">Other Chats</span>
+        <span className="text-[10px] text-muted-foreground/50 font-mono">({count})</span>
       </div>
+      <span className={cn(
+        "size-3.5 flex items-center justify-center rounded transition-all duration-150 shrink-0",
+        isCollapsed ? "rotate-0 text-muted-foreground/60" : "rotate-90 text-muted-foreground/60",
+        "opacity-60 group-hover:opacity-100"
+      )}>
+        <ChevronRight className="size-3" />
+      </span>
     </div>
   );
 }
 
 function SessionRow({ 
-  session, active, pinned, folders, onClick, onTogglePin, onRename, onArchive, onMoveToFolder, onDelete 
+  session, active, pinned, status, folders, onClick, onTogglePin, onRename, onArchive, onMoveToFolder, onDelete 
 }: {
   session: Session;
   active: boolean;
   pinned: boolean;
+  status?: SessionStatus;
   folders: Folder[];
   onClick: () => void;
   onTogglePin: () => void;
@@ -598,12 +554,12 @@ function SessionRow({
       layout="position"
       variants={fadeUp}
       exit={{ opacity: 0, x: -4, transition: { duration: 0.12, ease: [0.16, 1, 0.3, 1] } }}
-      className={cn('group relative rounded-md border border-transparent', active ? 'bg-white/5 border-white/5' : 'hover:bg-sidebar-accent/20')}
+      className={cn('group relative rounded-md', active ? 'bg-white/5' : 'hover:bg-white/5')}
     >
       {active && (
         <motion.span
           layoutId="active-session-pill"
-          className="absolute inset-0 rounded-md bg-white/5 ring-1 ring-white/10"
+          className="absolute inset-0 rounded-md bg-white/5"
           transition={{ type: 'spring', stiffness: 380, damping: 32 }}
           aria-hidden="true"
         />
@@ -614,9 +570,15 @@ function SessionRow({
         className="relative w-full text-left px-2 py-1.5 flex items-center gap-1.5 pr-12 min-w-0"
         title="Right click or use three-dots menu to pin"
       >
-        <span className="text-muted-foreground/60 text-[10px] shrink-0">•</span>
+        <span className={cn(
+          'inline-block size-1.5 rounded-full shrink-0 transition-colors',
+          status === 'working' && 'bg-amber-400 animate-pulse',
+          status === 'awaiting' && 'bg-blue-400',
+          status === 'error' && 'bg-red-400',
+          (!status || status === 'idle') && 'bg-muted-foreground/60',
+        )} />
         {pinned && <Pin className="size-2.5 text-muted-foreground/60 shrink-0" />}
-        <p className={cn('truncate flex-1 text-[11.5px]', active ? 'text-foreground font-semibold' : 'text-foreground/75')}>
+        <p className={cn('truncate flex-1 text-[12px]', active ? 'text-foreground font-semibold' : 'text-foreground/75')}>
           {session.title}
         </p>
       </button>
@@ -624,7 +586,7 @@ function SessionRow({
       {/* Floating kebab menu triggers */}
       <div 
         onClick={(e) => e.stopPropagation()} 
-        className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition flex items-center gap-0.5 bg-background/90 border border-border/30 backdrop-blur rounded px-0.5 z-40"
+        className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition flex items-center gap-0.5 bg-background/90 backdrop-blur rounded px-0.5 z-40"
       >
         <motion.button
           onClick={onTogglePin}
@@ -648,8 +610,8 @@ function SessionRow({
 
       {/* Kebab action dropdown */}
       {showMenu && (
-        <div 
-          className="absolute right-1 top-7 z-50 w-36 bg-[#18181b] border border-border/60 rounded-md shadow-2xl py-1 text-[11px] animate-in fade-in slide-in-from-top-1 duration-100"
+        <div
+          className="absolute right-1 top-7 z-50 w-36 bg-[#18181b] rounded-md shadow-2xl py-1 text-[11px] animate-in fade-in slide-in-from-top-1 duration-100"
           onClick={(e) => e.stopPropagation()}
         >
           <button 
@@ -679,7 +641,7 @@ function SessionRow({
               </span>
               <ChevronRight className="size-2.5 text-muted-foreground" />
             </button>
-            <div className="absolute left-full top-0 ml-0.5 hidden group-hover/sub:block w-32 bg-[#18181b] border border-border/60 rounded-md shadow-2xl py-1 z-50 animate-in fade-in slide-in-from-left-1 duration-100">
+            <div className="absolute left-full top-0 ml-0.5 hidden group-hover/sub:block w-32 bg-[#18181b] rounded-md shadow-2xl py-1 z-50 animate-in fade-in slide-in-from-left-1 duration-100">
               <button 
                 onClick={() => { onMoveToFolder(null); setShowMenu(false); }}
                 className={cn("w-full text-left px-2.5 py-1 hover:bg-white/5 truncate transition", !session.folderId ? "text-primary font-medium" : "text-foreground/80")}

@@ -22,9 +22,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': process.env.AUGUST_PROXY_URL || 'http://localhost:8080',
-      '/v1':  process.env.AUGUST_PROXY_URL || 'http://localhost:8080',
-      '/ui':  process.env.AUGUST_PROXY_URL || 'http://localhost:8080',
+      '/api': process.env.AUGUST_PROXY_URL || 'http://localhost:8085',
+      '/v1':  process.env.AUGUST_PROXY_URL || 'http://localhost:8085',
+      '/ui':  process.env.AUGUST_PROXY_URL || 'http://localhost:8085',
     },
   },
 });

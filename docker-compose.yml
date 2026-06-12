@@ -26,6 +26,9 @@ services:
       - ./web-dist:/app/web-dist
       - ./data:/app/data
       - ./host_files:/app/host_files
+      # Mount skills directories so the agent can discover them
+      - ./skills:/app/skills
+      - ${USERPROFILE}/.august/skills:/root/.august/skills
     ports:
       - "8085:8080"
     extra_hosts:

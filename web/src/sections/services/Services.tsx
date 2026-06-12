@@ -1,104 +1,176 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { SectionHeader } from '@/components/SectionHeader';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { mockServices, type ServiceConnection } from '@/lib/mock';
+import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { Server, Wrench, CheckCircle2, AlertCircle, Loader2, PauseCircle, PlayCircle, Power } from 'lucide-react';
 
-const ICONS: Record<string, string> = {
-  google: 'G', github: '⌥', slack: 'S', notion: 'N', linear: 'L', figma: 'F',
+interface McpServer {
+  name: string;
+  status: 'running' | 'stopped' | 'disabled' | 'not_started' | 'error';
+  toolCount: number;
+  enabled: boolean;
+  command: string;
+  source?: string;
+  error?: string | null;
+  tools?: string[];
+}
+
+const SERVER_ICONS: Record<string, { icon: string; color: string }> = {
+  'blender':        { icon: 'B', color: 'from-orange-500 to-amber-600' },
+  'brave-search':   { icon: 'Br', color: 'from-red-500 to-rose-600' },
+  'browser-use':    { icon: 'Bu', color: 'from-blue-500 to-cyan-500' },
+  'fetch':          { icon: 'F', color: 'from-green-500 to-emerald-500' },
+  'filesystem':     { icon: 'Fs', color: 'from-slate-500 to-zinc-600' },
+  'github':         { icon: 'Gh', color: 'from-slate-700 to-slate-900' },
+  'linear':         { icon: 'Li', color: 'from-indigo-500 to-purple-600' },
+  'minimax':        { icon: 'Mm', color: 'from-purple-500 to-violet-600' },
+  'n8n':            { icon: 'N', color: 'from-red-600 to-orange-500' },
+  'notebooklm-mcp': { icon: 'Nl', color: 'from-sky-500 to-blue-600' },
+  'playwright':     { icon: 'Pw', color: 'from-green-600 to-teal-500' },
 };
-const COLORS: Record<string, string> = {
-  google: 'from-red-500 to-orange-500',
-  github: 'from-slate-700 to-slate-900',
-  slack: 'from-purple-500 to-pink-500',
-  notion: 'from-stone-600 to-stone-800',
-  linear: 'from-indigo-500 to-purple-600',
-  figma: 'from-orange-500 to-pink-600',
-};
+
+function getStatusMeta(status: string) {
+  switch (status) {
+    case 'running':
+      return { label: 'Running', tone: 'good' as const, icon: CheckCircle2 };
+    case 'error':
+      return { label: 'Error', tone: 'bad' as const, icon: AlertCircle };
+    case 'starting':
+      return { label: 'Starting', tone: 'warn' as const, icon: Loader2 };
+    case 'disabled':
+      return { label: 'Disabled', tone: 'muted' as const, icon: PauseCircle };
+    default:
+      return { label: 'Stopped', tone: 'muted' as const, icon: Power };
+  }
+}
 
 export function Services() {
-  const { data } = useQuery({
-    queryKey: ['services'],
+  const { data, isLoading } = useQuery({
+    queryKey: ['mcp-servers'],
     queryFn: async () => {
       try {
-        const res = await api.get<{ services: ServiceConnection[] }>('/api/services');
-        return res.services ?? [];
+        const res = await api.get<{ status: McpServer[] }>('/ui/mcp');
+        return res.status ?? [];
       } catch {
-        return mockServices;
+        return [] as McpServer[];
       }
     },
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   });
-  const services = data ?? mockServices;
+
+  const servers = data ?? [];
+
+  const running = servers.filter(s => s.status === 'running');
+  const enabled = servers.filter(s => s.enabled && s.status !== 'running');
+  const disabled = servers.filter(s => !s.enabled);
 
   return (
     <div className="p-6 space-y-6">
       <SectionHeader
         title="Services"
-        subtitle="Third-party integrations used by MCP tools. Connect once, use everywhere."
+        subtitle={`${running.length} running · ${servers.length} total MCP servers`}
       />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {services.map((svc) => {
-          const connected = svc.status === 'connected';
-          return (
-            <Card key={svc.name}>
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className={cn(
-                      'size-10 rounded-xl bg-gradient-to-br grid place-items-center text-white text-sm font-bold',
-                      COLORS[svc.name] ?? 'from-slate-500 to-slate-700',
-                    )}>
-                      {ICONS[svc.name] ?? svc.name[0]?.toUpperCase()}
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold capitalize">{svc.name}</h3>
-                      <p className="text-[10px] text-muted-foreground mt-0.5 font-mono">{svc.scopes.length} scopes</p>
-                    </div>
-                  </div>
-                  <Badge variant={connected ? 'success' : 'secondary'}>{connected ? 'Connected' : 'Not connected'}</Badge>
-                </div>
-                {connected && svc.account && (
-                  <p className="text-xs text-muted-foreground mb-3 font-mono truncate">{svc.account}</p>
-                )}
-                {connected && svc.scopes.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mb-3">
-                    {svc.scopes.slice(0, 4).map((s) => (
-                      <span key={s} className="inline-flex items-center rounded-full bg-secondary text-secondary-foreground px-1.5 py-0.5 text-[9px] font-mono">
-                        {s}
-                      </span>
-                    ))}
-                    {svc.scopes.length > 4 && (
-                      <span className="text-[9px] text-muted-foreground">+{svc.scopes.length - 4} more</span>
-                    )}
-                  </div>
-                )}
-                <div className="flex gap-2">
-                  <button className="flex-1 rounded-md border border-border bg-background hover:bg-accent text-xs font-medium py-1.5 transition">
-                    {connected ? 'Re-authenticate' : 'Connect'}
-                  </button>
-                  {connected && (
-                    <button className="rounded-md border border-red-200 text-red-600 hover:bg-red-50 text-xs font-medium px-3 py-1.5 transition dark:border-red-800 dark:hover:bg-red-900/20">
-                      Disconnect
-                    </button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Available integrations</CardTitle>
-        </CardHeader>
-        <CardContent className="text-xs text-muted-foreground">
-          More services can be added by dropping an MCP server config into <code className="font-mono bg-muted px-1 rounded">config.json</code> under <code className="font-mono">mcp.servers</code>.
-        </CardContent>
-      </Card>
+      {isLoading && servers.length === 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-40 rounded-lg bg-muted/30 animate-pulse" />
+          ))}
+        </div>
+      ) : servers.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">No MCP servers configured.</p>
+      ) : (
+        <>
+          {running.length > 0 && (
+            <div>
+              <h3 className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-2 px-1">Running</h3>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {running.map(s => <ServerCard key={s.name} server={s} />)}
+              </div>
+            </div>
+          )}
+
+          {enabled.length > 0 && (
+            <div>
+              <h3 className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-2 px-1">Enabled</h3>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {enabled.map(s => <ServerCard key={s.name} server={s} />)}
+              </div>
+            </div>
+          )}
+
+          {disabled.length > 0 && (
+            <div>
+              <h3 className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-2 px-1">Disabled</h3>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {disabled.map(s => <ServerCard key={s.name} server={s} />)}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
+  );
+}
+
+function ServerCard({ server }: { server: McpServer }) {
+  const meta = getStatusMeta(server.status);
+  const StatusIcon = meta.icon;
+  const visual = SERVER_ICONS[server.name] ?? { icon: server.name[0]?.toUpperCase() ?? '?', color: 'from-slate-500 to-slate-700' };
+
+  return (
+    <Card className="overflow-hidden">
+      <CardContent className="p-4">
+        <div className="flex items-start gap-3">
+          <div className={cn(
+            'size-9 rounded-lg bg-gradient-to-br grid place-items-center text-white text-[11px] font-bold shrink-0',
+            visual.color,
+          )}>
+            {visual.icon}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold font-mono truncate">{server.name}</h3>
+              <span className={cn(
+                'inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full',
+                meta.tone === 'good' && 'bg-emerald-500/10 text-emerald-500',
+                meta.tone === 'bad' && 'bg-red-500/10 text-red-500',
+                meta.tone === 'warn' && 'bg-amber-500/10 text-amber-500',
+                meta.tone === 'muted' && 'bg-muted text-muted-foreground',
+              )}>
+                <StatusIcon className={cn('size-2.5', meta.tone === 'warn' && 'animate-spin')} />
+                {meta.label}
+              </span>
+            </div>
+
+            {server.toolCount > 0 && (
+              <p className="text-[10px] text-muted-foreground mt-1 font-mono flex items-center gap-1">
+                <Wrench className="size-2.5" /> {server.toolCount} tools
+              </p>
+            )}
+
+            {server.error && (
+              <p className="text-[10px] text-red-500/80 mt-1 truncate" title={server.error}>
+                {server.error}
+              </p>
+            )}
+
+            {server.tools && server.tools.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {server.tools.slice(0, 3).map(tool => (
+                  <span key={tool} className="inline-flex items-center rounded bg-secondary text-secondary-foreground px-1.5 py-0.5 text-[9px] font-mono truncate max-w-[120px]">
+                    {tool}
+                  </span>
+                ))}
+                {server.tools.length > 3 && (
+                  <span className="text-[9px] text-muted-foreground">+{server.tools.length - 3}</span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

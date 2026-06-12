@@ -9,6 +9,8 @@ const { checkCommandPaths, checkPathPermission, extractPathsFromCommand } = requ
 const { MEMORY_TOOLS, handleMemoryTool } = require('./memory-tools');
 const {
     CORE_MEMORY_FILE,
+    CORE_MEMORY_LIMITS,
+    checkMemoryBudget,
     getDefaultAugustCoreMemory,
     normalizeAugustCoreMemory,
     readAugustCoreMemory,
@@ -20,6 +22,12 @@ const {
     appendCheckpoint
 } = require('../memory/core-memory');
 const { getDefaultSubagentConfig, loadSubagentConfig, saveSubagentConfig, subagentConfigToContextBlock } = require('./subagent-config');
+
+function formatCoreMemoryBudgetError(section, budget) {
+    if (budget.error) return budget.error;
+    const limit = CORE_MEMORY_LIMITS[section] || budget.limit;
+    return `${section} core memory is ${budget.length}/${limit} characters (${budget.overage} over the ${limit} character limit). Use august__core_memory_replace to compact it before writing.`;
+}
 
 // ── Sub-agent Tool Execution ──
 // Build tool definitions for the sub-agent from all available managed proxy tools
@@ -1009,17 +1017,32 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
             }
 
             case 'august__core_memory_append':
-                const appendMem = readAugustCoreMemory();
-                if (!appendMem[args.section]) appendMem[args.section] = "";
-                appendMem[args.section] += `\n- ${args.content}`;
-                writeAugustCoreMemory(appendMem);
-                return `Successfully appended to ${args.section} memory.`;
+                if (!args?.section || !args?.content) return '[Tool Execution Failed]: section and content are required';
+                {
+                    const appendMem = readAugustCoreMemory();
+                    const current = appendMem[args.section] || '';
+                    const candidate = `${current}${current ? '\n' : ''}- ${args.content}`;
+                    const budget = checkMemoryBudget(args.section, candidate);
+                    if (!budget.valid) {
+                        return `[Tool Execution Failed]: ${formatCoreMemoryBudgetError(args.section, budget)} Current ${args.section} memory is ${current.length}/${budget.limit} characters.`;
+                    }
+                    appendMem[args.section] = candidate;
+                    writeAugustCoreMemory(appendMem);
+                    return `Successfully appended to ${args.section} memory.`;
+                }
 
             case 'august__core_memory_replace':
-                const replaceMem = readAugustCoreMemory();
-                replaceMem[args.section] = args.content;
-                writeAugustCoreMemory(replaceMem);
-                return `Successfully replaced ${args.section} memory.`;
+                if (!args?.section || !Object.prototype.hasOwnProperty.call(args, 'content')) return '[Tool Execution Failed]: section and content are required';
+                {
+                    const replaceMem = readAugustCoreMemory();
+                    const budget = checkMemoryBudget(args.section, args.content);
+                    if (!budget.valid) {
+                        return `[Tool Execution Failed]: ${formatCoreMemoryBudgetError(args.section, budget)} Current ${args.section} memory is ${String(replaceMem[args.section] || '').length}/${budget.limit} characters.`;
+                    }
+                    replaceMem[args.section] = args.content;
+                    writeAugustCoreMemory(replaceMem);
+                    return `Successfully replaced ${args.section} memory.`;
+                }
 
             case 'august__remember_project': {
                 const nextMemory = upsertProject(readAugustCoreMemory(), args);

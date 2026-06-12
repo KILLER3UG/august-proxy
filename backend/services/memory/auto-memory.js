@@ -1,4 +1,5 @@
 const { readAugustCoreMemory, writeAugustCoreMemory } = require('../tools/august-tools');
+const { checkMemoryBudget, CoreMemoryBudgetError } = require('./core-memory');
 
 /**
  * Extract plain text from a message content field.
@@ -45,10 +46,88 @@ function extractAssistantText(assistantContent) {
 const fs = require('fs');
 const path = require('path');
 const debugLogPath = path.join(__dirname, 'debug.txt');
+
+function getLearningHistoryFile() {
+    return process.env.AUGUST_LEARNING_HISTORY_FILE || path.join(__dirname, '..', '..', '..', 'data', 'august_learning_history.json');
+}
+
+const MAX_LEARNING_HISTORY = 10;
 const semanticMemory = require('./semantic-memory');
 const { upsertLearnedGuideline } = require('./learned-guidelines');
 const _origLog = console.log;
 const _origWarn = console.warn;
+
+let learningStatus = {
+    status: 'idle',
+    lastStartedAt: null,
+    lastEndedAt: null,
+    lastDurationMs: 0,
+    lastClientId: null,
+    lastTopic: null,
+    lastSummary: null,
+    lastReason: null,
+    lastError: null
+};
+
+function readLearningHistory() {
+    const historyFile = getLearningHistoryFile();
+    if (!fs.existsSync(historyFile)) return [];
+    try {
+        const parsed = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+        return Array.isArray(parsed) ? parsed.slice(-MAX_LEARNING_HISTORY) : [];
+    } catch (_err) {
+        return [];
+    }
+}
+
+function writeLearningHistory(records) {
+    const historyFile = getLearningHistoryFile();
+    const dir = path.dirname(historyFile);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const tempFile = `${historyFile}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify(records.slice(-MAX_LEARNING_HISTORY), null, 2));
+    fs.renameSync(tempFile, historyFile);
+}
+
+function appendLearningHistory(record) {
+    const records = [...readLearningHistory(), record].slice(-MAX_LEARNING_HISTORY);
+    writeLearningHistory(records);
+}
+
+function getLearningStatus() {
+    return {
+        ...learningStatus,
+        history: readLearningHistory()
+    };
+}
+
+function recordLearningRun(base, updates = {}) {
+    const endedAt = new Date().toISOString();
+    const record = {
+        ...base,
+        ...updates,
+        endedAt,
+        durationMs: Number(((Date.now() - base.startedMs) || 0).toFixed(2))
+    };
+    delete record.startedMs;
+    learningStatus = {
+        status: record.status,
+        lastStartedAt: record.startedAt,
+        lastEndedAt: endedAt,
+        lastDurationMs: record.durationMs,
+        lastClientId: record.clientId || null,
+        lastTopic: record.topic || null,
+        lastSummary: record.summary || null,
+        lastReason: record.reason || null,
+        lastError: record.error || null
+    };
+    try {
+        appendLearningHistory(record);
+    } catch (historyErr) {
+        console.warn(`[Auto-Memory] Failed to persist learning history: ${historyErr.message}`);
+    }
+    return record;
+}
 
 console.log = function(...args) {
     if (typeof args[0] === 'string' && args[0].includes('[Auto-Memory]')) {
@@ -212,14 +291,53 @@ async function saveCheckpointToVectorDb(cfg, topic, summary) {
  * Extracts persistent facts from the conversation and saves them to August Core Memory.
  */
 async function extractAndSaveMemories(userMessages, assistantContent, cfg, upstreamModel, clientId) {
+    const startedAt = new Date().toISOString();
+    const startedMs = Date.now();
+    const runBase = {
+        status: 'learning',
+        clientId: clientId || null,
+        topic: null,
+        summary: null,
+        startedAt,
+        startedMs,
+        durationMs: 0,
+        addedFacts: [],
+        deletedFacts: [],
+        semanticFacts: [],
+        guidelinesQueued: [],
+        checkpointSaved: false,
+        partial: false,
+        fallbackReason: null,
+        reason: null
+    };
+    let completed = false;
+
+    function finish(status, updates = {}) {
+        if (completed) return null;
+        completed = true;
+        return recordLearningRun(runBase, { status, ...updates });
+    }
+
+    learningStatus = {
+        status: 'learning',
+        lastStartedAt: startedAt,
+        lastEndedAt: null,
+        lastDurationMs: 0,
+        lastClientId: clientId || null,
+        lastTopic: null,
+        lastSummary: null,
+        lastReason: null,
+        lastError: null
+    };
+
     try {
         const memory = readAugustCoreMemory();
         const currentContext = memory.global_context || "No cross-session context established.";
         
-        // Grab the last 2 user messages, extract only text (strip images/files)
         const recentUserMsgs = (userMessages || []).filter(m => m.role === 'user').slice(-2);
         if (recentUserMsgs.length === 0) {
             console.log('[Auto-Memory] Skipped: no user messages found in conversation');
+            finish('skipped', { reason: 'no user messages' });
             return;
         }
 
@@ -233,19 +351,19 @@ async function extractAndSaveMemories(userMessages, assistantContent, cfg, upstr
 
         if (textOnlyMessages.length === 0) {
             console.log('[Auto-Memory] Skipped: user messages contained no text (images/files only)');
+            finish('skipped', { reason: 'no user text' });
             return;
         }
 
-        // Extract just the text from the assistant response (strip thinking, metadata)
         const assistantText = extractAssistantText(assistantContent);
         if (!assistantText || assistantText.length < 10) {
             console.log('[Auto-Memory] Skipped: assistant response too short or empty');
+            finish('skipped', { reason: 'short assistant response' });
             return;
         }
 
         console.log(`[Auto-Memory] Starting extraction... (${textOnlyMessages.length} user msgs, ${assistantText.length} chars assistant text, model=${upstreamModel})`);
 
-        // Retrieve current semantic facts to inject in the prompt for deduplication
         const semanticFactsText = semanticMemory.getAllFacts()
             .map(f => `- ${f.key} (${f.category}): ${f.value}`)
             .join('\n');
@@ -264,7 +382,7 @@ ${semanticFactsText || 'None recorded yet.'}
 
 GUIDELINES FOR CORE & SEMANTIC FACTS:
 - Only extract long-term, durable facts that will remain true next week (e.g. tech stack, preferences, project architecture, connected devices).
-- DO NOT extract transient debugging info, line numbers, temporary variables, terminal command lines, package versions, or compilation error messages. Route active task context *exclusively* to the conversation checkpoint.
+- DO NOT extract transient debugging info, line numbers, temporary variables, package versions, or compilation error messages. Route active task context *exclusively* to the conversation checkpoint.
 - Perform semantic deduplication: if a fact is already represented in either CURRENT CORE MEMORY or CURRENT SEMANTIC MEMORY (even if phrased differently), DO NOT extract it.
 - If the user contradicts a current fact, specify the old fact in "delete_facts" and the new fact in "add_facts".
 - If no new facts are found, return empty arrays.
@@ -301,16 +419,14 @@ Respond ONLY with valid JSON in this exact format:
   ]
 }`;
 
-        // Determine the best endpoint to use from cfg
         let targetUrl = cfg.targetUrl;
-
-        // Detect Anthropic-native endpoints that have no OpenAI-compatible alternative
         const isAnthropicNative = (
             targetUrl.includes('api.anthropic.com') ||
             (targetUrl.includes('/v1/messages') && !targetUrl.includes('/chat/completions') && !targetUrl.includes('minimax'))
-        ) && !targetUrl.includes('/anthropic/v1/messages'); // Minimax wrapper handled below
+        ) && !targetUrl.includes('/anthropic/v1/messages');
 
         let response;
+        let fallbackReason = null;
         if (isAnthropicNative) {
             console.log(`[Auto-Memory] Using Anthropic-native format -> ${targetUrl}`);
             const anthropicPayload = {
@@ -334,7 +450,6 @@ Respond ONLY with valid JSON in this exact format:
                 signal: AbortSignal.timeout(30000)
             });
         } else {
-            // Rewrite to OpenAI-compatible endpoint
             if (targetUrl.includes('/anthropic/v1/messages')) {
                 targetUrl = targetUrl.replace('/anthropic/v1/messages', targetUrl.includes('minimax') ? '/v1/text/chatcompletion_v2' : '/v1/chat/completions');
             } else if (targetUrl.includes('/anthropic')) {
@@ -342,7 +457,6 @@ Respond ONLY with valid JSON in this exact format:
             }
             console.log(`[Auto-Memory] Using OpenAI-compatible format -> ${targetUrl}`);
 
-            // Ensure we never send fake Claude/GPT client aliases to OpenAI-compatible upstreams.
             const memModel = resolveMemoryExtractionModel(cfg, upstreamModel, isAnthropicNative, targetUrl);
             
             const payload = {
@@ -374,28 +488,31 @@ Respond ONLY with valid JSON in this exact format:
         let extracted;
         if (!response.ok) {
             const errBody = await response.text().catch(() => '');
-            const reason = `HTTP ${response.status}: ${errBody.slice(0, 200)}`;
-            console.warn(`[Auto-Memory] Extraction API returned ${reason}. Using local fallback checkpoint.`);
-            extracted = fallbackExtraction(textOnlyMessages, assistantText, reason);
+            fallbackReason = `HTTP ${response.status}: ${errBody.slice(0, 200)}`;
+            console.warn(`[Auto-Memory] Extraction API returned ${fallbackReason}. Using local fallback checkpoint.`);
+            extracted = fallbackExtraction(textOnlyMessages, assistantText, fallbackReason);
         } else {
             const data = await response.json();
             const extractionProviderError = providerErrorFromData(data);
             if (extractionProviderError) {
-                console.warn(`[Auto-Memory] Extraction provider error: ${extractionProviderError}. Using local fallback checkpoint.`);
-                extracted = fallbackExtraction(textOnlyMessages, assistantText, extractionProviderError);
+                fallbackReason = extractionProviderError;
+                console.warn(`[Auto-Memory] Extraction provider error: ${fallbackReason}. Using local fallback checkpoint.`);
+                extracted = fallbackExtraction(textOnlyMessages, assistantText, fallbackReason);
             } else {
                 const jsonStr = extractModelJsonText(data);
 
                 if (!jsonStr) {
+                    fallbackReason = 'empty extraction response';
                     console.log('[Auto-Memory] Extraction model returned empty content; using local fallback checkpoint.');
-                    extracted = fallbackExtraction(textOnlyMessages, assistantText, 'empty extraction response');
+                    extracted = fallbackExtraction(textOnlyMessages, assistantText, fallbackReason);
                 } else {
                     console.log(`[Auto-Memory] Raw extraction response: ${jsonStr.slice(0, 200)}`);
                     try {
                         extracted = JSON.parse(cleanJsonPayload(jsonStr));
                     } catch (parseErr) {
-                        console.warn(`[Auto-Memory] Extraction JSON parse failed: ${parseErr.message}. Using local fallback checkpoint.`);
-                        extracted = fallbackExtraction(textOnlyMessages, assistantText, parseErr.message);
+                        fallbackReason = parseErr.message;
+                        console.warn(`[Auto-Memory] Extraction JSON parse failed: ${fallbackReason}. Using local fallback checkpoint.`);
+                        extracted = fallbackExtraction(textOnlyMessages, assistantText, fallbackReason);
                     }
                 }
             }
@@ -403,82 +520,122 @@ Respond ONLY with valid JSON in this exact format:
         
         let updatedContext = currentContext;
         let modified = false;
+        const addedFacts = [];
+        const deletedFacts = [];
 
         if (extracted.delete_facts && Array.isArray(extracted.delete_facts) && extracted.delete_facts.length > 0) {
             let lines = updatedContext.split('\n');
-            lines = lines.filter(line => !extracted.delete_facts.some(d => line.toLowerCase().includes(d.toLowerCase())));
+            const before = lines.length;
+            lines = lines.filter(line => !extracted.delete_facts.some(d => line.toLowerCase().includes(String(d || '').toLowerCase())));
+            for (const deleted of extracted.delete_facts) {
+                deletedFacts.push(String(deleted));
+            }
             updatedContext = lines.join('\n');
-            modified = true;
+            if (lines.length < before) modified = true;
         }
 
         if (extracted.add_facts && Array.isArray(extracted.add_facts) && extracted.add_facts.length > 0) {
             for (const fact of extracted.add_facts) {
-                if (!updatedContext.includes(fact)) {
-                    updatedContext += (updatedContext ? '\n' : '') + `- ${fact}`;
+                const cleanedFact = String(fact || '').trim();
+                if (cleanedFact && !updatedContext.includes(cleanedFact)) {
+                    updatedContext += (updatedContext ? '\n' : '') + `- ${cleanedFact}`;
+                    addedFacts.push(cleanedFact);
                     modified = true;
                 }
             }
         }
 
-        let pendingGuidelines = 0;
+        const cleanedGuidelines = [];
         if (extracted.learned_guidelines && Array.isArray(extracted.learned_guidelines) && extracted.learned_guidelines.length > 0) {
             for (const rule of extracted.learned_guidelines) {
                 const cleanedRule = typeof rule === 'string' ? rule.trim() : String(rule).trim();
-                if (cleanedRule) {
-                    const saved = upsertLearnedGuideline(cleanedRule, {
-                        source: clientId || 'auto-memory',
-                        confidence: 0.6,
-                        status: 'pending'
-                    });
-                    if (saved?.status === 'pending') pendingGuidelines++;
+                if (cleanedRule) cleanedGuidelines.push(cleanedRule);
+            }
+        }
+
+        const checkpoint = extracted.conversation_summary && extracted.conversation_summary.topic && extracted.conversation_summary.summary
+            ? {
+                topic: String(extracted.conversation_summary.topic).trim(),
+                summary: String(extracted.conversation_summary.summary).trim(),
+                timestamp: new Date().toISOString()
+            }
+            : null;
+
+        const candidateContext = updatedContext.trim() || "No cross-session context established.";
+        const budget = checkMemoryBudget('global_context', candidateContext);
+        if (!budget.valid) {
+            const reason = 'global_context budget exceeded';
+            const warning = `${reason}: ${candidateContext.length}/${budget.limit} chars, over by ${budget.overage}`;
+            console.warn(`[Auto-Memory] ${warning}. Core memory write skipped.`);
+            finish('skipped', {
+                reason,
+                warning,
+                addedFacts,
+                deletedFacts,
+                semanticFacts: [],
+                guidelinesQueued: [],
+                checkpointSaved: false,
+                partial: false,
+                fallbackReason
+            });
+            return;
+        }
+
+        let pendingGuidelines = 0;
+        const guidelinesQueued = [];
+        if (cleanedGuidelines.length > 0) {
+            for (const cleanedRule of cleanedGuidelines) {
+                const saved = upsertLearnedGuideline(cleanedRule, {
+                    source: clientId || 'auto-memory',
+                    confidence: 0.6,
+                    status: 'pending'
+                });
+                if (saved?.status === 'pending') {
+                    pendingGuidelines++;
+                    guidelinesQueued.push(saved);
                 }
             }
         }
 
-        if (extracted.conversation_summary && extracted.conversation_summary.topic && extracted.conversation_summary.summary) {
+        if (checkpoint) {
             if (!memory.conversation_checkpoints) memory.conversation_checkpoints = [];
-            memory.conversation_checkpoints.push({
-                topic: extracted.conversation_summary.topic,
-                summary: extracted.conversation_summary.summary,
-                timestamp: new Date().toISOString()
-            });
-            // Keep only the last 15 checkpoints in the core memory
+            memory.conversation_checkpoints.push(checkpoint);
             if (memory.conversation_checkpoints.length > 15) {
                 memory.conversation_checkpoints.shift();
             }
 
-            // --- VECTOR DB INTEGRATION ---
             await saveCheckpointToVectorDb(
                 cfg,
-                extracted.conversation_summary.topic,
-                extracted.conversation_summary.summary
+                checkpoint.topic,
+                checkpoint.summary
             );
 
             modified = true;
         }
 
         if (modified) {
-            memory.global_context = updatedContext.trim() || "No cross-session context established.";
+            memory.global_context = candidateContext;
             writeAugustCoreMemory(memory);
-            console.log(`[Auto-Memory] ✓ Background core memory extraction successful. Added ${extracted.add_facts?.length || 0} facts, deleted ${extracted.delete_facts?.length || 0} facts, queued ${pendingGuidelines} learned guideline(s) for review, added checkpoint: ${!!extracted.conversation_summary}.`);
+            console.log(`[Auto-Memory] ✓ Background core memory extraction successful. Added ${addedFacts.length} facts, deleted ${deletedFacts.length} facts, queued ${pendingGuidelines} learned guideline(s) for review, added checkpoint: ${!!checkpoint}.`);
         } else {
             console.log('[Auto-Memory] No new persistent core facts found in this turn.');
         }
 
-        // Save semantic facts from unified payload
+        const savedSemanticFacts = [];
         if (extracted.semantic_facts && Array.isArray(extracted.semantic_facts) && extracted.semantic_facts.length > 0) {
             const sourceId = clientId || 'unknown';
             let semCount = 0;
             for (const fact of extracted.semantic_facts) {
                 if (fact.key && fact.value) {
                     try {
-                        semanticMemory.setFact(
+                        const saved = semanticMemory.setFact(
                             fact.key,
                             fact.value,
                             fact.category || 'user_preference',
                             null,
                             sourceId
                         );
+                        savedSemanticFacts.push({ key: saved.key, value: saved.value, category: saved.category });
                         semCount++;
                     } catch (err) {
                         console.warn(`[Auto-Memory] Failed to save semantic fact ${fact.key}: ${err.message}`);
@@ -498,10 +655,31 @@ Respond ONLY with valid JSON in this exact format:
             console.warn(`[Auto-Memory] Graph memory sync skipped: ${graphErr.message}`);
         }
 
+        const changed = modified || savedSemanticFacts.length > 0 || pendingGuidelines > 0;
+        finish(changed ? 'evolved' : 'skipped', {
+            reason: changed ? null : 'no new facts',
+            topic: checkpoint?.topic || null,
+            summary: checkpoint?.summary || null,
+            addedFacts,
+            deletedFacts,
+            semanticFacts: savedSemanticFacts,
+            guidelinesQueued,
+            checkpointSaved: !!checkpoint,
+            fallbackReason
+        });
+
     } catch (e) {
         console.warn('[Auto-Memory] Background extraction failed:', e.message);
         require('fs').appendFileSync(require('path').join(__dirname, 'debug.txt'), new Date().toISOString() + ' ERROR: ' + e.message + '\n' + e.stack + '\n');
+        finish('failed', {
+            error: e.message,
+            stack: e.stack
+        });
+    } finally {
+        if (!completed) {
+            finish('failed', { error: 'unknown auto-memory error' });
+        }
     }
 }
 
-module.exports = { extractAndSaveMemories, extractTextFromContent, extractAssistantText };
+module.exports = { extractAndSaveMemories, extractTextFromContent, extractAssistantText, getLearningStatus, readLearningHistory, getLearningHistoryFile };
