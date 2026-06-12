@@ -5,6 +5,8 @@ const { getModelContextWindow, saveModelContextWindow, loadModelContextWindow } 
 const { estimateTokens, formatTokenCount } = require('../lib/tokens');
 const { buildFriendlyRateLimitMessage, getRetryDelayMs, isRetryableStatus } = require('../lib/upstream');
 const { LlmAdapterBase } = require('./base');
+const { SseStreamParser } = require('./sse-parser');
+const { classifyOpenAiToolCalls } = require('./tool-classification');
 const { buildSystemPromptText } = require('../services/memory/context-builder');
 const {
     MANAGED_WEB_TOOL_NAMES,
@@ -121,6 +123,287 @@ function writeOpenAiSSEError(res, status, message) {
     writeOpenAiSSEHeaders(res, status);
     res.write(`data: ${JSON.stringify({ type: 'error', error: { message } })}\n\n`);
     res.end();
+}
+
+function writeOpenAiSSEData(res, payload) {
+    try {
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+function writeOpenAiSSEDone(res) {
+    try {
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function pipeOpenAiStream(response, onChunk) {
+    if (!response.body) {
+        const text = await response.text();
+        onChunk(text, Buffer.from(text, 'utf8'));
+        return text;
+    }
+
+    const decoder = new TextDecoder();
+    let rawBody = '';
+    for await (const chunk of response.body) {
+        const text = decoder.decode(chunk, { stream: true });
+        rawBody += text;
+        onChunk(text, chunk);
+    }
+    const tail = decoder.decode();
+    if (tail) {
+        rawBody += tail;
+        onChunk(tail, Buffer.from(tail, 'utf8'));
+    }
+    return rawBody;
+}
+
+function createOpenAiStreamAccumulator(requestModel) {
+    return {
+        id: '',
+        object: 'chat.completion',
+        created: null,
+        model: requestModel || '',
+        role: 'assistant',
+        content: '',
+        reasoning: '',
+        toolCallsByIndex: new Map(),
+        finishReason: null,
+        usage: null
+    };
+}
+
+function accumulateOpenAiChunk(state, chunk) {
+    if (!state || !chunk || typeof chunk !== 'object') return state;
+    if (chunk.id) state.id = chunk.id;
+    if (chunk.object) state.object = chunk.object;
+    if (chunk.created) state.created = chunk.created;
+    if (chunk.model) state.model = chunk.model;
+    if (chunk.usage) state.usage = chunk.usage;
+
+    const choice = chunk.choices?.[0];
+    if (!choice) return state;
+
+    const delta = choice.delta || {};
+    if (typeof delta.role === 'string') state.role = delta.role;
+    if (typeof delta.content === 'string') state.content += delta.content;
+    if (typeof delta.reasoning === 'string') state.reasoning += delta.reasoning;
+    if (typeof delta.reasoning_content === 'string') state.reasoning += delta.reasoning_content;
+
+    if (Array.isArray(delta.tool_calls)) {
+        for (const toolCall of delta.tool_calls) {
+            if (!toolCall || typeof toolCall !== 'object') continue;
+            const index = Number.isInteger(toolCall.index) ? toolCall.index : state.toolCallsByIndex.size;
+            const existing = state.toolCallsByIndex.get(index);
+            const normalized = existing || {
+                index,
+                id: '',
+                type: toolCall.type || 'function',
+                function: { name: '', arguments: '' }
+            };
+            if (toolCall.id) normalized.id = toolCall.id;
+            if (toolCall.type) normalized.type = toolCall.type;
+            if (toolCall.function?.name) normalized.function.name += toolCall.function.name;
+            if (toolCall.function?.arguments) normalized.function.arguments += toolCall.function.arguments;
+            state.toolCallsByIndex.set(index, normalized);
+        }
+    }
+
+    const finishReason = choice.finish_reason;
+    if (finishReason !== null && finishReason !== undefined) {
+        state.finishReason = finishReason;
+    }
+
+    return state;
+}
+
+function buildOpenAiAggregatedFromStream(state) {
+    const toolCalls = Array.from(state.toolCallsByIndex.values())
+        .sort((a, b) => a.index - b.index)
+        .map(({ index, ...toolCall }) => toolCall);
+    const message = {
+        role: state.role || 'assistant',
+        content: state.content || ''
+    };
+    if (state.reasoning) message.reasoning = state.reasoning;
+    if (toolCalls.length > 0) message.tool_calls = toolCalls;
+
+    return {
+        id: state.id || 'chatcmpl-' + Math.random().toString(36).substr(2, 9),
+        object: state.object || 'chat.completion',
+        created: state.created || Math.floor(Date.now() / 1000),
+        model: state.model || 'unknown',
+        choices: [{
+            index: 0,
+            message,
+            finish_reason: state.finishReason || 'stop'
+        }],
+        usage: state.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+    };
+}
+
+function buildOpenAiToolCallChunk(baseParsed, requestModel, toolCalls, finishReason = 'tool_calls') {
+    return {
+        id: baseParsed?.id || 'chatcmpl-' + Math.random().toString(36).substr(2, 9),
+        object: 'chat.completion.chunk',
+        created: baseParsed?.created || Math.floor(Date.now() / 1000),
+        model: requestModel,
+        choices: [{
+            index: 0,
+            delta: { tool_calls: toolCalls },
+            finish_reason: finishReason
+        }]
+    };
+}
+
+async function streamOpenAiSSEToClient(response, res, reqId, requestModel) {
+    if (!response.ok) {
+        const rawBody = await response.text();
+        throw new Error(`Upstream Error (${response.status}): ${rawBody}`);
+    }
+
+    writeOpenAiSSEHeaders(res, response.status);
+    const rawBody = await pipeOpenAiStream(response, (text, chunk) => {
+        try {
+            res.write(chunk);
+        } catch (e) {
+            // Client disconnected; let the outer abort/error path close the request.
+        }
+    });
+
+    if (rawBody.trim()) {
+        try {
+            const parsed = parseSSEToJSON(rawBody);
+            captureResponse(reqId, parsed);
+            const { inputTokens: inTok, outputTokens: outTok } = extractUsageTokens(parsed.usage, 'streaming passthrough');
+            captureTokens(reqId, inTok, outTok);
+        } catch (e) {
+            console.warn('[Proxy Stream Capture Warning]: Failed to aggregate OpenAI SSE:', e.message);
+        }
+    }
+}
+
+async function streamUpstreamAndResolveToolsOpenAi({
+    response,
+    res,
+    reqId,
+    requestModel,
+    oReq,
+    cfg,
+    clientToolNames,
+    managedLocalToolNames,
+    workspacePath,
+    parentSignal
+}) {
+    const state = createOpenAiStreamAccumulator(requestModel);
+
+    if (!response.ok) {
+        const rawBody = await response.text();
+        throw new Error(`Upstream Error (${response.status}): ${rawBody}`);
+    }
+
+    writeOpenAiSSEHeaders(res, response.status);
+
+    const parser = new SseStreamParser((event, data) => {
+        if (data === '[DONE]') return;
+        let chunk;
+        try {
+            chunk = JSON.parse(data);
+        } catch (e) {
+            return;
+        }
+
+        accumulateOpenAiChunk(state, chunk);
+
+        const delta = chunk.choices?.[0]?.delta;
+        if (!delta || typeof delta !== 'object') return;
+
+        const forwardedDelta = {};
+        if (typeof delta.role === 'string') forwardedDelta.role = delta.role;
+        if (typeof delta.content === 'string' && delta.content !== '') forwardedDelta.content = delta.content;
+        if (typeof delta.reasoning === 'string' && delta.reasoning !== '') forwardedDelta.reasoning = delta.reasoning;
+        if (typeof delta.reasoning_content === 'string' && delta.reasoning_content !== '') forwardedDelta.reasoning_content = delta.reasoning_content;
+
+        if (Object.keys(forwardedDelta).length > 0) {
+            const forwardedChunk = {
+                ...chunk,
+                choices: [{
+                    ...chunk.choices[0],
+                    delta: forwardedDelta
+                }]
+            };
+            writeOpenAiSSEData(res, forwardedChunk);
+        }
+    });
+
+    await pipeOpenAiStream(response, (text) => parser.feed(text));
+    parser.flush();
+
+    const parsed = buildOpenAiAggregatedFromStream(state);
+    captureResponse(reqId, parsed);
+    const { inputTokens: inTok, outputTokens: outTok } = extractUsageTokens(parsed.usage, 'streaming tool interception');
+    captureTokens(reqId, inTok, outTok);
+
+    const toolCalls = parsed.choices?.[0]?.message?.tool_calls || [];
+    const classification = classifyOpenAiToolCalls(toolCalls, managedLocalToolNames, clientToolNames);
+
+    if (classification.canExecuteManaged) {
+        const msg = parsed.choices?.[0]?.message || {};
+        const assistantMessage = {
+            role: msg.role || 'assistant',
+            content: msg.content || null,
+            tool_calls: classification.toolCalls
+        };
+        if (msg.reasoning) assistantMessage.reasoning = msg.reasoning;
+        if (msg.reasoning_content) assistantMessage.reasoning_content = msg.reasoning_content;
+        oReq.messages.push(assistantMessage);
+
+        const toolResults = await executeManagedOpenAiToolCalls(
+            classification.managedToolCalls,
+            oReq.tools,
+            oReq.messages,
+            workspacePath,
+            (evt) => writeOpenAiSSEData(res, evt),
+            parentSignal
+        );
+        toolResults.forEach(toolResult => oReq.messages.push(toolResult));
+
+        return streamUpstreamAndResolveToolsOpenAi({
+            response: await fetch(cfg.targetUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${cfg.apiKey}`
+                },
+                body: JSON.stringify(oReq),
+                signal: parentSignal
+            }),
+            res,
+            reqId,
+            requestModel,
+            oReq,
+            cfg,
+            clientToolNames,
+            managedLocalToolNames,
+            workspacePath,
+            parentSignal
+        });
+    }
+
+    if (classification.hasClientOrUnknown) {
+        writeOpenAiSSEData(res, buildOpenAiToolCallChunk(parsed, requestModel, classification.toolCalls, 'tool_calls'));
+    }
+
+    writeOpenAiSSEDone(res);
+    return parsed;
 }
 
 function buildOpenAiSynthesizedChunk(parsed, requestModel, finishReason = null) {
@@ -460,9 +743,9 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             }
 
             // ── Intercept and locally execute managed tool calls ──
-            // Force non-streaming when we have managed tools so we can run the tool loop synchronously
-            if (managedLocalToolNames.size > 0) {
-                oReq.stream = false; // force non-streaming for tool interception
+            // Keep upstream streaming enabled when the client wants SSE; intercept tool deltas locally instead.
+            if (managedLocalToolNames.size > 0 && !(clientWantsStream && !isResponsesEndpoint)) {
+                oReq.stream = false; // force non-streaming for non-SSE clients and Responses translation
             }
 
             if (isResponsesEndpoint) {
@@ -674,69 +957,23 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             // ── Streaming handling ──
 
             if (upstreamIsStream && clientWantsStream) {
-                // Buffer the upstream stream and normalize it ourselves. some providers
-                // ignore stream:false, so forwarding raw SSE would leak delta.tool_calls.
-                const rawBody = await response.text();
-                if (!response.ok) {
-                    requestStatus = 'error';
-                    requestError = response.status === 429
-                        ? buildFriendlyRateLimitMessage(response.status, rawBody, attempts)
-                        : `Upstream Error (${response.status}): ${rawBody}`;
-                    writeOpenAiSSEError(res, response.status, requestError);
-                    finishRequest();
-                    return;
+                if (managedLocalToolNames.size > 0) {
+                    await streamUpstreamAndResolveToolsOpenAi({
+                        response,
+                        res,
+                        reqId,
+                        requestModel,
+                        oReq,
+                        cfg,
+                        clientToolNames,
+                        managedLocalToolNames,
+                        workspacePath: req.workspacePath,
+                        parentSignal: abortCtrl.signal
+                    });
+                } else {
+                    await streamOpenAiSSEToClient(response, res, reqId, requestModel);
                 }
-
-                try {
-                    const parsed = parseSSEToJSON(rawBody);
-                    captureResponse(reqId, parsed);
-                    const inTok  = parsed.usage?.prompt_tokens     || parsed.usage?.input_tokens     || 0;
-                    const outTok = parsed.usage?.completion_tokens || parsed.usage?.output_tokens || 0;
-                    captureTokens(reqId, inTok, outTok);
-
-                    const upstreamMsg = parsed.choices?.[0]?.message;
-                    const hasManagedTools = upstreamMsg?.tool_calls?.length > 0 &&
-                        managedLocalToolNames.size > 0 &&
-                        upstreamMsg.tool_calls.some(tc => managedLocalToolNames.has(tc.function?.name));
-
-                    writeOpenAiSSEHeaders(res, response.status);
-                    if (hasManagedTools) {
-                        const resolved = await resolveManagedOpenAiToolCalls(parsed, oReq, cfg, clientToolNames, req.workspacePath, (evt) => {
-                            try { res.write(`data: ${JSON.stringify(evt)}\n\n`); } catch (e) {}
-                        }, abortCtrl.signal, true);
-                        const resolvedMsg = resolved.choices?.[0]?.message;
-                        const resolvedDelta = {
-                            role: resolvedMsg?.role || 'assistant',
-                            content: resolvedMsg?.content || ''
-                        };
-                        if (resolvedMsg?.reasoning) resolvedDelta.reasoning = resolvedMsg.reasoning;
-                        if (resolvedMsg?.reasoning_content) resolvedDelta.reasoning_content = resolvedMsg.reasoning_content;
-                        const resolvedChunk = {
-                            id: resolved.id || parsed.id || 'chatcmpl-' + Math.random().toString(36).substr(2, 9),
-                            object: 'chat.completion.chunk',
-                            created: resolved.created || parsed.created || Math.floor(Date.now() / 1000),
-                            model: requestModel,
-                            choices: [{
-                                index: 0,
-                                delta: resolvedDelta,
-                                finish_reason: resolved.choices?.[0]?.finish_reason || 'stop'
-                            }]
-                        };
-                        res.write(`data: ${JSON.stringify(resolvedChunk)}\n\n`);
-                    } else {
-                        const chunk = buildOpenAiSynthesizedChunk(parsed, requestModel);
-                        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-                    }
-                    res.write('data: [DONE]\n\n');
-                    res.end();
-                    finishRequest();
-                } catch (err) {
-                    console.error('[Proxy Stream Error]:', err);
-                    requestStatus = 'error';
-                    requestError = err.message;
-                    writeOpenAiSSEError(res, res.headersSent ? 200 : response.status, err.message);
-                    finishRequest();
-                }
+                finishRequest();
                 return;
             } else if (!upstreamIsStream && clientWantsStream) {
                 // Provider returned JSON but client expects SSE (Codex)

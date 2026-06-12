@@ -4,7 +4,7 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback, type KeyboardEvent } from 'react';
 import { Send, Paperclip, Mic, AtSign, Sparkles, ChevronRight, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug } from 'lucide-react';
-import { cn, formatTimeAgo } from '@/lib/utils';
+import { cn, formatTimeAgo, fmtElapsed } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
 import { marked } from 'marked';
@@ -305,10 +305,24 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     // ── Phase 2: full model list (background) ──
     try {
+      // Fetch providers to know which ones have keys
+      const providersRes = await fetch('/api/config/activeProvider');
+      const availableProviders = new Set<string>();
+      if (providersRes.ok) {
+        const provData = await providersRes.json();
+        (provData.providers || []).forEach((p: any) => {
+          if (p.isAvailable) availableProviders.add(p.id);
+        });
+      }
+
       const modelsRes = await fetch('/api/models');
       if (modelsRes.ok) {
         const data = await modelsRes.json();
-        const loadedModels: ModelItem[] = data?.models || [];
+        const allModels: ModelItem[] = data?.models || [];
+        // Filter to only show models from providers with keys set
+        const loadedModels = availableProviders.size > 0
+          ? allModels.filter(m => availableProviders.has(m.provider))
+          : allModels;
         if (loadedModels.length > 0) {
           setModels(loadedModels);
           // Only update selected model if the user hasn't manually chosen one
@@ -1293,7 +1307,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 <Button onClick={send} disabled={!input.trim() && attachments.length === 0} size="sm">
                   <Send className="size-3" />
                   Send
-                  <kbd className="ml-1 rounded bg-primary-foreground/20 px-1 text-[10px] font-mono">↵</kbd>
+                  <kbd className="ml-1 rounded bg-muted/20 border border-border/20 px-1 text-[10px] font-mono">↵</kbd>
                 </Button>
               )}
             </div>
@@ -1302,8 +1316,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
         {/* Usage tracker — minimal, no static hint text */}
         <div className="flex items-center justify-end mt-1 px-1">
-          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
-            <span className="relative w-16 h-1 rounded-full bg-muted overflow-hidden inline-block">
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
+            <span className="relative w-20 h-1.5 rounded-full bg-muted overflow-hidden inline-block">
               <span
                 className={cn('absolute inset-y-0 left-0 rounded-full transition-all duration-300', pct > 80 ? 'bg-destructive' : pct > 60 ? 'bg-amber-500' : 'bg-primary')}
                 style={{ width: `${pct}%` }}
@@ -1460,16 +1474,6 @@ function ToolBlock({ tools }: { tools: NonNullable<ChatMessage['tools']> }) {
       ))}
     </>
   );
-}
-
-function fmtElapsed(ms: number): string {
-  const sec = Math.max(0, ms) / 1000;
-  if (sec < 1) return `${Math.round(ms)}ms`;
-  if (sec < 10) return `${sec.toFixed(1)}s`;
-  if (sec < 60) return `${Math.round(sec)}s`;
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return s ? `${m}m ${s}s` : `${m}m`;
 }
 
 // ----------------------------------------------------
@@ -2078,7 +2082,7 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
           </span>
         )}
         <span className="truncate max-w-[200px] font-medium text-foreground transition-all duration-200">{selected ? getModelDisplayName(selected.id) : 'model'}</span>
-        <svg className="size-3 shrink-0 opacity-60 ml-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg className={cn("size-3 shrink-0 opacity-60 ml-0.5 transition-transform duration-200", open && "rotate-180")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
@@ -2090,10 +2094,10 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-full mb-1 right-0 z-50 min-w-[240px] max-w-[320px] bg-[#18181b] rounded-lg shadow-2xl overflow-hidden origin-bottom-right"
+            className="absolute bottom-full mb-1 right-0 z-50 min-w-[240px] max-w-[320px] bg-popover rounded-lg shadow-2xl overflow-hidden origin-bottom-right"
           >
             {/* Search bar */}
-            <div className="px-1.5 pt-1.5 pb-0.5 bg-[#18181b]">
+            <div className="px-1.5 pt-1.5 pb-0.5 bg-popover">
               <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1">
                 <svg className="size-2.5 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
@@ -2141,13 +2145,13 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
               {/* Top fade indicator */}
               <div className={cn(
                 'absolute top-0 left-0 right-0 h-5 z-10 pointer-events-none transition-opacity',
-                'bg-gradient-to-b from-[#18181b] to-transparent',
+                'bg-gradient-to-b from-popover to-transparent',
                 scrollTop > 4 ? 'opacity-100' : 'opacity-0'
               )} />
               {/* Bottom fade indicator */}
               <div className={cn(
                 'absolute bottom-0 left-0 right-0 h-5 z-10 pointer-events-none transition-opacity',
-                'bg-gradient-to-t from-[#18181b] to-transparent',
+                'bg-gradient-to-t from-popover to-transparent',
                 scrollEnd ? 'opacity-0' : 'opacity-100'
               )} />
 
@@ -2173,9 +2177,9 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
                 ) : (
                   grouped.map(({ provider, visible, isExpanded, total, showCollapse }) => (
                     <div key={provider}>
-                      <div className="px-2 py-1 text-[10px] uppercase tracking-widest text-muted-foreground/50 font-semibold sticky top-0 bg-[#18181b]/95 backdrop-blur z-20 flex justify-between items-center">
+                      <div className="px-2 py-1 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold sticky top-0 bg-popover/95 backdrop-blur z-20 flex justify-between items-center">
                         <span>{provider}</span>
-                        <span className="text-[9px] lowercase font-mono text-muted-foreground/40">({total})</span>
+                        <span className="text-[10px] lowercase font-mono text-muted-foreground/60">({total})</span>
                       </div>
                       {visible.map(m => {
                         const { name, tag } = modelDisplayParts(m.id);
@@ -2196,7 +2200,7 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
                                 <span className="ml-1.5 text-[10px] text-muted-foreground/50 font-normal">{tag}</span>
                               )}
                             </span>
-                            <span className="text-[10px] text-muted-foreground/40 shrink-0 tabular-nums">
+                            <span className="text-[10px] text-muted-foreground/60 shrink-0 tabular-nums">
                               {formatContextWindow(m.contextWindow)}
                             </span>
                           </button>
@@ -2259,7 +2263,7 @@ function EffortDropdown({ value, onChange }: {
 
   const options: { value: 'low' | 'medium' | 'high' | 'max'; label: string; desc: string }[] = [
     { value: 'low', label: 'Low', desc: 'Short thinking, fast response' },
-    { value: 'medium', label: 'Med', desc: 'Balanced thinking & speed' },
+    { value: 'medium', label: 'Medium', desc: 'Balanced thinking & speed' },
     { value: 'high', label: 'High', desc: 'Thorough reasoning' },
     { value: 'max', label: 'Max', desc: 'Full depth, maximum reasoning' },
   ];
@@ -2277,10 +2281,10 @@ function EffortDropdown({ value, onChange }: {
         )}
         title="Thinking Effort"
       >
-        <span className="text-[10px] font-medium text-foreground transition-all duration-200">
+<span className="text-xs font-medium text-foreground transition-all duration-200">
           {currentOpt.label}
         </span>
-        <svg className="size-2.5 shrink-0 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg className={cn("size-2.5 shrink-0 opacity-60 transition-transform duration-200", open && "rotate-180")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
@@ -2292,7 +2296,7 @@ function EffortDropdown({ value, onChange }: {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-full mb-1.5 right-0 z-50 min-w-[200px] bg-[#18181b] rounded-lg shadow-2xl py-1 origin-bottom-right"
+            className="absolute bottom-full mb-1.5 right-0 z-50 min-w-[200px] bg-popover rounded-lg shadow-2xl py-1 origin-bottom-right"
           >
             <div className="px-2.5 py-1 text-[10px] text-muted-foreground/50 uppercase tracking-widest font-semibold mb-0.5">
               Reasoning Effort

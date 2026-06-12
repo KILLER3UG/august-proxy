@@ -131,11 +131,6 @@
 }
 
 /* 2. Fix the search bar input so that it is not white */
-input[type="text"], input {
-  background-color: var(--dt-muted) !important;
-  color: var(--dt-foreground) !important;
-  border-color: var(--dt-border) !important;
-}
 input::placeholder {
   color: var(--dt-muted-foreground) !important;
 }
@@ -145,13 +140,9 @@ input::placeholder {
   border-color: var(--dt-border) !important;
 }
 
-/* 4. Disable focus ring blue highlights */
-textarea:focus, input:focus, div:focus-within {
-  outline: none !important;
-  box-shadow: none !important;
-  --tw-ring-offset-shadow: 0 0 #0000 !important;
-  --tw-ring-shadow: 0 0 #0000 !important;
-  --tw-ring-color: transparent !important;
+/* 4. Disable focus ring blue highlights — only on elements that manage their own focus */
+.composer-container:focus-within {
+  --tw-ring-shadow: none !important;
 }
 
 /* 5. Thinking indicator animations */

@@ -139,7 +139,7 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
   };
 
   return (
-    <div className="flex h-full text-xs relative select-none bg-[#0e0e11]">
+    <div className="flex h-full text-xs relative select-none bg-sidebar">
       <div className="flex-1 flex flex-col min-w-0 text-xs">
         {/* Nav items */}
         <div className="py-2.5 px-2 flex flex-col gap-0.5">
@@ -178,7 +178,7 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder="Search sessions..."
-                className="w-full pl-8 pr-2 py-1 text-[11px] bg-secondary/30 rounded-md border border-transparent focus:border-border/50 focus:bg-background outline-none transition text-sidebar-foreground placeholder:text-muted-foreground"
+                className="w-full pl-8 pr-2 py-1 text-[11px] bg-white/5 rounded-md border border-transparent focus:border-white/10 focus:bg-white/10 outline-none transition text-sidebar-foreground placeholder:text-muted-foreground"
               />
             </div>
           </div>
@@ -350,7 +350,7 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
           <div className="px-2 pb-2 pt-1 border-t border-border/20">
             <button
               onClick={() => onNavigate('/settings')}
-              className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sidebar-foreground/60 hover:bg-white/5 hover:text-foreground transition"
+              className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sidebar-foreground/80 hover:bg-white/5 hover:text-foreground transition"
             >
               <Settings className="size-3.5" />
               <span>Settings</span>
@@ -543,7 +543,7 @@ function SessionRow({
           }}
           onBlur={handleSaveRename}
           onClick={(e) => e.stopPropagation()}
-          className="bg-[#09090b] border border-border/80 px-1.5 py-0.5 rounded text-[11px] w-full outline-none text-foreground"
+          className="bg-muted border border-border/80 px-1.5 py-0.5 rounded text-[11px] w-full outline-none text-foreground"
         />
       </div>
     );
@@ -611,7 +611,7 @@ function SessionRow({
       {/* Kebab action dropdown */}
       {showMenu && (
         <div
-          className="absolute right-1 top-7 z-50 w-36 bg-[#18181b] rounded-md shadow-2xl py-1 text-[11px] animate-in fade-in slide-in-from-top-1 duration-100"
+          className="absolute right-1 top-7 z-50 w-36 bg-popover rounded-md shadow-2xl py-1 text-[11px] animate-in fade-in slide-in-from-top-1 duration-100"
           onClick={(e) => e.stopPropagation()}
         >
           <button 
@@ -641,7 +641,7 @@ function SessionRow({
               </span>
               <ChevronRight className="size-2.5 text-muted-foreground" />
             </button>
-            <div className="absolute left-full top-0 ml-0.5 hidden group-hover/sub:block w-32 bg-[#18181b] rounded-md shadow-2xl py-1 z-50 animate-in fade-in slide-in-from-left-1 duration-100">
+            <div className="absolute left-full top-0 ml-0.5 hidden group-hover/sub:block w-32 bg-popover rounded-md shadow-2xl py-1 z-50 animate-in fade-in slide-in-from-left-1 duration-100">
               <button 
                 onClick={() => { onMoveToFolder(null); setShowMenu(false); }}
                 className={cn("w-full text-left px-2.5 py-1 hover:bg-white/5 truncate transition", !session.folderId ? "text-primary font-medium" : "text-foreground/80")}

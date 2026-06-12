@@ -13,7 +13,7 @@
     "memory:eval": "node backend/scripts/run-memory-eval.js",
     "build:web": "npm run build -w web",
     "preview:web": "npm run preview -w web",
-    "test:backend": "node --test backend/test/verification.test.js",
+    "test:backend": "node --test backend/test/verification.test.js backend/test/sse-streaming.test.cjs",
     "test:memory": "node --test backend/test/memory-evals.test.cjs backend/test/memory-quality.test.cjs",
     "test:frontend": "npm run test -w web",
     "test:verify": "npm run test:backend && npm run test:memory && npm run test:frontend",

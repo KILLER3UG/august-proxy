@@ -11,6 +11,8 @@ const { getBrainConfig } = require('../services/memory/brain-orchestrator');
 const { executeToolBatch } = require('../services/workbench/tool-executor');
 const { isOpenAiToolCallParallelSafe, isAnthropicToolUseParallelSafe, parseOpenAiToolArgs } = require('../services/workbench/managed-tool-policy');
 const { LlmAdapterBase } = require('./base');
+const { SseStreamParser } = require('./sse-parser');
+const { classifyOpenAiToolCalls, classifyAnthropicToolUses, getToolNameFromOpenAiTool } = require('./tool-classification');
 const { buildSystemBlocks: buildContextSystemBlocks, isMiniMaxTarget } = require('../services/memory/context-builder');
 const {
     MANAGED_WEB_TOOL_NAMES,
@@ -1348,6 +1350,673 @@ function streamAnthropicMessageEnd(res, parsed) {
     res.write(`event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`);
 }
 
+function writeAnthropicSSEData(res, payload, eventName = 'message') {
+    try {
+        res.write(`event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+function writeAnthropicSSEDataOnly(res, payload) {
+    try {
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function pipeResponseToText(response, onChunk) {
+    if (!response.body) {
+        const text = await response.text();
+        onChunk(text, Buffer.from(text, 'utf8'));
+        return text;
+    }
+
+    const decoder = new TextDecoder();
+    let rawBody = '';
+    for await (const chunk of response.body) {
+        const text = decoder.decode(chunk, { stream: true });
+        rawBody += text;
+        onChunk(text, chunk);
+    }
+    const tail = decoder.decode();
+    if (tail) {
+        rawBody += tail;
+        onChunk(tail, Buffer.from(tail, 'utf8'));
+    }
+    return rawBody;
+}
+
+function rewriteModelFieldsInValue(value, responseModel) {
+    if (!value || typeof value !== 'object') return value;
+    if (value.type === 'thinking') return value;
+    if (Array.isArray(value)) {
+        value.forEach(item => rewriteModelFieldsInValue(item, responseModel));
+        return value;
+    }
+    if (typeof value.model === 'string') value.model = responseModel;
+    Object.values(value).forEach(child => rewriteModelFieldsInValue(child, responseModel));
+    return value;
+}
+
+function rewriteAnthropicSSELine(line, responseModel) {
+    if (!line.startsWith('data: ')) return line;
+    const payload = line.slice(6).trim();
+    if (!payload || payload === '[DONE]') return line;
+    try {
+        const parsed = JSON.parse(payload);
+        if (parsed && typeof parsed === 'object') {
+            rewriteModelFieldsInValue(parsed, responseModel);
+            return `data: ${JSON.stringify(parsed)}`;
+        }
+    } catch (e) {
+        return line;
+    }
+    return line;
+}
+
+async function streamAnthropicSSEToClient(response, res, reqId, responseModel) {
+    if (!response.ok) {
+        const rawBody = await response.text();
+        throw new Error(`Upstream Error (${response.status}): ${rawBody}`);
+    }
+
+    writeAnthropicSSEHeaders(res);
+    let rawBody = '';
+    const parser = new SseStreamParser((event, data) => {
+        if (data === '[DONE]') return;
+        let payload;
+        try {
+            payload = JSON.parse(data);
+        } catch (e) {
+            return;
+        }
+        rewriteModelFieldsInValue(payload, responseModel);
+        res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
+    });
+
+    rawBody = await pipeResponseToText(response, (text) => parser.feed(text));
+    parser.flush();
+
+    try {
+        const parsed = parseAnthropicSSEToJSON(rawBody);
+        captureResponse(reqId, parsed);
+        captureTokens(reqId, parsed.usage?.input_tokens || 0, parsed.usage?.output_tokens || 0);
+    } catch (e) {
+        console.warn('[Proxy Stream Capture Warning]: Failed to aggregate Anthropic SSE:', e.message);
+    }
+
+    return parsed;
+}
+
+function createAnthropicNativeStreamState(clientFacingModel) {
+    return {
+        id: '',
+        model: clientFacingModel,
+        role: 'assistant',
+        contentByUpstreamIndex: new Map(),
+        toolUsesByUpstreamIndex: new Map(),
+        clientIndexByUpstreamIndex: new Map(),
+        nextClientIndex: 0,
+        usage: { input_tokens: 0, output_tokens: 0 },
+        stopReason: null,
+        stopSequence: null,
+        messageStarted: false
+    };
+}
+
+function getClientAnthropicIndex(state, upstreamIndex) {
+    if (state.clientIndexByUpstreamIndex.has(upstreamIndex)) {
+        return state.clientIndexByUpstreamIndex.get(upstreamIndex);
+    }
+    const index = state.nextClientIndex++;
+    state.clientIndexByUpstreamIndex.set(upstreamIndex, index);
+    return index;
+}
+
+function streamAnthropicNativeContentStart(res, state, upstreamIndex, block) {
+    const index = getClientAnthropicIndex(state, upstreamIndex);
+    state.contentByUpstreamIndex.set(upstreamIndex, {
+        ...block,
+        text: block.text || '',
+        thinking: block.thinking || ''
+    });
+    writeAnthropicSSEData(res, {
+        type: 'content_block_start',
+        index,
+        content_block: {
+            type: block.type,
+            ...(block.type === 'text' ? { text: '' } : {}),
+            ...(block.type === 'thinking' ? { thinking: '' } : {})
+        }
+    }, 'content_block_start');
+}
+
+function streamAnthropicNativeContentDelta(res, state, upstreamIndex, delta) {
+    const index = getClientAnthropicIndex(state, upstreamIndex);
+    const block = state.contentByUpstreamIndex.get(upstreamIndex);
+    if (block?.type === 'text' && delta?.text) {
+        block.text = (block.text || '') + delta.text;
+    }
+    if (block?.type === 'thinking' && delta?.thinking) {
+        block.thinking = (block.thinking || '') + delta.thinking;
+    }
+    writeAnthropicSSEData(res, {
+        type: 'content_block_delta',
+        index,
+        delta
+    }, 'content_block_delta');
+}
+
+function streamAnthropicNativeContentStop(res, state, upstreamIndex) {
+    const index = getClientAnthropicIndex(state, upstreamIndex);
+    writeAnthropicSSEData(res, {
+        type: 'content_block_stop',
+        index
+    }, 'content_block_stop');
+}
+
+function buildAnthropicAggregatedFromNativeStream(state) {
+    const content = [];
+    for (const [upstreamIndex, block] of state.contentByUpstreamIndex.entries()) {
+        content[upstreamIndex] = {
+            type: block.type,
+            ...(block.text !== undefined ? { text: block.text } : {}),
+            ...(block.thinking !== undefined ? { thinking: block.thinking } : {})
+        };
+    }
+    for (const [upstreamIndex, toolUse] of state.toolUsesByUpstreamIndex.entries()) {
+        content[upstreamIndex] = {
+            type: 'tool_use',
+            id: toolUse.id,
+            name: toolUse.name,
+            input: toolUse.input || {}
+        };
+    }
+
+    return {
+        id: state.id || 'msg_' + Math.random().toString(36).substring(2, 14),
+        type: 'message',
+        role: state.role,
+        content: content.filter(Boolean),
+        model: state.model,
+        stop_reason: state.stopReason || 'end_turn',
+        stop_sequence: state.stopSequence,
+        usage: state.usage
+    };
+}
+
+function buildOpenAiAggregatedForAnthropicFromStream(state) {
+    const toolCalls = Array.from(state.toolCallsByIndex.values())
+        .sort((a, b) => a.index - b.index)
+        .map(({ index, ...toolCall }) => toolCall);
+    const message = {
+        role: state.role || 'assistant',
+        content: state.content || ''
+    };
+    if (state.reasoning) message.reasoning = state.reasoning;
+    if (toolCalls.length > 0) message.tool_calls = toolCalls;
+
+    return {
+        id: state.id || 'chatcmpl-' + Math.random().toString(36).substr(2, 9),
+        object: 'chat.completion',
+        created: state.created || Math.floor(Date.now() / 1000),
+        model: state.model || 'unknown',
+        choices: [{
+            index: 0,
+            message,
+            finish_reason: state.finishReason || 'stop'
+        }],
+        usage: state.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+    };
+}
+
+function accumulateOpenAiChunkForAnthropic(state, chunk) {
+    if (!state || !chunk || typeof chunk !== 'object') return state;
+    if (chunk.id) state.id = chunk.id;
+    if (chunk.created) state.created = chunk.created;
+    if (chunk.model) state.model = chunk.model;
+    if (chunk.usage) state.usage = chunk.usage;
+
+    const choice = chunk.choices?.[0];
+    if (!choice) return state;
+    const delta = choice.delta || {};
+    if (typeof delta.role === 'string') state.role = delta.role;
+    if (typeof delta.content === 'string') state.content += delta.content;
+    if (typeof delta.reasoning === 'string') state.reasoning += delta.reasoning;
+    if (typeof delta.reasoning_content === 'string') state.reasoning += delta.reasoning_content;
+
+    if (Array.isArray(delta.tool_calls)) {
+        for (const toolCall of delta.tool_calls) {
+            if (!toolCall || typeof toolCall !== 'object') continue;
+            const index = Number.isInteger(toolCall.index) ? toolCall.index : state.toolCallsByIndex.size;
+            const existing = state.toolCallsByIndex.get(index);
+            const normalized = existing || {
+                index,
+                id: '',
+                type: toolCall.type || 'function',
+                function: { name: '', arguments: '' }
+            };
+            if (toolCall.id) normalized.id = toolCall.id;
+            if (toolCall.type) normalized.type = toolCall.type;
+            if (toolCall.function?.name) normalized.function.name += toolCall.function.name;
+            if (toolCall.function?.arguments) normalized.function.arguments += toolCall.function.arguments;
+            state.toolCallsByIndex.set(index, normalized);
+        }
+    }
+
+    const finishReason = choice.finish_reason;
+    if (finishReason !== null && finishReason !== undefined) state.finishReason = finishReason;
+    return state;
+}
+
+function createOpenAiToAnthropicStreamState(clientFacingModel) {
+    return {
+        id: '',
+        created: null,
+        model: '',
+        role: 'assistant',
+        content: '',
+        reasoning: '',
+        toolCallsByIndex: new Map(),
+        finishReason: null,
+        usage: null,
+        blockIndex: 0,
+        activeBlockType: null,
+        messageStarted: false
+    };
+}
+
+function ensureOpenAiToAnthropicBlock(res, state, type) {
+    if (state.activeBlockType !== type) {
+        if (state.activeBlockType) {
+            writeAnthropicSSEData(res, {
+                type: 'content_block_stop',
+                index: state.blockIndex - 1
+            }, 'content_block_stop');
+        }
+        writeAnthropicSSEData(res, {
+            type: 'content_block_start',
+            index: state.blockIndex,
+            content_block: {
+                type,
+                ...(type === 'text' ? { text: '' } : {}),
+                ...(type === 'thinking' ? { thinking: '' } : {})
+            }
+        }, 'content_block_start');
+        state.activeBlockType = type;
+        state.blockIndex += 1;
+    }
+}
+
+function closeOpenAiToAnthropicActiveBlock(res, state) {
+    if (!state.activeBlockType) return;
+    writeAnthropicSSEData(res, {
+        type: 'content_block_stop',
+        index: state.blockIndex - 1
+    }, 'content_block_stop');
+    state.activeBlockType = null;
+}
+
+function streamOpenAiDeltaAsAnthropic(res, state, delta) {
+    if (!delta || typeof delta !== 'object') return;
+    if (typeof delta.content === 'string' && delta.content !== '') {
+        ensureOpenAiToAnthropicBlock(res, state, 'text');
+        writeAnthropicSSEData(res, {
+            type: 'content_block_delta',
+            index: state.blockIndex - 1,
+            delta: { type: 'text_delta', text: delta.content }
+        }, 'content_block_delta');
+    }
+    const reasoning = delta.reasoning || delta.reasoning_content;
+    if (typeof reasoning === 'string' && reasoning !== '') {
+        ensureOpenAiToAnthropicBlock(res, state, 'thinking');
+        writeAnthropicSSEData(res, {
+            type: 'content_block_delta',
+            index: state.blockIndex - 1,
+            delta: { type: 'thinking_delta', thinking: reasoning }
+        }, 'content_block_delta');
+    }
+}
+
+function openAiToolCallsToAnthropicToolUses(toolCalls) {
+    return (toolCalls || []).map(tc => {
+        let input = {};
+        try {
+            input = JSON.parse(tc.function?.arguments || '{}');
+        } catch (e) {
+            input = {};
+        }
+        return {
+            type: 'tool_use',
+            id: getAnthropicId(tc.id),
+            name: tc.function?.name || '',
+            input
+        };
+    });
+}
+
+function streamAnthropicToolUseBlock(res, toolUse, index) {
+    streamAnthropicContentBlock(res, {
+        type: 'tool_use',
+        id: toolUse.id,
+        name: toolUse.name,
+        input: toolUse.input || {}
+    }, index);
+}
+
+function streamAnthropicMessageEndState(res, state) {
+    writeAnthropicSSEData(res, {
+        type: 'message_delta',
+        delta: { stop_reason: state.stopReason || 'end_turn', stop_sequence: null },
+        usage: { output_tokens: state.usage?.output_tokens || 0 }
+    }, 'message_delta');
+    writeAnthropicSSEData(res, { type: 'message_stop' }, 'message_stop');
+}
+
+async function streamOpenAiUpstreamToAnthropicClient({
+    response,
+    res,
+    reqId,
+    clientFacingModel,
+    oReq,
+    cfg,
+    clientToolNames,
+    managedLocalToolNames,
+    workspacePath,
+    parentSignal,
+    messageAlreadyStarted = false
+}) {
+    if (!response.ok) {
+        const rawBody = await response.text();
+        throw new Error(`Upstream Error (${response.status}): ${rawBody}`);
+    }
+
+    writeAnthropicSSEHeaders(res);
+    const state = createOpenAiToAnthropicStreamState(clientFacingModel);
+    state.model = clientFacingModel;
+    const parser = new SseStreamParser((event, data) => {
+        if (data === '[DONE]') return;
+        let chunk;
+        try {
+            chunk = JSON.parse(data);
+        } catch (e) {
+            return;
+        }
+
+        accumulateOpenAiChunkForAnthropic(state, chunk);
+
+        if (!state.messageStarted && !messageAlreadyStarted) {
+            writeAnthropicSSEData(res, {
+                type: 'message_start',
+                message: {
+                    id: chunk.id || 'msg_' + Math.random().toString(36).substring(2, 14),
+                    type: 'message',
+                    role: 'assistant',
+                    content: [],
+                    model: clientFacingModel,
+                    stop_reason: null,
+                    stop_sequence: null,
+                    usage: { input_tokens: chunk.usage?.prompt_tokens || chunk.usage?.input_tokens || 0, output_tokens: 0 }
+                }
+            }, 'message_start');
+            state.messageStarted = true;
+        }
+
+        const delta = chunk.choices?.[0]?.delta;
+        if (delta) streamOpenAiDeltaAsAnthropic(res, state, delta);
+    });
+
+    await pipeResponseToText(response, (text) => parser.feed(text));
+    parser.flush();
+
+    const parsed = buildOpenAiAggregatedForAnthropicFromStream(state);
+    captureResponse(reqId, parsed);
+    const upUsage = parsed.usage || {};
+    captureTokens(reqId, upUsage.prompt_tokens || upUsage.input_tokens || 0, upUsage.completion_tokens || upUsage.output_tokens || 0);
+
+    closeOpenAiToAnthropicActiveBlock(res, state);
+
+    const toolCalls = parsed.choices?.[0]?.message?.tool_calls || [];
+    const classification = classifyOpenAiToolCalls(toolCalls, managedLocalToolNames, clientToolNames);
+
+    if (classification.canExecuteManaged) {
+        const msg = parsed.choices?.[0]?.message || {};
+        oReq.messages.push({
+            role: msg.role || 'assistant',
+            content: msg.content || null,
+            tool_calls: classification.toolCalls,
+            ...(msg.reasoning ? { reasoning: msg.reasoning } : {}),
+            ...(msg.reasoning_content ? { reasoning_content: msg.reasoning_content } : {})
+        });
+
+        const openAiToolCalls = classification.managedToolCalls.map(tc => ({
+            id: tc.id,
+            type: 'function',
+            function: {
+                name: tc.function?.name,
+                arguments: tc.function?.arguments || '{}'
+            }
+        }));
+        const toolResults = await executeManagedOpenAiToolCalls(
+            openAiToolCalls,
+            oReq.tools,
+            oReq.messages,
+            workspacePath,
+            (evt) => writeAnthropicSSEDataOnly(res, evt),
+            parentSignal
+        );
+        toolResults.forEach(toolResult => oReq.messages.push(toolResult));
+
+        return streamOpenAiUpstreamToAnthropicClient({
+            response: await fetch(cfg.targetUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${cfg.apiKey}`
+                },
+                body: JSON.stringify(oReq),
+                signal: parentSignal
+            }),
+            res,
+            reqId,
+            clientFacingModel,
+            oReq,
+            cfg,
+            clientToolNames,
+            managedLocalToolNames,
+            workspacePath,
+            parentSignal,
+            messageAlreadyStarted: true
+        });
+    }
+
+    if (classification.hasClientOrUnknown) {
+        const toolUses = openAiToolCallsToAnthropicToolUses(classification.toolCalls);
+        toolUses.forEach((toolUse, idx) => streamAnthropicToolUseBlock(res, toolUse, state.blockIndex + idx));
+        state.stopReason = 'tool_use';
+    } else {
+        state.stopReason = parsed.choices?.[0]?.finish_reason === 'length' ? 'max_tokens' : 'end_turn';
+    }
+
+    streamAnthropicMessageEndState(res, state);
+    res.end();
+    return parsed;
+}
+
+async function streamUpstreamAndResolveToolsAnthropic({
+    response,
+    res,
+    reqId,
+    clientFacingModel,
+    upstreamReq,
+    cfg,
+    clientToolNames,
+    managedLocalToolNames,
+    workspacePath,
+    parentSignal,
+    messageAlreadyStarted = false
+}) {
+    if (!response.ok) {
+        const rawBody = await response.text();
+        throw new Error(`Upstream Error (${response.status}): ${rawBody}`);
+    }
+
+    writeAnthropicSSEHeaders(res);
+    const state = createAnthropicNativeStreamState(clientFacingModel);
+    const parser = new SseStreamParser((event, data) => {
+        if (data === '[DONE]') return;
+        let payload;
+        try {
+            payload = JSON.parse(data);
+        } catch (e) {
+            return;
+        }
+
+        if (payload.type === 'message_start' && payload.message) {
+            state.id = payload.message.id || state.id;
+            state.model = clientFacingModel;
+            state.role = payload.message.role || state.role;
+            if (payload.message.usage) {
+                state.usage.input_tokens = payload.message.usage.input_tokens || state.usage.input_tokens || 0;
+                state.usage.output_tokens = payload.message.usage.output_tokens || state.usage.output_tokens || 0;
+            }
+            if (!state.messageStarted && !messageAlreadyStarted) {
+                writeAnthropicSSEData(res, {
+                    type: 'message_start',
+                    message: {
+                        id: state.id || 'msg_' + Math.random().toString(36).substring(2, 14),
+                        type: 'message',
+                        role: 'assistant',
+                        content: [],
+                        model: clientFacingModel,
+                        stop_reason: null,
+                        stop_sequence: null,
+                        usage: {
+                            input_tokens: state.usage.input_tokens || 0,
+                            output_tokens: 0
+                        }
+                    }
+                }, 'message_start');
+                state.messageStarted = true;
+            }
+            return;
+        }
+
+        if (payload.type === 'content_block_start' && payload.content_block) {
+            const block = payload.content_block;
+            if (block.type === 'tool_use') {
+                state.toolUsesByUpstreamIndex.set(payload.index, {
+                    id: block.id || 'toolu_' + Math.random().toString(36).substring(2, 14),
+                    name: block.name || '',
+                    inputDelta: ''
+                });
+                return;
+            }
+            if (block.type === 'text' || block.type === 'thinking') {
+                streamAnthropicNativeContentStart(res, state, payload.index, block);
+            }
+            return;
+        }
+
+        if (payload.type === 'content_block_delta' && payload.delta) {
+            if (payload.delta.type === 'input_json_delta') {
+                const toolUse = state.toolUsesByUpstreamIndex.get(payload.index);
+                if (toolUse) toolUse.inputDelta = (toolUse.inputDelta || '') + (payload.delta.partial_json || '');
+                return;
+            }
+            if (payload.delta.type === 'text_delta' || payload.delta.type === 'thinking_delta') {
+                streamAnthropicNativeContentDelta(res, state, payload.index, payload.delta);
+            }
+            return;
+        }
+
+        if (payload.type === 'content_block_stop') {
+            if (state.toolUsesByUpstreamIndex.has(payload.index)) {
+                const toolUse = state.toolUsesByUpstreamIndex.get(payload.index);
+                try {
+                    toolUse.input = JSON.parse(toolUse.inputDelta || '{}');
+                } catch (e) {
+                    toolUse.input = {};
+                }
+                delete toolUse.inputDelta;
+                return;
+            }
+            streamAnthropicNativeContentStop(res, state, payload.index);
+            return;
+        }
+
+        if (payload.type === 'message_delta' && payload.delta) {
+            if (payload.delta.stop_reason) state.stopReason = payload.delta.stop_reason;
+            if (payload.delta.stop_sequence) state.stopSequence = payload.delta.stop_sequence;
+            if (payload.usage?.output_tokens) state.usage.output_tokens = payload.usage.output_tokens;
+            return;
+        }
+
+        if (payload.type === 'message_stop') return;
+    });
+
+    const rawBody = await pipeResponseToText(response, (text) => parser.feed(text));
+    parser.flush();
+
+    const parsed = buildAnthropicAggregatedFromNativeStream(state);
+    captureResponse(reqId, parsed);
+    captureTokens(reqId, parsed.usage?.input_tokens || 0, parsed.usage?.output_tokens || 0);
+
+    const toolUses = parsed.content.filter(block => block?.type === 'tool_use');
+    const classification = classifyAnthropicToolUses(toolUses, managedLocalToolNames, clientToolNames);
+
+    if (classification.canExecuteManaged) {
+        upstreamReq.messages.push({
+            role: 'assistant',
+            content: parsed.content
+        });
+        const toolResults = await executeManagedAnthropicToolUses(
+            classification.managedToolUses,
+            upstreamReq.tools,
+            upstreamReq,
+            workspacePath,
+            (evt) => writeAnthropicSSEDataOnly(res, evt),
+            parentSignal
+        );
+        upstreamReq.messages.push({
+            role: 'user',
+            content: toolResults
+        });
+
+        return streamUpstreamAndResolveToolsAnthropic({
+            response: await fetch(cfg.targetUrl, {
+                method: 'POST',
+                headers: buildAnthropicHeaders(cfg.apiKey),
+                body: JSON.stringify(upstreamReq),
+                signal: parentSignal
+            }),
+            res,
+            reqId,
+            clientFacingModel,
+            upstreamReq,
+            cfg,
+            clientToolNames,
+            managedLocalToolNames,
+            workspacePath,
+            parentSignal,
+            messageAlreadyStarted: true
+        });
+    }
+
+    if (classification.hasClientOrUnknown) {
+        classification.toolUses.forEach((toolUse, idx) => streamAnthropicToolUseBlock(res, toolUse, state.nextClientIndex + idx));
+        state.stopReason = 'tool_use';
+    }
+
+    streamAnthropicMessageEndState(res, state);
+    res.end();
+    return parsed;
+}
+
 function streamAnthropicErrorAndEnd(res, errorMsg, blockIndex) {
     writeAnthropicSSEHeaders(res);
     streamAnthropicContentBlock(res, {
@@ -1821,12 +2490,11 @@ async function handleMessages(req, res, cleanPath, reqId) {
                 
                 upstreamReq = normalizeAnthropicToolsForNativeUpstream(upstreamReq, ctx);
 
-                // KEY FIX: if we have managed tools to intercept locally, force non-streaming
-                // upstream so we can run the tool loop synchronously, then stream back ourselves.
+                // Keep upstream streaming enabled when the client wants SSE; intercept managed tool deltas locally instead.
                 const clientWantsStream = aReq.stream === true;
                 if (ctx.managedLocalToolNames.size > 0 && clientWantsStream) {
-                    console.log('[Proxy] Forcing non-streaming upstream to intercept managed tool calls');
-                    upstreamReq.stream = false;
+                    console.log('[Proxy] Streaming upstream for managed Anthropic tool interception');
+                    upstreamReq.stream = true;
                 }
                 console.log(`[Proxy Debug Claude]: incoming_model=${aReq.model || 'unknown'} public_model=${requestModel} backend_model=${upstreamModel} target=${cfg.targetUrl || 'unknown'}`);
                 console.log('[Proxy Debug Tools]:', JSON.stringify({ 
@@ -1870,6 +2538,30 @@ async function handleMessages(req, res, cleanPath, reqId) {
                 }
 
                 const rawBody = await response.text();
+                if (clientWantsStream && !isClaudeDesktop3pClient(req) && (response.headers.get('content-type') || '').includes('text/event-stream')) {
+                    const parsed = ctx.managedLocalToolNames.size > 0
+                        ? await streamUpstreamAndResolveToolsAnthropic({
+                            response,
+                            res,
+                            reqId,
+                            clientFacingModel,
+                            upstreamReq,
+                            cfg,
+                            clientToolNames,
+                            managedLocalToolNames: ctx.managedLocalToolNames,
+                            workspacePath: null,
+                            parentSignal: abortCtrl.signal
+                        })
+                        : await streamAnthropicSSEToClient(response, res, reqId, clientFacingModel);
+
+                    if (parsed?.stop_reason === 'end_turn') {
+                        console.log('[Auto-Memory] end_turn detected, launching extraction...');
+                        const { extractAndSaveMemories } = require('../services/memory/auto-memory');
+                        extractAndSaveMemories(aReq.messages, parsed, cfg, upstreamModel, clientId).catch(e => console.warn('[Auto-Memory] Extraction failed:', e.message));
+                    }
+                    return; // finishRequest() runs in finally
+                }
+
                 if (!response.ok) {
                     console.error('[Proxy Error] Minimax rejected request:', {
                         status: response.status,
@@ -2081,6 +2773,35 @@ async function handleMessages(req, res, cleanPath, reqId) {
             }
 
             const upstreamIsStream = response.headers.get('content-type')?.includes('text/event-stream');
+            if (aReq.stream === true && upstreamIsStream && !isClaudeDesktop3pClient(req)) {
+                if (!response.ok) {
+                    const errorBody = await response.text();
+                    throw new Error(
+                        response.status === 429
+                            ? buildFriendlyRateLimitMessage(response.status, errorBody, attempts)
+                            : `Upstream Error (${response.status}): ${errorBody}`
+                    );
+                }
+                const parsed = await streamOpenAiUpstreamToAnthropicClient({
+                    response,
+                    res,
+                    reqId,
+                    clientFacingModel,
+                    oReq,
+                    cfg,
+                    clientToolNames: new Set((aReq.tools || []).map(t => t.name || t.function?.name).filter(Boolean)),
+                    managedLocalToolNames: ctx.managedLocalToolNames,
+                    workspacePath: null,
+                    parentSignal: abortCtrl.signal
+                });
+                if (parsed.choices?.[0]?.finish_reason === 'stop') {
+                    console.log('[Auto-Memory] stop detected (OpenAI translation path), launching extraction...');
+                    const { extractAndSaveMemories } = require('../services/memory/auto-memory');
+                    extractAndSaveMemories(aReq.messages, parsed, cfg, upstreamModel, clientId).catch(e => console.warn('[Auto-Memory] Extraction failed:', e.message));
+                }
+                return;
+            }
+
             let data;
             if (upstreamIsStream) {
                 data = parseSSEToJSON(rawBody);

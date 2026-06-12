@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { cn } from '@/lib/utils';
+import { cn, fmtElapsed } from '@/lib/utils';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import {
   Terminal,
@@ -242,16 +242,6 @@ function Section({
       <div className="flex-1 min-w-0 text-muted-foreground">{children}</div>
     </div>
   );
-}
-
-function fmtElapsed(ms: number): string {
-  const sec = Math.max(0, ms) / 1000;
-  if (sec < 1) return `${Math.round(ms)}ms`;
-  if (sec < 10) return `${sec.toFixed(1)}s`;
-  if (sec < 60) return `${Math.round(sec)}s`;
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return s ? `${m}m ${s}s` : `${m}m`;
 }
 
 /** Colorize unified-diff lines for the inline diff section. */

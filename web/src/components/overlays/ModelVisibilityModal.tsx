@@ -93,7 +93,7 @@ export function ModelVisibilityModal({ open, onClose, models, loading, hiddenMod
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed left-1/2 top-[15%] z-50 -translate-x-1/2 w-[420px] h-[500px] bg-[#18181b] rounded-xl shadow-2xl flex flex-col overflow-hidden"
+            className="fixed left-1/2 top-[15%] z-50 -translate-x-1/2 w-[420px] h-[500px] bg-popover rounded-xl shadow-2xl flex flex-col overflow-hidden"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">

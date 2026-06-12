@@ -169,9 +169,9 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0e0e11] text-xs">
+    <div className="flex flex-col h-full bg-sidebar text-xs">
       {/* Header */}
-      <div className="p-3 border-b border-border/40 flex items-center justify-between shrink-0 bg-[#09090b]">
+      <div className="p-3 border-b border-border/40 flex items-center justify-between shrink-0 bg-background">
         <div className="flex items-center gap-2">
           <FolderGit2 className="size-4 text-amber-500/80" />
           <div className="flex flex-col">
@@ -195,7 +195,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
       </div>
 
       {/* Path Display / Connect Fallback */}
-      <div className="p-3 border-b border-border/10 bg-[#0e0e11] shrink-0">
+      <div className="p-3 border-b border-border/10 bg-sidebar shrink-0">
         {workspacePath ? (
           <div className="flex flex-col gap-0.5 min-w-0">
             <span className="text-[10px] text-muted-foreground/50 font-mono truncate" title={workspacePath}>
@@ -233,7 +233,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
             />
             <div className="relative flex items-center justify-center my-1">
               <span className="w-full h-[1px] bg-border/20 absolute" />
-              <span className="text-[9px] uppercase px-2 bg-[#0e0e11] text-muted-foreground/60 relative font-bold">or</span>
+              <span className="text-[9px] uppercase px-2 bg-sidebar text-muted-foreground/60 relative font-bold">or</span>
             </div>
             <button
               onClick={handleSelectFolder}

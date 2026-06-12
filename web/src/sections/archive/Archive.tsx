@@ -67,13 +67,13 @@ export function Archive() {
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Search archived sessions..."
-              className="w-full pl-8 pr-2 py-1.5 text-xs bg-[#18181b] border border-border/40 rounded-md outline-none text-foreground placeholder:text-muted-foreground focus:border-primary/50"
+              className="w-full pl-8 pr-2 py-1.5 text-xs bg-popover border border-border/40 rounded-md outline-none text-foreground placeholder:text-muted-foreground focus:border-primary/50"
             />
           </div>
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
-            className="px-2 py-1.5 text-xs bg-[#18181b] border border-border/40 rounded-md text-foreground outline-none cursor-pointer focus:border-primary/50"
+            className="px-2 py-1.5 text-xs bg-popover border border-border/40 rounded-md text-foreground outline-none cursor-pointer focus:border-primary/50"
           >
             <option value="newest">Newest First</option>
             <option value="oldest">Oldest First</option>

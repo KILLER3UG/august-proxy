@@ -149,7 +149,7 @@ export function ChatLayout() {
                   animate={{ width: 320, opacity: 1 }}
                   exit={{ width: 0, opacity: 0 }}
                   transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="shrink-0 bg-[#0e0e11] overflow-hidden flex flex-col"
+                  className="shrink-0 bg-sidebar overflow-hidden flex flex-col"
                 >
                   <div className="w-80 shrink-0 overflow-y-auto flex flex-col h-full">
                     <WorkspacePanel sessionId={active?.id || null} />

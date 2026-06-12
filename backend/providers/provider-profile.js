@@ -55,7 +55,8 @@ class ProviderProfile {
   }
 
   isAvailable() {
-    return this.envVars.length === 0 || this.envVars.some(v => {
+    if (this.envVars.length === 0) return false;
+    return this.envVars.some(v => {
       if (v.endsWith('_BASE_URL')) return false;
       return !!process.env[v];
     });
