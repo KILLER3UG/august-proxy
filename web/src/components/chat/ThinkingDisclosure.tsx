@@ -60,7 +60,7 @@ export function ThinkingDisclosure({
 
   return (
     <div
-      className="text-xs text-muted-foreground"
+      className="text-sm text-muted-foreground"
       data-slot="thinking-disclosure"
     >
       <DisclosureRow
@@ -68,7 +68,7 @@ export function ThinkingDisclosure({
         open={open}
         trailing={
           displayDuration && (
-            <span className="font-mono text-[10px] text-muted-foreground/60 tabular-nums shrink-0">
+            <span className="font-mono text-[12px] text-muted-foreground/60 tabular-nums shrink-0">
               {displayDuration}
             </span>
           )
@@ -78,7 +78,7 @@ export function ThinkingDisclosure({
           {icon}
           <span
             className={cn(
-              'text-xs font-medium leading-5 text-muted-foreground',
+              'text-sm font-medium leading-5 text-muted-foreground',
               pending && 'shimmer text-foreground/55'
             )}
           >

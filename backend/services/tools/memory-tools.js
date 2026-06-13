@@ -376,6 +376,9 @@ async function handleMemoryTool(toolName, args) {
         ...(Array.isArray(memory.conversation_checkpoints) && memory.conversation_checkpoints.length > 0
           ? memory.conversation_checkpoints.slice(-5).map(c => `- ${c.topic}: ${c.summary.slice(0, 120)}`)
           : ['(none)']),
+        '',
+        '=== Recent Semantic Facts ===',
+        ...(semanticMemory.getAllFacts().slice(-5).map(f => `- ${f.key}: ${f.value} [${f.category}]`)),
       ];
       return sections.join('\n');
     }

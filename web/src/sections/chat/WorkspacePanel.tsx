@@ -169,13 +169,13 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-sidebar text-xs">
+    <div className="flex flex-col h-full bg-sidebar text-sm">
       {/* Header */}
       <div className="p-3 border-b border-border/40 flex items-center justify-between shrink-0 bg-background">
         <div className="flex items-center gap-2">
           <FolderGit2 className="size-4 text-amber-500/80" />
           <div className="flex flex-col">
-            <span className="font-semibold text-foreground/80 text-[11px]">Workspace Explorer</span>
+            <span className="font-semibold text-foreground/80 text-[13px]">Workspace Explorer</span>
             {workspacePath && (
               <span className="text-[9px] text-muted-foreground/50 font-mono truncate max-w-[180px]" title={workspacePath}>
                 {workspacePath.split(/[/\\]/).pop()}
@@ -204,7 +204,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
           </div>
         ) : (
           <div className="py-4 px-2 text-center text-muted-foreground/60 space-y-3">
-            <p className="text-[10.5px]">No folder connected to this session.</p>
+            <p className="text-[12.5px]">No folder connected to this session.</p>
             <input
               type="text"
               placeholder="Paste path & press Enter (e.g. C:/my-project)..."
@@ -290,7 +290,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
                       <FileText className="size-3.5 text-muted-foreground/60 shrink-0" />
                     </>
                   )}
-                  <span className="truncate text-[11px] font-mono">{node.name}</span>
+                  <span className="truncate text-[13px] font-mono">{node.name}</span>
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
@@ -329,7 +329,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
               </div>
             ))}
             {loading && (
-              <div className="py-4 text-center text-muted-foreground/50 text-[10px] animate-pulse">
+              <div className="py-4 text-center text-muted-foreground/50 text-[12px] animate-pulse">
                 Loading files...
               </div>
             )}

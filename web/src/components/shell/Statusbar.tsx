@@ -60,7 +60,7 @@ export function Statusbar() {
 
   return (
     <div className="flex items-center justify-end mt-1 px-1">
-      <div className="flex items-center gap-3 text-[10px] text-muted-foreground font-mono">
+      <div className="flex items-center gap-3 text-[12px] text-muted-foreground font-mono">
         <span className="inline-flex items-center gap-1.5">
           <StatusDot tone={gatewayTone} className="size-1.5" />
           {gatewayLabel}

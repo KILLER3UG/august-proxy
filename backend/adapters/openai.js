@@ -8,6 +8,7 @@ const { LlmAdapterBase } = require('./base');
 const { SseStreamParser } = require('./sse-parser');
 const { classifyOpenAiToolCalls } = require('./tool-classification');
 const { buildSystemPromptText } = require('../services/memory/context-builder');
+const { sanitizeToolSchema } = require('../services/tools/mcp-client');
 const {
     MANAGED_WEB_TOOL_NAMES,
     isManagedWebToolName,
@@ -733,6 +734,15 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 // Dumb client (no tools sent): inject all proxy tools so August tools are available
                 oReq.tools = getProxyOpenAiToolDefinitions();
                 console.log('[Proxy Tools]: Injected default proxy tools (MCP/August/Cowork/web)');
+            }
+            // ── Sanitize tool schemas for OpenAI JSON Schema compliance ──
+            // Client-provided tools may have invalid JSON Schema (e.g. tuple-style `items` arrays
+            // or raw arrays of type schemas at anyOf/oneOf level). OpenAI/OpenRouter rejects these.
+            // Proxy-managed tools are already clean but sanitization is idempotent.
+            for (const tool of oReq.tools || []) {
+                if (tool?.function?.parameters) {
+                    tool.function.parameters = sanitizeToolSchema(tool.function.parameters);
+                }
             }
             // Remember which tools are locally managed so we can intercept them (only if not client-provided)
             for (const tool of oReq.tools || []) {

@@ -165,19 +165,10 @@ function sanitizeAnthropicToolDefinition(tool) {
     const name = typeof normalized.name === 'string' ? normalized.name.trim() : '';
     if (!name) return null;
 
-    let inputSchema = normalized.input_schema;
-    if (!inputSchema || typeof inputSchema !== 'object' || Array.isArray(inputSchema)) {
-        inputSchema = { type: 'object', properties: {} };
-    }
-    if (!inputSchema.type) inputSchema.type = 'object';
-    if (inputSchema.type === 'object' && (!inputSchema.properties || typeof inputSchema.properties !== 'object' || Array.isArray(inputSchema.properties))) {
-        inputSchema.properties = {};
-    }
-
     return {
         name,
         description: typeof normalized.description === 'string' ? normalized.description : '',
-        input_schema: inputSchema
+        input_schema: sanitizeToolSchema(normalized.input_schema)
     };
 }
 

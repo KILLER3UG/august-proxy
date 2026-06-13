@@ -70,9 +70,35 @@ const WORKSPACE_ROOT = path.resolve(__dirname, '..', '..', '..');
 const PROJECT_ROOT = path.resolve(WORKSPACE_ROOT);
 const CONTAINER_PROJECT_ROOT = path.resolve(process.env.AUGUST_PROXY_CONTAINER_ROOT || PROJECT_ROOT);
 const LEGACY_HOST_PROJECT_ROOTS = [
-    'C:\\Users\\rober\\LocalFolders\\august-proxy',
-    'C:\\Users\\rober\\LocalFolders\\DockerContainer\\august-proxy'
+    'C:/Users/rober/LocalFolders/august-proxy',
+    'C:/Users/rober/LocalFolders/DockerContainer/august-proxy'
 ];
+
+function getWorkspaceRoot() {
+    return path.resolve(process.env.AUGUST_PROXY_WORKDIR || process.env.AUGUST_WORKDIR || WORKSPACE_ROOT);
+}
+
+function getProjectRoot() {
+    return path.resolve(process.env.AUGUST_PROXY_PROJECT_ROOT || getWorkspaceRoot());
+}
+
+function getContainerProjectRoot() {
+    return path.resolve(process.env.AUGUST_PROXY_CONTAINER_ROOT || getProjectRoot());
+}
+
+function getProxyRoot() {
+    return path.resolve(process.env.AUGUST_PROXY_ROOT || WORKSPACE_ROOT);
+}
+
+function getHostProjectRoots() {
+    return uniquePaths([
+        ...splitConfiguredRoots(process.env.AUGUST_PROXY_HOST_ROOTS),
+        ...splitConfiguredRoots(process.env.AUGUST_PROXY_HOST_ROOT),
+        ...splitConfiguredRoots(process.env.AUGUST_HOST_ROOT),
+        getProjectRoot(),
+        ...LEGACY_HOST_PROJECT_ROOTS
+    ]);
+}
 const COMPACT_THRESHOLD = 60;      // compact messages after this many entries
 const COMPACT_KEEP_RECENT = 12;    // keep last N messages verbatim
 const DRIFT_INTERVAL = 8;          // inject identity reminder every N tool-result turns
@@ -105,13 +131,7 @@ function normalizeForCompare(value) {
         .toLowerCase();
 }
 
-const HOST_PROJECT_ROOTS = uniquePaths([
-    ...splitConfiguredRoots(process.env.AUGUST_PROXY_HOST_ROOTS),
-    ...splitConfiguredRoots(process.env.AUGUST_PROXY_HOST_ROOT),
-    ...splitConfiguredRoots(process.env.AUGUST_HOST_ROOT),
-    PROJECT_ROOT,
-    ...LEGACY_HOST_PROJECT_ROOTS
-]);
+const HOST_PROJECT_ROOTS = [];
 
 function newId(prefix) {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -283,31 +303,31 @@ function clearWorkbenchGoal(session, reason = 'cleared') {
 
 function mapHostPath(inputPath) {
     const raw = String(inputPath || '').trim();
-    if (!raw) return WORKSPACE_ROOT;
+    if (!raw) return getWorkspaceRoot();
     const normalizedRaw = normalizeForCompare(raw);
-    for (const hostRoot of HOST_PROJECT_ROOTS) {
+    for (const hostRoot of getHostProjectRoots()) {
         const normalizedHost = normalizeForCompare(hostRoot);
         if (normalizedRaw === normalizedHost || normalizedRaw.startsWith(`${normalizedHost}/`)) {
             const suffix = raw.replace(/\\/g, '/')
                 .slice(String(hostRoot).replace(/\\/g, '/').replace(/\/+$/, '').length)
                 .replace(/^\/+/, '');
-            return path.join(CONTAINER_PROJECT_ROOT, suffix);
+            return path.join(getContainerProjectRoot(), suffix);
         }
     }
     return raw;
 }
 
 function resolveAnyPath(inputPath, workspacePath = null) {
-    if (!inputPath || typeof inputPath !== 'string') return workspacePath || WORKSPACE_ROOT;
+    if (!inputPath || typeof inputPath !== 'string') return workspacePath || getWorkspaceRoot();
     const mapped = mapHostPath(inputPath);
     const resolved = path.isAbsolute(mapped)
         ? path.resolve(mapped)
-        : path.resolve(workspacePath || PROJECT_ROOT, mapped);
+        : path.resolve(workspacePath || getProjectRoot(), mapped);
     return resolved;
 }
 
 function toDisplayPath(filePath, workspacePath = null) {
-    return path.relative(workspacePath || WORKSPACE_ROOT, filePath).replace(/\\/g, '/') || '.';
+    return path.relative(workspacePath || getWorkspaceRoot(), filePath).replace(/\\/g, '/') || '.';
 }
 
 const PROXY_ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -315,7 +335,7 @@ const PROXY_ROOT = path.resolve(__dirname, '..', '..', '..');
 function isProxyPath(filePath) {
     if (!filePath) return false;
     const resolved = path.resolve(String(filePath));
-    const normalizedRoot = path.resolve(PROXY_ROOT).toLowerCase().replace(/\\/g, '/');
+    const normalizedRoot = path.resolve(getProxyRoot()).toLowerCase().replace(/\\/g, '/');
     const normalizedPath = resolved.toLowerCase().replace(/\\/g, '/');
     return normalizedPath === normalizedRoot || normalizedPath.startsWith(normalizedRoot + '/');
 }
@@ -332,7 +352,7 @@ function isProxyMutation(toolName, args) {
     }
     if (toolName === 'august__bash' || toolName === 'august__run_command') {
         const cmd = String(args.command || '').toLowerCase();
-        const normalizedRoot = PROXY_ROOT.toLowerCase().replace(/\\/g, '/');
+        const normalizedRoot = getProxyRoot().toLowerCase().replace(/\\/g, '/');
         if (cmd.includes(normalizedRoot)) return true;
     }
     if (toolName.startsWith('mcp__filesystem__')) {
@@ -939,20 +959,24 @@ function describeWorkbenchEnvironment(session) {
         generatedAt: new Date().toISOString(),
         provider: session?.provider || 'claude',
         roots: {
-            projectRoot: PROJECT_ROOT,
-            workspaceRoot: WORKSPACE_ROOT,
-            containerProjectRoot: CONTAINER_PROJECT_ROOT,
-            hostProjectRoots: HOST_PROJECT_ROOTS
+            projectRoot: getProjectRoot(),
+            workspaceRoot: getWorkspaceRoot(),
+            containerProjectRoot: getContainerProjectRoot(),
+            hostProjectRoots: getHostProjectRoots(),
+            proxyRoot: getProxyRoot()
         },
         pathMapping: {
             envVars: [
                 'AUGUST_PROXY_HOST_ROOTS',
                 'AUGUST_PROXY_HOST_ROOT',
                 'AUGUST_HOST_ROOT',
-                'AUGUST_PROXY_CONTAINER_ROOT'
+                'AUGUST_PROXY_CONTAINER_ROOT',
+                'AUGUST_PROXY_WORKDIR',
+                'AUGUST_PROXY_ALLOWED_ROOTS',
+                'AUGUST_PROXY_DESKTOP_ROOTS'
             ],
-            hostRootsMapTo: CONTAINER_PROJECT_ROOT,
-            note: 'Host project paths are mapped to the container project root before file tools run, so pasted Windows paths and in-container paths resolve to the same project tree.'
+            hostRootsMapTo: getContainerProjectRoot(),
+            note: 'Host project paths are mapped to the configured container/project root before file tools run. Desktop apps should set AUGUST_PROXY_WORKDIR and AUGUST_PROXY_ALLOWED_ROOTS to the user-approved folders.'
         },
         approvalGate: {
             approved: session?.approved === true,
@@ -1406,7 +1430,7 @@ function buildSystemPrompt(session) {
         'Any mutation anywhere on the system requires an explicit approved plan via august__submit_plan and user approval in the Workbench UI.',
         'A mutation means writing/editing/deleting/moving/creating files, running shell commands, changing memory, installing/importing/updating resources, launching background tasks, or using host computer controls that click/type/focus/launch/close/set clipboard.',
         'If a mutating tool is attempted without approval, the server will cancel it and return the approval-gate reminder.',
-        'The proxy system directory is: ' + PROXY_ROOT,
+        'The proxy system directory is: ' + getProxyRoot(),
         planLine
     ].join('\n');
 
@@ -2287,6 +2311,11 @@ async function generateSessionTitle(session, firstMessage, emit) {
 
 module.exports = {
     WORKSPACE_ROOT,
+    getWorkspaceRoot,
+    getProjectRoot,
+    getContainerProjectRoot,
+    getProxyRoot,
+    getHostProjectRoots,
     answerWorkbenchBtw,
     approveWorkbenchPlan,
     clearWorkbenchGoal,

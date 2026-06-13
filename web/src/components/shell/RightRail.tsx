@@ -36,8 +36,8 @@ export function RightRail({ title, subtitle, children, className }: Props) {
     >
       <header className="h-9 flex items-center justify-between border-b border-border px-3 shrink-0">
         <div className="min-w-0">
-          <p className="text-xs font-semibold truncate">{title}</p>
-          {subtitle && <p className="text-[10px] text-muted-foreground truncate">{subtitle}</p>}
+          <p className="text-sm font-semibold truncate">{title}</p>
+          {subtitle && <p className="text-[12px] text-muted-foreground truncate">{subtitle}</p>}
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
           <Button variant="ghost" size="icon-sm" onClick={() => setCollapsed(true)} aria-label="Collapse rail">

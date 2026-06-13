@@ -1,4 +1,5 @@
 const { exec } = require('child_process');
+const fs = require('fs');
 
 const DANGEROUS_PATTERNS = [
   /\brm\s+-rf\b/i,
@@ -38,6 +39,24 @@ function getShell() {
   return process.platform === 'win32' ? 'powershell.exe' : '/bin/bash';
 }
 
+function getWorkspacePath(fallback = process.cwd()) {
+  const candidates = [
+    process.env.AUGUST_PROXY_WORKDIR,
+    process.env.AUGUST_WORKDIR,
+    process.env.AUGUST_PROXY_CONTAINER_ROOT,
+    fallback
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return fallback;
+}
+
+function resolveWorkspacePath(candidate = null) {
+  return getWorkspacePath(candidate || null);
+}
+
 function getManagedBashToolDefinitions() {
   return [
     {
@@ -49,6 +68,7 @@ function getManagedBashToolDefinitions() {
           type: 'object',
           properties: {
             command: { type: 'string', description: 'The bash command to execute.' },
+            cwd: { type: 'string', description: 'Optional working directory. Defaults to AUGUST_PROXY_WORKDIR, AUGUST_WORKDIR, AUGUST_PROXY_CONTAINER_ROOT, or the proxy process cwd.' },
             timeout_ms: { type: 'number', description: 'Timeout in milliseconds (default 60000).' }
           },
           required: ['command']
@@ -64,6 +84,7 @@ function getManagedBashToolDefinitions() {
           type: 'object',
           properties: {
             command: { type: 'string', description: 'The bash command to execute.' },
+            cwd: { type: 'string', description: 'Optional working directory. Defaults to AUGUST_PROXY_WORKDIR, AUGUST_WORKDIR, AUGUST_PROXY_CONTAINER_ROOT, or the proxy process cwd.' },
             timeout_ms: { type: 'number', description: 'Timeout in milliseconds (default 60000).' }
           },
           required: ['command']
@@ -121,7 +142,7 @@ async function executeManagedBashTool(toolName, args, workspacePath = null, onPr
     }
 
     const child = exec(command, {
-      cwd: workspacePath || '/app',
+      cwd: resolveWorkspacePath(args.cwd || workspacePath),
       timeout: timeoutMs,
       maxBuffer: MAX_OUTPUT_CHARS * 2,
       shell: getShell()
@@ -162,5 +183,7 @@ async function executeManagedBashTool(toolName, args, workspacePath = null, onPr
 module.exports = {
   isManagedBashToolName,
   executeManagedBashTool,
-  getManagedBashToolDefinitions
+  getManagedBashToolDefinitions,
+  getWorkspacePath,
+  resolveWorkspacePath
 };

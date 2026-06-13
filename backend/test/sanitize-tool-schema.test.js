@@ -1,4 +1,5 @@
 const { sanitizeToolSchema } = require('../services/tools/mcp-client');
+const { sanitizeAnthropicToolDefinition, openAiToAnthropicToolDefinition } = require('../adapters/proxy-tools');
 const assert = require('assert');
 
 let passed = 0;
@@ -125,6 +126,135 @@ test('array property (non-type-objects) → {type:"string"}', () => {
 // 10. String input → fallback
 test('string input → {type:"object", properties:{}}', () => {
     assert.deepStrictEqual(sanitizeToolSchema('bad'), { type: 'object', properties: {} });
+});
+
+// 11. Nested anyOf with raw array of type objects (the real error case)
+test('nested anyOf items with array of type objects → fixed', () => {
+    const input = {
+        type: 'object',
+        properties: {
+            value: {
+                anyOf: [
+                    {
+                        type: 'array',
+                        items: [
+                            { maximum: 1, minimum: 0, type: 'number' },
+                            { maximum: 1, minimum: 0, type: 'number' },
+                            { maximum: 1, minimum: 0, type: 'number' },
+                            { maximum: 1, minimum: 0, type: 'number' }
+                        ]
+                    },
+                    { type: 'string' }
+                ]
+            }
+        }
+    };
+    const result = sanitizeToolSchema(input);
+    const valueSchema = result.properties.value;
+    assert.strictEqual(valueSchema.anyOf[0].type, 'array');
+    assert.deepStrictEqual(valueSchema.anyOf[0].items, {
+        oneOf: [
+            { maximum: 1, minimum: 0, type: 'number' },
+            { maximum: 1, minimum: 0, type: 'number' },
+            { maximum: 1, minimum: 0, type: 'number' },
+            { maximum: 1, minimum: 0, type: 'number' }
+        ]
+    });
+});
+
+// 12. Deeply nested oneOf inside properties
+test('deeply nested oneOf in properties → sanitized', () => {
+    const input = {
+        type: 'object',
+        properties: {
+            config: {
+                type: 'object',
+                properties: {
+                    color: {
+                        oneOf: [
+                            [{ type: 'number' }, { type: 'number' }, { type: 'number' }],
+                            { type: 'string' }
+                        ]
+                    }
+                }
+            }
+        }
+    };
+    const result = sanitizeToolSchema(input);
+    const colorSchema = result.properties.config.properties.color;
+    // oneOf[0] is a raw array of type objects → should become {type:'array', items:{oneOf:[...]}}
+    assert.deepStrictEqual(colorSchema.oneOf[0], {
+        type: 'array',
+        items: { oneOf: [{ type: 'number' }, { type: 'number' }, { type: 'number' }] }
+    });
+});
+
+test('anthropic tool definition sanitizes OpenAI function parameters', () => {
+    const result = sanitizeAnthropicToolDefinition({
+        type: 'function',
+        function: {
+            name: 'bad_tool',
+            description: 'has bad tuple items',
+            parameters: {
+                type: 'object',
+                properties: {
+                    value: {
+                        anyOf: [{
+                            type: 'array',
+                            items: [
+                                { maximum: 1, minimum: 0, type: 'number' },
+                                { maximum: 1, minimum: 0, type: 'number' },
+                                { maximum: 1, minimum: 0, type: 'number' },
+                                { maximum: 1, minimum: 0, type: 'number' }
+                            ]
+                        }]
+                    }
+                }
+            }
+        }
+    });
+    assert.deepStrictEqual(result.input_schema.properties.value.anyOf[0].items, {
+        oneOf: [
+            { maximum: 1, minimum: 0, type: 'number' },
+            { maximum: 1, minimum: 0, type: 'number' },
+            { maximum: 1, minimum: 0, type: 'number' },
+            { maximum: 1, minimum: 0, type: 'number' }
+        ]
+    });
+});
+
+test('openai-to-anthropic conversion sanitizes parameters', () => {
+    const result = openAiToAnthropicToolDefinition({
+        type: 'function',
+        function: {
+            name: 'bad_tool',
+            description: 'has bad tuple items',
+            parameters: {
+                type: 'object',
+                properties: {
+                    value: {
+                        anyOf: [{
+                            type: 'array',
+                            items: [
+                                { maximum: 1, minimum: 0, type: 'number' },
+                                { maximum: 1, minimum: 0, type: 'number' },
+                                { maximum: 1, minimum: 0, type: 'number' },
+                                { maximum: 1, minimum: 0, type: 'number' }
+                            ]
+                        }]
+                    }
+                }
+            }
+        }
+    });
+    assert.deepStrictEqual(result.input_schema.properties.value.anyOf[0].items, {
+        oneOf: [
+            { maximum: 1, minimum: 0, type: 'number' },
+            { maximum: 1, minimum: 0, type: 'number' },
+            { maximum: 1, minimum: 0, type: 'number' },
+            { maximum: 1, minimum: 0, type: 'number' }
+        ]
+    });
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

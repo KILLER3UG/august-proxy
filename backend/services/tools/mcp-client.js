@@ -39,35 +39,72 @@ function sanitizeToolSchema(schema) {
         }
         const sanitizedProps = {};
         for (const [key, val] of Object.entries(schema.properties)) {
-            sanitizedProps[key] = sanitizePropertyValue(val);
+            sanitizedProps[key] = sanitizeSchemaDeep(val);
         }
         schema = { ...schema, properties: sanitizedProps };
     }
     return schema;
 }
 
-function sanitizePropertyValue(val) {
+// Deep recursive sanitizer — walks the entire JSON Schema tree and fixes invalid structures
+function sanitizeSchemaDeep(val) {
     if (!val || typeof val !== 'object') {
         return { type: 'string' };
     }
+    // Raw array of type objects → {type:'array', items:{oneOf:[...]}}
     if (Array.isArray(val)) {
-        // Raw array of type objects (e.g. [{'type':'number'},{'type':'number'}]) → proper array schema
         if (val.length > 0 && val.every(item => item && typeof item === 'object' && !Array.isArray(item) && item.type)) {
-            return { type: 'array', items: { oneOf: val } };
+            return { type: 'array', items: { oneOf: val.map(sanitizeSchemaDeep) } };
         }
         return { type: 'string' };
     }
-    if (val.type === 'array' && Array.isArray(val.items) && val.items.every(item => item && typeof item === 'object' && item.type)) {
-        return { ...val, items: { oneOf: val.items } };
-    }
-    if (val.type === 'object' && val.properties && typeof val.properties === 'object' && !Array.isArray(val.properties)) {
-        const nested = {};
-        for (const [k, v] of Object.entries(val.properties)) {
-            nested[k] = sanitizePropertyValue(v);
+
+    const result = { ...val };
+
+    // Fix items: raw array of type objects
+    if (Array.isArray(result.items)) {
+        if (result.items.length > 0 && result.items.every(item => item && typeof item === 'object' && !Array.isArray(item) && item.type)) {
+            result.items = { oneOf: result.items.map(sanitizeSchemaDeep) };
+        } else {
+            result.items = { type: 'string' };
         }
-        return { ...val, properties: nested };
+    } else if (result.items && typeof result.items === 'object') {
+        result.items = sanitizeSchemaDeep(result.items);
     }
-    return val;
+
+    // Recurse into anyOf / oneOf / allOf
+    for (const key of ['anyOf', 'oneOf', 'allOf']) {
+        if (Array.isArray(result[key])) {
+            result[key] = result[key].map(sanitizeSchemaDeep);
+        }
+    }
+
+    // Recurse into nested properties
+    if (result.properties && typeof result.properties === 'object' && !Array.isArray(result.properties)) {
+        const nested = {};
+        for (const [k, v] of Object.entries(result.properties)) {
+            nested[k] = sanitizeSchemaDeep(v);
+        }
+        result.properties = nested;
+    }
+
+    // Recurse into additionalProperties
+    if (result.additionalProperties && typeof result.additionalProperties === 'object' && !Array.isArray(result.additionalProperties)) {
+        result.additionalProperties = sanitizeSchemaDeep(result.additionalProperties);
+    }
+
+    // Recurse into definitions/$defs
+    for (const defsKey of ['definitions', '$defs']) {
+        if (result[defsKey] && typeof result[defsKey] === 'object' && !Array.isArray(result[defsKey])) {
+            const defs = {};
+            for (const [k, v] of Object.entries(result[defsKey])) {
+                defs[k] = sanitizeSchemaDeep(v);
+            }
+            result[defsKey] = defs;
+        }
+    }
+
+    return result;
 }
 
 function nowIso() {

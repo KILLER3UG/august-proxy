@@ -141,8 +141,8 @@ export function SessionList({ activeId, collapsed, onToggleCollapsed, onSelect, 
   };
 
   return (
-    <div className="flex h-full text-xs relative select-none bg-sidebar">
-      <div className="flex-1 flex flex-col min-w-0 text-xs">
+    <div className="flex h-full text-sm relative select-none bg-sidebar">
+      <div className="flex-1 flex flex-col min-w-0 text-sm">
         {/* Nav items */}
         <div className="py-2.5 px-2 flex flex-col gap-0.5">
           <button
@@ -587,7 +587,7 @@ function SessionRow({
             (!status || status === 'idle') && 'bg-muted-foreground/60',
           )} />
           {pinned && <Pin className="size-2.5 text-muted-foreground/60 shrink-0" />}
-          <p className={cn('truncate flex-1 text-[12px]', active ? 'text-foreground font-semibold' : 'text-foreground/75')}>
+           <p className={cn('truncate flex-1 text-[14px]', active ? 'text-foreground font-semibold' : 'text-foreground/75')}>
             {session.title}
           </p>
         </div>

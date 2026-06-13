@@ -13,13 +13,13 @@ export function Sidebar() {
     <aside className="w-60 shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex flex-col">
       <div className="px-4 py-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2.5">
-          <span className="size-7 rounded-md bg-primary text-primary-foreground grid place-items-center text-[10px] font-bold">CP</span>
+          <span className="size-7 rounded-md bg-primary text-primary-foreground grid place-items-center text-[12px] font-bold">CP</span>
           <div className="leading-tight">
-            <h1 className="text-sm font-bold">August Proxy</h1>
-            <p className="text-[10px] text-muted-foreground">Local gateway</p>
+            <h1 className="text-base font-bold">August Proxy</h1>
+            <p className="text-[12px] text-muted-foreground">Local gateway</p>
           </div>
         </div>
-        <div className="mt-3 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+        <div className="mt-3 flex items-center gap-1.5 text-[12px] text-muted-foreground">
           <span className={cn(
             'inline-block size-1.5 rounded-full',
             gatewayTone === 'good'  && 'bg-primary',
@@ -40,7 +40,7 @@ export function Sidebar() {
                 to={to}
                 end={to === '/'}
                 className={({ isActive }) => cn(
-                  'group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition outline-none',
+                  'group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition outline-none',
                   'focus-visible:ring-2 focus-visible:ring-ring',
                   isActive
                     ? 'bg-sidebar-accent text-sidebar-accent-foreground'
@@ -55,7 +55,7 @@ export function Sidebar() {
         </ul>
       </nav>
 
-      <div className="px-4 py-3 border-t border-sidebar-border text-[10px] text-muted-foreground font-mono">
+      <div className="px-4 py-3 border-t border-sidebar-border text-[12px] text-muted-foreground font-mono">
         v2.0.0 · port 8085
       </div>
     </aside>
