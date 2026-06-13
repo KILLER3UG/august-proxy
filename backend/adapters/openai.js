@@ -766,9 +766,9 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 let fetchSignal = abortCtrl.signal;
                 let timeoutId = null;
                 if (typeof AbortSignal.any === 'function') {
-                    fetchSignal = AbortSignal.any([abortCtrl.signal, AbortSignal.timeout(300000)]);
+                    fetchSignal = AbortSignal.any([abortCtrl.signal, AbortSignal.timeout(600000)]);
                 } else {
-                    timeoutId = setTimeout(() => abortCtrl.abort(), 300000);
+                    timeoutId = setTimeout(() => abortCtrl.abort(), 600000);
                 }
 
                 try {

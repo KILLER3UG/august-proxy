@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { marked } from 'marked';
 import { toast } from 'sonner';
 import { useStore } from '@nanostores/react';
-import { $sessions, setSessionStatus, clearSessionStatus } from '@/store/sessions';
+import { $sessions, setSessionStatus, clearSessionStatus, renameSession } from '@/store/sessions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
 import { ToolCallItem as ToolCallItemComp, getToolIcon } from '@/components/chat/ToolCallItem';
@@ -395,7 +395,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           : msg
       ));
       setStreaming(false);
-      if (sessionId) clearSessionStatus(sessionId);
+      if (sessionId) setSessionStatus(sessionId, 'done');
       return;
     }
 
@@ -439,7 +439,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       ));
     }
     setStreaming(false);
-    if (sessionId) clearSessionStatus(sessionId);
+    if (sessionId) setSessionStatus(sessionId, 'done');
   };
 
   function appendBlockEvent(
@@ -961,6 +961,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       text = `${text}\n\n${attachInfo}`;
     }
 
+    // Auto-generate title from first user message
+    if (messages.length === 0 && sessionId) {
+      const title = text.length > 50 ? text.slice(0, 50).trim() + '…' : text;
+      renameSession(sessionId, title);
+    }
+
     setInput('');
     setAttachments([]);
     setShowToolsDropdown(false);
@@ -1250,7 +1256,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   e.target.style.height = Math.min(e.target.scrollHeight, 240) + 'px';
                 }}
                 onKeyDown={onKey}
-                placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${getModelDisplayName(currentModel.id)}…` : 'Type a message…')}
+                placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${modelDisplayParts(currentModel.id).name}…` : 'Type a message…')}
                 rows={1}
                 disabled={streaming}
                 className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
@@ -2137,7 +2143,7 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
             {selected.provider === 'openai-api' ? 'openai' : selected.provider}
           </span>
         )}
-        <span className="truncate max-w-[200px] font-medium text-foreground transition-all duration-200">{selected ? getModelDisplayName(selected.id || selected.name || '') : 'model'}</span>
+        <span className="truncate max-w-[200px] font-medium text-foreground transition-all duration-200">{selected ? modelDisplayParts(selected.id || selected.name || '').name : 'model'}</span>
         <svg className={cn("size-3 shrink-0 opacity-60 ml-0.5 transition-transform duration-200", open && "rotate-180")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />
         </svg>

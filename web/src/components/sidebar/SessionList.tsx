@@ -17,6 +17,7 @@ import {
   $sessions, 
   $folders, 
   $sessionStates,
+  clearSessionStatus,
   renameSession, 
   deleteSession, 
   archiveSession, 
@@ -31,6 +32,7 @@ import {
   type SessionStatus,
 } from '@/store/sessions';
 import { toast } from 'sonner';
+import { modelDisplayParts } from '@/sections/chat/ChatThread';
 
 const SESSIONS_KEY = 'august-pinned-sessions';
 const STORAGE = (() => {
@@ -404,9 +406,10 @@ function Section({ title, count, empty, onNewFolder, onUploadFolder, children }:
   );
 }
 
-function FolderHeader({ folder, count, onToggleCollapse, onNewSession, onRename, onDelete }: {
+function FolderHeader({ folder, count, hasActiveSession, onToggleCollapse, onNewSession, onRename, onDelete }: {
   folder: Folder;
   count: number;
+  hasActiveSession?: boolean;
   onToggleCollapse: () => void;
   onNewSession: () => void;
   onRename: () => void;
@@ -566,22 +569,87 @@ function SessionRow({
         />
       )}
       <button
-        onClick={onClick}
+        onClick={() => {
+          if (status === 'done') clearSessionStatus(session.id);
+          onClick();
+        }}
         onContextMenu={(e) => { e.preventDefault(); onTogglePin(); }}
-        className="relative w-full text-left px-2 py-1.5 flex items-center gap-1.5 pr-12 min-w-0"
+        className="relative w-full text-left px-2 py-1.5 flex flex-col gap-0.5 pr-12 min-w-0"
         title="Right click or use three-dots menu to pin"
       >
-        <span className={cn(
-          'inline-block size-1.5 rounded-full shrink-0 transition-colors',
-          status === 'working' && 'bg-amber-400 animate-pulse',
-          status === 'awaiting' && 'bg-blue-400',
-          status === 'error' && 'bg-red-400',
-          (!status || status === 'idle') && 'bg-muted-foreground/60',
-        )} />
-        {pinned && <Pin className="size-2.5 text-muted-foreground/60 shrink-0" />}
-        <p className={cn('truncate flex-1 text-[12px]', active ? 'text-foreground font-semibold' : 'text-foreground/75')}>
-          {session.title}
-        </p>
+        <div className="flex items-center gap-1.5">
+          <span className={cn(
+            'inline-block size-1.5 rounded-full shrink-0 transition-colors',
+            status === 'working' && 'bg-amber-400',
+            status === 'done' && 'bg-emerald-400',
+            status === 'awaiting' && 'bg-blue-400',
+            status === 'error' && 'bg-red-400',
+            (!status || status === 'idle') && 'bg-muted-foreground/60',
+          )} />
+          {pinned && <Pin className="size-2.5 text-muted-foreground/60 shrink-0" />}
+          <p className={cn('truncate flex-1 text-[12px]', active ? 'text-foreground font-semibold' : 'text-foreground/75')}>
+            {session.title}
+          </p>
+        </div>
+        <AnimatePresence>
+          {status === 'working' && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="flex items-center gap-1 ml-3 overflow-hidden"
+            >
+              <span className="text-[10px] text-amber-400/80 font-medium">
+                {modelDisplayParts(session.model).name}
+              </span>
+              <span className="text-[10px] text-amber-400/50">is</span>
+              <span className="flex items-center gap-px">
+                {['w','o','r','k','i','n','g'].map((ch, i) => (
+                  <motion.span
+                    key={i}
+                    className="text-[10px] text-amber-400/70 font-medium inline-block"
+                    animate={{ opacity: [0.3, 1, 0.3], y: [1, -1, 1] }}
+                    transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.08 }}
+                  >
+                    {ch}
+                  </motion.span>
+                ))}
+              </span>
+            </motion.div>
+          )}
+          {status === 'done' && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="flex items-center gap-1 ml-3 overflow-hidden"
+            >
+              <span className="text-[10px] text-emerald-400/80 font-medium">
+                {modelDisplayParts(session.model).name}
+              </span>
+              <motion.span
+                className="text-[10px] text-emerald-400/60 font-medium"
+                animate={{ opacity: [0.4, 1, 0.4] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+              >
+                done
+              </motion.span>
+            </motion.div>
+          )}
+          {status === 'error' && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="flex items-center gap-1 ml-3 overflow-hidden"
+            >
+              <span className="text-[10px] text-red-400/80 font-medium">
+                {modelDisplayParts(session.model).name}
+              </span>
+              <span className="text-[10px] text-red-400/60 font-medium">error</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </button>
 
       {/* Floating kebab menu triggers */}

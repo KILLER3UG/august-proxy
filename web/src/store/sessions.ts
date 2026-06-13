@@ -13,7 +13,7 @@ export interface Session {
   workspacePath?: string | null;
 }
 
-export type SessionStatus = 'idle' | 'working' | 'awaiting' | 'error';
+export type SessionStatus = 'idle' | 'working' | 'awaiting' | 'error' | 'done';
 
 export const $sessionStates = atom<Record<string, SessionStatus>>({});
 

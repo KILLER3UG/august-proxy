@@ -6,7 +6,9 @@ const { startRequest, endRequest } = require('../../lib/logger');
 /* ── safeSend ───────────────────────────────────────────────────────────
  * Safely sends a JSON string payload to a WebSocket client. Wraps ws.send
  * in a try-catch to ignore closed sockets.                               */
+let lastActivityTime = Date.now();
 function safeSend(ws, payload) {
+    lastActivityTime = Date.now();
     if (ws.readyState !== 1 /* OPEN */) return;
     try {
         ws.send(typeof payload === 'string' ? payload : JSON.stringify(payload));
@@ -187,9 +189,13 @@ class WebSocketMockResponse {
 function handleChatConnection(ws) {
     let abortController = null;
 
-    // ── Keepalive ping every 30s ──
+    // ── Keepalive ping every 30s (only if no recent activity) ──
+    lastActivityTime = Date.now();
     const pingInterval = setInterval(() => {
-        safeSend(ws, { type: 'ping' });
+        const inactiveTime = Date.now() - lastActivityTime;
+        if (inactiveTime >= 25000) {
+            safeSend(ws, { type: 'ping' });
+        }
     }, 30000);
 
     ws.on('message', async (data) => {
