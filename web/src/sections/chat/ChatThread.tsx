@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { marked } from 'marked';
 import { toast } from 'sonner';
 import { useStore } from '@nanostores/react';
-import { $sessions, setSessionStatus, clearSessionStatus, renameSession, updateSessionModel } from '@/store/sessions';
+import { $sessions, setSessionStatus, clearSessionStatus, renameSession, updateSessionModel, type Session } from '@/store/sessions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
 import { ToolCallItem as ToolCallItemComp, getToolIcon } from '@/components/chat/ToolCallItem';
@@ -107,6 +107,27 @@ interface ModelItem {
   isFree?: boolean;
   supportsReasoning?: boolean;
   supportsThinking?: boolean;
+}
+
+export function modelFromSession(session: Pick<Session, 'model' | 'provider'> | null): ModelItem | null {
+  if (!session?.model) return null;
+  return {
+    id: session.model,
+    name: session.model,
+    provider: session.provider || '',
+    contextWindow: 128000,
+    supportsReasoning: isLikelyReasoningModel(session.model),
+    supportsThinking: isLikelyReasoningModel(session.model),
+  };
+}
+
+function loadLastModel(): ModelItem | null {
+  try {
+    const saved = localStorage.getItem('august_last_model');
+    return saved ? JSON.parse(saved) as ModelItem : null;
+  } catch {
+    return null;
+  }
 }
 
 const VARIANT_TAGS: ReadonlyArray<readonly [RegExp, string]> = [
@@ -219,13 +240,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   };
 
   const visibleModels = useMemo(() => models.filter(m => !hiddenModels.has(m.id)), [models, hiddenModels]);
-  // Initialise instantly from localStorage so the button renders without any network wait
+  // Initialise from the active session first so model state is scoped per chat.
+  // localStorage is only a fallback for sessions without a saved model.
   const [selectedModel, setSelectedModel] = useState<ModelItem | null>(() => {
-    try {
-      const saved = localStorage.getItem('august_last_model');
-      if (saved) return JSON.parse(saved) as ModelItem;
-    } catch {}
-    return null;
+    return modelFromSession(activeSession || null) || loadLastModel();
   });
   const [effort, setEffort] = useState<'low' | 'medium' | 'high' | 'max'>(() => {
     try {
@@ -248,6 +266,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const activeSessionIdRef = useRef<string | null>(sessionId);
+  const sessionGenerationRef = useRef(0);
+
+  useEffect(() => {
+    activeSessionIdRef.current = sessionId;
+    sessionGenerationRef.current += 1;
+  }, [sessionId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -277,6 +302,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   // Track whether the user manually changed the model so we don't override it when the full list loads
   const userSelectedRef = useRef<string | null>(null);
+
+  // Keep the dropdown anchored to the active session's saved model. This is the
+  // per-session fix: model selection in session A must not be overwritten by the
+  // global backend model when the user visits session B.
+  useEffect(() => {
+    if (!sessionId || !activeSession?.model) return;
+    userSelectedRef.current = activeSession.model;
+    setSelectedModel(prev => {
+      if (prev?.id === activeSession.model && prev.provider === activeSession.provider) return prev;
+      return modelFromSession(activeSession || null) || prev;
+    });
+  }, [sessionId, activeSession?.model, activeSession?.provider]);
 
   // ── Two-phase model loading ───────────────────────────────────────
   // Phase 1 (instant): read config only — fast, small payload.
@@ -364,17 +401,23 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   // Remove hardcoded fallback — rely on API only
   const currentModel = selectedModel || null;
+  const modelForRequest = currentModel || modelFromSession(activeSession || null);
 
   // Dynamic context usage tracker
-  const maxContext = currentModel?.contextWindow || 128000;
+  const maxContext = modelForRequest?.contextWindow || 128000;
   const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0) + input.length;
   const estTokens = Math.ceil(totalChars / 4) + 120;
   const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
 
   // ── WebSocket chat client ─────────────────────────────────────────
   // Tries WS first. On connect failure, falls back to HTTP POST.
-  // Uses per-turn connection — clean and simple.
+  // Request IDs keep concurrent turns isolated across session switches.
   const generateAIResponse = async (chatHistory: ChatMessage[]) => {
+    const turnSessionId = sessionId;
+    const turnGeneration = sessionGenerationRef.current;
+    const isCurrentTurn = () => turnGeneration === sessionGenerationRef.current && activeSessionIdRef.current === turnSessionId;
+    if (!isCurrentTurn()) return;
+
     setStreaming(true);
     if (sessionId) setSessionStatus(sessionId, 'working');
 
@@ -396,9 +439,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const wsSucceeded = await tryWebSocketChat(
       chatHistory, assistantMsgId, abortController,
       (val: number | null) => { thinkingEnd = val; },
-      thinkingStart
+      thinkingStart,
+      isCurrentTurn
     );
-    if (wsSucceeded) {
+    if (wsSucceeded === 'succeeded') {
+      if (!isCurrentTurn()) return;
       // Merge final thinking duration
       const finalDuration = thinkingEnd
         ? Math.round((thinkingEnd - thinkingStart) / 100) / 10
@@ -413,6 +458,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       return;
     }
 
+    if (wsSucceeded === 'aborted') {
+      if (isCurrentTurn()) {
+        setStreaming(false);
+        if (sessionId) clearSessionStatus(sessionId);
+      }
+      return;
+    }
+
     // ── Fallback: HTTP POST ──
     try {
       const res = await fetch('/api/chat', {
@@ -420,8 +473,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: currentModel?.id,
-          provider: currentModel?.provider,
+          model: modelForRequest?.id,
+          provider: modelForRequest?.provider,
           messages: chatHistory.map(m => ({ role: m.role, content: m.content })),
           effort: effort,
           workspacePath: workspacePath
@@ -429,11 +482,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       });
 
       if (!res.ok) {
+        if (!isCurrentTurn()) return;
         const errMsg = await res.text();
         setMessages(prev => prev.map(msg =>
           msg.id === assistantMsgId ? {
             ...msg,
-            content: `⚠️ Failed to get response${currentModel ? ` from ${currentModel.id}` : ''}: ${errMsg}`
+            content: `⚠️ Failed to get response${modelForRequest ? ` from ${modelForRequest.id}` : ''}: ${errMsg}`
           } : msg
         ));
         setStreaming(false);
@@ -441,9 +495,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         return;
       }
 
-      await readSSEStream(res, assistantMsgId, abortController, thinkingStart);
+      await readSSEStream(res, assistantMsgId, abortController, thinkingStart, isCurrentTurn);
     } catch (e: any) {
-      if (e?.name === 'AbortError') { setStreaming(false); if (sessionId) clearSessionStatus(sessionId); return; }
+      if (e?.name === 'AbortError') {
+        if (isCurrentTurn()) {
+          setStreaming(false);
+          if (sessionId) clearSessionStatus(sessionId);
+        }
+        return;
+      }
+      if (!isCurrentTurn()) return;
       console.error(e);
       setMessages(prev => prev.map(msg =>
         msg.id === assistantMsgId ? {
@@ -452,6 +513,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         } : msg
       ));
     }
+    if (!isCurrentTurn()) return;
     setStreaming(false);
     if (sessionId) setSessionStatus(sessionId, 'done');
   };
@@ -542,17 +604,19 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }
 
   // ── WebSocket helper ─────────────────────────────────────────────
-  // Returns true if WS successfully completed the turn.
+  // Returns the turn result after WS completes, aborts, or fails.
   const WS_RECONNECT_MAX = 3;
   const WS_RECONNECT_BASE_MS = 1000;
+  type ChatTurnResult = 'succeeded' | 'aborted' | 'failed';
 
   const tryWebSocketChat = async (
     chatHistory: ChatMessage[],
     assistantMsgId: string,
     abortController: AbortController,
     setThinkingEnd: (v: number | null) => void,
-    thinkingStart: number
-  ): Promise<boolean> => {
+    thinkingStart: number,
+    isCurrentTurn: () => boolean
+  ): Promise<ChatTurnResult> => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/chat/ws`;
 
@@ -573,7 +637,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       if (abortController.signal.aborted) { aborted = true; break; }
 
       try {
-        const result = await new Promise<{ success: boolean; aborted: boolean }>((resolve) => {
+        const result = await new Promise<ChatTurnResult>((resolve) => {
           const socket = getOrCreateWs(wsUrl);
           ws = socket;
           let opened = false;
@@ -585,15 +649,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
           const sendChatStart = () => {
             if (abortController.signal.aborted) {
-              resolve({ success: false, aborted: true });
+              resolve('aborted');
               return;
             }
             socket.send(JSON.stringify({
               type: 'chat.start',
               requestId,
               payload: {
-                model: currentModel?.id,
-                provider: currentModel?.provider,
+                model: modelForRequest?.id,
+                provider: modelForRequest?.provider,
                 messages: chatHistory.map(m => ({ role: m.role, content: m.content })),
                 effort: effort,
                 workspacePath: workspacePath
@@ -624,6 +688,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
               // Only process events matching our requestId
               if (parsed.requestId && parsed.requestId !== requestId) return;
+              if (!isCurrentTurn()) {
+                cleanup();
+                resolve('aborted');
+                return;
+              }
 
               switch (parsed.type) {
                 case 'thinking':
@@ -740,7 +809,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
               if (done || parsed.type === 'done') {
                 cleanup();
-                resolve({ success: true, aborted: false });
+                resolve(isCurrentTurn() ? 'succeeded' : 'aborted');
               }
             } catch (e) {
               // Non-JSON message — ignore
@@ -754,30 +823,35 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           // Shared socket: don't resolve on close — each request resolves via 'done' event or abort
           socket.onclose = () => {
             if (!done && !abortController.signal.aborted) {
-              // Socket closed unexpectedly — trigger abort so request can be retried via HTTP fallback
-              abortController.abort();
+              if (isCurrentTurn()) {
+                // Socket closed unexpectedly — trigger abort so request can be retried via HTTP fallback
+                abortController.abort();
+              } else {
+                cleanup();
+                resolve('aborted');
+              }
             }
           };
 
-          // Abort controller: close socket
+          // Abort controller: ask backend to cancel only this request id
           abortController.signal.addEventListener('abort', () => {
-            if (socket.readyState === WebSocket.OPEN) {
+            if (isCurrentTurn() && socket.readyState === WebSocket.OPEN) {
               socket.send(JSON.stringify({ type: 'chat.abort', requestId }));
             }
             cleanup();
-            resolve({ success: false, aborted: true });
+            resolve('aborted');
           }, { once: true });
         });
 
-        if (result.success) return true;
-        if (result.aborted) return false;
+        if (result === 'succeeded') return 'succeeded';
+        if (result === 'aborted') return 'aborted';
         // Otherwise: reconnect attempt
       } catch {
         // Connection error, will retry
       }
     }
 
-    return false; // All WS attempts failed, signal HTTP fallback
+    return 'failed'; // All WS attempts failed, signal HTTP fallback
   };
 
   // ── SSE stream reader (HTTP fallback) ────────────────────────────
@@ -786,11 +860,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     res: Response,
     assistantMsgId: string,
     abortController: AbortController,
-    thinkingStart: number
+    thinkingStart: number,
+    isCurrentTurn: () => boolean
   ) => {
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
     if (!reader) return;
+    if (!isCurrentTurn()) return;
 
     let assistantContent = '';
     let thinkingContent = '';
@@ -878,6 +954,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       }
       buffer = buffer.slice(lineStart);
 
+      if (!isCurrentTurn()) return;
       setMessages(prev => prev.map(msg =>
         msg.id === assistantMsgId ? {
           ...msg,
@@ -967,9 +1044,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       renameSession(sessionId, title);
     }
 
-    // Update session model to reflect current selection
-    if (sessionId && currentModel) {
-      updateSessionModel(sessionId, currentModel.id, currentModel.provider);
+    // Save the selected model on this session only; do not change global defaults.
+    if (sessionId && modelForRequest) {
+      updateSessionModel(sessionId, modelForRequest.id, modelForRequest.provider);
     }
 
     setInput('');
@@ -990,10 +1067,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   };
 
   const stop = () => {
-    abortRef.current?.abort();
+    const controller = abortRef.current;
+    if (controller && activeSessionIdRef.current === sessionId) {
+      controller.abort();
+    }
     abortRef.current = null;
-    setStreaming(false);
-    if (sessionId) clearSessionStatus(sessionId);
+    if (activeSessionIdRef.current === sessionId) setStreaming(false);
+    if (sessionId && activeSessionIdRef.current === sessionId) clearSessionStatus(sessionId);
   };
 
   // ── Revert: delete user message and all subsequent messages, put text back into chat input ──
@@ -1264,7 +1344,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${modelDisplayParts(currentModel.id).name}…` : 'Type a message…')}
                 rows={1}
                 disabled={streaming}
-                className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
+                className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-base outline-none placeholder:text-muted-foreground disabled:opacity-60"
                 style={{ minHeight: '40px', maxHeight: '240px' }}
               />
             </>
@@ -1289,27 +1369,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   setSelectedModel(m);
                   // Remember the user's explicit choice so background full-list load doesn't override it
                   userSelectedRef.current = m.id;
-                  // Persist for instant restore on next page load
+                  // Persist for instant restore on next page load and fallback sessions
                   try { localStorage.setItem('august_last_model', JSON.stringify(m)); } catch {}
-                  try {
-                    await Promise.all([
-                      fetch('/api/config/activeProvider', {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ provider: m.provider })
-                      }),
-                      fetch('/api/config/provider-details', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          provider: m.provider,
-                          config: { currentModel: m.id, _upstreamModel: m.id }
-                        })
-                      })
-                    ]);
-                  } catch (e) {
-                    console.error('Failed to update backend model config:', e);
-                  }
+                  // Scope the model to this session. The request payload also carries
+                  // model/provider, so normal selection must not rewrite global backend config.
+                  if (sessionId) updateSessionModel(sessionId, m.id, m.provider);
                 }}
               />
               {selectedModel?.supportsReasoning && (
@@ -1790,7 +1854,7 @@ function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool
   const hasBody = !!(tool.args || tool.result);
   const ToolIcon = getToolIcon(tool.name);
   return (
-    <div className="text-xs text-muted-foreground w-full py-0.5" data-slot="tool-block">
+    <div className="text-sm text-muted-foreground w-full py-0.5" data-slot="tool-block">
       <DisclosureRow
         onToggle={hasBody ? () => setOpen(!open) : undefined}
         open={open}
@@ -1806,7 +1870,7 @@ function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool
           <ToolIcon className="size-3.5 shrink-0 text-primary" />
           <span
             className={cn(
-              'text-xs font-medium leading-5',
+              'text-sm font-medium leading-5',
               tool.status === 'running' && 'shimmer text-foreground/55'
             )}
           >
@@ -1831,19 +1895,19 @@ function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool
               )}
             </span>
           </span>
-          {tool.status === 'done' && <span className="text-primary/80 text-[10px]">done</span>}
-          {tool.status === 'error' && <span className="text-destructive text-[10px]">error</span>}
+          {tool.status === 'done' && <span className="text-primary/80 text-[12px]">done</span>}
+          {tool.status === 'error' && <span className="text-destructive text-[12px]">error</span>}
         </span>
       </DisclosureRow>
       {open && hasBody && (
         <div className="mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1">
           {tool.args && (
-            <pre className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[11px] text-muted-foreground/70 break-words leading-relaxed border-l border-border/30 ml-2.5">
+            <pre className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[13px] text-muted-foreground/70 break-words leading-relaxed border-l border-border/30 ml-2.5">
               {tool.args}
             </pre>
           )}
           {tool.result && (
-            <div className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[11px] text-foreground/80 break-words leading-relaxed border-l border-border/30 ml-2.5">
+            <div className="px-2 py-1.5 font-mono whitespace-pre-wrap text-[13px] text-foreground/80 break-words leading-relaxed border-l border-border/30 ml-2.5">
               {tool.result}
             </div>
           )}
@@ -1856,7 +1920,7 @@ function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool
 function ThinkingIndicator() {
   return (
     <div className="flex gap-3">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono pt-1">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground font-mono pt-1">
         <span className="thinking-text animating">
           <span className="thinking-label">
             <span className="thinking-char thinking-cap" style={{ animationDelay: '0ms' }}>A</span>
@@ -2137,7 +2201,7 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
       <button
         onClick={() => setOpen(!open)}
         className={cn(
-          'flex items-center gap-1.5 text-xs font-sans outline-none cursor-pointer shrink-0',
+          'flex items-center gap-1.5 text-sm font-sans outline-none cursor-pointer shrink-0',
           'text-muted-foreground hover:text-foreground transition-all duration-200',
           'bg-muted/30 hover:bg-muted/50 rounded-md px-2 py-1',
         )}
@@ -2175,7 +2239,7 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   placeholder="Search…"
-                  className="bg-transparent text-xs font-mono outline-none w-full placeholder:text-muted-foreground/50 text-foreground py-0.5"
+                  className="bg-transparent text-sm font-mono outline-none w-full placeholder:text-muted-foreground/50 text-foreground py-0.5"
                 />
                 {searchQuery && (
                   <button
@@ -2238,7 +2302,7 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
                     <div className="skeleton-row h-7 w-full rounded" />
                   </div>
                 ) : grouped.length === 0 ? (
-                  <div className="px-3 py-4 text-xs text-muted-foreground text-center">
+                  <div className="px-3 py-4 text-sm text-muted-foreground text-center">
                     {searchQuery.trim() ? `No results for "${searchQuery.trim()}"` : 'no models loaded'}
                   </div>
                 ) : (
@@ -2255,7 +2319,7 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
                             key={m.id}
                             onClick={() => { onSelect(m); setOpen(false); }}
                             className={cn(
-                              'w-full text-left px-2.5 py-1.5 text-xs transition-all duration-150 flex items-center gap-2 rounded-md mx-1',
+                              'w-full text-left px-2.5 py-1.5 text-sm transition-all duration-150 flex items-center gap-2 rounded-md mx-1',
                               selected?.id === m.id
                                 ? 'text-primary bg-primary/10 font-semibold'
                                 : 'text-foreground/80 hover:bg-white/5 hover:text-foreground'
@@ -2342,13 +2406,13 @@ function EffortDropdown({ value, onChange }: {
       <button
         onClick={() => setOpen(!open)}
         className={cn(
-          'flex items-center gap-1.5 text-xs outline-none cursor-pointer',
+          'flex items-center gap-1.5 text-sm outline-none cursor-pointer',
           'text-muted-foreground hover:text-foreground transition-all duration-200',
           'bg-muted/30 hover:bg-muted/50 rounded-md px-2 py-1',
         )}
         title="Thinking Effort"
       >
-<span className="text-xs font-medium text-foreground transition-all duration-200">
+<span className="text-sm font-medium text-foreground transition-all duration-200">
           {currentOpt.label}
         </span>
         <svg className={cn("size-2.5 shrink-0 opacity-60 transition-transform duration-200", open && "rotate-180")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2373,14 +2437,14 @@ function EffortDropdown({ value, onChange }: {
                 key={opt.value}
                 onClick={() => { onChange(opt.value); setOpen(false); }}
                 className={cn(
-                  'w-full text-left px-2.5 py-1.5 text-[11px] transition-all duration-150 flex flex-col gap-0.5 rounded-md mx-1',
+                  'w-full text-left px-2.5 py-1.5 text-[13px] transition-all duration-150 flex flex-col gap-0.5 rounded-md mx-1',
                   value === opt.value
                     ? 'text-primary bg-primary/10 font-semibold'
                     : 'text-foreground/80 hover:bg-white/5 hover:text-foreground'
                 )}
               >
                 <span className="font-sans font-medium">{opt.label}</span>
-                <span className="text-[10px] text-muted-foreground/50">{opt.desc}</span>
+                <span className="text-[12px] text-muted-foreground/50">{opt.desc}</span>
               </button>
             ))}
           </motion.div>
