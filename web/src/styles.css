@@ -229,8 +229,8 @@ input::placeholder {
 
 /* ── Markdown Content Styling ────────────────────────────────────── */
 .markdown-content {
-  font-size: 1.125rem;
-  line-height: 1.6;
+  font-size: 0.75rem !important;
+  line-height: 1.5;
 }
 
 .markdown-content p {
@@ -265,9 +265,9 @@ input::placeholder {
   margin-bottom: 0.5rem;
   color: var(--dt-foreground);
 }
-.markdown-content h1 { font-size: 1.5rem; }
-.markdown-content h2 { font-size: 1.25rem; }
-.markdown-content h3 { font-size: 1.125rem; }
+.markdown-content h1 { font-size: 1rem; }
+.markdown-content h2 { font-size: 0.875rem; }
+.markdown-content h3 { font-size: 0.75rem; }
 
 /* Lists */
 .markdown-content ul,

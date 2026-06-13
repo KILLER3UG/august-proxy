@@ -43,6 +43,7 @@ const { registerBrowserTools, cleanup: cleanupBrowserTools } = require('./servic
 const { registerVisionTools } = require('./services/tools/vision-tools');
 const { registerDelegateTools } = require('./services/tools/delegate-tools');
 const { registerExecuteTools } = require('./services/tools/execute-tools');
+const { handleServiceConnectionRoutes } = require('./services/tools/service-connections');
 
 const UI_PATH = path.join(__dirname, 'ui', 'pages', 'ui.html');
 const UI_ROOT = path.join(__dirname, 'ui');
@@ -524,12 +525,13 @@ const requestHandler = async (req, res) => {
         }
     }
 
+    if (await handleServiceConnectionRoutes(req, res, req.url)) return;
+
     // ── Services endpoint ──
     if (req.url === '/api/services' && req.method === 'GET') {
         try {
-            const config = getConfig();
-            const integrations = config.integrations || [];
-            return sendJson(res, { services: integrations });
+            const { getServiceConnectionsArray } = require('./services/tools/service-connections');
+            return sendJson(res, { services: getServiceConnectionsArray() });
         } catch (e) {
             return sendJson(res, { services: [] });
         }

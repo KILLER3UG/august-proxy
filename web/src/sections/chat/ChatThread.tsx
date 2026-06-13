@@ -22,17 +22,77 @@ import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/comp
 import { Statusbar } from '@/components/shell/Statusbar';
 
 // ── Global WebSocket manager ─────────────────────────────────────────
-// Keeps connections alive across session switches so requests aren't cancelled.
-const wsConnections = new Map<string, WebSocket>();
-function getOrCreateWs(wsUrl: string): WebSocket {
+// Keeps one shared connection alive across session switches so requests
+// aren't cancelled. Each request has its own id and subscription so two
+// sessions can stream concurrently without overwriting each other's handlers.
+interface WsConnection {
+  socket: WebSocket;
+  subscribers: Map<string, {
+    done: boolean;
+    aborted: boolean;
+    onOpen?: () => void;
+    onEvent: (payload: any) => void;
+    onClose: () => void;
+  }>;
+}
+const wsConnections = new Map<string, WsConnection>();
+const activeWsAbortControllers = new Map<string, AbortController>();
+let visibleSessionId: string | null = null;
+let visibleGeneration = 0;
+
+function safeSendWs(socket: WebSocket, payload: any) {
+  if (socket.readyState !== WebSocket.OPEN) return;
+  try {
+    socket.send(typeof payload === 'string' ? payload : JSON.stringify(payload));
+  } catch {
+    // Socket closed or write failed mid-send — ignore.
+  }
+}
+
+function getOrCreateWs(wsUrl: string): WsConnection {
   const existing = wsConnections.get(wsUrl);
-  if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
+  if (existing && (existing.socket.readyState === WebSocket.OPEN || existing.socket.readyState === WebSocket.CONNECTING)) {
     return existing;
   }
-  const ws = new WebSocket(wsUrl);
-  wsConnections.set(wsUrl, ws);
-  ws.onclose = () => wsConnections.delete(wsUrl);
-  return ws;
+  const socket = new WebSocket(wsUrl);
+  const connection: WsConnection = { socket, subscribers: new Map() };
+  wsConnections.set(wsUrl, connection);
+
+  socket.onopen = () => {
+    for (const sub of connection.subscribers.values()) {
+      if (!sub.done && !sub.aborted) sub.onOpen?.();
+    }
+  };
+
+  socket.onmessage = (event) => {
+    try {
+      const parsed = JSON.parse(event.data);
+      if (parsed.type === 'ping') {
+        safeSendWs(socket, { type: 'pong' });
+        return;
+      }
+      if (!parsed.requestId) return;
+      const sub = connection.subscribers.get(parsed.requestId);
+      if (!sub || sub.done || sub.aborted) return;
+      sub.onEvent(parsed);
+    } catch {
+      // Non-JSON message — ignore.
+    }
+  };
+
+  socket.onclose = () => {
+    wsConnections.delete(wsUrl);
+    for (const sub of connection.subscribers.values()) {
+      if (!sub.done && !sub.aborted) sub.onClose();
+    }
+    connection.subscribers.clear();
+  };
+
+  socket.onerror = () => {
+    // Connection-level error; close will clean up subscribers.
+  };
+
+  return connection;
 }
 
 // Configure marked to support GitHub Flavored Markdown and breaks
@@ -265,13 +325,32 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mountedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const activeSessionIdRef = useRef<string | null>(sessionId);
-  const sessionGenerationRef = useRef(0);
+
+  const markTurnFinished = (turnSessionId: string | null, controller: AbortController | null) => {
+    if (turnSessionId && activeWsAbortControllers.get(turnSessionId) === controller) {
+      activeWsAbortControllers.delete(turnSessionId);
+    }
+    if (abortRef.current === controller) {
+      abortRef.current = null;
+    }
+  };
+
+  const isTurnVisible = (turnSessionId: string | null) => mountedRef.current && visibleSessionId === turnSessionId;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     activeSessionIdRef.current = sessionId;
-    sessionGenerationRef.current += 1;
+    visibleSessionId = sessionId;
+    setStreaming(sessionId ? activeWsAbortControllers.has(sessionId) : false);
   }, [sessionId]);
 
   useEffect(() => {
@@ -403,6 +482,44 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const currentModel = selectedModel || null;
   const modelForRequest = currentModel || modelFromSession(activeSession || null);
 
+  const storageKeyFor = (id: string | null) => id ? `chat_messages_${id}` : null;
+  const persistMessages = (id: string | null, value: ChatMessage[]) => {
+    const key = storageKeyFor(id);
+    if (!key) return;
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+  };
+
+  const updateAssistantMessage = useCallback((
+    turnSessionId: string | null,
+    assistantMsgId: string,
+    updater: (messages: ChatMessage[]) => ChatMessage[]
+  ) => {
+    const key = storageKeyFor(turnSessionId);
+    if (turnSessionId === sessionId && mountedRef.current) {
+      setMessages(prev => {
+        const next = updater(prev);
+        persistMessages(turnSessionId, next);
+        return next;
+      });
+      return;
+    }
+    if (!key) return;
+    try {
+      const saved = localStorage.getItem(key);
+      const current = saved ? JSON.parse(saved) as ChatMessage[] : [];
+      persistMessages(turnSessionId, updater(current));
+    } catch {
+      persistMessages(turnSessionId, updater([]));
+    }
+  }, [sessionId]);
+
+  const createAssistantPlaceholder = (assistantMsgId: string): ChatMessage => ({
+    id: assistantMsgId,
+    role: 'assistant',
+    content: '',
+    timestamp: new Date().toISOString()
+  });
+
   // Dynamic context usage tracker
   const maxContext = modelForRequest?.contextWindow || 128000;
   const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0) + input.length;
@@ -414,55 +531,60 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // Request IDs keep concurrent turns isolated across session switches.
   const generateAIResponse = async (chatHistory: ChatMessage[]) => {
     const turnSessionId = sessionId;
-    const turnGeneration = sessionGenerationRef.current;
-    const isCurrentTurn = () => turnGeneration === sessionGenerationRef.current && activeSessionIdRef.current === turnSessionId;
-    if (!isCurrentTurn()) return;
+    const isCurrentTurn = () => isTurnVisible(turnSessionId);
+    if (!turnSessionId) return;
 
     setStreaming(true);
-    if (sessionId) setSessionStatus(sessionId, 'working');
+    setSessionStatus(turnSessionId, 'working');
 
     const assistantMsgId = `a${Date.now()}`;
     const abortController = new AbortController();
     abortRef.current = abortController;
+    activeWsAbortControllers.set(turnSessionId, abortController);
 
     const thinkingStart = Date.now();
     let thinkingEnd: number | null = null;
 
-    setMessages(m => [...m, {
-      id: assistantMsgId,
-      role: 'assistant',
-      content: '',
-      timestamp: new Date().toISOString()
-    }]);
+    const nextMessages = [...chatHistory, createAssistantPlaceholder(assistantMsgId)];
+    setMessages(nextMessages);
+    persistMessages(turnSessionId, nextMessages);
 
     // ── Try WebSocket first ──
     const wsSucceeded = await tryWebSocketChat(
+      turnSessionId,
       chatHistory, assistantMsgId, abortController,
       (val: number | null) => { thinkingEnd = val; },
       thinkingStart,
-      isCurrentTurn
+      isCurrentTurn,
+      updateAssistantMessage
     );
     if (wsSucceeded === 'succeeded') {
-      if (!isCurrentTurn()) return;
+      if (!isCurrentTurn()) {
+        setSessionStatus(turnSessionId, 'done');
+        markTurnFinished(turnSessionId, abortController);
+        return;
+      }
       // Merge final thinking duration
       const finalDuration = thinkingEnd
         ? Math.round((thinkingEnd - thinkingStart) / 100) / 10
         : undefined;
-      setMessages(prev => prev.map(msg =>
+      updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
         msg.id === assistantMsgId && msg.thinking
           ? { ...msg, thinkingDuration: finalDuration }
           : msg
       ));
       setStreaming(false);
-      if (sessionId) setSessionStatus(sessionId, 'done');
+      setSessionStatus(turnSessionId, 'done');
+      markTurnFinished(turnSessionId, abortController);
       return;
     }
 
     if (wsSucceeded === 'aborted') {
       if (isCurrentTurn()) {
         setStreaming(false);
-        if (sessionId) clearSessionStatus(sessionId);
+        clearSessionStatus(turnSessionId);
       }
+      markTurnFinished(turnSessionId, abortController);
       return;
     }
 
@@ -482,40 +604,51 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       });
 
       if (!res.ok) {
-        if (!isCurrentTurn()) return;
         const errMsg = await res.text();
-        setMessages(prev => prev.map(msg =>
+        updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
           msg.id === assistantMsgId ? {
             ...msg,
             content: `⚠️ Failed to get response${modelForRequest ? ` from ${modelForRequest.id}` : ''}: ${errMsg}`
           } : msg
         ));
-        setStreaming(false);
-        if (sessionId) clearSessionStatus(sessionId);
+        if (isCurrentTurn()) {
+          setStreaming(false);
+          clearSessionStatus(turnSessionId);
+        } else {
+          setSessionStatus(turnSessionId, 'error');
+        }
+        markTurnFinished(turnSessionId, abortController);
         return;
       }
 
-      await readSSEStream(res, assistantMsgId, abortController, thinkingStart, isCurrentTurn);
+      await readSSEStream(res, turnSessionId, assistantMsgId, abortController, thinkingStart, isCurrentTurn, updateAssistantMessage);
     } catch (e: any) {
       if (e?.name === 'AbortError') {
         if (isCurrentTurn()) {
           setStreaming(false);
-          if (sessionId) clearSessionStatus(sessionId);
+          clearSessionStatus(turnSessionId);
         }
+        markTurnFinished(turnSessionId, abortController);
         return;
       }
-      if (!isCurrentTurn()) return;
+      if (!isCurrentTurn()) {
+        setSessionStatus(turnSessionId, 'error');
+        markTurnFinished(turnSessionId, abortController);
+        return;
+      }
       console.error(e);
-      setMessages(prev => prev.map(msg =>
+      updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
         msg.id === assistantMsgId ? {
           ...msg,
           content: `⚠️ Connection error: ${e.message}`
         } : msg
       ));
     }
-    if (!isCurrentTurn()) return;
-    setStreaming(false);
-    if (sessionId) setSessionStatus(sessionId, 'done');
+    if (isCurrentTurn()) {
+      setStreaming(false);
+      setSessionStatus(turnSessionId, 'done');
+    }
+    markTurnFinished(turnSessionId, abortController);
   };
 
   function appendBlockEvent(
@@ -610,49 +743,69 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   type ChatTurnResult = 'succeeded' | 'aborted' | 'failed';
 
   const tryWebSocketChat = async (
+    turnSessionId: string | null,
     chatHistory: ChatMessage[],
     assistantMsgId: string,
     abortController: AbortController,
     setThinkingEnd: (v: number | null) => void,
     thinkingStart: number,
-    isCurrentTurn: () => boolean
+    isCurrentTurn: () => boolean,
+    updateAssistantMessage: (
+      targetSessionId: string | null,
+      targetAssistantMsgId: string,
+      updater: (messages: ChatMessage[]) => ChatMessage[]
+    ) => void
   ): Promise<ChatTurnResult> => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/chat/ws`;
-
-    let ws: WebSocket | null = null;
-    let assistantContent = '';
-    let thinkingContent = '';
-    let toolResults: ChatMessage['tools'] = [];
-    let streamBlocks: MessageBlock[] = [];
-    let wsThinkingEnd: number | null = null;
-    let done = false;
-    let aborted = false;
 
     for (let attempt = 0; attempt < WS_RECONNECT_MAX; attempt++) {
       if (attempt > 0) {
         await new Promise(r => setTimeout(r, WS_RECONNECT_BASE_MS * Math.pow(2, attempt - 1)));
       }
 
-      if (abortController.signal.aborted) { aborted = true; break; }
+      if (abortController.signal.aborted) return 'aborted';
 
       try {
         const result = await new Promise<ChatTurnResult>((resolve) => {
-          const socket = getOrCreateWs(wsUrl);
-          ws = socket;
-          let opened = false;
-          let requestId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const connection = getOrCreateWs(wsUrl);
+          const socket = connection.socket;
+          const requestId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-          const cleanup = () => {
-            // Don't close the shared socket — it persists across session switches
+          let assistantContent = '';
+          let thinkingContent = '';
+          let toolResults: ChatMessage['tools'] = [];
+          let streamBlocks: MessageBlock[] = [];
+          let wsThinkingEnd: number | null = null;
+          let settled = false;
+          let done = false;
+          let aborted = false;
+
+          const finish = (result: ChatTurnResult) => {
+            if (settled) return;
+            settled = true;
+            connection.subscribers.delete(requestId);
+            resolve(result);
+          };
+
+          const update = () => {
+            updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
+              msg.id === assistantMsgId ? {
+                ...msg,
+                content: assistantContent,
+                thinking: thinkingContent || undefined,
+                tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
+                blocks: streamBlocks
+              } : msg
+            ));
           };
 
           const sendChatStart = () => {
-            if (abortController.signal.aborted) {
-              resolve('aborted');
+            if (aborted || abortController.signal.aborted) {
+              finish('aborted');
               return;
             }
-            socket.send(JSON.stringify({
+            safeSendWs(socket, {
               type: 'chat.start',
               requestId,
               payload: {
@@ -662,37 +815,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 effort: effort,
                 workspacePath: workspacePath
               }
-            }));
+            });
           };
 
-          socket.onopen = () => {
-            opened = true;
-            sendChatStart();
-          };
-
-          // If socket is already open, send immediately
-          if (socket.readyState === WebSocket.OPEN) {
-            opened = true;
-            sendChatStart();
-          }
-
-          socket.onmessage = (event) => {
-            try {
-              const parsed = JSON.parse(event.data);
-
-              // Respond to server pings
-              if (parsed.type === 'ping') {
-                socket.send(JSON.stringify({ type: 'pong', requestId }));
-                return;
-              }
-
-              // Only process events matching our requestId
-              if (parsed.requestId && parsed.requestId !== requestId) return;
-              if (!isCurrentTurn()) {
-                cleanup();
-                resolve('aborted');
-                return;
-              }
+          connection.subscribers.set(requestId, {
+            done: false,
+            aborted: false,
+            onOpen: sendChatStart,
+            onEvent: (parsed) => {
+              if (parsed.type === 'ping') return;
 
               switch (parsed.type) {
                 case 'thinking':
@@ -763,14 +894,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   done = true;
                   break;
                 case 'error':
+                  done = true;
                   const errMsg = parsed.message || parsed.error?.message || parsed.error || 'Unknown error';
                   console.error('[WS] Chat error:', errMsg);
                   assistantContent += `\n\n⚠️ Error: ${errMsg}`;
                   streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: `\n\n⚠️ Error: ${errMsg}` });
-                  done = true;
                   break;
                 default: {
-                  // Raw OpenAI/Anthropic streaming chunk — extract fields directly
                   const delta = parsed.choices?.[0]?.delta;
                   if (delta?.reasoning_content) {
                     thinkingContent += delta.reasoning_content;
@@ -796,78 +926,68 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 }
               }
 
-              // Update UI
-              setMessages(prev => prev.map(msg =>
-                msg.id === assistantMsgId ? {
-                  ...msg,
-                  content: assistantContent,
-                  thinking: thinkingContent || undefined,
-                  tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
-                  blocks: streamBlocks
-                } : msg
-              ));
-
-              if (done || parsed.type === 'done') {
-                cleanup();
-                resolve(isCurrentTurn() ? 'succeeded' : 'aborted');
-              }
-            } catch (e) {
-              // Non-JSON message — ignore
+              update();
+              if (done) finish('succeeded');
+            },
+            onClose: () => {
+              if (!done && !aborted && !abortController.signal.aborted) finish('failed');
             }
-          };
+          });
 
-          socket.onerror = () => {
-            // Connection-level error, close will fire next
-          };
-
-          // Shared socket: don't resolve on close — each request resolves via 'done' event or abort
-          socket.onclose = () => {
-            if (!done && !abortController.signal.aborted) {
-              if (isCurrentTurn()) {
-                // Socket closed unexpectedly — trigger abort so request can be retried via HTTP fallback
-                abortController.abort();
-              } else {
-                cleanup();
-                resolve('aborted');
-              }
-            }
-          };
-
-          // Abort controller: ask backend to cancel only this request id
           abortController.signal.addEventListener('abort', () => {
-            if (isCurrentTurn() && socket.readyState === WebSocket.OPEN) {
-              socket.send(JSON.stringify({ type: 'chat.abort', requestId }));
+            aborted = true;
+            const sub = connection.subscribers.get(requestId);
+            if (sub) sub.aborted = true;
+            if (socket.readyState === WebSocket.OPEN) {
+              safeSendWs(socket, { type: 'chat.abort', requestId });
             }
-            cleanup();
-            resolve('aborted');
+            finish('aborted');
           }, { once: true });
+
+          if (socket.readyState === WebSocket.OPEN) {
+            sendChatStart();
+          }
         });
 
-        if (result === 'succeeded') return 'succeeded';
-        if (result === 'aborted') return 'aborted';
-        // Otherwise: reconnect attempt
+        if (result === 'succeeded' || result === 'aborted') return result;
       } catch {
-        // Connection error, will retry
+        // Connection error, will retry.
       }
     }
 
-    return 'failed'; // All WS attempts failed, signal HTTP fallback
+    return 'failed';
   };
 
   // ── SSE stream reader (HTTP fallback) ────────────────────────────
   // Extracted from the original generateAIResponse body
   const readSSEStream = async (
     res: Response,
+    turnSessionId: string | null,
     assistantMsgId: string,
     abortController: AbortController,
     thinkingStart: number,
-    isCurrentTurn: () => boolean
+    isCurrentTurn: () => boolean,
+    updateAssistantMessage: (
+      targetSessionId: string | null,
+      targetAssistantMsgId: string,
+      updater: (messages: ChatMessage[]) => ChatMessage[]
+    ) => void
   ) => {
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
     if (!reader) return;
-    if (!isCurrentTurn()) return;
 
+    const update = () => {
+      updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
+        msg.id === assistantMsgId ? {
+          ...msg,
+          content: assistantContent,
+          thinking: thinkingContent || undefined,
+          tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
+          blocks: streamBlocks
+        } : msg
+      ));
+    };
     let assistantContent = '';
     let thinkingContent = '';
     let buffer = '';
@@ -954,16 +1074,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       }
       buffer = buffer.slice(lineStart);
 
-      if (!isCurrentTurn()) return;
-      setMessages(prev => prev.map(msg =>
-        msg.id === assistantMsgId ? {
-          ...msg,
-          content: assistantContent,
-          thinking: thinkingContent || undefined,
-          tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
-          blocks: streamBlocks
-        } : msg
-      ));
+      if (abortController.signal.aborted) return;
+      update();
     }
 
     // Flush remaining buffer
@@ -1019,11 +1131,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       return block;
     });
 
-    setMessages(prev => prev.map(msg =>
+    updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
       msg.id === assistantMsgId ? { ...msg, content: finalContent, thinking: thinkingContent || undefined, thinkingDuration: finalDuration, blocks: cleanedBlocks } : msg
     ));
-    // Save latest assistant message for TTS
-    if (finalContent) {
+    // Save latest assistant message for TTS only when this is the visible session.
+    if (finalContent && isCurrentTurn()) {
       try { sessionStorage.setItem('august_last_assistant_message', finalContent); } catch {}
     }
   };
@@ -1063,15 +1175,19 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
+    persistMessages(sessionId, nextMessages);
     await generateAIResponse(nextMessages);
   };
 
   const stop = () => {
-    const controller = abortRef.current;
+    const controller = sessionId ? activeWsAbortControllers.get(sessionId) : abortRef.current;
     if (controller && activeSessionIdRef.current === sessionId) {
       controller.abort();
     }
-    abortRef.current = null;
+    if (abortRef.current === controller) {
+      abortRef.current = null;
+    }
+    if (sessionId) activeWsAbortControllers.delete(sessionId);
     if (activeSessionIdRef.current === sessionId) setStreaming(false);
     if (sessionId && activeSessionIdRef.current === sessionId) clearSessionStatus(sessionId);
   };
@@ -1344,7 +1460,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${modelDisplayParts(currentModel.id).name}…` : 'Type a message…')}
                 rows={1}
                 disabled={streaming}
-                className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-base outline-none placeholder:text-muted-foreground disabled:opacity-60"
+                className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-xs outline-none placeholder:text-muted-foreground disabled:opacity-60"
                 style={{ minHeight: '40px', maxHeight: '240px' }}
               />
             </>
@@ -1541,7 +1657,7 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
   return (
     <div className="my-1" style={{ overflowAnchor: 'none' }}>
       <ThinkingDisclosure pending={isGenerating} duration={duration}>
-        <div className="pl-3 border-l border-foreground/15 leading-relaxed py-1 thought-content">
+        <div className="pl-3 border-l border-foreground/15 leading-relaxed py-1 thought-content text-xs">
           <Markdown content={text} />
         </div>
       </ThinkingDisclosure>
@@ -1671,7 +1787,7 @@ function MessageBubble({
       )}
       {isUser ? (
         <>
-          <div className="rounded-2xl border border-border/40 bg-muted/40 dark:bg-[#161618] px-4 py-2.5 text-sm leading-relaxed text-foreground shadow-sm max-w-[85%] ml-auto">
+          <div className="rounded-2xl border border-border/40 bg-muted/40 dark:bg-[#161618] px-4 py-2.5 text-xs leading-relaxed text-foreground shadow-sm max-w-[85%] ml-auto">
             {editing ? (
               <div className="flex flex-col gap-2">
                 <textarea
@@ -1777,7 +1893,7 @@ function MessageBubble({
                 } else if (block.type === 'final_output') {
                   if (!block.content) return null;
                   return (
-                    <div key={block.id || `out_${index}`} className="text-base leading-relaxed text-foreground/90 space-y-3 max-w-none">
+                    <div key={block.id || `out_${index}`} className="text-xs leading-relaxed text-foreground/90 space-y-3 max-w-none">
                       <Markdown content={block.content} />
                     </div>
                   );

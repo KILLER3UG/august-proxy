@@ -35,6 +35,15 @@ module.exports = {
             timeoutMs: 60000
         },
         {
+            name: 'google-workspace',
+            enabled: true,
+            source: 'builtin',
+            description: 'Google Workspace — Gmail, Calendar, Drive, Docs, Sheets, Contacts via August service-connection OAuth.',
+            command: 'node',
+            args: ['backend/services/tools/google-workspace-mcp.js'],
+            timeoutMs: 30000
+        },
+        {
             name: 'blender',
             enabled: false,
             source: 'builtin',
