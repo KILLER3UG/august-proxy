@@ -1,5 +1,5 @@
 const { logActivity } = require('../lib/logger');
-const { getMcpToolDefinitions, isMcpToolName, executeMcpToolCall } = require('../services/tools/mcp-client');
+const { getMcpToolDefinitions, isMcpToolName, executeMcpToolCall, sanitizeToolSchema } = require('../services/tools/mcp-client');
 const { getAugustToolDefinitions, isAugustToolName, executeAugustToolCall } = require('../services/tools/august-tools');
 const { getCoworkToolDefinitions, isCoworkToolName, executeCoworkToolCall } = require('../services/tools/cowork-tools');
 const { executeManagedWebTool } = require('../services/tools/local-web');
@@ -238,7 +238,7 @@ function openAiToAnthropicToolDefinition(tool) {
         return {
             name: tool.function.name,
             description: tool.function.description || '',
-            input_schema: tool.function.parameters || { type: 'object', properties: {} }
+            input_schema: sanitizeToolSchema(tool.function.parameters)
         };
     }
     return tool;
@@ -250,7 +250,7 @@ function anthropicToOpenAiToolDefinition(tool) {
         function: {
             name: tool.name,
             description: tool.description || '',
-            parameters: tool.input_schema || { type: 'object', properties: {} },
+            parameters: sanitizeToolSchema(tool.input_schema),
             strict: tool.strict
         }
     };

@@ -33,6 +33,11 @@ function normalizeBashToolName(toolName) {
   return toolName;
 }
 
+function getShell() {
+  if (process.env.AUGUST_BASH_SHELL) return process.env.AUGUST_BASH_SHELL;
+  return process.platform === 'win32' ? 'powershell.exe' : '/bin/bash';
+}
+
 function getManagedBashToolDefinitions() {
   return [
     {
@@ -119,7 +124,7 @@ async function executeManagedBashTool(toolName, args, workspacePath = null, onPr
       cwd: workspacePath || '/app',
       timeout: timeoutMs,
       maxBuffer: MAX_OUTPUT_CHARS * 2,
-      shell: '/bin/bash'
+      shell: getShell()
     }, (error, stdout, stderr) => {
       const result = {
         stdout: (stdout || '').slice(0, MAX_OUTPUT_CHARS),

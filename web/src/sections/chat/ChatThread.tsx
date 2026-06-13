@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { marked } from 'marked';
 import { toast } from 'sonner';
 import { useStore } from '@nanostores/react';
-import { $sessions, setSessionStatus, clearSessionStatus, renameSession } from '@/store/sessions';
+import { $sessions, setSessionStatus, clearSessionStatus, renameSession, updateSessionModel } from '@/store/sessions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
 import { ToolCallItem as ToolCallItemComp, getToolIcon } from '@/components/chat/ToolCallItem';
@@ -20,6 +20,20 @@ import { HoistedTodoPanel } from '@/components/chat/HoistedTodoPanel';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { Statusbar } from '@/components/shell/Statusbar';
+
+// ── Global WebSocket manager ─────────────────────────────────────────
+// Keeps connections alive across session switches so requests aren't cancelled.
+const wsConnections = new Map<string, WebSocket>();
+function getOrCreateWs(wsUrl: string): WebSocket {
+  const existing = wsConnections.get(wsUrl);
+  if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
+    return existing;
+  }
+  const ws = new WebSocket(wsUrl);
+  wsConnections.set(wsUrl, ws);
+  ws.onclose = () => wsConnections.delete(wsUrl);
+  return ws;
+}
 
 // Configure marked to support GitHub Flavored Markdown and breaks
 marked.use({
@@ -560,25 +574,20 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
       try {
         const result = await new Promise<{ success: boolean; aborted: boolean }>((resolve) => {
-          const socket = new WebSocket(wsUrl);
+          const socket = getOrCreateWs(wsUrl);
           ws = socket;
           let opened = false;
           let requestId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
           const cleanup = () => {
-            if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
-              socket.close();
-            }
+            // Don't close the shared socket — it persists across session switches
           };
 
-          socket.onopen = () => {
-            opened = true;
+          const sendChatStart = () => {
             if (abortController.signal.aborted) {
-              socket.close();
               resolve({ success: false, aborted: true });
               return;
             }
-            // Send chat.start
             socket.send(JSON.stringify({
               type: 'chat.start',
               requestId,
@@ -591,6 +600,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               }
             }));
           };
+
+          socket.onopen = () => {
+            opened = true;
+            sendChatStart();
+          };
+
+          // If socket is already open, send immediately
+          if (socket.readyState === WebSocket.OPEN) {
+            opened = true;
+            sendChatStart();
+          }
 
           socket.onmessage = (event) => {
             try {
@@ -731,38 +751,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             // Connection-level error, close will fire next
           };
 
+          // Shared socket: don't resolve on close — each request resolves via 'done' event or abort
           socket.onclose = () => {
-            if (!opened) {
-              // Connection never established — fallback
-              resolve({ success: false, aborted: false });
-              return;
-            }
-            if (!done) {
-              // Premature close without 'done' — try reconnect
-              // Check if we have received any content. If so, do not retry or fallback, just show partial and complete.
-              const hasContent = assistantContent.trim() !== '' ||
-                                 thinkingContent.trim() !== '' ||
-                                 (toolResults && toolResults.length > 0);
-              if (hasContent) {
-                assistantContent += '\n\n[Connection lost. Showing partial response.]';
-                setMessages(prev => prev.map(msg =>
-                  msg.id === assistantMsgId ? {
-                    ...msg,
-                    content: assistantContent
-                  } : msg
-                ));
-                // Resolve success: true to prevent retry loop and fallback
-                resolve({ success: true, aborted: false });
-              } else {
-                resolve({ success: false, aborted: abortController.signal.aborted });
-              }
+            if (!done && !abortController.signal.aborted) {
+              // Socket closed unexpectedly — trigger abort so request can be retried via HTTP fallback
+              abortController.abort();
             }
           };
 
           // Abort controller: close socket
           abortController.signal.addEventListener('abort', () => {
             if (socket.readyState === WebSocket.OPEN) {
-              socket.send(JSON.stringify({ type: 'chat.abort' }));
+              socket.send(JSON.stringify({ type: 'chat.abort', requestId }));
             }
             cleanup();
             resolve({ success: false, aborted: true });
@@ -965,6 +965,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (messages.length === 0 && sessionId) {
       const title = text.length > 50 ? text.slice(0, 50).trim() + '…' : text;
       renameSession(sessionId, title);
+    }
+
+    // Update session model to reflect current selection
+    if (sessionId && currentModel) {
+      updateSessionModel(sessionId, currentModel.id, currentModel.provider);
     }
 
     setInput('');

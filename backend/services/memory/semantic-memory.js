@@ -203,6 +203,7 @@ function backfillFactsFromCoreMemory(memory, source = 'core-memory') {
 
 module.exports = {
     backfillFactsFromCoreMemory,
+    getSemanticMemoryFile,
     setFact,
     getFact,
     searchFacts,

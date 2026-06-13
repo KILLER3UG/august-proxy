@@ -1255,26 +1255,49 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                 return `Updated learned guideline ${updated.id} to status "${updated.status}".`;
             }
 
-            case 'august__call_specialist':
-                const { getConfig, getProfile } = require('../../lib/config');
+            case 'august__call_specialist': {
+                const { getConfig } = require('../../lib/config');
+                const { resolveActiveProvider } = require('../../providers/provider-resolver');
                 const cfgSpecial = getConfig();
                 const endpoints = cfgSpecial.specialistEndpoints || {};
                 const ep = endpoints[args.specialty];
-                if (!ep) return `No specialist endpoint configured for "${args.specialty}". Available: ${Object.keys(endpoints).join(', ')}`;
+
+                let targetUrl = ep?.url;
+                let model = ep?.model || 'MiniMax-M2.7';
+                let apiKey = ep?.apiKey;
+                let maxTokens = ep?.maxTokens || 4096;
+                let timeoutMs = ep?.timeoutMs || 120000;
+
+                if (!targetUrl) {
+                    try {
+                        const activeProvider = resolveActiveProvider();
+                        if (activeProvider?.baseUrl) {
+                            targetUrl = activeProvider.baseUrl;
+                            model = activeProvider.model || model;
+                            apiKey = activeProvider.apiKey || apiKey;
+                        }
+                    } catch (e) {
+                        // Keep specialist config errors local to this tool.
+                    }
+                }
+
+                if (!targetUrl) {
+                    return `[Tool Execution Failed]: No specialist endpoint or active upstream provider configured for "${args.specialty}". Add specialistEndpoints.${args.specialty}.url or configure an active provider.`;
+                }
 
                 const specPayload = {
-                    model: ep.model || 'MiniMax-M2.7',
+                    model,
                     messages: [{ role: 'user', content: args.task }],
-                    max_tokens: ep.maxTokens || 4096
+                    max_tokens: maxTokens
                 };
                 const specHeaders = { 'Content-Type': 'application/json' };
-                if (ep.apiKey) specHeaders['Authorization'] = `Bearer ${ep.apiKey}`;
+                if (apiKey) specHeaders['Authorization'] = `Bearer ${apiKey}`;
 
-                const specResponse = await fetch(ep.url, {
+                const specResponse = await fetch(targetUrl, {
                     method: 'POST',
                     headers: specHeaders,
                     body: JSON.stringify(specPayload),
-                    signal: AbortSignal.timeout(ep.timeoutMs || 120000)
+                    signal: AbortSignal.timeout(timeoutMs)
                 });
                 if (!specResponse.ok) {
                     const errText = await specResponse.text().catch(() => '');
@@ -1283,6 +1306,7 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                 const specData = await specResponse.json();
                 const specReply = specData.choices?.[0]?.message?.content || specData.content?.[0]?.text || '(no content)';
                 return `[Specialist: ${args.specialty}]\n${specReply}`;
+            }
 
             case 'august__supermemory': {
                 const {
@@ -1332,12 +1356,21 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                 const subCfg = loadSubagentConfig();
                 const strategy = subCfg.current;
                 const { getProfile: getProfileForSub } = require('../../lib/config');
-                const subProfile = getProfileForSub('claude') || getProfileForSub('codex') || {};
-                const subTargetUrl = subProfile.targetUrl;
-                const subApiKey = subProfile.apiKey;
-                const subModel = subProfile._upstreamModel || subProfile.currentModel || 'claude-opus-4-6';
+                const { resolveActiveProvider } = require('../../providers/provider-resolver');
+                const fallbackProfile = getProfileForSub('claude') || getProfileForSub('codex') || {};
+                let provider = fallbackProfile;
 
-                if (!subTargetUrl) return '[Error] No upstream provider configured for sub-agent.';
+                try {
+                    provider = resolveActiveProvider() || provider;
+                } catch (e) {
+                    // Fall back to legacy claude/codex provider config.
+                }
+
+                const subTargetUrl = provider.baseUrl || provider.targetUrl;
+                const subApiKey = provider.apiKey || fallbackProfile.apiKey;
+                const subModel = provider.model || fallbackProfile._upstreamModel || fallbackProfile.currentModel || 'claude-opus-4-6';
+
+                if (!subTargetUrl) return '[Error] No upstream provider configured for sub-agent. Configure an active provider or a claude/codex targetUrl.';
 
                 const subPrompt = `${strategy.system_prompt}\n\nTASK: ${args.task}`;
                 const subTools = buildSubAgentToolDefinitions();

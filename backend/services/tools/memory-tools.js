@@ -274,6 +274,14 @@ async function handleMemoryTool(toolName, args) {
       const results = hybridSearchEntries(query, all, limit, { filters });
 
       if (!results || results.length === 0) {
+        const brain = searchBrain(query, { limit });
+        const fallback = brain?.results || [];
+        if (fallback.length > 0) {
+          const lines = fallback.map((r, i) =>
+            `[${i + 1}] ${r.provider || 'memory'}: ${r.topic || r.key || 'Untitled'}\n    Key: ${r.key || r.id || ''}\n    Score: ${(r.score || 0).toFixed(3)}\n    Summary: ${String(r.summary || r.text || '').slice(0, 200)}`
+          );
+          return `[Memory Search: "${query}"]\n${lines.join('\n\n')}\n\nUse fact_search() for structured facts or context_read() for core memory.`;
+        }
         return `No matching checkpoints found for "${query}". Use memory_topics() to see all available topics.`;
       }
 
@@ -284,23 +292,37 @@ async function handleMemoryTool(toolName, args) {
     }
 
     case 'august__memory_read': {
-      const id = String(args.id || '').trim();
-      if (!id) return 'Checkpoint ID is required.';
+      const id = String(args.id || args.key || '').trim();
+      if (!id) return 'Checkpoint ID or fact key is required.';
       const entry = getVectorEntryById(id);
-      if (!entry) return `Checkpoint "${id}" not found. Use memory_search() to find valid IDs.`;
+      if (entry) {
+        const meta = entry.metadata || {};
+        return [
+          `[Conversation Checkpoint]`,
+          `Topic: ${entry.topic || 'Untitled'}`,
+          `Date: ${new Date(entry.timestamp).toLocaleString()}`,
+          `Summary: ${entry.summary || ''}`,
+          meta.project ? `Project: ${meta.project}` : '',
+          meta.outcome ? `Outcome: ${meta.outcome}` : '',
+          meta.task ? `Task: ${meta.task}` : '',
+          meta.tags?.length ? `Tags: ${meta.tags.join(', ')}` : '',
+          `ID: ${entry.id}`
+        ].filter(Boolean).join('\n');
+      }
 
-      const meta = entry.metadata || {};
-      return [
-        `[Conversation Checkpoint]`,
-        `Topic: ${entry.topic || 'Untitled'}`,
-        `Date: ${new Date(entry.timestamp).toLocaleString()}`,
-        `Summary: ${entry.summary || ''}`,
-        meta.project ? `Project: ${meta.project}` : '',
-        meta.outcome ? `Outcome: ${meta.outcome}` : '',
-        meta.task ? `Task: ${meta.task}` : '',
-        entry.tags?.length ? `Tags: ${entry.tags.join(', ')}` : '',
-        meta.source ? `Source: ${meta.source}` : '',
-      ].filter(Boolean).join('\n');
+      const fact = semanticMemory.getFact(id);
+      if (fact) {
+        return [
+          `[Semantic Fact]`,
+          `Key: ${fact.key}`,
+          `Category: ${fact.category}`,
+          `Value: ${fact.value}`,
+          `Source: ${fact.provenance?.source || fact.source || ''}`,
+          `Confidence: ${fact.confidence ?? ''}`
+        ].filter(Boolean).join('\n');
+      }
+
+      return `Checkpoint or fact "${id}" not found. Use memory_search() or fact_search() to find valid IDs/keys.`;
     }
 
     case 'august__fact_search': {

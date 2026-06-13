@@ -22,6 +22,54 @@ const clients = new Map();
 const toolRegistry = new Map(); // "mcp__serverName__toolName" -> tool schema
 const serverStatus = new Map();
 
+// ── Schema sanitization ──────────────────────────────────────────────
+function sanitizeToolSchema(schema) {
+    if (!schema || typeof schema !== 'object') {
+        return { type: 'object', properties: {} };
+    }
+    if (Array.isArray(schema)) {
+        return { type: 'object', properties: {} };
+    }
+    if (!schema.type) {
+        schema = { ...schema, type: 'object' };
+    }
+    if (schema.type === 'object') {
+        if (!schema.properties || typeof schema.properties !== 'object' || Array.isArray(schema.properties)) {
+            schema = { ...schema, properties: {} };
+        }
+        const sanitizedProps = {};
+        for (const [key, val] of Object.entries(schema.properties)) {
+            sanitizedProps[key] = sanitizePropertyValue(val);
+        }
+        schema = { ...schema, properties: sanitizedProps };
+    }
+    return schema;
+}
+
+function sanitizePropertyValue(val) {
+    if (!val || typeof val !== 'object') {
+        return { type: 'string' };
+    }
+    if (Array.isArray(val)) {
+        // Raw array of type objects (e.g. [{'type':'number'},{'type':'number'}]) → proper array schema
+        if (val.length > 0 && val.every(item => item && typeof item === 'object' && !Array.isArray(item) && item.type)) {
+            return { type: 'array', items: { oneOf: val } };
+        }
+        return { type: 'string' };
+    }
+    if (val.type === 'array' && Array.isArray(val.items) && val.items.every(item => item && typeof item === 'object' && item.type)) {
+        return { ...val, items: { oneOf: val.items } };
+    }
+    if (val.type === 'object' && val.properties && typeof val.properties === 'object' && !Array.isArray(val.properties)) {
+        const nested = {};
+        for (const [k, v] of Object.entries(val.properties)) {
+            nested[k] = sanitizePropertyValue(v);
+        }
+        return { ...val, properties: nested };
+    }
+    return val;
+}
+
 function nowIso() {
     return new Date().toISOString();
 }
@@ -145,7 +193,7 @@ async function startServer(config) {
                     function: {
                         name: namespacedName,
                         description: `[MCP: ${config.name}] ${tool.description || ''}`,
-                        parameters: tool.inputSchema
+                        parameters: sanitizeToolSchema(tool.inputSchema)
                     }
                 };
                 toolRegistry.set(namespacedName, toolDefinition);
@@ -219,7 +267,7 @@ async function startServer(config) {
                 function: {
                     name: namespacedName,
                     description: `[MCP: ${config.name}] ${tool.description || ''}`,
-                    parameters: tool.inputSchema
+                    parameters: sanitizeToolSchema(tool.inputSchema)
                 }
             };
             toolRegistry.set(namespacedName, toolDefinition);
@@ -367,5 +415,6 @@ module.exports = {
     stopMcpServers,
     getMcpToolDefinitions,
     isMcpToolName,
-    executeMcpToolCall
+    executeMcpToolCall,
+    sanitizeToolSchema
 };

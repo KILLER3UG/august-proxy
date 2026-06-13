@@ -8,6 +8,7 @@ const { executeManagedWebTool } = require('../services/tools/local-web');
 const { validateToolArguments, buildValidationErrorToolMessage } = require('../services/workbench/validator');
 const { recordToolFailure } = require('../services/memory/tool-failure-memory');
 const { getBrainConfig } = require('../services/memory/brain-orchestrator');
+const { sanitizeToolSchema } = require('../services/tools/mcp-client');
 const { executeToolBatch } = require('../services/workbench/tool-executor');
 const { isOpenAiToolCallParallelSafe, isAnthropicToolUseParallelSafe, parseOpenAiToolArgs } = require('../services/workbench/managed-tool-policy');
 const { LlmAdapterBase } = require('./base');
@@ -451,7 +452,7 @@ function translateTools(anthropicTools, ctx) {
             function: {
                 name: t.name,
                 description: t.description,
-                parameters: t.input_schema,
+                parameters: sanitizeToolSchema(t.input_schema),
                 strict: t.strict
             }
         };

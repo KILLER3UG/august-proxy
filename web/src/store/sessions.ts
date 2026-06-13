@@ -120,6 +120,12 @@ export function renameSession(id: string, newTitle: string) {
   saveSessionsToStorage(updated);
 }
 
+export function updateSessionModel(id: string, model: string, provider: string) {
+  const updated = $sessions.get().map(s => s.id === id ? { ...s, model, provider } : s);
+  $sessions.set(updated);
+  saveSessionsToStorage(updated);
+}
+
 export function deleteSession(id: string) {
   const updated = $sessions.get().filter(s => s.id !== id);
   $sessions.set(updated);

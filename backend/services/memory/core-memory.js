@@ -1,9 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 
+function parseLimit(key, fallback) {
+    const value = Number(process.env[key]);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
 const CORE_MEMORY_LIMITS = {
-    user_profile: 3000,
-    global_context: 4000
+    user_profile: parseLimit('AUGUST_USER_PROFILE_LIMIT', 3000),
+    global_context: parseLimit('AUGUST_GLOBAL_CONTEXT_LIMIT', 60000)
 };
 
 function getCoreMemoryFile() {
@@ -12,7 +17,7 @@ function getCoreMemoryFile() {
 
 class CoreMemoryBudgetError extends Error {
     constructor(section, details) {
-        super(`${section} core memory exceeds the ${details.limit} character limit (${details.length}/${details.limit}, over by ${details.overage}). Compact it with august__core_memory_replace before writing.`);
+        super(`${section} core memory exceeds the ${details.limit} character limit (${details.length}/${details.limit}, over by ${details.overage}). Compact it with august__core_memory_replace before writing, or raise the limit with AUGUST_${section.toUpperCase()}_LIMIT.`);
         this.name = 'CoreMemoryBudgetError';
         this.section = section;
         this.details = details;

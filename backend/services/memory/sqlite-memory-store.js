@@ -2,7 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const SQLITE_MEMORY_FILE = process.env.AUGUST_BRAIN_SQLITE_FILE || path.join(__dirname, '..', '..', '..', 'data', 'august_brain.sqlite');
+function getSqliteMemoryFile() {
+    return process.env.AUGUST_BRAIN_SQLITE_FILE || path.join(__dirname, '..', '..', '..', 'data', 'august_brain.sqlite');
+}
+
 const SQLITE_TIMEOUT_MS = 10000;
 const SQLITE_BUSY_RETRIES = 2;
 
@@ -40,21 +43,26 @@ function isSqliteLocked(error) {
 }
 
 function quarantineSqliteStore(reason = 'corrupt') {
+    closeMemoryStore();
+    const filePath = getSqliteMemoryFile();
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    for (const candidate of [filePath, `${filePath}-wal`, `${filePath}-shm`]) {
+        try {
+            if (fs.existsSync(candidate)) {
+                fs.renameSync(candidate, `${candidate}.${stamp}.${reason}`);
+            }
+        } catch (e) {
+            try { fs.unlinkSync(candidate); } catch (ignore) {}
+        }
+    }
+    return true;
+}
+
+function closeMemoryStore() {
     try {
         if (nodeDb && typeof nodeDb.close === 'function') nodeDb.close();
     } catch (e) {}
     nodeDb = null;
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    for (const filePath of [SQLITE_MEMORY_FILE, `${SQLITE_MEMORY_FILE}-wal`, `${SQLITE_MEMORY_FILE}-shm`]) {
-        try {
-            if (fs.existsSync(filePath)) {
-                fs.renameSync(filePath, `${filePath}.${stamp}.${reason}`);
-            }
-        } catch (e) {
-            try { fs.unlinkSync(filePath); } catch (ignore) {}
-        }
-    }
-    return true;
 }
 
 function markSqliteUnavailable(error, ms = 30000) {
@@ -95,7 +103,7 @@ function openNodeDb() {
     if (!detectNodeSqlite()) return null;
     if (nodeDb) return nodeDb;
     const { DatabaseSync } = require('node:sqlite');
-    nodeDb = new DatabaseSync(SQLITE_MEMORY_FILE);
+    nodeDb = new DatabaseSync(getSqliteMemoryFile());
     nodeDb.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
     return nodeDb;
 }
@@ -113,7 +121,7 @@ function runSqliteCli(script, { jsonOutput = false } = {}) {
     ].filter(Boolean).join('\n');
     for (let attempt = 0; attempt < SQLITE_BUSY_RETRIES; attempt++) {
         try {
-            const output = execFileSync('sqlite3', [SQLITE_MEMORY_FILE], {
+            const output = execFileSync('sqlite3', [getSqliteMemoryFile()], {
                 input,
                 encoding: 'utf8',
                 timeout: SQLITE_TIMEOUT_MS
@@ -1273,7 +1281,8 @@ function listProviderEvents({ limit = 50 } = {}) {
 
 function getMemoryStoreStatus() {
     const driver = getDriverName();
-    const exists = fs.existsSync(SQLITE_MEMORY_FILE);
+    const filePath = getSqliteMemoryFile();
+    const exists = fs.existsSync(filePath);
     const schemaReady = driver !== 'unavailable' ? ensureMemorySchema() : false;
     let count = 0;
     if (schemaReady) {
@@ -1290,7 +1299,7 @@ function getMemoryStoreStatus() {
     return {
         driver,
         available: schemaReady,
-        path: SQLITE_MEMORY_FILE,
+        path: filePath,
         exists,
         count: Number(count) || 0,
         lastError: sqliteLastError,
@@ -1299,7 +1308,8 @@ function getMemoryStoreStatus() {
 }
 
 module.exports = {
-    SQLITE_MEMORY_FILE,
+    SQLITE_MEMORY_FILE: getSqliteMemoryFile(),
+    closeMemoryStore,
     createMemoryProposal,
     deleteMemory,
     deleteMemoryFact,

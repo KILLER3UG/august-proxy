@@ -2,8 +2,9 @@ module.exports = {
     mcpServers: [
         {
             name: 'minimax',
-            enabled: true,
+            enabled: process.env.MINIMAX_MCP_ENABLED === '1',
             source: 'builtin',
+            // Disabled until a valid MiniMax API key is available. Set MINIMAX_MCP_ENABLED=1 after rotating the key.
             // Uses uvx to run the python-based minimax MCP server
             command: 'uvx',
             args: ['minimax-coding-plan-mcp'],

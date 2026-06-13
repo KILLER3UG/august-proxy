@@ -271,7 +271,20 @@ function applyRetentionDecision(input = {}) {
 
     if (action === 'keep') {
         if (memoryType === 'sqlite' && targetId) sqliteStore.updateMemoryLifecycle(targetId, { lifecycleStatus: 'active', trust: 0.9, metadata: { keptBy: input.actor || 'system' } });
-        if (memoryType === 'sqlite-fact' && targetId) sqliteStore.upsertMemoryFact({ id: targetId, key: targetKey, lifecycleStatus: 'active', trust: 0.9, metadata: { keptBy: input.actor || 'system' } });
+        if (memoryType === 'sqlite-fact' && targetId) {
+            const existing = sqliteStore.listMemoryFacts({ limit: 500 }).find(item => item.id === targetId || item.key === targetKey);
+            if (existing) {
+                sqliteStore.upsertMemoryFact({
+                    ...existing,
+                    lifecycleStatus: 'active',
+                    trust: 0.9,
+                    metadata: {
+                        ...(existing.metadata || {}),
+                        keptBy: input.actor || 'system'
+                    }
+                });
+            }
+        }
         if (memoryType === 'core' && input.type && targetKey !== null && targetKey !== undefined) memoryGovernance.applyMemoryGovernance({ action: 'pin_core', type: input.type, key: targetKey });
         if (memoryType === 'guideline') guidelines.setLearnedGuidelineStatus(targetId || targetKey, 'active', { reason: reasons.join('; '), actor: input.actor || 'system' });
     }

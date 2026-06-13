@@ -185,9 +185,10 @@ class WebSocketMockResponse {
 
 /* ── handleChatConnection ───────────────────────────────────────────────
  * Called by index.js after wss.handleUpgrade completes for /api/chat/ws.
- * Manages keepalive, message dispatch, and lifecycle for one WS client.  */
+ * Manages keepalive, message dispatch, and lifecycle for one WS client.
+ * Supports multiple concurrent requests via requestId tracking.           */
 function handleChatConnection(ws) {
-    let abortController = null;
+    const activeRequests = new Map();
 
     // ── Keepalive ping every 30s (only if no recent activity) ──
     lastActivityTime = Date.now();
@@ -203,19 +204,20 @@ function handleChatConnection(ws) {
             const msg = JSON.parse(data.toString());
 
             if (msg.type === 'chat.start') {
-                /* Abort any in-flight turn before starting a new one */
-                if (abortController) {
-                    abortController.abort();
-                    abortController = null;
-                }
-
                 const { requestId, payload } = msg;
                 if (!requestId || !payload) {
                     safeSend(ws, { type: 'error', requestId, message: 'requestId and payload required' });
                     return;
                 }
 
-                abortController = new AbortController();
+                // Abort only the same requestId if it exists (allow concurrent requests)
+                if (activeRequests.has(requestId)) {
+                    activeRequests.get(requestId).abort();
+                    activeRequests.delete(requestId);
+                }
+
+                const abortController = new AbortController();
+                activeRequests.set(requestId, abortController);
 
                 const { model, messages, provider, effort, workspacePath } = payload;
 
@@ -327,9 +329,16 @@ function handleChatConnection(ws) {
                     endRequest(reqId);
                 }
             } else if (msg.type === 'chat.abort') {
-                if (abortController) {
-                    abortController.abort();
-                    abortController = null;
+                const targetId = msg.requestId;
+                if (targetId && activeRequests.has(targetId)) {
+                    activeRequests.get(targetId).abort();
+                    activeRequests.delete(targetId);
+                } else if (!targetId) {
+                    // Abort all if no specific requestId
+                    for (const [id, ctrl] of activeRequests) {
+                        ctrl.abort();
+                    }
+                    activeRequests.clear();
                 }
             } else if (msg.type === 'pong') {
                 /* acknowledge (no action needed) */
@@ -341,18 +350,18 @@ function handleChatConnection(ws) {
 
     ws.on('close', () => {
         clearInterval(pingInterval);
-        if (abortController) {
-            abortController.abort();
-            abortController = null;
+        for (const [, ctrl] of activeRequests) {
+            ctrl.abort();
         }
+        activeRequests.clear();
     });
 
     ws.on('error', () => {
         clearInterval(pingInterval);
-        if (abortController) {
-            abortController.abort();
-            abortController = null;
+        for (const [, ctrl] of activeRequests) {
+            ctrl.abort();
         }
+        activeRequests.clear();
     });
 }
 
