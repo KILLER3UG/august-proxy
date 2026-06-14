@@ -129,17 +129,10 @@ export function Providers() {
     }
   };
 
-  const active = sorted.find(p => p.id === data.activeProvider) || sorted[0];
-
   return (
     <div className="p-6 space-y-6">
       <SectionHeader
         title="Providers"
-        subtitle={
-          <span className="flex items-center gap-2">
-            Active: <span className="rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[11px] text-primary">{data.activeProvider}</span>
-          </span>
-        }
         actions={
           <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
             Refresh
@@ -147,29 +140,8 @@ export function Providers() {
         }
       />
 
-      <div className="grid gap-3 lg:grid-cols-[280px_1fr]">
-        <div className="rounded-2xl border bg-card p-4 shadow-sm">
-          <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">Current provider</p>
-          {active && (
-            <div className="mt-3 rounded-xl bg-gradient-to-br from-primary/10 to-muted p-4">
-              <div className="flex items-center gap-3">
-                <div className="size-10 rounded-xl bg-primary text-primary-foreground grid place-items-center font-mono text-sm font-bold">
-                  {active.name.slice(0, 1)}
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">{active.name}</p>
-                  <p className="truncate text-xs text-muted-foreground font-mono">{active.apiMode}</p>
-                </div>
-              </div>
-              <p className="mt-3 text-xs text-muted-foreground">
-                {active.isAvailable ? 'Ready to route requests.' : 'Needs setup before it can be used.'}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-3">
-          <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold px-1">Available providers</p>
+      <div className="space-y-3">
+        <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold px-1">Available providers</p>
           {sorted.map((p) => {
             const isExpanded = expandedId === p.id;
             const providerDetails = details?.id === p.id ? details : null;
@@ -373,6 +345,5 @@ export function Providers() {
           })}
         </div>
       </div>
-    </div>
   );
 }

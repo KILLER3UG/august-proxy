@@ -3,7 +3,6 @@
 /*  ┌────┬────────────────────────────────────────────────────────────────┐  */
 /*  │  + │ ⌘N  New session                            Search... ⌘K        │  */
 /*  │  ⌘ │   Skills & Tools                                                │  */
-/*  │  ✉ │   Messaging                                                     │  */
 /*  │  📦│   Artifacts                                                     │  */
 /*  │────│  ┌─────────────────────────┐                                  │  */
 /*  │ 🔍│  │ PINNED                   │                                  │  */
@@ -16,50 +15,70 @@
 /*  └────┴────────────────────────────────────────────────────────────────┘  */
 /*  Gateway ready · Agents · Cron       354.0k/1.0M 35% ━━━━  15:43 MiniMax M3   v2  */
 
-import { useState, useEffect } from 'react';
-import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, ChevronDown, Volume2, Minus, Square, X, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose } from 'lucide-react';
-import { SessionList } from '@/components/sidebar/SessionList';
-import { WorkspacePanel } from '@/sections/chat/WorkspacePanel';
-import { useStore } from '@nanostores/react';
-import { $sessions, createSession, type Session } from '@/store/sessions';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { useState, useEffect } from "react";
+import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Settings,
+  ChevronDown,
+  Volume2,
+  Minus,
+  Square,
+  X,
+  PanelLeft,
+  PanelLeftClose,
+  PanelRight,
+  PanelRightClose,
+} from "lucide-react";
+import { SessionList } from "@/components/sidebar/SessionList";
+import { WorkspacePanel } from "@/sections/chat/WorkspacePanel";
+import { useStore } from "@nanostores/react";
+import { $sessions, createSession, type Session } from "@/store/sessions";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
-const SESSIONS_COLLAPSED_KEY = 'august-sessions-collapsed';
+const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 
 export function ChatLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { sessionId } = useParams<{ sessionId?: string }>();
-  const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem(SESSIONS_COLLAPSED_KEY) === '1');
-  const [showRightSidebar, setShowRightSidebar] = useState<boolean>(() => localStorage.getItem('august-show-right-sidebar') === '1');
+  const [collapsed, setCollapsed] = useState<boolean>(
+    () => localStorage.getItem(SESSIONS_COLLAPSED_KEY) === "1",
+  );
+  const [showRightSidebar, setShowRightSidebar] = useState<boolean>(
+    () => localStorage.getItem("august-show-right-sidebar") === "1",
+  );
 
   useEffect(() => {
-    localStorage.setItem('august-show-right-sidebar', showRightSidebar ? '1' : '0');
+    localStorage.setItem(
+      "august-show-right-sidebar",
+      showRightSidebar ? "1" : "0",
+    );
   }, [showRightSidebar]);
 
   useEffect(() => {
     const handleOpen = () => setShowRightSidebar(true);
-    window.addEventListener('august-open-right-sidebar', handleOpen);
-    return () => window.removeEventListener('august-open-right-sidebar', handleOpen);
+    window.addEventListener("august-open-right-sidebar", handleOpen);
+    return () =>
+      window.removeEventListener("august-open-right-sidebar", handleOpen);
   }, []);
 
   const sessions = useStore($sessions);
-  const active = sessions.find((s) => s.id === sessionId && !s.isArchived) ?? null;
+  const active =
+    sessions.find((s) => s.id === sessionId && !s.isArchived) ?? null;
 
   // Auto redirect from `/` or invalid/archived sessionId to the first non-archived session
   useEffect(() => {
-    const activeSessions = sessions.filter(s => !s.isArchived);
-    if (location.pathname === '/' || location.pathname === '') {
+    const activeSessions = sessions.filter((s) => !s.isArchived);
+    if (location.pathname === "/" || location.pathname === "") {
       let activeSess = activeSessions[0];
       if (!activeSess) {
         activeSess = createSession();
       }
       navigate(`/c/${activeSess.id}`, { replace: true });
-    } else if (location.pathname.startsWith('/c/')) {
-      const match = sessions.find(s => s.id === sessionId);
+    } else if (location.pathname.startsWith("/c/")) {
+      const match = sessions.find((s) => s.id === sessionId);
       if (!match || match.isArchived) {
         const fallback = activeSessions[0] || createSession();
         navigate(`/c/${fallback.id}`, { replace: true });
@@ -73,11 +92,11 @@ export function ChatLayout() {
   };
 
   useEffect(() => {
-    localStorage.setItem(SESSIONS_COLLAPSED_KEY, collapsed ? '1' : '0');
+    localStorage.setItem(SESSIONS_COLLAPSED_KEY, collapsed ? "1" : "0");
   }, [collapsed]);
 
   // Don't show sidebar in settings overlay (the overlay has its own sidebar)
-  const isSettings = location.pathname.startsWith('/settings');
+  const isSettings = location.pathname.startsWith("/settings");
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
@@ -102,10 +121,16 @@ export function ChatLayout() {
                     onNew={() => handleNewSession()}
                     onNewInFolder={(folderId) => handleNewSession(folderId)}
                     onNavigate={(p) => {
-                      if (p.startsWith('settings') || p.startsWith('/settings')) {
-                        sessionStorage.setItem('pre-settings-path', location.pathname);
+                      if (
+                        p.startsWith("settings") ||
+                        p.startsWith("/settings")
+                      ) {
+                        sessionStorage.setItem(
+                          "pre-settings-path",
+                          location.pathname,
+                        );
                       }
-                      navigate(p.startsWith('/') ? p : `/${p}`);
+                      navigate(p.startsWith("/") ? p : `/${p}`);
                     }}
                   />
                 </div>
@@ -118,13 +143,13 @@ export function ChatLayout() {
           <Titlebar
             session={active}
             sidebarCollapsed={collapsed}
-            onToggleSidebar={() => setCollapsed(c => !c)}
+            onToggleSidebar={() => setCollapsed((c) => !c)}
             showRightSidebar={showRightSidebar}
             onSettings={() => {
-              sessionStorage.setItem('pre-settings-path', location.pathname);
-              navigate('/settings');
+              sessionStorage.setItem("pre-settings-path", location.pathname);
+              navigate("/settings");
             }}
-            onToggleRightSidebar={() => setShowRightSidebar(s => !s)}
+            onToggleRightSidebar={() => setShowRightSidebar((s) => !s)}
           />
           <div className="flex-1 flex min-h-0 overflow-hidden">
             <main className="flex-1 min-h-0 overflow-hidden">
@@ -133,7 +158,7 @@ export function ChatLayout() {
                   key={location.pathname}
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{    opacity: 0, y: -4 }}
+                  exit={{ opacity: 0, y: -4 }}
                   transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
                   className="h-full"
                 >
@@ -164,7 +189,14 @@ export function ChatLayout() {
   );
 }
 
-function Titlebar({ session, sidebarCollapsed, onToggleSidebar, showRightSidebar, onSettings, onToggleRightSidebar }: {
+function Titlebar({
+  session,
+  sidebarCollapsed,
+  onToggleSidebar,
+  showRightSidebar,
+  onSettings,
+  onToggleRightSidebar,
+}: {
   session: Session | null;
   sidebarCollapsed: boolean;
   onToggleSidebar: () => void;
@@ -180,9 +212,9 @@ function Titlebar({ session, sidebarCollapsed, onToggleSidebar, showRightSidebar
       setSpeaking(false);
       return;
     }
-    const lastMessage = sessionStorage.getItem('august_last_assistant_message');
+    const lastMessage = sessionStorage.getItem("august_last_assistant_message");
     if (!lastMessage) {
-      toast.info('No message to read');
+      toast.info("No message to read");
       return;
     }
     const utterance = new SpeechSynthesisUtterance(lastMessage);
@@ -200,13 +232,17 @@ function Titlebar({ session, sidebarCollapsed, onToggleSidebar, showRightSidebar
         <button
           onClick={onToggleSidebar}
           className="size-12 flex items-center justify-center shrink-0 hover:bg-accent text-muted-foreground hover:text-foreground transition"
-          title={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+          title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
         >
-          {sidebarCollapsed ? <PanelLeftClose className="size-4" /> : <PanelLeft className="size-4" />}
+          {sidebarCollapsed ? (
+            <PanelLeftClose className="size-4" />
+          ) : (
+            <PanelLeft className="size-4" />
+          )}
         </button>
         <div className="flex items-center gap-2 px-2 min-w-0">
           <h1 className="text-[13px] font-medium text-foreground truncate">
-            {session?.title ?? 'General Assistance Conversation Started'}
+            {session?.title ?? "General Assistance Conversation Started"}
           </h1>
           <ChevronDown className="size-3.5 text-muted-foreground/60 cursor-pointer hover:text-foreground transition" />
         </div>
@@ -217,30 +253,45 @@ function Titlebar({ session, sidebarCollapsed, onToggleSidebar, showRightSidebar
           onClick={speakLatest}
           className={cn(
             "p-1 hover:bg-accent rounded transition",
-            speaking ? "text-primary animate-pulse" : "text-muted-foreground hover:text-foreground"
+            speaking
+              ? "text-primary animate-pulse"
+              : "text-muted-foreground hover:text-foreground",
           )}
           title={speaking ? "Stop reading" : "Read latest response"}
         >
           <Volume2 className="size-4" />
         </button>
-        <button 
+        <button
           onClick={onToggleRightSidebar}
-          className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition" 
+          className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition"
           title="Toggle Workspace Explorer"
         >
-          {showRightSidebar ? <PanelRightClose className="size-4" /> : <PanelRight className="size-4" />}
+          {showRightSidebar ? (
+            <PanelRightClose className="size-4" />
+          ) : (
+            <PanelRight className="size-4" />
+          )}
         </button>
 
         <div className="h-4 w-[1px] bg-border/40" />
 
         <div className="flex items-center gap-1.5 ml-1">
-          <button className="size-6 flex items-center justify-center hover:bg-accent rounded text-muted-foreground hover:text-foreground transition" aria-label="Minimize">
+          <button
+            className="size-6 flex items-center justify-center hover:bg-accent rounded text-muted-foreground hover:text-foreground transition"
+            aria-label="Minimize"
+          >
             <Minus className="size-3.5" />
           </button>
-          <button className="size-6 flex items-center justify-center hover:bg-accent rounded text-muted-foreground hover:text-foreground transition" aria-label="Maximize">
+          <button
+            className="size-6 flex items-center justify-center hover:bg-accent rounded text-muted-foreground hover:text-foreground transition"
+            aria-label="Maximize"
+          >
             <Square className="size-2.5" />
           </button>
-          <button className="size-6 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground rounded text-muted-foreground transition" aria-label="Close">
+          <button
+            className="size-6 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground rounded text-muted-foreground transition"
+            aria-label="Close"
+          >
             <X className="size-3.5" />
           </button>
         </div>

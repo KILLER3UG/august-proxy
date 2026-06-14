@@ -142,7 +142,7 @@ export const mockRequests: RequestLog[] = makeRequests();
 
 function makeSessions(): Session[] {
   const arr: Session[] = [];
-  const titles = ['Refactor the dashboard nav', 'Add providers page', 'Fix URL routing bug', 'Tauri tray icon', 'Memory graph query', 'Embed xterm in Workbench', 'Ship the desktop MSI', 'Onboarding flow', 'Add cmdk palette', 'Wire up statusbar', 'Fix rerenderCostSummary', 'Refactor to React 19'];
+  const titles = ['Refactor the dashboard nav', 'Add providers page', 'Fix URL routing bug', 'Tauri tray icon', 'Memory graph query', 'Embed terminal in chat', 'Ship the desktop MSI', 'Onboarding flow', 'Add cmdk palette', 'Wire up statusbar', 'Fix rerenderCostSummary', 'Refactor to React 19'];
   const last = ['Done — committed on refactor/ui-v2.', 'Looking at the inspector now.', 'Pushed. Need review.', 'Will continue tomorrow.'];
   const providers = ['opencode-go', 'minimax', 'kilo', 'openrouter'];
   const models = ['claude-opus-4-7', 'gpt-5', 'kilo/kimi-k2', 'anthropic/claude-sonnet-4'];
@@ -207,7 +207,7 @@ export const mockThinking: ThinkingStep[] = [
   { id: 't7', title: 'Scaffold Vite + React 19 + TS',  status: 'active', duration:  320, timestamp: new Date(Date.now() -  4800).toISOString(), detail: 'Building the foundation: package.json, vite.config.ts, tsconfig, styles.css, utils, api client.' },
   { id: 't8', title: 'Build shadcn component library', status: 'pending',                timestamp: new Date(Date.now() -  3000).toISOString(), detail: 'Button, Card, Input, Badge, Spinner, Skeleton, Separator, StatusDot, StatusPill.' },
   { id: 't9', title: 'Build AppShell + CommandPalette',status: 'pending',                timestamp: new Date(Date.now() -  2000).toISOString(), detail: 'Three-pane shell, sidebar, titlebar, statusbar, cmdk palette, gateway state machine.' },
-  { id: 't10',title: 'Migrate sections one by one',   status: 'pending',                timestamp: new Date(Date.now() -  1000).toISOString(), detail: 'Overview → Health → Providers → Workbench → Services → Traffic → Conversations → Inspector → Thinking → Memory → MCP → August.' },
+  { id: 't10',title: 'Migrate sections one by one',   status: 'pending',                timestamp: new Date(Date.now() -  1000).toISOString(), detail: 'Overview → Health → Providers → Services → Traffic → Conversations → Inspector → Thinking → Memory → MCP → August.' },
 ];
 
 export const mockServices: ServiceConnection[] = [

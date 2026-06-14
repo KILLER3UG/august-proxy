@@ -49,7 +49,7 @@ const DEFAULT_SESSIONS: Session[] = [
 
   // Research folder
   { id: 'sess_5', title: 'Memory graph query', startedAt: new Date(Date.now() - 18000000).toISOString(), messageCount: 15, lastMessage: 'Pushed. Need review.', provider: 'opencode-go', model: 'claude-opus-4-7', folderId: 'f_research', isArchived: false },
-  { id: 'sess_6', title: 'Embed xterm in Workbench', startedAt: new Date(Date.now() - 21600000).toISOString(), messageCount: 3, lastMessage: 'Done — committed on refactor/ui-v2.', provider: 'minimax', model: 'gpt-5', folderId: 'f_research', isArchived: false },
+  { id: 'sess_6', title: 'Embed terminal in chat', startedAt: new Date(Date.now() - 21600000).toISOString(), messageCount: 3, lastMessage: 'Done — committed on refactor/ui-v2.', provider: 'minimax', model: 'gpt-5', folderId: 'f_research', isArchived: false },
   { id: 'sess_7', title: 'Refactor to React 19', startedAt: new Date(Date.now() - 25200000).toISOString(), messageCount: 22, lastMessage: 'Will continue tomorrow.', provider: 'kilo', model: 'kilo/kimi-k2', folderId: 'f_research', isArchived: false },
 
   // Personal folder

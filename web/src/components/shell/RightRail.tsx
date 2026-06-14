@@ -12,7 +12,7 @@ interface Props {
 
 /**
  * Resizable right-rail details pane. Used by Inspector (per-request details),
- * Workbench (per-message tool call preview), and any section that wants
+ * chat tool-call previews, and any section that wants side-by-side details.
  * side-by-side details. Mirrors Hermes Desktop's ChatPreviewRail pattern.
  */
 export function RightRail({ title, subtitle, children, className }: Props) {
