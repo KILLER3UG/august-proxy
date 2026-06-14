@@ -570,7 +570,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     let workbenchSessionId = workbenchSession?.id || activeSession?.workbenchSessionId || null;
     let assistantContent = '';
     let thinkingContent = '';
-    let toolResults: ChatMessage['tools'] = [];
+    let toolResults: NonNullable<ChatMessage['tools']> = [];
     let streamBlocks: MessageBlock[] = [];
     let finished = false;
     let hadError = false;
@@ -654,7 +654,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         onToolUse: ({ id, name, input }) => {
           toolResults = [...toolResults, {
             name,
-            args: JSON.stringify(input, null, 2),
+            context: JSON.stringify(input || {}, null, 2),
             id,
             status: 'running',
             summary: Object.keys(input || {}).join(', '),
@@ -726,7 +726,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   function appendBlockEvent(
     prevBlocks: MessageBlock[],
     event: {
-      type: 'thinking' | 'text' | 'content' | 'tool_call' | 'tool_progress' | 'tool_result';
+      type: 'thinking' | 'text' | 'content' | 'tool_call' | 'command' | 'tool_progress' | 'tool_result';
       content?: string;
       name?: string;
       id?: string;
@@ -763,8 +763,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           content: text
         });
       }
-    } else if (event.type === 'tool_call') {
-      const isCommand = event.name?.startsWith('@run_command') || event.name?.startsWith('run_command');
+    } else if (event.type === 'tool_call' || event.type === 'command') {
+      const isCommand = event.type === 'command' || event.name?.startsWith('@run_command') || event.name?.startsWith('run_command');
       blocks.push({
         id: `b_tool_${event.id || Date.now()}`,
         type: isCommand ? 'command' : 'tool_call',
@@ -1203,6 +1203,45 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
       />
       <div className="flex-1 flex flex-col min-w-0 bg-background h-full overflow-hidden relative">
+        {workbenchBtw && (
+          <WorkbenchBtwDrawer
+            result={workbenchBtw}
+            onSend={async (question) => {
+              if (!sessionId) return;
+              const active = workbenchSession || (activeSession?.workbenchSessionId ? {
+                id: activeSession.workbenchSessionId,
+                provider: activeSession.workbenchProvider || "claude",
+                agentId: activeSession.workbenchAgentId || "build",
+                agentRole: activeSession.workbenchAgentId || "build",
+                agentMode: "assistant",
+                approved: false,
+                approvedAt: null,
+                plan: null,
+                goal: null,
+                lastGoal: null,
+                messageCount: 0,
+                mutationCount: 0,
+                lastMutationAt: null,
+                updatedAt: new Date().toISOString(),
+                todos: [],
+              } : null);
+              if (!active) return;
+              setWorkbenchBusy(true);
+              try {
+                const result = await answerWorkbenchBtw({
+                  sessionId: active.id,
+                  question,
+                  provider: active.provider === "codex" ? "codex" : "claude",
+                  agentId: active.agentId,
+                });
+                setWorkbenchBtw(result);
+              } finally {
+                setWorkbenchBusy(false);
+              }
+            }}
+            onClose={() => setWorkbenchBtw(null)}
+          />
+        )}
         <div className="flex-grow flex flex-col min-h-0 relative">
           <AnimatePresence initial={false} mode="wait">
             {messages.length === 0 ? (
@@ -1241,6 +1280,30 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   style={{ overflowAnchor: 'none' }}
                 >
                   <div className="max-w-3xl mx-auto px-6 py-8 space-y-5 relative">
+                    <div className="flex items-center justify-between gap-3">
+                      <WorkbenchStatusPill session={workbenchSession} />
+                      {workbenchBusy && <span className="text-[11px] text-muted-foreground font-mono">August is working…</span>}
+                    </div>
+                    <WorkbenchPlanPanel
+                      session={workbenchSession}
+                      onApprove={async () => {
+                        if (!workbenchSession) return;
+                        try {
+                          const updated = await approveWorkbenchPlan(workbenchSession.id);
+                          setWorkbenchSession(updated);
+                          if (sessionId) {
+                            updateSessionWorkbenchMetadata(sessionId, {
+                              workbenchSessionId: updated.id,
+                              workbenchAgentId: updated.agentId,
+                              workbenchProvider: updated.provider,
+                            });
+                          }
+                        } catch (e: any) {
+                          toast.error("Could not approve Workbench plan", { description: e.message });
+                        }
+                      }}
+                    />
+                    <TodoSummary todos={workbenchSession?.todos} />
                     {messages.map((m, i) => {
                       const isReverting = revertingIndex !== null && i > revertingIndex;
                       return (

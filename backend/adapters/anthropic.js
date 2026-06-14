@@ -53,6 +53,16 @@ const KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES = new Set([
 ]);
 const adapterBase = new LlmAdapterBase({ profileName: 'claude', logPrefix: 'Anthropic' });
 
+/** True for Claude family model ids (claude-*) or the public alias names. */
+function isClaudeFamilyModel(model) {
+    if (typeof model !== 'string') return false;
+    const lower = model.trim().toLowerCase();
+    if (!lower) return false;
+    if (lower.startsWith('claude-')) return true;
+    if (KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES.has(model)) return true;
+    return lower === 'sonnet' || lower === 'opus' || lower === 'best' || lower === 'opusplan';
+}
+
 function isMiniMaxModel(model) {
     return adapterBase.isMiniMaxModel(model);
 }
@@ -2464,6 +2474,29 @@ async function handleMessages(req, res, cleanPath, reqId) {
             clientFacingModel = resolveClaudeClientFacingModel(aReq.model);
             syncClaudePublicAlias(requestModel);
             const cfg = resolveClaudeUpstreamConfig(baseCfg, requestModel);
+
+            // ── Per-model provider routing ──
+            // If the requested model maps to a specific configured provider
+            // (e.g. deepseek-chat -> deepseek), route to that provider's
+            // baseUrl/apiKey instead of the claude profile's targetUrl.
+            // This lets OpenAI-compatible models work through Claude Code
+            // (/v1/messages) — the request is translated to OpenAI format
+            // and forwarded to the matched provider.
+            const requestedRaw = typeof aReq.model === 'string' ? aReq.model.trim() : '';
+            if (requestedRaw && !isClaudeFamilyModel(requestedRaw)) {
+                try {
+                    const { resolveProviderForModel } = require('../providers/route-resolver');
+                    const routed = resolveProviderForModel(requestedRaw);
+                    if (routed && routed.baseUrl && routed.apiKey && routed.name !== 'anthropic') {
+                        cfg.targetUrl = routed.baseUrl;
+                        cfg.apiKey = routed.apiKey;
+                        console.log(`[Proxy Model Route]: ${requestedRaw} -> provider ${routed.name} (${routed.baseUrl})`);
+                    }
+                } catch (e) {
+                    console.warn('[Proxy Model Route] resolution failed:', e.message);
+                }
+            }
+
             const upstreamModel = shouldPreserveClaudeAliasForAnthropicUpstream(requestModel)
                 ? requestModel
                 : getClaudeBackendModel(cfg, aReq.model);

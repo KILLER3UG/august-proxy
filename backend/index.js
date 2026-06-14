@@ -512,6 +512,26 @@ const requestHandler = async (req, res) => {
         const claudeProfile = getProfile('claude');
         const codexProfile = getProfile('codex');
         const mem = process.memoryUsage();
+
+        // Derive the proxy's own origin from the request host (so it works
+        // behind LAN/Tailscale hostnames), falling back to localhost:port.
+        const host = req.headers.host || `localhost:${LISTEN_PORT}`;
+        const proto = req.headers['x-forwarded-proto'] || (host.startsWith('localhost') ? 'http' : 'http');
+        const origin = `${proto}://${host}`;
+
+        // Active upstream provider baseUrl (key redacted) for reference.
+        let activeUpstream = null;
+        try {
+            const activeName = getActiveProvider();
+            if (activeName) {
+                const pcfg = getProviderConfig(activeName) || {};
+                const { getProvider } = require('./providers/provider-registry');
+                const profile = getProvider(activeName);
+                const baseUrl = pcfg.baseUrl || pcfg.targetUrl || profile?.resolveBaseUrl() || '';
+                activeUpstream = { provider: activeName, baseUrl };
+            }
+        } catch { /* ignore */ }
+
         return sendJson(res, {
             claude: { status: claudeProfile?.apiKey ? 'ok' : 'missing key' },
             codex: { status: codexProfile?.apiKey ? 'ok' : 'missing key' },
@@ -519,7 +539,16 @@ const requestHandler = async (req, res) => {
             memory: {
                 used: Math.round(mem.heapUsed / 1024 / 1024),
                 total: Math.round(mem.heapTotal / 1024 / 1024)
-            }
+            },
+            origin,
+            port: LISTEN_PORT,
+            // OpenAI/Anthropic-compatible entrypoints this proxy exposes.
+            endpoints: {
+                anthropic: { url: `${origin}/v1/messages`, label: 'Anthropic Messages (Claude Code)', client: 'claude' },
+                openai: { url: `${origin}/v1/chat/completions`, label: 'OpenAI Chat Completions', client: 'codex' },
+                models: { url: `${origin}/v1/models`, label: 'OpenAI-compatible model list', client: 'any' }
+            },
+            activeUpstream
         });
     }
 
@@ -606,154 +635,14 @@ const requestHandler = async (req, res) => {
 
     // ── Aggregate models from all active providers ──
     if (req.url === '/api/models' && req.method === 'GET') {
-        const { listProviders } = require('./providers/provider-registry');
-        const { getProviderConfig } = require('./lib/config');
-        const { inferFromModelId } = require('./lib/models');
-        const providers = listProviders();
-        const allModels = [];
-
-        function getContextWindowForModel(modelId, providerProfile, contextLengthFromApi) {
-            if (contextLengthFromApi) return contextLengthFromApi;
-            const inferred = inferFromModelId(modelId);
-            if (inferred && inferred.inputTokens) return inferred.inputTokens;
-            const profile = providerProfile ? providerProfile.getModelProfile(modelId) : null;
-            if (profile && profile.contextWindow) return profile.contextWindow;
-            return 128000;
+        try {
+            const { getModelList } = require('./providers/model-list');
+            const models = await getModelList();
+            return sendJson(res, { models });
+        } catch (e) {
+            console.error('[Proxy /api/models] error:', e.message);
+            return sendJson(res, { models: [] });
         }
-
-        for (const p of providers) {
-            const config = getProviderConfig(p.name) || {};
-            const apiKey = config.apiKey || p.resolveApiKey();
-            const baseUrl = config.baseUrl || config.targetUrl || p.resolveBaseUrl();
-            const enabled = p.isAvailable() || !!config.apiKey;
-
-            if (!enabled) continue;
-
-            let models = [];
-            // Try live fetch from models endpoint for any provider with a valid base URL and API key
-            try {
-                const { deriveModelsUrl } = require('./lib/models');
-                const modelsUrl = deriveModelsUrl(baseUrl);
-                if (modelsUrl && apiKey) {
-                    const fetchRes = await fetch(modelsUrl, {
-                        headers: { 'Authorization': `Bearer ${apiKey}` },
-                        signal: AbortSignal.timeout(5000)
-                    });
-                    if (fetchRes.ok) {
-                        const data = await fetchRes.json();
-                        const list = data.data || data.models || data || [];
-                        models = list.map(m => ({
-                            id: m.id,
-                            name: m.id,
-                            provider: p.name,
-                            contextWindow: getContextWindowForModel(m.id, p, m.context_length)
-                        }));
-                    }
-                }
-            } catch (e) {
-                console.warn(`[Proxy Models] Failed to fetch models for ${p.name}:`, e.message);
-            }
-
-            // Fallback list of known models if fetch failed or for providers without models API (like Anthropic)
-            if (models.length === 0) {
-                let staticModels = [];
-                if (p.name === 'anthropic') {
-                    staticModels = [
-                        { id: 'claude-3-5-sonnet-20241022', contextWindow: 200000 },
-                        { id: 'claude-3-5-haiku-20241022', contextWindow: 200000 },
-                        { id: 'claude-3-opus-20240229', contextWindow: 200000 },
-                        { id: 'claude-sonnet-4-6', contextWindow: 200000 },
-                        { id: 'claude-opus-4-6', contextWindow: 200000 }
-                    ];
-                } else if (p.name === 'openai-api') {
-                    staticModels = [
-                        { id: 'gpt-4o', contextWindow: 128000 },
-                        { id: 'gpt-4o-mini', contextWindow: 128000 },
-                        { id: 'o1', contextWindow: 200000 },
-                        { id: 'o3-mini', contextWindow: 200000 }
-                    ];
-                } else if (p.name === 'gemini') {
-                    staticModels = [
-                        // Gemini 2.5 — flagship
-                        { id: 'gemini-2.5-pro', contextWindow: 2000000 },
-                        { id: 'gemini-2.5-pro-preview-06-05', contextWindow: 2000000 },
-                        { id: 'gemini-2.5-flash', contextWindow: 1000000 },
-                        { id: 'gemini-2.5-flash-preview-05-20', contextWindow: 1000000 },
-                        // Gemini 2.0
-                        { id: 'gemini-2.0-flash', contextWindow: 1000000 },
-                        { id: 'gemini-2.0-flash-lite', contextWindow: 1000000 },
-                        // Gemma open models (served via AI Studio)
-                        { id: 'gemma-3-27b-it', contextWindow: 131072 },
-                        { id: 'gemma-3-12b-it', contextWindow: 131072 },
-                        { id: 'gemma-3-4b-it', contextWindow: 131072 },
-                        { id: 'gemma-3-1b-it', contextWindow: 32768 },
-                    ];
-                } else if (p.name === 'deepseek') {
-                    staticModels = [
-                        { id: 'deepseek-chat', contextWindow: 64000 },
-                        { id: 'deepseek-reasoner', contextWindow: 64000 }
-                    ];
-                } else {
-                    if (p.defaultModel) {
-                        staticModels.push({ id: p.defaultModel, contextWindow: 128000 });
-                    }
-                    if (p.fallbackModels) {
-                        p.fallbackModels.forEach(m => staticModels.push({ id: m, contextWindow: 128000 }));
-                    }
-                }
-                models = staticModels.map(m => ({
-                    id: m.id,
-                    name: m.id,
-                    provider: p.name,
-                    contextWindow: getContextWindowForModel(m.id, p, m.contextWindow)
-                }));
-            }
-
-            // Gather any explicitly configured models from settings
-            const configuredModelIds = new Set();
-            if (config.currentModel) configuredModelIds.add(config.currentModel);
-            if (config.model) configuredModelIds.add(config.model);
-            if (config._upstreamModel) configuredModelIds.add(config._upstreamModel);
-            if (config.contextModelId) configuredModelIds.add(config.contextModelId);
-            if (Array.isArray(config.models)) {
-                config.models.forEach(m => {
-                    if (typeof m === 'string') configuredModelIds.add(m);
-                    else if (m && m.id) configuredModelIds.add(m.id);
-                });
-            }
-
-            // Always ensure configured models are appended to the list
-            for (const mid of configuredModelIds) {
-                if (!models.some(m => m.id === mid)) {
-                    models.push({
-                        id: mid,
-                        name: mid,
-                        provider: p.name,
-                        contextWindow: getContextWindowForModel(mid, p, config.contextWindow)
-                    });
-                }
-            }
-
-            // Map the resolved properties (supportsReasoning, supportsThinking) to the models
-            const { resolveModelProfile } = require('./lib/model-profiles');
-            const mappedModels = models.map(m => {
-                const provProfile = p.getModelProfile(m.id);
-                const globalProfile = resolveModelProfile(m.id);
-                const supportsThinking = !!(provProfile?.supportsThinking || globalProfile?.supportsThinking);
-                const supportsReasoning = !!(provProfile?.supportsReasoning || provProfile?.supportsThinking || globalProfile?.supportsReasoning || globalProfile?.supportsThinking);
-                return {
-                    ...m,
-                    supportsReasoning,
-                    supportsThinking
-                };
-            });
-
-            allModels.push(...mappedModels);
-        }
-
-        // Ensure unique model IDs
-        const uniqueModels = Array.from(new Map(allModels.map(m => [m.id, m])).values());
-        return sendJson(res, { models: uniqueModels });
     }
 
     // ── Chat Completions proxy for the web UI ──
@@ -1938,21 +1827,16 @@ const requestHandler = async (req, res) => {
         return;
     }
 
-    // ── Fake model list (shared) ──
-    if (cleanPath.includes('/v1/models')) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        const now = Math.floor(Date.now() / 1000);
-        return res.end(JSON.stringify({
-            object: "list",
-            data: [
-                { id: 'claude-opus-4-7', object: 'model', created: now, owned_by: 'august' },
-                { id: 'claude-opus-4-6', object: 'model', created: now, owned_by: 'august' },
-                { id: 'claude-sonnet-4-6', object: 'model', created: now, owned_by: 'august' },
-                { id: 'gpt-5.4', object: 'model', created: now, owned_by: 'august' },
-                { id: 'gpt-4o', object: 'model', created: now, owned_by: 'august' },
-                { id: 'gpt-4-turbo', object: 'model', created: now, owned_by: 'august' }
-            ]
-        }));
+    // ── OpenAI-compatible model list (aggregated from all configured providers) ──
+    if (cleanPath.includes('/v1/models') && req.method === 'GET') {
+        try {
+            const { getModelListOpenAI } = require('./providers/model-list');
+            const payload = await getModelListOpenAI();
+            return sendJson(res, payload);
+        } catch (e) {
+            console.error('[Proxy /v1/models] error:', e.message);
+            return sendJson(res, { object: 'list', data: [] });
+        }
     }
 
     // ── August Core Security Gateway ──

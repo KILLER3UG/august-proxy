@@ -67,6 +67,16 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   { key: 'providers', label: 'Providers', Icon: LayoutDashboard, path: '/settings/providers' },
   { key: 'mcp', label: 'MCP & Skills', Icon: Settings, path: '/settings/mcp' },
   { key: 'memory', label: 'Memory', Icon: MessagesSquare, path: '/settings/memory' },
+  { key: 'traffic', label: 'Traffic', Icon: Activity, path: '/settings/traffic' },
+  { key: 'inspector', label: 'Inspector', Icon: Search, path: '/settings/inspector' },
+  { key: 'conversations', label: 'Conversations', Icon: MessagesSquare, path: '/settings/conversations' },
+  { key: 'thinking', label: 'Thinking', Icon: Brain, path: '/settings/thinking' },
+  { key: 'logs', label: 'Logs', Icon: Search, path: '/settings/logs' },
+  { key: 'models', label: 'Models', Icon: LayoutDashboard, path: '/settings/models' },
+  { key: 'agents', label: 'Agents', Icon: Brain, path: '/settings/agents' },
+  { key: 'terminal', label: 'Terminal', Icon: Settings, path: '/settings/terminal' },
+  { key: 'automations', label: 'Automations', Icon: Settings, path: '/settings/automations' },
+  { key: 'connections', label: 'Connections', Icon: Settings, path: '/settings/connections' },
 ] as const;
 
 export const SETTINGS_ROUTES: readonly SectionRoute[] = [

@@ -648,6 +648,22 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             }
             oReq.model = requestModel;
 
+            // ── Per-model provider routing ──
+            // If the requested model maps to a specific configured provider
+            // (e.g. deepseek-chat -> deepseek), route to that provider's
+            // baseUrl/apiKey instead of the codex/claude profile's targetUrl.
+            try {
+                const { resolveProviderForModel } = require('../providers/route-resolver');
+                const routed = resolveProviderForModel(requestModel);
+                if (routed && routed.baseUrl && routed.apiKey) {
+                    cfg.targetUrl = routed.baseUrl;
+                    cfg.apiKey = routed.apiKey;
+                    console.log(`[Proxy Model Route]: ${requestModel} -> provider ${routed.name} (${routed.baseUrl})`);
+                }
+            } catch (e) {
+                console.warn('[Proxy Model Route] resolution failed:', e.message);
+            }
+
             // ── Smart context compaction (only when approaching model's limit) ──
             let contextWindow = loadModelContextWindow('codex', requestModel);
             if (!contextWindow) {

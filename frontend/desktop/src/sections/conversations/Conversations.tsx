@@ -1,19 +1,84 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { SectionHeader } from '@/components/SectionHeader';
 import { Card, CardContent } from '@/components/ui/card';
-import { Search, Pin, MessageSquare } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Search, MessageSquare, Inbox } from 'lucide-react';
 import { formatTimeAgo, cn } from '@/lib/utils';
-import { useStore } from '@nanostores/react';
-import { $sessions, type Session } from '@/store/sessions';
+import { getConversations, type ConversationsResponse, type RequestEntry } from '@/api/backend-ui';
+
+interface ConversationItem {
+  reqId: string;
+  clientType: string;
+  model: string;
+  status: string;
+  date?: string;
+  messages: Array<{ role: string; content: string }>;
+  response?: unknown;
+  finishReason?: string | null;
+  error?: string | null;
+}
+
+function normalize(grouped: ConversationsResponse | undefined): ConversationItem[] {
+  const items: ConversationItem[] = [];
+  for (const [clientType, entries] of Object.entries(grouped || {})) {
+    for (const e of entries as Array<RequestEntry & { details: { messages: unknown; response: unknown; finishReason?: string | null; error?: string | null } | null }>) {
+      const rawMessages = e.details?.messages;
+      const messages = toMessages(rawMessages);
+      items.push({
+        reqId: e.reqId,
+        clientType,
+        model: e.model || 'unknown',
+        status: e.status || 'unknown',
+        date: e.date,
+        messages,
+        response: e.details?.response,
+        finishReason: e.details?.finishReason,
+        error: e.details?.error,
+      });
+    }
+  }
+  return items.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+}
+
+function toMessages(raw: unknown): Array<{ role: string; content: string }> {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((m: any) => {
+      const role = m?.role || 'unknown';
+      let content = '';
+      if (typeof m?.content === 'string') content = m.content;
+      else if (Array.isArray(m?.content)) {
+        content = m.content
+          .map((b: any) => (typeof b === 'string' ? b : b?.text || b?.content || b?.type || ''))
+          .filter(Boolean)
+          .join('\n');
+      } else if (m?.content && typeof m.content === 'object') {
+        content = String(m.content.text || m.content.content || '');
+      }
+      return { role, content };
+    })
+    .filter((m) => m.content);
+}
 
 export function Conversations() {
-  const allSessions = useStore($sessions);
-  const sessions = allSessions.filter(s => !s.isArchived);
-  const [selected, setSelected] = useState<Session | null>(null);
+  const { data, isLoading } = useQuery({
+    queryKey: ['conversations', 'today'],
+    queryFn: () => getConversations('today'),
+    refetchInterval: 5_000,
+  });
+
+  const items = useMemo(() => normalize(data), [data]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
 
-  const visible = sessions.filter((s) =>
-    !filter || s.title.toLowerCase().includes(filter.toLowerCase()));
+  const visible = items.filter((it) => {
+    if (!filter) return true;
+    const hay = `${it.clientType} ${it.model} ${it.messages.map((m) => m.content).join(' ')}`.toLowerCase();
+    return hay.includes(filter.toLowerCase());
+  });
+
+  const selected = items.find((i) => i.reqId === selectedId) ?? null;
 
   return (
     <div className="flex h-full">
@@ -25,46 +90,58 @@ export function Conversations() {
             <input
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter sessions…"
+              placeholder="Filter by client, model, or text…"
               className="w-full pl-7 pr-2 py-1.5 text-xs bg-secondary rounded-md border border-transparent focus:border-border focus:bg-background outline-none transition"
             />
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {visible.map((s) => (
+          {isLoading && (
+            <p className="text-center text-xs text-muted-foreground py-6">Loading…</p>
+          )}
+          {!isLoading && visible.length === 0 && (
+            <p className="text-center text-xs text-muted-foreground py-6">
+              {filter ? `No conversations match "${filter}"` : 'No conversations captured yet'}
+            </p>
+          )}
+          {visible.map((it) => (
             <button
-              key={s.id}
-              onClick={() => setSelected(s)}
+              key={it.reqId}
+              onClick={() => setSelectedId(it.reqId)}
               className={cn(
                 'w-full text-left rounded-md px-2.5 py-2 transition',
-                selected?.id === s.id ? 'bg-accent' : 'hover:bg-accent/50',
+                selectedId === it.reqId ? 'bg-accent' : 'hover:bg-accent/50',
               )}
             >
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium truncate flex-1">{s.title}</p>
-                {s.messageCount > 20 && <Pin className="size-3 text-muted-foreground" />}
+                <p className="text-sm font-medium truncate flex-1">{it.clientType}</p>
+                <Badge variant={it.status === 'error' ? 'destructive' : 'secondary'} className="text-[9px]">
+                  {it.status.slice(0, 8)}
+                </Badge>
               </div>
-              <p className="text-[11px] text-muted-foreground truncate mt-0.5">{s.lastMessage}</p>
+              <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                {it.messages[it.messages.length - 1]?.content || it.model}
+              </p>
               <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground font-mono">
-                <span>{formatTimeAgo(s.startedAt)}</span>
+                <span>{it.date ? formatTimeAgo(it.date) : '—'}</span>
                 <span>·</span>
-                <span><MessageSquare className="inline size-2.5" /> {s.messageCount}</span>
+                <span><MessageSquare className="inline size-2.5" /> {it.messages.length}</span>
                 <span>·</span>
-                <span className="truncate">{s.model}</span>
+                <span className="truncate">{it.model}</span>
               </div>
             </button>
           ))}
-          {visible.length === 0 && (
-            <p className="text-center text-xs text-muted-foreground py-6">No sessions match "{filter}"</p>
-          )}
         </div>
       </div>
       <div className="flex-1 overflow-auto p-6">
         {selected ? (
-          <SessionDetail session={selected} />
+          <ConversationDetail item={selected} />
         ) : (
           <div className="h-full grid place-items-center text-sm text-muted-foreground">
-            Select a session to view its transcript
+            <div className="text-center">
+              <Inbox className="size-8 text-muted-foreground/40 mx-auto mb-2" />
+              Select a conversation to view its transcript
+            </div>
           </div>
         )}
       </div>
@@ -72,26 +149,58 @@ export function Conversations() {
   );
 }
 
-function SessionDetail({ session }: { session: Session }) {
+function ConversationDetail({ item }: { item: ConversationItem }) {
   return (
     <div className="space-y-4">
       <SectionHeader
-        title={session.title}
-        subtitle={`${session.model} · ${session.provider} · started ${formatTimeAgo(session.startedAt)}`}
+        title={item.clientType}
+        subtitle={`${item.model} · ${item.status} · ${item.date ? formatTimeAgo(item.date) : ''}`}
         actions={
           <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
-            <span>{session.messageCount} messages</span>
+            <span>{item.messages.length} messages</span>
             <span>·</span>
-            <span className="font-mono">{session.id}</span>
+            <span className="font-mono">{item.reqId}</span>
           </div>
         }
       />
-      <Card>
-        <CardContent className="p-5 text-sm text-muted-foreground italic">
-          Full transcript view would render here. In the current build, the right rail pattern is used
-          for transcript previews (see <code className="font-mono">RightRail</code> in <code className="font-mono">@/components/shell</code>).
-        </CardContent>
-      </Card>
+
+      {item.error && (
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[10px] uppercase tracking-wider text-destructive mb-1">Error</p>
+            <pre className="text-xs font-mono whitespace-pre-wrap break-all text-destructive">{item.error}</pre>
+          </CardContent>
+        </Card>
+      )}
+
+      {item.messages.length === 0 ? (
+        <Card>
+          <CardContent className="p-5 text-sm text-muted-foreground italic">
+            No message bodies were captured for this request.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {item.messages.map((m, i) => (
+            <div key={i} className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}>
+              <Card className={cn('max-w-[85%]', m.role === 'user' ? 'bg-secondary' : 'bg-card')}>
+                <CardContent className="py-2.5 px-3">
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mb-1 font-mono">
+                    <span className="font-semibold">{m.role}</span>
+                  </div>
+                  <p className="text-sm whitespace-pre-wrap break-words">{m.content}</p>
+                </CardContent>
+              </Card>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {item.finishReason && (
+        <p className="text-[10px] text-muted-foreground font-mono px-1">
+          finish_reason: {item.finishReason}
+        </p>
+      )}
     </div>
   );
 }
