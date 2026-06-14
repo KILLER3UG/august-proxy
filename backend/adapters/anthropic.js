@@ -5,6 +5,7 @@ const { getModelContextWindow, saveModelContextWindow, loadModelContextWindow } 
 const { estimateTokens, formatTokenCount } = require('../lib/tokens');
 const { buildFriendlyRateLimitMessage, getRetryDelayMs, isRetryableStatus } = require('../lib/upstream');
 const { executeManagedWebTool } = require('../services/tools/local-web');
+const { getCoworkToolDefinitions } = require('../services/tools/cowork-tools');
 const { validateToolArguments, buildValidationErrorToolMessage } = require('../services/workbench/validator');
 const { recordToolFailure } = require('../services/memory/tool-failure-memory');
 const { getBrainConfig } = require('../services/memory/brain-orchestrator');
