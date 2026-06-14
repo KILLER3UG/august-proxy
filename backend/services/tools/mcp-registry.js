@@ -133,19 +133,41 @@ function getMcpServers() {
     return mergeMcpServers(Array.isArray(config.mcpServers) ? config.mcpServers : []);
 }
 
+function maskSensitiveRecord(record = {}) {
+    return Object.fromEntries(
+        Object.entries(record)
+            .map(([key, value]) => [key, SENSITIVE_KEY_PATTERN.test(key) ? maskSecretValue(value) : value])
+    );
+}
+
+function preserveMaskedRecord(normalized, existing, fieldName) {
+    if (!existing?.[fieldName]) return;
+    normalized[fieldName] = Object.fromEntries(
+        Object.entries(normalized[fieldName] || {})
+            .map(([key, value]) => {
+                if (SENSITIVE_KEY_PATTERN.test(key) && MASKED_VALUE_PATTERN.test(String(value))) {
+                    return [key, existing[fieldName][key] || ''];
+                }
+                return [key, value];
+            })
+    );
+}
+
 function getMcpServersForUi() {
     return getMcpServers().map(server => {
-        const safeEnv = Object.fromEntries(
-            Object.entries(server.env || {})
-                .map(([key, value]) => [key, SENSITIVE_KEY_PATTERN.test(key) ? maskSecretValue(value) : value])
-        );
+        const safeEnv = maskSensitiveRecord(server.env || {});
+        const safeHeaders = maskSensitiveRecord(server.headers || {});
         return {
             ...server,
+            headers: safeHeaders,
             env: safeEnv,
             argsText: (server.args || []).join('\n'),
+            headersText: Object.entries(safeHeaders)
+                .map(([key, value]) => `${key}=${value}`)
+                .join('\n'),
             envText: Object.entries(safeEnv)
-            .map(([key, value]) => `${key}=${SENSITIVE_KEY_PATTERN.test(key) ? maskSecretValue(value) : value}`)
-            .join('\n')
+                .map(([key, value]) => `${key}=${value}`)
+                .join('\n')
         };
     });
 }
@@ -163,16 +185,8 @@ function saveCustomMcpServer(data) {
         normalized.source = 'builtin';
     }
 
-    if (existing?.env) {
-        normalized.env = Object.fromEntries(
-            Object.entries(normalized.env || {}).map(([key, value]) => {
-                if (SENSITIVE_KEY_PATTERN.test(key) && MASKED_VALUE_PATTERN.test(String(value))) {
-                    return [key, existing.env[key] || ''];
-                }
-                return [key, value];
-            })
-        );
-    }
+    preserveMaskedRecord(normalized, existing, 'env');
+    preserveMaskedRecord(normalized, existing, 'headers');
 
     if (existingIndex >= 0) current[existingIndex] = normalized;
     else current.push(normalized);

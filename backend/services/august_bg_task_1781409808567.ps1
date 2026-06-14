@@ -1,0 +1,1 @@
+Write-Output "August background task test at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" >> C:\Users\rober\august_bg_test.log

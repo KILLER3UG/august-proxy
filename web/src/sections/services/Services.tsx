@@ -18,6 +18,9 @@ import {
   MessageCircle,
   PauseCircle,
   PlayCircle,
+  Plus,
+  RotateCcw,
+  Save,
   Server,
   Trash2,
   Wrench
@@ -25,13 +28,39 @@ import {
 
 interface McpServer {
   name: string;
-  status: 'running' | 'stopped' | 'disabled' | 'not_started' | 'error';
+  status: 'running' | 'stopped' | 'disabled' | 'not_started' | 'error' | 'starting';
   toolCount: number;
   enabled: boolean;
-  command: string;
+  command?: string;
+  url?: string;
+  args?: string[];
+  argsText?: string;
+  env?: Record<string, string>;
+  envText?: string;
+  headers?: Record<string, string>;
+  headersText?: string;
+  cwd?: string;
+  timeoutMs?: number;
   source?: string;
   error?: string | null;
   tools?: string[];
+}
+
+interface McpGlobalEnvVar {
+  key: string;
+  value: string;
+  set: boolean;
+  sensitive: boolean;
+  masked?: boolean;
+}
+
+interface ImportLinkResult {
+  sourceUrl?: string;
+  resolvedUrl?: string;
+  mcpServers?: Array<{ name?: string; command?: string; enabled?: boolean }>;
+  skills?: Array<{ name?: string; enabled?: boolean }>;
+  plugins?: Array<{ name?: string; enabled?: boolean; mcpServerCount?: number; skillCount?: number }>;
+  enabledMcpServers?: string[];
 }
 
 type ServiceName = 'google' | 'github' | 'slack';
@@ -142,6 +171,51 @@ function formatTime(value?: string) {
   }
 }
 
+function scopeLabel(scope: string) {
+  const labels: Record<string, string> = {
+    openid: 'OpenID',
+    email: 'Email',
+    profile: 'Profile',
+    'https://www.googleapis.com/auth/gmail.readonly': 'Gmail read',
+    'https://www.googleapis.com/auth/gmail.send': 'Gmail send',
+    'https://www.googleapis.com/auth/calendar': 'Calendar',
+    'https://www.googleapis.com/auth/drive': 'Drive',
+    'https://www.googleapis.com/auth/documents': 'Documents',
+    'https://www.googleapis.com/auth/spreadsheets': 'Spreadsheets',
+    'https://www.googleapis.com/auth/presentations': 'Slides',
+    'https://www.googleapis.com/auth/tasks': 'Tasks',
+    'https://www.googleapis.com/auth/contacts': 'Contacts'
+  };
+
+  return labels[scope] || scope.replace(/^https:\/\/www\.googleapis\.com\/auth\//, '').replaceAll('.', ' ').replaceAll(/[_-]+/g, ' ');
+}
+
+function linesToArray(value: string) {
+  return value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+}
+
+function linesToObject(value: string) {
+  return Object.fromEntries(
+    linesToArray(value)
+      .map(line => {
+        const idx = line.indexOf('=');
+        if (idx === -1) return [line, ''];
+        return [line.slice(0, idx).trim(), line.slice(idx + 1).trim()];
+      })
+      .filter(([key]) => key)
+  );
+}
+
+function envValue(env: Record<string, string>, key: string, fallback = '') {
+  return env[key] || fallback;
+}
+
+function objectToLines(value: Record<string, string> = {}) {
+  return Object.entries(value)
+    .map(([key, child]) => `${key}=${child}`)
+    .join('\n');
+}
+
 export function Services() {
   const queryClient = useQueryClient();
 
@@ -161,6 +235,14 @@ export function Services() {
       return res.status ?? [];
     },
     refetchInterval: 15_000,
+  });
+
+  const { data: globalEnvData } = useQuery({
+    queryKey: ['mcp-global-env'],
+    queryFn: async () => {
+      const res = await api.get<{ env: McpGlobalEnvVar[] }>('/api/mcp-env');
+      return res.env ?? [];
+    },
   });
 
   const googleAuth = useMutation({
@@ -203,6 +285,43 @@ export function Services() {
     }
   });
 
+  const saveMcpServer = useMutation({
+    mutationFn: async (server: McpServer) => {
+      await api.post('/ui/mcp', server);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mcp-servers'] });
+      queryClient.invalidateQueries({ queryKey: ['mcp-global-env'] });
+    }
+  });
+
+  const restartMcpServers = useMutation({
+    mutationFn: async () => {
+      await api.post('/ui/mcp/restart');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mcp-servers'] });
+    }
+  });
+
+  const saveGlobalMcpEnv = useMutation({
+    mutationFn: async (envText: string) => {
+      const env = Object.entries(linesToObject(envText)).map(([key, value]) => ({ key, value }));
+      await api.post('/api/mcp-env', { env });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mcp-global-env'] });
+      restartMcpServers.mutate();
+    }
+  });
+
+  const [globalEnvText, setGlobalEnvText] = useState('');
+
+  useEffect(() => {
+    if (!globalEnvData) return;
+    setGlobalEnvText(globalEnvData.map(item => `${item.key}=${item.value}`).join('\n'));
+  }, [globalEnvData]);
+
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
@@ -227,9 +346,15 @@ export function Services() {
         title="Services"
         subtitle={`${connectedServices} connected · ${running.length} MCP servers running · ${servers.length} total MCP servers`}
       />
+      <ServicesGuide />
 
       <div>
-        <h3 className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-3 px-1">Service Connections</h3>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold px-1">Accounts & logins</h3>
+            <p className="px-1 text-xs text-muted-foreground">Connect the accounts August can use through tools and MCP servers.</p>
+          </div>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {(servicesLoading || mcpLoading) && services.length === 0 ? Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="h-44 rounded-lg border bg-muted/30 animate-pulse" />
@@ -247,40 +372,92 @@ export function Services() {
         </div>
       </div>
 
+      <GoogleWorkspaceSetupPanel
+        envText={globalEnvText}
+        onEnvTextChange={setGlobalEnvText}
+        onSave={() => saveGlobalMcpEnv.mutate(globalEnvText)}
+        onRestart={() => restartMcpServers.mutate()}
+        isBusy={saveGlobalMcpEnv.isPending || restartMcpServers.isPending}
+      />
+      <LinkImportPanel />
+
       <div>
-        <h3 className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-3 px-1">MCP Servers</h3>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold px-1">MCP tools</h3>
+            <p className="px-1 text-xs text-muted-foreground">Servers that expose Gmail, Drive, search, browser, Blender, and other tools.</p>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={() => restartMcpServers.mutate()} disabled={restartMcpServers.isPending || saveMcpServer.isPending}>
+            <RotateCcw className={cn('size-3.5', restartMcpServers.isPending && 'animate-spin')} />
+            Restart all
+          </Button>
+        </div>
         {servers.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">No MCP servers configured.</p>
         ) : (
           <>
             {running.length > 0 && (
               <div>
-                <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-2 px-1">Running</h4>
+                <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-2 px-1">Ready</h4>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {running.map(s => <ServerCard key={s.name} server={s} />)}
+                  {running.map(s => <ServerCard key={s.name} server={s} onSave={(server) => saveMcpServer.mutate(server)} isBusy={saveMcpServer.isPending} />)}
                 </div>
               </div>
             )}
 
             {enabled.length > 0 && (
               <div>
-                <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-2 px-1">Enabled</h4>
+                <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-2 px-1">Needs setup</h4>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {enabled.map(s => <ServerCard key={s.name} server={s} />)}
+                  {enabled.map(s => <ServerCard key={s.name} server={s} onSave={(server) => saveMcpServer.mutate(server)} isBusy={saveMcpServer.isPending} />)}
                 </div>
               </div>
             )}
 
             {disabled.length > 0 && (
               <div>
-                <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-2 px-1">Disabled</h4>
+                <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-semibold mb-2 px-1">Turned off</h4>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {disabled.map(s => <ServerCard key={s.name} server={s} />)}
+                  {disabled.map(s => <ServerCard key={s.name} server={s} onSave={(server) => saveMcpServer.mutate(server)} isBusy={saveMcpServer.isPending} />)}
                 </div>
               </div>
             )}
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ServicesGuide() {
+  return (
+    <div className="grid gap-3 md:grid-cols-3">
+      <div className="rounded-2xl border bg-card p-4 shadow-sm">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <span className="grid size-7 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary">1</span>
+          Connect accounts
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          Use this for accounts that need login, like Google, GitHub, or Slack.
+        </p>
+      </div>
+      <div className="rounded-2xl border bg-card p-4 shadow-sm">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <span className="grid size-7 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary">2</span>
+          MCP tools start here
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          MCP servers turn connected accounts and local tools into callable tools. Most servers need no extra setup.
+        </p>
+      </div>
+      <div className="rounded-2xl border bg-card p-4 shadow-sm">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <span className="grid size-7 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary">3</span>
+          Only add inputs when needed
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          If a server asks for a token, API key, URL, or header, open Optional and add it as KEY=value.
+        </p>
       </div>
     </div>
   );
@@ -348,7 +525,7 @@ function ServiceConnectionCard({
 
         {service.maskedToken && (
           <div className="rounded-lg border bg-muted/30 px-3 py-2">
-            <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">Token</p>
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">Stored login</p>
             <p className="mt-1 text-xs font-mono truncate" title={service.maskedToken}>{service.maskedToken}</p>
           </div>
         )}
@@ -362,7 +539,7 @@ function ServiceConnectionCard({
 
         {service.missingConfig && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-300">
-            Add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET to .env, then restart August.
+            Google login is not available yet. Add the Google OAuth secret in Google login setup, save, restart August, then connect here.
           </div>
         )}
 
@@ -437,10 +614,234 @@ function ServiceConnectionCard({
   );
 }
 
-function ServerCard({ server }: { server: McpServer }) {
+function GoogleWorkspaceSetupPanel({
+  envText,
+  onEnvTextChange,
+  onSave,
+  onRestart,
+  isBusy
+}: {
+  envText: string;
+  onEnvTextChange: (value: string) => void;
+  onSave: () => void;
+  onRestart: () => void;
+  isBusy: boolean;
+}) {
+  const env = linesToObject(envText);
+  const clientId = envValue(env, 'GOOGLE_OAUTH_CLIENT_ID');
+  const clientSecret = envValue(env, 'GOOGLE_OAUTH_CLIENT_SECRET');
+  const redirectUri = envValue(env, 'GOOGLE_OAUTH_REDIRECT_URI');
+
+  function updateEnv(key: string, value: string) {
+    const next = { ...env, [key]: value };
+    onEnvTextChange(objectToLines(next));
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <CardTitle>Google login setup</CardTitle>
+            <CardDescription>Connect Google Workspace tools like Gmail, Calendar, Drive, Docs, and Sheets.</CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={onRestart} disabled={isBusy}>
+              <RotateCcw className={cn('size-3.5', isBusy && 'animate-spin')} />
+              Restart
+            </Button>
+            <Button type="button" size="sm" onClick={onSave} disabled={isBusy}>
+              <Save className="size-3.5" />
+              Save
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-xl border bg-muted/20 p-3 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground mb-2">Beginner steps</p>
+          <ol className="list-decimal pl-4 space-y-1">
+            <li>Add the Google OAuth values if August asks for them.</li>
+            <li>Save this card.</li>
+            <li>Restart August or click Restart.</li>
+            <li>Click Connect on the Google card and sign in with your Google account.</li>
+          </ol>
+          <p className="mt-2">The client secret is masked. Leave masked values unchanged to preserve the existing secret.</p>
+        </div>
+
+        <div className="grid gap-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Google client ID</label>
+            <Input
+              className="h-9 text-xs font-mono"
+              placeholder="Google OAuth client ID"
+              value={clientId}
+              onChange={e => updateEnv('GOOGLE_OAUTH_CLIENT_ID', e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Google client secret</label>
+            <Input
+              className="h-9 text-xs font-mono"
+              type="password"
+              placeholder="Google OAuth client secret"
+              value={clientSecret}
+              onChange={e => updateEnv('GOOGLE_OAUTH_CLIENT_SECRET', e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium">Redirect URI</label>
+            <Input
+              className="h-9 text-xs font-mono"
+              placeholder="https://your-domain/oauth/callback"
+              value={redirectUri}
+              onChange={e => updateEnv('GOOGLE_OAUTH_REDIRECT_URI', e.target.value)}
+            />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LinkImportPanel() {
+  const queryClient = useQueryClient();
+  const [link, setLink] = useState('');
+  const [enableMcp, setEnableMcp] = useState(true);
+  const [result, setResult] = useState<ImportLinkResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const importLink = useMutation({
+    mutationFn: async (url: string) => {
+      const res = await api.post('/ui/import-link', { url, enableMcp });
+      return res as ImportLinkResult;
+    },
+    onSuccess: data => {
+      setResult(data);
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ['mcp-servers'] });
+    },
+    onError: e => {
+      setError(e instanceof Error ? e.message : String(e));
+      setResult(null);
+    }
+  });
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div>
+          <CardTitle>Paste a GitHub or MCP link</CardTitle>
+          <CardDescription>Paste a repo, raw file, or capability link. August will look for skills, plugins, or MCP server metadata.</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex gap-2">
+          <Input
+            className="h-10 text-xs font-mono"
+            placeholder="https://github.com/owner/repo"
+            value={link}
+            onChange={e => setLink(e.target.value)}
+          />
+          <Button type="button" size="sm" onClick={() => importLink.mutate(link.trim())} disabled={importLink.isPending || !link.trim()}>
+            <Link className="size-3.5" />
+            Import
+          </Button>
+        </div>
+
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            className="rounded border-border bg-background"
+            checked={enableMcp}
+            onChange={e => setEnableMcp(e.target.checked)}
+            disabled={importLink.isPending}
+          />
+          enable MCP servers found in the link
+        </label>
+
+        {error && <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-500/90">{error}</p>}
+        {result && (
+          <div className="rounded-xl border bg-emerald-500/10 p-3 text-xs text-emerald-700 dark:text-emerald-300 space-y-2">
+            <p className="font-medium">Imported successfully</p>
+            {result.resolvedUrl && <p className="truncate">Source: {result.resolvedUrl}</p>}
+            {result.enabledMcpServers?.length ? (
+              <p>MCP servers: {result.enabledMcpServers.join(', ')}</p>
+            ) : (
+              <p>No MCP server was imported from this link.</p>
+            )}
+            {result.skills?.length ? <p>Skills: {result.skills.map(s => s.name).filter(Boolean).join(', ')}</p> : null}
+            {result.plugins?.length ? <p>Plugins: {result.plugins.map(p => p.name).filter(Boolean).join(', ')}</p> : null}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ServerCard({
+  server,
+  onSave,
+  isBusy
+}: {
+  server: McpServer;
+  onSave: (server: McpServer) => void;
+  isBusy: boolean;
+}) {
   const meta = getStatusMeta(server.status);
   const StatusIcon = meta.icon;
   const visual = SERVER_ICONS[server.name] ?? { icon: server.name[0]?.toUpperCase() ?? '?', color: 'from-slate-500 to-slate-700' };
+  const [enabled, setEnabled] = useState(server.enabled);
+  const [command, setCommand] = useState(server.command || '');
+  const [url, setUrl] = useState(server.url || '');
+  const [argsText, setArgsText] = useState(server.argsText ?? (server.args || []).join('\n'));
+  const [envText, setEnvText] = useState(server.envText ?? objectToLines(server.env));
+  const [headersText, setHeadersText] = useState(server.headersText ?? objectToLines(server.headers));
+  const [cwd, setCwd] = useState(server.cwd || '');
+  const [timeoutMs, setTimeoutMs] = useState(String(server.timeoutMs || 15000));
+  const [advanced, setAdvanced] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const isUrlServer = url.trim().length > 0;
+  const isStdioServer = !isUrlServer;
+  const hasOptionalInputs = envText.trim() || headersText.trim() || argsText.trim() || cwd.trim();
+  const showAdvanced = advanced || Boolean(hasOptionalInputs);
+  const showUrlInput = isUrlServer || !command || advanced || !hasOptionalInputs;
+  const showCommandInput = !isUrlServer || !url || advanced || !hasOptionalInputs;
+  const showArgs = isStdioServer || showAdvanced;
+  const showEnv = isStdioServer || showAdvanced;
+  const showHeaders = isUrlServer || showAdvanced;
+  const showCwd = isStdioServer || showAdvanced;
+
+  const setupHint = !enabled
+    ? 'Turned off. Toggle on if you want August to start this MCP server.'
+    : server.status === 'running'
+      ? 'Ready. August can call tools from this server.'
+      : 'Needs setup. Check the command, URL, env, or headers, then save to restart it.';
+
+  function buildServerPayload(): McpServer {
+    return {
+      ...server,
+      enabled,
+      command,
+      url,
+      args: linesToArray(argsText),
+      env: linesToObject(envText),
+      headers: linesToObject(headersText),
+      cwd: cwd.trim() || undefined,
+      timeoutMs: Math.max(1000, Number(timeoutMs) || 15000)
+    };
+  }
+
+  function handleSave() {
+    setError(null);
+    setSaved(false);
+    try {
+      onSave(buildServerPayload());
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   return (
     <Card className="overflow-hidden">
@@ -491,6 +892,132 @@ function ServerCard({ server }: { server: McpServer }) {
                 )}
               </div>
             )}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-xl border bg-muted/20 p-3">
+          <div className="flex items-start gap-2">
+            <div className={cn(
+              'mt-0.5 size-2 rounded-full shrink-0',
+              server.status === 'running' ? 'bg-emerald-500' : server.status === 'error' ? 'bg-red-500' : 'bg-amber-500'
+            )} />
+            <p className="text-xs leading-relaxed text-muted-foreground">{setupHint}</p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-lg border bg-muted/20 p-3 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">Server setup</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {isUrlServer ? 'URL transport. Headers are only needed when the remote MCP asks for auth.' : 'Command transport. Env/args are only needed when this server needs them.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {!showAdvanced && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => setAdvanced(true)} disabled={isBusy}>
+                  <Plus className="size-3.5" />
+                  Optional setup
+                </Button>
+              )}
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="rounded border-border bg-background"
+                  checked={enabled}
+                  onChange={e => setEnabled(e.target.checked)}
+                  disabled={isBusy}
+                />
+                enabled
+              </label>
+            </div>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            {showUrlInput && (
+              <Input
+                className="h-8 text-xs font-mono"
+                placeholder="https://host/mcp"
+                value={url}
+                onChange={e => setUrl(e.target.value)}
+                disabled={isBusy}
+              />
+            )}
+            {showCommandInput && (
+              <Input
+                className="h-8 text-xs font-mono"
+                placeholder={isUrlServer ? 'leave empty for URL MCP' : 'node / uvx / npx command'}
+                value={command}
+                onChange={e => setCommand(e.target.value)}
+                disabled={isBusy}
+              />
+            )}
+          </div>
+
+          {showArgs && (
+            <textarea
+              className="min-h-16 w-full rounded-md border bg-background px-3 py-2 text-xs font-mono outline-none focus:ring-2 focus:ring-ring/40 disabled:opacity-50"
+              placeholder="args, one per line"
+              value={argsText}
+              onChange={e => setArgsText(e.target.value)}
+              disabled={isBusy}
+            />
+          )}
+
+          {showEnv && (
+            <textarea
+              className="min-h-16 w-full rounded-md border bg-background px-3 py-2 text-xs font-mono outline-none focus:ring-2 focus:ring-ring/40 disabled:opacity-50"
+              placeholder="KEY=VALUE env vars, one per line"
+              value={envText}
+              onChange={e => setEnvText(e.target.value)}
+              disabled={isBusy}
+            />
+          )}
+
+          {showHeaders && (
+            <textarea
+              className="min-h-16 w-full rounded-md border bg-background px-3 py-2 text-xs font-mono outline-none focus:ring-2 focus:ring-ring/40 disabled:opacity-50"
+              placeholder="Authorization=Bearer ... headers, one per line"
+              value={headersText}
+              onChange={e => setHeadersText(e.target.value)}
+              disabled={isBusy}
+            />
+          )}
+
+          {showCwd && (
+            <Input
+              className="h-8 text-xs font-mono"
+              placeholder="cwd"
+              value={cwd}
+              onChange={e => setCwd(e.target.value)}
+              disabled={isBusy}
+            />
+          )}
+
+          <Input
+            className="h-8 text-xs font-mono"
+            type="number"
+            min="1000"
+            value={timeoutMs}
+            onChange={e => setTimeoutMs(e.target.value)}
+            disabled={isBusy}
+          />
+
+          {showAdvanced && (
+            <p className="rounded-md bg-muted/50 px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground">
+              Env key-value means process variables like <span className="font-mono">BRAVE_API_KEY=abc123</span>. Header key-value means HTTP headers like <span className="font-mono">Authorization=Bearer abc123</span>. Use one per line.
+            </p>
+          )}
+
+          {error && <p className="text-[10px] text-red-500/80">{error}</p>}
+          {saved && <p className="text-[10px] text-emerald-600 dark:text-emerald-400">Saved. Backend restarted MCP servers.</p>}
+
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] text-muted-foreground">Masked secrets stay saved when left unchanged.</p>
+            <Button type="button" size="sm" onClick={handleSave} disabled={isBusy}>
+              <Save className="size-3.5" />
+              Save inputs
+            </Button>
           </div>
         </div>
       </CardContent>

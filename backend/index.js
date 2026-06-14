@@ -12,7 +12,7 @@ const { deleteMcpServer, getMcpServersForUi, saveCustomMcpServer, setMcpServerEn
 const { deleteSkill, getSkills, getTeamSkills, saveSkill } = require('./services/tools/skills');
 const { deletePlugin, getPlugins, setPluginEnabled } = require('./services/tools/plugins');
 const { readJsonBody, sendError, sendJson } = require('./lib/http-utils');
-const { redactForDisplay } = require('./lib/redact');
+const { redactForDisplay, maskSecretValue } = require('./lib/redact');
 const { DEFAULT_CONTEXT_MAX_CHARS, buildSystemPromptDetails } = require('./services/memory/context-builder');
 const { identifyClient } = require('./lib/client-identity');
 const { executeManagedWebTool } = require('./services/tools/local-web');
@@ -32,6 +32,39 @@ const { listProviders, getProvider } = require('./providers/provider-registry');
 const { registerBuiltinProviders } = require('./providers/builtin');
 const { resolveProvider, resolveActiveProvider } = require('./providers/provider-resolver');
 const { getActiveProvider, setActiveProvider, getProviderConfig, saveProviderConfig, getEnvVars, setEnvVar, deleteEnvVar, getProviderRequiredEnvVars } = require('./lib/config');
+
+const MCP_GLOBAL_ENV_KEYS = [
+  { key: 'GOOGLE_OAUTH_CLIENT_ID', sensitive: false },
+  { key: 'GOOGLE_OAUTH_CLIENT_SECRET', sensitive: true },
+  { key: 'GOOGLE_OAUTH_REDIRECT_URI', sensitive: false }
+];
+
+function getMcpGlobalEnvForUi() {
+  return MCP_GLOBAL_ENV_KEYS.map(({ key, sensitive }) => {
+    const value = process.env[key] || '';
+    return {
+      key,
+      value: sensitive && value ? maskSecretValue(value) : value,
+      set: !!value,
+      sensitive,
+      masked: sensitive && !!value
+    };
+  });
+}
+
+function updateMcpGlobalEnvFromUi(entries = []) {
+  const current = getMcpGlobalEnvForUi();
+  for (const entry of entries) {
+    const key = String(entry.key || '').trim();
+    if (!key) continue;
+    const value = String(entry.value ?? '');
+    const existing = current.find(item => item.key === key);
+    if (existing?.sensitive && existing.masked && value === existing.value) {
+      continue;
+    }
+    setEnvVar(key, value);
+  }
+}
 
 // ── New Module Imports: Storage, Tools, MCP OAuth, Cron ──
 const sessionStore = require('./services/storage/session-store');
@@ -452,6 +485,18 @@ const requestHandler = async (req, res) => {
             if (!body.key) return sendError(res, new Error('key is required'), 400);
             setEnvVar(body.key, body.value);
             return sendJson(res, { status: 'ok', key: body.key, set: true });
+        } catch (e) { return sendError(res, e, 500); }
+    }
+
+    if (req.url === '/api/mcp-env' && req.method === 'GET') {
+        return sendJson(res, { env: getMcpGlobalEnvForUi() });
+    }
+
+    if (req.url === '/api/mcp-env' && req.method === 'POST') {
+        try {
+            const body = await readJsonBody(req);
+            updateMcpGlobalEnvFromUi(body.env || []);
+            return sendJson(res, { status: 'ok', env: getMcpGlobalEnvForUi() });
         } catch (e) { return sendError(res, e, 500); }
     }
 
