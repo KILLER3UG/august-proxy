@@ -6,6 +6,7 @@ import { StatusDot, type StatusTone } from '@/components/StatusDot';
 import { $gateway } from '@/store/gateway';
 import { $sessions } from '@/store/sessions';
 import { api } from '@/api/client';
+import { getActiveSessionIds, subscribeActiveSessions } from '@/sections/chat/chat-runtime';
 
 interface LearningStatus {
   status: 'idle' | 'learning' | 'evolved' | 'skipped' | 'failed';
@@ -35,6 +36,11 @@ export function Statusbar() {
   const sessions = useStore($sessions);
   const { sessionId } = useParams<{ sessionId?: string }>();
   const [now, setNow] = useState(Date.now());
+  const [activeSessionIds, setActiveSessionIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    return subscribeActiveSessions(setActiveSessionIds);
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -44,6 +50,12 @@ export function Statusbar() {
   const activeSession = useMemo(() => {
     return sessions.find((s) => s.id === sessionId && !s.isArchived) ?? sessions.find((s) => !s.isArchived) ?? null;
   }, [sessions, sessionId]);
+
+  const activeSessionLabels = useMemo(() => {
+    return activeSessionIds
+      .map((id) => sessions.find((s) => s.id === id && !s.isArchived)?.title || id.slice(0, 12))
+      .filter((label, index, labels) => label && labels.indexOf(label) === index);
+  }, [activeSessionIds, sessions]);
 
   const { data: learning, error } = useQuery<LearningStatus>({
     queryKey: ['memory-learning-status'],
@@ -73,6 +85,17 @@ export function Statusbar() {
           />
           {learningView.label}
         </span>
+        {activeSessionLabels.length > 0 && (
+          <>
+            <span className="text-muted-foreground/30">·</span>
+            <span className="inline-flex items-center gap-1.5">
+              <StatusDot tone="warn" className="size-1.5 animate-pulse" />
+              {activeSessionLabels.length === 1
+                ? `${activeSessionLabels[0]} working`
+                : `${activeSessionLabels.length} chats working`}
+            </span>
+          </>
+        )}
         <span className="text-muted-foreground/30">·</span>
         <span className="tabular-nums">{formatClock(elapsedSeconds)}</span>
       </div>

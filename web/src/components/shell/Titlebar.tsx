@@ -1,15 +1,14 @@
 import { useStore } from '@nanostores/react';
+import { useLocation } from 'react-router-dom';
 import { Command, Sun, Moon, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { $theme, toggleTheme } from '@/store/theme';
 import { toggleCommandPalette } from '@/store/command-palette';
-import { NAV_ITEMS } from '@/routes';
+import { resolveRouteLabel } from '@/routes';
 
 export function Titlebar() {
   const theme = useStore($theme);
-  const currentLabel = NAV_ITEMS.find((n) => location.pathname === n.to)?.label
-    ?? NAV_ITEMS.find((n) => n.to !== '/' && location.pathname.startsWith(n.to))?.label
-    ?? 'August';
+  const currentLabel = resolveRouteLabel(location.pathname);
 
   return (
     <header className="h-12 flex items-center justify-between border-b border-border bg-background/80 backdrop-blur px-3 shrink-0">

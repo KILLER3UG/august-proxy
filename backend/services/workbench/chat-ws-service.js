@@ -1,6 +1,6 @@
 const { Readable } = require('stream');
 const openaiAdapter = require('../../adapters/openai');
-const { getProviderConfig, getActiveProvider, saveProfile } = require('../../lib/config');
+const { getProviderConfig, getActiveProvider } = require('../../lib/config');
 const { startRequest, endRequest } = require('../../lib/logger');
 
 /* ── safeSend ───────────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ function handleChatConnection(ws) {
                 const abortController = new AbortController();
                 activeRequests.set(requestId, abortController);
 
-                const { model, messages, provider, effort, workspacePath } = payload;
+                const { sessionId, model, messages, provider, effort, workspacePath } = payload;
 
                 if (!model) {
                     safeSend(ws, { type: 'error', requestId, message: 'model is required' });
@@ -277,14 +277,6 @@ function handleChatConnection(ws) {
                     return;
                 }
 
-                /* Sync codex profile */
-                saveProfile('codex', {
-                    targetUrl: baseUrl,
-                    apiKey,
-                    currentModel: model,
-                    _upstreamModel: model,
-                });
-
                 /* Build OpenAI-compatible payload */
                 const openaiPayload = {
                     model,
@@ -315,9 +307,15 @@ function handleChatConnection(ws) {
                 fakeReq.augustClientId = 'web-ui';
                 fakeReq.workspacePath = workspacePath;
                 fakeReq.signal = abortController.signal;
+                fakeReq.openAiCompatibleProfile = {
+                    targetUrl: baseUrl,
+                    apiKey,
+                    currentModel: model,
+                    _upstreamModel: model,
+                };
 
                 const mockRes = new WebSocketMockResponse(ws, requestId, abortController.signal);
-                const reqId = startRequest({ clientType: 'codex', endpoint: '/api/chat/ws', model });
+                const reqId = startRequest({ clientType: 'codex', endpoint: '/api/chat/ws', model, sessionId: sessionId || null });
 
                 try {
                     await openaiAdapter.handleChatCompletions(fakeReq, mockRes, '/v1/chat/completions', reqId);

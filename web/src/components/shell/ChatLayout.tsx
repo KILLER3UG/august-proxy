@@ -18,24 +18,10 @@
 import { useState, useEffect } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Settings,
-  ChevronDown,
-  Volume2,
-  Minus,
-  Square,
-  X,
-  PanelLeft,
-  PanelLeftClose,
-  PanelRight,
-  PanelRightClose,
-} from "lucide-react";
-import { SessionList } from "@/components/sidebar/SessionList";
-import { WorkspacePanel } from "@/sections/chat/WorkspacePanel";
 import { useStore } from "@nanostores/react";
 import { $sessions, createSession, type Session } from "@/store/sessions";
-import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import { ChatTitlebar } from "./ChatTitlebar";
+import { SessionSidebar } from "./SessionSidebar";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 
@@ -102,45 +88,25 @@ export function ChatLayout() {
     <div className="h-screen flex flex-col bg-background text-foreground">
       <div className="flex-1 flex min-h-0">
         {!isSettings && (
-          <AnimatePresence initial={false}>
-            {!collapsed && (
-              <motion.aside
-                key="sidebar"
-                initial={{ width: 0, opacity: 0 }}
-                animate={{ width: 256, opacity: 1 }}
-                exit={{ width: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="shrink-0 bg-sidebar text-sidebar-foreground flex flex-col overflow-hidden"
-              >
-                <div className="w-64 flex-1 overflow-hidden">
-                  <SessionList
-                    activeId={active?.id}
-                    collapsed={collapsed}
-                    onToggleCollapsed={() => setCollapsed((c) => !c)}
-                    onSelect={(s) => navigate(`/c/${s.id}`)}
-                    onNew={() => handleNewSession()}
-                    onNewInFolder={(folderId) => handleNewSession(folderId)}
-                    onNavigate={(p) => {
-                      if (
-                        p.startsWith("settings") ||
-                        p.startsWith("/settings")
-                      ) {
-                        sessionStorage.setItem(
-                          "pre-settings-path",
-                          location.pathname,
-                        );
-                      }
-                      navigate(p.startsWith("/") ? p : `/${p}`);
-                    }}
-                  />
-                </div>
-              </motion.aside>
-            )}
-          </AnimatePresence>
+          <SessionSidebar
+            activeId={active?.id}
+            collapsed={collapsed}
+            showRightSidebar={showRightSidebar}
+            onToggleCollapsed={() => setCollapsed((c) => !c)}
+            onToggleRightSidebar={() => setShowRightSidebar((s) => !s)}
+            onNew={() => handleNewSession()}
+            onNewInFolder={(folderId) => handleNewSession(folderId)}
+            onNavigate={(path) => {
+              if (path.startsWith("settings") || path.startsWith("/settings")) {
+                sessionStorage.setItem("pre-settings-path", location.pathname);
+              }
+              navigate(path.startsWith("/") ? path : `/${path}`);
+            }}
+          />
         )}
 
         <div className="flex-1 flex flex-col min-w-0">
-          <Titlebar
+          <ChatTitlebar
             session={active}
             sidebarCollapsed={collapsed}
             onToggleSidebar={() => setCollapsed((c) => !c)}
@@ -166,136 +132,9 @@ export function ChatLayout() {
                 </motion.div>
               </AnimatePresence>
             </main>
-            <AnimatePresence initial={false}>
-              {showRightSidebar && !isSettings && (
-                <motion.aside
-                  key="right-sidebar"
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{ width: 320, opacity: 1 }}
-                  exit={{ width: 0, opacity: 0 }}
-                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="shrink-0 bg-sidebar overflow-hidden flex flex-col"
-                >
-                  <div className="w-80 shrink-0 overflow-y-auto flex flex-col h-full">
-                    <WorkspacePanel sessionId={active?.id || null} />
-                  </div>
-                </motion.aside>
-              )}
-            </AnimatePresence>
           </div>
         </div>
       </div>
     </div>
-  );
-}
-
-function Titlebar({
-  session,
-  sidebarCollapsed,
-  onToggleSidebar,
-  showRightSidebar,
-  onSettings,
-  onToggleRightSidebar,
-}: {
-  session: Session | null;
-  sidebarCollapsed: boolean;
-  onToggleSidebar: () => void;
-  showRightSidebar: boolean;
-  onSettings: () => void;
-  onToggleRightSidebar: () => void;
-}) {
-  const [speaking, setSpeaking] = useState(false);
-
-  const speakLatest = () => {
-    if (speaking) {
-      window.speechSynthesis.cancel();
-      setSpeaking(false);
-      return;
-    }
-    const lastMessage = sessionStorage.getItem("august_last_assistant_message");
-    if (!lastMessage) {
-      toast.info("No message to read");
-      return;
-    }
-    const utterance = new SpeechSynthesisUtterance(lastMessage);
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
-    window.speechSynthesis.speak(utterance);
-    setSpeaking(true);
-  };
-
-  return (
-    <header className="h-12 bg-background flex items-center justify-between shrink-0 select-none">
-      <div className="flex items-center min-w-0">
-        <button
-          onClick={onToggleSidebar}
-          className="size-12 flex items-center justify-center shrink-0 hover:bg-accent text-muted-foreground hover:text-foreground transition"
-          title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-        >
-          {sidebarCollapsed ? (
-            <PanelLeftClose className="size-4" />
-          ) : (
-            <PanelLeft className="size-4" />
-          )}
-        </button>
-        <div className="flex items-center gap-2 px-2 min-w-0">
-          <h1 className="text-[13px] font-medium text-foreground truncate">
-            {session?.title ?? "General Assistance Conversation Started"}
-          </h1>
-          <ChevronDown className="size-3.5 text-muted-foreground/60 cursor-pointer hover:text-foreground transition" />
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <button
-          onClick={speakLatest}
-          className={cn(
-            "p-1 hover:bg-accent rounded transition",
-            speaking
-              ? "text-primary animate-pulse"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-          title={speaking ? "Stop reading" : "Read latest response"}
-        >
-          <Volume2 className="size-4" />
-        </button>
-        <button
-          onClick={onToggleRightSidebar}
-          className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition"
-          title="Toggle Workspace Explorer"
-        >
-          {showRightSidebar ? (
-            <PanelRightClose className="size-4" />
-          ) : (
-            <PanelRight className="size-4" />
-          )}
-        </button>
-
-        <div className="h-4 w-[1px] bg-border/40" />
-
-        <div className="flex items-center gap-1.5 ml-1">
-          <button
-            className="size-6 flex items-center justify-center hover:bg-accent rounded text-muted-foreground hover:text-foreground transition"
-            aria-label="Minimize"
-          >
-            <Minus className="size-3.5" />
-          </button>
-          <button
-            className="size-6 flex items-center justify-center hover:bg-accent rounded text-muted-foreground hover:text-foreground transition"
-            aria-label="Maximize"
-          >
-            <Square className="size-2.5" />
-          </button>
-          <button
-            className="size-6 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground rounded text-muted-foreground transition"
-            aria-label="Close"
-          >
-            <X className="size-3.5" />
-          </button>
-        </div>
-      </div>
-    </header>
   );
 }

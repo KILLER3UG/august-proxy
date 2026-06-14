@@ -20,6 +20,7 @@ import { HoistedTodoPanel } from '@/components/chat/HoistedTodoPanel';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { Statusbar } from '@/components/shell/Statusbar';
+import { createChatRuntime, type ChatTurnRecord } from './chat-runtime';
 
 // ── Global WebSocket manager ─────────────────────────────────────────
 // Keeps one shared connection alive across session switches so requests
@@ -36,7 +37,7 @@ interface WsConnection {
   }>;
 }
 const wsConnections = new Map<string, WsConnection>();
-const activeWsAbortControllers = new Map<string, AbortController>();
+export const chatRuntime = createChatRuntime();
 let visibleSessionId: string | null = null;
 let visibleGeneration = 0;
 
@@ -283,7 +284,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return buildDemoThread(sessionId);
   });
   const [input, setInput] = useState('');
-  const [streaming, setStreaming] = useState(false);
+  const [runtimeVersion, setRuntimeVersion] = useState(0);
+  const streaming = chatRuntime.isSessionStreaming(sessionId);
   const [models, setModels] = useState<ModelItem[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(loadHiddenModels);
@@ -326,19 +328,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(false);
-  const abortRef = useRef<AbortController | null>(null);
-  const activeSessionIdRef = useRef<string | null>(sessionId);
-
-  const markTurnFinished = (turnSessionId: string | null, controller: AbortController | null) => {
-    if (turnSessionId && activeWsAbortControllers.get(turnSessionId) === controller) {
-      activeWsAbortControllers.delete(turnSessionId);
-    }
-    if (abortRef.current === controller) {
-      abortRef.current = null;
-    }
-  };
 
   const isTurnVisible = (turnSessionId: string | null) => mountedRef.current && visibleSessionId === turnSessionId;
+
+  const finishTurn = (turn: ChatTurnRecord, status: 'done' | 'error' | 'aborted' = 'done') => {
+    chatRuntime.finishTurn(turn.turnId, status);
+  };
+
+  const abortTurn = (turn: ChatTurnRecord) => {
+    chatRuntime.abortTurn(turn.turnId);
+  };
 
   useEffect(() => {
     mountedRef.current = true;
@@ -347,10 +346,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     };
   }, []);
 
+  useEffect(() => chatRuntime.subscribe(() => setRuntimeVersion((value) => value + 1)), []);
+
   useEffect(() => {
-    activeSessionIdRef.current = sessionId;
     visibleSessionId = sessionId;
-    setStreaming(sessionId ? activeWsAbortControllers.has(sessionId) : false);
   }, [sessionId]);
 
   useEffect(() => {
@@ -533,14 +532,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const turnSessionId = sessionId;
     const isCurrentTurn = () => isTurnVisible(turnSessionId);
     if (!turnSessionId) return;
+    if (!chatRuntime.canStartTurn(turnSessionId)) return;
 
-    setStreaming(true);
     setSessionStatus(turnSessionId, 'working');
 
     const assistantMsgId = `a${Date.now()}`;
-    const abortController = new AbortController();
-    abortRef.current = abortController;
-    activeWsAbortControllers.set(turnSessionId, abortController);
+    const turn = chatRuntime.startTurn({
+      sessionId: turnSessionId,
+      assistantMsgId,
+      transport: 'none',
+    });
+    const abortController = turn.controller;
 
     const thinkingStart = Date.now();
     let thinkingEnd: number | null = null;
@@ -551,6 +553,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     // ── Try WebSocket first ──
     const wsSucceeded = await tryWebSocketChat(
+      turn,
       turnSessionId,
       chatHistory, assistantMsgId, abortController,
       (val: number | null) => { thinkingEnd = val; },
@@ -561,7 +564,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (wsSucceeded === 'succeeded') {
       if (!isCurrentTurn()) {
         setSessionStatus(turnSessionId, 'done');
-        markTurnFinished(turnSessionId, abortController);
+        finishTurn(turn, 'done');
         return;
       }
       // Merge final thinking duration
@@ -573,18 +576,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           ? { ...msg, thinkingDuration: finalDuration }
           : msg
       ));
-      setStreaming(false);
+      finishTurn(turn, 'done');
       setSessionStatus(turnSessionId, 'done');
-      markTurnFinished(turnSessionId, abortController);
       return;
     }
 
     if (wsSucceeded === 'aborted') {
       if (isCurrentTurn()) {
-        setStreaming(false);
         clearSessionStatus(turnSessionId);
       }
-      markTurnFinished(turnSessionId, abortController);
+      finishTurn(turn, 'aborted');
       return;
     }
 
@@ -595,6 +596,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          sessionId: turnSessionId,
           model: modelForRequest?.id,
           provider: modelForRequest?.provider,
           messages: chatHistory.map(m => ({ role: m.role, content: m.content })),
@@ -612,28 +614,33 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           } : msg
         ));
         if (isCurrentTurn()) {
-          setStreaming(false);
           clearSessionStatus(turnSessionId);
         } else {
           setSessionStatus(turnSessionId, 'error');
         }
-        markTurnFinished(turnSessionId, abortController);
+        finishTurn(turn, 'error');
         return;
       }
 
-      await readSSEStream(res, turnSessionId, assistantMsgId, abortController, thinkingStart, isCurrentTurn, updateAssistantMessage);
+      const sseResult = await readSSEStream(res, turn, turnSessionId, assistantMsgId, abortController, thinkingStart, isCurrentTurn, updateAssistantMessage);
+      if (sseResult === 'aborted') {
+        if (isCurrentTurn()) {
+          clearSessionStatus(turnSessionId);
+        }
+        finishTurn(turn, 'aborted');
+        return;
+      }
     } catch (e: any) {
       if (e?.name === 'AbortError') {
         if (isCurrentTurn()) {
-          setStreaming(false);
           clearSessionStatus(turnSessionId);
         }
-        markTurnFinished(turnSessionId, abortController);
+        finishTurn(turn, 'aborted');
         return;
       }
       if (!isCurrentTurn()) {
         setSessionStatus(turnSessionId, 'error');
-        markTurnFinished(turnSessionId, abortController);
+        finishTurn(turn, 'error');
         return;
       }
       console.error(e);
@@ -643,12 +650,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           content: `⚠️ Connection error: ${e.message}`
         } : msg
       ));
+      finishTurn(turn, 'error');
+      return;
     }
     if (isCurrentTurn()) {
-      setStreaming(false);
       setSessionStatus(turnSessionId, 'done');
     }
-    markTurnFinished(turnSessionId, abortController);
+    finishTurn(turn, 'done');
   };
 
   function appendBlockEvent(
@@ -743,6 +751,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   type ChatTurnResult = 'succeeded' | 'aborted' | 'failed';
 
   const tryWebSocketChat = async (
+    turn: ChatTurnRecord,
     turnSessionId: string | null,
     chatHistory: ChatMessage[],
     assistantMsgId: string,
@@ -771,6 +780,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           const connection = getOrCreateWs(wsUrl);
           const socket = connection.socket;
           const requestId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          chatRuntime.setRequestId(turn.turnId, requestId);
+          chatRuntime.setTransport(turn.turnId, 'ws');
 
           let assistantContent = '';
           let thinkingContent = '';
@@ -809,6 +820,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               type: 'chat.start',
               requestId,
               payload: {
+                sessionId: turnSessionId,
                 model: modelForRequest?.id,
                 provider: modelForRequest?.provider,
                 messages: chatHistory.map(m => ({ role: m.role, content: m.content })),
@@ -962,6 +974,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // Extracted from the original generateAIResponse body
   const readSSEStream = async (
     res: Response,
+    turn: ChatTurnRecord,
     turnSessionId: string | null,
     assistantMsgId: string,
     abortController: AbortController,
@@ -975,7 +988,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   ) => {
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
-    if (!reader) return;
+    chatRuntime.setTransport(turn.turnId, 'http');
+    if (!reader) return 'succeeded';
 
     const update = () => {
       updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
@@ -1074,7 +1088,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       }
       buffer = buffer.slice(lineStart);
 
-      if (abortController.signal.aborted) return;
+      if (abortController.signal.aborted) return 'aborted';
       update();
     }
 
@@ -1138,6 +1152,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (finalContent && isCurrentTurn()) {
       try { sessionStorage.setItem('august_last_assistant_message', finalContent); } catch {}
     }
+    return abortController.signal.aborted ? 'aborted' : 'succeeded';
   };
 
   const send = async () => {
@@ -1180,16 +1195,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   };
 
   const stop = () => {
-    const controller = sessionId ? activeWsAbortControllers.get(sessionId) : abortRef.current;
-    if (controller && activeSessionIdRef.current === sessionId) {
-      controller.abort();
+    const activeTurnId = chatRuntime.getLatestActiveTurnId(sessionId);
+    const turn = activeTurnId ? chatRuntime.getTurn(activeTurnId) : null;
+    if (turn) {
+      abortTurn(turn);
+      if (sessionId) clearSessionStatus(sessionId);
     }
-    if (abortRef.current === controller) {
-      abortRef.current = null;
-    }
-    if (sessionId) activeWsAbortControllers.delete(sessionId);
-    if (activeSessionIdRef.current === sessionId) setStreaming(false);
-    if (sessionId && activeSessionIdRef.current === sessionId) clearSessionStatus(sessionId);
   };
 
   // ── Revert: delete user message and all subsequent messages, put text back into chat input ──

@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react';
 import { NavLink } from 'react-router-dom';
-import { NAV_ITEMS } from '@/routes';
+import { SECTION_NAV_ITEMS } from '@/routes';
 import { cn } from '@/lib/utils';
 import { $gateway } from '@/store/gateway';
 import type { StatusTone } from '@/components/StatusDot';
@@ -34,7 +34,7 @@ export function Sidebar() {
 
       <nav className="flex-1 overflow-y-auto p-2">
         <ul className="flex flex-col gap-0.5">
-          {NAV_ITEMS.map(({ to, label, Icon }) => (
+          {SECTION_NAV_ITEMS.map(({ to, label, Icon }) => (
             <li key={to}>
               <NavLink
                 to={to}

@@ -8,22 +8,14 @@ import {
   Sun,
   Moon,
   Settings,
-  MessageSquare,
-  Activity,
-  FileSearch,
-  Brain,
-  Database,
-  Server,
-  Sparkles,
   Copy,
-  BarChart3,
 } from "lucide-react";
 import {
   $commandPaletteOpen,
   closeCommandPalette,
 } from "@/store/command-palette";
 import { $theme, toggleTheme } from "@/store/theme";
-import { NAV_ITEMS } from "@/routes";
+import { SECTION_NAV_ITEMS, SETTINGS_TABS } from '@/routes';
 import { Backdrop } from "./Backdrop";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -121,16 +113,11 @@ export function CommandPalette() {
             heading="Settings tabs"
             className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground"
           >
-            {[
-              { key: "health", label: "Health", Icon: Activity },
-              { key: "providers", label: "Providers", Icon: Server },
-              { key: "mcp", label: "MCP & Skills", Icon: Database },
-              { key: "memory", label: "Memory", Icon: Brain },
-            ].map(({ key, label, Icon }) => (
+            {SETTINGS_TABS.map(({ key, label, Icon, path }) => (
               <Command.Item
                 key={key}
                 value={`settings ${label}`}
-                onSelect={run(() => navigate(`/settings/${key}`))}
+                onSelect={run(() => navigate(path))}
                 className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
               >
                 <Icon className="size-3.5" /> {label}
@@ -144,21 +131,11 @@ export function CommandPalette() {
             heading="Tools"
             className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground"
           >
-            {[
-              { path: "/dashboard", label: "Dashboard", Icon: BarChart3 },
-              { path: "/traffic", label: "Traffic", Icon: Activity },
-              {
-                path: "/conversations",
-                label: "Conversations",
-                Icon: MessageSquare,
-              },
-              { path: "/inspector", label: "Inspector", Icon: FileSearch },
-              { path: "/thinking", label: "Thinking", Icon: Sparkles },
-            ].map(({ path, label, Icon }) => (
+            {SECTION_NAV_ITEMS.filter((item) => item.to !== '/').map(({ to, label, Icon }) => (
               <Command.Item
-                key={path}
+                key={to}
                 value={`tool ${label}`}
-                onSelect={run(() => navigate(path))}
+                onSelect={run(() => navigate(to))}
                 className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
               >
                 <Icon className="size-3.5" /> {label}

@@ -1,5 +1,6 @@
 const http = require('http');
 const https = require('https');
+const { Readable } = require('stream');
 const { WebSocketServer } = require('ws');
 const fs = require('fs');
 const path = require('path');
@@ -759,7 +760,7 @@ const requestHandler = async (req, res) => {
     if (req.url === '/api/chat' && req.method === 'POST') {
         try {
             const body = await readJsonBody(req);
-            const { model, provider, messages, effort, workspacePath } = body;
+            const { sessionId, model, provider, messages, effort, workspacePath } = body;
             
             if (!model) {
                 return sendError(res, new Error('model is required'), 400);
@@ -855,17 +856,7 @@ const requestHandler = async (req, res) => {
                 return sendError(res, new Error(`API Key for provider '${resolvedProvider.displayName}' is not configured.`), 400);
             }
 
-            // Sync codex profile dynamically in the backend configuration
-            const codexProfile = {
-                targetUrl: baseUrl,
-                apiKey: apiKey,
-                currentModel: model,
-                _upstreamModel: model
-            };
-            saveProfile('codex', codexProfile);
-
             // Construct the fake request stream
-            const { Readable } = require('stream');
             const openaiPayload = {
                 model,
                 messages,
@@ -894,6 +885,12 @@ const requestHandler = async (req, res) => {
             };
             fakeReq.augustClientId = req.augustClientId || 'web-ui';
             fakeReq.workspacePath = workspacePath;
+            fakeReq.openAiCompatibleProfile = {
+                targetUrl: baseUrl,
+                apiKey,
+                currentModel: model,
+                _upstreamModel: model,
+            };
 
             // Propagate close event to fakeReq to support cancellation
             req.on('close', () => {
@@ -901,7 +898,7 @@ const requestHandler = async (req, res) => {
             });
 
             // Create a request ID for tracking
-            const reqId = startRequest({ clientType: 'codex', endpoint: '/api/chat', model: model });
+            const reqId = startRequest({ clientType: 'codex', endpoint: '/api/chat', model: model, sessionId: sessionId || null });
 
             // Create mockRes to translate standard OpenAI chunks back to simple chunks for web UI
             const mockRes = {
