@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { marked } from 'marked';
 import { toast } from 'sonner';
 import { useStore } from '@nanostores/react';
-import { $sessions, setSessionStatus, clearSessionStatus, renameSession, updateSessionModel, type Session } from '@/store/sessions';
+import { $sessions, setSessionStatus, clearSessionStatus, renameSession, updateSessionModel, updateSessionWorkbenchMetadata, type Session } from '@/store/sessions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
 import { ToolCallItem as ToolCallItemComp, getToolIcon } from '@/components/chat/ToolCallItem';
@@ -21,80 +21,22 @@ import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { Statusbar } from '@/components/shell/Statusbar';
 import { createChatRuntime, type ChatTurnRecord } from './chat-runtime';
+import {
+  createWorkbenchSession,
+  listWorkbenchAgents,
+  streamWorkbenchChat,
+  approveWorkbenchPlan,
+  answerWorkbenchBtw,
+  getWorkbenchSession,
+} from '@/api/workbench';
+import type { WorkbenchAgentRegistry, WorkbenchBtwResult, WorkbenchSession } from '@/types/workbench';
+import { WorkbenchAgentSelector } from '@/components/chat/WorkbenchAgentSelector';
+import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
+import { TodoSummary, WorkbenchPlanPanel, WorkbenchStatusPill } from '@/components/chat/WorkbenchPlanPanel';
 
-// ── Global WebSocket manager ─────────────────────────────────────────
-// Keeps one shared connection alive across session switches so requests
-// aren't cancelled. Each request has its own id and subscription so two
-// sessions can stream concurrently without overwriting each other's handlers.
-interface WsConnection {
-  socket: WebSocket;
-  subscribers: Map<string, {
-    done: boolean;
-    aborted: boolean;
-    onOpen?: () => void;
-    onEvent: (payload: any) => void;
-    onClose: () => void;
-  }>;
-}
-const wsConnections = new Map<string, WsConnection>();
 export const chatRuntime = createChatRuntime();
 let visibleSessionId: string | null = null;
 let visibleGeneration = 0;
-
-function safeSendWs(socket: WebSocket, payload: any) {
-  if (socket.readyState !== WebSocket.OPEN) return;
-  try {
-    socket.send(typeof payload === 'string' ? payload : JSON.stringify(payload));
-  } catch {
-    // Socket closed or write failed mid-send — ignore.
-  }
-}
-
-function getOrCreateWs(wsUrl: string): WsConnection {
-  const existing = wsConnections.get(wsUrl);
-  if (existing && (existing.socket.readyState === WebSocket.OPEN || existing.socket.readyState === WebSocket.CONNECTING)) {
-    return existing;
-  }
-  const socket = new WebSocket(wsUrl);
-  const connection: WsConnection = { socket, subscribers: new Map() };
-  wsConnections.set(wsUrl, connection);
-
-  socket.onopen = () => {
-    for (const sub of connection.subscribers.values()) {
-      if (!sub.done && !sub.aborted) sub.onOpen?.();
-    }
-  };
-
-  socket.onmessage = (event) => {
-    try {
-      const parsed = JSON.parse(event.data);
-      if (parsed.type === 'ping') {
-        safeSendWs(socket, { type: 'pong' });
-        return;
-      }
-      if (!parsed.requestId) return;
-      const sub = connection.subscribers.get(parsed.requestId);
-      if (!sub || sub.done || sub.aborted) return;
-      sub.onEvent(parsed);
-    } catch {
-      // Non-JSON message — ignore.
-    }
-  };
-
-  socket.onclose = () => {
-    wsConnections.delete(wsUrl);
-    for (const sub of connection.subscribers.values()) {
-      if (!sub.done && !sub.aborted) sub.onClose();
-    }
-    connection.subscribers.clear();
-  };
-
-  socket.onerror = () => {
-    // Connection-level error; close will clean up subscribers.
-  };
-
-  return connection;
-}
 
 // Configure marked to support GitHub Flavored Markdown and breaks
 marked.use({
@@ -290,6 +232,33 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(loadHiddenModels);
   const [showModelVisibility, setShowModelVisibility] = useState(false);
+  const [workbenchSession, setWorkbenchSession] = useState<WorkbenchSession | null>(() => {
+    if (activeSession?.workbenchSessionId) {
+      return {
+        id: activeSession.workbenchSessionId,
+        provider: activeSession.workbenchProvider || 'claude',
+        agentId: activeSession.workbenchAgentId || 'build',
+        agentRole: activeSession.workbenchAgentId || 'build',
+        agentMode: 'assistant',
+        approved: false,
+        approvedAt: null,
+        plan: null,
+        goal: null,
+        lastGoal: null,
+        messageCount: 0,
+        mutationCount: 0,
+        lastMutationAt: null,
+        updatedAt: new Date().toISOString(),
+        todos: [],
+      };
+    }
+    return null;
+  });
+  const [workbenchAgents, setWorkbenchAgents] = useState<WorkbenchAgentRegistry | null>(null);
+  const [workbenchAgentsLoading, setWorkbenchAgentsLoading] = useState(false);
+  const [selectedAgentId, setSelectedAgentId] = useState(activeSession?.workbenchAgentId || 'build');
+  const [workbenchBtw, setWorkbenchBtw] = useState<WorkbenchBtwResult | null>(null);
+  const [workbenchBusy, setWorkbenchBusy] = useState(false);
 
   const toggleModelVisibility = (modelId: string) => {
     setHiddenModels(prev => {
@@ -392,6 +361,26 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       return modelFromSession(activeSession || null) || prev;
     });
   }, [sessionId, activeSession?.model, activeSession?.provider]);
+
+  useEffect(() => {
+    if (activeSession?.workbenchAgentId) setSelectedAgentId(activeSession.workbenchAgentId);
+  }, [activeSession?.workbenchAgentId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setWorkbenchAgentsLoading(true);
+    listWorkbenchAgents(selectedAgentId)
+      .then((registry) => {
+        if (!cancelled) setWorkbenchAgents(registry);
+      })
+      .catch((e) => console.warn('[Workbench] Agent registry failed:', e))
+      .finally(() => {
+        if (!cancelled) setWorkbenchAgentsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAgentId]);
 
   // ── Two-phase model loading ───────────────────────────────────────
   // Phase 1 (instant): read config only — fast, small payload.
@@ -525,9 +514,40 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const estTokens = Math.ceil(totalChars / 4) + 120;
   const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
 
-  // ── WebSocket chat client ─────────────────────────────────────────
-  // Tries WS first. On connect failure, falls back to HTTP POST.
-  // Request IDs keep concurrent turns isolated across session switches.
+  // ── Workbench chat client ─────────────────────────────────────────
+  const getWorkbenchProvider = () => modelForRequest?.provider === 'codex' ? 'codex' as const : 'claude' as const;
+
+  const ensureWorkbenchSession = async () => {
+    if (!sessionId) return null;
+    const existingId = workbenchSession?.id || activeSession?.workbenchSessionId;
+    if (existingId) {
+      try {
+        const loaded = await getWorkbenchSession(existingId);
+        setWorkbenchSession(loaded);
+        updateSessionWorkbenchMetadata(sessionId, {
+          workbenchSessionId: loaded.id,
+          workbenchAgentId: loaded.agentId,
+          workbenchProvider: loaded.provider,
+        });
+        return loaded;
+      } catch {
+        // The backend may have been restarted; create a fresh Workbench session below.
+      }
+    }
+
+    const created = await createWorkbenchSession({
+      provider: getWorkbenchProvider(),
+      agentId: selectedAgentId || 'build',
+    });
+    setWorkbenchSession(created);
+    updateSessionWorkbenchMetadata(sessionId, {
+      workbenchSessionId: created.id,
+      workbenchAgentId: created.agentId,
+      workbenchProvider: created.provider,
+    });
+    return created;
+  };
+
   const generateAIResponse = async (chatHistory: ChatMessage[]) => {
     const turnSessionId = sessionId;
     const isCurrentTurn = () => isTurnVisible(turnSessionId);
@@ -535,6 +555,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (!chatRuntime.canStartTurn(turnSessionId)) return;
 
     setSessionStatus(turnSessionId, 'working');
+    setWorkbenchBusy(true);
 
     const assistantMsgId = `a${Date.now()}`;
     const turn = chatRuntime.startTurn({
@@ -546,117 +567,160 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     const thinkingStart = Date.now();
     let thinkingEnd: number | null = null;
+    let workbenchSessionId = workbenchSession?.id || activeSession?.workbenchSessionId || null;
+    let assistantContent = '';
+    let thinkingContent = '';
+    let toolResults: ChatMessage['tools'] = [];
+    let streamBlocks: MessageBlock[] = [];
+    let finished = false;
+    let hadError = false;
 
     const nextMessages = [...chatHistory, createAssistantPlaceholder(assistantMsgId)];
     setMessages(nextMessages);
     persistMessages(turnSessionId, nextMessages);
 
-    // ── Try WebSocket first ──
-    const wsSucceeded = await tryWebSocketChat(
-      turn,
-      turnSessionId,
-      chatHistory, assistantMsgId, abortController,
-      (val: number | null) => { thinkingEnd = val; },
-      thinkingStart,
-      isCurrentTurn,
-      updateAssistantMessage
-    );
-    if (wsSucceeded === 'succeeded') {
-      if (!isCurrentTurn()) {
-        setSessionStatus(turnSessionId, 'done');
-        finishTurn(turn, 'done');
-        return;
-      }
-      // Merge final thinking duration
-      const finalDuration = thinkingEnd
-        ? Math.round((thinkingEnd - thinkingStart) / 100) / 10
-        : undefined;
-      updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
-        msg.id === assistantMsgId && msg.thinking
-          ? { ...msg, thinkingDuration: finalDuration }
-          : msg
-      ));
-      finishTurn(turn, 'done');
-      setSessionStatus(turnSessionId, 'done');
-      return;
-    }
-
-    if (wsSucceeded === 'aborted') {
-      if (isCurrentTurn()) {
-        clearSessionStatus(turnSessionId);
-      }
-      finishTurn(turn, 'aborted');
-      return;
-    }
-
-    // ── Fallback: HTTP POST ──
-    try {
-      const res = await fetch('/api/chat', {
-        signal: abortController.signal,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: turnSessionId,
-          model: modelForRequest?.id,
-          provider: modelForRequest?.provider,
-          messages: chatHistory.map(m => ({ role: m.role, content: m.content })),
-          effort: effort,
-          workspacePath: workspacePath
-        })
-      });
-
-      if (!res.ok) {
-        const errMsg = await res.text();
-        updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
-          msg.id === assistantMsgId ? {
-            ...msg,
-            content: `⚠️ Failed to get response${modelForRequest ? ` from ${modelForRequest.id}` : ''}: ${errMsg}`
-          } : msg
-        ));
-        if (isCurrentTurn()) {
-          clearSessionStatus(turnSessionId);
-        } else {
-          setSessionStatus(turnSessionId, 'error');
-        }
-        finishTurn(turn, 'error');
-        return;
-      }
-
-      const sseResult = await readSSEStream(res, turn, turnSessionId, assistantMsgId, abortController, thinkingStart, isCurrentTurn, updateAssistantMessage);
-      if (sseResult === 'aborted') {
-        if (isCurrentTurn()) {
-          clearSessionStatus(turnSessionId);
-        }
-        finishTurn(turn, 'aborted');
-        return;
-      }
-    } catch (e: any) {
-      if (e?.name === 'AbortError') {
-        if (isCurrentTurn()) {
-          clearSessionStatus(turnSessionId);
-        }
-        finishTurn(turn, 'aborted');
-        return;
-      }
-      if (!isCurrentTurn()) {
-        setSessionStatus(turnSessionId, 'error');
-        finishTurn(turn, 'error');
-        return;
-      }
-      console.error(e);
+    const update = () => {
       updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
         msg.id === assistantMsgId ? {
           ...msg,
-          content: `⚠️ Connection error: ${e.message}`
+          content: assistantContent,
+          thinking: thinkingContent || undefined,
+          tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
+          blocks: streamBlocks,
+          todos: workbenchSession?.todos?.length ? workbenchSession.todos : undefined,
         } : msg
       ));
-      finishTurn(turn, 'error');
-      return;
+    };
+
+    const finalize = (status: 'done' | 'error' | 'aborted') => {
+      if (finished) return;
+      finished = true;
+      setWorkbenchBusy(false);
+      updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
+        msg.id === assistantMsgId ? {
+          ...msg,
+          content: assistantContent,
+          thinking: thinkingContent || undefined,
+          thinkingDuration: thinkingEnd
+            ? Math.round((thinkingEnd - thinkingStart) / 100) / 10
+            : thinkingContent.trim()
+              ? Math.round((Date.now() - thinkingStart) / 100) / 10
+              : undefined,
+          tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
+          blocks: streamBlocks,
+          todos: workbenchSession?.todos?.length ? workbenchSession.todos : undefined,
+        } : msg
+      ));
+      if (status === 'done' || status === 'error') {
+        if (isCurrentTurn()) setSessionStatus(turnSessionId, status === 'done' ? 'done' : 'error');
+      }
+      finishTurn(turn, status);
+    };
+
+    try {
+      const session = await ensureWorkbenchSession();
+      if (!session) {
+        updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
+          msg.id === assistantMsgId ? { ...msg, content: '⚠️ Could not initialize Workbench session.' } : msg
+        ));
+        finalize('error');
+        return;
+      }
+      workbenchSessionId = session.id;
+      chatRuntime.setTransport(turn.turnId, 'http');
+
+      await streamWorkbenchChat({
+        sessionId: workbenchSessionId,
+        message: chatHistory.map(m => `${m.role}: ${m.content}`).join('\n\n') || ' ',
+        provider: getWorkbenchProvider(),
+        agentId: selectedAgentId || session.agentId,
+      }, {
+        onThinking: ({ content }) => {
+          if (!thinkingEnd && content.trim()) {
+            thinkingEnd = Date.now();
+          }
+          thinkingContent += content;
+          streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content });
+          update();
+        },
+        onText: ({ content }) => {
+          if (!thinkingEnd && thinkingContent.trim()) {
+            thinkingEnd = Date.now();
+          }
+          assistantContent += content;
+          streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content });
+          update();
+        },
+        onToolUse: ({ id, name, input }) => {
+          toolResults = [...toolResults, {
+            name,
+            args: JSON.stringify(input, null, 2),
+            id,
+            status: 'running',
+            summary: Object.keys(input || {}).join(', '),
+            error: '',
+            startedAt: Date.now(),
+          }];
+          streamBlocks = appendBlockEvent(streamBlocks, {
+            type: name.startsWith('@run_command') || name.startsWith('run_command') ? 'command' : 'tool_call',
+            name,
+            id,
+            context: JSON.stringify(input || {}, null, 2),
+            status: 'running',
+          });
+          update();
+        },
+        onToolResult: ({ id, content, is_error }) => {
+          const resultText = typeof content === 'string' ? content : JSON.stringify(content);
+          toolResults = toolResults.map(t => t.id === id ? {
+            ...t,
+            status: is_error ? 'error' : 'done',
+            result: resultText,
+            error: is_error ? resultText : '',
+            duration: undefined,
+          } : t);
+          streamBlocks = appendBlockEvent(streamBlocks, {
+            type: 'tool_result',
+            id,
+            status: is_error ? 'error' : 'done',
+            summary: resultText.slice(0, 240),
+            error: is_error ? resultText.slice(0, 240) : '',
+          });
+          update();
+        },
+        onSession: (sessionState) => {
+          setWorkbenchSession(sessionState);
+          if (sessionState.agentId) setSelectedAgentId(sessionState.agentId);
+          update();
+        },
+        onBtw: (result) => {
+          setWorkbenchBtw(result);
+        },
+        onDone: () => {
+          finalize('done');
+        },
+        onError: ({ message }) => {
+          hadError = true;
+          assistantContent += `\n\n⚠️ Workbench error: ${message}`;
+          streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: `\n\n⚠️ Workbench error: ${message}` });
+          update();
+          finalize('error');
+        },
+      }, abortController.signal);
+
+      if (!finished) finalize(hadError ? 'error' : 'done');
+    } catch (e: any) {
+      if (e?.name === 'AbortError') {
+        clearSessionStatus(turnSessionId);
+        finalize('aborted');
+        return;
+      }
+      console.error(e);
+      assistantContent += `\n\n⚠️ Connection error: ${e.message}`;
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: `\n\n⚠️ Connection error: ${e.message}` });
+      update();
+      finalize('error');
     }
-    if (isCurrentTurn()) {
-      setSessionStatus(turnSessionId, 'done');
-    }
-    finishTurn(turn, 'done');
   };
 
   function appendBlockEvent(
@@ -744,417 +808,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return blocks;
   }
 
-  // ── WebSocket helper ─────────────────────────────────────────────
-  // Returns the turn result after WS completes, aborts, or fails.
-  const WS_RECONNECT_MAX = 3;
-  const WS_RECONNECT_BASE_MS = 1000;
-  type ChatTurnResult = 'succeeded' | 'aborted' | 'failed';
-
-  const tryWebSocketChat = async (
-    turn: ChatTurnRecord,
-    turnSessionId: string | null,
-    chatHistory: ChatMessage[],
-    assistantMsgId: string,
-    abortController: AbortController,
-    setThinkingEnd: (v: number | null) => void,
-    thinkingStart: number,
-    isCurrentTurn: () => boolean,
-    updateAssistantMessage: (
-      targetSessionId: string | null,
-      targetAssistantMsgId: string,
-      updater: (messages: ChatMessage[]) => ChatMessage[]
-    ) => void
-  ): Promise<ChatTurnResult> => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/chat/ws`;
-
-    for (let attempt = 0; attempt < WS_RECONNECT_MAX; attempt++) {
-      if (attempt > 0) {
-        await new Promise(r => setTimeout(r, WS_RECONNECT_BASE_MS * Math.pow(2, attempt - 1)));
-      }
-
-      if (abortController.signal.aborted) return 'aborted';
-
-      try {
-        const result = await new Promise<ChatTurnResult>((resolve) => {
-          const connection = getOrCreateWs(wsUrl);
-          const socket = connection.socket;
-          const requestId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          chatRuntime.setRequestId(turn.turnId, requestId);
-          chatRuntime.setTransport(turn.turnId, 'ws');
-
-          let assistantContent = '';
-          let thinkingContent = '';
-          let toolResults: ChatMessage['tools'] = [];
-          let streamBlocks: MessageBlock[] = [];
-          let wsThinkingEnd: number | null = null;
-          let settled = false;
-          let done = false;
-          let aborted = false;
-
-          const finish = (result: ChatTurnResult) => {
-            if (settled) return;
-            settled = true;
-            connection.subscribers.delete(requestId);
-            resolve(result);
-          };
-
-          const update = () => {
-            updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
-              msg.id === assistantMsgId ? {
-                ...msg,
-                content: assistantContent,
-                thinking: thinkingContent || undefined,
-                tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
-                blocks: streamBlocks
-              } : msg
-            ));
-          };
-
-          const sendChatStart = () => {
-            if (aborted || abortController.signal.aborted) {
-              finish('aborted');
-              return;
-            }
-            safeSendWs(socket, {
-              type: 'chat.start',
-              requestId,
-              payload: {
-                sessionId: turnSessionId,
-                model: modelForRequest?.id,
-                provider: modelForRequest?.provider,
-                messages: chatHistory.map(m => ({ role: m.role, content: m.content })),
-                effort: effort,
-                workspacePath: workspacePath
-              }
-            });
-          };
-
-          connection.subscribers.set(requestId, {
-            done: false,
-            aborted: false,
-            onOpen: sendChatStart,
-            onEvent: (parsed) => {
-              if (parsed.type === 'ping') return;
-
-              switch (parsed.type) {
-                case 'thinking':
-                  thinkingContent += parsed.content || '';
-                  streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.content || '' });
-                  if (wsThinkingEnd === null && thinkingContent.trim()) {
-                    wsThinkingEnd = Date.now();
-                    setThinkingEnd(wsThinkingEnd);
-                  }
-                  break;
-                case 'text':
-                case 'content':
-                  if (wsThinkingEnd === null && thinkingContent.trim()) {
-                    wsThinkingEnd = Date.now();
-                    setThinkingEnd(wsThinkingEnd);
-                  }
-                  assistantContent += parsed.content || '';
-                  streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: parsed.content || '' });
-                  break;
-                case 'tool_call':
-                  toolResults = [...(toolResults || []), {
-                    name: parsed.name,
-                    context: parsed.context || '',
-                    id: parsed.id || `tc_${Date.now()}`,
-                    status: parsed.status || 'running',
-                    summary: '',
-                    error: '',
-                    startedAt: Date.now(),
-                  }];
-                  streamBlocks = appendBlockEvent(streamBlocks, {
-                    type: 'tool_call',
-                    name: parsed.name,
-                    id: parsed.id,
-                    context: parsed.context,
-                    status: parsed.status
-                  });
-                  break;
-                case 'tool_result':
-                  toolResults = (toolResults || []).map(t =>
-                    t.id === parsed.id ? {
-                      ...t,
-                      ...(parsed.summary ? { summary: parsed.summary } : {}),
-                      ...(parsed.error ? { error: parsed.error } : {}),
-                      status: parsed.status || 'done',
-                      duration: parsed.duration,
-                    } : t
-                  );
-                  streamBlocks = appendBlockEvent(streamBlocks, {
-                    type: 'tool_result',
-                    id: parsed.id,
-                    status: parsed.status,
-                    summary: parsed.summary,
-                    error: parsed.error,
-                    duration: parsed.duration
-                  });
-                  break;
-                case 'tool_progress':
-                  toolResults = (toolResults || []).map(t =>
-                    t.id === parsed.id ? { ...t, preview: (t.preview || '') + (parsed.preview || '') } : t
-                  );
-                  streamBlocks = appendBlockEvent(streamBlocks, {
-                    type: 'tool_progress',
-                    id: parsed.id,
-                    preview: parsed.preview
-                  });
-                  break;
-                case 'done':
-                  done = true;
-                  break;
-                case 'error':
-                  done = true;
-                  const errMsg = parsed.message || parsed.error?.message || parsed.error || 'Unknown error';
-                  console.error('[WS] Chat error:', errMsg);
-                  assistantContent += `\n\n⚠️ Error: ${errMsg}`;
-                  streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: `\n\n⚠️ Error: ${errMsg}` });
-                  break;
-                default: {
-                  const delta = parsed.choices?.[0]?.delta;
-                  if (delta?.reasoning_content) {
-                    thinkingContent += delta.reasoning_content;
-                    streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: delta.reasoning_content });
-                  } else if (delta?.content) {
-                    if (wsThinkingEnd === null && thinkingContent.trim()) {
-                      wsThinkingEnd = Date.now();
-                      setThinkingEnd(wsThinkingEnd);
-                    }
-                    assistantContent += delta.content;
-                    streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: delta.content });
-                  } else if (parsed.thinking) {
-                    thinkingContent += parsed.thinking;
-                    streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.thinking });
-                  } else if (parsed.reasoning_content) {
-                    thinkingContent += parsed.reasoning_content;
-                    streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.reasoning_content });
-                  } else if (parsed.content) {
-                    assistantContent += parsed.content;
-                    streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: parsed.content });
-                  }
-                  break;
-                }
-              }
-
-              update();
-              if (done) finish('succeeded');
-            },
-            onClose: () => {
-              if (!done && !aborted && !abortController.signal.aborted) finish('failed');
-            }
-          });
-
-          abortController.signal.addEventListener('abort', () => {
-            aborted = true;
-            const sub = connection.subscribers.get(requestId);
-            if (sub) sub.aborted = true;
-            if (socket.readyState === WebSocket.OPEN) {
-              safeSendWs(socket, { type: 'chat.abort', requestId });
-            }
-            finish('aborted');
-          }, { once: true });
-
-          if (socket.readyState === WebSocket.OPEN) {
-            sendChatStart();
-          }
-        });
-
-        if (result === 'succeeded' || result === 'aborted') return result;
-      } catch {
-        // Connection error, will retry.
-      }
-    }
-
-    return 'failed';
-  };
-
-  // ── SSE stream reader (HTTP fallback) ────────────────────────────
-  // Extracted from the original generateAIResponse body
-  const readSSEStream = async (
-    res: Response,
-    turn: ChatTurnRecord,
-    turnSessionId: string | null,
-    assistantMsgId: string,
-    abortController: AbortController,
-    thinkingStart: number,
-    isCurrentTurn: () => boolean,
-    updateAssistantMessage: (
-      targetSessionId: string | null,
-      targetAssistantMsgId: string,
-      updater: (messages: ChatMessage[]) => ChatMessage[]
-    ) => void
-  ) => {
-    const reader = res.body?.getReader();
-    const decoder = new TextDecoder();
-    chatRuntime.setTransport(turn.turnId, 'http');
-    if (!reader) return 'succeeded';
-
-    const update = () => {
-      updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
-        msg.id === assistantMsgId ? {
-          ...msg,
-          content: assistantContent,
-          thinking: thinkingContent || undefined,
-          tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
-          blocks: streamBlocks
-        } : msg
-      ));
-    };
-    let assistantContent = '';
-    let thinkingContent = '';
-    let buffer = '';
-    let toolResults: ChatMessage['tools'] = [];
-    let streamBlocks: MessageBlock[] = [];
-    let thinkingEnd: number | null = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let lineStart = 0;
-      let newlineIdx: number;
-      while ((newlineIdx = buffer.indexOf('\n', lineStart)) >= 0) {
-        const line = buffer.slice(lineStart, newlineIdx).trim();
-        lineStart = newlineIdx + 1;
-        if (!line || line.startsWith(':')) continue;
-
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.type === 'thinking') {
-              thinkingContent += parsed.content || '';
-              streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.content || '' });
-            } else if (parsed.type === 'text' || parsed.type === 'content') {
-              if (!thinkingEnd && thinkingContent.trim()) { thinkingEnd = Date.now(); }
-              assistantContent += parsed.content || '';
-              streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: parsed.content || '' });
-            } else if (parsed.type === 'tool_call') {
-              toolResults = [...(toolResults || []), {
-                name: parsed.name, context: parsed.context || '', id: parsed.id,
-                status: parsed.status || 'running', summary: '', error: '', startedAt: Date.now(),
-              }];
-              streamBlocks = appendBlockEvent(streamBlocks, {
-                type: 'tool_call', name: parsed.name, id: parsed.id, context: parsed.context, status: parsed.status
-              });
-            } else if (parsed.type === 'tool_result') {
-              toolResults = (toolResults || []).map(t =>
-                t.id === parsed.id ? { ...t, ...(parsed.summary ? { summary: parsed.summary } : {}), ...(parsed.error ? { error: parsed.error } : {}), status: parsed.status || 'done', duration: parsed.duration } : t
-              );
-              streamBlocks = appendBlockEvent(streamBlocks, {
-                type: 'tool_result', id: parsed.id, status: parsed.status, summary: parsed.summary, error: parsed.error, duration: parsed.duration
-              });
-            } else if (parsed.type === 'tool_progress') {
-              toolResults = (toolResults || []).map(t =>
-                t.id === parsed.id ? { ...t, preview: (t.preview || '') + (parsed.preview || '') } : t
-              );
-              streamBlocks = appendBlockEvent(streamBlocks, {
-                type: 'tool_progress', id: parsed.id, preview: parsed.preview
-              });
-            } else if (parsed.thinking) {
-              thinkingContent += parsed.thinking;
-              streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.thinking });
-            } else if (parsed.reasoning_content) {
-              thinkingContent += parsed.reasoning_content;
-              streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.reasoning_content });
-            } else if (parsed.choices && parsed.choices[0]?.delta?.reasoning_content) {
-              thinkingContent += parsed.choices[0].delta.reasoning_content;
-              streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.choices[0].delta.reasoning_content });
-            } else {
-              if (!thinkingEnd && thinkingContent.trim()) { thinkingEnd = Date.now(); }
-              assistantContent += parsed.content || data;
-              streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: parsed.content || data });
-            }
-          } catch {
-            if (!thinkingEnd && thinkingContent.trim()) { thinkingEnd = Date.now(); }
-            assistantContent += data;
-            streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: data });
-          }
-        } else {
-          const thinkMatch = line.match(/<thinking>([\s\S]*?)<\/thinking>/);
-          if (thinkMatch) {
-            thinkingContent += thinkMatch[1];
-            assistantContent += line.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
-            streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: line });
-          } else {
-            if (!thinkingEnd && thinkingContent.trim()) { thinkingEnd = Date.now(); }
-            assistantContent += line;
-            streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: line });
-          }
-        }
-      }
-      buffer = buffer.slice(lineStart);
-
-      if (abortController.signal.aborted) return 'aborted';
-      update();
-    }
-
-    // Flush remaining buffer
-    if (buffer.trim()) {
-      const thinkMatch = buffer.match(/<thinking>([\s\S]*?)<\/thinking>/);
-      if (thinkMatch) {
-        thinkingContent += thinkMatch[1];
-        assistantContent += buffer.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
-        streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: buffer });
-      } else if (buffer.startsWith('data: ')) {
-        const data = buffer.slice(6);
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.type === 'thinking') {
-            thinkingContent += parsed.content || '';
-            streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.content || '' });
-          } else if (parsed.thinking) {
-            thinkingContent += parsed.thinking;
-            streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.thinking });
-          } else if (parsed.reasoning_content) {
-            thinkingContent += parsed.reasoning_content;
-            streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content: parsed.reasoning_content });
-          } else {
-            if (!thinkingEnd && thinkingContent.trim()) thinkingEnd = Date.now();
-            assistantContent += parsed.content || data;
-            streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: parsed.content || data });
-          }
-        } catch {
-          assistantContent += data;
-          streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: data });
-        }
-      } else {
-        assistantContent += buffer;
-        streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: buffer });
-      }
-    }
-
-    const finalDuration = thinkingEnd
-      ? Math.round((thinkingEnd - thinkingStart) / 100) / 10
-      : thinkingContent.trim()
-        ? Math.round((Date.now() - thinkingStart) / 100) / 10
-        : undefined;
-
-    const finalContent = assistantContent.replace(/(?:\s*\[DONE\]\s*)+$/g, '');
-
-    const cleanedBlocks = streamBlocks.map((block, idx) => {
-      if (idx === streamBlocks.length - 1 && block.type === 'final_output' && block.content) {
-        return {
-          ...block,
-          content: block.content.replace(/(?:\s*\[DONE\]\s*)+$/g, '')
-        };
-      }
-      return block;
-    });
-
-    updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
-      msg.id === assistantMsgId ? { ...msg, content: finalContent, thinking: thinkingContent || undefined, thinkingDuration: finalDuration, blocks: cleanedBlocks } : msg
-    ));
-    // Save latest assistant message for TTS only when this is the visible session.
-    if (finalContent && isCurrentTurn()) {
-      try { sessionStorage.setItem('august_last_assistant_message', finalContent); } catch {}
-    }
-    return abortController.signal.aborted ? 'aborted' : 'succeeded';
-  };
-
   const send = async () => {
     let text = input.trim();
     if (!text && attachments.length === 0) return;
@@ -1191,7 +844,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
     persistMessages(sessionId, nextMessages);
-    await generateAIResponse(nextMessages);
+    await generateAIResponse([userMsg]);
   };
 
   const stop = () => {
@@ -1268,7 +921,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (!msg || msg.role !== 'user') return;
     const trimmed = messages.slice(0, userIndex + 1);
     setMessages(trimmed);
-    await generateAIResponse(trimmed);
+    await generateAIResponse([msg]);
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {

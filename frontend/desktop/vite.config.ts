@@ -11,7 +11,7 @@ export default defineConfig({
   // when the SPA is mounted under /v2/.
   base: '/v2/',
   build: {
-    outDir: '../web-dist',
+    outDir: '../../web-dist',
     emptyOutDir: true,
     sourcemap: true,
     target: 'es2022',

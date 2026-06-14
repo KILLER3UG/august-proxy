@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const { SseStreamParser } = require('../adapters/sse-parser');
 const { classifyOpenAiToolCalls, classifyAnthropicToolUses } = require('../adapters/tool-classification');
+const { mergeOpenAiCompatibleProfile } = require('../adapters/openai');
 
 test('SseStreamParser preserves partial JSON spacing and flushes final event', () => {
     const events = [];
@@ -59,6 +60,53 @@ test('OpenAI tool-call classification separates managed, client, and mixed turns
     assert.equal(mixed.canExecuteManaged, false);
     assert.equal(mixed.hasClientOrUnknown, true);
     assert.equal(mixed.toolCalls.length, 2);
+});
+
+test('OpenAI request profile overrides shared codex profile', () => {
+    const cfg = mergeOpenAiCompatibleProfile({
+        targetUrl: 'https://session-a.example/v1',
+        apiKey: 'session-a-key',
+        currentModel: 'session-a-model',
+        _upstreamModel: 'session-a-upstream',
+    }, {
+        targetUrl: 'https://shared.example/v1',
+        apiKey: 'shared-key',
+        currentModel: 'shared-model',
+        _upstreamModel: 'shared-upstream',
+    });
+
+    assert.equal(cfg.currentModel, 'session-a-model');
+    assert.equal(cfg._upstreamModel, 'session-a-upstream');
+    assert.equal(cfg.targetUrl, 'https://session-a.example/v1/chat/completions');
+});
+
+test('OpenAI request profile fills missing upstream model from request currentModel', () => {
+    const cfg = mergeOpenAiCompatibleProfile({
+        targetUrl: 'https://session-b.example/v1',
+        apiKey: 'session-b-key',
+        currentModel: 'session-b-model',
+    }, {
+        targetUrl: 'https://shared.example/v1',
+        apiKey: 'shared-key',
+        currentModel: 'shared-model',
+        _upstreamModel: 'shared-upstream',
+    });
+
+    assert.equal(cfg.currentModel, 'session-b-model');
+    assert.equal(cfg._upstreamModel, 'session-b-model');
+});
+
+test('OpenAI request profile falls back to shared profile when request profile is empty', () => {
+    const cfg = mergeOpenAiCompatibleProfile(null, {
+        targetUrl: 'https://shared.example/v1',
+        apiKey: 'shared-key',
+        currentModel: 'shared-model',
+        _upstreamModel: 'shared-upstream',
+    });
+
+    assert.equal(cfg.currentModel, 'shared-model');
+    assert.equal(cfg._upstreamModel, 'shared-upstream');
+    assert.equal(cfg.targetUrl, 'https://shared.example/v1/chat/completions');
 });
 
 test('Anthropic tool-use classification treats mixed turns as client-owned', () => {

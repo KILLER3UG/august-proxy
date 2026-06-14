@@ -11,6 +11,9 @@ export interface Session {
   folderId?: string | null;
   isArchived?: boolean;
   workspacePath?: string | null;
+  workbenchSessionId?: string;
+  workbenchAgentId?: string;
+  workbenchProvider?: string;
 }
 
 export type SessionStatus = 'idle' | 'working' | 'awaiting' | 'error' | 'done';
@@ -122,6 +125,15 @@ export function renameSession(id: string, newTitle: string) {
 
 export function updateSessionModel(id: string, model: string, provider: string) {
   const updated = $sessions.get().map(s => s.id === id ? { ...s, model, provider } : s);
+  $sessions.set(updated);
+  saveSessionsToStorage(updated);
+}
+
+export function updateSessionWorkbenchMetadata(
+  id: string,
+  metadata: Pick<Session, 'workbenchSessionId' | 'workbenchAgentId' | 'workbenchProvider'>
+) {
+  const updated = $sessions.get().map(s => s.id === id ? { ...s, ...metadata } : s);
   $sessions.set(updated);
   saveSessionsToStorage(updated);
 }

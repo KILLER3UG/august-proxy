@@ -462,23 +462,32 @@ function toOpenAiCompatibleTargetUrl(targetUrl) {
     return `${target}/v1/chat/completions`;
 }
 
-function getOpenAiCompatibleProfile() {
-    const codex = getProfile('codex') || {};
-    const fallback = getProfile('claude') || {};
-    const merged = codex.targetUrl
-        ? { ...codex }
+function mergeOpenAiCompatibleProfile(requestProfile, fallbackProfile) {
+    const requestUpstreamModel = requestProfile?._upstreamModel || (requestProfile?.currentModel && requestProfile ? requestProfile.currentModel : undefined);
+    const merged = requestProfile?.targetUrl
+        ? {
+            ...requestProfile,
+            _upstreamModel: requestUpstreamModel || requestProfile.currentModel || requestProfile._upstreamModel
+        }
         : {
-            ...fallback,
-            ...codex,
-            apiKey: codex.apiKey || fallback.apiKey,
-            targetUrl: fallback.targetUrl,
-            _upstreamModel: codex._upstreamModel || fallback._upstreamModel || fallback.currentModel,
-            currentModel: codex.currentModel || fallback.currentModel
+            ...fallbackProfile,
+            ...requestProfile,
+            apiKey: requestProfile?.apiKey || fallbackProfile.apiKey,
+            targetUrl: fallbackProfile.targetUrl,
+            _upstreamModel: requestUpstreamModel || fallbackProfile._upstreamModel || fallbackProfile.currentModel,
+            currentModel: requestProfile?.currentModel || fallbackProfile.currentModel
         };
     merged.targetUrl = toOpenAiCompatibleTargetUrl(merged.targetUrl);
     if (merged.targetUrl.includes('minimax') && looksLikeProviderAlias(merged._upstreamModel || merged.currentModel)) {
         merged._upstreamModel = merged.openAiCompatibleModel || merged.memoryExtractionModel || merged.memoryModel || merged._upstreamModel || merged.currentModel || 'auto';
     }
+    return merged;
+}
+
+function getOpenAiCompatibleProfile(requestProfile = null) {
+    const codex = getProfile('codex') || {};
+    const fallback = getProfile('claude') || {};
+    const merged = mergeOpenAiCompatibleProfile(requestProfile || codex, fallback);
     return merged;
 }
 
@@ -568,7 +577,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             try {
             console.log(`[Proxy Body]: ${cleanPath} (${body.length} bytes)`);
 
-            const cfg = getOpenAiCompatibleProfile();
+            const cfg = getOpenAiCompatibleProfile(req.openAiCompatibleProfile || null);
             let oReq = {};
             try {
                 oReq = JSON.parse(body || '{}');
@@ -1312,4 +1321,8 @@ function sendSimulatedOpenAiStream(res, parsed, requestModel) {
     res.end();
 }
 
-module.exports = { handleChatCompletions };
+module.exports = {
+    handleChatCompletions,
+    getOpenAiCompatibleProfile,
+    mergeOpenAiCompatibleProfile
+};
