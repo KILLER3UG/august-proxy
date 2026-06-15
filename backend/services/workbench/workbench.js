@@ -45,27 +45,38 @@ const { getTeamSkills } = require('../tools/skills');
  * The proxy no longer assumes a "claude"/"codex" profile exists — providers
  * are configured by name (e.g. opencode-zen) under the active provider. This
  * resolves the active provider first (the real source of targetUrl/apiKey),
- * then falls back to the legacy claude/codex profile. `provider` is the
- * Workbench transport hint ('claude' | 'codex') and only selects the API
- * *format* (Anthropic Messages vs OpenAI Chat), not which upstream to hit.
+ * then falls back to the legacy claude/codex profile.
+ *
+ * Crucially, the upstream API *format* (Anthropic Messages vs OpenAI Chat) is
+ * decided by the provider's apiMode, NOT by the session.provider hint. Most
+ * configured providers (opencode-zen, kilo, deepseek, openrouter, …) are
+ * openai_chat, so the Workbench must send OpenAI-format requests to them even
+ * when the session hint is 'claude'. The returned profile carries:
+ *   - targetUrl: the FULL endpoint URL for the resolved format
+ *   - useOpenAiFormat: true → send OpenAI /chat/completions shape
+ *   - apiMode, currentModel, _upstreamModel, apiKey, etc.
  */
 function resolveWorkbenchProfile(provider) {
     // 1. Try the active provider (real config: targetUrl + apiKey + model).
     try {
         const resolved = resolveActiveProvider();
         if (resolved && resolved.baseUrl && resolved.apiKey) {
+            const apiMode = resolved.apiMode || 'openai_chat';
+            const useOpenAiFormat = apiMode !== 'anthropic_messages';
+            const model = resolved.model || resolved.defaultModel;
             return {
-                targetUrl: resolved.baseUrl,
+                targetUrl: useOpenAiFormat
+                    ? normalizeOpenAiTargetUrl({ targetUrl: resolved.baseUrl })
+                    : ensureAnthropicMessagesUrl(resolved.baseUrl),
                 apiKey: resolved.apiKey,
-                currentModel: resolved.model || resolved.defaultModel,
-                _upstreamModel: resolved.model || resolved.defaultModel,
+                currentModel: model,
+                _upstreamModel: model,
                 contextWindow: resolved.contextWindow,
                 providerName: resolved.name,
-                // Preserve any alias/generation defaults from the resolved profile.
-                ...(resolved.profile && typeof resolved.profile === 'object' ? {
-                    inputCostPer1M: resolved.inputCostPer1M,
-                    outputCostPer1M: resolved.outputCostPer1M,
-                } : {}),
+                apiMode,
+                useOpenAiFormat,
+                inputCostPer1M: resolved.inputCostPer1M,
+                outputCostPer1M: resolved.outputCostPer1M,
             };
         }
     } catch (e) {
@@ -77,7 +88,41 @@ function resolveWorkbenchProfile(provider) {
     if (!legacy.targetUrl) {
         throw new Error(`${provider === 'codex' ? 'Codex' : 'Claude'} profile target URL is missing — set an active provider with a baseUrl and API key.`);
     }
-    return legacy;
+    // A legacy 'codex' profile is OpenAI-shaped; a 'claude' profile may point at
+    // either an Anthropic-native or an OpenAI-compatible upstream (some setups
+    // set a claude profile targetUrl to an OpenAI endpoint).
+    const legacyUseOpenAi = provider === 'codex' || /\/chat\/completions/i.test(legacy.targetUrl);
+    return {
+        ...legacy,
+        targetUrl: legacyUseOpenAi ? normalizeOpenAiTargetUrl(legacy) : legacy.targetUrl,
+        apiMode: legacyUseOpenAi ? 'openai_chat' : 'anthropic_messages',
+        useOpenAiFormat: legacyUseOpenAi,
+    };
+}
+
+/** Build the full /chat/completions URL from a provider baseUrl. */
+function normalizeOpenAiTargetUrl(profile) {
+    const target = String(profile.targetUrl || profile.baseUrl || '').trim();
+    if (!target) return '';
+    if (/\/chat\/completions$/i.test(target)) return target;
+    return target.replace(/\/+$/, '').replace(/\/models$/i, '') + '/chat/completions';
+}
+
+/** Build the full /v1/messages URL from an Anthropic-native provider baseUrl. */
+function ensureAnthropicMessagesUrl(baseUrl) {
+    const target = String(baseUrl || '').trim();
+    if (!target) return '';
+    if (/\/v1\/messages$/i.test(target)) return target;
+    return target.replace(/\/+$/, '').replace(/\/models$/i, '') + '/v1/messages';
+}
+
+/**
+ * Resolve the Workbench profile for a session. Single source of truth that all
+ * call sites should use — picks the format from the provider, not session hint.
+ */
+function getWorkbenchProfile(session) {
+    const provider = session?.provider === 'codex' ? 'codex' : 'claude';
+    return resolveWorkbenchProfile(provider);
 }
 
 const sessions = new Map();
@@ -743,7 +788,8 @@ function requireAgentPermission(session, toolName, args, toolContext = {}) {
 
 function getSessionBrainPolicy(session) {
     const providerName = session?.provider === 'codex' ? 'codex' : 'claude';
-    const profile = getProfile(providerName) || {};
+    let profile = {};
+    try { profile = getWorkbenchProfile(session); } catch { profile = getProfile(providerName) || {}; }
     const model = profile._upstreamModel || profile.currentModel || '';
     const planned = planBrainTurn({
         messages: session?.messages || [],
@@ -1080,8 +1126,9 @@ async function executeSubAgent(session, args, toolContext = {}) {
         : 'general';
     const childAgent = getAgent(childAgentId);
     const inheritedPermissions = deriveChildAgentPermissions(parentAgentId, childAgentId);
-    const profile = getProfile(session.provider === 'codex' ? 'codex' : 'claude') || {};
-    const targetUrl = session.provider === 'codex' ? normalizeOpenAiTargetUrl(profile) : profile.targetUrl;
+    const profile = getWorkbenchProfile(session);
+    const useOpenAi = profile.useOpenAiFormat;
+    const targetUrl = profile.targetUrl;
     const model = profile._upstreamModel || profile.currentModel || 'claude-opus-4-6';
     if (!targetUrl) return { status: 'error', message: 'Provider target URL missing.' };
 
@@ -1137,10 +1184,10 @@ async function executeSubAgent(session, args, toolContext = {}) {
     while (subLoops < 4) {
         subLoops++;
         try {
-            const headers = session.provider === 'codex'
+            const headers = useOpenAi
                 ? { 'Content-Type': 'application/json', ...(profile.apiKey ? { Authorization: `Bearer ${profile.apiKey}` } : {}) }
                 : buildHeaders(profile.apiKey);
-            const body = session.provider === 'codex'
+            const body = useOpenAi
                 ? { model, messages: [{ role: 'system', content: subPrompt }, ...subMessages], tools: openAiToolDefinitions(session), tool_choice: 'auto', stream: false }
                 : { model, max_tokens: 1024, system: subPrompt, messages: subMessages, tools: toolDefinitions(session) };
 
@@ -1152,7 +1199,7 @@ async function executeSubAgent(session, args, toolContext = {}) {
                 return { status: 'error', jobId: job.id, message };
             }
             const data = JSON.parse(raw);
-            const content = session.provider === 'codex'
+            const content = useOpenAi
                 ? openAiMessageToAnthropicContent(data.choices?.[0]?.message || {})
                 : (Array.isArray(data.content) ? data.content : []);
 
@@ -1477,9 +1524,9 @@ function buildSystemPrompt(session) {
     ].join('\n');
 
     // Build shared context blocks via context-builder (same as regular API path)
-    const profile = getProfile(session.provider === 'codex' ? 'codex' : 'claude') || {};
+    const profile = getWorkbenchProfile(session);
     const model = profile._upstreamModel || profile.currentModel;
-    const targetUrl = session.provider === 'codex' ? normalizeOpenAiTargetUrl(profile) : profile.targetUrl;
+    const targetUrl = profile.targetUrl;
     const brainPlan = getSessionBrainPolicy(session);
     const basePrompt = buildSystemPromptText(null, {
         includeMiniMaxContract: true,
@@ -1555,13 +1602,13 @@ function extractOpenAiText(data) {
 }
 
 async function callWorkbenchTextOnlyModel(session, { system, user, maxTokens = 768 } = {}) {
-    const provider = session.provider === 'codex' ? 'codex' : 'claude';
-    const profile = getProfile(provider) || {};
-    const model = profile._upstreamModel || profile.currentModel || (provider === 'codex' ? 'gpt-4o' : 'claude-opus-4-6');
-    const targetUrl = provider === 'codex' ? normalizeOpenAiTargetUrl(profile) : profile.targetUrl;
-    if (!targetUrl) throw new Error(`${provider === 'codex' ? 'Codex' : 'Claude'} profile target URL is missing.`);
+    const profile = getWorkbenchProfile(session);
+    const useOpenAi = profile.useOpenAiFormat;
+    const model = profile._upstreamModel || profile.currentModel || 'claude-opus-4-6';
+    const targetUrl = profile.targetUrl;
+    if (!targetUrl) throw new Error('Provider target URL is missing.');
 
-    if (provider === 'codex') {
+    if (useOpenAi) {
         const res = await fetch(targetUrl, {
             method: 'POST',
             headers: {
@@ -1669,11 +1716,20 @@ function buildHeaders(apiKey) {
 }
 
 async function callWorkbenchModel(session) {
-    return session.provider === 'codex' ? callOpenAiWorkbenchModel(session) : callAnthropicWorkbenchModel(session);
+    // Transport follows the provider's apiMode, not the session.provider hint.
+    // opencode-zen/kilo/deepseek/etc. are openai_chat even when the UI session
+    // is 'claude'-shaped — sending Anthropic format to them 404s.
+    const useOpenAi = (() => {
+        try { return getWorkbenchProfile(session).useOpenAiFormat; } catch { return session.provider === 'codex'; }
+    })();
+    return useOpenAi ? callOpenAiWorkbenchModel(session) : callAnthropicWorkbenchModel(session);
 }
 
 async function callWorkbenchModelStream(session, emit) {
-    if (session.provider === 'codex') {
+    const useOpenAi = (() => {
+        try { return getWorkbenchProfile(session).useOpenAiFormat; } catch { return session.provider === 'codex'; }
+    })();
+    if (useOpenAi) {
         await callOpenAiWorkbenchModelStream(session, emit);
     } else {
         await callAnthropicWorkbenchModelStream(session, emit);
@@ -1782,13 +1838,6 @@ function openAiMessageToAnthropicContent(message = {}) {
         });
     });
     return content;
-}
-
-function normalizeOpenAiTargetUrl(profile) {
-    const target = String(profile.targetUrl || '').trim();
-    if (!target) return '';
-    if (/\/chat\/completions$/i.test(target)) return target;
-    return target.replace(/\/+$/, '').replace(/\/models$/i, '') + '/chat/completions';
 }
 
 async function callOpenAiWorkbenchModel(session) {
@@ -2250,7 +2299,7 @@ async function sendWorkbenchMessageStream({ sessionId, message, provider, agentI
     try {
         const lastAssistant = session.messages.filter(m => m.role === 'assistant').pop();
         if (lastAssistant) {
-            const cfg = getProfile(session.provider === 'codex' ? 'codex' : 'claude') || {};
+            const cfg = getWorkbenchProfile(session);
             extractAndSaveMemories(session.messages, lastAssistant, cfg, cfg._upstreamModel || cfg.currentModel, 'workbench')
                 .catch(e => console.warn('[Auto-Memory] Workbench extraction failed:', e.message));
         }
