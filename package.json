@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "frontend/desktop"
+    "frontend/desktop",
+    "frontend/mobile"
   ],
   "scripts": {
     "start": "node backend/index.js",

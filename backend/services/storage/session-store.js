@@ -7,8 +7,9 @@
 const fs = require('fs');
 const path = require('path');
 const { getConfig } = require('../../lib/config');
+const { getDataDir } = require('../../lib/data-paths');
 
-const DATA_DIR = path.join(__dirname, '..', '..', '..', 'data');
+const DATA_DIR = getDataDir();
 const DB_PATH = path.join(DATA_DIR, 'august-sessions.db');
 const WAL_PATH = DB_PATH + '-wal';
 const SHM_PATH = DB_PATH + '-shm';

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { dataPath } = require('../../lib/data-paths');
 
 const VALID_CATEGORIES = new Set([
     'user_preference',
@@ -20,7 +21,7 @@ const DEFAULT_TTL_DAYS = {
 };
 
 function getSemanticMemoryFile() {
-    return process.env.AUGUST_SEMANTIC_MEMORY_FILE || path.join(__dirname, '..', '..', '..', 'data', 'august_semantic_memory.json');
+    return process.env.AUGUST_SEMANTIC_MEMORY_FILE || dataPath('august_semantic_memory.json');
 }
 
 function readDB() {

@@ -6,6 +6,7 @@ const execPromise = util.promisify(exec);
 const readTimestamps = new Map();
 
 const { checkCommandPaths, checkPathPermission, extractPathsFromCommand } = require('../../lib/path-permissions');
+const { dataPath } = require('../../lib/data-paths');
 const { MEMORY_TOOLS, handleMemoryTool } = require('./memory-tools');
 const {
     CORE_MEMORY_FILE,
@@ -1124,7 +1125,7 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
 
                 const scriptName = path.join(__dirname, '..', `august_bg_task_${Date.now()}.ps1`);
                 fs.writeFileSync(scriptName, args.script_content, 'utf8');
-                const outLog = path.join(__dirname, '..', '..', '..', 'data', 'august_background.log');
+                const outLog = dataPath('august_background.log');
                 
                 // Spawn detached powershell process
                 const { spawn } = require('child_process');
@@ -1498,7 +1499,7 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                 reportLines.push(`Mode: ${mode}\n`);
 
                 // Read the request log
-                const REQUEST_LOG_PATH = path.join(__dirname, '..', '..', '..', 'data', 'request-log.json', 'log.json');
+                const REQUEST_LOG_PATH = dataPath('request-log.json', 'log.json');
                 let entries = [];
                 try {
                     const raw = fs.readFileSync(REQUEST_LOG_PATH, 'utf8');

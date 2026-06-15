@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const { dataPath } = require('../../lib/data-paths');
 
-const STORAGE_DIR = path.join(__dirname, '..', '..', '..', 'data', 'tool-results');
+const STORAGE_DIR = dataPath('tool-results');
 const DEFAULT_RESULT_MAX_CHARS = 50000;
 const BASH_RESULT_MAX_CHARS = 30000;
 const TURN_BUDGET_MAX_CHARS = 200000;

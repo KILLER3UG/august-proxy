@@ -8,8 +8,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const { dataPath } = require('../../lib/data-paths');
 
-const CATALOG_PATH = path.join(__dirname, '..', '..', 'data', 'model-catalog.json');
+const CATALOG_PATH = dataPath('model-catalog.json');
 
 // ── Internal State ──
 let _models = new Map();

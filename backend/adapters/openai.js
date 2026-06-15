@@ -658,6 +658,9 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 if (routed && routed.baseUrl && routed.apiKey) {
                     cfg.targetUrl = routed.baseUrl;
                     cfg.apiKey = routed.apiKey;
+                    cfg._upstreamModel = requestModel;
+                    cfg.currentModel = requestModel;
+                    if (routed.apiMode) cfg.apiMode = routed.apiMode;
                     console.log(`[Proxy Model Route]: ${requestModel} -> provider ${routed.name} (${routed.baseUrl})`);
                 }
             } catch (e) {

@@ -16,8 +16,9 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const { getDataDir } = require('../../../lib/data-paths');
 
-const DATA_DIR = path.join(__dirname, '..', '..', '..', '..', 'data');
+const DATA_DIR = getDataDir();
 const TODO_FILE = path.join(DATA_DIR, 'august_todos.json');
 const KANBAN_FILE = path.join(DATA_DIR, 'august_kanban.json');
 const PLAN_FILE = path.join(DATA_DIR, 'august_plan.md');

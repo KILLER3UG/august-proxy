@@ -14,6 +14,7 @@ const { extractAndSaveMemories } = require('../memory/auto-memory');
 const { getBrainDiagnostics } = require('../memory/brain-diagnostics');
 const { getBrainConfig, getWorkbenchMaxToolLoops, planBrainTurn } = require('../memory/brain-orchestrator');
 const { getCapabilityHealth } = require('../monitoring/health');
+const { dataPath } = require('../../lib/data-paths');
 const { getActivityLog, getPendingRequests, getRequestLog, getStats } = require('../../lib/logger');
 const { findSkillSources, importSkillFromLink, previewSkillImport } = require('../tools/skill-importer');
 const { executeToolBatch } = require('./tool-executor');
@@ -126,7 +127,7 @@ function getWorkbenchProfile(session) {
 }
 
 const sessions = new Map();
-const WORKBENCH_SESSIONS_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_workbench_sessions.json');
+const WORKBENCH_SESSIONS_FILE = dataPath('august_workbench_sessions.json');
 
 function loadSessions() {
     if (sessions.size > 0) return;
@@ -787,9 +788,14 @@ function requireAgentPermission(session, toolName, args, toolContext = {}) {
 }
 
 function getSessionBrainPolicy(session) {
-    const providerName = session?.provider === 'codex' ? 'codex' : 'claude';
+    let providerName = session?.provider === 'codex' ? 'codex' : 'claude';
     let profile = {};
-    try { profile = getWorkbenchProfile(session); } catch { profile = getProfile(providerName) || {}; }
+    try {
+        profile = getWorkbenchProfile(session);
+        providerName = profile.providerName || providerName;
+    } catch {
+        profile = getProfile(providerName) || {};
+    }
     const model = profile._upstreamModel || profile.currentModel || '';
     const planned = planBrainTurn({
         messages: session?.messages || [],
@@ -1737,7 +1743,8 @@ async function callWorkbenchModelStream(session, emit) {
 }
 
 async function callAnthropicWorkbenchModel(session) {
-    const profile = resolveWorkbenchProfile('claude');
+    const profile = getWorkbenchProfile(session);
+    if (!profile.targetUrl) throw new Error('Workbench provider target URL is missing.');
     const model = profile._upstreamModel || profile.currentModel || 'claude-opus-4-6';
 
     const events = [];
@@ -1841,9 +1848,8 @@ function openAiMessageToAnthropicContent(message = {}) {
 }
 
 async function callOpenAiWorkbenchModel(session) {
-    const profile = resolveWorkbenchProfile('codex');
-    const targetUrl = normalizeOpenAiTargetUrl(profile);
-    if (!targetUrl) throw new Error('Codex profile target URL is missing.');
+    const profile = getWorkbenchProfile(session);
+    if (!profile.targetUrl) throw new Error('Workbench provider target URL is missing.');
     const model = profile._upstreamModel || profile.currentModel || 'gpt-4o';
 
     const events = [];
@@ -1851,7 +1857,7 @@ async function callOpenAiWorkbenchModel(session) {
     while (loops < getWorkbenchMaxToolLoops()) {
         loops++;
         const brainPolicy = getSessionBrainPolicy(session);
-        const response = await fetch(targetUrl, {
+        const response = await fetch(profile.targetUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -2066,7 +2072,8 @@ async function parseOpenAiStream(response, onData) {
 }
 
 async function callAnthropicWorkbenchModelStream(session, emit) {
-    const profile = resolveWorkbenchProfile('claude');
+    const profile = getWorkbenchProfile(session);
+    if (!profile.targetUrl) throw new Error('Workbench provider target URL is missing.');
     const model = profile._upstreamModel || profile.currentModel || 'claude-opus-4-6';
 
     let loops = 0;
@@ -2160,16 +2167,15 @@ async function callAnthropicWorkbenchModelStream(session, emit) {
 }
 
 async function callOpenAiWorkbenchModelStream(session, emit) {
-    const profile = resolveWorkbenchProfile('codex');
-    const targetUrl = normalizeOpenAiTargetUrl(profile);
-    if (!targetUrl) throw new Error('Codex profile target URL is missing.');
+    const profile = getWorkbenchProfile(session);
+    if (!profile.targetUrl) throw new Error('Workbench provider target URL is missing.');
     const model = profile._upstreamModel || profile.currentModel || 'gpt-4o';
 
     let loops = 0;
     while (loops < getWorkbenchMaxToolLoops()) {
         loops++;
         const brainPolicy = getSessionBrainPolicy(session);
-        const response = await fetch(targetUrl, {
+        const response = await fetch(profile.targetUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -2338,50 +2344,35 @@ function deleteWorkbenchSession(sessionId) {
 
 async function generateSessionTitle(session, firstMessage, emit) {
     try {
-        let profile;
-        try {
-            profile = resolveWorkbenchProfile(session.provider === 'codex' ? 'codex' : 'claude');
-        } catch {
-            profile = {};
-        }
+        const profile = getWorkbenchProfile(session);
         if (!profile.targetUrl || !profile.apiKey) return;
         const prompt = `Summarize this request as a short title:\n\n<request>${firstMessage}</request>\n\nOutput only the title, nothing else, no quotes.`;
-        
-        const isCodex = session.provider === 'codex';
-        let body = {};
-        if (isCodex) {
-            body = {
-                model: profile._upstreamModel || profile.currentModel || 'gpt-4o-mini',
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.3,
-                max_tokens: 300
-            };
-        } else {
-            body = {
-                model: profile._upstreamModel || profile.currentModel || 'claude-3-haiku-20240307',
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.3,
-                max_tokens: 300
-            };
-        }
-        
+
+        const isOpenAi = profile.useOpenAiFormat;
+        const body = {
+            model: profile._upstreamModel || profile.currentModel || (isOpenAi ? 'gpt-4o-mini' : 'claude-3-haiku-20240307'),
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.3,
+            max_tokens: 300
+        };
+
         const headers = {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${profile.apiKey}`
         };
-        if (!isCodex) {
+        if (!isOpenAi) {
             headers['x-api-key'] = profile.apiKey;
             headers['anthropic-version'] = '2023-06-01';
         }
-        
+
         const fetchFn = typeof fetch !== 'undefined' ? fetch : require('node-fetch');
         const res = await fetchFn(profile.targetUrl, { method: 'POST', headers, body: JSON.stringify(body) });
         if (!res.ok) return;
         const data = await res.json();
         let title = '';
-        if (isCodex && data.choices && data.choices[0]?.message?.content) {
+        if (isOpenAi && data.choices && data.choices[0]?.message?.content) {
             title = data.choices[0].message.content.trim();
-        } else if (!isCodex && data.content && Array.isArray(data.content)) {
+        } else if (!isOpenAi && data.content && Array.isArray(data.content)) {
             for (const block of data.content) {
                 if (block.text) { title = block.text.trim(); break; }
             }

@@ -4,8 +4,9 @@
 const fs = require('fs');
 const path = require('path');
 const { getConfig, getProfile } = require('./config');
+const { dataPath } = require('./data-paths');
 
-const REQUEST_LOG_FILE = path.join(__dirname, '..', '..', 'data', 'request-log.json');
+const REQUEST_LOG_FILE = dataPath('request-log.json');
 const DEFAULT_REQUEST_LOG_LIMIT = 5000;
 const DEFAULT_PENDING_TIMEOUT_MINUTES = 10;
 const MAX_ACTIVITY_LOG = 200;

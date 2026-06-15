@@ -13,10 +13,11 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const os = require('os');
+const { getDataDir } = require('../../../lib/data-paths');
 
 // ── Data File ──
 
-const DATA_DIR = path.join(__dirname, '..', '..', '..', '..', 'data');
+const DATA_DIR = getDataDir();
 const CRON_JOBS_FILE = path.join(DATA_DIR, 'august_cron_jobs.json');
 const DEFAULT_CRON_JOBS = { jobs: [], version: 1 };
 

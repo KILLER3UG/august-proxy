@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const { dataPath } = require('../../lib/data-paths');
 
-const SUBAGENT_CONFIG_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_subagent_config.json');
+const SUBAGENT_CONFIG_FILE = dataPath('august_subagent_config.json');
 
 function getDefaultSubagentConfig() {
     return {

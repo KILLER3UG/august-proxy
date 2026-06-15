@@ -27,9 +27,9 @@ module.exports = {
         },
         {
             name: 'fetch',
-            enabled: true,
+            enabled: false,
             source: 'builtin',
-            // Clean markdown web fetching
+            // Clean markdown web fetching; requires Python/uvx on the host.
             command: 'uvx',
             args: ['mcp-server-fetch'],
             timeoutMs: 60000

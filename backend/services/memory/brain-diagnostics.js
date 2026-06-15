@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { getConfig, getProfile } = require('../../lib/config');
+const { dataPath } = require('../../lib/data-paths');
 const { CORE_MEMORY_FILE, readAugustCoreMemory } = require('./core-memory');
 const semanticMemory = require('./semantic-memory');
 const { getSupermemorySettings } = require('./supermemory');
@@ -201,8 +202,8 @@ function getBrainDiagnostics() {
         summary,
         files: {
             core: coreInfo,
-            semantic: getFileInfo(path.join(__dirname, '..', '..', '..', 'data', 'august_semantic_memory.json')),
-            vector: getFileInfo(path.join(__dirname, '..', '..', '..', 'data', 'august_infinite_memory.json')),
+            semantic: getFileInfo(dataPath('august_semantic_memory.json')),
+            vector: getFileInfo(dataPath('august_infinite_memory.json')),
             graph: getFileInfo(graph.file),
             agentJobs: getFileInfo(getAgentJobsFile())
         },

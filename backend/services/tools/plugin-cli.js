@@ -19,8 +19,9 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { dataPath } = require('../../lib/data-paths');
 
-const PLUGINS_CONFIG_FILE = path.join(__dirname, '..', '..', '..', 'data', 'config.json');
+const PLUGINS_CONFIG_FILE = dataPath('config.json');
 const PLUGINS_DIR = path.join(os.homedir(), '.august', 'plugins');
 
 // ── Ensure plugins directory ──

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { dataPath } = require('../../lib/data-paths');
 
 function parseLimit(key, fallback) {
     const value = Number(process.env[key]);
@@ -12,7 +13,7 @@ const CORE_MEMORY_LIMITS = {
 };
 
 function getCoreMemoryFile() {
-    return process.env.AUGUST_CORE_MEMORY_FILE || path.join(__dirname, '..', '..', '..', 'data', 'august_core_memory.json');
+    return process.env.AUGUST_CORE_MEMORY_FILE || dataPath('august_core_memory.json');
 }
 
 class CoreMemoryBudgetError extends Error {

@@ -44,10 +44,11 @@ function extractAssistantText(assistantContent) {
 
 const fs = require('fs');
 const path = require('path');
+const { dataPath } = require('../../lib/data-paths');
 const debugLogPath = path.join(__dirname, 'debug.txt');
 
 function getLearningHistoryFile() {
-    return process.env.AUGUST_LEARNING_HISTORY_FILE || path.join(__dirname, '..', '..', '..', 'data', 'august_learning_history.json');
+    return process.env.AUGUST_LEARNING_HISTORY_FILE || dataPath('august_learning_history.json');
 }
 
 const MAX_LEARNING_HISTORY = 10;

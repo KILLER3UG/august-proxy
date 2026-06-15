@@ -1,6 +1,5 @@
 const http = require('http');
 const https = require('https');
-const { Readable } = require('stream');
 const { WebSocketServer } = require('ws');
 const fs = require('fs');
 const path = require('path');
@@ -26,7 +25,6 @@ const { answerWorkbenchBtw, approveWorkbenchPlan, createWorkbenchSession, getWor
 const agentRegistry = require('./services/tools/agent-registry');
 const agentSessions = require('./services/tools/agent-sessions');
 const terminalService = require('./services/workbench/terminal-service');
-const chatWsService = require('./services/workbench/chat-ws-service');
 const automationJobs = require('./services/workbench/automation-jobs');
 const hostAgent = require('./lib/host-agent');
 const { listProviders, getProvider } = require('./providers/provider-registry');
@@ -79,56 +77,12 @@ const { registerDelegateTools } = require('./services/tools/delegate-tools');
 const { registerExecuteTools } = require('./services/tools/execute-tools');
 const { handleServiceConnectionRoutes } = require('./services/tools/service-connections');
 
-const UI_PATH = path.join(__dirname, 'ui', 'pages', 'ui.html');
-const UI_ROOT = path.join(__dirname, 'ui');
-const APP_PATH = path.join(__dirname, 'ui', 'pages', 'app.html');
-const TAILWIND_CSS_PATH = path.join(__dirname, 'ui', 'css', 'tailwind.generated.css');
 // ── New SPA (Vite/React/Tailwind v4) ──
+// The React SPA in web-dist/ is the only user UI. All non-API GET requests serve it.
 const WEB_DIST = path.join(__dirname, '..', 'web-dist');
 const WEB_INDEX = path.join(WEB_DIST, 'index.html');
 const LISTEN_PORT = Number(process.env.AUGUST_PROXY_PORT || process.env.PORT || 8080);
 const MAX_CONTEXT_MAX_CHARS = 64000;
-
-function assertInsideUiRoot(filePath) {
-    const resolvedRoot = path.resolve(__dirname);
-    const resolvedPath = path.resolve(filePath);
-    const relative = path.relative(resolvedRoot, resolvedPath);
-    if (relative.startsWith('..') || path.isAbsolute(relative)) {
-        throw new Error(`UI include escapes src/: ${filePath}`);
-    }
-    return resolvedPath;
-}
-
-function renderHtmlTemplate(filePath, stack = []) {
-    const resolvedPath = assertInsideUiRoot(filePath);
-    if (stack.includes(resolvedPath)) {
-        throw new Error(`Circular UI include: ${[...stack, resolvedPath].map(p => path.basename(p)).join(' -> ')}`);
-    }
-
-    const template = fs.readFileSync(resolvedPath, 'utf8');
-    const nextStack = [...stack, resolvedPath];
-    return template.replace(/<!--\s*@include\s+([^\s]+)\s*-->/g, (_match, includePath) => {
-        const resolvedInclude = path.resolve(path.dirname(resolvedPath), includePath);
-        assertInsideUiRoot(resolvedInclude);
-        return renderHtmlTemplate(resolvedInclude, nextStack);
-    });
-}
-
-function resolveUiAssetPath(relativePath) {
-    let decodedPath;
-    try {
-        decodedPath = decodeURIComponent(relativePath);
-    } catch (_err) {
-        return null;
-    }
-    if (decodedPath.includes('\0')) return null;
-
-    const resolvedRoot = path.resolve(UI_ROOT);
-    const resolvedPath = path.resolve(UI_ROOT, decodedPath);
-    const relative = path.relative(resolvedRoot, resolvedPath);
-    if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
-    return resolvedPath;
-}
 
 // Serve the new Vite/React SPA from web-dist/. Strips /v2 or /ui-v2
 // from the path, or rewrites /v2-assets/* → /assets/*.
@@ -327,70 +281,20 @@ const requestHandler = async (req, res) => {
     // a query string. Use `url.pathname` to match routes regardless of ?foo=bar.
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
-    // ── New SPA (Vite/React) ───────────────────────────────────────
-    // The SPA handles its own routing client-side. We serve it by default
-    // for all non-API GET requests, unless the user explicitly opts out
-    // via ?ui=v1.
+    // ── SPA (Vite/React) ──────────────────────────────────────────
+    // The React SPA handles its own routing client-side. We serve it for
+    // every non-API GET request.
     if (req.method === 'GET' && fs.existsSync(WEB_INDEX)) {
         const isApiRoute = url.pathname.startsWith('/api/') || url.pathname.startsWith('/v1/') || url.pathname.startsWith('/ui/');
-        const isOldUiOptIn = url.pathname === '/' && url.searchParams.get('ui') === 'v1';
-        const isStaticAsset = url.pathname === '/tailwind.generated.css' || url.pathname === '/favicon.ico' || url.pathname === '/app';
-        
-        if (!isApiRoute && !isOldUiOptIn && !isStaticAsset) {
+        if (!isApiRoute) {
             const isAsset = url.pathname.startsWith('/v2-assets/') || url.pathname.startsWith('/ui-v2-assets/') || url.pathname.includes('/assets/');
             return serveSpa(req, res, url, isAsset);
         }
     }
 
-    if (url.pathname === '/' && req.method === 'GET') {
-        // Fallback for explicit ?ui=v1 opt-in to serve the old dashboard
-        try {
-            res.writeHead(200, {
-                'Content-Type': 'text/html; charset=utf-8',
-                'Cache-Control': 'no-store'
-            });
-            return res.end(renderHtmlTemplate(UI_PATH));
-        } catch (err) {
-            console.error('[UI] Failed to render dashboard:', err.message);
-            res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
-            return res.end(`Failed to render UI: ${err.message}`);
-        }
-    }
-
-    if (req.url === '/app' && req.method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        return res.end(fs.readFileSync(APP_PATH, 'utf8'));
-    }
-
     if (req.url === '/favicon.ico' && req.method === 'GET') {
         res.writeHead(204);
         return res.end();
-    }
-
-    if (req.url === '/tailwind.generated.css' && req.method === 'GET') {
-        if (!fs.existsSync(TAILWIND_CSS_PATH)) {
-            res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-            return res.end('Generated Tailwind stylesheet is missing.');
-        }
-        res.writeHead(200, {
-            'Content-Type': 'text/css; charset=utf-8',
-            'Cache-Control': 'no-store'
-        });
-        return res.end(fs.readFileSync(TAILWIND_CSS_PATH, 'utf8'));
-    }
-
-    // ── Serve /ui/* static files (CSS, JS) ──
-    if (req.url.startsWith('/ui/') && (req.url.endsWith('.js') || req.url.endsWith('.css')) && req.method === 'GET') {
-        const relativePath = req.url.replace(/^\/ui\//, '');
-        const filePath = resolveUiAssetPath(relativePath);
-        if (filePath && fs.existsSync(filePath)) {
-            const ext = path.extname(filePath);
-            const mime = ext === '.css' ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8';
-            res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-store' });
-            return res.end(fs.readFileSync(filePath, 'utf8'));
-        }
-        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-        return res.end('Not Found');
     }
 
     if (await handleMemoryRoutes(req, res, req.url)) return;
@@ -643,220 +547,6 @@ const requestHandler = async (req, res) => {
             console.error('[Proxy /api/models] error:', e.message);
             return sendJson(res, { models: [] });
         }
-    }
-
-    // ── Chat Completions proxy for the web UI ──
-    if (req.url === '/api/chat' && req.method === 'POST') {
-        try {
-            const body = await readJsonBody(req);
-            const { sessionId, model, provider, messages, effort, workspacePath } = body;
-            
-            if (!model) {
-                return sendError(res, new Error('model is required'), 400);
-            }
-            if (!messages || !Array.isArray(messages)) {
-                return sendError(res, new Error('messages array is required'), 400);
-            }
-
-            // Resolve which provider to use
-            const { listProviders } = require('./providers/provider-registry');
-            const { getProviderConfig, getActiveProvider, setActiveProvider, saveProviderConfig, saveProfile } = require('./lib/config');
-            const providers = listProviders();
-            let resolvedProvider = null;
-            
-            if (provider) {
-                resolvedProvider = providers.find(p => p.name === provider);
-            }
-            
-            if (!resolvedProvider) {
-                const { getProviderHint } = require('./providers/provider-hints');
-                const hintedProvider = getProviderHint(model);
-                if (hintedProvider) {
-                    resolvedProvider = providers.find(p => p.name === hintedProvider);
-                }
-            }
-            
-            if (!resolvedProvider) {
-                const lowerModel = model.toLowerCase();
-                for (const p of providers) {
-                    if (p._modelProfiles && p._modelProfiles[model]) {
-                        resolvedProvider = p;
-                        break;
-                    }
-                }
-                if (!resolvedProvider) {
-                    // Prefer specific model-profile matches over wildcard matches.
-                    let wildcardMatch = null;
-                    let bestSpecificMatch = null;
-                    let bestSpecificLength = -1;
-                    for (const p of providers) {
-                        if (!p.getModelProfile) continue;
-                        const mp = p.getModelProfile(model);
-                        if (!mp) continue;
-                        if (p._modelProfiles && p._modelProfiles[model]) {
-                            resolvedProvider = p;
-                            break;
-                        }
-                        const lowerModel = model.toLowerCase();
-                        const matchingKeys = Object.keys(p._modelProfiles || {})
-                            .filter(k => k !== '*' && lowerModel.startsWith(k.toLowerCase()))
-                            .sort((a, b) => b.length - a.length);
-                        if (matchingKeys.length > 0) {
-                            const keyLength = matchingKeys[0].length;
-                            if (!bestSpecificMatch || keyLength > bestSpecificLength) {
-                                bestSpecificMatch = p;
-                                bestSpecificLength = keyLength;
-                            } else if (keyLength === bestSpecificLength) {
-                                bestSpecificMatch = p;
-                            }
-                        } else if (!wildcardMatch && p._modelProfiles && p._modelProfiles['*']) {
-                            wildcardMatch = p;
-                        }
-                    }
-                    if (!resolvedProvider) resolvedProvider = bestSpecificMatch || wildcardMatch;
-                }
-            }
-            if (!resolvedProvider) {
-                const lowerModel = model.toLowerCase();
-                for (const p of providers) {
-                    if (lowerModel.startsWith(p.name.toLowerCase()) || p.aliases.some(alias => lowerModel.startsWith(alias.toLowerCase()))) {
-                        resolvedProvider = p;
-                        break;
-                    }
-                }
-            }
-            if (!resolvedProvider) {
-                const lowerModel = model.toLowerCase();
-                if (lowerModel.startsWith('claude-')) resolvedProvider = providers.find(p => p.name === 'anthropic');
-                else if (lowerModel.startsWith('gpt-') || lowerModel.startsWith('o1') || lowerModel.startsWith('o3')) resolvedProvider = providers.find(p => p.name === 'openai-api');
-                else if (lowerModel.startsWith('gemini-')) resolvedProvider = providers.find(p => p.name === 'gemini');
-                else if (lowerModel.startsWith('deepseek-')) resolvedProvider = providers.find(p => p.name === 'deepseek');
-            }
-            if (!resolvedProvider) {
-                const active = getActiveProvider() || 'openai-api';
-                resolvedProvider = providers.find(p => p.name === active) || providers[0];
-            }
-
-            const pConfig = getProviderConfig(resolvedProvider.name) || {};
-            const apiKey = pConfig.apiKey || resolvedProvider.resolveApiKey();
-            const baseUrl = pConfig.baseUrl || resolvedProvider.resolveBaseUrl();
-
-            if (!apiKey) {
-                return sendError(res, new Error(`API Key for provider '${resolvedProvider.displayName}' is not configured.`), 400);
-            }
-
-            // Construct the fake request stream
-            const openaiPayload = {
-                model,
-                messages,
-                stream: true
-            };
-            const { resolveModelProfile } = require('./lib/model-profiles');
-            const globalProfile = resolveModelProfile(model);
-            const provProfile = resolvedProvider ? resolvedProvider.getModelProfile(model) : null;
-            const supportsThinking = !!(provProfile?.supportsThinking || globalProfile?.supportsThinking);
-            const supportsReasoning = !!(provProfile?.supportsReasoning || provProfile?.supportsThinking || globalProfile?.supportsReasoning || globalProfile?.supportsThinking);
-
-            if (effort) {
-                if (supportsThinking) {
-                    const budgetMap = { low: 1024, medium: 2048, high: 4096, max: 8192 };
-                    openaiPayload.thinking = { type: 'enabled', budget_tokens: budgetMap[effort] || 2048 };
-                    openaiPayload.temperature = 1;
-                } else if (supportsReasoning) {
-                    openaiPayload.reasoning_effort = effort === 'max' ? 'high' : effort;
-                }
-            }
-
-            const fakeReq = Readable.from([JSON.stringify(openaiPayload)]);
-            fakeReq.headers = {
-                ...req.headers,
-                'content-type': 'application/json'
-            };
-            fakeReq.augustClientId = req.augustClientId || 'web-ui';
-            fakeReq.workspacePath = workspacePath;
-            fakeReq.openAiCompatibleProfile = {
-                targetUrl: baseUrl,
-                apiKey,
-                currentModel: model,
-                _upstreamModel: model,
-            };
-
-            // Propagate close event to fakeReq to support cancellation
-            req.on('close', () => {
-                fakeReq.emit('close');
-            });
-
-            // Create a request ID for tracking
-            const reqId = startRequest({ clientType: 'codex', endpoint: '/api/chat', model: model, sessionId: sessionId || null });
-
-            // Create mockRes to translate standard OpenAI chunks back to simple chunks for web UI
-            const mockRes = {
-                headersSent: false,
-                writeHead(statusCode, headers) {
-                    res.writeHead(statusCode, {
-                        ...headers,
-                        'Content-Type': 'text/event-stream; charset=utf-8',
-                        'Cache-Control': 'no-cache',
-                        'Connection': 'keep-alive',
-                        'X-Accel-Buffering': 'no'
-                    });
-                    this.headersSent = true;
-                },
-                write(chunk) {
-                    const text = chunk.toString();
-                    const lines = text.split('\n');
-                    for (const line of lines) {
-                        const trimmed = line.trim();
-                        if (!trimmed) continue;
-                        if (trimmed.startsWith('data:')) {
-                            const dataStr = trimmed.slice(5).trim();
-                            if (dataStr === '[DONE]') {
-                                res.write('data: [DONE]\n\n');
-                                continue;
-                            }
-                            try {
-                                const parsed = JSON.parse(dataStr);
-                                const reasoning = parsed.choices?.[0]?.delta?.reasoning_content || parsed.choices?.[0]?.delta?.reasoning;
-                                const content = parsed.choices?.[0]?.delta?.content;
-                                if (reasoning || content) {
-                                    if (reasoning) {
-                                        res.write(`data: ${JSON.stringify({ type: 'thinking', content: reasoning })}\n\n`);
-                                    }
-                                    if (content) {
-                                        res.write(`data: ${JSON.stringify({ type: 'text', content: content })}\n\n`);
-                                    }
-                                } else {
-                                    res.write(`data: ${dataStr}\n\n`);
-                                }
-                            } catch (err) {
-                                res.write(`${line}\n\n`);
-                            }
-                        } else {
-                            res.write(`${line}\n`);
-                        }
-                    }
-                },
-                end(chunk) {
-                    if (chunk) {
-                        this.write(chunk);
-                    }
-                    res.end();
-                }
-            };
-
-            // Delegate to the OpenAI adapter
-            await openaiAdapter.handleChatCompletions(fakeReq, mockRes, '/v1/chat/completions', reqId);
-        } catch (e) {
-            console.error('[Proxy /api/chat] Error:', e);
-            if (!res.headersSent) {
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: e.message }));
-            } else {
-                res.write(`data: ${JSON.stringify({ type: 'text', content: `\n\n⚠️ Error: ${e.message}` })}\n`);
-                res.end();
-            }
-        }
-        return;
     }
 
     if (req.url === '/ui/compatibility' && req.method === 'GET') {
@@ -2204,12 +1894,6 @@ server.on('upgrade', (req, socket, head) => {
         const terminalId = url.searchParams.get('id');
         wss.handleUpgrade(req, socket, head, (ws) => {
             terminalService.handleTerminalConnection(ws, terminalId);
-        });
-        return;
-    }
-    if (url.pathname === '/api/chat/ws') {
-        wss.handleUpgrade(req, socket, head, (ws) => {
-            chatWsService.handleChatConnection(ws);
         });
         return;
     }

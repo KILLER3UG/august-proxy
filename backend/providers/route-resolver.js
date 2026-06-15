@@ -2,7 +2,7 @@
 /* Resolves which provider + baseUrl + apiKey + apiMode should serve a
  * given model id. This mirrors the cascade already proven in the /api/chat
  * route (backend/index.js) so that the OpenAI/Anthropic-compatible
- * /v1/ endpoints route the same way the web chat does — e.g. a request
+ * /v1/ endpoints route consistently — e.g. a request
  * for `deepseek-chat` from Claude Code (/v1/messages) routes to the
  * deepseek provider instead of the claude profile's targetUrl.
  *

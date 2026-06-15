@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { dataPath } = require('../../lib/data-paths');
 
 function getSqliteMemoryFile() {
-    return process.env.AUGUST_BRAIN_SQLITE_FILE || path.join(__dirname, '..', '..', '..', 'data', 'august_brain.sqlite');
+    return process.env.AUGUST_BRAIN_SQLITE_FILE || dataPath('august_brain.sqlite');
 }
 
 const SQLITE_TIMEOUT_MS = 10000;
