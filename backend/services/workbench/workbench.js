@@ -1855,6 +1855,13 @@ function toOpenAiMessages(messages) {
 
 function openAiMessageToAnthropicContent(message = {}) {
     const content = [];
+    // Capture reasoning/thinking content from OpenAI-compatible providers.
+    // DeepSeek exposes it as `reasoning_content`; other providers use
+    // `thinking` or `reasoning`. Persisted as a `thinking` block so the
+    // frontend can render it; the next round-trip via `toOpenAiMessage`
+    // drops it (providers don't consume thinking in history).
+    const reasoning = message.reasoning_content ?? message.thinking ?? message.reasoning;
+    if (reasoning) content.push({ type: 'thinking', thinking: String(reasoning) });
     if (message.content) content.push({ type: 'text', text: String(message.content) });
     (message.tool_calls || []).forEach(toolCall => {
         let input = {};
@@ -2228,6 +2235,7 @@ async function callOpenAiWorkbenchModelStream(session, emit) {
         }
 
         let textBuffer = '';
+        let thinkingBuffer = '';
         const toolCallAccum = {};
 
         await parseOpenAiStream(response, (eventType, data) => {
@@ -2235,6 +2243,16 @@ async function callOpenAiWorkbenchModelStream(session, emit) {
             const choice = data.choices?.[0];
             if (!choice) return;
             const delta = choice.delta || {};
+
+            // Capture reasoning/thinking deltas in real time. DeepSeek exposes
+            // this as `reasoning_content`; other providers use `thinking` or
+            // `reasoning`. Emit each delta so the frontend shows live thinking,
+            // and buffer the full text for the persisted content block.
+            const reasoningDelta = delta.reasoning_content ?? delta.thinking ?? delta.reasoning;
+            if (reasoningDelta) {
+                thinkingBuffer += reasoningDelta;
+                safeEmit(emit, 'thinking', { content: reasoningDelta });
+            }
 
             if (delta.content) textBuffer += delta.content;
 
@@ -2263,6 +2281,7 @@ async function callOpenAiWorkbenchModelStream(session, emit) {
         });
 
         const content = [];
+        if (thinkingBuffer) content.push({ type: 'thinking', thinking: thinkingBuffer });
         if (textBuffer) content.push({ type: 'text', text: textBuffer });
 
         const toolUses = [];
