@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Bot, CheckCircle2, FileText, FolderOpen, ShieldAlert, Wrench } from 'lucide-react';
+import { CheckCircle2, FileText, FolderOpen, ShieldAlert, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -84,23 +84,11 @@ function PlanList({ title, icon, items }: { title: string; icon: ReactNode; item
   );
 }
 
-export function WorkbenchStatusPill({ session }: { session: WorkbenchSession | null }) {
-  if (!session) return null;
-
-  return (
-    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
-      <Bot className="size-3" />
-      <span>{session.agentRole || session.agentId}</span>
-      <span className="text-muted-foreground/40">·</span>
-      <span>{session.provider}</span>
-      {session.approved && (
-        <>
-          <span className="text-muted-foreground/40">·</span>
-          <span className="text-emerald-500">approved</span>
-        </>
-      )}
-    </div>
-  );
+export function WorkbenchStatusPill({ session: _session }: { session: WorkbenchSession | null }) {
+  // The "Primary Builder · claude" status pill was removed from the chat
+  // header. The component is preserved as a no-op so the existing call
+  // site in ChatThread.tsx doesn't need to be touched.
+  return null;
 }
 
 export function TodoSummary({ todos }: { todos?: WorkbenchTodo[] }) {

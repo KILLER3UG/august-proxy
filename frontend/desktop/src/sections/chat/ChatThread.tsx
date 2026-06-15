@@ -259,7 +259,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'plan';
   });
   const [workbenchBtw, setWorkbenchBtw] = useState<WorkbenchBtwResult | null>(null);
-  const [workbenchBusy, setWorkbenchBusy] = useState(false);
 
   const toggleModelVisibility = (modelId: string) => {
     setHiddenModels(prev => {
@@ -542,7 +541,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (!chatRuntime.canStartTurn(turnSessionId)) return;
 
     setSessionStatus(turnSessionId, 'working');
-    setWorkbenchBusy(true);
 
     const assistantMsgId = `a${Date.now()}`;
     const turn = chatRuntime.startTurn({
@@ -582,7 +580,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const finalize = (status: 'done' | 'error' | 'aborted') => {
       if (finished) return;
       finished = true;
-      setWorkbenchBusy(false);
       updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
         msg.id === assistantMsgId ? {
           ...msg,
@@ -1250,18 +1247,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 todos: [],
               } : null);
               if (!active) return;
-              setWorkbenchBusy(true);
-              try {
-                const result = await answerWorkbenchBtw({
-                  sessionId: active.id,
-                  question,
-                  provider: active.provider === "codex" ? "codex" : "claude",
-                  agentId: active.agentId,
-                });
-                setWorkbenchBtw(result);
-              } finally {
-                setWorkbenchBusy(false);
-              }
+              const result = await answerWorkbenchBtw({
+                sessionId: active.id,
+                question,
+                provider: active.provider === "codex" ? "codex" : "claude",
+                agentId: active.agentId,
+              });
+              setWorkbenchBtw(result);
             }}
             onClose={() => setWorkbenchBtw(null)}
           />
@@ -1306,7 +1298,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   <div className="max-w-3xl mx-auto px-6 py-8 space-y-5 relative">
                     <div className="flex items-center justify-between gap-3">
                       <WorkbenchStatusPill session={workbenchSession} />
-                      {workbenchBusy && <span className="text-[11px] text-muted-foreground font-mono">August is working…</span>}
                     </div>
                     <WorkbenchPlanPanel
                       session={workbenchSession}
