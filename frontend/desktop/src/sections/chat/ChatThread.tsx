@@ -1119,7 +1119,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           <div className="flex items-center justify-between px-1.5 pb-1.5">
             <div className="flex items-center gap-1.5">
               <div className="relative">
-                <ToolBtn Icon={Plus} label="Composer actions" onClick={() => {
+                <ToolBtn Icon={Plus} label="Composer actions" className="h-8 w-8" onClick={() => {
                   setShowComposerActionsDropdown((value) => !value);
                   setShowToolsDropdown(false);
                   setShowCommandsDropdown(false);
@@ -1968,12 +1968,13 @@ function ChatCheckpoints({ messages, scrollRef }: {
   );
 }
 
-function ToolBtn({ Icon, label, onClick }: { Icon: any; label: string; onClick?: () => void }) {
+function ToolBtn({ Icon, label, onClick, className }: { Icon: any; label: string; onClick?: () => void; className?: string }) {
   return (
     <button
       onClick={onClick}
+      className={cn('h-8 w-8 p-0 rounded-lg hover:bg-muted hover:text-foreground transition text-muted-foreground', className)}
+      title={label}
       aria-label={label}
-      className="p-2 hover:bg-accent rounded-md transition text-muted-foreground hover:text-foreground"
     >
       <Icon className="size-3.5" />
     </button>
@@ -2064,7 +2065,7 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
       <button
         onClick={() => setOpen(!open)}
         className={cn(
-          'flex items-center gap-1.5 text-sm font-sans outline-none cursor-pointer shrink-0',
+          'flex items-center gap-1.5 text-xs font-sans outline-none cursor-pointer shrink-0 h-8',
           'text-muted-foreground hover:text-foreground transition-all duration-200',
           'bg-muted/30 hover:bg-muted/50 rounded-md px-2 py-1',
         )}
@@ -2269,7 +2270,7 @@ function EffortDropdown({ value, onChange }: {
       <button
         onClick={() => setOpen(!open)}
         className={cn(
-          'flex items-center gap-1.5 text-sm outline-none cursor-pointer',
+          'flex items-center gap-1.5 text-xs outline-none cursor-pointer h-8',
           'text-muted-foreground hover:text-foreground transition-all duration-200',
           'bg-muted/30 hover:bg-muted/50 rounded-md px-2 py-1',
         )}

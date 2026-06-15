@@ -68,7 +68,7 @@ export function WorkbenchModeSelector({ selectedMode, onChange, className }: Wor
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="px-2 py-1 rounded-md text-[11px] bg-muted hover:bg-muted/70 text-foreground border border-border/50 capitalize"
+        className="h-8 px-2 py-1 rounded-md text-[11px] bg-muted hover:bg-muted/70 text-foreground border border-border/50 capitalize"
         title={guard.description}
       >
         {guard.label}
