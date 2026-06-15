@@ -37,6 +37,7 @@ const manifestPath = join(releaseDir, 'august-desktop-manifest.json');
 
 const args = new Set(process.argv.slice(2));
 const publish = args.has('--publish');
+const buildTauri = args.has('--tauri');
 const version = getVersionFromArgs() || getBumpFromArgs()
     ? getBumpFromArgs()
         ? bumpVersion(await readVersion(), getBumpFromArgs())
@@ -142,11 +143,24 @@ async function stageBackend() {
     await copyDir(nodeModules, join(out, 'node_modules'));
 }
 
+async function buildTauriApp() {
+    if (!buildTauri) return;
+    run('npm', ['run', 'tauri', '-w', 'frontend/desktop', 'build']);
+
+    const tauriBundleDir = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
+    const latest = join(tauriBundleDir, 'latest.json');
+    if (existsSync(latest)) {
+        await copyFile(latest, join(releaseDir, 'latest.json'));
+        console.log(`[release] copied ${latest}`);
+    }
+}
+
 async function main() {
     await mkdir(releaseDir, { recursive: true });
     await mkdir(stagingDir, { recursive: true });
 
     await buildWeb();
+    await buildTauriApp();
     await stageBackend();
 
     const webZip = join(releaseDir, `web-${version}.zip`);
@@ -184,6 +198,8 @@ async function main() {
         if (existsSync(webZip)) ghArgs.push(webZip);
         if (existsSync(backendZip)) ghArgs.push(backendZip);
         if (existsSync(manifestPath)) ghArgs.push(manifestPath);
+        const tauriLatest = join(releaseDir, 'latest.json');
+        if (existsSync(tauriLatest)) ghArgs.push(tauriLatest);
         run('gh', ghArgs);
     }
 }
