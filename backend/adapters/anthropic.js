@@ -2491,6 +2491,12 @@ async function handleMessages(req, res, cleanPath, reqId) {
                     if (routed && routed.baseUrl && routed.apiKey && routed.name !== 'anthropic') {
                         cfg.targetUrl = routed.baseUrl;
                         cfg.apiKey = routed.apiKey;
+                        // Send the actual requested model upstream — not the claude
+                        // profile's _upstreamModel. Without this, a Claude Code
+                        // request for deepseek-v4 would reach opencode-zen as the
+                        // wrong model (e.g. deepseek-v4-flash) and fail/abort.
+                        cfg._upstreamModel = requestedRaw;
+                        cfg.currentModel = requestedRaw;
                         console.log(`[Proxy Model Route]: ${requestedRaw} -> provider ${routed.name} (${routed.baseUrl})`);
                     }
                 } catch (e) {
@@ -2500,7 +2506,7 @@ async function handleMessages(req, res, cleanPath, reqId) {
 
             const upstreamModel = shouldPreserveClaudeAliasForAnthropicUpstream(requestModel)
                 ? requestModel
-                : getClaudeBackendModel(cfg, aReq.model);
+                : (cfg._upstreamModel || getClaudeBackendModel(cfg, aReq.model));
             if (cfg.publicModelAlias && upstreamModel) {
                 console.log(`[Proxy Alias Route]: ${cfg.publicModelAlias} -> ${upstreamModel}`);
             }

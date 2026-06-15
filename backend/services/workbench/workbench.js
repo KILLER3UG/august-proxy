@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 const { getProfile } = require('../../lib/config');
+const { resolveActiveProvider } = require('../../providers/provider-resolver');
 const { buildSystemPromptText } = require('../memory/context-builder');
 const semanticMemory = require('../memory/semantic-memory');
 const hostAgent = require('../../lib/host-agent');
@@ -37,6 +38,47 @@ const {
 } = require('../tools/agent-registry');
 const { renderTeamSkillsForSystem } = require('../tools/skills');
 const { getTeamSkills } = require('../tools/skills');
+
+/**
+ * Resolve the provider profile for a Workbench turn.
+ *
+ * The proxy no longer assumes a "claude"/"codex" profile exists — providers
+ * are configured by name (e.g. opencode-zen) under the active provider. This
+ * resolves the active provider first (the real source of targetUrl/apiKey),
+ * then falls back to the legacy claude/codex profile. `provider` is the
+ * Workbench transport hint ('claude' | 'codex') and only selects the API
+ * *format* (Anthropic Messages vs OpenAI Chat), not which upstream to hit.
+ */
+function resolveWorkbenchProfile(provider) {
+    // 1. Try the active provider (real config: targetUrl + apiKey + model).
+    try {
+        const resolved = resolveActiveProvider();
+        if (resolved && resolved.baseUrl && resolved.apiKey) {
+            return {
+                targetUrl: resolved.baseUrl,
+                apiKey: resolved.apiKey,
+                currentModel: resolved.model || resolved.defaultModel,
+                _upstreamModel: resolved.model || resolved.defaultModel,
+                contextWindow: resolved.contextWindow,
+                providerName: resolved.name,
+                // Preserve any alias/generation defaults from the resolved profile.
+                ...(resolved.profile && typeof resolved.profile === 'object' ? {
+                    inputCostPer1M: resolved.inputCostPer1M,
+                    outputCostPer1M: resolved.outputCostPer1M,
+                } : {}),
+            };
+        }
+    } catch (e) {
+        console.warn('[Workbench] resolveActiveProvider failed, falling back to legacy profile:', e.message);
+    }
+
+    // 2. Fall back to the legacy claude/codex profile shape.
+    const legacy = getProfile(provider) || {};
+    if (!legacy.targetUrl) {
+        throw new Error(`${provider === 'codex' ? 'Codex' : 'Claude'} profile target URL is missing — set an active provider with a baseUrl and API key.`);
+    }
+    return legacy;
+}
 
 const sessions = new Map();
 const WORKBENCH_SESSIONS_FILE = path.join(__dirname, '..', '..', '..', 'data', 'august_workbench_sessions.json');
@@ -1639,8 +1681,7 @@ async function callWorkbenchModelStream(session, emit) {
 }
 
 async function callAnthropicWorkbenchModel(session) {
-    const profile = getProfile('claude') || {};
-    if (!profile.targetUrl) throw new Error('Claude profile target URL is missing.');
+    const profile = resolveWorkbenchProfile('claude');
     const model = profile._upstreamModel || profile.currentModel || 'claude-opus-4-6';
 
     const events = [];
@@ -1751,7 +1792,7 @@ function normalizeOpenAiTargetUrl(profile) {
 }
 
 async function callOpenAiWorkbenchModel(session) {
-    const profile = getProfile('codex') || {};
+    const profile = resolveWorkbenchProfile('codex');
     const targetUrl = normalizeOpenAiTargetUrl(profile);
     if (!targetUrl) throw new Error('Codex profile target URL is missing.');
     const model = profile._upstreamModel || profile.currentModel || 'gpt-4o';
@@ -1976,8 +2017,7 @@ async function parseOpenAiStream(response, onData) {
 }
 
 async function callAnthropicWorkbenchModelStream(session, emit) {
-    const profile = getProfile('claude') || {};
-    if (!profile.targetUrl) throw new Error('Claude profile target URL is missing.');
+    const profile = resolveWorkbenchProfile('claude');
     const model = profile._upstreamModel || profile.currentModel || 'claude-opus-4-6';
 
     let loops = 0;
@@ -2071,7 +2111,7 @@ async function callAnthropicWorkbenchModelStream(session, emit) {
 }
 
 async function callOpenAiWorkbenchModelStream(session, emit) {
-    const profile = getProfile('codex') || {};
+    const profile = resolveWorkbenchProfile('codex');
     const targetUrl = normalizeOpenAiTargetUrl(profile);
     if (!targetUrl) throw new Error('Codex profile target URL is missing.');
     const model = profile._upstreamModel || profile.currentModel || 'gpt-4o';
@@ -2249,7 +2289,12 @@ function deleteWorkbenchSession(sessionId) {
 
 async function generateSessionTitle(session, firstMessage, emit) {
     try {
-        const profile = getProfile(session.provider === 'codex' ? 'codex' : 'claude') || getProfile('claude') || {};
+        let profile;
+        try {
+            profile = resolveWorkbenchProfile(session.provider === 'codex' ? 'codex' : 'claude');
+        } catch {
+            profile = {};
+        }
         if (!profile.targetUrl || !profile.apiKey) return;
         const prompt = `Summarize this request as a short title:\n\n<request>${firstMessage}</request>\n\nOutput only the title, nothing else, no quotes.`;
         

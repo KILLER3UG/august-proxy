@@ -15,6 +15,7 @@ import {
   isFreeModelId,
   type CatalogModel,
   type ModelAlias,
+  type ModelCostEstimate,
   type AggregatedModel,
 } from '@/api/backend-ui';
 
@@ -34,7 +35,7 @@ export function Models() {
     <div className="p-6 space-y-4 flex flex-col h-full">
       <SectionHeader
         title="Models"
-        subtitle="Model catalog, capabilities, aliases, and cost estimates."
+        subtitle="All models from every configured provider. Models are listed under the provider that serves them — e.g. deepseek/kimi models appear under opencode-zen when served through it."
         actions={
           <div className="flex items-center gap-1 text-[10px]">
             {TABS.map((t) => (
@@ -219,7 +220,7 @@ function CostTab() {
   const [inputTokens, setInputTokens] = useState('1000');
   const [outputTokens, setOutputTokens] = useState('500');
 
-  const estimate = useMutation({
+  const estimate = useMutation<ModelCostEstimate>({
     mutationFn: () =>
       estimateModelCost(modelId, Number(inputTokens) || 0, Number(outputTokens) || 0),
   });
@@ -274,10 +275,9 @@ function CostTab() {
               <p className="text-sm text-destructive">{estimate.data.error}</p>
             ) : (
               <>
-                <Row label="Input cost" value={`$${(estimate.data.inputCost || 0).toFixed(6)}`} />
-                <Row label="Output cost" value={`$${(estimate.data.outputCost || 0).toFixed(6)}`} />
+                <Row label="Model" value={estimate.data.model} />
                 <div className="border-t border-border pt-2">
-                  <Row label="Total" value={`$${(estimate.data.totalCost || 0).toFixed(6)}`} strong />
+                  <Row label="Total" value={`$${(estimate.data.cost || 0).toFixed(6)}`} strong />
                 </div>
               </>
             )}
