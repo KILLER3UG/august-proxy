@@ -19,9 +19,10 @@ import { tmpdir } from 'node:os';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
-const outDir = resolve(root, 'frontend/desktop/src-tauri/binaries/node');
+const outDir = resolve(root, 'frontend/desktop/src-tauri/binaries');
 
 const args = new Set(process.argv.slice(2));
+const targetArg = [...args].find(a => a.startsWith('--target='))?.split('=')[1];
 const allTargets = args.has('--all');
 const explicitVersion = [...args].find(a => a.startsWith('--version='))?.split('=')[1]
     || process.env.AUGUST_NODE_VERSION
@@ -53,6 +54,20 @@ function allTargetsList() {
         { platform: 'linux', arch: 'x64', triple: tripleForLinuxX64() },
         { platform: 'linux', arch: 'arm64', triple: tripleForLinuxArm64() }
     ];
+}
+
+function targetFromArg(value) {
+    const [platform, arch] = value.split('-');
+    if (!platform || !arch) return null;
+    const triple = (() => {
+        if (platform === 'win' && arch === 'x64') return tripleForWindowsX64();
+        if (platform === 'darwin' && arch === 'x64') return tripleForMacX64();
+        if (platform === 'darwin' && arch === 'arm64') return tripleForMacArm64();
+        if (platform === 'linux' && arch === 'x64') return tripleForLinuxX64();
+        if (platform === 'linux' && arch === 'arm64') return tripleForLinuxArm64();
+        return null;
+    })();
+    return triple ? { platform, arch, triple } : null;
 }
 
 function archiveName(target, version) {
@@ -88,7 +103,8 @@ async function download(url, destination) {
 
 function extract(archivePath, destDir) {
     return new Promise((resolveExtract, rejectExtract) => {
-        const child = process.platform === 'win32'
+        const isZip = archivePath.toLowerCase().endsWith('.zip');
+        const child = isZip && process.platform === 'win32'
             ? spawn('powershell.exe', [
                 '-NoProfile',
                 '-ExecutionPolicy',
@@ -129,7 +145,11 @@ async function fetchAndStage(target, version) {
     await rm(stage, { recursive: true, force: true });
 }
 
-const targets = allTargets ? allTargetsList() : targetsForHost();
+const targets = targetArg
+    ? [targetFromArg(targetArg)].filter(Boolean)
+    : allTargets
+        ? allTargetsList()
+        : targetsForHost();
 await mkdir(outDir, { recursive: true });
 
 await writeFile(join(outDir, 'README.md'), `# Bundled Node binaries

@@ -32,7 +32,7 @@ import type { WorkbenchBtwResult, WorkbenchSession } from '@/types/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import { WorkbenchModeSelector, WORKBENCH_GUARD_MODES, applyWorkbenchGuardMode, type WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
 import { ContextRing } from './ChatComposer';
-import { TodoSummary, WorkbenchPlanPanel, WorkbenchStatusPill } from '@/components/chat/WorkbenchPlanPanel';
+import { TodoSummary, WorkbenchPlanPanel } from '@/components/chat/WorkbenchPlanPanel';
 
 export const chatRuntime = createChatRuntime();
 let visibleSessionId: string | null = null;
@@ -1400,9 +1400,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   style={{ overflowAnchor: 'none' }}
                 >
                   <div className="max-w-3xl mx-auto px-6 py-8 space-y-5 relative">
-                    <div className="flex items-center justify-between gap-3">
-                      <WorkbenchStatusPill session={workbenchSession} />
-                    </div>
                     <WorkbenchPlanPanel
                       session={workbenchSession}
                       onApprove={async () => {
