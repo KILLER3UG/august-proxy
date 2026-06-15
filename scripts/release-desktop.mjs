@@ -19,16 +19,14 @@
 // The generated manifest is intended for the custom sidecar updater in
 // backend/services/desktop/asset-updater.js.
 
-import { mkdir, writeFile, readFile, copyFile, rename, rm, stat, readdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { join, resolve, relative, basename } from 'node:path';
+import { mkdir, writeFile, readFile, copyFile, rm } from 'node:fs/promises';
+import { existsSync, createReadStream } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { tmpdir } from 'node:os';
 
 const root = resolve(process.cwd());
 const releaseDir = resolve(root, 'releases/desktop');
-const stagingDir = resolve(releaseDir, 'staging');
 const webDist = resolve(root, 'web-dist');
 const backendDir = resolve(root, 'backend');
 const nodeModules = resolve(root, 'node_modules');
@@ -68,29 +66,19 @@ async function readVersion() {
 }
 
 function run(command, args, options = {}) {
+    if (process.platform === 'win32' && !command.includes('.')) {
+        command = `${command}.cmd`;
+    }
+
     const result = spawnSync(command, args, {
         stdio: 'inherit',
         cwd: options.cwd || root,
-        env: { ...process.env, ...(options.env || {}) }
+        env: { ...process.env, ...(options.env || {}) },
+        shell: process.platform === 'win32' && command.endsWith('.cmd')
     });
     if (result.status !== 0) {
-        throw new Error(`${command} ${args.join(' ')} exited with ${result.status}`);
-    }
-}
-
-async function copyDir(src, dest, filter = () => true) {
-    await mkdir(dest, { recursive: true });
-    const entries = await readdir(src, { withFileTypes: true });
-    for (const entry of entries) {
-        const srcPath = join(src, entry.name);
-        const destPath = join(dest, entry.name);
-        if (!filter(entry.name, srcPath)) continue;
-        if (entry.isDirectory()) {
-            await copyDir(srcPath, destPath, filter);
-        } else if (entry.isFile()) {
-            await mkdir(dirname(destPath), { recursive: true });
-            await copyFile(srcPath, destPath);
-        }
+        const exit = result.signal || result.status || 'unknown';
+        throw new Error(`${command} ${args.join(' ')} exited with ${exit}`);
     }
 }
 
@@ -98,29 +86,90 @@ function dirname(path) {
     return path.split(/[\\/]/).slice(0, -1).join('/') || '.';
 }
 
+function powershellZip(script, env = {}) {
+    run('powershell.exe', [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        script
+    ], { env });
+}
+
 function sha256(filePath) {
     return new Promise((resolve, reject) => {
         const hash = createHash('sha256');
-        const stream = require('node:fs').createReadStream(filePath);
+        const stream = createReadStream(filePath);
         stream.on('data', chunk => hash.update(chunk));
         stream.on('error', reject);
         stream.on('end', () => resolve(hash.digest('hex')));
     });
 }
 
-async function zipFolder(inputDir, outputFile) {
+async function zipFolder(inputDir, outputFile, prefix = '') {
     await mkdir(dirname(outputFile), { recursive: true });
     await rm(outputFile, { force: true });
     if (process.platform === 'win32') {
-        run('powershell.exe', [
-            '-NoProfile',
-            '-ExecutionPolicy',
-            'Bypass',
-            '-Command',
-            `Compress-Archive -Path "${inputDir}" -DestinationPath "${outputFile}" -Force`
-        ], { shell: true });
+        powershellZip(`
+\$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+\$out = \$env:AUGUST_ZIP_OUTPUT
+\$inputDir = \$env:AUGUST_ZIP_INPUT
+\$prefix = \$env:AUGUST_ZIP_PREFIX
+\$zip = [System.IO.Compression.ZipFile]::Open(\$out, 'Create')
+try {
+    \$compression = [System.IO.Compression.CompressionLevel]::Optimal
+    \$sourceRoot = (Resolve-Path -LiteralPath \$inputDir).Path.TrimEnd('\\','/') + '\\'
+    Get-ChildItem -LiteralPath \$inputDir -Recurse -File | ForEach-Object {
+        \$rel = \$_.FullName.Substring(\$sourceRoot.Length).Replace('\\','/')
+        \$entryName = if (\$prefix) { "\$prefix/\$rel" } else { \$rel }
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(\$zip, \$_.FullName, \$entryName, \$compression) | Out-Null
+    }
+} finally {
+    \$zip.Dispose()
+}
+`, {
+            AUGUST_ZIP_OUTPUT: outputFile,
+            AUGUST_ZIP_INPUT: inputDir,
+            AUGUST_ZIP_PREFIX: prefix
+        });
     } else {
-        run('tar', ['-a', '-cf', outputFile, '-C', dirname(inputDir), basename(inputDir)]);
+        run('tar', ['-a', '-cf', outputFile, '-C', inputDir, '.']);
+    }
+}
+
+async function zipBackend(outputFile) {
+    await mkdir(dirname(outputFile), { recursive: true });
+    await rm(outputFile, { force: true });
+    if (process.platform === 'win32') {
+        powershellZip(`
+\$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+\$out = \$env:AUGUST_ZIP_OUTPUT
+\$backend = \$env:AUGUST_ZIP_BACKEND
+\$nodeModules = \$env:AUGUST_ZIP_NODE_MODULES
+\$zip = [System.IO.Compression.ZipFile]::Open(\$out, 'Create')
+function Add-Directory(\$source, \$prefix) {
+    \$sourceRoot = (Resolve-Path -LiteralPath \$source).Path.TrimEnd('\\','/') + '\\'
+    Get-ChildItem -LiteralPath \$source -Recurse -File | ForEach-Object {
+        \$rel = \$_.FullName.Substring(\$sourceRoot.Length).Replace('\\','/')
+        \$entryName = "\$prefix/\$rel".Replace('\\','/')
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(\$zip, \$_.FullName, \$entryName, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+    }
+}
+try {
+    Add-Directory \$backend 'backend'
+    Add-Directory \$nodeModules 'backend/node_modules'
+} finally {
+    \$zip.Dispose()
+}
+`, {
+            AUGUST_ZIP_OUTPUT: outputFile,
+            AUGUST_ZIP_BACKEND: backendDir,
+            AUGUST_ZIP_NODE_MODULES: nodeModules
+        });
+    } else {
+        run('tar', ['-a', '-cf', outputFile, '-C', root, 'backend', 'node_modules']);
     }
 }
 
@@ -161,17 +210,15 @@ async function main() {
     }
 
     await mkdir(releaseDir, { recursive: true });
-    await mkdir(stagingDir, { recursive: true });
-
-    await buildWeb();
-    await buildTauriApp();
-    await stageBackend();
 
     const webZip = join(releaseDir, `web-${version}.zip`);
     const backendZip = join(releaseDir, `backend-${version}.zip`);
 
+    await buildWeb();
+    await buildTauriApp();
+    await zipBackend(backendZip);
+
     await zipFolder(webDist, webZip);
-    await zipFolder(join(stagingDir, 'backend'), backendZip);
 
     const webSha = await sha256(webZip);
     const backendSha = await sha256(backendZip);
