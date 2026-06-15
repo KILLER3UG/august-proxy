@@ -1209,7 +1209,17 @@ async function executeSubAgent(session, args, toolContext = {}) {
                 ? openAiMessageToAnthropicContent(data.choices?.[0]?.message || {})
                 : (Array.isArray(data.content) ? data.content : []);
 
-            subMessages.push({ role: 'assistant', content });
+            // When the next iteration will go back to an OpenAI-format provider,
+            // re-encode the assistant turn (and tool results below) into the
+            // OpenAI shape; otherwise subMessages would carry Anthropic-shaped
+            // content blocks (tool_use / tool_result) into a request the
+            // OpenAI provider cannot parse, triggering the same
+            // "content or tool_calls must be set" 400.
+            if (useOpenAi) {
+                toOpenAiMessage({ role: 'assistant', content }).forEach(m => subMessages.push(m));
+            } else {
+                subMessages.push({ role: 'assistant', content });
+            }
             const text = extractAssistantText(content);
             if (text) {
                 subResult = text;
@@ -1232,7 +1242,11 @@ async function executeSubAgent(session, args, toolContext = {}) {
                 depth: depth + 1
             });
             appendAgentJobToolResult(job.id, 'tool_results', results, { loop: subLoops });
-            subMessages.push({ role: 'user', content: results });
+            if (useOpenAi) {
+                toOpenAiMessage({ role: 'user', content: results }).forEach(m => subMessages.push(m));
+            } else {
+                subMessages.push({ role: 'user', content: results });
+            }
         } catch (e) {
             failAgentJob(job.id, e, { loops: subLoops });
             return { status: 'error', jobId: job.id, message: `Sub-agent error: ${e.message}` };
@@ -1797,38 +1811,46 @@ async function callAnthropicWorkbenchModel(session) {
     };
 }
 
+// Convert a single Anthropic-shaped session message into one or more
+// OpenAI-shaped chat messages. Returns [] for assistant turns that have no
+// text and no tool_use blocks, so strict OpenAI-compatible providers (e.g.
+// DeepSeek) do not see an assistant turn with `content: null` and no
+// `tool_calls` (the "content or tool_calls must be set" 400).
+function toOpenAiMessage(message) {
+    if (message.role === 'user' && typeof message.content === 'string') {
+        return [{ role: 'user', content: message.content }];
+    }
+    if (message.role === 'assistant' && Array.isArray(message.content)) {
+        const text = extractAssistantText(message.content);
+        const toolUses = message.content.filter(block => block.type === 'tool_use');
+        if (!text && !toolUses.length) return []; // drop empty assistant turns
+        return [{
+            role: 'assistant',
+            content: text || null,
+            tool_calls: toolUses.length ? toolUses.map(toolUse => ({
+                id: toolUse.id,
+                type: 'function',
+                function: {
+                    name: toolUse.name,
+                    arguments: JSON.stringify(toolUse.input || {})
+                }
+            })) : undefined
+        }];
+    }
+    if (message.role === 'user' && Array.isArray(message.content)) {
+        return message.content
+            .filter(block => block.type === 'tool_result')
+            .map(block => ({
+                role: 'tool',
+                tool_call_id: block.tool_use_id,
+                content: block.content || ''
+            }));
+    }
+    return [];
+}
+
 function toOpenAiMessages(messages) {
-    return messages.flatMap(message => {
-        if (message.role === 'user' && typeof message.content === 'string') {
-            return [{ role: 'user', content: message.content }];
-        }
-        if (message.role === 'assistant' && Array.isArray(message.content)) {
-            const text = extractAssistantText(message.content);
-            const toolUses = message.content.filter(block => block.type === 'tool_use');
-            return [{
-                role: 'assistant',
-                content: text || null,
-                tool_calls: toolUses.length ? toolUses.map(toolUse => ({
-                    id: toolUse.id,
-                    type: 'function',
-                    function: {
-                        name: toolUse.name,
-                        arguments: JSON.stringify(toolUse.input || {})
-                    }
-                })) : undefined
-            }];
-        }
-        if (message.role === 'user' && Array.isArray(message.content)) {
-            return message.content
-                .filter(block => block.type === 'tool_result')
-                .map(block => ({
-                    role: 'tool',
-                    tool_call_id: block.tool_use_id,
-                    content: block.content || ''
-                }));
-        }
-        return [];
-    });
+    return messages.flatMap(toOpenAiMessage);
 }
 
 function openAiMessageToAnthropicContent(message = {}) {
@@ -1881,7 +1903,13 @@ async function callOpenAiWorkbenchModel(session) {
         const data = JSON.parse(raw);
         const message = data.choices?.[0]?.message || {};
         const content = openAiMessageToAnthropicContent(message);
-        session.messages.push({ role: 'assistant', content });
+        // Skip persisting an empty assistant turn — strict OpenAI-compatible
+        // providers (e.g. DeepSeek) reject assistant messages with
+        // `content: null` and no `tool_calls`. Empty `content` here means the
+        // upstream returned no `message.content` and no `message.tool_calls`.
+        if (content.length) {
+            session.messages.push({ role: 'assistant', content });
+        }
         extractAndSyncTodos(session);
 
         content.forEach(block => {
@@ -2248,6 +2276,14 @@ async function callOpenAiWorkbenchModelStream(session, emit) {
             toolUses.push(tu);
         }
 
+        // Skip persisting an empty assistant turn — strict OpenAI-compatible
+        // providers (e.g. DeepSeek) reject assistant messages with
+        // `content: null` and no `tool_calls`. If nothing was streamed and
+        // there are no tool calls, end this iteration cleanly.
+        if (!content.length) {
+            session.updatedAt = new Date().toISOString();
+            return;
+        }
         session.messages.push({ role: 'assistant', content });
         extractAndSyncTodos(session);
 
