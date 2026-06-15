@@ -830,7 +830,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
     persistMessages(sessionId, nextMessages);
-    await generateAIResponse([userMsg]);
+    // Pass the FULL message history — `generateAIResponse` builds the new
+    // messages state from this argument, so passing only `[userMsg]` would
+    // overwrite the existing list with just two entries and wipe the prior
+    // conversation from view and from localStorage.
+    await generateAIResponse(nextMessages);
   };
 
   const stop = () => {
@@ -1401,9 +1405,27 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 // ThinkingDisclosure — auto-open while streaming
 // ----------------------------------------------------
 function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGenerating?: boolean; duration?: number }) {
+  // Live-tick the elapsed time while the model is thinking so the duration
+  // label updates in real time. While `isGenerating` is true we own the
+  // display; once it flips to false `ThinkingDisclosure` falls back to the
+  // persisted `duration` prop that was set in `finalize()`.
+  const [elapsed, setElapsed] = useState<number>(0);
+  useEffect(() => {
+    if (!isGenerating) return;
+    const startedAt = Date.now();
+    const tick = () => setElapsed((Date.now() - startedAt) / 1000);
+    tick();
+    const id = window.setInterval(tick, 100);
+    return () => window.clearInterval(id);
+  }, [isGenerating]);
+
   return (
     <div className="my-1" style={{ overflowAnchor: 'none' }}>
-      <ThinkingDisclosure pending={isGenerating} duration={duration}>
+      <ThinkingDisclosure
+        pending={isGenerating}
+        duration={duration}
+        elapsed={isGenerating ? elapsed : undefined}
+      >
         <div className="pl-3 border-l border-foreground/15 leading-relaxed py-1 thought-content text-xs">
           <Markdown content={text} />
         </div>

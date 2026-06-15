@@ -28,12 +28,18 @@ export function ThinkingDisclosure({
   icon,
   label = 'Thinking',
 }: ThinkingDisclosureProps) {
-  // `null` = no explicit user toggle yet, defer to streaming default
+  // `null` = no explicit user toggle yet, defer to default-open
+  // We default to OPEN so the model's thinking stays visible after
+  // streaming ends; the user can still collapse it via the disclosure row.
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
-  const open = userOpen ?? pending;
+  // Default-open so the thinking content remains visible after the model
+  // stops streaming. The streaming-time "isPreview" treatment (max-h-40
+  // window + scroll-pinned) is independent of this flag and is still
+  // driven by `pending && userOpen === null` below.
+  const open = userOpen ?? true;
   const isPreview = pending && userOpen === null;
 
   // Pin scroll to bottom during live preview
