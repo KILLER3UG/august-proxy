@@ -79,7 +79,7 @@ fn resolve_backend_entry(app: &AppHandle) -> Option<PathBuf> {
         }
     }
 
-    let mut candidates = vec![
+    let candidates = vec![
         app.path()
             .resolve("backend/index.js", tauri::path::BaseDirectory::Resource)
             .ok(),

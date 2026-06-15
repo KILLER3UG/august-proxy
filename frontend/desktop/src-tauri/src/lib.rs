@@ -4,7 +4,6 @@
 //   src-tauri/ ← this crate: Rust shell + Node supervisor
 //   webview content comes from ../../web-dist during desktop builds
 
-use tauri::Manager;
 
 mod backend;
 mod tray;

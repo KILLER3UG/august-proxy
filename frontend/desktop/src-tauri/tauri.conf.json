@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.august.proxy",
   "build": {
-    "frontendDist": "../../web-dist",
+    "frontendDist": "../../../web-dist",
     "devUrl": "http://localhost:5173"
   },
   "app": {
