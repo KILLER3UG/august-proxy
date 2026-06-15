@@ -2153,7 +2153,7 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
               <div
                 ref={listRef}
                 onScroll={onScroll}
-                className="max-h-[240px] overflow-y-auto py-0.5"
+                className="model-dropdown-list max-h-[240px] overflow-y-auto py-0.5"
               >
                 {loading && grouped.length === 0 ? (
                   <div className="px-2 py-1 space-y-1">

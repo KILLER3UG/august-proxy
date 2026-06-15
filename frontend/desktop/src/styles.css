@@ -130,6 +130,34 @@
   background: rgba(255, 255, 255, 0.22) !important;
 }
 
+.model-dropdown-list {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent !important;
+}
+
+.model-dropdown-list::-webkit-scrollbar {
+  width: 4px !important;
+  height: 0 !important;
+}
+
+.model-dropdown-list::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.model-dropdown-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18) !important;
+  border-radius: 9999px !important;
+}
+
+.model-dropdown-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28) !important;
+}
+
+.model-dropdown-list::-webkit-scrollbar-button,
+.model-dropdown-list::-webkit-scrollbar-corner {
+  display: none !important;
+}
+
 /* 2. Fix the search bar input so that it is not white */
 input::placeholder {
   color: var(--dt-muted-foreground) !important;
