@@ -131,13 +131,17 @@
 }
 
 .model-dropdown-list {
+  overflow-x: hidden !important;
   scrollbar-width: thin !important;
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent !important;
 }
 
 .model-dropdown-list::-webkit-scrollbar {
   width: 4px !important;
-  height: 0 !important;
+}
+
+.model-dropdown-list::-webkit-scrollbar-horizontal {
+  display: none !important;
 }
 
 .model-dropdown-list::-webkit-scrollbar-track {
