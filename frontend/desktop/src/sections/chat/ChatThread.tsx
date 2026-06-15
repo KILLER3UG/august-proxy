@@ -1098,26 +1098,21 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 </div>
               )}
 
-              <div className="relative flex items-start">
-                <textarea
-                  ref={taRef}
-                  value={input}
-                  onChange={(e) => {
-                    handleInputChange(e.target.value);
-                    e.target.style.height = 'auto';
-                    e.target.style.height = Math.min(e.target.scrollHeight, 240) + 'px';
-                  }}
-                  onKeyDown={onKey}
-                  placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${modelDisplayParts(currentModel.id).name}…` : 'Type a message…')}
-                  rows={1}
-                  disabled={streaming}
-                  className="w-full resize-none bg-transparent px-4 pt-3 pb-1 pr-16 text-xs outline-none placeholder:text-muted-foreground disabled:opacity-60"
-                  style={{ minHeight: '40px', maxHeight: '240px' }}
-                />
-                <div className="absolute right-3 bottom-3 pointer-events-auto">
-                  <ContextRing pct={pct} estTokens={estTokens} maxContext={maxContext} modelName={modelForRequest?.name} />
-                </div>
-              </div>
+              <textarea
+                ref={taRef}
+                value={input}
+                onChange={(e) => {
+                  handleInputChange(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = Math.min(e.target.scrollHeight, 240) + 'px';
+                }}
+                onKeyDown={onKey}
+                placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${modelDisplayParts(currentModel.id).name}…` : 'Type a message…')}
+                rows={1}
+                disabled={streaming}
+                className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-xs outline-none placeholder:text-muted-foreground disabled:opacity-60"
+                style={{ minHeight: '40px', maxHeight: '240px' }}
+              />
             </>
           )}
 
@@ -1175,6 +1170,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               />
             </div>
             <div className="flex items-center gap-2">
+              <ContextRing pct={pct} estTokens={estTokens} maxContext={maxContext} modelName={modelForRequest?.name} size={28} />
               <ModelDropdown
                 models={models}
                 visibleModels={visibleModels}

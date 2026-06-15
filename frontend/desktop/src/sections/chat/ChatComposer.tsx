@@ -399,14 +399,16 @@ export function ContextRing({
   estTokens,
   maxContext,
   modelName,
+  size = 22,
+  stroke = 3,
 }: {
   pct: number;
   estTokens: number;
   maxContext: number;
   modelName?: string;
+  size?: number;
+  stroke?: number;
 }) {
-  const size = 22;
-  const stroke = 3;
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(100, pct));
