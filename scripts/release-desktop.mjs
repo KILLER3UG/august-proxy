@@ -38,11 +38,8 @@ const manifestPath = join(releaseDir, 'august-desktop-manifest.json');
 const args = new Set(process.argv.slice(2));
 const publish = args.has('--publish');
 const buildTauri = args.has('--tauri');
-const version = getVersionFromArgs() || getBumpFromArgs()
-    ? getBumpFromArgs()
-        ? bumpVersion(await readVersion(), getBumpFromArgs())
-        : getVersionFromArgs()
-    : await readVersion();
+const bump = getBumpFromArgs();
+const version = getVersionFromArgs() || (bump ? bumpVersion(await readVersion(), bump) : await readVersion());
 
 function getVersionFromArgs() {
     for (const arg of process.argv.slice(2)) {
@@ -156,6 +153,13 @@ async function buildTauriApp() {
 }
 
 async function main() {
+    if (bump) {
+        const pkg = JSON.parse(await readFile(packageJsonPath, 'utf8'));
+        pkg.version = version;
+        await writeFile(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
+        console.log(`[release] bumped package version to ${version}`);
+    }
+
     await mkdir(releaseDir, { recursive: true });
     await mkdir(stagingDir, { recursive: true });
 
