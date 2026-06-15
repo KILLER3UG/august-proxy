@@ -1884,35 +1884,57 @@ console.log(`--- AI Adapter Active on Port ${LISTEN_PORT} ---`);
 // ── WebSocket server (noServer mode — upgrades are routed manually) ──
 const wss = new WebSocketServer({ noServer: true });
 
-server.listen(LISTEN_PORT, '0.0.0.0', () => {
-    console.log('[bridge] Server is listening...');
-});
-
-server.on('upgrade', (req, socket, head) => {
-    const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
-    if (url.pathname === '/ui/terminal/connect') {
-        const terminalId = url.searchParams.get('id');
-        wss.handleUpgrade(req, socket, head, (ws) => {
-            terminalService.handleTerminalConnection(ws, terminalId);
-        });
-        return;
-    }
-    socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-    socket.destroy();
-});
-
-setInterval(() => {
-    automationJobs.runDueAutomations().catch(e => {
-        console.warn('[automations] tick failed:', e.message);
+function startServer() {
+    server.listen(LISTEN_PORT, '0.0.0.0', () => {
+        console.log('[bridge] Server is listening...');
     });
-}, 60000).unref();
 
-// Initialize MCP servers after the HTTP listener is available so the dashboard
-// remains reachable while uvx/npx tools warm their package caches.
-const claudeProfile = getProfile('claude');
-startMcpServers(claudeProfile?.apiKey || '').catch(e => {
-    console.error('[bridge] Failed to start MCP servers:', e);
-});
+    server.on('upgrade', (req, socket, head) => {
+        const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
+        if (url.pathname === '/ui/terminal/connect') {
+            const terminalId = url.searchParams.get('id');
+            wss.handleUpgrade(req, socket, head, (ws) => {
+                terminalService.handleTerminalConnection(ws, terminalId);
+            });
+            return;
+        }
+        socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+        socket.destroy();
+    });
+
+    setInterval(() => {
+        automationJobs.runDueAutomations().catch(e => {
+            console.warn('[automations] tick failed:', e.message);
+        });
+    }, 60000).unref();
+
+    // Initialize MCP servers after the HTTP listener is available so the dashboard
+    // remains reachable while uvx/npx tools warm their package caches.
+    const claudeProfile = getProfile('claude');
+    startMcpServers(claudeProfile?.apiKey || '').catch(e => {
+        console.error('[bridge] Failed to start MCP servers:', e);
+    });
+}
+
+const autoUpdateEnabled = process.env.AUGUST_AUTO_UPDATE === '1'
+    || (process.env.AUGUST_AUTO_UPDATE !== '0' && process.env.AUGUST_PROXY_DESKTOP === '1');
+
+if (autoUpdateEnabled) {
+    require('./services/desktop/asset-updater').checkForUpdates()
+        .then(result => {
+            if (result.applied) {
+                console.log(`[bridge] asset update applied (${result.version}); exiting so the desktop supervisor can restart with new code.`);
+                process.exit(0);
+            }
+            startServer();
+        })
+        .catch(error => {
+            console.warn('[bridge] asset update check failed; starting server anyway:', error.message);
+            startServer();
+        });
+} else {
+    startServer();
+}
 
 // ── Initialize Session Store (SQLite) ──
 (async () => {

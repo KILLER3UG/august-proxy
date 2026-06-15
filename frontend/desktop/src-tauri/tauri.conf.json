@@ -28,8 +28,7 @@
   "bundle": {
     "active": true,
     "targets": ["msi", "nsis"],
-    "externalBin": ["binaries/node"],
-    "resources": ["binaries/node/*"],
+    "resources": ["binaries/*"],
     "icon": [
       "icons/icon.png",
       "icons/icon.ico"
@@ -37,5 +36,14 @@
     "category": "DeveloperTool",
     "shortDescription": "Local AI proxy and chat",
     "longDescription": "August Proxy — local AI gateway, chat, and provider routing."
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVFNUYwNzg2QTg2MUVFNkYKUldSdjdtR29oZ2RmWHNIbGxVcGRHS0EvbTRMTzRmT3dZMkNrWW9NRUNIQVgvRXRGaDQvWDl5eFUK",
+      "endpoints": [
+        "https://github.com/KILLER3UG/august-proxy/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

@@ -47,11 +47,21 @@ fn resolve_node(app: &AppHandle) -> Option<PathBuf> {
     let mut candidates = Vec::new();
     for name in node_binary_names() {
         candidates.push(app.path().resolve(name, tauri::path::BaseDirectory::Resource).ok());
-        candidates.push(
-            app.path()
-                .resolve(Path::new("binaries").join("node").join(name), tauri::path::BaseDirectory::Resource)
-                .ok(),
-        );
+    }
+
+    if let Ok(binaries_dir) = app.path().resolve("binaries", tauri::path::BaseDirectory::Resource) {
+        if let Ok(entries) = std::fs::read_dir(binaries_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if name.starts_with("node-") {
+                            candidates.push(Some(path));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     candidates
