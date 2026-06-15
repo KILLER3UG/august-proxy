@@ -3,7 +3,7 @@
 /* Tool calls render as inline cards. Right rail optional.                  */
 
 import { useState, useRef, useEffect, useMemo, useCallback, type KeyboardEvent } from 'react';
-import { Send, Paperclip, Mic, AtSign, Sparkles, ChevronRight, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw } from 'lucide-react';
+import { Send, Paperclip, Mic, AtSign, Plus, Sparkles, ChevronRight, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw } from 'lucide-react';
 import { cn, formatTimeAgo, fmtElapsed } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
@@ -291,6 +291,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // Composer tools states
   const [attachments, setAttachments] = useState<{ name: string; size: string }[]>([]);
   const [voiceActive, setVoiceActive] = useState(false);
+  const [showComposerActionsDropdown, setShowComposerActionsDropdown] = useState(false);
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
   const [showCommandsDropdown, setShowCommandsDropdown] = useState(false);
 
@@ -1097,35 +1098,83 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 </div>
               )}
 
-              <textarea
-                ref={taRef}
-                value={input}
-                onChange={(e) => {
-                  handleInputChange(e.target.value);
-                  e.target.style.height = 'auto';
-                  e.target.style.height = Math.min(e.target.scrollHeight, 240) + 'px';
-                }}
-                onKeyDown={onKey}
-                placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${modelDisplayParts(currentModel.id).name}…` : 'Type a message…')}
-                rows={1}
-                disabled={streaming}
-                className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-xs outline-none placeholder:text-muted-foreground disabled:opacity-60"
-                style={{ minHeight: '40px', maxHeight: '240px' }}
-              />
+              <div className="relative flex items-start">
+                <textarea
+                  ref={taRef}
+                  value={input}
+                  onChange={(e) => {
+                    handleInputChange(e.target.value);
+                    e.target.style.height = 'auto';
+                    e.target.style.height = Math.min(e.target.scrollHeight, 240) + 'px';
+                  }}
+                  onKeyDown={onKey}
+                  placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${modelDisplayParts(currentModel.id).name}…` : 'Type a message…')}
+                  rows={1}
+                  disabled={streaming}
+                  className="w-full resize-none bg-transparent px-4 pt-3 pb-1 pr-16 text-xs outline-none placeholder:text-muted-foreground disabled:opacity-60"
+                  style={{ minHeight: '40px', maxHeight: '240px' }}
+                />
+                <div className="absolute right-3 bottom-3 pointer-events-auto">
+                  <ContextRing pct={pct} estTokens={estTokens} maxContext={maxContext} modelName={modelForRequest?.name} />
+                </div>
+              </div>
             </>
           )}
 
           <div className="flex items-center justify-between px-1.5 pb-1.5">
-            <div className="flex items-center text-muted-foreground">
-              <ToolBtn Icon={Paperclip} label="Attach file" onClick={() => fileInputRef.current?.click()} />
-              <ToolBtn Icon={AtSign}    label="Mention tool" onClick={() => { setShowToolsDropdown(!showToolsDropdown); setShowCommandsDropdown(false); }} />
-              <ToolBtn Icon={Mic}       label="Voice input" onClick={startVoiceInput} />
-            </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <div className="relative">
+                <ToolBtn Icon={Plus} label="Composer actions" onClick={() => {
+                  setShowComposerActionsDropdown((value) => !value);
+                  setShowToolsDropdown(false);
+                  setShowCommandsDropdown(false);
+                }} />
+                {showComposerActionsDropdown && (
+                  <div className="absolute left-0 bottom-full mb-2 z-20 w-44 bg-card border border-border rounded-xl shadow-2xl p-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fileInputRef.current?.click();
+                        setShowComposerActionsDropdown(false);
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-muted transition flex items-center justify-between"
+                    >
+                      <span>Attach file</span>
+                      <Paperclip className="size-3.5 text-muted-foreground" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowToolsDropdown(true);
+                        setShowCommandsDropdown(false);
+                        setShowComposerActionsDropdown(false);
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-muted transition flex items-center justify-between"
+                    >
+                      <span>Mention tool</span>
+                      <AtSign className="size-3.5 text-muted-foreground" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        startVoiceInput();
+                        setShowComposerActionsDropdown(false);
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-muted transition flex items-center justify-between"
+                    >
+                      <span>Voice input</span>
+                      <Mic className="size-3.5 text-muted-foreground" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <WorkbenchModeSelector
                 selectedMode={workbenchMode}
                 onChange={setWorkbenchMode}
               />
+            </div>
+            <div className="flex items-center gap-2">
               <ModelDropdown
                 models={models}
                 visibleModels={visibleModels}
@@ -1167,10 +1216,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           </div>
         </div>
 
-        {/* Usage tracker — compact capacity gauge */}
-        <div className="flex items-center justify-end mt-1 px-1">
-          <ContextRing pct={pct} estTokens={estTokens} maxContext={maxContext} modelName={modelForRequest?.name} />
-        </div>
       </div>
     );
   };
