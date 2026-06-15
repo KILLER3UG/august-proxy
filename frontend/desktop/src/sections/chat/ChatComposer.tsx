@@ -149,7 +149,7 @@ export function ChatComposer({
         'border-border',
       )}>
         {voiceActive ? (
-          <div className="h-[96px] w-full flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm space-y-2 text-foreground">
+          <div className="h-[128px] w-full flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm space-y-2 text-foreground">
             <div className="flex items-center gap-1">
               <span className="w-1 h-4 bg-primary rounded animate-pulse" />
               <span className="w-1 h-6 bg-primary rounded animate-pulse" style={{ animationDelay: '150ms' }} />
@@ -184,14 +184,13 @@ export function ChatComposer({
               onChange={(e) => {
                 onInputChange(e.target.value);
                 e.target.style.height = 'auto';
-                e.target.style.height = Math.min(e.target.scrollHeight, 240) + 'px';
+                e.target.style.height = Math.min(e.target.scrollHeight, 360) + 'px';
               }}
               onKeyDown={onKey}
-              placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${currentModel.name}…` : 'Type a message…')}
+              placeholder={streaming ? 'Type to queue your next message…' : (currentModel ? `Message ${currentModel.name}…` : 'Type a message…')}
               rows={1}
-              disabled={streaming}
-              className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-xs outline-none placeholder:text-muted-foreground disabled:opacity-60"
-              style={{ minHeight: '40px', maxHeight: '240px' }}
+              className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-xs outline-none placeholder:text-muted-foreground"
+              style={{ minHeight: '64px', maxHeight: '360px' }}
             />
           </>
         )}

@@ -203,8 +203,11 @@ const TOOLS = [
 
 const COMMANDS = [
   { name: '/help', desc: 'Show available commands' },
-  { name: '/reset', desc: 'Reset conversation history' },
+  { name: '/btw', desc: 'Ask a by-the-way question: /btw <question>' },
+  { name: '/goal', desc: 'Set a workbench goal: /goal <condition>' },
   { name: '/clear', desc: 'Clear the chat display' },
+  { name: '/new', desc: 'Start a new chat session' },
+  { name: '/reset', desc: 'Reset conversation history' },
   { name: '/debug', desc: 'Toggle diagnostics mode' },
   { name: '/model', desc: 'Switch model: /model <name>' },
   { name: '/provider', desc: 'Switch provider: /provider <name>' },
@@ -293,6 +296,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [showComposerActionsDropdown, setShowComposerActionsDropdown] = useState(false);
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
   const [showCommandsDropdown, setShowCommandsDropdown] = useState(false);
+  const [queuedMessage, setQueuedMessage] = useState<{ text: string; attachments: { name: string; size: string }[] } | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -599,6 +603,28 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         if (isCurrentTurn()) setSessionStatus(turnSessionId, status === 'done' ? 'done' : 'error');
       }
       finishTurn(turn, status);
+
+      // Drain the message queue: if the user queued a follow-up while this
+      // turn was streaming, append it as a user message and start the next
+      // turn. Drain on any terminal status (done / aborted / error) so the
+      // user isn't left with a stuck queue after Stop or a failure.
+      if (queuedMessage && isCurrentTurn()) {
+        const next = queuedMessage;
+        setQueuedMessage(null);
+        const userMsg: ChatMessage = {
+          id: `m${Date.now()}`,
+          role: 'user',
+          content: next.text,
+          timestamp: new Date().toISOString()
+        };
+        setMessages(prev => {
+          const withQueued = [...prev, userMsg];
+          persistMessages(sessionId, withQueued);
+          // Schedule the next turn after this state update is applied.
+          queueMicrotask(() => { void generateAIResponse(withQueued); });
+          return withQueued;
+        });
+      }
     };
 
     try {
@@ -794,11 +820,59 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const send = async () => {
     let text = input.trim();
     if (!text && attachments.length === 0) return;
-    if (streaming) return;
 
     if (attachments.length > 0) {
       const attachInfo = attachments.map(a => `[File Attachment: ${a.name} (${a.size})]`).join('\n');
       text = `${text}\n\n${attachInfo}`;
+    }
+
+    // Local slash command dispatch — handle purely client-side commands
+    // before sending to the backend. The workbench backend intercepts
+    // /btw and /goal at workbench.js:2334-2347 and answers them without
+    // pushing a user message into the session, so we let those fall
+    // through to the normal send path.
+    const slashMatch = text.match(/^\/([a-zA-Z][\w-]*)(?:\s+([\s\S]*))?$/);
+    if (slashMatch) {
+      const cmd = slashMatch[1].toLowerCase();
+      const arg = String(slashMatch[2] || '').trim();
+      setInput('');
+      setAttachments([]);
+      setShowToolsDropdown(false);
+      setShowCommandsDropdown(false);
+      if (cmd === 'help') {
+        const helpText = COMMANDS.map(c => `${c.name}  —  ${c.desc}`).join('\n');
+        toast.info(`Available commands:\n\n${helpText}`, { duration: 12000 });
+        return;
+      }
+      if (cmd === 'clear') {
+        setMessages([]);
+        persistMessages(sessionId, []);
+        return;
+      }
+      if (cmd === 'new') {
+        // Defer to the parent (App) to create a fresh chat session.
+        // No listener wires this up yet, so just tell the user how.
+        toast.info('Use the sidebar to start a new session.');
+        return;
+      }
+      if (cmd === 'btw' && !arg) {
+        toast.error('/btw needs a question. Try: /btw What does this codebase do?');
+        return;
+      }
+      // /btw, /goal, /reset, /debug, /model, /provider, /unknown — fall
+      // through and let the backend (or the workbench parser) handle it.
+      // Restore the text since we cleared it above.
+    }
+
+    // Queue when streaming instead of dropping the message. The next turn
+    // starts automatically from `finalize()` once the current turn ends.
+    if (streaming) {
+      setQueuedMessage({ text, attachments: [...attachments] });
+      setInput('');
+      setAttachments([]);
+      setShowToolsDropdown(false);
+      setShowCommandsDropdown(false);
+      return;
     }
 
     // Auto-generate title from first user message
@@ -1047,21 +1121,52 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
         {/* Commands Dropdown — triggered by typing / */}
         {showCommandsDropdown && (
-          <div className="absolute bottom-full mb-2 left-2 z-10 w-64 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <div className="absolute bottom-full mb-2 left-2 z-10 w-72 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
             <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-semibold">Commands & Tools</div>
-            {COMMANDS.filter(c => !input || c.name.startsWith(input)).map((c) => (
+            {COMMANDS.filter(c => {
+              const q = input.trim().toLowerCase();
+              if (!q) return true;
+              return c.name.toLowerCase().startsWith(q);
+            }).map((c) => (
               <button
                 key={c.name}
                 onClick={() => {
-                  insertText(c.name);
+                  insertText(c.name + ' ');
                   setShowCommandsDropdown(false);
                 }}
-                className="w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between"
+                className="w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between gap-2"
               >
-                <span className="font-mono font-medium text-amber-500">{c.name}</span>
-                <span className="text-[10px] text-muted-foreground">{c.desc}</span>
+                <span className="font-mono font-medium text-amber-500 shrink-0">{c.name}</span>
+                <span className="text-[10px] text-muted-foreground truncate">{c.desc}</span>
               </button>
             ))}
+            {COMMANDS.filter(c => {
+              const q = input.trim().toLowerCase();
+              if (!q) return false;
+              return c.name.toLowerCase().startsWith(q);
+            }).length === 0 && input.trim() && (
+              <div className="px-2.5 py-1.5 text-[11px] text-muted-foreground">No matching command. Press Enter to send as a normal message.</div>
+            )}
+          </div>
+        )}
+
+        {/* Queued message pill — shown above the composer when a follow-up
+            message is waiting for the current turn to finish. */}
+        {queuedMessage && (
+          <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-xl border border-amber-500/30 bg-amber-500/5 text-[11px] animate-in fade-in slide-in-from-bottom-1 duration-150">
+            <span className="text-amber-600 font-semibold uppercase tracking-wider">Queued</span>
+            <span className="truncate text-muted-foreground flex-1 min-w-0">
+              {queuedMessage.text.length > 120 ? queuedMessage.text.slice(0, 120).trim() + '…' : queuedMessage.text}
+            </span>
+            <button
+              type="button"
+              onClick={() => setQueuedMessage(null)}
+              className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition shrink-0"
+              title="Cancel queued message"
+              aria-label="Cancel queued message"
+            >
+              <X className="size-3" />
+            </button>
           </div>
         )}
 
@@ -1070,7 +1175,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           'border-border',
         )}>
           {voiceActive ? (
-            <div className="h-[96px] w-full flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm space-y-2 text-foreground">
+            <div className="h-[128px] w-full flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm space-y-2 text-foreground">
               <div className="flex items-center gap-1">
                 <span className="w-1 h-4 bg-primary rounded animate-pulse" />
                 <span className="w-1 h-6 bg-primary rounded animate-pulse" style={{ animationDelay: '150ms' }} />
@@ -1105,14 +1210,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 onChange={(e) => {
                   handleInputChange(e.target.value);
                   e.target.style.height = 'auto';
-                  e.target.style.height = Math.min(e.target.scrollHeight, 240) + 'px';
+                  e.target.style.height = Math.min(e.target.scrollHeight, 360) + 'px';
                 }}
                 onKeyDown={onKey}
-                placeholder={streaming ? 'August is working…' : (currentModel ? `Message ${modelDisplayParts(currentModel.id).name}…` : 'Type a message…')}
+                placeholder={streaming ? 'Type to queue your next message…' : (currentModel ? `Message ${modelDisplayParts(currentModel.id).name}…` : 'Type a message…')}
                 rows={1}
-                disabled={streaming}
-                className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-xs outline-none placeholder:text-muted-foreground disabled:opacity-60"
-                style={{ minHeight: '40px', maxHeight: '240px' }}
+                className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-xs outline-none placeholder:text-muted-foreground"
+                style={{ minHeight: '64px', maxHeight: '360px' }}
               />
             </>
           )}
