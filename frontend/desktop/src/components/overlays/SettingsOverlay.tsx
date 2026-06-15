@@ -35,6 +35,7 @@ import { August } from "@/sections/august/August";
 import { Archive } from "@/sections/archive/Archive";
 
 /* Heavier / newer sections are code-split so they only load when opened. */
+const Overview = lazy(() => import("@/sections/overview/Overview").then((m) => ({ default: m.Overview })));
 const Traffic = lazy(() => import("@/sections/traffic/Traffic").then((m) => ({ default: m.Traffic })));
 const Inspector = lazy(() => import("@/sections/inspector/Inspector").then((m) => ({ default: m.Inspector })));
 const Conversations = lazy(() => import("@/sections/conversations/Conversations").then((m) => ({ default: m.Conversations })));
@@ -77,6 +78,7 @@ const TABS: TabItem[] = [
   { key: "archive", label: "Archive", Icon: ArchiveIcon, Component: Archive, group: "Core" },
 
   // Observability
+  { key: "overview", label: "Artifacts", Icon: Boxes, Component: Overview, group: "Observability" },
   { key: "traffic", label: "Traffic", Icon: Activity, Component: Traffic, group: "Observability" },
   { key: "inspector", label: "Inspector", Icon: Search, Component: Inspector, group: "Observability" },
   { key: "conversations", label: "Conversations", Icon: MessagesSquare, Component: Conversations, group: "Observability" },

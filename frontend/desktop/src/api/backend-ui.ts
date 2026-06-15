@@ -205,10 +205,9 @@ export interface ModelAlias {
   provider: string;
 }
 
-export interface CostEstimate {
-  inputCost?: number;
-  outputCost?: number;
-  totalCost?: number;
+export interface ModelCostEstimate {
+  model: string;
+  cost: number;
   error?: string;
 }
 
@@ -310,8 +309,8 @@ export function getModelAliases(): Promise<{ aliases: ModelAlias[] }> {
   return api.get<{ aliases: ModelAlias[] }>('/ui/models/aliases');
 }
 
-export function estimateModelCost(modelId: string, inputTokens: number, outputTokens: number): Promise<CostEstimate> {
-  return api.post<CostEstimate>('/ui/models/estimate-cost', { modelId, inputTokens, outputTokens });
+export function estimateModelCost(modelId: string, inputTokens: number, outputTokens: number): Promise<ModelCostEstimate> {
+  return api.post<ModelCostEstimate>('/ui/models/estimate-cost', { modelId, inputTokens, outputTokens });
 }
 
 /* ── Aggregated models (/api/models — all configured providers) ── */

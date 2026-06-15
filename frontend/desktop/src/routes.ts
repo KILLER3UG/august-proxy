@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Suspense, lazy, type ReactNode } from 'react';
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import {
   LayoutDashboard,
   Activity,
@@ -13,13 +13,6 @@ import {
 } from 'lucide-react';
 import { ChatThread } from '@/sections/chat/ChatThread';
 import { SettingsOverlay } from '@/components/overlays/SettingsOverlay';
-import { PageLoader } from '@/components/PageLoader';
-
-const Overview = lazy(() => import('@/sections/overview/Overview').then((m) => ({ default: m.Overview })));
-const Traffic = lazy(() => import('@/sections/traffic/Traffic').then((m) => ({ default: m.Traffic })));
-const Inspector = lazy(() => import('@/sections/inspector/Inspector').then((m) => ({ default: m.Inspector })));
-const Thinking = lazy(() => import('@/sections/thinking/Thinking').then((m) => ({ default: m.Thinking })));
-const Conversations = lazy(() => import('@/sections/conversations/Conversations').then((m) => ({ default: m.Conversations })));
 
 export interface SectionRoute {
   path: string;
@@ -43,10 +36,6 @@ export interface SettingsTab {
   path: string;
 }
 
-function WithPageLoader(element: ReactNode) {
-  return React.createElement(Suspense, { fallback: React.createElement(PageLoader) }, element);
-}
-
 function ChatThreadWithParams() {
   const { sessionId } = useParams<{ sessionId: string }>();
   return React.createElement(ChatThread, { sessionId: sessionId ?? null });
@@ -55,11 +44,7 @@ function ChatThreadWithParams() {
 export const SECTION_ROUTES: readonly SectionRoute[] = [
   { path: '/', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThread, { sessionId: 'demo' }), nav: true },
   { path: '/c/:sessionId', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThreadWithParams) },
-  { path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, element: WithPageLoader(React.createElement(Overview)), nav: true },
-  { path: '/traffic', label: 'Traffic', Icon: Activity, element: WithPageLoader(React.createElement(Traffic)), nav: true },
-  { path: '/conversations', label: 'Conversations', Icon: MessagesSquare, element: WithPageLoader(React.createElement(Conversations)), nav: true },
-  { path: '/inspector', label: 'Inspector', Icon: Search, element: WithPageLoader(React.createElement(Inspector)), nav: true },
-  { path: '/thinking', label: 'Thinking', Icon: Brain, element: WithPageLoader(React.createElement(Thinking)), nav: true },
+  { path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, element: React.createElement(Navigate, { to: '/settings?tab=overview', replace: true }), nav: false },
 ] as const;
 
 export const SETTINGS_TABS: readonly SettingsTab[] = [
@@ -67,6 +52,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   { key: 'providers', label: 'Providers', Icon: LayoutDashboard, path: '/settings/providers' },
   { key: 'mcp', label: 'MCP & Skills', Icon: Settings, path: '/settings/mcp' },
   { key: 'memory', label: 'Memory', Icon: MessagesSquare, path: '/settings/memory' },
+  { key: 'overview', label: 'Artifacts', Icon: LayoutDashboard, path: '/settings/overview' },
   { key: 'traffic', label: 'Traffic', Icon: Activity, path: '/settings/traffic' },
   { key: 'inspector', label: 'Inspector', Icon: Search, path: '/settings/inspector' },
   { key: 'conversations', label: 'Conversations', Icon: MessagesSquare, path: '/settings/conversations' },

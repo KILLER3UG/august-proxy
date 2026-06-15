@@ -236,17 +236,7 @@ export function ChatComposer({
       </div>
 
       <div className="flex items-center justify-end mt-1 px-1">
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
-          <span className="relative w-20 h-1.5 rounded-full bg-muted overflow-hidden inline-block">
-            <span
-              className={cn('absolute inset-y-0 left-0 rounded-full transition-all duration-300', pct > 80 ? 'bg-destructive' : pct > 60 ? 'bg-amber-500' : 'bg-primary')}
-              style={{ width: `${pct}%` }}
-            />
-          </span>
-          <span>{pct}%</span>
-          <span className="text-muted-foreground/50">·</span>
-          <span className="text-muted-foreground/70">{estTokens.toLocaleString()} / {maxContext.toLocaleString()}</span>
-        </div>
+        <ContextRing pct={pct} estTokens={estTokens} maxContext={maxContext} modelName={currentModel?.name} />
       </div>
     </>
   );
@@ -393,6 +383,79 @@ function EffortDropdown({ value, onChange }: { value: 'low' | 'medium' | 'high' 
               {option}
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Context usage ring — compact, details on hover ─────────────────── */
+/* A ~22px donut showing how full the context window is. Idle state shows
+ * just the ring + centered %; hovering reveals a tooltip card with the
+ * exact token counts and the active model. Keeps the composer calm for
+ * beginners while keeping every detail one hover away. */
+function ContextRing({
+  pct,
+  estTokens,
+  maxContext,
+  modelName,
+}: {
+  pct: number;
+  estTokens: number;
+  maxContext: number;
+  modelName?: string;
+}) {
+  const size = 22;
+  const stroke = 3;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const clamped = Math.max(0, Math.min(100, pct));
+  const dash = (clamped / 100) * c;
+  const tone = clamped > 80 ? 'var(--dt-destructive)' : clamped > 60 ? '#f59e0b' : 'var(--dt-primary)';
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      className="relative inline-flex items-center"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <svg width={size} height={size} className="-rotate-90 shrink-0" aria-label={`${clamped}% of context used`}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--dt-muted)" strokeWidth={stroke} />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke={tone}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={`${dash} ${c - dash}`}
+          style={{ transition: 'stroke-dasharray 0.3s ease, stroke 0.3s ease' }}
+        />
+      </svg>
+      <span className="absolute inset-0 grid place-items-center text-[8px] font-mono tabular-nums text-muted-foreground pointer-events-none">
+        {clamped}
+      </span>
+
+      {hovered && (
+        <div className="absolute right-0 bottom-full mb-2 z-30 w-44 bg-card border border-border rounded-lg shadow-2xl p-2.5 text-left animate-in fade-in slide-in-from-bottom-1 duration-100">
+          <div className="flex items-center justify-between text-[11px] mb-1.5">
+            <span className="text-muted-foreground">Context</span>
+            <span className="font-mono font-semibold tabular-nums" style={{ color: tone }}>{clamped}%</span>
+          </div>
+          <div className="h-1 rounded-full bg-muted overflow-hidden mb-2">
+            <div className="h-full rounded-full transition-all duration-300" style={{ width: `${clamped}%`, backgroundColor: tone }} />
+          </div>
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono tabular-nums">
+            <span>{estTokens.toLocaleString()} used</span>
+            <span>{maxContext.toLocaleString()} max</span>
+          </div>
+          {modelName && (
+            <div className="mt-2 pt-2 border-t border-border/60 text-[10px] text-muted-foreground truncate">
+              <span className="opacity-60">Model · </span>{modelName}
+            </div>
+          )}
         </div>
       )}
     </div>

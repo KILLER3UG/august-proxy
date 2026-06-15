@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Bot, Send, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +15,10 @@ export function WorkbenchBtwDrawer({
   onClose: () => void;
 }) {
   const [question, setQuestion] = useState('');
+
+  useEffect(() => {
+    setQuestion('');
+  }, [result?.id]);
 
   if (!result) return null;
 

@@ -23,15 +23,14 @@ import { Statusbar } from '@/components/shell/Statusbar';
 import { createChatRuntime, type ChatTurnRecord } from './chat-runtime';
 import {
   createWorkbenchSession,
-  listWorkbenchAgents,
   streamWorkbenchChat,
   approveWorkbenchPlan,
   answerWorkbenchBtw,
   getWorkbenchSession,
 } from '@/api/workbench';
-import type { WorkbenchAgentRegistry, WorkbenchBtwResult, WorkbenchSession } from '@/types/workbench';
-import { WorkbenchAgentSelector } from '@/components/chat/WorkbenchAgentSelector';
+import type { WorkbenchBtwResult, WorkbenchSession } from '@/types/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
+import { WorkbenchModeSelector, WORKBENCH_GUARD_MODES, applyWorkbenchGuardMode, type WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
 import { TodoSummary, WorkbenchPlanPanel, WorkbenchStatusPill } from '@/components/chat/WorkbenchPlanPanel';
 
 export const chatRuntime = createChatRuntime();
@@ -254,9 +253,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }
     return null;
   });
-  const [workbenchAgents, setWorkbenchAgents] = useState<WorkbenchAgentRegistry | null>(null);
-  const [workbenchAgentsLoading, setWorkbenchAgentsLoading] = useState(false);
-  const [selectedAgentId, setSelectedAgentId] = useState(activeSession?.workbenchAgentId || 'build');
+  const [workbenchMode, setWorkbenchMode] = useState<WorkbenchGuardMode>(() => {
+    const saved = localStorage.getItem('august_last_workbench_guard_mode') as WorkbenchGuardMode | null;
+    return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'plan';
+  });
   const [workbenchBtw, setWorkbenchBtw] = useState<WorkbenchBtwResult | null>(null);
   const [workbenchBusy, setWorkbenchBusy] = useState(false);
 
@@ -347,6 +347,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     try { localStorage.setItem('august_last_effort', effort); } catch {}
   }, [effort]);
 
+  useEffect(() => {
+    try { localStorage.setItem('august_last_workbench_guard_mode', workbenchMode); } catch {}
+  }, [workbenchMode]);
+
   // Track whether the user manually changed the model so we don't override it when the full list loads
   const userSelectedRef = useRef<string | null>(null);
 
@@ -361,26 +365,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       return modelFromSession(activeSession || null) || prev;
     });
   }, [sessionId, activeSession?.model, activeSession?.provider]);
-
-  useEffect(() => {
-    if (activeSession?.workbenchAgentId) setSelectedAgentId(activeSession.workbenchAgentId);
-  }, [activeSession?.workbenchAgentId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setWorkbenchAgentsLoading(true);
-    listWorkbenchAgents(selectedAgentId)
-      .then((registry) => {
-        if (!cancelled) setWorkbenchAgents(registry);
-      })
-      .catch((e) => console.warn('[Workbench] Agent registry failed:', e))
-      .finally(() => {
-        if (!cancelled) setWorkbenchAgentsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedAgentId]);
 
   // ── Two-phase model loading ───────────────────────────────────────
   // Phase 1 (instant): read config only — fast, small payload.
@@ -401,7 +385,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           const pConfig = config?.[activeProvider] || {};
           const activeModelId: string | null = pConfig.model || pConfig._upstreamModel || pConfig.currentModel || null;
           if (activeModelId && !userSelectedRef.current) {
-            // Build a lightweight placeholder so the button shows the correct label instantly
             const placeholder: ModelItem = {
               id: activeModelId,
               name: activeModelId,
@@ -411,7 +394,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               supportsThinking: isLikelyReasoningModel(activeModelId),
             };
             setSelectedModel(prev => {
-              // Only override localStorage value if the config model differs
               if (prev && prev.id === activeModelId) return prev;
               return placeholder;
             });
@@ -515,6 +497,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
 
   // ── Workbench chat client ─────────────────────────────────────────
+  // Workbench only accepts claude/codex engine ids. The normal provider/model
+  // selector still controls regular model display, but Workbench routes codex
+  // requests to codex and everything else to claude.
   const getWorkbenchProvider = () => modelForRequest?.provider === 'codex' ? 'codex' as const : 'claude' as const;
 
   const ensureWorkbenchSession = async () => {
@@ -537,7 +522,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     const created = await createWorkbenchSession({
       provider: getWorkbenchProvider(),
-      agentId: selectedAgentId || 'build',
+      agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
     });
     setWorkbenchSession(created);
     updateSessionWorkbenchMetadata(sessionId, {
@@ -631,9 +616,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
       await streamWorkbenchChat({
         sessionId: workbenchSessionId,
-        message: chatHistory.map(m => `${m.role}: ${m.content}`).join('\n\n') || ' ',
+        message: applyWorkbenchGuardMode(workbenchMode, chatHistory.map(m => `${m.role}: ${m.content}`).join('\n\n') || ' '),
         provider: getWorkbenchProvider(),
-        agentId: selectedAgentId || session.agentId,
+        agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
       }, {
         onThinking: ({ content }) => {
           if (!thinkingEnd && content.trim()) {
@@ -690,7 +675,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         },
         onSession: (sessionState) => {
           setWorkbenchSession(sessionState);
-          if (sessionState.agentId) setSelectedAgentId(sessionState.agentId);
           update();
         },
         onBtw: (result) => {
@@ -1137,6 +1121,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               <ToolBtn Icon={Mic}       label="Voice input" onClick={startVoiceInput} />
             </div>
             <div className="flex items-center gap-2">
+              <WorkbenchModeSelector
+                selectedMode={workbenchMode}
+                onChange={setWorkbenchMode}
+              />
               <ModelDropdown
                 models={models}
                 visibleModels={visibleModels}

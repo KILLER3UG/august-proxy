@@ -208,7 +208,7 @@ export function SessionList({
             <Wrench className="size-3.5" /> Skills & Tools
           </button>
           <button
-            onClick={() => onNavigate("/dashboard")}
+            onClick={() => onNavigate("/settings?tab=overview")}
             className="w-full text-left rounded-md px-2.5 py-1.5 text-sidebar-foreground/80 hover:bg-white/5 hover:text-foreground transition flex items-center gap-2"
           >
             <Package className="size-3.5" /> Artifacts
