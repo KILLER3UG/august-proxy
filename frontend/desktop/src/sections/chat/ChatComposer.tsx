@@ -394,7 +394,7 @@ function EffortDropdown({ value, onChange }: { value: 'low' | 'medium' | 'high' 
  * just the ring + centered %; hovering reveals a tooltip card with the
  * exact token counts and the active model. Keeps the composer calm for
  * beginners while keeping every detail one hover away. */
-function ContextRing({
+export function ContextRing({
   pct,
   estTokens,
   maxContext,

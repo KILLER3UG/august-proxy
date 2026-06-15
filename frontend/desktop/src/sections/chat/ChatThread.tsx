@@ -31,6 +31,7 @@ import {
 import type { WorkbenchBtwResult, WorkbenchSession } from '@/types/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import { WorkbenchModeSelector, WORKBENCH_GUARD_MODES, applyWorkbenchGuardMode, type WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
+import { ContextRing } from './ChatComposer';
 import { TodoSummary, WorkbenchPlanPanel, WorkbenchStatusPill } from '@/components/chat/WorkbenchPlanPanel';
 
 export const chatRuntime = createChatRuntime();
@@ -1166,19 +1167,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           </div>
         </div>
 
-        {/* Usage tracker — minimal, no static hint text */}
+        {/* Usage tracker — compact capacity gauge */}
         <div className="flex items-center justify-end mt-1 px-1">
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
-            <span className="relative w-20 h-1.5 rounded-full bg-muted overflow-hidden inline-block">
-              <span
-                className={cn('absolute inset-y-0 left-0 rounded-full transition-all duration-300', pct > 80 ? 'bg-destructive' : pct > 60 ? 'bg-amber-500' : 'bg-primary')}
-                style={{ width: `${pct}%` }}
-              />
-            </span>
-            <span>{pct}%</span>
-            <span className="text-muted-foreground/50">·</span>
-            <span className="text-muted-foreground/70">{estTokens.toLocaleString()} / {maxContext.toLocaleString()}</span>
-          </div>
+          <ContextRing pct={pct} estTokens={estTokens} maxContext={maxContext} modelName={modelForRequest?.name} />
         </div>
       </div>
     );
