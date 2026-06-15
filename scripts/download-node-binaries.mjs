@@ -120,7 +120,8 @@ function extract(archivePath, destDir) {
 
 async function fetchAndStage(target, version) {
     const url = archiveUrl(target, version);
-    const archive = join(tmpdir(), `node-${version}-${target.triple}${process.platform === 'win32' ? '.zip' : '.tar.gz'}`);
+    const archiveExt = target.platform === 'win' ? '.zip' : '.tar.gz';
+    const archive = join(tmpdir(), `node-${version}-${target.triple}${archiveExt}`);
     const stage = join(tmpdir(), `node-stage-${target.triple}`);
 
     console.log(`[node-bins] downloading ${url}`);
