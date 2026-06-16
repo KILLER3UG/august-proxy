@@ -22,6 +22,7 @@ import { useStore } from "@nanostores/react";
 import { $sessions, createSession, type Session } from "@/store/sessions";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
+import { GitPanel } from "./GitPanel";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 
@@ -132,6 +133,22 @@ export function ChatLayout() {
                 </motion.div>
               </AnimatePresence>
             </main>
+            <AnimatePresence initial={false}>
+              {showRightSidebar && (
+                <motion.aside
+                  key="right-rail"
+                  initial={{ width: 0, opacity: 0 }}
+                  animate={{ width: 288, opacity: 1 }}
+                  exit={{ width: 0, opacity: 0 }}
+                  transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                  className="border-l border-white/[0.06] bg-card/30 overflow-hidden shrink-0"
+                >
+                  <div className="w-72 h-full overflow-y-auto">
+                    <GitPanel sessionId={active?.id} className="border-0 rounded-none" />
+                  </div>
+                </motion.aside>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>

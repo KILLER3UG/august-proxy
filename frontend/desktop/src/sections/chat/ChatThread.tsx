@@ -19,6 +19,7 @@ import { FileIcon as NewFileIcon } from '@/components/ui/FileIcon';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import { SuggestedActionBubble } from '@/components/chat/SuggestedActionBubble';
+import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
 import { HoistedTodoPanel } from '@/components/chat/HoistedTodoPanel';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
@@ -1513,6 +1514,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             onEdit={(text) => handleEdit(i, text)}
                             onRegenerate={() => handleRegenerate(i)}
                           />
+                          {/* Render the most recent prompt disclosure at the top
+                              of the most recent assistant turn so the user can
+                              inspect what was actually sent to the model. */}
+                          {lastPrompt && m.role === 'assistant' && i === messages.length - 1 && (
+                            <div className="ml-11 mt-1">
+                              <PromptDisclosure
+                                content={lastPrompt.content}
+                                tokens={lastPrompt.tokens}
+                              />
+                            </div>
+                          )}
                         </div>
                       );
                     })}
