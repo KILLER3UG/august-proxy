@@ -18,6 +18,7 @@ import { ToolIcon as NewToolIcon } from '@/components/ui/ToolIcon';
 import { FileIcon as NewFileIcon } from '@/components/ui/FileIcon';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
+import { SuggestedActionBubble } from '@/components/chat/SuggestedActionBubble';
 import { HoistedTodoPanel } from '@/components/chat/HoistedTodoPanel';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
@@ -235,6 +236,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [input, setInput] = useState('');
   const [runtimeVersion, setRuntimeVersion] = useState(0);
   const streaming = chatRuntime.isSessionStreaming(sessionId);
+  // Suggested follow-up bubble — visible after a turn completes and before
+  // the user types anything new. Resets when the user starts a new turn.
+  const [suggestionDismissed, setSuggestionDismissed] = useState(false);
+  const hasAssistantTurn = messages.some(m => m.role === 'assistant' && m.content.length > 0);
+  const showSuggestion = !streaming && !input.trim() && hasAssistantTurn && !suggestionDismissed;
   const [models, setModels] = useState<ModelItem[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(loadHiddenModels);
@@ -333,6 +339,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, streaming]);
+
+  // Re-arm the suggested-action bubble each time a new turn starts.
+  useEffect(() => {
+    if (streaming) setSuggestionDismissed(false);
+  }, [streaming]);
 
   useEffect(() => {
     const key = sessionId ? `chat_messages_${sessionId}` : null;
@@ -1516,6 +1527,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   className="shrink-0 z-10 w-full bg-background px-4 py-3"
                 >
                   <div className="max-w-3xl mx-auto">
+                    <SuggestedActionBubble
+                      visible={showSuggestion}
+                      onSelect={(s) => {
+                        setInput(s);
+                        setSuggestionDismissed(true);
+                      }}
+                      onDismiss={() => setSuggestionDismissed(true)}
+                    />
                     {renderComposerContent()}
                   </div>
                 </motion.div>
