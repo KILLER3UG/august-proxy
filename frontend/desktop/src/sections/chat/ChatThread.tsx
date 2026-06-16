@@ -100,8 +100,14 @@ export interface ChatMessage {
   }>;
   /** Inline clarify/question */
   clarify?: {
-    question: string;
+    question?: string;
     choices?: string[];
+    /** Multi-question flow; wins over the legacy `question`/`choices` when present. */
+    questions?: Array<{ question: string; choices?: string[] }>;
+    /** 0-indexed; managed by the popup. */
+    currentIndex?: number;
+    /** Header line above the question (e.g. "Synthesized user context to craft …"). */
+    contextSummary?: string;
     answer?: string;
   };
   blocks?: MessageBlock[];
@@ -1716,8 +1722,7 @@ function MessageBubble({
     >
       {!isUser && message.clarify && !message.clarify.answer && onClarifyAnswer && (
         <ClarifyTool
-          question={message.clarify.question}
-          choices={message.clarify.choices}
+          payload={message.clarify}
           onSubmit={onClarifyAnswer}
         />
       )}
