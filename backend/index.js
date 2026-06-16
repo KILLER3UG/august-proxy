@@ -318,6 +318,17 @@ const requestHandler = async (req, res) => {
         return sendJson(res, { status: 'ok', activeProvider: providerName });
     }
 
+    if (req.url === '/api/providers/health' && req.method === 'GET') {
+        const { probeAllProviders } = require('./lib/provider-health');
+        const force = (() => {
+            try { return new URL(req.url, 'http://x').searchParams.get('force') === '1'; } catch { return false; }
+        })();
+        probeAllProviders({ force })
+            .then((results) => sendJson(res, { results, at: Date.now() }))
+            .catch((err) => sendError(res, err, 500));
+        return;
+    }
+
     if (req.url === '/api/config/activeProvider' && req.method === 'GET') {
         const { getProviderConfig } = require('./lib/config');
         return sendJson(res, { 

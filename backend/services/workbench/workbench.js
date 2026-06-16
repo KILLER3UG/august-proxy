@@ -2466,6 +2466,23 @@ async function sendWorkbenchMessageStream({ sessionId, message, provider, agentI
         generateSessionTitle(session, text, emit).catch(e => console.warn('[Workbench] title gen err:', e.message));
     }
 
+    // Emit the assembled prompt so the UI can show a collapsible "PROMPT"
+    // disclosure. Carries the system prompt + the current user message;
+    // large enough to be informative but small enough to be readable.
+    try {
+        const sysPrompt = buildSystemPrompt(session);
+        const promptPayload = {
+            content: sysPrompt + '\n\n[user]\n' + text,
+            systemPrompt: sysPrompt,
+            userMessage: text,
+            tokens: (sysPrompt.length + text.length) / 4,
+        };
+        safeEmit(emit, 'prompt', promptPayload);
+    } catch (err) {
+        // Non-fatal: if prompt assembly fails, the turn still proceeds.
+        console.warn('[Workbench] prompt emit failed:', err.message);
+    }
+
     await callWorkbenchModelStream(session, emit);
     await continueGoalUntilReached(session, emit);
 

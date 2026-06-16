@@ -122,6 +122,7 @@ export interface WorkbenchEventHandlers {
   onToolResult?: (data: { id: string; content: any; is_error?: boolean }) => void;
   onSession?: (data: WorkbenchSession) => void;
   onBtw?: (data: WorkbenchBtwResult) => void;
+  onPrompt?: (data: { content: string; systemPrompt?: string; userMessage?: string; tokens?: number }) => void;
   onDone?: () => void;
   onError?: (data: { message: string }) => void;
 }

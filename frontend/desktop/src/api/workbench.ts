@@ -173,6 +173,14 @@ function dispatchWorkbenchEvent(
     case 'btw':
       handlers.onBtw?.(payload as WorkbenchBtwResult);
       break;
+    case 'prompt':
+      handlers.onPrompt?.({
+        content: payload?.content || '',
+        systemPrompt: payload?.systemPrompt,
+        userMessage: payload?.userMessage,
+        tokens: payload?.tokens,
+      });
+      break;
     case 'done':
       handlers.onDone?.();
       break;
