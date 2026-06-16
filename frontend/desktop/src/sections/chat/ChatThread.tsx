@@ -33,7 +33,7 @@ import {
 import type { WorkbenchBtwResult, WorkbenchSession } from '@/types/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import { WorkbenchModeSelector, WORKBENCH_GUARD_MODES, applyWorkbenchGuardMode, type WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
-import { ContextRing } from './ChatComposer';
+import { ContextRing, estimateContextBreakdown, type ContextBreakdown } from './ChatComposer';
 import { TodoSummary, WorkbenchPlanPanel } from '@/components/chat/WorkbenchPlanPanel';
 
 export const chatRuntime = createChatRuntime();
@@ -504,6 +504,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0) + input.length;
   const estTokens = Math.ceil(totalChars / 4) + 120;
   const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
+
+  // Per-category breakdown for the ContextRing popup. Tool count is an
+  // estimate of the available tool definitions the workbench exposes.
+  const contextBreakdown: ContextBreakdown = useMemo(
+    () => estimateContextBreakdown({
+      messages,
+      input,
+      toolCount: 30, // baseline workbench tool surface
+    }),
+    [messages, input]
+  );
 
   // ── Workbench chat client ─────────────────────────────────────────
   // Workbench only accepts claude/codex engine ids. The normal provider/model
@@ -1309,7 +1320,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               />
             </div>
             <div className="flex items-center gap-2">
-              <ContextRing pct={pct} estTokens={estTokens} maxContext={maxContext} modelName={modelForRequest?.name} size={18} />
+              <ContextRing
+                pct={pct}
+                estTokens={estTokens}
+                maxContext={maxContext}
+                modelName={modelForRequest?.name}
+                size={18}
+                breakdown={contextBreakdown}
+              />
               <ModelDropdown
                 models={models}
                 visibleModels={visibleModels}

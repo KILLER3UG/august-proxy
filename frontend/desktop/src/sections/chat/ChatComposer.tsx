@@ -1,4 +1,4 @@
-import { useState, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Paperclip, AtSign, Mic, Send, StopCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -392,11 +392,46 @@ function EffortDropdown({ value, onChange }: { value: 'low' | 'medium' | 'high' 
 /* A ~22px donut showing how full the context window is. Hovering reveals
  * a tooltip card with the exact token counts and the active model. Keeps the
  * composer calm for beginners while keeping every detail one hover away. */
+export interface ContextBreakdown {
+  messages: number;
+  systemTools: number;
+  systemPrompt: number;
+  skills: number;
+  meta: number;
+}
+
+/**
+ * Estimate per-category context consumption from the raw inputs that
+ * ChatThread has on hand. Returns a number-of-tokens value for each
+ * category. The total should approximately equal `estTokens` (the
+ * visible donut's numerator).
+ */
+export function estimateContextBreakdown(args: {
+  messages: Array<{ content: string; role: string }>;
+  input: string;
+  /** Number of available tool definitions the model can call. */
+  toolCount: number;
+  /** Optional: bytes of core memory / skills injected into the prompt. */
+  coreMemoryBytes?: number;
+}): ContextBreakdown {
+  const messagesChars = args.messages.reduce((sum, m) => sum + m.content.length, 0) + args.input.length;
+  const messages = Math.ceil(messagesChars / 4);
+  // Avg ~180 tokens per tool definition (name + description + JSON schema) — common industry estimate.
+  const systemTools = Math.ceil(args.toolCount * 180);
+  // Base system prompt + project context (rough estimate; matches the BrainPolicy
+  // baseline that the backend ships). Skill prompts add to this on top.
+  const systemPrompt = 800;
+  const skills = Math.ceil((args.coreMemoryBytes ?? 0) / 4);
+  const meta = 100; // session metadata, attachments index, etc.
+  return { messages, systemTools, systemPrompt, skills, meta };
+}
+
 export function ContextRing({
   pct,
   estTokens,
   maxContext,
   modelName,
+  breakdown,
   size = 22,
   stroke = 3,
 }: {
@@ -404,6 +439,8 @@ export function ContextRing({
   estTokens: number;
   maxContext: number;
   modelName?: string;
+  /** When provided, the hover popup shows a per-category breakdown. */
+  breakdown?: ContextBreakdown;
   size?: number;
   stroke?: number;
 }) {
@@ -412,49 +449,120 @@ export function ContextRing({
   const clamped = Math.max(0, Math.min(100, pct));
   const dash = (clamped / 100) * c;
   const tone = clamped > 80 ? 'var(--dt-destructive)' : clamped > 60 ? '#f59e0b' : 'var(--dt-primary)';
-  const [hovered, setHovered] = useState(false);
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // Close on click outside + Escape
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  // Pre-compute breakdown rows (each row needs a label, a value, a color, and a percent)
+  const rows = breakdown
+    ? (() => {
+        const total = Math.max(
+          1,
+          breakdown.messages + breakdown.systemTools + breakdown.systemPrompt + breakdown.skills + breakdown.meta
+        );
+        const items: Array<{ label: string; tokens: number; pct: number; opacity: number }> = [
+          { label: 'Messages',       tokens: breakdown.messages,    pct: (breakdown.messages / total) * 100,    opacity: 1    },
+          { label: 'System tools',   tokens: breakdown.systemTools, pct: (breakdown.systemTools / total) * 100, opacity: 0.65 },
+          { label: 'System prompt',  tokens: breakdown.systemPrompt,pct: (breakdown.systemPrompt / total) * 100,opacity: 0.45 },
+          { label: 'Skills',         tokens: breakdown.skills,      pct: (breakdown.skills / total) * 100,      opacity: 0.30 },
+          { label: 'Meta context',   tokens: breakdown.meta,        pct: (breakdown.meta / total) * 100,        opacity: 0    },
+        ];
+        return items;
+      })()
+    : null;
 
   return (
     <div
+      ref={rootRef}
       className="relative inline-flex items-center"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => !breakdown && setOpen(false)}
     >
-      <svg width={size} height={size} className="-rotate-90 shrink-0" aria-label={`${clamped}% of context used`}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--dt-muted)" strokeWidth={stroke} />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke={tone}
-          strokeWidth={stroke}
-          strokeLinecap="round"
-          strokeDasharray={`${dash} ${c - dash}`}
-          style={{ transition: 'stroke-dasharray 0.3s ease, stroke 0.3s ease' }}
-        />
-      </svg>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="inline-flex items-center cursor-pointer"
+        aria-label={`${clamped}% of context used. Click for breakdown.`}
+      >
+        <svg width={size} height={size} className="-rotate-90 shrink-0">
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--dt-muted)" strokeWidth={stroke} />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            fill="none"
+            stroke={tone}
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={`${dash} ${c - dash}`}
+            style={{ transition: 'stroke-dasharray 0.3s ease, stroke 0.3s ease' }}
+          />
+        </svg>
+      </button>
 
-      {hovered && (
-        <div className="absolute right-0 bottom-full mb-2 z-30 w-44 bg-card border border-border rounded-lg shadow-2xl p-2.5 text-left animate-in fade-in slide-in-from-bottom-1 duration-100">
-          <div className="flex items-center justify-between text-[11px] mb-1.5">
-            <span className="text-muted-foreground">Context</span>
-            <span className="font-mono font-semibold tabular-nums" style={{ color: tone }}>{clamped}%</span>
+      {open && (
+        <div
+          className="absolute right-0 bottom-full mb-2 z-30 w-72 rounded-lg shadow-2xl p-3 text-left animate-in fade-in slide-in-from-bottom-1 duration-100"
+          style={{ backgroundColor: '#1c1c1c', border: '0.5px solid rgba(255,255,255,0.12)' }}
+        >
+          <div className="flex items-center justify-between text-[12.5px] mb-1.5">
+            <span className="font-medium text-[#e0e0e0]">Context windows</span>
+            <span className="font-mono tabular-nums text-muted-foreground text-[11.5px]">
+              {formatTokens(estTokens)}/{formatTokens(maxContext)} ({clamped}%)
+            </span>
           </div>
-          <div className="h-1 rounded-full bg-muted overflow-hidden mb-2">
-            <div className="h-full rounded-full transition-all duration-300" style={{ width: `${clamped}%`, backgroundColor: tone }} />
+          <div className="h-1 rounded-full overflow-hidden mb-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+            <div
+              className="h-full rounded-full transition-all duration-300"
+              style={{ width: `${clamped}%`, backgroundColor: '#3b7eff' }}
+            />
           </div>
-          <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono tabular-nums">
-            <span>{estTokens.toLocaleString()} used</span>
-            <span>{maxContext.toLocaleString()} max</span>
-          </div>
+          {rows && (
+            <div className="space-y-0.5">
+              {rows.map((r) => (
+                <div key={r.label} className="flex items-center gap-1.5 py-[2px] text-[11.5px]">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{
+                      backgroundColor: r.opacity === 0 ? '#444' : '#3b7eff',
+                      opacity: r.opacity === 0 ? 1 : r.opacity,
+                    }}
+                  />
+                  <span className="text-[#c0c0c0]">{r.label}</span>
+                  <span className="ml-auto font-mono tabular-nums text-muted-foreground text-[11px]">
+                    {r.pct.toFixed(1)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           {modelName && (
-            <div className="mt-2 pt-2 border-t border-border/60 text-[10px] text-muted-foreground truncate">
-              <span className="opacity-60">Model · </span>{modelName}
+            <div className="mt-2 pt-2 border-t border-white/10 text-[11px] text-muted-foreground truncate">
+              <span className="opacity-60">Model · </span>
+              <span className="text-[#ddd]">{modelName}</span>
             </div>
           )}
         </div>
       )}
     </div>
   );
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return n.toLocaleString();
 }
