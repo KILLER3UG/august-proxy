@@ -44,6 +44,8 @@ marked.use({
   breaks: true
 });
 
+const STREAM_UPDATE_INTERVAL_MS = 24;
+
 export interface MessageBlock {
   id: string;
   type: 'thinking' | 'tool_call' | 'command' | 'final_output';
@@ -557,6 +559,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const thinkingStart = Date.now();
     let thinkingEnd: number | null = null;
     let workbenchSessionId = workbenchSession?.id || activeSession?.workbenchSessionId || null;
+    let latestWorkbenchTodos = workbenchSession?.todos ?? [];
     let assistantContent = '';
     let thinkingContent = '';
     let toolResults: NonNullable<ChatMessage['tools']> = [];
@@ -576,14 +579,35 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           thinking: thinkingContent || undefined,
           tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
           blocks: streamBlocks,
-          todos: workbenchSession?.todos?.length ? workbenchSession.todos : undefined,
+          todos: latestWorkbenchTodos.length > 0 ? latestWorkbenchTodos : undefined,
         } : msg
       ));
+    };
+
+    let updateTimeout: number | null = null;
+    let lastFlushAt = 0;
+    const flushUpdate = () => {
+      updateTimeout = null;
+      lastFlushAt = performance.now();
+      update();
+    };
+    const scheduleUpdate = () => {
+      if (updateTimeout !== null) return;
+      const now = performance.now();
+      const delay = Math.max(0, STREAM_UPDATE_INTERVAL_MS - (now - lastFlushAt));
+      updateTimeout = window.setTimeout(flushUpdate, delay);
+    };
+    const cancelPendingUpdate = () => {
+      if (updateTimeout !== null) {
+        window.clearTimeout(updateTimeout);
+        updateTimeout = null;
+      }
     };
 
     const finalize = (status: 'done' | 'error' | 'aborted') => {
       if (finished) return;
       finished = true;
+      cancelPendingUpdate();
       updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
         msg.id === assistantMsgId ? {
           ...msg,
@@ -596,7 +620,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               : undefined,
           tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
           blocks: streamBlocks,
-          todos: workbenchSession?.todos?.length ? workbenchSession.todos : undefined,
+          todos: latestWorkbenchTodos.length > 0 ? latestWorkbenchTodos : undefined,
         } : msg
       ));
       if (status === 'done' || status === 'error') {
@@ -652,7 +676,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           }
           thinkingContent += content;
           streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content });
-          update();
+          scheduleUpdate();
         },
         onText: ({ content }) => {
           if (!thinkingEnd && thinkingContent.trim()) {
@@ -660,7 +684,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           }
           assistantContent += content;
           streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content });
-          update();
+          scheduleUpdate();
         },
         onToolUse: ({ id, name, input }) => {
           toolResults = [...toolResults, {
@@ -679,7 +703,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             context: JSON.stringify(input || {}, null, 2),
             status: 'running',
           });
-          update();
+          scheduleUpdate();
         },
         onToolResult: ({ id, content, is_error }) => {
           const resultText = typeof content === 'string' ? content : JSON.stringify(content);
@@ -697,11 +721,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             summary: resultText.slice(0, 240),
             error: is_error ? resultText.slice(0, 240) : '',
           });
-          update();
+          scheduleUpdate();
         },
         onSession: (sessionState) => {
+          latestWorkbenchTodos = sessionState.todos ?? [];
           setWorkbenchSession(sessionState);
-          update();
+          scheduleUpdate();
         },
         onBtw: (result) => {
           setWorkbenchBtw(result);
@@ -713,7 +738,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           hadError = true;
           assistantContent += `\n\n⚠️ Workbench error: ${message}`;
           streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: `\n\n⚠️ Workbench error: ${message}` });
-          update();
+          scheduleUpdate();
           finalize('error');
         },
       }, abortController.signal);
@@ -1282,7 +1307,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               />
             </div>
             <div className="flex items-center gap-2">
-              <ContextRing pct={pct} estTokens={estTokens} maxContext={maxContext} modelName={modelForRequest?.name} size={28} />
+              <ContextRing pct={pct} estTokens={estTokens} maxContext={maxContext} modelName={modelForRequest?.name} size={18} />
               <ModelDropdown
                 models={models}
                 visibleModels={visibleModels}
@@ -1531,7 +1556,7 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
         duration={duration}
         elapsed={isGenerating ? elapsed : undefined}
       >
-        <div className="pl-3 border-l border-foreground/15 leading-relaxed py-1 thought-content text-xs">
+        <div className="pl-3 border-l border-foreground/15 leading-relaxed py-1 thought-content text-[13px]">
           <Markdown content={text} />
           {isGenerating && <WorkingIndicator className="mt-2" />}
         </div>
@@ -1662,7 +1687,7 @@ function MessageBubble({
       )}
       {isUser ? (
         <>
-          <div className="rounded-2xl border border-border/40 bg-muted/40 dark:bg-[#161618] px-4 py-2.5 text-xs leading-relaxed text-foreground shadow-sm max-w-[85%] ml-auto">
+          <div className="rounded-2xl border border-border/40 bg-muted/40 dark:bg-[#161618] px-4 py-2.5 text-[13px] leading-relaxed text-foreground shadow-sm max-w-[85%] ml-auto">
             {editing ? (
               <div className="flex flex-col gap-2">
                 <textarea
@@ -1748,33 +1773,53 @@ function MessageBubble({
                 {JSON.stringify(message, null, 2)}
               </div>
             ) : (
-              displayBlocks.map((block, index) => {
-                if (block.type === 'thinking') {
+              <AnimatePresence initial={false}>
+                {displayBlocks.map((block, index) => {
+                  const key = block.id || `${block.type}_${index}`;
+                  const renderBlock = () => {
+                    if (block.type === 'thinking') {
+                      return (
+                        <ReasoningBlock
+                          text={block.content || ''}
+                          isGenerating={isLast && streaming && index === displayBlocks.length - 1}
+                          duration={message.thinkingDuration}
+                        />
+                      );
+                    } else if (block.type === 'tool_call' || block.type === 'command') {
+                      if (!block.tool) return null;
+                      return (
+                        <div className="my-1">
+                          <ToolCallItemComp tool={block.tool} />
+                        </div>
+                      );
+                    } else if (block.type === 'final_output') {
+                      if (!block.content) return null;
+                      return (
+                        <div className={cn(
+                          "text-[13px] leading-relaxed text-foreground/90 space-y-3 max-w-none",
+                          isLast && streaming && "streaming-markdown-content"
+                        )}>
+                          <Markdown content={block.content} />
+                        </div>
+                      );
+                    }
+                    return null;
+                  };
+
                   return (
-                    <ReasoningBlock
-                      key={block.id || `think_${index}`}
-                      text={block.content || ''}
-                      isGenerating={isLast && streaming && index === displayBlocks.length - 1}
-                      duration={message.thinkingDuration}
-                    />
+                    <motion.div
+                      key={key}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.12, ease: 'easeOut' }}
+                      className="chat-streaming-block"
+                    >
+                      {renderBlock()}
+                    </motion.div>
                   );
-                } else if (block.type === 'tool_call' || block.type === 'command') {
-                  if (!block.tool) return null;
-                  return (
-                    <div key={block.id || `tool_${index}`} className="my-1">
-                      <ToolCallItemComp tool={block.tool} />
-                    </div>
-                  );
-                } else if (block.type === 'final_output') {
-                  if (!block.content) return null;
-                  return (
-                    <div key={block.id || `out_${index}`} className="text-xs leading-relaxed text-foreground/90 space-y-3 max-w-none">
-                      <Markdown content={block.content} />
-                    </div>
-                  );
-                }
-                return null;
-              })
+                })}
+              </AnimatePresence>
             )}
           </div>
           {/* Action buttons below assistant message */}
@@ -2511,9 +2556,9 @@ export function getDisplayBlocks(
       for (const block of blocks) {
         if (block.type === 'final_output' && block.content) {
           const parsed = parseSequentialText(block.content);
-          for (const sub of parsed) {
+          for (const [subIndex, sub] of parsed.entries()) {
             result.push({
-              id: `${block.id}_sub_${sub.type}_${Math.random().toString(36).slice(2, 6)}`,
+              id: `${block.id}_sub_${subIndex}_${sub.type}`,
               type: sub.type,
               content: sub.content
             });
@@ -2529,7 +2574,7 @@ export function getDisplayBlocks(
     const resultFallback: MessageBlock[] = [];
     if (thinking && thinking.trim()) {
       resultFallback.push({
-        id: `fallback_think_${Date.now()}`,
+        id: 'fallback_thinking',
         type: 'thinking',
         content: thinking.trim()
       });
@@ -2548,9 +2593,9 @@ export function getDisplayBlocks(
 
     if (content && content.trim()) {
       const parsed = parseSequentialText(content);
-      for (const sub of parsed) {
+      for (const [subIndex, sub] of parsed.entries()) {
         resultFallback.push({
-          id: `fallback_content_sub_${sub.type}_${Math.random().toString(36).slice(2, 6)}`,
+          id: `fallback_content_sub_${subIndex}_${sub.type}`,
           type: sub.type,
           content: sub.content
         });
@@ -2563,7 +2608,7 @@ export function getDisplayBlocks(
   }
 
   return [{
-    id: `fallback_raw_${Date.now()}`,
+    id: 'fallback_raw',
     type: 'final_output',
     content: content || ''
   }];
@@ -2587,12 +2632,33 @@ export function parseThinkingAndContent(rawContent: string, existingThinking?: s
 
 function Markdown({ content }: { content: string }) {
   if (!content) return null;
-  const html = marked.parse(content) as string;
+  const blocks = useMemo(() => {
+    return marked.lexer(content)
+      .filter(token => token.type !== 'space')
+      .map((token, index) => {
+        const raw = token.raw ?? '';
+        let html = '';
+        try {
+          html = marked.parser([token]) as string;
+        } catch {
+          html = marked.parse(raw) as string;
+        }
+        return {
+          key: `${index}-${token.type}-${raw.slice(0, 32).replace(/\s+/g, '')}`,
+          html
+        };
+      });
+  }, [content]);
 
   return (
-    <div 
-      className="markdown-content"
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <div className="markdown-content">
+      {blocks.map(block => (
+        <div
+          key={block.key}
+          className="markdown-token"
+          dangerouslySetInnerHTML={{ __html: block.html }}
+        />
+      ))}
+    </div>
   );
 }

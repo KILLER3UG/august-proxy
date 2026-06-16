@@ -389,10 +389,9 @@ function EffortDropdown({ value, onChange }: { value: 'low' | 'medium' | 'high' 
 }
 
 /* ── Context usage ring — compact, details on hover ─────────────────── */
-/* A ~22px donut showing how full the context window is. Idle state shows
- * just the ring + centered %; hovering reveals a tooltip card with the
- * exact token counts and the active model. Keeps the composer calm for
- * beginners while keeping every detail one hover away. */
+/* A ~22px donut showing how full the context window is. Hovering reveals
+ * a tooltip card with the exact token counts and the active model. Keeps the
+ * composer calm for beginners while keeping every detail one hover away. */
 export function ContextRing({
   pct,
   estTokens,
@@ -435,9 +434,6 @@ export function ContextRing({
           style={{ transition: 'stroke-dasharray 0.3s ease, stroke 0.3s ease' }}
         />
       </svg>
-      <span className="absolute inset-0 grid place-items-center text-[8px] font-mono tabular-nums text-muted-foreground pointer-events-none">
-        {clamped}
-      </span>
 
       {hovered && (
         <div className="absolute right-0 bottom-full mb-2 z-30 w-44 bg-card border border-border rounded-lg shadow-2xl p-2.5 text-left animate-in fade-in slide-in-from-bottom-1 duration-100">

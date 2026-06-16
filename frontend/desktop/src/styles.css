@@ -254,15 +254,52 @@ input::placeholder {
   opacity: 0;
 }
 
+.chat-streaming-block {
+  will-change: opacity;
+  contain: layout;
+}
+
+.streaming-markdown-content {
+  font-variant-ligatures: none;
+  font-synthesis-weight: none;
+  text-rendering: geometricPrecision;
+}
+
+.streaming-markdown-content > :last-child {
+  animation: markdown-stream-in 140ms ease-out both;
+}
+
+@keyframes markdown-stream-in {
+  from {
+    opacity: 0;
+    filter: blur(0.2px);
+    transform: translateY(-1px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
 .thought-content {
-  opacity: 0.5;
-  transition: opacity 0.3s ease;
+  opacity: 0.72;
+  transition: opacity 0.25s ease;
 }
 
 /* ── Markdown Content Styling ────────────────────────────────────── */
 .markdown-content {
-  font-size: 0.75rem !important;
-  line-height: 1.5;
+  font-size: 0.8125rem !important;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+
+.markdown-token {
+  min-width: 0;
+}
+
+.markdown-token > :last-child {
+  margin-bottom: 0;
 }
 
 .markdown-content p {
@@ -297,9 +334,9 @@ input::placeholder {
   margin-bottom: 0.5rem;
   color: var(--dt-foreground);
 }
-.markdown-content h1 { font-size: 1rem; }
-.markdown-content h2 { font-size: 0.875rem; }
-.markdown-content h3 { font-size: 0.75rem; }
+.markdown-content h1 { font-size: 1.05rem; }
+.markdown-content h2 { font-size: 0.95rem; }
+.markdown-content h3 { font-size: 0.85rem; }
 
 /* Lists */
 .markdown-content ul,
@@ -322,7 +359,7 @@ input::placeholder {
 /* Code blocks & inline code */
 .markdown-content code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.85em;
+  font-size: 0.875em;
   background-color: rgba(100, 150, 255, 0.06);
   padding: 0.125rem 0.25rem;
   border-radius: 0.25rem;
@@ -346,7 +383,7 @@ input::placeholder {
   border-radius: 0;
   border: none;
   color: inherit;
-  font-size: 0.875rem;
+  font-size: 0.9rem;
   font-weight: 400;
   display: block;
 }
@@ -359,7 +396,7 @@ input::placeholder {
   border-collapse: collapse;
   margin-top: 0.75rem;
   margin-bottom: 0.75rem;
-  font-size: 0.875rem;
+  font-size: 0.9rem;
 }
 .markdown-content th,
 .markdown-content td {

@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState, type ReactNode } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 
@@ -28,19 +29,20 @@ export function ThinkingDisclosure({
   icon,
   label = 'Thinking',
 }: ThinkingDisclosureProps) {
-  // `null` = no explicit user toggle yet, defer to default-open
-  // We default to OPEN so the model's thinking stays visible after
-  // streaming ends; the user can still collapse it via the disclosure row.
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
-  // Default-open so the thinking content remains visible after the model
-  // stops streaming. The streaming-time "isPreview" treatment (max-h-40
-  // window + scroll-pinned) is independent of this flag and is still
-  // driven by `pending && userOpen === null` below.
-  const open = userOpen ?? true;
+  // New thinking starts open so the user sees it as it streams. Once it stops
+  // streaming, auto-collapse it unless the user explicitly opened it.
+  const open = userOpen ?? pending;
+
+  useEffect(() => {
+    if (pending) setUserOpen(null);
+  }, [pending]);
+
   const isPreview = pending && userOpen === null;
+
 
   // Pin scroll to bottom during live preview
   useEffect(() => {
@@ -107,17 +109,24 @@ export function ThinkingDisclosure({
           </span>
         </span>
       </DisclosureRow>
-      {open && (
-        <div
-          className={cn(
-            'mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1',
-            isPreview && 'max-h-40'
-          )}
-          ref={scrollRef}
-        >
-          <div ref={contentRef}>{children}</div>
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="thinking-content"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className={cn(
+              'mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1',
+              isPreview && 'max-h-40'
+            )}
+            ref={scrollRef}
+          >
+            <div ref={contentRef}>{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

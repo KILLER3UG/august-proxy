@@ -2237,7 +2237,6 @@ async function callAnthropicWorkbenchModelStream(session, emit) {
         }
 
         const blocks = {};
-        let textBuffer = '';
 
         await parseAnthropicStream(response, (eventType, data) => {
             switch (eventType) {
@@ -2257,7 +2256,7 @@ async function callAnthropicWorkbenchModelStream(session, emit) {
                         safeEmit(emit, 'thinking', { content: data.delta.thinking || '' });
                     } else if (data.delta.type === 'text_delta') {
                         block.text = (block.text || '') + (data.delta.text || '');
-                        textBuffer += data.delta.text || '';
+                        if (data.delta.text) safeEmit(emit, 'text', { content: data.delta.text });
                     } else if (data.delta.type === 'input_json_delta') {
                         block._inputPart = (block._inputPart || '') + (data.delta.partial_json || '');
                     }
@@ -2272,13 +2271,10 @@ async function callAnthropicWorkbenchModelStream(session, emit) {
                     break;
                 }
                 case 'message_stop': {
-                    if (textBuffer) { safeEmit(emit, 'text', { content: textBuffer }); textBuffer = ''; }
                     break;
                 }
             }
         });
-
-        if (textBuffer) { safeEmit(emit, 'text', { content: textBuffer }); textBuffer = ''; }
 
         const content = Object.values(blocks).sort((a, b) => (a.index || 0) - (b.index || 0));
         for (const b of content) { delete b.index; delete b._inputPart; }
@@ -2357,14 +2353,18 @@ async function callOpenAiWorkbenchModelStream(session, emit) {
             // Capture reasoning/thinking deltas in real time. DeepSeek exposes
             // this as `reasoning_content`; other providers use `thinking` or
             // `reasoning`. Emit each delta so the frontend shows live thinking,
-            // and buffer the full text for the persisted content block.
+            // and buffer the full text for the persisted content block. Text
+            // deltas are emitted live as well so the answer streams in-place.
             const reasoningDelta = delta.reasoning_content ?? delta.thinking ?? delta.reasoning;
             if (reasoningDelta) {
                 thinkingBuffer += reasoningDelta;
                 safeEmit(emit, 'thinking', { content: reasoningDelta });
             }
 
-            if (delta.content) textBuffer += delta.content;
+            if (delta.content) {
+                textBuffer += delta.content;
+                safeEmit(emit, 'text', { content: delta.content });
+            }
 
             if (delta.tool_calls) {
                 for (const tc of delta.tool_calls) {
@@ -2386,7 +2386,6 @@ async function callOpenAiWorkbenchModelStream(session, emit) {
                     try { input = JSON.parse(tc.args || '{}'); } catch (_) {}
                     safeEmit(emit, 'tool_use', { id: tc.id || newId('toolu'), name: tc.name, input });
                 }
-                if (textBuffer) { safeEmit(emit, 'text', { content: textBuffer }); textBuffer = ''; }
             }
         });
 
