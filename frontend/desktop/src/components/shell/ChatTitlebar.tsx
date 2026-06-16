@@ -9,7 +9,10 @@ import {
   PanelRight,
   PanelRightClose,
   Settings,
+  GitBranch,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { gitApi } from "@/api/git";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Session } from "@/store/sessions";
@@ -32,6 +35,13 @@ export function ChatTitlebar({
   onSettings,
 }: ChatTitlebarProps) {
   const [speaking, setSpeaking] = useState(false);
+  const branch = useQuery({
+    queryKey: ['git', 'branch', session?.id],
+    queryFn: () => gitApi.branch(session?.id),
+    refetchInterval: 30_000,
+    retry: false,
+  });
+  const currentBranch = branch.data?.current;
 
   const speakLatest = () => {
     if (speaking) {
@@ -71,6 +81,15 @@ export function ChatTitlebar({
           <h1 className="text-[13px] font-medium text-foreground truncate">
             {session?.title ?? "General Assistance Conversation Started"}
           </h1>
+          {currentBranch && (
+            <span
+              className="inline-flex items-center gap-1 text-[10px] font-mono text-muted-foreground/80 bg-white/[0.04] border border-white/[0.06] px-1.5 py-0.5 rounded-md"
+              title={`Current git branch`}
+            >
+              <GitBranch size={10} />
+              {currentBranch}
+            </span>
+          )}
           <button
             onClick={onSettings}
             className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition"
