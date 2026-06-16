@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { CheckCircle2, FileText, FolderOpen, ShieldAlert, Wrench } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { ArrowRight, Check, CheckCircle2, Circle, FileText, FolderOpen, ShieldAlert, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -92,25 +92,64 @@ export function WorkbenchStatusPill({ session: _session }: { session: WorkbenchS
 }
 
 export function TodoSummary({ todos }: { todos?: WorkbenchTodo[] }) {
+  const [expanded, setExpanded] = useState(false);
   if (!todos?.length) return null;
+
+  const total = todos.length;
+  const done = todos.filter(t => t.status === 'completed').length;
+  const visible = expanded ? todos : todos.slice(0, 3);
+  const overflow = total - visible.length;
 
   return (
     <div className="mx-auto max-w-3xl rounded-lg border border-border bg-card">
-      <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
-        Todos
+      <div className="flex items-center justify-between px-3 py-2">
+        <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+          Todos
+        </span>
+        <span className="font-mono tabular-nums text-[10.5px] text-muted-foreground/80">
+          {done}/{total}
+        </span>
       </div>
       <div className="space-y-0.5 px-3 pb-3">
-        {todos.map(todo => (
-          <div key={todo.id} className="flex items-start gap-2 text-xs">
+        {visible.map(todo => (
+          <div key={todo.id} className="flex items-center gap-2 text-xs">
+            <span className="w-3 inline-flex justify-center shrink-0 text-muted-foreground/80">
+              {todo.status === 'completed' ? (
+                <Check className="size-3 text-emerald-500" />
+              ) : todo.status === 'in_progress' ? (
+                <ArrowRight className="size-3 text-amber-500" />
+              ) : (
+                <Circle className="size-3 text-muted-foreground/40" />
+              )}
+            </span>
             <span className={cn(
-              'mt-0.5 size-2 rounded-full shrink-0',
-              todo.status === 'completed' ? 'bg-emerald-500' : todo.status === 'in_progress' ? 'bg-amber-500' : 'bg-muted-foreground/30'
-            )} />
-            <span className={cn(
-              todo.status === 'completed' && 'text-muted-foreground line-through'
-            )}>{todo.content}</span>
+              'flex-1',
+              todo.status === 'completed' && 'text-muted-foreground line-through',
+              todo.status === 'in_progress' && 'text-foreground',
+              todo.status === 'pending' && 'text-muted-foreground/70'
+            )}>
+              {todo.content}
+            </span>
           </div>
         ))}
+        {overflow > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="text-[10px] text-muted-foreground/60 italic hover:text-foreground pl-5 pt-0.5"
+          >
+            + {overflow} waiting…
+          </button>
+        )}
+        {expanded && total > 3 && (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="text-[10px] text-muted-foreground/60 italic hover:text-foreground pl-5"
+          >
+            show less
+          </button>
+        )}
       </div>
     </div>
   );
