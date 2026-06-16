@@ -245,6 +245,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // Suggested follow-up bubble — visible after a turn completes and before
   // the user types anything new. Resets when the user starts a new turn.
   const [suggestionDismissed, setSuggestionDismissed] = useState(false);
+  const [lastPrompt, setLastPrompt] = useState<{ content: string; systemPrompt: string; userMessage: string; tokens: number } | null>(null);
   const hasAssistantTurn = messages.some(m => m.role === 'assistant' && m.content.length > 0);
   const showSuggestion = !streaming && !input.trim() && hasAssistantTurn && !suggestionDismissed;
   const [models, setModels] = useState<ModelItem[]>([]);
@@ -700,6 +701,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
         effort,
       }, {
+        onPrompt: ({ content, systemPrompt, userMessage, tokens }) => {
+          // Stash the assembled prompt for the upcoming assistant turn so
+          // we can render a <PromptDisclosure> at the top of the turn.
+          setLastPrompt({ content, systemPrompt: systemPrompt ?? '', userMessage: userMessage ?? '', tokens: tokens ?? 0 });
+        },
         onThinking: ({ content }) => {
           if (!thinkingEnd && content.trim()) {
             thinkingEnd = Date.now();

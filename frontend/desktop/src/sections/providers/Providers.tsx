@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
+import { useProviderHealth } from '@/api/provider-health';
 import { SectionHeader } from '@/components/SectionHeader';
 import { PageLoader } from '@/components/PageLoader';
 import { Eye, EyeOff, ChevronDown, ChevronRight, Save, Check, Key, ArrowUpRight, PlugZap, ShieldCheck, Globe, Loader2 } from 'lucide-react';
@@ -55,6 +56,7 @@ export function Providers() {
     queryKey: ['providers'],
     queryFn: () => api.get<ActiveProviderData>('/api/config/activeProvider'),
   });
+  const { byProvider: healthByProvider, loaded: healthLoaded, refresh: refreshHealth } = useProviderHealth(60_000);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [baseUrls, setBaseUrls] = useState<Record<string, string>>({});
@@ -175,6 +177,18 @@ export function Providers() {
                           <span className="inline-flex items-center gap-1 text-[9px] font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded-full">
                             <Check className="size-2.5" /> active
                           </span>
+                        )}
+                        {hasKey && healthLoaded && (
+                          <span
+                            className={cn(
+                              'inline-block size-1.5 rounded-full shrink-0',
+                              healthByProvider.get(p.id)?.online
+                                ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,.5)]'
+                                : 'bg-muted-foreground/40'
+                            )}
+                            title={healthByProvider.get(p.id)?.online ? 'Live · reachable' : 'Offline or unreachable'}
+                            aria-label={healthByProvider.get(p.id)?.online ? 'Provider online' : 'Provider offline'}
+                          />
                         )}
                       </div>
                       <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
