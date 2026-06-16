@@ -1448,6 +1448,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         </div>
                       );
                     })}
+                    {streaming && (() => {
+                      // Live-thinking placeholder: the assistant bubble is
+                      // created immediately, but no thinking/content block may
+                      // exist on the first render. Show the disclosure label
+                      // now so it stays synced with the streamed thoughts.
+                      const lastMsg = messages[messages.length - 1];
+                      if (!lastMsg || lastMsg.role !== 'assistant') {
+                        return <ReasoningBlock text='' isGenerating />;
+                      }
+                      const parsed = parseThinkingAndContent(lastMsg.content, lastMsg.thinking);
+                      return (!parsed.thinking && !parsed.content) ? <ReasoningBlock text='' isGenerating /> : null;
+                    })()}
                   </div>
                 </div>
 
@@ -1521,6 +1533,7 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
       >
         <div className="pl-3 border-l border-foreground/15 leading-relaxed py-1 thought-content text-xs">
           <Markdown content={text} />
+          {isGenerating && <WorkingIndicator className="mt-2" />}
         </div>
       </ThinkingDisclosure>
     </div>
@@ -1763,7 +1776,6 @@ function MessageBubble({
                 return null;
               })
             )}
-            {isLast && streaming && <WorkingIndicator className="mt-2" />}
           </div>
           {/* Action buttons below assistant message */}
           <div className={cn(

@@ -58,11 +58,15 @@ export function ThinkingDisclosure({
     return () => observer.disconnect();
   }, [isPreview, open, children]);
 
+  const displayLabel = pending
+    ? 'Thinking'
+    : duration !== undefined
+      ? `Thought for ${fmtElapsed(duration)}`
+      : label;
+
   const displayDuration = pending
     ? elapsed !== undefined ? fmtElapsed(elapsed) : null
-    : duration !== undefined
-      ? fmtElapsed(duration)
-      : null;
+    : null;
 
   return (
     <div
@@ -84,16 +88,13 @@ export function ThinkingDisclosure({
           {icon}
           <span
             className={cn(
-              'text-sm font-medium leading-5 text-muted-foreground',
-              pending && 'shimmer text-foreground/55'
+              'text-sm font-medium leading-5',
+              pending ? 'text-foreground/80 shimmer thinking-content-generating' : 'text-muted-foreground'
             )}
           >
             <span className={cn('thinking-text', pending && 'animating')}>
-              <span className="thinking-label">
-                <span className="thinking-char thinking-cap" style={{ animationDelay: '0ms' }}>{label[0]}</span>
-                {label.slice(1).split('').map((ch, i) => (
-                  <span key={i} className="thinking-char" style={{ animationDelay: `${(i + 1) * 100}ms` }}>{ch}</span>
-                ))}
+              <span className="thinking-label" style={{ whiteSpace: 'pre' }}>
+                {displayLabel}
               </span>
               {pending && (
                 <span className="thinking-dots">
