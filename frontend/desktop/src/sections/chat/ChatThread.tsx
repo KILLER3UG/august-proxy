@@ -644,6 +644,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         message: applyWorkbenchGuardMode(workbenchMode, chatHistory.map(m => `${m.role}: ${m.content}`).join('\n\n') || ' '),
         provider: getWorkbenchProvider(),
         agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
+        effort,
       }, {
         onThinking: ({ content }) => {
           if (!thinkingEnd && content.trim()) {
@@ -875,10 +876,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       return;
     }
 
-    // Auto-generate title from first user message
+    // Auto-generate title from the first user request. Skip slash commands
+    // (e.g. "/debug …", "/model …") so the session isn't named after a
+    // command, and collapse whitespace/newlines for a clean single-line title.
     if (messages.length === 0 && sessionId) {
-      const title = text.length > 50 ? text.slice(0, 50).trim() + '…' : text;
-      renameSession(sessionId, title);
+      const isCommand = /^\s*\/[a-zA-Z][\w-]*\b/.test(text);
+      if (!isCommand) {
+        const cleaned = text.replace(/\s+/g, ' ').trim();
+        const title = cleaned.length > 50 ? cleaned.slice(0, 50).trim() + '…' : cleaned;
+        if (title) renameSession(sessionId, title);
+      }
     }
 
     // Save the selected model on this session only; do not change global defaults.
@@ -1441,12 +1448,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         </div>
                       );
                     })}
-                    {streaming && (() => {
-                      const lastMsg = messages[messages.length - 1];
-                      if (!lastMsg || lastMsg.role !== 'assistant') return <ThinkingIndicator />;
-                      const parsed = parseThinkingAndContent(lastMsg.content, lastMsg.thinking);
-                      return (!parsed.thinking && !parsed.content) ? <ThinkingIndicator /> : null;
-                    })()}
                   </div>
                 </div>
 
@@ -1890,30 +1891,6 @@ function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-function ThinkingIndicator() {
-  return (
-    <div className="flex gap-3">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground font-mono pt-1">
-        <span className="thinking-text animating">
-          <span className="thinking-label">
-            <span className="thinking-char thinking-cap" style={{ animationDelay: '0ms' }}>A</span>
-            <span className="thinking-char" style={{ animationDelay: '100ms' }}>u</span>
-            <span className="thinking-char" style={{ animationDelay: '200ms' }}>g</span>
-            <span className="thinking-char" style={{ animationDelay: '300ms' }}>u</span>
-            <span className="thinking-char" style={{ animationDelay: '400ms' }}>s</span>
-            <span className="thinking-char" style={{ animationDelay: '500ms' }}>t</span>
-          </span>
-          <span className="thinking-dots">
-            <span className="dot" style={{ animationDelay: '0ms' }}>.</span>
-            <span className="dot" style={{ animationDelay: '200ms' }}>.</span>
-            <span className="dot" style={{ animationDelay: '400ms' }}>.</span>
-          </span>
-        </span>
-      </div>
     </div>
   );
 }

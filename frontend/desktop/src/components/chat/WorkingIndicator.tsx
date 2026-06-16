@@ -7,7 +7,7 @@ interface WorkingIndicatorProps {
 export function WorkingIndicator({ className }: WorkingIndicatorProps) {
   return (
     <div className={cn("flex items-center gap-0.5 py-1", className)}>
-      {['A', 'u', 'g'].map((char, i) => (
+      {['A', 'U', 'G'].map((char, i) => (
         <motion.span
           key={i}
           className="text-lg font-bold text-primary inline-block"

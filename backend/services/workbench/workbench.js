@@ -39,6 +39,7 @@ const {
 } = require('../tools/agent-registry');
 const { renderTeamSkillsForSystem } = require('../tools/skills');
 const { getTeamSkills } = require('../tools/skills');
+const modelCatalog = require('../catalog/model-catalog');
 
 /**
  * Resolve the provider profile for a Workbench turn.
@@ -115,6 +116,75 @@ function ensureAnthropicMessagesUrl(baseUrl) {
     if (!target) return '';
     if (/\/v1\/messages$/i.test(target)) return target;
     return target.replace(/\/+$/, '').replace(/\/models$/i, '') + '/v1/messages';
+}
+
+// ── Reasoning effort helpers ─────────────────────────────────────────────
+//
+// A user-facing "effort" knob (low / medium / high / max) that meaningfully
+// changes the model call. Resolution priority (first non-null wins):
+//   1. effort explicitly passed to this turn
+//   2. session.effort (last value the user picked for this workbench session)
+//   3. model-catalog default for the resolved model
+//   4. "medium"
+//
+// Per-provider mapping is applied at the call site:
+//   • Anthropic (supportsThinking) → thinking.budget_tokens
+//   • Anthropic (no native thinking) → system-prompt instruction
+//   • OpenAI / Codex / OpenAI-compatible (supportsReasoning) → reasoning_effort
+const EFFORT_LEVELS = ['low', 'medium', 'high', 'max'];
+
+function normalizeEffort(value) {
+    if (typeof value !== 'string') return null;
+    const lower = value.toLowerCase().trim();
+    return EFFORT_LEVELS.includes(lower) ? lower : null;
+}
+
+function resolveEffectiveEffort(incoming, session, modelEntry) {
+    return normalizeEffort(incoming)
+        || normalizeEffort(session && session.effort)
+        || normalizeEffort(modelEntry && modelEntry.reasoningEffort)
+        || 'medium';
+}
+
+function effortToThinkingBudget(effort, modelMax, maxTokens) {
+    const base = (() => {
+        switch (effort) {
+            case 'low':    return 4000;
+            case 'medium': return 16000;
+            case 'high':   return 64000;
+            case 'max':    return 128000;
+            default:       return 16000;
+        }
+    })();
+    let budget = base;
+    if (modelMax && modelMax > 0) budget = Math.min(budget, modelMax);
+    // Anthropic rejects budget_tokens >= max_tokens. Clamp to maxTokens - 1.
+    if (maxTokens && maxTokens > 0) budget = Math.min(budget, maxTokens - 1);
+    // Anthropic requires a minimum of 1024 budget tokens. If we can't honor
+    // that, return 0 so the caller skips the thinking block.
+    return budget >= 1024 ? budget : 0;
+}
+
+function effortToPromptInstruction(effort) {
+    switch (effort) {
+        case 'low':
+            return 'Be concise. Think briefly before answering.';
+        case 'high':
+            return 'Think deeply and methodically. Consider edge cases and verify your reasoning before answering.';
+        case 'max':
+            return 'Think as deeply as possible. Plan, verify, and challenge your own assumptions before answering.';
+        case 'medium':
+        default:
+            return 'Think carefully through the problem before answering.';
+    }
+}
+
+// Map August's 4-level effort to OpenAI's 3-level reasoning_effort.
+// OpenAI rejects "max"; clamp silently (matches Hermes behaviour).
+function effortToOpenAiReasoningEffort(effort) {
+    if (effort === 'low' || effort === 'medium' || effort === 'high') return effort;
+    if (effort === 'max') return 'high';
+    return null;
 }
 
 /**
@@ -1766,16 +1836,29 @@ async function callAnthropicWorkbenchModel(session) {
     while (loops < getWorkbenchMaxToolLoops()) {
         loops++;
         const brainPolicy = getSessionBrainPolicy(session);
+        const modelEntry = modelCatalog.get(model);
+        const effectiveEffort = resolveEffectiveEffort(undefined, session, modelEntry);
+        const body = {
+            model,
+            max_tokens: brainPolicy.executionPolicy.maxTokens,
+            system: buildSystemPrompt(session),
+            messages: session.messages,
+            tools: toolDefinitions(session)
+        };
+        if (modelEntry && modelEntry.supportsThinking) {
+            const budget = effortToThinkingBudget(
+                effectiveEffort,
+                modelEntry.thinkingBudgetMax || 0,
+                brainPolicy.executionPolicy.maxTokens
+            );
+            if (budget > 0) body.thinking = { type: 'enabled', budget_tokens: budget };
+        } else {
+            body.system = `${effortToPromptInstruction(effectiveEffort)}\n\n${body.system}`;
+        }
         const response = await fetch(profile.targetUrl, {
             method: 'POST',
             headers: buildHeaders(profile.apiKey),
-            body: JSON.stringify({
-                model,
-                max_tokens: brainPolicy.executionPolicy.maxTokens,
-                system: buildSystemPrompt(session),
-                messages: session.messages,
-                tools: toolDefinitions(session)
-            }),
+            body: JSON.stringify(body),
             signal: AbortSignal.timeout(300000)
         });
         const raw = await response.text();
@@ -1886,23 +1969,30 @@ async function callOpenAiWorkbenchModel(session) {
     while (loops < getWorkbenchMaxToolLoops()) {
         loops++;
         const brainPolicy = getSessionBrainPolicy(session);
+        const modelEntry = modelCatalog.get(model);
+        const effectiveEffort = resolveEffectiveEffort(undefined, session, modelEntry);
+        const openAiEffort = modelEntry && modelEntry.supportsReasoning
+            ? effortToOpenAiReasoningEffort(effectiveEffort)
+            : null;
+        const body = {
+            model,
+            messages: [
+                { role: 'system', content: buildSystemPrompt(session) },
+                ...toOpenAiMessages(session.messages)
+            ],
+            tools: openAiToolDefinitions(session),
+            tool_choice: 'auto',
+            stream: false,
+            max_tokens: brainPolicy.executionPolicy.maxTokens
+        };
+        if (openAiEffort) body.reasoning_effort = openAiEffort;
         const response = await fetch(profile.targetUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...(profile.apiKey ? { Authorization: `Bearer ${profile.apiKey}` } : {})
             },
-            body: JSON.stringify({
-                model,
-                messages: [
-                    { role: 'system', content: buildSystemPrompt(session) },
-                    ...toOpenAiMessages(session.messages)
-                ],
-                tools: openAiToolDefinitions(session),
-                tool_choice: 'auto',
-                stream: false,
-                max_tokens: brainPolicy.executionPolicy.maxTokens
-            }),
+            body: JSON.stringify(body),
             signal: AbortSignal.timeout(300000)
         });
         const raw = await response.text();
@@ -2115,17 +2205,30 @@ async function callAnthropicWorkbenchModelStream(session, emit) {
     while (loops < getWorkbenchMaxToolLoops()) {
         loops++;
         const brainPolicy = getSessionBrainPolicy(session);
+        const modelEntry = modelCatalog.get(model);
+        const effectiveEffort = resolveEffectiveEffort(undefined, session, modelEntry);
+        const body = {
+            model,
+            max_tokens: brainPolicy.executionPolicy.maxTokens,
+            system: buildSystemPrompt(session),
+            messages: session.messages,
+            tools: toolDefinitions(session),
+            stream: true
+        };
+        if (modelEntry && modelEntry.supportsThinking) {
+            const budget = effortToThinkingBudget(
+                effectiveEffort,
+                modelEntry.thinkingBudgetMax || 0,
+                brainPolicy.executionPolicy.maxTokens
+            );
+            if (budget > 0) body.thinking = { type: 'enabled', budget_tokens: budget };
+        } else {
+            body.system = `${effortToPromptInstruction(effectiveEffort)}\n\n${body.system}`;
+        }
         const response = await fetch(profile.targetUrl, {
             method: 'POST',
             headers: buildHeaders(profile.apiKey),
-            body: JSON.stringify({
-                model,
-                max_tokens: brainPolicy.executionPolicy.maxTokens,
-                system: buildSystemPrompt(session),
-                messages: session.messages,
-                tools: toolDefinitions(session),
-                stream: true
-            }),
+            body: JSON.stringify(body),
             signal: AbortSignal.timeout(300000)
         });
         if (!response.ok) {
@@ -2210,23 +2313,30 @@ async function callOpenAiWorkbenchModelStream(session, emit) {
     while (loops < getWorkbenchMaxToolLoops()) {
         loops++;
         const brainPolicy = getSessionBrainPolicy(session);
+        const modelEntry = modelCatalog.get(model);
+        const effectiveEffort = resolveEffectiveEffort(undefined, session, modelEntry);
+        const openAiEffort = modelEntry && modelEntry.supportsReasoning
+            ? effortToOpenAiReasoningEffort(effectiveEffort)
+            : null;
+        const body = {
+            model,
+            messages: [
+                { role: 'system', content: buildSystemPrompt(session) },
+                ...toOpenAiMessages(session.messages)
+            ],
+            tools: openAiToolDefinitions(session),
+            tool_choice: 'auto',
+            stream: true,
+            max_tokens: brainPolicy.executionPolicy.maxTokens
+        };
+        if (openAiEffort) body.reasoning_effort = openAiEffort;
         const response = await fetch(profile.targetUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...(profile.apiKey ? { Authorization: `Bearer ${profile.apiKey}` } : {})
             },
-            body: JSON.stringify({
-                model,
-                messages: [
-                    { role: 'system', content: buildSystemPrompt(session) },
-                    ...toOpenAiMessages(session.messages)
-                ],
-                tools: openAiToolDefinitions(session),
-                tool_choice: 'auto',
-                stream: true,
-                max_tokens: brainPolicy.executionPolicy.maxTokens
-            }),
+            body: JSON.stringify(body),
             signal: AbortSignal.timeout(300000)
         });
         if (!response.ok) {
@@ -2324,10 +2434,14 @@ async function callOpenAiWorkbenchModelStream(session, emit) {
     safeEmit(emit, 'text', { content: 'Workbench stopped after the maximum tool loop count.' });
 }
 
-async function sendWorkbenchMessageStream({ sessionId, message, provider, agentId } = {}, emit) {
+async function sendWorkbenchMessageStream({ sessionId, message, provider, agentId, effort } = {}, emit) {
     const session = getWorkbenchSession(sessionId);
     if (provider === 'claude' || provider === 'codex') session.provider = provider;
     if (agentId) session.agentId = resolveAgentId(agentId, session.agentId || 'build');
+    // Persist the user's effort choice on the session so subsequent turns in
+    // this session (/btw, /goal, goal continuation) reuse the same setting.
+    const normalizedIncoming = normalizeEffort(effort);
+    if (normalizedIncoming) session.effort = normalizedIncoming;
     const text = String(message || '').trim();
     if (!text) throw new Error('Message is required.');
 
