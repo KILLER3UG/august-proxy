@@ -120,6 +120,14 @@ export interface WorkbenchEventHandlers {
   onText?: (data: { content: string }) => void;
   onToolUse?: (data: { id: string; name: string; input: Record<string, any> }) => void;
   onToolResult?: (data: { id: string; content: any; is_error?: boolean }) => void;
+  onToolProgress?: (data: {
+    id: string;
+    name: string;
+    phase: 'reading' | 'read' | 'running' | 'done' | 'error';
+    paths?: string[];
+    path?: string;
+    message?: string;
+  }) => void;
   onSession?: (data: WorkbenchSession) => void;
   onBtw?: (data: WorkbenchBtwResult) => void;
   onPrompt?: (data: { content: string; systemPrompt?: string; userMessage?: string; tokens?: number }) => void;

@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { Check, Loader2, FileSearch } from 'lucide-react';
 import { cn, fmtElapsed } from '@/lib/utils';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ToolIcon } from '@/components/ui/ToolIcon';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { DiffView } from '@/components/chat/DiffView';
+import { visibleProgress, type ProgressEntry } from '@/lib/tool-progress';
 
 /**
  * Extract a filename hint from a tool's JSON context (best-effort).
@@ -114,7 +116,14 @@ export interface ToolEntry {
  * a bordered card. The tool name animates while running, same as the
  * "Thinking" label in ThinkingDisclosure.
  */
-export function ToolCallItem({ tool }: { tool: ToolEntry }) {
+export function ToolCallItem({
+  tool,
+  progress,
+}: {
+  tool: ToolEntry;
+  /** Optional live "Reading… / Read" sub-list emitted by the workbench. */
+  progress?: ReadonlyArray<ProgressEntry>;
+}) {
   const [userOverride, setUserOverride] = useState<boolean | null>(null);
   const open = userOverride ?? tool.status === 'error';
 
@@ -202,6 +211,52 @@ export function ToolCallItem({ tool }: { tool: ToolEntry }) {
       {open && hasBody && (
         <div className="pl-3 border-l border-foreground/15 ml-2.5 mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1">
           {tool.context && <Section label="context">{tool.context}</Section>}
+
+          {(() => {
+            const visible = progress ? visibleProgress(progress) : [];
+            const total = progress?.length ?? 0;
+            const overflow = Math.max(0, total - visible.length);
+            if (visible.length === 0) return null;
+            return (
+              <div className="my-1.5 space-y-0.5" aria-label="Tool progress" data-tool-progress>
+                <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">
+                  <FileSearch size={10} />
+                  <span>
+                    {tool.status === 'running' ? 'Exploring' : 'Files'}
+                  </span>
+                </div>
+                {visible.map((entry) => (
+                  <div
+                    key={entry.path}
+                    className="flex items-center gap-1.5 text-[11px] truncate"
+                    title={entry.path}
+                  >
+                    <span className="w-2.5 shrink-0 inline-flex justify-center">
+                      {entry.status === 'reading' ? (
+                        <Loader2 size={10} className="animate-spin text-blue-500" />
+                      ) : (
+                        <Check size={10} className="text-muted-foreground/50" />
+                      )}
+                    </span>
+                    <span
+                      className={cn(
+                        'truncate font-mono',
+                        entry.status === 'reading' ? 'text-blue-400 italic' : 'text-muted-foreground/60 line-through'
+                      )}
+                    >
+                      {entry.status === 'reading' ? 'Reading ' : 'Read '}
+                      {entry.path}
+                    </span>
+                  </div>
+                ))}
+                {overflow > 0 && (
+                  <div className="text-[10px] text-muted-foreground/50 italic pl-4">
+                    + {overflow} more
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {tool.preview && tool.status === 'running' && (
             <Section label="streaming">

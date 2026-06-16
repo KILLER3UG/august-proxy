@@ -889,8 +889,9 @@ function isParallelSafeWorkbenchToolUse(toolUse) {
     return true;
 }
 
-function listDirectory(args) {
+function listDirectory(args, progress) {
     const dir = resolveAnyPath(args.path || '.');
+    if (progress) progress('reading', { paths: [toDisplayPath(dir)] });
     const entries = fs.readdirSync(dir, { withFileTypes: true }).slice(0, 100).map(entry => {
         const fullPath = path.join(dir, entry.name);
         const stat = fs.statSync(fullPath);
@@ -901,15 +902,19 @@ function listDirectory(args) {
             sizeBytes: stat.size
         };
     });
+    if (progress) progress('read', { path: toDisplayPath(dir) });
     return { root: toDisplayPath(dir), entries };
 }
 
-function readFile(args) {
+function readFile(args, progress) {
     const filePath = resolveAnyPath(args.path);
+    const display = toDisplayPath(filePath);
+    if (progress) progress('reading', { paths: [display] });
     const maxChars = Math.max(1000, Math.min(80000, Number(args.max_chars || 20000)));
     const text = fs.readFileSync(filePath, 'utf8');
+    if (progress) progress('read', { path: display });
     return {
-        path: toDisplayPath(filePath),
+        path: display,
         length: text.length,
         truncated: text.length > maxChars,
         content: text.slice(0, maxChars)
@@ -933,18 +938,32 @@ function walkFiles(root, limit = 800) {
     return results;
 }
 
-function searchFiles(args) {
+function searchFiles(args, progress) {
     const root = resolveAnyPath(args.path || '.');
     const query = String(args.query || '');
     const limit = Math.max(1, Math.min(100, Number(args.limit || 50)));
+    // Surface the file list (capped) as "reading" so the UI shows a list of
+    // paths the model is about to inspect. Then emit "read" per file as
+    // it's actually opened.
+    const filePaths = walkFiles(root);
+    const displayPaths = filePaths.map(p => toDisplayPath(p));
+    if (progress && displayPaths.length) {
+        progress('reading', { paths: displayPaths.slice(0, 10) });
+    }
     const matches = [];
-    for (const filePath of walkFiles(root)) {
+    for (let i = 0; i < filePaths.length; i++) {
+        const filePath = filePaths[i];
+        const display = displayPaths[i];
         let text = '';
-        try { text = fs.readFileSync(filePath, 'utf8'); } catch (e) { continue; }
+        try { text = fs.readFileSync(filePath, 'utf8'); } catch (e) {
+            if (progress) progress('read', { path: display });
+            continue;
+        }
+        if (progress) progress('read', { path: display });
         const lines = text.split(/\r?\n/);
-        for (let i = 0; i < lines.length; i++) {
-            if (lines[i].toLowerCase().includes(query.toLowerCase())) {
-                matches.push({ path: toDisplayPath(filePath), line: i + 1, text: lines[i].slice(0, 300) });
+        for (let li = 0; li < lines.length; li++) {
+            if (lines[li].toLowerCase().includes(query.toLowerCase())) {
+                matches.push({ path: display, line: li + 1, text: lines[li].slice(0, 300) });
                 if (matches.length >= limit) return { query, matches };
             }
         }
@@ -1457,10 +1476,17 @@ async function executeWorkbenchTool(session, toolUse, toolContext = {}) {
     const blocked = requireApproval(session, name, args);
     if (blocked) return blocked;
 
+    // Build a `progress(phase, extra)` callback for the read tools so they
+    // can stream "reading" / "read" phases to the UI. No-op if `emit` is missing.
+    const emit = toolContext.emit;
+    const progress = emit
+        ? (phase, extra) => safeEmitProgress(emit, { id: toolUse.id, name, phase, ...(extra || {}) })
+        : () => {};
+
     let result;
     try {
-        if (name === 'august__list_directory' || name === 'workbench_list_directory') result = listDirectory(args);
-        else if (name === 'august__search_files' || name === 'workbench_search_files') result = searchFiles(args);
+        if (name === 'august__list_directory' || name === 'workbench_list_directory') result = listDirectory(args, progress);
+        else if (name === 'august__search_files' || name === 'workbench_search_files') result = searchFiles(args, progress);
         else if (name === 'august__diagnose_proxy' || name === 'workbench_diagnose_proxy') result = diagnoseProxy(args);
         else if (name === 'august__describe_environment' || name === 'workbench_describe_environment') result = describeWorkbenchEnvironment(session);
         else if (name === 'august__list_proxy_capabilities' || name === 'workbench_list_proxy_capabilities') result = listProxyCapabilities();
@@ -1473,7 +1499,11 @@ async function executeWorkbenchTool(session, toolUse, toolContext = {}) {
         else if (name === 'august__get_activity' || name === 'workbench_get_activity') result = getWorkbenchActivity(args);
         else if (name === 'august__submit_plan' || name === 'workbench_submit_plan') result = submitPlan(session, args);
         else if (name === 'august__replace_text' || name === 'workbench_replace_text') result = replaceText(args);
-        else if (name === 'august__run_command' || name === 'workbench_run_command') result = await runCommand(args);
+        else if (name === 'august__run_command' || name === 'workbench_run_command') {
+            progress('running', { message: 'starting command' });
+            result = await runCommand(args);
+            progress('done');
+        }
         else if (name === 'august__spawn_subagent' || name === 'workbench_spawn_subagent') result = await executeSubAgent(session, args, toolContext);
         else if (name === 'august__run_team' || name === 'workbench_run_team') result = await executeTeamRun(session, args, toolContext);
         else if (name === 'august__generate_session_title') {
@@ -1516,6 +1546,7 @@ async function executeWorkbenchTool(session, toolUse, toolContext = {}) {
         else if (isManagedWebToolName(name)) result = await executeManagedWebTool(name, args);
         else throw new Error(`Unsupported workbench tool: ${name}`);
     } catch (e) {
+        progress('error', { message: e.message });
         recordToolFailure({
             toolName: name,
             args,
@@ -1529,6 +1560,7 @@ async function executeWorkbenchTool(session, toolUse, toolContext = {}) {
     }
 
     if (mutating) recordMutation(session, name, args, result);
+    progress('done');
     return result;
 }
 
@@ -1880,7 +1912,7 @@ async function callAnthropicWorkbenchModel(session) {
             return { session: summarizeSession(session), assistant: extractAssistantText(content), content, events };
         }
 
-        const results = await executeWorkbenchToolBatch(session, toolUses);
+        const results = await executeWorkbenchToolBatch(session, toolUses, { emit });
         results.forEach(r => events.push({ type: 'tool_result', id: r.tool_use_id, content: r.content, is_error: r.is_error }));
         session.messages.push({ role: 'user', content: results });
     }
@@ -2021,7 +2053,7 @@ async function callOpenAiWorkbenchModel(session) {
             return { session: summarizeSession(session), assistant: extractAssistantText(content), content, events };
         }
 
-        const results = await executeWorkbenchToolBatch(session, toolUses);
+        const results = await executeWorkbenchToolBatch(session, toolUses, { emit });
         results.forEach(r => events.push({ type: 'tool_result', id: r.tool_use_id, content: r.content, is_error: r.is_error }));
         session.messages.push({ role: 'user', content: results });
     }
@@ -2152,6 +2184,20 @@ function updateWorkbenchGoal({ sessionId, action, condition } = {}) {
 
 function safeEmit(emit, type, data) {
     try { emit(type, data); } catch (_) { throw new Error('SSE connection closed'); }
+}
+
+/**
+ * Emit a `tool_progress` event for a tool call. Used by read tools to surface
+ * the in-flight "Reading <file>" → "Read <file>" sub-list in the UI.
+ *
+ * Phases: 'reading' (about to read these paths), 'read' (this single path is done),
+ * 'running' (generic), 'done' (the whole tool call is complete), 'error'.
+ *
+ * If `emit` is missing (e.g. a non-streamed invocation) this is a no-op.
+ */
+function safeEmitProgress(emit, payload) {
+    if (typeof emit !== 'function') return;
+    try { emit('tool_progress', payload); } catch (_) { /* SSE closed */ }
 }
 
 async function parseAnthropicStream(response, onEvent) {
@@ -2287,7 +2333,7 @@ async function callAnthropicWorkbenchModelStream(session, emit) {
             return;
         }
 
-        const toolResults = await executeWorkbenchToolBatch(session, toolUses);
+        const toolResults = await executeWorkbenchToolBatch(session, toolUses, { emit });
         toolResults.forEach(result => safeEmit(emit, 'tool_result', {
             id: result.tool_use_id,
             content: result.content,
@@ -2420,7 +2466,7 @@ async function callOpenAiWorkbenchModelStream(session, emit) {
             return;
         }
 
-        const toolResults = await executeWorkbenchToolBatch(session, toolUses);
+        const toolResults = await executeWorkbenchToolBatch(session, toolUses, { emit });
         toolResults.forEach(result => safeEmit(emit, 'tool_result', {
             id: result.tool_use_id,
             content: result.content,

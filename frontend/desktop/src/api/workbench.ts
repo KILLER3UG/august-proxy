@@ -167,6 +167,19 @@ function dispatchWorkbenchEvent(
         is_error: payload?.is_error,
       });
       break;
+    case 'tool_progress': {
+      const phase = (payload?.phase || 'done') as
+        'reading' | 'read' | 'running' | 'done' | 'error';
+      handlers.onToolProgress?.({
+        id: payload?.id || '',
+        name: payload?.name || '',
+        phase,
+        paths: Array.isArray(payload?.paths) ? payload.paths : undefined,
+        path: typeof payload?.path === 'string' ? payload.path : undefined,
+        message: typeof payload?.message === 'string' ? payload.message : undefined,
+      });
+      break;
+    }
     case 'session':
       handlers.onSession?.(payload as WorkbenchSession);
       break;

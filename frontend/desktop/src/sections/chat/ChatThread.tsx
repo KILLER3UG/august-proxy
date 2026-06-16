@@ -20,6 +20,7 @@ import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import { SuggestedActionBubble } from '@/components/chat/SuggestedActionBubble';
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
+import { applyToolProgress, visibleProgress, type ToolProgressEvent } from '@/lib/tool-progress';
 import { HoistedTodoPanel } from '@/components/chat/HoistedTodoPanel';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
@@ -247,6 +248,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // the user types anything new. Resets when the user starts a new turn.
   const [suggestionDismissed, setSuggestionDismissed] = useState(false);
   const [lastPrompt, setLastPrompt] = useState<{ content: string; systemPrompt: string; userMessage: string; tokens: number } | null>(null);
+  // Live tool-progress state: per-tool-id list of { path, status: 'reading' | 'read' }
+  // entries, used to render the "Reading X" / "Read X" sub-list under
+  // in-flight tool calls. Reset on each new turn.
+  const [toolProgress, setToolProgress] = useState<Map<string, ReadonlyArray<{ path: string; status: 'reading' | 'read' }>>>(
+    () => new Map()
+  );
   const hasAssistantTurn = messages.some(m => m.role === 'assistant' && m.content.length > 0);
   const showSuggestion = !streaming && !input.trim() && hasAssistantTurn && !suggestionDismissed;
   const [models, setModels] = useState<ModelItem[]>([]);
@@ -764,6 +771,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           latestWorkbenchTodos = sessionState.todos ?? [];
           setWorkbenchSession(sessionState);
           scheduleUpdate();
+        },
+        onToolProgress: (event) => {
+          // Phase 1.5: live "Reading… / Read" sub-list under in-flight tool
+          // calls. applyToolProgress is a pure reducer (lib/tool-progress.ts);
+          // see __tests__/tool-progress.test.ts for the contract.
+          const e: ToolProgressEvent = {
+            id: event.id,
+            phase: event.phase,
+            paths: event.paths,
+            path: event.path,
+          };
+          setToolProgress(prev => applyToolProgress(prev, e));
         },
         onBtw: (result) => {
           setWorkbenchBtw(result);
@@ -1513,6 +1532,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             onRevert={() => handleRevert(i)}
                             onEdit={(text) => handleEdit(i, text)}
                             onRegenerate={() => handleRegenerate(i)}
+                            toolProgress={toolProgress}
                           />
                           {/* Render the most recent prompt disclosure at the top
                               of the most recent assistant turn so the user can
@@ -1629,11 +1649,21 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
 }
 
 // ── Tool execution block ──
-function ToolBlock({ tools }: { tools: NonNullable<ChatMessage['tools']> }) {
+function ToolBlock({
+  tools,
+  toolProgress,
+}: {
+  tools: NonNullable<ChatMessage['tools']>;
+  toolProgress: Map<string, ReadonlyArray<{ path: string; status: 'reading' | 'read' }>>;
+}) {
   return (
     <>
       {tools.map((tool) => (
-        <ToolCallItemComp key={tool.id} tool={tool} />
+        <ToolCallItemComp
+          key={tool.id}
+          tool={tool}
+          progress={toolProgress.get(tool.id)}
+        />
       ))}
     </>
   );
@@ -1650,6 +1680,7 @@ function MessageBubble({
   onEdit,
   onRegenerate,
   onClarifyAnswer,
+  toolProgress,
 }: {
   message: ChatMessage;
   isLast?: boolean;
@@ -1658,6 +1689,7 @@ function MessageBubble({
   onEdit?: (text: string) => void;
   onRegenerate?: () => void;
   onClarifyAnswer?: (answer: string) => void;
+  toolProgress?: Map<string, ReadonlyArray<{ path: string; status: 'reading' | 'read' }>>;
 }) {
   const [showActions, setShowActions] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -1684,8 +1716,16 @@ function MessageBubble({
   };
 
   if (message.role === 'tool') {
-    return <ToolCallCard tool={message.tool!} timestamp={message.timestamp} />;
+    const toolKey = message.tool?.name ?? 'legacy';
+    return (
+      <ToolCallCard
+        tool={message.tool!}
+        timestamp={message.timestamp}
+        progress={toolProgress?.get(toolKey)}
+      />
+    );
   }
+
   const isUser = message.role === 'user';
 
   const displayBlocks = useMemo(() => {
@@ -1851,7 +1891,10 @@ function MessageBubble({
                       if (!block.tool) return null;
                       return (
                         <div className="my-1">
-                          <ToolCallItemComp tool={block.tool} />
+                          <ToolCallItemComp
+                            tool={block.tool}
+                            progress={block.tool.id ? toolProgress?.get(block.tool.id) : undefined}
+                          />
                         </div>
                       );
                     } else if (block.type === 'final_output') {
@@ -1946,7 +1989,15 @@ function MessageBubble({
   );
 }
 
-function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool']>; timestamp: string }) {
+function ToolCallCard({
+  tool,
+  timestamp,
+  progress,
+}: {
+  tool: NonNullable<ChatMessage['tool']>;
+  timestamp: string;
+  progress?: ReadonlyArray<{ path: string; status: 'reading' | 'read' }>;
+}) {
   const [open, setOpen] = useState(false);
   const hasBody = !!(tool.args || tool.result);
   const toolNameForIcon = tool.name.replace(/^@/, '');
@@ -2012,6 +2063,39 @@ function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool
           {tool.status === 'error' && <span className="text-destructive text-[12px]">error</span>}
         </span>
       </DisclosureRow>
+      {(() => {
+        const visible = progress ? visibleProgress(progress) : [];
+        const total = progress?.length ?? 0;
+        const overflow = Math.max(0, total - visible.length);
+        if (visible.length === 0) return null;
+        return (
+          <div className="ml-3 mt-0.5 mb-1 space-y-0.5 border-l border-border/30 pl-2" aria-label="Tool progress" data-tool-progress>
+            {visible.map((entry) => (
+              <div key={entry.path} className="flex items-center gap-1.5 text-[11.5px] truncate" title={entry.path}>
+                <span className="w-2.5 shrink-0 inline-flex justify-center">
+                  {entry.status === 'reading' ? (
+                    <Loader2 size={10} className="animate-spin text-blue-500" />
+                  ) : (
+                    <Check size={10} className="text-muted-foreground/50" />
+                  )}
+                </span>
+                <span
+                  className={cn(
+                    'truncate font-mono',
+                    entry.status === 'reading' ? 'text-blue-400 italic' : 'text-muted-foreground/60 line-through'
+                  )}
+                >
+                  {entry.status === 'reading' ? 'Reading ' : 'Read '}
+                  {entry.path}
+                </span>
+              </div>
+            ))}
+            {overflow > 0 && (
+              <div className="text-[10px] text-muted-foreground/50 italic pl-4">+ {overflow} more</div>
+            )}
+          </div>
+        );
+      })()}
       {open && hasBody && (
         <div className="mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1">
           {tool.args && (
