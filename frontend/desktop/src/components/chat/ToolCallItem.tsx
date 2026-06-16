@@ -3,6 +3,7 @@ import { cn, fmtElapsed } from '@/lib/utils';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ToolIcon } from '@/components/ui/ToolIcon';
 import { FileIcon } from '@/components/ui/FileIcon';
+import { DiffView } from '@/components/chat/DiffView';
 
 /**
  * Extract a filename hint from a tool's JSON context (best-effort).
@@ -20,6 +21,74 @@ function extractFilename(context?: string): string | null {
   } catch {
     /* not JSON — ignore */
   }
+  return null;
+}
+
+/**
+ * Best-effort extraction of diff inputs from a tool's args / result.
+ * Returns a payload compatible with <DiffView> props.
+ */
+function extractDiffData(tool: { context?: string; result?: unknown; name?: string }): {
+  diff?: string;
+  oldContent?: string;
+  newContent?: string;
+} | null {
+  const isEditLike = /^(write_file|edit_file|replace_file|apply_patch|create_file|str_replace|@write_file|@edit_file|@replace_file|@apply_patch|@create_file|@str_replace)/i.test(
+    (tool.name || '').replace(/^@/, '')
+  );
+  if (!isEditLike) return null;
+
+  // 1) Pre-formatted diff (most common — workbench already computes it)
+  if (tool.context && typeof tool.context === 'string' && /^[+\-@]/.test(tool.context.trim())) {
+    // The context itself looks like a diff
+    return { diff: tool.context };
+  }
+  if (typeof (tool as { inline_diff?: string }).inline_diff === 'string') {
+    return { diff: (tool as { inline_diff?: string }).inline_diff };
+  }
+
+  // 2) Inspect args and result for old/new pairs
+  let args: Record<string, unknown> = {};
+  if (tool.context) {
+    try { args = JSON.parse(tool.context) as Record<string, unknown>; } catch { /* ignore */ }
+  }
+  const result = (tool as { result?: unknown }).result;
+
+  // Result: { diff: '...' } or { patch: '...' } or the result itself is a string
+  if (typeof result === 'string' && (result.includes('--- ') || result.includes('+++ ') || result.startsWith('@@'))) {
+    return { diff: result };
+  }
+  if (result && typeof result === 'object') {
+    const r = result as Record<string, unknown>;
+    if (typeof r.diff === 'string') return { diff: r.diff };
+    if (typeof r.patch === 'string') return { diff: r.patch };
+    if (typeof r.unified_diff === 'string') return { diff: r.unified_diff };
+    if (typeof r.old === 'string' && typeof r.new === 'string') {
+      return { oldContent: r.old, newContent: r.new };
+    }
+    if (typeof r.oldContent === 'string' && typeof r.newContent === 'string') {
+      return { oldContent: r.oldContent, newContent: r.newContent };
+    }
+  }
+
+  // 3) Args: { old_string, new_string } / { find, replace } / { patch } / { content } (no old → all added)
+  const pick = (...keys: string[]) => {
+    for (const k of keys) {
+      const v = args[k];
+      if (typeof v === 'string' && v.length > 0) return v;
+    }
+    return undefined;
+  };
+  const oldString = pick('old_string', 'find', 'old', 'oldContent');
+  const newString = pick('new_string', 'replace', 'new', 'newContent', 'content', 'patch');
+  if (oldString !== undefined && newString !== undefined) {
+    return { oldContent: oldString, newContent: newString };
+  }
+  if (newString !== undefined) {
+    // write_file with no old → show as all-added
+    return { oldContent: '', newContent: newString };
+  }
+
   return null;
 }
 
@@ -141,13 +210,18 @@ export function ToolCallItem({ tool }: { tool: ToolEntry }) {
             </Section>
           )}
 
-          {tool.inline_diff && (
-            <Section label="diff">
-              <pre className="whitespace-pre overflow-x-auto text-[11px] leading-snug">
-                {colorizeDiff(tool.inline_diff)}
-              </pre>
-            </Section>
-          )}
+          {(() => {
+            const diffData = extractDiffData(tool);
+            return diffData ? (
+              <Section label="diff">
+                <DiffView
+                  diff={diffData.diff}
+                  oldContent={diffData.oldContent}
+                  newContent={diffData.newContent}
+                />
+              </Section>
+            ) : null;
+          })()}
 
           {tool.searchHits && tool.searchHits.length > 0 && (
             <Section label="results">
@@ -213,20 +287,4 @@ function Section({
       <div className="flex-1 min-w-0 text-muted-foreground">{children}</div>
     </div>
   );
-}
-
-/** Colorize unified-diff lines for the inline diff section. */
-function colorizeDiff(diff: string): React.ReactNode {
-  return diff.split('\n').map((line, i) => (
-    <div key={i} className={diffLineClass(line)}>
-      {line || '\u00A0'}
-    </div>
-  ));
-}
-
-function diffLineClass(line: string): string {
-  if (line.startsWith('+') && !line.startsWith('+++')) return 'text-green-600 dark:text-green-400';
-  if (line.startsWith('-') && !line.startsWith('---')) return 'text-destructive';
-  if (line.startsWith('@@')) return 'text-primary';
-  return 'text-muted-foreground/70';
 }
