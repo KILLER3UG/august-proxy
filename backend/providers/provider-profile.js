@@ -36,6 +36,16 @@ class ProviderProfile {
     return [];
   }
 
+  /**
+   * Optional native-quota probe. Returns `{ used, limit, resetsAt }` or
+   * null if the provider doesn't expose a daily-quota API (or it isn't
+   * implemented yet). The quota-store merges this with locally recorded
+   * usage, preferring the native number when present.
+   */
+  async getNativeQuota(/* model */) {
+    return null;
+  }
+
   buildExtraBody(opts = {}) {
     return {};
   }

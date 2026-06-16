@@ -348,6 +348,33 @@ const requestHandler = async (req, res) => {
         }
     }
 
+    if (req.url.startsWith('/api/providers/quota') && req.method === 'GET') {
+        const { getAllQuotas, getDailyQuota } = require('./services/providers/quota-store');
+        const url = new URL(req.url, 'http://x');
+        const provider = url.searchParams.get('provider');
+        try {
+            if (provider) {
+                const model = url.searchParams.get('model');
+                if (model) {
+                    sendJson(res, await getDailyQuota(provider, model));
+                } else {
+                    sendJson(res, { results: await getAllQuotas(provider) });
+                }
+            } else {
+                // All providers
+                const { listProviders } = require('./providers/provider-registry');
+                const all = await Promise.all(listProviders().map(async (p) => ({
+                    provider: p.name,
+                    quotas: await getAllQuotas(p.name),
+                })));
+                sendJson(res, { results: all });
+            }
+            return;
+        } catch (err) {
+            return sendError(res, err, 500);
+        }
+    }
+
     if (req.url === '/api/config/activeProvider' && req.method === 'GET') {
         const { getProviderConfig } = require('./lib/config');
         return sendJson(res, { 
