@@ -13,7 +13,9 @@ import { useStore } from '@nanostores/react';
 import { $sessions, setSessionStatus, clearSessionStatus, renameSession, updateSessionModel, updateSessionWorkbenchMetadata, type Session } from '@/store/sessions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
-import { ToolCallItem as ToolCallItemComp, getToolIcon } from '@/components/chat/ToolCallItem';
+import { ToolCallItem as ToolCallItemComp } from '@/components/chat/ToolCallItem';
+import { ToolIcon as NewToolIcon } from '@/components/ui/ToolIcon';
+import { FileIcon as NewFileIcon } from '@/components/ui/FileIcon';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import { HoistedTodoPanel } from '@/components/chat/HoistedTodoPanel';
@@ -1887,7 +1889,19 @@ function MessageBubble({
 function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool']>; timestamp: string }) {
   const [open, setOpen] = useState(false);
   const hasBody = !!(tool.args || tool.result);
-  const ToolIcon = getToolIcon(tool.name);
+  const toolNameForIcon = tool.name.replace(/^@/, '');
+  const isCommand = toolNameForIcon === 'run_command' || tool.name.startsWith('@run_command');
+  // Try to extract a filename hint from the args JSON for a brand-aware file icon.
+  let legacyFilename: string | null = null;
+  if (!isCommand && tool.args) {
+    try {
+      const parsed = JSON.parse(tool.args);
+      for (const key of ['file_path', 'path', 'filename', 'file', 'filepath']) {
+        const v = parsed?.[key];
+        if (typeof v === 'string' && v.length > 0) { legacyFilename = v; break; }
+      }
+    } catch { /* not JSON — ignore */ }
+  }
   return (
     <div className="text-sm text-muted-foreground w-full py-0.5" data-slot="tool-block">
       <DisclosureRow
@@ -1902,7 +1916,11 @@ function ToolCallCard({ tool, timestamp }: { tool: NonNullable<ChatMessage['tool
         }
       >
         <span className="flex min-w-0 items-center gap-2">
-          <ToolIcon className="size-3.5 shrink-0 text-primary" />
+          {legacyFilename ? (
+            <NewFileIcon name={legacyFilename} size={14} className="shrink-0" />
+          ) : (
+            <NewToolIcon name={toolNameForIcon} kind={isCommand ? 'command' : 'tool'} size={14} className="shrink-0" />
+          )}
           <span
             className={cn(
               'text-sm font-medium leading-5',

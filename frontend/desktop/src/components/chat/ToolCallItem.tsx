@@ -1,62 +1,26 @@
 import { useEffect, useState } from 'react';
 import { cn, fmtElapsed } from '@/lib/utils';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
-import {
-  Terminal,
-  FileText,
-  Search,
-  Code,
-  Database,
-  Plug,
-  Puzzle,
-  Wrench
-} from 'lucide-react';
+import { ToolIcon } from '@/components/ui/ToolIcon';
+import { FileIcon } from '@/components/ui/FileIcon';
 
-export function getToolIcon(toolName: string) {
-  const name = toolName.toLowerCase();
-  
-  // Terminal / shell commands
-  if (name.includes('run_command') || name.includes('bash') || name.includes('powershell') || name.includes('cmd') || name.includes('execute')) {
-    return Terminal;
+/**
+ * Extract a filename hint from a tool's JSON context (best-effort).
+ * Returns null if the context isn't JSON or no filename-shaped key is present.
+ */
+function extractFilename(context?: string): string | null {
+  if (!context) return null;
+  try {
+    const parsed = JSON.parse(context);
+    if (typeof parsed === 'string') return parsed;
+    for (const key of ['file_path', 'path', 'filename', 'file', 'filepath', 'notebook_path', 'target_file']) {
+      const v = parsed[key];
+      if (typeof v === 'string' && v.length > 0) return v;
+    }
+  } catch {
+    /* not JSON — ignore */
   }
-  
-  // File operations
-  if (name.includes('read_file') || name.includes('write_file') || name.includes('cat') || name.includes('open') || name.includes('file') || name.includes('replace_file')) {
-    return FileText;
-  }
-  
-  // Web search
-  if (name.includes('search') || name.includes('web_search') || name.includes('google') || name.includes('bing') || name.includes('url')) {
-    return Search;
-  }
-  
-  // Code execution
-  if (name.includes('code') || name.includes('execute_code') || name.includes('python') || name.includes('node') || name.includes('run_code')) {
-    return Code;
-  }
-  
-  // Database queries
-  if (name.includes('db') || name.includes('database') || name.includes('query') || name.includes('sql') || name.includes('postgres') || name.includes('mongo')) {
-    return Database;
-  }
-  
-  // MCP
-  if (name.includes('mcp') || name.includes('protocol')) {
-    return Plug;
-  }
-  
-  // API call
-  if (name.includes('api') || name.includes('http') || name.includes('fetch') || name.includes('request')) {
-    return Plug;
-  }
-  
-  // General skill
-  if (name.includes('skill') || name.includes('workflow')) {
-    return Puzzle;
-  }
-  
-  // Default fallback
-  return Wrench;
+  return null;
 }
 
 export interface ToolEntry {
@@ -103,10 +67,13 @@ export function ToolCallItem({ tool }: { tool: ToolEntry }) {
 
   const isRunning = tool.status === 'running';
   const isCommand = tool.name.startsWith('@run_command') || tool.name.startsWith('run_command');
+  // Strip the @ prefix that the workbench sometimes prepends so the icon
+  // mapper matches the canonical tool name (e.g. "read_file" not "@read_file").
+  const toolNameForIcon = tool.name.replace(/^@/, '');
   const label = isCommand
-    ? `Executed: ${tool.name.replace(/^@/, '')}`
-    : tool.name;
-  const ToolIcon = getToolIcon(tool.name);
+    ? `Executed: ${toolNameForIcon}`
+    : toolNameForIcon;
+  const filename = !isCommand ? extractFilename(tool.context) : null;
 
   return (
     <div className="text-xs text-muted-foreground w-full py-0.5" data-slot="tool-block">
@@ -122,7 +89,11 @@ export function ToolCallItem({ tool }: { tool: ToolEntry }) {
         }
       >
         <span className="flex min-w-0 items-center gap-2">
-          <ToolIcon className="size-3.5 shrink-0 text-primary" />
+          {filename ? (
+            <FileIcon name={filename} size={14} className="shrink-0" />
+          ) : (
+            <ToolIcon name={toolNameForIcon} kind={isCommand ? 'command' : 'tool'} size={14} className="shrink-0" />
+          )}
           <span
             className={cn(
               'text-xs font-medium leading-5',
