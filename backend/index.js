@@ -329,6 +329,15 @@ const requestHandler = async (req, res) => {
         return;
     }
 
+    if (req.url.startsWith('/api/usage/')) {
+        try {
+            const { handleUsageRoutes } = require('./services/usage/usage-routes');
+            if (handleUsageRoutes(req, res)) return;
+        } catch (err) {
+            return sendError(res, err, 500);
+        }
+    }
+
     if (req.url === '/api/config/activeProvider' && req.method === 'GET') {
         const { getProviderConfig } = require('./lib/config');
         return sendJson(res, { 
