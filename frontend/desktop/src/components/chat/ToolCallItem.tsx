@@ -27,6 +27,41 @@ function extractFilename(context?: string): string | null {
 }
 
 /**
+ * Best-effort extraction of the actual command string for run_command tools.
+ * The workbench stores tool input as a JSON-encoded `context` string, so
+ * we look for an obvious `command` (or `cmd` / `shell_command`) field.
+ */
+function extractCommand(context?: string): string | null {
+  if (!context) return null;
+  try {
+    const parsed = JSON.parse(context);
+    if (typeof parsed === 'string') return parsed;
+    if (parsed && typeof parsed === 'object') {
+      for (const key of ['command', 'cmd', 'shell_command', 'shellCommand', 'script']) {
+        const v = (parsed as Record<string, unknown>)[key];
+        if (typeof v === 'string' && v.length > 0) return v;
+      }
+    }
+  } catch {
+    /* not JSON — ignore */
+  }
+  return null;
+}
+
+function truncate(s: string, n: number): string {
+  if (s.length <= n) return s;
+  return `${s.slice(0, n - 1).trimEnd()}…`;
+}
+
+// Above this length the per-character shimmer animation becomes visually
+// noisy and slow. Used to decide between the animated "thinking-text" path
+// and the plain monospace fallback.
+const LONG_LABEL_THRESHOLD = 40;
+function isLongLabel(label: string): boolean {
+  return label.length > LONG_LABEL_THRESHOLD;
+}
+
+/**
  * Best-effort extraction of diff inputs from a tool's args / result.
  * Returns a payload compatible with <DiffView> props.
  */
@@ -148,9 +183,16 @@ export function ToolCallItem({
   // Strip the @ prefix that the workbench sometimes prepends so the icon
   // mapper matches the canonical tool name (e.g. "read_file" not "@read_file").
   const toolNameForIcon = tool.name.replace(/^@/, '');
+  // For run_command tools, surface the actual command string inline so the
+  // user can see what's being executed without expanding the disclosure —
+  // especially important when the model runs a batch of commands and the
+  // user is scanning the list. Truncate long commands with a tooltip that
+  // shows the full text.
+  const commandText = isCommand ? extractCommand(tool.context) : null;
   const label = isCommand
-    ? `Executed: ${toolNameForIcon}`
+    ? (commandText ? `Executed: ${truncate(commandText, 120)}` : `Executed: ${toolNameForIcon}`)
     : toolNameForIcon;
+  const labelTitle = isCommand && commandText && commandText.length > 120 ? commandText : undefined;
   const filename = !isCommand ? extractFilename(tool.context) : null;
 
   return (
@@ -174,30 +216,41 @@ export function ToolCallItem({
           )}
           <span
             className={cn(
-              'text-xs font-medium leading-5',
-              isRunning && 'shimmer text-foreground/55'
+              'text-xs font-medium leading-5 min-w-0 flex-1',
+              isRunning && !isLongLabel(label) && 'shimmer text-foreground/55'
             )}
+            title={labelTitle}
           >
-            <span className={cn('thinking-text', isRunning && 'animating')}>
-              <span className="thinking-label">
-                {Array.from(label).map((ch, i) => (
-                  <span
-                    key={i}
-                    className={cn('thinking-char', i === 0 && 'thinking-cap')}
-                    style={{ animationDelay: `${i * 100}ms` }}
-                  >
-                    {ch}
-                  </span>
-                ))}
+            {isLongLabel(label) ? (
+              // Long labels (typically a multi-flag shell command) bypass the
+              // per-character shimmer animation: animating 100+ chars with a
+              // 100ms stagger is visually noisy. Render as a plain monospace
+              // span with a `title` tooltip for the full text.
+              <span className="font-mono text-[11.5px] text-foreground/85 wrap-anywhere break-words">
+                {label}
               </span>
-              {isRunning && (
-                <span className="thinking-dots">
-                  <span className="dot" style={{ animationDelay: '0ms' }}>.</span>
-                  <span className="dot" style={{ animationDelay: '200ms' }}>.</span>
-                  <span className="dot" style={{ animationDelay: '400ms' }}>.</span>
+            ) : (
+              <span className={cn('thinking-text', isRunning && 'animating')}>
+                <span className="thinking-label">
+                  {Array.from(label).map((ch, i) => (
+                    <span
+                      key={i}
+                      className={cn('thinking-char', i === 0 && 'thinking-cap')}
+                      style={{ animationDelay: `${i * 100}ms` }}
+                    >
+                      {ch}
+                    </span>
+                  ))}
                 </span>
-              )}
-            </span>
+                {isRunning && (
+                  <span className="thinking-dots">
+                    <span className="dot" style={{ animationDelay: '0ms' }}>.</span>
+                    <span className="dot" style={{ animationDelay: '200ms' }}>.</span>
+                    <span className="dot" style={{ animationDelay: '400ms' }}>.</span>
+                  </span>
+                )}
+              </span>
+            )}
           </span>
           {tool.status === 'done' && (
             <span className="text-primary/80 text-[10px]">done</span>

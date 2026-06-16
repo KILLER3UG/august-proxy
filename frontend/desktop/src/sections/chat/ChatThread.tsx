@@ -32,6 +32,7 @@ import {
   approveWorkbenchPlan,
   answerWorkbenchBtw,
   getWorkbenchSession,
+  listWorkbenchCapabilities,
 } from '@/api/workbench';
 import type { WorkbenchBtwResult, WorkbenchSession } from '@/types/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
@@ -294,6 +295,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }
     return null;
   });
+  const [workbenchToolCount, setWorkbenchToolCount] = useState<number | null>(null);
   const [workbenchMode, setWorkbenchMode] = useState<WorkbenchGuardMode>(() => {
     const saved = localStorage.getItem('august_last_workbench_guard_mode') as WorkbenchGuardMode | null;
     return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'plan';
@@ -356,6 +358,28 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setWorkbenchToolCount(null);
+      return;
+    }
+
+    let cancelled = false;
+    listWorkbenchCapabilities()
+      .then(({ totalTools }) => {
+        if (!cancelled && Number.isFinite(totalTools)) {
+          setWorkbenchToolCount(totalTools);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setWorkbenchToolCount(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   useEffect(() => chatRuntime.subscribe(() => setRuntimeVersion((value) => value + 1)), []);
 
@@ -543,15 +567,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const estTokens = Math.ceil(totalChars / 4) + 120;
   const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
 
-  // Per-category breakdown for the ContextRing popup. Tool count is an
-  // estimate of the available tool definitions the workbench exposes.
+  // Per-category breakdown for the ContextRing popup. The tool surface comes
+  // from the backend capability endpoint; 30 is only a startup fallback.
+  const toolCountForBreakdown = workbenchToolCount ?? 30;
   const contextBreakdown: ContextBreakdown = useMemo(
     () => estimateContextBreakdown({
       messages,
       input,
-      toolCount: 30, // baseline workbench tool surface
+      toolCount: toolCountForBreakdown,
     }),
-    [messages, input]
+    [messages, input, toolCountForBreakdown]
   );
 
   // ── Workbench chat client ─────────────────────────────────────────
