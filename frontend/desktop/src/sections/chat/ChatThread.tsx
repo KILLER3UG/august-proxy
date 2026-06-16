@@ -247,7 +247,19 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // Suggested follow-up bubble — visible after a turn completes and before
   // the user types anything new. Resets when the user starts a new turn.
   const [suggestionDismissed, setSuggestionDismissed] = useState(false);
-  const [lastPrompt, setLastPrompt] = useState<{ content: string; systemPrompt: string; userMessage: string; tokens: number } | null>(null);
+  // Sub-agent prompt disclosures, keyed by the parent tool_use id. The
+  // backend emits a `prompt` SSE event only for august__spawn_subagent /
+  // august__run_team calls (and only for the sub-agents they spawn); we
+  // store those payloads here so each one can be rendered directly under
+  // the matching tool call block. Cleared on each new turn.
+  const [subagentPrompts, setSubagentPrompts] = useState<Map<string, {
+    content: string;
+    systemPrompt: string;
+    userMessage: string;
+    tokens: number;
+    subagentId?: string;
+    jobId?: string;
+  }>>(() => new Map());
   // Live tool-progress state: per-tool-id list of { path, status: 'reading' | 'read' }
   // entries, used to render the "Reading X" / "Read X" sub-list under
   // in-flight tool calls. Reset on each new turn.
@@ -609,6 +621,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const nextMessages = [...chatHistory, createAssistantPlaceholder(assistantMsgId)];
     setMessages(nextMessages);
     persistMessages(turnSessionId, nextMessages);
+    // Reset per-turn UI state: the sub-agent prompt map only ever carries
+    // disclosures from the active turn, so clear it as we start streaming.
+    setSubagentPrompts(new Map());
 
     const update = () => {
       updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
@@ -709,10 +724,24 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
         effort,
       }, {
-        onPrompt: ({ content, systemPrompt, userMessage, tokens }) => {
-          // Stash the assembled prompt for the upcoming assistant turn so
-          // we can render a <PromptDisclosure> at the top of the turn.
-          setLastPrompt({ content, systemPrompt: systemPrompt ?? '', userMessage: userMessage ?? '', tokens: tokens ?? 0 });
+        onPrompt: ({ content, systemPrompt, userMessage, tokens, toolUseId, subagentId, jobId }) => {
+          // The backend only emits `prompt` for sub-agent calls. Stash the
+          // disclosure keyed by the parent tool_use id so it can be rendered
+          // directly under the matching subagent tool call block — never
+          // as a free-floating disclosure at the end of the turn.
+          const key = toolUseId || (jobId ? `subagent-${jobId}` : `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+          setSubagentPrompts(prev => {
+            const next = new Map(prev);
+            next.set(key, {
+              content,
+              systemPrompt: systemPrompt ?? '',
+              userMessage: userMessage ?? '',
+              tokens: tokens ?? 0,
+              subagentId: subagentId || undefined,
+              jobId: jobId || undefined,
+            });
+            return next;
+          });
         },
         onThinking: ({ content }) => {
           if (!thinkingEnd && content.trim()) {
@@ -1533,18 +1562,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             onEdit={(text) => handleEdit(i, text)}
                             onRegenerate={() => handleRegenerate(i)}
                             toolProgress={toolProgress}
+                            subagentPrompts={subagentPrompts}
                           />
-                          {/* Render the most recent prompt disclosure at the top
-                              of the most recent assistant turn so the user can
-                              inspect what was actually sent to the model. */}
-                          {lastPrompt && m.role === 'assistant' && i === messages.length - 1 && (
-                            <div className="ml-11 mt-1">
-                              <PromptDisclosure
-                                content={lastPrompt.content}
-                                tokens={lastPrompt.tokens}
-                              />
-                            </div>
-                          )}
                         </div>
                       );
                     })}
@@ -1681,6 +1700,7 @@ function MessageBubble({
   onRegenerate,
   onClarifyAnswer,
   toolProgress,
+  subagentPrompts,
 }: {
   message: ChatMessage;
   isLast?: boolean;
@@ -1690,6 +1710,18 @@ function MessageBubble({
   onRegenerate?: () => void;
   onClarifyAnswer?: (answer: string) => void;
   toolProgress?: Map<string, ReadonlyArray<{ path: string; status: 'reading' | 'read' }>>;
+  /** Sub-agent prompt disclosures keyed by the parent tool_use id. Only
+   *  present for blocks whose tool name is august__spawn_subagent or
+   *  august__run_team (and the team-run agents they spawn). The bubble
+   *  renders each disclosure directly under its matching tool call. */
+  subagentPrompts?: Map<string, {
+    content: string;
+    systemPrompt: string;
+    userMessage: string;
+    tokens: number;
+    subagentId?: string;
+    jobId?: string;
+  }>;
 }) {
   const [showActions, setShowActions] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -1889,12 +1921,40 @@ function MessageBubble({
                       );
                     } else if (block.type === 'tool_call' || block.type === 'command') {
                       if (!block.tool) return null;
+                      const isSubagentCall =
+                        block.tool.name === 'august__spawn_subagent' ||
+                        block.tool.name === 'workbench_spawn_subagent' ||
+                        block.tool.name === 'august__run_team' ||
+                        block.tool.name === 'workbench_run_team';
+                      // For a subagent tool call, look up any prompt
+                      // disclosures the backend emitted for this tool_use id.
+                      // For run_team, multiple sub-agents can share the same
+                      // toolUseId, so render them all in spawn order.
+                      const promptEntries = isSubagentCall && block.tool.id && subagentPrompts
+                        ? Array.from(subagentPrompts.entries())
+                            .filter(([k]) => k === block.tool!.id)
+                            .map(([, v]) => v)
+                        : [];
                       return (
                         <div className="my-1">
                           <ToolCallItemComp
                             tool={block.tool}
                             progress={block.tool.id ? toolProgress?.get(block.tool.id) : undefined}
                           />
+                          {promptEntries.length > 0 && (
+                            <div className="ml-3 mt-1 flex flex-col gap-1">
+                              {promptEntries.map((p, pi) => (
+                                <PromptDisclosure
+                                  key={`${block.tool!.id}-prompt-${pi}`}
+                                  content={p.content}
+                                  tokens={p.tokens}
+                                  label={p.subagentId
+                                    ? `SUB-AGENT PROMPT · ${p.subagentId}`
+                                    : 'SUB-AGENT PROMPT'}
+                                />
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     } else if (block.type === 'final_output') {

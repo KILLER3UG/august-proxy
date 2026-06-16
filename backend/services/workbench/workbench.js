@@ -1273,6 +1273,30 @@ async function executeSubAgent(session, args, toolContext = {}) {
         'Keep your response concise and actionable.'
     ].join('\n');
 
+    // Emit the assembled sub-agent prompt as a `prompt` SSE event so the UI
+    // can attach a collapsible PROMPT disclosure to the parent tool-call
+    // block. The toolUseId keys the event back to the tool_use block on the
+    // client; if the parent caller didn't pass one (e.g. internal nested
+    // delegation), fall back to the durable job id so the client can still
+    // de-duplicate.
+    try {
+        const subPromptPayload = {
+            content: subPrompt,
+            systemPrompt: subPrompt,
+            userMessage: task,
+            tokens: (subPrompt.length + task.length) / 4,
+            toolUseId: toolContext.toolUseId || `subagent-${job.id}`,
+            subagentId: childAgentId,
+            jobId: job.id,
+            parentJobId: job.parentJobId,
+            depth: job.depth,
+        };
+        safeEmit(toolContext.emit, 'prompt', subPromptPayload);
+    } catch (err) {
+        // Non-fatal: the sub-agent still runs even if the prompt event fails.
+        console.warn('[Workbench] sub-agent prompt emit failed:', err.message);
+    }
+
     const subMessages = [{ role: 'user', content: task }];
     let subResult = '';
     let subLoops = 0;
@@ -1504,8 +1528,8 @@ async function executeWorkbenchTool(session, toolUse, toolContext = {}) {
             result = await runCommand(args);
             progress('done');
         }
-        else if (name === 'august__spawn_subagent' || name === 'workbench_spawn_subagent') result = await executeSubAgent(session, args, toolContext);
-        else if (name === 'august__run_team' || name === 'workbench_run_team') result = await executeTeamRun(session, args, toolContext);
+        else if (name === 'august__spawn_subagent' || name === 'workbench_spawn_subagent') result = await executeSubAgent(session, args, { ...toolContext, toolUseId: toolUse.id });
+        else if (name === 'august__run_team' || name === 'workbench_run_team') result = await executeTeamRun(session, args, { ...toolContext, toolUseId: toolUse.id });
         else if (name === 'august__generate_session_title') {
             const firstUserMsg = session.messages?.find(m => m.role === 'user');
             if (!firstUserMsg) throw new Error('No user messages to generate a title from.');
@@ -2512,22 +2536,11 @@ async function sendWorkbenchMessageStream({ sessionId, message, provider, agentI
         generateSessionTitle(session, text, emit).catch(e => console.warn('[Workbench] title gen err:', e.message));
     }
 
-    // Emit the assembled prompt so the UI can show a collapsible "PROMPT"
-    // disclosure. Carries the system prompt + the current user message;
-    // large enough to be informative but small enough to be readable.
-    try {
-        const sysPrompt = buildSystemPrompt(session);
-        const promptPayload = {
-            content: sysPrompt + '\n\n[user]\n' + text,
-            systemPrompt: sysPrompt,
-            userMessage: text,
-            tokens: (sysPrompt.length + text.length) / 4,
-        };
-        safeEmit(emit, 'prompt', promptPayload);
-    } catch (err) {
-        // Non-fatal: if prompt assembly fails, the turn still proceeds.
-        console.warn('[Workbench] prompt emit failed:', err.message);
-    }
+    // The assembled prompt is no longer emitted as a `prompt` SSE event for
+    // every turn. The PROMPT disclosure is now scoped to sub-agent calls
+    // (august__spawn_subagent / august__run_team) and emitted from inside
+    // executeSubAgent / executeTeamRun so the UI can attach it to the
+    // specific tool-call block that triggered the sub-agent.
 
     await callWorkbenchModelStream(session, emit);
     await continueGoalUntilReached(session, emit);

@@ -192,6 +192,9 @@ function dispatchWorkbenchEvent(
         systemPrompt: payload?.systemPrompt,
         userMessage: payload?.userMessage,
         tokens: payload?.tokens,
+        toolUseId: payload?.toolUseId,
+        subagentId: payload?.subagentId,
+        jobId: payload?.jobId,
       });
       break;
     case 'done':

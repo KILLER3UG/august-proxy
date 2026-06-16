@@ -130,7 +130,21 @@ export interface WorkbenchEventHandlers {
   }) => void;
   onSession?: (data: WorkbenchSession) => void;
   onBtw?: (data: WorkbenchBtwResult) => void;
-  onPrompt?: (data: { content: string; systemPrompt?: string; userMessage?: string; tokens?: number }) => void;
+  onPrompt?: (data: {
+    content: string;
+    systemPrompt?: string;
+    userMessage?: string;
+    tokens?: number;
+    /** ID of the parent tool_use block (august__spawn_subagent / august__run_team)
+     *  that triggered the sub-agent whose prompt is being disclosed. Used by
+     *  the chat thread to attach the disclosure to the right tool call card. */
+    toolUseId?: string;
+    /** Sub-agent profile id (e.g. "general", "researcher") that this prompt
+     *  was assembled for. */
+    subagentId?: string;
+    /** Durable job id of the sub-agent run, if available. */
+    jobId?: string;
+  }) => void;
   onDone?: () => void;
   onError?: (data: { message: string }) => void;
 }
