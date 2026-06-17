@@ -6,7 +6,7 @@
  * isFree marker (:free / -free suffix conventions used by OpenRouter
  * and friends). */
 
-const { listProviders } = require('./provider-registry');
+const { listProviders, getProvider } = require('./provider-registry');
 const { getProviderConfig } = require('../lib/config');
 const { inferFromModelId, deriveModelsUrl } = require('../lib/models');
 const { resolveModelProfile } = require('../lib/model-profiles');
@@ -22,6 +22,66 @@ function isFreeModelId(id) {
     return lower.includes(':free') || lower.includes('-free') || lower.endsWith('free');
 }
 
+const DISPLAY_VARIANT_TAGS = [
+    [/-fast$/i, 'Fast'],
+    [/-thinking$/i, 'Thinking'],
+    [/-preview$/i, 'Preview'],
+    [/-latest$/i, 'Latest'],
+    [/:free$/i, 'Free'],
+    [/-free$/i, 'Free'],
+];
+
+const titleCase = (text) => text.replace(/\b\w/g, c => c.toUpperCase()).trim();
+
+function prettifyModelBase(base) {
+    if (/^claude-/i.test(base)) return titleCase(base.replace(/^claude-/i, '').replace(/-/g, ' '));
+    if (/^gpt-/i.test(base)) return base.replace(/^gpt-/i, 'GPT-');
+    if (/^gemini-/i.test(base)) return 'Gemini ' + titleCase(base.replace(/^gemini-/i, '').replace(/-/g, ' '));
+    if (/^deepseek-/i.test(base)) return titleCase(base.replace(/^deepseek-/i, 'DeepSeek '));
+    if (/^llama-/i.test(base)) return titleCase(base.replace(/^llama-/i, 'Llama '));
+    if (/^qwen-/i.test(base) || /^qwq-/i.test(base)) return titleCase(base.replace(/-/g, ' '));
+    if (/^mistral-/i.test(base)) return titleCase(base.replace(/^mistral-/i, 'Mistral '));
+    if (/^minimax-/i.test(base)) return titleCase(base.replace(/^minimax-/i, 'MiniMax '));
+    return titleCase(base.replace(/-/g, ' '));
+}
+
+function stripProviderPrefix(id) {
+    const sepIdx = id.search(/[/:]/);
+    return sepIdx >= 0 ? id.slice(sepIdx + 1) : id;
+}
+
+function sanitizeProviderToken(providerName) {
+    return String(providerName || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+}
+
+function stripProviderAliasPrefix(id, providerName) {
+    const providerToken = sanitizeProviderToken(providerName);
+    if (!providerToken) return id;
+    const lowerId = id.toLowerCase();
+    const prefix = providerToken + '-';
+    return lowerId.startsWith(prefix) ? id.slice(prefix.length) : id;
+}
+
+function getModelDisplayAlias(model) {
+    if (!model || typeof model.id !== 'string') return '';
+    let base = stripProviderPrefix(model.id);
+    base = stripProviderAliasPrefix(base, model.provider);
+
+    let tag = '';
+    for (const [pattern, label] of DISPLAY_VARIANT_TAGS) {
+        if (pattern.test(base)) {
+            base = base.replace(pattern, '');
+            tag = label;
+            break;
+        }
+    }
+
+    const name = prettifyModelBase(base) || model.id;
+    return tag ? `${name} (${tag})` : name;
+}
 
 function toClaudeDesktopModelAlias(id, providerName = '') {
     if (typeof id !== 'string') return '';
@@ -31,33 +91,40 @@ function toClaudeDesktopModelAlias(id, providerName = '') {
         .replace(/[^A-Za-z0-9._-]/g, '-')
         .replace(/-+/g, '-')
         .replace(/^-|-$/g, '');
-    const sanitizedProvider = String(providerName || '')
-        .toLowerCase()
-        .replace(/[^A-Za-z0-9._-]/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
+    const sanitizedProvider = sanitizeProviderToken(providerName);
     if (!sanitizedProvider || !sanitizedId || sanitizedId.toLowerCase().startsWith(sanitizedProvider + '-')) return sanitizedId;
     return sanitizedProvider + '-' + sanitizedId;
 }
 
+function getProviderDisplayName(providerName) {
+    return getProvider(providerName)?.displayName || providerName || '';
+}
+
 function addModelAlias(aliases, ids, alias, model) {
-    if (!alias || alias === model.id || ids.has(alias) || aliases.has(alias)) return;
+    if (!alias || alias === model.id || ids.has(alias) || aliases.has(alias)) return false;
     aliases.set(alias, {
         modelId: model.id,
         provider: model.provider,
     });
+    ids.add(alias);
+    return true;
 }
 
 function buildModelAliasMap(models) {
     const ids = new Set(models.map(m => m.id));
     const aliases = new Map();
     for (const model of models) {
-        addModelAlias(aliases, ids, toClaudeDesktopModelAlias(model.id), model);
-        addModelAlias(aliases, ids, toClaudeDesktopModelAlias(model.id, model.provider), model);
+        const displayAlias = getModelDisplayAlias(model);
+        if (!addModelAlias(aliases, ids, displayAlias, model)) {
+            const providerDisplayName = getProviderDisplayName(model.provider);
+            const providerAlias = providerDisplayName && providerDisplayName !== displayAlias ? `${displayAlias} (${providerDisplayName})` : '';
+            if (!addModelAlias(aliases, ids, providerAlias, model)) {
+                addModelAlias(aliases, ids, toClaudeDesktopModelAlias(model.id, model.provider), model);
+            }
+        }
     }
     return aliases;
 }
-
 async function getModelAliasMap() {
     const now = Date.now();
     if (modelAliasCache && now - modelAliasCacheAt < MODEL_ALIAS_CACHE_TTL_MS) return modelAliasCache;
@@ -274,26 +341,18 @@ async function getModelListOpenAI({ includeClientAliases = false, filterRoutable
     const models = await getModelList();
     const created = Math.floor(Date.now() / 1000);
     const visibleModels = filterRoutable ? models.filter(isModelRoutableForClient) : models;
-    const ids = new Set(visibleModels.map(m => m.id));
     const aliases = includeClientAliases ? buildModelAliasMap(visibleModels) : new Map();
     const aliasesByRealId = new Map(Array.from(aliases, ([alias, entry]) => [normalizeAliasEntry(entry, alias), alias]));
     const data = [];
     for (const model of visibleModels) {
+        const alias = aliasesByRealId.get(model.id) || getModelDisplayAlias(model) || model.id;
         data.push({
-            id: model.id,
+            id: alias,
+            name: alias,
             object: 'model',
             created,
             owned_by: model.provider,
         });
-        const alias = aliasesByRealId.get(model.id);
-        if (alias && !ids.has(alias)) {
-            data.push({
-                id: alias,
-                object: 'model',
-                created,
-                owned_by: model.provider + '-alias',
-            });
-        }
     }
     return {
         object: 'list',
@@ -306,5 +365,6 @@ module.exports = {
     getModelListOpenAI,
     resolveModelAlias,
     resolveModelAliasDetails,
+    getModelDisplayAlias,
     isFreeModelId,
 };
