@@ -116,7 +116,7 @@ export function ChatTitlebar({
         <button
           onClick={onToggleRightSidebar}
           className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition"
-          title="Toggle Workspace Explorer"
+          title="Toggle Workbench sidebar"
         >
           {showRightSidebar ? (
             <PanelRightClose className="size-4" />

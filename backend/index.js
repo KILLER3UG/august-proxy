@@ -999,6 +999,44 @@ const requestHandler = async (req, res) => {
         }
     }
 
+    if (req.url === '/ui/preview/sessions' && req.method === 'GET') {
+        const previewService = require('./services/workbench/preview-service');
+        return sendJson(res, previewService.listPreviewSessions());
+    }
+
+    if (req.url === '/ui/preview/sessions' && req.method === 'POST') {
+        try {
+            const previewService = require('./services/workbench/preview-service');
+            return sendJson(res, previewService.createPreviewSession(await readJsonBody(req)));
+        } catch (e) {
+            return sendError(res, e, 400);
+        }
+    }
+
+    if (req.url.startsWith('/ui/preview/session/') && req.method === 'GET') {
+        try {
+            const previewService = require('./services/workbench/preview-service');
+            return sendJson(res, await previewService.getPreviewSession(decodeURIComponent(req.url.split('/').pop())));
+        } catch (e) {
+            return sendError(res, e, 404);
+        }
+    }
+
+    if (req.url.startsWith('/ui/preview/session/') && req.method === 'DELETE') {
+        const previewService = require('./services/workbench/preview-service');
+        return sendJson(res, { deleted: previewService.stopPreviewSession(decodeURIComponent(req.url.split('/').pop())) });
+    }
+
+    if (req.url === '/ui/preview/approve' && req.method === 'POST') {
+        try {
+            const previewService = require('./services/workbench/preview-service');
+            const body = await readJsonBody(req);
+            return sendJson(res, await previewService.approvePreviewRequest(body.requestId, { approve: body.approve !== false }));
+        } catch (e) {
+            return sendError(res, e, 400);
+        }
+    }
+
     if (req.url === '/ui/terminal/sessions' && req.method === 'GET') {
         return sendJson(res, { sessions: terminalService.listTerminalSessions(), approvals: terminalService.listTerminalApprovals() });
     }

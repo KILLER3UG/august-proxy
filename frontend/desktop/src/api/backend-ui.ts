@@ -164,6 +164,36 @@ export interface AutomationListResponse {
   job?: AutomationJob;
 }
 
+/* ── Preview (backend/services/workbench/preview-service.js) ── */
+export interface PreviewSession {
+  id: string;
+  title?: string;
+  cwd?: string;
+  command?: string;
+  status?: string;
+  url?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  logLength?: number;
+}
+
+export interface PreviewApproval {
+  requestId: string;
+  id?: string;
+  type?: string;
+  command?: string;
+  cwd?: string;
+  title?: string;
+  reason?: string;
+  status?: string;
+  createdAt?: string;
+}
+
+export interface PreviewSessionsResponse {
+  sessions: PreviewSession[];
+  approvals: PreviewApproval[];
+}
+
 /* ── Terminal (backend/services/workbench/terminal-service.js) ── */
 export interface TerminalSession {
   id: string;
@@ -274,9 +304,38 @@ export function deleteAutomation(id: string): Promise<{ deleted: boolean }> {
   return api.delete<{ deleted: boolean }>(`/ui/automations/${encodeURIComponent(id)}`);
 }
 
+/* ── Preview ── */
+export function getPreviewSessions(): Promise<PreviewSessionsResponse> {
+  return api.get<PreviewSessionsResponse>('/ui/preview/sessions');
+}
+
+export function startPreviewSession(params: { command: string; cwd?: string; title?: string; approved?: boolean }): Promise<PreviewSession | { status: 'approval_required'; requestId: string; reason: string }> {
+  return api.post('/ui/preview/sessions', params);
+}
+
+export function getPreviewSession(id: string): Promise<{ log: string } & PreviewSession> {
+  return api.get<{ log: string } & PreviewSession>(`/ui/preview/session/${encodeURIComponent(id)}`);
+}
+
+export function stopPreviewSession(id: string): Promise<{ deleted: boolean }> {
+  return api.delete(`/ui/preview/session/${encodeURIComponent(id)}`);
+}
+
+export function approvePreviewRequest(requestId: string, approve = true): Promise<unknown> {
+  return api.post('/ui/preview/approve', { requestId, approve });
+}
+
 /* ── Terminal ── */
 export function getTerminalSessions(): Promise<TerminalSessionsResponse> {
   return api.get<TerminalSessionsResponse>('/ui/terminal/sessions');
+}
+
+export function getTerminalBuffer(sessionId: string): Promise<{ buffer: string } & TerminalSession> {
+  return api.get<{ buffer: string } & TerminalSession>(`/ui/terminal/buffer?id=${encodeURIComponent(sessionId)}`);
+}
+
+export function createTerminalSession(params?: { cwd?: string; title?: string }): Promise<TerminalSession> {
+  return api.post<TerminalSession>('/ui/terminal/sessions', params || {});
 }
 
 export function submitTerminalCommand(sessionId: string, command: string): Promise<unknown> {

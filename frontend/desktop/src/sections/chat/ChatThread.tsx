@@ -1857,7 +1857,7 @@ function MessageBubble({
           onSubmit={onClarifyAnswer}
         />
       )}
-      {/* todos moved out of the chat area — see FloatingRightPanel */}
+      {/* todos are rendered in the layout-level Workbench sidebar */}
       {isUser ? (
         <>
           <div className="rounded-2xl border border-border/40 bg-muted/40 dark:bg-[#161618] px-4 py-2.5 text-[13px] leading-relaxed text-foreground shadow-sm max-w-[85%] ml-auto">

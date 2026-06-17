@@ -1,20 +1,21 @@
 /* ── Chat-first layout ────────────────────────────────────────────── */
 /*                                                                          */
-/* The right-side info (todo list, git changes, branch) is rendered as a   */
-/* floating pill stack (FloatingRightPanel) positioned over the chat       */
-/* area — NOT as a sidebar.                                                 */
+/* The right-side Workbench sidebar is rendered as a layout sidebar with    */
+/* Preview, Diff, Terminal, Tasks, and Plan sections.                       */
 
 import { useState, useEffect } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "@nanostores/react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { $sessions, createSession, type Session } from "@/store/sessions";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
-import { FloatingRightPanel } from "./FloatingRightPanel";
-import { getWorkbenchSession } from "@/api/workbench";
-import type { WorkbenchTodo } from "@/types/workbench";
+import { RightDrawer } from "./RightDrawer";
+import { closeRightDrawer, useRightDrawer } from "./RightDrawerState";
+import { approveWorkbenchPlan, getWorkbenchSession } from "@/api/workbench";
+import { toast } from "sonner";
+import type { WorkbenchSession } from "@/types/workbench";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 
@@ -28,6 +29,11 @@ export function ChatLayout() {
   const [showRightSidebar, setShowRightSidebar] = useState<boolean>(
     () => localStorage.getItem("august-show-right-sidebar") === "1",
   );
+  const sessions = useStore($sessions);
+  const rightDrawer = useRightDrawer();
+  const queryClient = useQueryClient();
+  const active =
+    sessions.find((s) => s.id === sessionId && !s.isArchived) ?? null;
 
   useEffect(() => {
     localStorage.setItem(
@@ -37,19 +43,20 @@ export function ChatLayout() {
   }, [showRightSidebar]);
 
   useEffect(() => {
+    if (rightDrawer.open && !showRightSidebar) {
+      setShowRightSidebar(true);
+    }
+  }, [rightDrawer.open, showRightSidebar]);
+
+  useEffect(() => {
     const handleOpen = () => setShowRightSidebar(true);
     window.addEventListener("august-open-right-sidebar", handleOpen);
     return () =>
       window.removeEventListener("august-open-right-sidebar", handleOpen);
   }, []);
 
-  const sessions = useStore($sessions);
-  const active =
-    sessions.find((s) => s.id === sessionId && !s.isArchived) ?? null;
-
-  // Fetch the active workbench session to feed the floating right panel
-  // (todo list). The chat thread also fetches this independently, so this
-  // is the layout-level mirror for the floating pills.
+  // Fetch the active workbench session to feed the right sidebar. The chat
+  // thread also fetches this independently, so this is the layout-level mirror.
   const workbench = useQuery({
     queryKey: ['workbench-session', active?.workbenchSessionId],
     queryFn: () =>
@@ -59,7 +66,7 @@ export function ChatLayout() {
     enabled: !!active?.workbenchSessionId,
     refetchInterval: 2_000,
   });
-  const todos: WorkbenchTodo[] = (workbench.data?.todos ?? []).slice();
+  const workbenchSession: WorkbenchSession | null = workbench.data || null;
 
   // Auto redirect from `/` or invalid/archived sessionId to the first non-archived session
   useEffect(() => {
@@ -84,6 +91,17 @@ export function ChatLayout() {
     navigate(`/c/${newSess.id}`);
   };
 
+  const approvePlan = async () => {
+    if (!active?.workbenchSessionId) return;
+    try {
+      const updated = await approveWorkbenchPlan(active.workbenchSessionId);
+      queryClient.setQueryData(['workbench-session', active.workbenchSessionId], updated);
+      toast.success('Workbench plan approved');
+    } catch (e: any) {
+      toast.error('Could not approve Workbench plan', { description: e.message });
+    }
+  };
+
   useEffect(() => {
     localStorage.setItem(SESSIONS_COLLAPSED_KEY, collapsed ? "1" : "0");
   }, [collapsed]);
@@ -98,9 +116,7 @@ export function ChatLayout() {
           <SessionSidebar
             activeId={active?.id}
             collapsed={collapsed}
-            showRightSidebar={showRightSidebar}
             onToggleCollapsed={() => setCollapsed((c) => !c)}
-            onToggleRightSidebar={() => setShowRightSidebar((s) => !s)}
             onNew={() => handleNewSession()}
             onNewInFolder={(folderId) => handleNewSession(folderId)}
             onNavigate={(path) => {
@@ -122,7 +138,10 @@ export function ChatLayout() {
               sessionStorage.setItem("pre-settings-path", location.pathname);
               navigate("/settings");
             }}
-            onToggleRightSidebar={() => setShowRightSidebar((s) => !s)}
+            onToggleRightSidebar={() => {
+              if (showRightSidebar) closeRightDrawer();
+              setShowRightSidebar((s) => !s);
+            }}
           />
           <div className="flex-1 min-h-0 overflow-hidden relative">
             <AnimatePresence mode="wait" initial={false}>
@@ -138,18 +157,17 @@ export function ChatLayout() {
               </motion.div>
             </AnimatePresence>
 
-            {/* Floating pill stack on the right edge — NOT a sidebar. Renders
-                only when there's an active chat session so it doesn't
-                overlap with the session sidebar or empty-state UIs. */}
             {!isSettings && active && (
-              // `key` includes the workbench session id so React remounts the
-              // pill (and its git queries) whenever the active session
-              // changes. Without it, the previous session's todos / git
-              // status would briefly linger after switching tabs.
-              <FloatingRightPanel
-                key={active.workbenchSessionId ?? active.id}
+              <RightDrawer
+                open={showRightSidebar}
                 sessionId={active.id}
-                todos={todos}
+                workspacePath={active.workspacePath || null}
+                workbenchSession={workbenchSession}
+                onApprovePlan={approvePlan}
+                onClose={() => {
+                  closeRightDrawer();
+                  setShowRightSidebar(false);
+                }}
               />
             )}
           </div>

@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { DiffView } from '@/components/chat/DiffView';
+import { openRightDrawer, setRightDrawerDiff } from '@/components/shell/RightDrawerState';
 import type { GitDiffResult } from '@/api/git';
 
 export function ChangedFilesCard({
@@ -59,7 +60,7 @@ export function ChangedFilesCard({
       {open && (
         <div className="border-t border-white/[0.045] px-3 py-2 space-y-1.5">
           {files.map((file) => (
-            <ChangedFileRow key={file.path} file={file} />
+            <ChangedFileRow key={file.path} changes={changes} file={file} />
           ))}
         </div>
       )}
@@ -67,31 +68,52 @@ export function ChangedFilesCard({
   );
 }
 
-function ChangedFileRow({ file }: { file: GitDiffResult['files'][number] }) {
+function ChangedFileRow({
+  changes,
+  file,
+}: {
+  changes: GitDiffResult;
+  file: GitDiffResult['files'][number];
+}) {
   const [open, setOpen] = useState(false);
   const hasDiff = Boolean(file.diff && file.diff.trim());
 
+  const openInDrawer = () => {
+    setRightDrawerDiff(changes, file.path);
+    openRightDrawer('diff');
+  };
+
   return (
     <div className="min-w-0">
-      <DisclosureRow
-        open={open && hasDiff}
-        onToggle={hasDiff ? () => setOpen(value => !value) : undefined}
-        trailing={
-          <span className="font-mono text-[10px] tabular-nums">
-            {file.added > 0 && <span className="text-emerald-500">+{file.added}</span>}
-            {' '}
-            {file.removed > 0 && <span className="text-rose-400">-{file.removed}</span>}
-            {file.added === 0 && file.removed === 0 && <span className="text-muted-foreground/50">0</span>}
+      <div className="flex items-center gap-1.5">
+        <DisclosureRow
+          open={open && hasDiff}
+          onToggle={hasDiff ? () => setOpen(value => !value) : undefined}
+          trailing={
+            <span className="font-mono text-[10px] tabular-nums">
+              {file.added > 0 && <span className="text-emerald-500">+{file.added}</span>}
+              {' '}
+              {file.removed > 0 && <span className="text-rose-400">-{file.removed}</span>}
+              {file.added === 0 && file.removed === 0 && <span className="text-muted-foreground/50">0</span>}
+            </span>
+          }
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <FileIcon name={file.path} size={13} className="shrink-0" />
+            <span className="truncate font-mono text-[10.5px] text-foreground/85" title={file.path}>
+              {file.path}
+            </span>
           </span>
-        }
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <FileIcon name={file.path} size={13} className="shrink-0" />
-          <span className="truncate font-mono text-[10.5px] text-foreground/85" title={file.path}>
-            {file.path}
-          </span>
-        </span>
-      </DisclosureRow>
+        </DisclosureRow>
+        <button
+          type="button"
+          onClick={openInDrawer}
+          className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-white/[0.05] hover:text-foreground transition"
+          title="Open full diff in drawer"
+        >
+          Open
+        </button>
+      </div>
       {open && hasDiff && (
         <div className="pl-4 pr-1 pt-0.5">
           <DiffView diff={file.diff} maxLines={32} />
