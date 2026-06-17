@@ -12,10 +12,12 @@ import { $sessions, createSession, type Session } from "@/store/sessions";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
-import { closeRightDrawer, openRightDrawer, useRightDrawer } from "./RightDrawerState";
+import { RightDrawerLauncher } from "./RightDrawerLauncher";
+import { closeRightDrawer, setRightDrawerSections, useRightDrawer } from "./RightDrawerState";
 import { approveWorkbenchPlan, getWorkbenchSession } from "@/api/workbench";
 import { toast } from "sonner";
 import type { WorkbenchSession } from "@/types/workbench";
+import type { RightDrawerSectionId } from "./RightDrawerState";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 const WORKBENCH_SIDEBAR_OPEN_KEY = "august-workbench-sidebar-open";
@@ -30,6 +32,7 @@ export function ChatLayout() {
   const [showRightSidebar, setShowRightSidebar] = useState<boolean>(
     () => localStorage.getItem(WORKBENCH_SIDEBAR_OPEN_KEY) === "1",
   );
+  const [launcherOpen, setLauncherOpen] = useState(false);
   const sessions = useStore($sessions);
   const rightDrawer = useRightDrawer();
   const queryClient = useQueryClient();
@@ -49,19 +52,22 @@ export function ChatLayout() {
     }
   }, [rightDrawer.open, showRightSidebar]);
 
-  const openWorkbenchSidebar = () => {
-    if (!rightDrawer.sections.length && !rightDrawer.activeSection) {
-      openRightDrawer('diff');
-    }
+  const openWorkbenchLauncher = () => {
+    setLauncherOpen(true);
+  };
+
+  const openWorkbenchSidebar = (section: RightDrawerSectionId) => {
+    setRightDrawerSections([section], section);
+    setLauncherOpen(false);
     setShowRightSidebar(true);
   };
 
   useEffect(() => {
-    window.addEventListener("august-open-right-sidebar", openWorkbenchSidebar);
+    window.addEventListener("august-open-right-sidebar", openWorkbenchLauncher);
     localStorage.removeItem("august-show-right-sidebar");
     return () =>
-      window.removeEventListener("august-open-right-sidebar", openWorkbenchSidebar);
-  }, [openWorkbenchSidebar]);
+      window.removeEventListener("august-open-right-sidebar", openWorkbenchLauncher);
+  }, [openWorkbenchLauncher]);
 
   // Fetch the active workbench session to feed the right sidebar. The chat
   // thread also fetches this independently, so this is the layout-level mirror.
@@ -151,13 +157,7 @@ export function ChatLayout() {
               sessionStorage.setItem("pre-settings-path", location.pathname);
               navigate("/settings");
             }}
-            onToggleRightSidebar={() => {
-              if (showRightSidebar) {
-                closeWorkbenchSidebar();
-              } else {
-                openWorkbenchSidebar();
-              }
-            }}
+            onToggleRightSidebar={openWorkbenchLauncher}
           />
           <div className="flex-1 min-h-0 overflow-hidden relative flex">
             <AnimatePresence mode="wait" initial={false}>
@@ -183,6 +183,11 @@ export function ChatLayout() {
                 onClose={closeWorkbenchSidebar}
               />
             )}
+            <RightDrawerLauncher
+              open={launcherOpen}
+              onClose={() => setLauncherOpen(false)}
+              onSelect={openWorkbenchSidebar}
+            />
           </div>
         </div>
       </div>

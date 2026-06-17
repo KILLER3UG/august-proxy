@@ -81,6 +81,14 @@ export function setActiveRightDrawerSection(section: RightDrawerSectionId) {
   });
 }
 
+export function setRightDrawerSections(sections: RightDrawerSectionId[], activeSection: RightDrawerSectionId = sections[0]) {
+  $rightDrawer.set({
+    open: true,
+    sections,
+    activeSection,
+  });
+}
+
 export function setRightDrawerDiff(diff?: GitDiffResult, selectedDiffPath?: string) {
   const current = $rightDrawer.get();
   $rightDrawer.set({
