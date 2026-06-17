@@ -142,7 +142,12 @@ export function ChatLayout() {
                 only when there's an active chat session so it doesn't
                 overlap with the session sidebar or empty-state UIs. */}
             {!isSettings && active && (
+              // `key` includes the workbench session id so React remounts the
+              // pill (and its git queries) whenever the active session
+              // changes. Without it, the previous session's todos / git
+              // status would briefly linger after switching tabs.
               <FloatingRightPanel
+                key={active.workbenchSessionId ?? active.id}
                 sessionId={active.id}
                 todos={todos}
               />
