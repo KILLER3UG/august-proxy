@@ -9,7 +9,7 @@ import { DisclosureRow } from '@/components/chat/DisclosureRow';
  * Collapsible "Thinking" section that:
  * - Auto-opens while streaming (pending=true)
  * - Auto-collapses when done
- * - Shows elapsed timer while streaming
+ * - Shows elapsed time inline while streaming
  * - Scroll-locks to bottom during live preview
  */
 interface ThinkingDisclosureProps {
@@ -60,15 +60,12 @@ export function ThinkingDisclosure({
     return () => observer.disconnect();
   }, [isPreview, open, children]);
 
+  const liveElapsed = pending && elapsed !== undefined ? fmtElapsed(elapsed) : null;
   const displayLabel = pending
-    ? 'Thinking'
+    ? liveElapsed ? `Thinking ${liveElapsed}` : 'Thinking'
     : duration !== undefined
       ? `Thought for ${fmtElapsed(duration)}`
       : label;
-
-  const displayDuration = pending
-    ? elapsed !== undefined ? fmtElapsed(elapsed) : null
-    : null;
 
   return (
     <div
@@ -78,13 +75,6 @@ export function ThinkingDisclosure({
       <DisclosureRow
         onToggle={() => setUserOpen(!open)}
         open={open}
-        trailing={
-          displayDuration && (
-            <span className="font-mono text-[12px] text-muted-foreground/60 tabular-nums shrink-0">
-              {displayDuration}
-            </span>
-          )
-        }
       >
         <span className="flex min-w-0 items-baseline gap-1.5">
           {icon}

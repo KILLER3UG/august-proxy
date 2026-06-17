@@ -169,10 +169,10 @@ export function ToolCallItem({
     return () => window.clearInterval(id);
   }, [tool.status]);
 
-  const hasTimestamps = tool.startedAt !== undefined || tool.duration !== undefined;
+  const hasTimestamps = tool.duration !== undefined || (tool.status === 'running' && tool.startedAt !== undefined);
   const elapsed = hasTimestamps
-    ? fmtElapsed(tool.duration !== undefined ? tool.duration : (tool.startedAt ? Date.now() - tool.startedAt : 0))
-    : null;
+    ? tool.duration ?? (tool.startedAt ? now - tool.startedAt : undefined)
+    : undefined;
 
   const hasBody = !!(
     tool.context || tool.preview || tool.summary || tool.error || tool.inline_diff || tool.searchHits
@@ -194,19 +194,13 @@ export function ToolCallItem({
     : toolNameForIcon;
   const labelTitle = isCommand && commandText && commandText.length > 120 ? commandText : undefined;
   const filename = !isCommand ? extractFilename(tool.context) : null;
+  const displayLabel = elapsed !== undefined ? `${label} · ${fmtElapsed(elapsed)}` : label;
 
   return (
     <div className="text-xs text-muted-foreground w-full py-0.5" data-slot="tool-block">
       <DisclosureRow
         onToggle={hasBody ? () => setUserOverride(!open) : undefined}
         open={open && hasBody}
-        trailing={
-          elapsed && (
-            <span className="font-mono text-[10px] text-muted-foreground/60 tabular-nums shrink-0">
-              {elapsed}
-            </span>
-          )
-        }
       >
         <span className="flex min-w-0 items-center gap-2">
           {filename ? (
@@ -227,12 +221,12 @@ export function ToolCallItem({
               // 100ms stagger is visually noisy. Render as a plain monospace
               // span with a `title` tooltip for the full text.
               <span className="font-mono text-[11.5px] text-foreground/85 wrap-anywhere break-words">
-                {label}
+                {displayLabel}
               </span>
             ) : (
               <span className={cn('thinking-text', isRunning && 'animating')}>
                 <span className="thinking-label">
-                  {Array.from(label).map((ch, i) => (
+                  {Array.from(displayLabel).map((ch, i) => (
                     <span
                       key={i}
                       className={cn('thinking-char', i === 0 && 'thinking-cap')}

@@ -11,10 +11,50 @@ const { getProviderConfig } = require('../lib/config');
 const { inferFromModelId, deriveModelsUrl } = require('../lib/models');
 const { resolveModelProfile } = require('../lib/model-profiles');
 
+let modelAliasCache = null;
+let modelAliasCacheAt = 0;
+const MODEL_ALIAS_CACHE_TTL_MS = 60000;
+
 function isFreeModelId(id) {
     if (typeof id !== 'string') return false;
     const lower = id.toLowerCase();
     return lower.includes(':free') || lower.includes('-free') || lower.endsWith('free');
+}
+
+
+function toClaudeDesktopModelAlias(id) {
+    if (typeof id !== 'string') return '';
+    return id
+        .replace(/^~/, '')
+        .replace(/[/:]/g, '-')
+        .replace(/[^A-Za-z0-9._-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+}
+
+function buildModelAliasMap(models) {
+    const ids = new Set(models.map(m => m.id));
+    const aliases = new Map();
+    for (const model of models) {
+        const alias = toClaudeDesktopModelAlias(model.id);
+        if (!alias || alias === model.id || ids.has(alias) || aliases.has(alias)) continue;
+        aliases.set(alias, model.id);
+    }
+    return aliases;
+}
+
+async function getModelAliasMap() {
+    const now = Date.now();
+    if (modelAliasCache && now - modelAliasCacheAt < MODEL_ALIAS_CACHE_TTL_MS) return modelAliasCache;
+    const models = await getModelList();
+    modelAliasCache = buildModelAliasMap(models);
+    modelAliasCacheAt = now;
+    return modelAliasCache;
+}
+
+async function resolveModelAlias(modelId) {
+    const aliases = await getModelAliasMap();
+    return aliases.get(modelId) || modelId;
 }
 
 function getContextWindowForModel(modelId, providerProfile, contextLengthFromApi) {
@@ -178,22 +218,39 @@ async function getModelList() {
 }
 
 /** Convert the aggregated list to OpenAI-style { object: "list", data: [...] }. */
-async function getModelListOpenAI() {
+async function getModelListOpenAI({ includeClientAliases = false } = {}) {
     const models = await getModelList();
     const created = Math.floor(Date.now() / 1000);
-    return {
-        object: 'list',
-        data: models.map((m) => ({
-            id: m.id,
+    const ids = new Set(models.map(m => m.id));
+    const aliases = includeClientAliases ? buildModelAliasMap(models) : new Map();
+    const aliasesByRealId = new Map(Array.from(aliases, ([alias, realId]) => [realId, alias]));
+    const data = [];
+    for (const model of models) {
+        data.push({
+            id: model.id,
             object: 'model',
             created,
-            owned_by: m.provider,
-        })),
+            owned_by: model.provider,
+        });
+        const alias = aliasesByRealId.get(model.id);
+        if (alias && !ids.has(alias)) {
+            data.push({
+                id: alias,
+                object: 'model',
+                created,
+                owned_by: model.provider + '-alias',
+            });
+        }
+    }
+    return {
+        object: 'list',
+        data,
     };
 }
 
 module.exports = {
     getModelList,
     getModelListOpenAI,
+    resolveModelAlias,
     isFreeModelId,
 };

@@ -1,4 +1,5 @@
 const { getProfile } = require('../lib/config');
+const { resolveModelAlias } = require('../providers/model-list');
 const { logActivity, endRequest, captureRequest, captureResponse, captureTokens, captureError } = require('../lib/logger');
 const { applySelfHealToMessages } = require('../services/workbench/selfheal');
 const { getModelContextWindow, saveModelContextWindow, loadModelContextWindow } = require('../lib/models');
@@ -623,16 +624,17 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
 
             // ── Model Resolution (Alias Mapping) ──
             const requestedModel = oReq.model || 'gpt-5.4';
-            requestModel = cfg._upstreamModel || cfg.currentModel || requestedModel;
-            
+            const requestedRaw = requestedModel ? await resolveModelAlias(requestedModel) : '';
+            requestModel = cfg._upstreamModel || cfg.currentModel || requestedRaw || requestedModel;
+
             // Handle explicit aliases (just like in Claude profile)
-            if (requestedModel === 'gpt-5.4' || requestedModel === 'gpt-4o' || requestedModel === 'gpt-4-turbo') {
+            if (requestedRaw === 'gpt-5.4' || requestedRaw === 'gpt-4o' || requestedRaw === 'gpt-4-turbo') {
                 requestModel = cfg._upstreamModel || cfg.currentModel;
             }
 
             // Handle aliasTargets if defined
-            if (cfg.aliasTargets && cfg.aliasTargets[requestedModel]) {
-                const target = cfg.aliasTargets[requestedModel];
+            if (cfg.aliasTargets && cfg.aliasTargets[requestedRaw]) {
+                const target = cfg.aliasTargets[requestedRaw];
                 requestModel = target.model || target.currentModel || requestModel;
                 if (target.targetUrl || target.url) cfg.targetUrl = target.targetUrl || target.url;
                 if (target.apiKey) cfg.apiKey = target.apiKey;
@@ -642,7 +644,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             if (authHeader.includes('Bearer model:')) {
                 const extractedModel = authHeader.split('model:')[1].trim();
                 if (extractedModel) {
-                    requestModel = extractedModel;
+                    requestModel = await resolveModelAlias(extractedModel);
                     console.log(`[Proxy Hijack]: Using model from CLI: ${requestModel}`);
                 }
             }

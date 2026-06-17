@@ -13,6 +13,7 @@ const { sanitizeToolSchema } = require('../services/tools/mcp-client');
 const { executeToolBatch } = require('../services/workbench/tool-executor');
 const { isOpenAiToolCallParallelSafe, isAnthropicToolUseParallelSafe, parseOpenAiToolArgs } = require('../services/workbench/managed-tool-policy');
 const { LlmAdapterBase } = require('./base');
+const { resolveModelAlias } = require('../providers/model-list');
 const { SseStreamParser } = require('./sse-parser');
 const { classifyOpenAiToolCalls, classifyAnthropicToolUses, getToolNameFromOpenAiTool } = require('./tool-classification');
 const { buildSystemBlocks: buildContextSystemBlocks, isMiniMaxTarget } = require('../services/memory/context-builder');
@@ -957,6 +958,15 @@ function shouldUseAnthropicUpstream(targetUrl) {
     } catch (e) {
         return /\/v1\/messages$/i.test(targetUrl) || /\/anthropic(\/|$)/i.test(targetUrl);
     }
+}
+
+function toOpenAiCompatibleTargetUrl(targetUrl) {
+    let target = String(targetUrl || '').trim();
+    if (!target) return '';
+    if (/\/chat\/completions$/i.test(target) || /\/text\/chatcompletion_v2$/i.test(target)) return target;
+    target = target.replace(/\/+$/, '');
+    if (/\/v\d+$/i.test(target)) return `${target}/chat/completions`;
+    return `${target}/v1/chat/completions`;
 }
 
 function buildAnthropicHeaders(apiKey) {
@@ -2437,8 +2447,13 @@ async function handleMessages(req, res, cleanPath, reqId) {
     const clientId = req.augustClientId || 'unknown';
     let body = '';
     const abortCtrl = new AbortController();
-    const handleAbort = () => abortCtrl.abort();
+    const handleAbort = () => {
+        if (req.aborted || (req.socket?.destroyed && !res.writableEnded)) {
+            abortCtrl.abort();
+        }
+    };
     if (!req.signal) {
+        req.on('aborted', handleAbort);
         req.on('close', handleAbort);
     }
     if (req.signal) {
@@ -2460,6 +2475,9 @@ async function handleMessages(req, res, cleanPath, reqId) {
         function finishRequest() {
             if (_endCalled) return;
             _endCalled = true;
+            req.off('aborted', handleAbort);
+            req.off('close', handleAbort);
+            if (req.signal) req.signal.removeEventListener('abort', handleAbort);
             endRequest(reqId, {
                 status: requestStatus,
                 model: clientFacingModel,
@@ -2483,13 +2501,14 @@ async function handleMessages(req, res, cleanPath, reqId) {
             // This lets OpenAI-compatible models work through Claude Code
             // (/v1/messages) — the request is translated to OpenAI format
             // and forwarded to the matched provider.
-            const requestedRaw = typeof aReq.model === 'string' ? aReq.model.trim() : '';
+            const incomingModel = typeof aReq.model === 'string' ? aReq.model.trim() : '';
+            const requestedRaw = incomingModel ? await resolveModelAlias(incomingModel) : '';
             if (requestedRaw && !isClaudeFamilyModel(requestedRaw)) {
                 try {
                     const { resolveProviderForModel } = require('../providers/route-resolver');
                     const routed = resolveProviderForModel(requestedRaw);
                     if (routed && routed.baseUrl && routed.apiKey && routed.name !== 'anthropic') {
-                        cfg.targetUrl = routed.baseUrl;
+                        cfg.targetUrl = toOpenAiCompatibleTargetUrl(routed.baseUrl);
                         cfg.apiKey = routed.apiKey;
                         // Send the actual requested model upstream — not the claude
                         // profile's _upstreamModel. Without this, a Claude Code

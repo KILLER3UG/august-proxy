@@ -4,7 +4,7 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback, type KeyboardEvent } from 'react';
 import { Send, Paperclip, Mic, AtSign, Plus, Sparkles, ChevronRight, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw } from 'lucide-react';
-import { cn, formatTimeAgo, fmtElapsed } from '@/lib/utils';
+import { cn, formatTimeAgo } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
 import { marked } from 'marked';
@@ -809,7 +809,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             status: is_error ? 'error' : 'done',
             result: resultText,
             error: is_error ? resultText : '',
-            duration: undefined,
+            duration: t.startedAt ? Date.now() - t.startedAt : undefined,
           } : t);
           streamBlocks = appendBlockEvent(streamBlocks, {
             type: 'tool_result',
@@ -817,6 +817,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             status: is_error ? 'error' : 'done',
             summary: resultText.slice(0, 240),
             error: is_error ? resultText.slice(0, 240) : '',
+            duration: toolResults.find(t => t.id === id)?.duration,
           });
           scheduleUpdate();
         },
@@ -1660,10 +1661,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 // ThinkingDisclosure — auto-open while streaming
 // ----------------------------------------------------
 function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGenerating?: boolean; duration?: number }) {
-  // Live-tick the elapsed time while the model is thinking so the duration
-  // label updates in real time. While `isGenerating` is true we own the
-  // display; once it flips to false `ThinkingDisclosure` falls back to the
-  // persisted `duration` prop that was set in `finalize()`.
+  // Live-tick the elapsed time in the Thinking label while the model is
+  // thinking. The interval stops as soon as this thinking section is done.
   const [elapsed, setElapsed] = useState<number>(0);
   useEffect(() => {
     if (!isGenerating) return;
@@ -1683,7 +1682,6 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
       >
         <div className="pl-3 border-l border-foreground/15 leading-relaxed py-1 thought-content text-[13px]">
           <Markdown content={text} />
-          {isGenerating && <WorkingIndicator className="mt-2" />}
         </div>
       </ThinkingDisclosure>
     </div>
@@ -2007,6 +2005,7 @@ function MessageBubble({
                 })}
               </AnimatePresence>
             )}
+            {isLast && streaming && !showRaw && <WorkingIndicator className="mt-1" />}
           </div>
           {/* Action buttons below assistant message */}
           <div className={cn(
@@ -2099,13 +2098,6 @@ function ToolCallCard({
       <DisclosureRow
         onToggle={hasBody ? () => setOpen(!open) : undefined}
         open={open}
-        trailing={
-          tool.duration !== undefined && (
-            <span className="font-mono text-[10px] text-muted-foreground/60 tabular-nums shrink-0">
-              {tool.duration}ms
-            </span>
-          )
-        }
       >
         <span className="flex min-w-0 items-center gap-2">
           {legacyFilename ? (
