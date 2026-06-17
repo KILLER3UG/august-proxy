@@ -1578,8 +1578,7 @@ const requestHandler = async (req, res) => {
     if (cleanPath.includes('/v1/models') && req.method === 'GET') {
         try {
             const { getModelListOpenAI } = require('./providers/model-list');
-            const isClaudeClient = String(req.headers['user-agent'] || '').toLowerCase().includes('claude');
-            const payload = await getModelListOpenAI({ includeClientAliases: isClaudeClient });
+            const payload = await getModelListOpenAI({ includeClientAliases: true, filterRoutable: true });
             return sendJson(res, payload);
         } catch (e) {
             console.error('[Proxy /v1/models] error:', e.message);

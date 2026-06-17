@@ -10,6 +10,7 @@ const { listProviders } = require('./provider-registry');
 const { getProviderConfig } = require('../lib/config');
 const { inferFromModelId, deriveModelsUrl } = require('../lib/models');
 const { resolveModelProfile } = require('../lib/model-profiles');
+const { resolveProviderForModel } = require('./route-resolver');
 
 let modelAliasCache = null;
 let modelAliasCacheAt = 0;
@@ -55,6 +56,26 @@ async function getModelAliasMap() {
 async function resolveModelAlias(modelId) {
     const aliases = await getModelAliasMap();
     return aliases.get(modelId) || modelId;
+}
+
+function getProviderPrefix(modelId) {
+    const match = String(modelId || '').trim().match(/^([^/:~]+)[/:]/);
+    return match ? match[1] : '';
+}
+
+function providerMatchesPrefix(provider, prefix) {
+    if (!provider || !prefix) return false;
+    const lowerPrefix = prefix.toLowerCase();
+    if (provider.name && provider.name.toLowerCase() === lowerPrefix) return true;
+    return Array.isArray(provider.aliases) && provider.aliases.some((alias) => String(alias).toLowerCase() === lowerPrefix);
+}
+
+function isModelRoutableForClient(model) {
+    const routed = resolveProviderForModel(model.id);
+    if (!routed) return false;
+    const prefix = getProviderPrefix(model.id);
+    if (!prefix) return true;
+    return providerMatchesPrefix(routed.provider, prefix);
 }
 
 function getContextWindowForModel(modelId, providerProfile, contextLengthFromApi) {
@@ -218,14 +239,15 @@ async function getModelList() {
 }
 
 /** Convert the aggregated list to OpenAI-style { object: "list", data: [...] }. */
-async function getModelListOpenAI({ includeClientAliases = false } = {}) {
+async function getModelListOpenAI({ includeClientAliases = false, filterRoutable = false } = {}) {
     const models = await getModelList();
     const created = Math.floor(Date.now() / 1000);
-    const ids = new Set(models.map(m => m.id));
-    const aliases = includeClientAliases ? buildModelAliasMap(models) : new Map();
+    const visibleModels = filterRoutable ? models.filter(isModelRoutableForClient) : models;
+    const ids = new Set(visibleModels.map(m => m.id));
+    const aliases = includeClientAliases ? buildModelAliasMap(visibleModels) : new Map();
     const aliasesByRealId = new Map(Array.from(aliases, ([alias, realId]) => [realId, alias]));
     const data = [];
-    for (const model of models) {
+    for (const model of visibleModels) {
         data.push({
             id: model.id,
             object: 'model',

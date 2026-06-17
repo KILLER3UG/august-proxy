@@ -18,9 +18,9 @@ const { getProviderHint } = require('./provider-hints');
  *   1. explicit provider-hint table
  *   2. exact model-profile key match
  *   3. longest model-profile prefix match
- *   4. wildcard (*) profile match
- *   5. provider name/alias prefix on the model id
- *   6. well-known family prefixes (claude-, gpt-, gemini-, deepseek-)
+ *   4. provider name/alias prefix or segment on the model id
+ *   5. well-known family prefixes (claude-, gpt-, gemini-, deepseek-)
+ *   6. wildcard (*) profile match
  *   7. active provider
  *
  * Returns { provider, baseUrl, apiKey, apiMode } or null.
@@ -38,7 +38,7 @@ function resolveProviderForModel(model) {
         if (p && hasCredentials(p)) return toResolved(p);
     }
 
-    // 2–4. Model-profile matches (exact → longest prefix → wildcard).
+    // 2–3. Model-profile matches (exact → longest prefix).
     let exactMatch = null;
     let bestPrefixMatch = null;
     let bestPrefixLength = -1;
@@ -67,18 +67,20 @@ function resolveProviderForModel(model) {
     }
     if (exactMatch) return toResolved(exactMatch);
     if (bestPrefixMatch) return toResolved(bestPrefixMatch);
-    if (wildcardMatch) return toResolved(wildcardMatch);
 
-    // 5. Provider name / alias prefixes the model id (e.g. "deepseek/...").
+    // 4. Provider name / alias prefix or segment on the model id.
+    const modelSegments = new Set(lowerModel.split(/[/:]/));
     for (const p of providers) {
         if (!hasCredentials(p)) continue;
+        const aliases = Array.isArray(p.aliases) ? p.aliases : [];
         if (lowerModel.startsWith(p.name.toLowerCase()) ||
-            (Array.isArray(p.aliases) && p.aliases.some((a) => lowerModel.startsWith(a.toLowerCase())))) {
+            modelSegments.has(p.name.toLowerCase()) ||
+            aliases.some((a) => lowerModel.startsWith(a.toLowerCase()) || modelSegments.has(a.toLowerCase()))) {
             return toResolved(p);
         }
     }
 
-    // 6. Well-known family prefixes.
+    // 5. Well-known family prefixes.
     let familyProvider = null;
     if (lowerModel.startsWith('claude-')) familyProvider = 'anthropic';
     else if (lowerModel.startsWith('gpt-') || lowerModel.startsWith('o1') || lowerModel.startsWith('o3')) familyProvider = 'openai-api';
@@ -88,6 +90,9 @@ function resolveProviderForModel(model) {
         const p = providers.find((x) => x.name === familyProvider);
         if (p && hasCredentials(p)) return toResolved(p);
     }
+
+    // 6. Wildcard profile match.
+    if (wildcardMatch) return toResolved(wildcardMatch);
 
     // 7. Active provider (only if it actually has credentials).
     const active = getActiveProvider();
