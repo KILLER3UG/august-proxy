@@ -2525,7 +2525,7 @@ async function handleMessages(req, res, cleanPath, reqId) {
                 }
             }
 
-            const upstreamModel = shouldPreserveClaudeAliasForAnthropicUpstream(requestModel)
+            const upstreamModel = shouldUseAnthropicUpstream(cfg.targetUrl) && shouldPreserveClaudeAliasForAnthropicUpstream(requestModel)
                 ? requestModel
                 : (cfg._upstreamModel || getClaudeBackendModel(cfg, aReq.model));
             if (cfg.publicModelAlias && upstreamModel) {

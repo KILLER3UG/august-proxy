@@ -67,8 +67,17 @@ function stripProviderAliasPrefix(id, providerName) {
 
 function getModelDisplayAlias(model) {
     if (!model || typeof model.id !== 'string') return '';
+    const hadProviderSeparator = /[/:]/.test(model.id);
     let base = stripProviderPrefix(model.id);
-    base = stripProviderAliasPrefix(base, model.provider);
+    const providerToken = sanitizeProviderToken(model.provider);
+    const providerModelPrefix = providerToken ? `${providerToken}-${providerToken}-` : '';
+    if (!hadProviderSeparator) {
+        if (base.toLowerCase().startsWith(providerModelPrefix)) {
+            base = base.slice(providerToken.length + 1);
+        } else {
+            base = stripProviderAliasPrefix(base, model.provider);
+        }
+    }
 
     let tag = '';
     for (const [pattern, label] of DISPLAY_VARIANT_TAGS) {
@@ -79,8 +88,9 @@ function getModelDisplayAlias(model) {
         }
     }
 
-    const name = prettifyModelBase(base) || model.id;
-    return tag ? `${name} (${tag})` : name;
+    const providerDisplayName = getProviderDisplayName(model.provider);
+    const baseName = tag ? `${prettifyModelBase(base) || model.id} (${tag})` : (prettifyModelBase(base) || model.id);
+    return providerDisplayName ? `${baseName}-${providerDisplayName}` : baseName;
 }
 
 function toClaudeDesktopModelAlias(id, providerName = '') {
