@@ -6,8 +6,6 @@ import {
   X,
   PanelLeft,
   PanelLeftClose,
-  PanelRight,
-  PanelRightClose,
   Settings,
   GitBranch,
 } from "lucide-react";
@@ -15,23 +13,23 @@ import { useQuery } from "@tanstack/react-query";
 import { gitApi } from "@/api/git";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { RightDrawerDropdown } from "./RightDrawerLauncher";
 import type { Session } from "@/store/sessions";
+import type { RightDrawerSectionId } from "./RightDrawerState";
 
 interface ChatTitlebarProps {
   session: Session | null;
   sidebarCollapsed: boolean;
-  showRightSidebar: boolean;
   onToggleSidebar: () => void;
-  onToggleRightSidebar: () => void;
+  onSelectRightDrawerSection: (section: RightDrawerSectionId) => void;
   onSettings: () => void;
 }
 
 export function ChatTitlebar({
   session,
   sidebarCollapsed,
-  showRightSidebar,
   onToggleSidebar,
-  onToggleRightSidebar,
+  onSelectRightDrawerSection,
   onSettings,
 }: ChatTitlebarProps) {
   const [speaking, setSpeaking] = useState(false);
@@ -113,17 +111,7 @@ export function ChatTitlebar({
         >
           <Volume2 className="size-4" />
         </button>
-        <button
-          onClick={onToggleRightSidebar}
-          className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition"
-          title="Toggle Workbench sidebar"
-        >
-          {showRightSidebar ? (
-            <PanelRightClose className="size-4" />
-          ) : (
-            <PanelRight className="size-4" />
-          )}
-        </button>
+        <RightDrawerDropdown onSelect={onSelectRightDrawerSection} />
 
         <div className="h-4 w-[1px] bg-border/40" />
 
