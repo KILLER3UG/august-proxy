@@ -1,5 +1,5 @@
 const { getProfile } = require('../lib/config');
-const { resolveModelAlias } = require('../providers/model-list');
+const { resolveModelAlias, resolveModelAliasDetails } = require('../providers/model-list');
 const { logActivity, endRequest, captureRequest, captureResponse, captureTokens, captureError } = require('../lib/logger');
 const { applySelfHealToMessages } = require('../services/workbench/selfheal');
 const { getModelContextWindow, saveModelContextWindow, loadModelContextWindow } = require('../lib/models');
@@ -505,13 +505,16 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
 
         const abortCtrl = new AbortController();
         const handleAbort = () => {
-            abortCtrl.abort();
+            if (req.aborted || (req.socket?.destroyed && !res.writableEnded)) {
+                abortCtrl.abort();
+            }
         };
         // Only wire 'close' on a real HTTP req. The WS fakeReq is a one-shot
         // Readable.from([...]) that emits 'close' immediately after the body
         // chunk is consumed — long before the upstream fetch completes. When a
         // proper req.signal is supplied, we rely solely on that for abort.
         if (!req.signal) {
+            req.on('aborted', handleAbort);
             req.on('close', handleAbort);
         }
         if (req.signal) {
@@ -531,6 +534,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 res.writeHead(408, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: { message: 'Request body timeout' } }));
             }
+            req.off('aborted', handleAbort);
             req.off('close', handleAbort);
             if (req.signal) req.signal.removeEventListener('abort', handleAbort);
             resolve();
@@ -547,6 +551,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: { message: err.message } }));
             }
+            req.off('aborted', handleAbort);
             req.off('close', handleAbort);
             if (req.signal) req.signal.removeEventListener('abort', handleAbort);
             resolve();
@@ -565,6 +570,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             function finishRequest() {
                 if (_endCalled) return;
                 _endCalled = true;
+                req.off('aborted', handleAbort);
                 req.off('close', handleAbort);
                 if (req.signal) req.signal.removeEventListener('abort', handleAbort);
                 endRequest(reqId, {
@@ -624,7 +630,9 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
 
             // ── Model Resolution (Alias Mapping) ──
             const requestedModel = oReq.model || 'gpt-5.4';
-            const requestedRaw = requestedModel ? await resolveModelAlias(requestedModel) : '';
+            const aliasDetails = requestedModel ? await resolveModelAliasDetails(requestedModel) : { modelId: requestedModel, provider: '' };
+            const requestedRaw = aliasDetails.modelId || requestedModel;
+            const routeLookupModel = requestedModel && !looksLikeProviderAlias(requestedModel) ? requestedModel : requestedRaw;
             requestModel = cfg._upstreamModel || cfg.currentModel || requestedRaw || requestedModel;
 
             // Handle explicit aliases (just like in Claude profile)
@@ -644,7 +652,8 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             if (authHeader.includes('Bearer model:')) {
                 const extractedModel = authHeader.split('model:')[1].trim();
                 if (extractedModel) {
-                    requestModel = await resolveModelAlias(extractedModel);
+                    const extractedAliasDetails = await resolveModelAliasDetails(extractedModel);
+                    requestModel = extractedAliasDetails.modelId || extractedModel;
                     console.log(`[Proxy Hijack]: Using model from CLI: ${requestModel}`);
                 }
             }
@@ -656,9 +665,9 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             // baseUrl/apiKey instead of the codex/claude profile's targetUrl.
             try {
                 const { resolveProviderForModel } = require('../providers/route-resolver');
-                const routed = resolveProviderForModel(requestModel);
+                const routed = resolveProviderForModel(routeLookupModel) || resolveProviderForModel(requestModel);
                 if (routed && routed.baseUrl && routed.apiKey) {
-                    cfg.targetUrl = routed.baseUrl;
+                    cfg.targetUrl = toOpenAiCompatibleTargetUrl(routed.baseUrl);
                     cfg.apiKey = routed.apiKey;
                     cfg._upstreamModel = requestModel;
                     cfg.currentModel = requestModel;

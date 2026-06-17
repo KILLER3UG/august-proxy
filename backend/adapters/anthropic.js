@@ -13,7 +13,7 @@ const { sanitizeToolSchema } = require('../services/tools/mcp-client');
 const { executeToolBatch } = require('../services/workbench/tool-executor');
 const { isOpenAiToolCallParallelSafe, isAnthropicToolUseParallelSafe, parseOpenAiToolArgs } = require('../services/workbench/managed-tool-policy');
 const { LlmAdapterBase } = require('./base');
-const { resolveModelAlias } = require('../providers/model-list');
+const { resolveModelAlias, resolveModelAliasDetails } = require('../providers/model-list');
 const { SseStreamParser } = require('./sse-parser');
 const { classifyOpenAiToolCalls, classifyAnthropicToolUses, getToolNameFromOpenAiTool } = require('./tool-classification');
 const { buildSystemBlocks: buildContextSystemBlocks, isMiniMaxTarget } = require('../services/memory/context-builder');
@@ -2502,11 +2502,13 @@ async function handleMessages(req, res, cleanPath, reqId) {
             // (/v1/messages) — the request is translated to OpenAI format
             // and forwarded to the matched provider.
             const incomingModel = typeof aReq.model === 'string' ? aReq.model.trim() : '';
-            const requestedRaw = incomingModel ? await resolveModelAlias(incomingModel) : '';
+            const aliasDetails = incomingModel ? await resolveModelAliasDetails(incomingModel) : { modelId: incomingModel, provider: '' };
+            const requestedRaw = aliasDetails.modelId || incomingModel;
+            const routeLookupModel = incomingModel && !isClaudeFamilyModel(incomingModel) ? incomingModel : requestedRaw;
             if (requestedRaw && !isClaudeFamilyModel(requestedRaw)) {
                 try {
                     const { resolveProviderForModel } = require('../providers/route-resolver');
-                    const routed = resolveProviderForModel(requestedRaw);
+                    const routed = resolveProviderForModel(routeLookupModel) || resolveProviderForModel(requestedRaw);
                     if (routed && routed.baseUrl && routed.apiKey && routed.name !== 'anthropic') {
                         cfg.targetUrl = toOpenAiCompatibleTargetUrl(routed.baseUrl);
                         cfg.apiKey = routed.apiKey;

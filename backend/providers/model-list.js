@@ -23,23 +23,37 @@ function isFreeModelId(id) {
 }
 
 
-function toClaudeDesktopModelAlias(id) {
+function toClaudeDesktopModelAlias(id, providerName = '') {
     if (typeof id !== 'string') return '';
-    return id
+    const sanitizedId = id
         .replace(/^~/, '')
         .replace(/[/:]/g, '-')
         .replace(/[^A-Za-z0-9._-]/g, '-')
         .replace(/-+/g, '-')
         .replace(/^-|-$/g, '');
+    const sanitizedProvider = String(providerName || '')
+        .toLowerCase()
+        .replace(/[^A-Za-z0-9._-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+    if (!sanitizedProvider || !sanitizedId || sanitizedId.toLowerCase().startsWith(sanitizedProvider + '-')) return sanitizedId;
+    return sanitizedProvider + '-' + sanitizedId;
+}
+
+function addModelAlias(aliases, ids, alias, model) {
+    if (!alias || alias === model.id || ids.has(alias) || aliases.has(alias)) return;
+    aliases.set(alias, {
+        modelId: model.id,
+        provider: model.provider,
+    });
 }
 
 function buildModelAliasMap(models) {
     const ids = new Set(models.map(m => m.id));
     const aliases = new Map();
     for (const model of models) {
-        const alias = toClaudeDesktopModelAlias(model.id);
-        if (!alias || alias === model.id || ids.has(alias) || aliases.has(alias)) continue;
-        aliases.set(alias, model.id);
+        addModelAlias(aliases, ids, toClaudeDesktopModelAlias(model.id), model);
+        addModelAlias(aliases, ids, toClaudeDesktopModelAlias(model.id, model.provider), model);
     }
     return aliases;
 }
@@ -53,9 +67,22 @@ async function getModelAliasMap() {
     return modelAliasCache;
 }
 
+function normalizeAliasEntry(entry, fallbackModelId) {
+    if (!entry) return fallbackModelId;
+    return typeof entry === 'string' ? entry : entry.modelId;
+}
+
 async function resolveModelAlias(modelId) {
     const aliases = await getModelAliasMap();
-    return aliases.get(modelId) || modelId;
+    return normalizeAliasEntry(aliases.get(modelId), modelId);
+}
+
+async function resolveModelAliasDetails(modelId) {
+    const aliases = await getModelAliasMap();
+    const entry = aliases.get(modelId);
+    if (!entry) return { modelId, provider: '' };
+    if (typeof entry === 'string') return { modelId: entry, provider: '' };
+    return { modelId: entry.modelId, provider: entry.provider || '' };
 }
 
 function getProviderPrefix(modelId) {
@@ -71,6 +98,10 @@ function providerMatchesPrefix(provider, prefix) {
 }
 
 function isModelRoutableForClient(model) {
+    const providerPrefixedId = model.provider ? `${model.provider}/${model.id}` : model.id;
+    const providerRouted = resolveProviderForModel(providerPrefixedId);
+    if (providerRouted && providerMatchesPrefix(providerRouted.provider, model.provider)) return true;
+
     const routed = resolveProviderForModel(model.id);
     if (!routed) return false;
     const prefix = getProviderPrefix(model.id);
@@ -245,7 +276,7 @@ async function getModelListOpenAI({ includeClientAliases = false, filterRoutable
     const visibleModels = filterRoutable ? models.filter(isModelRoutableForClient) : models;
     const ids = new Set(visibleModels.map(m => m.id));
     const aliases = includeClientAliases ? buildModelAliasMap(visibleModels) : new Map();
-    const aliasesByRealId = new Map(Array.from(aliases, ([alias, realId]) => [realId, alias]));
+    const aliasesByRealId = new Map(Array.from(aliases, ([alias, entry]) => [normalizeAliasEntry(entry, alias), alias]));
     const data = [];
     for (const model of visibleModels) {
         data.push({
@@ -274,5 +305,6 @@ module.exports = {
     getModelList,
     getModelListOpenAI,
     resolveModelAlias,
+    resolveModelAliasDetails,
     isFreeModelId,
 };
