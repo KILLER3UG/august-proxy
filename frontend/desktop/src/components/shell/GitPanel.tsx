@@ -1,9 +1,8 @@
 /* ── GitPanel ─ right-sidebar git tools (ZCode reference) ────────── */
-/* Mirrors the ZCode reference: a right-rail panel with three sections:    */
-/*   1. Progress tracker (A1 → / A2 ○ / A3 ✓) — at the top so the user     */
-/*      can track tasks at a glance without scrolling.                    */
-/*   2. Changes summary (+N -N)                                            */
-/*   3. Branch selector + Commit button                                    */
+/* Workspace-explorer rail: changes summary, branch selector, and commit. */
+/* The workbench todo list is intentionally NOT shown here — it lives in   */
+/* the chat area as a pill-style expandable component (TodoSummaryPill)   */
+/* so the user can track task progress right next to the running turn.    */
 /*                                                                          */
 /* Polls /api/git/status, /branch, /branches every 30s.                    */
 
@@ -17,15 +16,10 @@ import { cn } from '@/lib/utils';
 export interface GitPanelProps {
   /** Active session id (used to resolve the workspace cwd). */
   sessionId?: string;
-  /** Optional list of workbench todos to render as the progress tracker. */
-  todos?: Array<{ id: string; content: string; status: 'pending' | 'in_progress' | 'completed' }>;
   className?: string;
 }
 
-const PROGRESS_VISIBLE_LIMIT = 5;
-const PROGRESS_LABEL_CODE = (i: number) => `A${i + 1}`;
-
-export function GitPanel({ sessionId, todos = [], className }: GitPanelProps) {
+export function GitPanel({ sessionId, className }: GitPanelProps) {
   const qc = useQueryClient();
   const [commitMessage, setCommitMessage] = useState('');
   const [showBranchMenu, setShowBranchMenu] = useState(false);
@@ -80,10 +74,7 @@ export function GitPanel({ sessionId, todos = [], className }: GitPanelProps) {
 
   return (
     <div className={cn('flex flex-col gap-3 p-3 text-xs', className)}>
-      {/* 1. Progress tracker (top — always visible so the user can track tasks at a glance) */}
-      {todos.length > 0 && <ProgressTracker todos={todos} />}
-
-      {/* 2. Changes summary */}
+      {/* 1. Changes summary */}
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-3">
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">Changes</span>
@@ -139,7 +130,7 @@ export function GitPanel({ sessionId, todos = [], className }: GitPanelProps) {
         )}
       </div>
 
-      {/* 3. Branch selector + Commit */}
+      {/* 2. Branch selector + Commit */}
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">Branch &amp; commit</span>
@@ -201,95 +192,6 @@ export function GitPanel({ sessionId, todos = [], className }: GitPanelProps) {
         </div>
       </div>
 
-    </div>
-  );
-}
-
-/**
- * ProgressTracker — renders the workbench todo list in the right rail using
- * the ZCode reference style:
- *   - "Progress" label + "X/Y" counter header
- *   - Each row prefixed with a step code (A1, A2, A3...) and a status glyph
- *     (→ active / ○ pending / ✓ done)
- *   - Long item text wraps inside the row (no truncation)
- *   - "N waiting…" / "Hide N waiting" toggle for the overflow tail
- */
-function ProgressTracker({ todos }: {
-  todos: Array<{ id: string; content: string; status: 'pending' | 'in_progress' | 'completed' }>;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  const total = todos.length;
-  const done = todos.filter(t => t.status === 'completed').length;
-  const visible = expanded ? todos : todos.slice(0, PROGRESS_VISIBLE_LIMIT);
-  const overflow = total - visible.length;
-  const activeIdx = todos.findIndex(t => t.status === 'in_progress');
-
-  return (
-    <div className="rounded-xl border border-white/[0.06] bg-card/60 p-3" data-slot="progress-tracker">
-      <div className="flex items-center justify-between mb-1.5 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">
-        <span>Progress</span>
-        <span className="font-mono tabular-nums normal-case tracking-normal text-muted-foreground/60">
-          {done}/{total}
-        </span>
-      </div>
-      <div className="space-y-0.5">
-        {visible.map((t) => {
-          // The visible slice starts at index 0 even when collapsed, so
-          // compute the absolute index in the full list to keep the codes
-          // consistent ("A1" still means the first todo).
-          const absoluteIndex = todos.indexOf(t);
-          const code = PROGRESS_LABEL_CODE(absoluteIndex);
-          const isActive = absoluteIndex === activeIdx;
-          return (
-            <div
-              key={t.id}
-              className={cn(
-                'flex items-start gap-1.5 text-[11.5px] leading-snug',
-                isActive ? 'text-foreground' : 'text-muted-foreground/75'
-              )}
-              data-status={t.status}
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  'shrink-0 inline-flex justify-center w-3 pt-px tabular-nums',
-                  t.status === 'in_progress' && 'text-blue-500',
-                  t.status === 'completed' && 'text-emerald-500',
-                  t.status === 'pending' && 'text-muted-foreground/45'
-                )}
-              >
-                {t.status === 'completed' ? (
-                  '✓'
-                ) : t.status === 'in_progress' ? (
-                  '→'
-                ) : (
-                  '○'
-                )}
-              </span>
-              <span
-                className={cn(
-                  'min-w-0 flex-1 wrap-anywhere',
-                  t.status === 'completed' && 'line-through text-muted-foreground/55'
-                )}
-              >
-                <span className="font-mono text-muted-foreground/55 mr-1">{code}:</span>
-                {t.content || `Step ${absoluteIndex + 1}`}
-              </span>
-            </div>
-          );
-        })}
-        {overflow > 0 && (
-          <button
-            type="button"
-            onClick={() => setExpanded(o => !o)}
-            className="text-[10px] text-muted-foreground/55 italic hover:text-foreground/80 pl-4 pt-0.5 transition-colors"
-            aria-expanded={expanded}
-          >
-            {expanded ? `Hide ${overflow} waiting…` : `${overflow} waiting…`}
-          </button>
-        )}
-      </div>
     </div>
   );
 }

@@ -19,13 +19,10 @@ import { useState, useEffect } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "@nanostores/react";
-import { useQuery } from "@tanstack/react-query";
 import { $sessions, createSession, type Session } from "@/store/sessions";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { GitPanel } from "./GitPanel";
-import { getWorkbenchSession } from "@/api/workbench";
-import type { WorkbenchTodo } from "@/types/workbench";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 
@@ -58,20 +55,6 @@ export function ChatLayout() {
   const active =
     sessions.find((s) => s.id === sessionId && !s.isArchived) ?? null;
 
-  // Subscribe to the active session's workbench session so the right rail
-  // progress tracker can render the live todo list. The chat thread does
-  // the same fetch and shares the same backend state, so this is cheap
-  // (the network call returns the persisted session every poll).
-  const workbench = useQuery({
-    queryKey: ['workbench-session', active?.workbenchSessionId],
-    queryFn: () =>
-      active?.workbenchSessionId
-        ? getWorkbenchSession(active.workbenchSessionId)
-        : Promise.resolve(null),
-    enabled: !!active?.workbenchSessionId,
-    refetchInterval: 2_000,
-  });
-  const todos: WorkbenchTodo[] = (workbench.data?.todos ?? []).slice();
 
   // Auto redirect from `/` or invalid/archived sessionId to the first non-archived session
   useEffect(() => {
@@ -162,7 +145,7 @@ export function ChatLayout() {
                   className="border-l border-white/[0.06] bg-card/30 overflow-hidden shrink-0"
                 >
                   <div className="w-72 h-full overflow-y-auto">
-                    <GitPanel sessionId={active?.id} todos={todos} className="border-0 rounded-none" />
+                    <GitPanel sessionId={active?.id} className="border-0 rounded-none" />
                   </div>
                 </motion.aside>
               )}
