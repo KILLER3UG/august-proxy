@@ -9,12 +9,13 @@
  * Returns null when no provider-specific match is found, in which case
  * callers keep their existing fallback (claude/codex profile). */
 
-const { listProviders } = require('./provider-registry');
+const { listProviders, getProvider } = require('./provider-registry');
 const { getProviderConfig, getActiveProvider } = require('../lib/config');
 const { getProviderHint } = require('./provider-hints');
 
 /**
- * Resolve a provider for a model id using the same precedence as /api/chat:
+ * Resolve a provider for a model id using this precedence:
+ *   0. explicit provider hint from the selected model alias
  *   1. explicit provider-hint table
  *   2. exact model-profile key match
  *   3. longest model-profile prefix match
@@ -25,8 +26,21 @@ const { getProviderHint } = require('./provider-hints');
  *
  * Returns { provider, baseUrl, apiKey, apiMode } or null.
  */
-function resolveProviderForModel(model) {
+function resolveProviderByName(providerName) {
+    if (!providerName) return null;
+    const rawName = String(providerName).trim();
+    const p = getProvider(rawName) || getProvider(rawName.toLowerCase());
+    if (!p || !hasCredentials(p)) return null;
+    return toResolved(p);
+}
+
+function resolveProviderForModel(model, options = {}) {
     if (!model || typeof model !== 'string') return null;
+
+    // 0. Explicit provider hint from the selected model alias.
+    const hintedProvider = resolveProviderByName(options.providerHint || options.provider || options.providerName);
+    if (hintedProvider) return hintedProvider;
+
     const providers = listProviders();
     if (providers.length === 0) return null;
     const lowerModel = model.toLowerCase();
@@ -122,4 +136,4 @@ function toResolved(provider) {
     };
 }
 
-module.exports = { resolveProviderForModel };
+module.exports = { resolveProviderForModel, resolveProviderByName };

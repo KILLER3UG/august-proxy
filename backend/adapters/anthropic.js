@@ -2508,7 +2508,8 @@ async function handleMessages(req, res, cleanPath, reqId) {
             if (requestedRaw && !isClaudeFamilyModel(requestedRaw)) {
                 try {
                     const { resolveProviderForModel } = require('../providers/route-resolver');
-                    const routed = resolveProviderForModel(routeLookupModel) || resolveProviderForModel(requestedRaw);
+                    const routed = resolveProviderForModel(routeLookupModel, { providerHint: aliasDetails.provider })
+                        || resolveProviderForModel(requestedRaw, { providerHint: aliasDetails.provider });
                     if (routed && routed.baseUrl && routed.apiKey && routed.name !== 'anthropic') {
                         cfg.targetUrl = toOpenAiCompatibleTargetUrl(routed.baseUrl);
                         cfg.apiKey = routed.apiKey;

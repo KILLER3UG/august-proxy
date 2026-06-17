@@ -665,7 +665,8 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             // baseUrl/apiKey instead of the codex/claude profile's targetUrl.
             try {
                 const { resolveProviderForModel } = require('../providers/route-resolver');
-                const routed = resolveProviderForModel(routeLookupModel) || resolveProviderForModel(requestModel);
+                const routed = resolveProviderForModel(routeLookupModel, { providerHint: aliasDetails.provider })
+                    || resolveProviderForModel(requestModel, { providerHint: aliasDetails.provider });
                 if (routed && routed.baseUrl && routed.apiKey) {
                     cfg.targetUrl = toOpenAiCompatibleTargetUrl(routed.baseUrl);
                     cfg.apiKey = routed.apiKey;
