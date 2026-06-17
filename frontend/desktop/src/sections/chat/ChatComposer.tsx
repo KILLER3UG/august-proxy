@@ -145,7 +145,7 @@ export function ChatComposer({
       )}
 
       <div className={cn(
-        'rounded-2xl border bg-card shadow-sm transition focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary overflow-visible',
+        'w-full min-w-0 rounded-2xl border bg-card shadow-sm transition focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary overflow-visible',
         'border-border',
       )}>
         {voiceActive ? (
@@ -195,7 +195,7 @@ export function ChatComposer({
           </>
         )}
 
-        <div className="flex items-center justify-between px-1.5 pb-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-1.5 pb-1.5">
           <div className="flex items-center text-muted-foreground">
             <ToolBtn Icon={Paperclip} label="Attach file" onClick={onOpenFilePicker} />
             <ToolBtn Icon={AtSign} label="Mention tool" onClick={() => { onToggleToolsDropdown(!showToolsDropdown); onToggleCommandsDropdown(false); }} />
@@ -285,7 +285,7 @@ function ModelDropdown({
     <div className="relative">
       <button
         onClick={() => setOpen((v: boolean) => !v)}
-        className="px-2 py-1 rounded-md text-[11px] bg-muted hover:bg-muted/70 text-foreground border border-border/50 max-w-[180px] truncate"
+        className="px-2 py-1 rounded-md text-[11px] bg-muted hover:bg-muted/70 text-foreground border border-border/50 max-w-[140px] truncate"
         title={label}
       >
         {loading ? 'Loading…' : label}
