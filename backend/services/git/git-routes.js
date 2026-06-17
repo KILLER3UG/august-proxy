@@ -24,6 +24,10 @@ async function handleGitRoutes(req, res) {
             sendJson(res, await git.getStatus(ctx));
             return true;
         }
+        if (req.url.startsWith('/api/git/diff') && req.method === 'GET') {
+            sendJson(res, await git.getDiff(ctx));
+            return true;
+        }
         if (req.url.startsWith('/api/git/branch') && req.method === 'GET') {
             sendJson(res, await git.getCurrentBranch(ctx));
             return true;

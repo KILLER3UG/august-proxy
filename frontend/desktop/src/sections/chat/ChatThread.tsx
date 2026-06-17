@@ -38,6 +38,8 @@ import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import { WorkbenchModeSelector, WORKBENCH_GUARD_MODES, applyWorkbenchGuardMode, type WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
 import { ContextRing, estimateContextBreakdown, type ContextBreakdown } from './ChatComposer';
 import { WorkbenchPlanPanel } from '@/components/chat/WorkbenchPlanPanel';
+import { ChangedFilesCard } from '@/components/chat/ChangedFilesCard';
+import { gitApi, type GitDiffResult } from '@/api/git';
 
 export const chatRuntime = createChatRuntime();
 let visibleSessionId: string | null = null;
@@ -100,6 +102,8 @@ export interface ChatMessage {
     content: string;
     status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
   }>;
+  /** Inline Workbench mutation summary shown after the final response. */
+  changedFiles?: GitDiffResult;
   /** Inline clarify/question */
   clarify?: {
     question?: string;
@@ -639,6 +643,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     let thinkingContent = '';
     let toolResults: NonNullable<ChatMessage['tools']> = [];
     let streamBlocks: MessageBlock[] = [];
+    let changedFiles: GitDiffResult | null = null;
+    let beforeMutationCount = 0;
+    let latestMutationCount = 0;
     let finished = false;
     let hadError = false;
 
@@ -658,6 +665,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
           blocks: streamBlocks,
           todos: latestWorkbenchTodos.length > 0 ? latestWorkbenchTodos : undefined,
+          changedFiles: changedFiles || undefined,
         } : msg
       ));
     };
@@ -699,6 +707,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
           blocks: streamBlocks,
           todos: latestWorkbenchTodos.length > 0 ? latestWorkbenchTodos : undefined,
+          changedFiles: changedFiles || undefined,
         } : msg
       ));
       if (status === 'done' || status === 'error') {
@@ -739,6 +748,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         return;
       }
       workbenchSessionId = session.id;
+      beforeMutationCount = session.mutationCount;
+      latestMutationCount = session.mutationCount;
       chatRuntime.setTransport(turn.turnId, 'http');
 
       await streamWorkbenchChat({
@@ -823,6 +834,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         },
         onSession: (sessionState) => {
           latestWorkbenchTodos = sessionState.todos ?? [];
+          latestMutationCount = sessionState.mutationCount;
           setWorkbenchSession(sessionState);
           scheduleUpdate();
         },
@@ -841,7 +853,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         onBtw: (result) => {
           setWorkbenchBtw(result);
         },
-        onDone: () => {
+        onDone: async () => {
+          if (latestMutationCount > beforeMutationCount && turnSessionId) {
+            try {
+              const diff = await gitApi.diff(turnSessionId);
+              if (diff.files.length > 0) changedFiles = diff;
+            } catch (e) {
+              console.warn('[ChatThread] Failed to load changed files:', e);
+            }
+          }
           finalize('done');
         },
         onError: ({ message }) => {
@@ -2004,6 +2024,9 @@ function MessageBubble({
                   );
                 })}
               </AnimatePresence>
+            )}
+            {!isUser && message.changedFiles && message.changedFiles.files.length > 0 && (
+              <ChangedFilesCard changes={message.changedFiles} />
             )}
             {isLast && streaming && !showRaw && <WorkingIndicator className="mt-1" />}
           </div>

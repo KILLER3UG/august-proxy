@@ -11,6 +11,8 @@
 /*   • POST /api/git/commit       { sessionId, message }                 */
 /*   • POST /api/git/checkout    { sessionId, branch }                   */
 
+const fs = require('fs');
+const path = require('path');
 const { execFile } = require('child_process');
 const { getSession } = require('../storage/session-store');
 
@@ -27,6 +29,88 @@ function run(cmd, args, cwd) {
         });
         child.on('error', (e) => reject(e));
     });
+}
+
+function unquoteGitPath(rawPath) {
+    const raw = String(rawPath || '').trim();
+    if (!raw) return raw;
+    if (raw.startsWith('"')) {
+        try { return JSON.parse(raw); } catch (_) {}
+    }
+    if (raw.includes(' -> ')) {
+        const parts = raw.split(' -> ');
+        return unquoteGitPath(parts[parts.length - 1]);
+    }
+    return raw;
+}
+
+function parsePorcelainPath(line) {
+    const status = line.slice(0, 2);
+    const rawPath = line.slice(3);
+    return {
+        status,
+        path: unquoteGitPath(rawPath)
+    };
+}
+
+function parseNumstatLine(line) {
+    const match = line.match(/^(\d+|-)\s+(\d+|-)\s+(.+)$/);
+    if (!match) return null;
+    return {
+        path: unquoteGitPath(match[3]),
+        added: match[1] === '-' ? 0 : Number(match[1]),
+        removed: match[2] === '-' ? 0 : Number(match[2])
+    };
+}
+
+function parseDiffByPath(diff) {
+    const byPath = new Map();
+    const lines = String(diff || '').split('\n');
+    let currentPath = null;
+    let current = [];
+
+    const flush = () => {
+        if (currentPath && current.length > 0) {
+            byPath.set(currentPath, current.join('\n').trimEnd());
+        }
+        currentPath = null;
+        current = [];
+    };
+
+    for (const line of lines) {
+        if (line.startsWith('diff --git ')) {
+            flush();
+            const match = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+            if (match) {
+                currentPath = unquoteGitPath(match[2]);
+                current = [line];
+            }
+            continue;
+        }
+        if (currentPath) current.push(line);
+    }
+    flush();
+
+    return byPath;
+}
+
+function buildUntrackedDiff(filePath, cwd) {
+    const absolutePath = path.join(cwd, filePath);
+    if (!fs.existsSync(absolutePath)) return '';
+    const content = fs.readFileSync(absolutePath, 'utf8');
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    const lines = content.split(/\r?\n/);
+    if (content.endsWith('\n') && lines[lines.length - 1] === '') lines.pop();
+    const hunk = lines.length > 0 ? `@@ -0,0 +1,${lines.length} @@` : '@@ -0,0 +0,0 @@';
+    return [
+        `diff --git a/${normalizedPath} b/${normalizedPath}`,
+        'new file mode 100644',
+        'index 0000000..0000000',
+        '--- /dev/null',
+        `+++ b/${normalizedPath}`,
+        hunk,
+        ...lines.map(line => `+${line}`)
+    ].join('\n');
 }
 
 /** Resolve a session id to a workspace path; returns process.cwd() as fallback. */
@@ -53,16 +137,10 @@ async function getStatus({ sessionId, workspace } = {}) {
     if (!porcelain) {
         return { workspace: cwd, added: 0, removed: 0, files: [] };
     }
-    // Parse "XY path" lines (XY = status code, e.g. " M", "A ", "??", "UU")
-    const paths = porcelain.split('\n').map(line => {
-        if (!line) return null;
-        // First two chars are the status; the rest is the path. For renames the
-        // format is "R  old -> new" — keep just the new path.
-        const status = line.slice(0, 2);
-        let path = line.slice(3);
-        if (path.includes(' -> ')) path = path.split(' -> ')[1];
-        return { status, path };
-    }).filter(Boolean);
+
+    const paths = porcelain.split('\n')
+        .filter(Boolean)
+        .map(parsePorcelainPath);
 
     let numstat = '';
     try {
@@ -71,14 +149,13 @@ async function getStatus({ sessionId, workspace } = {}) {
         numstat = '';
     }
     const numByPath = new Map();
-    numstat.split('\n').forEach(line => {
-        const m = line.match(/^(\d+)\s+(\d+)\s+(.+)$/);
-        if (m) numByPath.set(m[3], { added: +m[1] || 0, removed: +m[2] || 0 });
+    numstat.split('\n').map(parseNumstatLine).filter(Boolean).forEach(item => {
+        numByPath.set(item.path, { added: item.added, removed: item.removed });
     });
 
     let added = 0, removed = 0;
     const files = paths.map(({ status, path }) => {
-        const ns = numByPath.get(path) || { added: 0, removed: 0 };
+        const ns = { ...(numByPath.get(path) || { added: 0, removed: 0 }) };
         // Untracked files have no HEAD diff, but they were added; set added=1
         if (status === '??' && ns.added === 0 && ns.removed === 0) ns.added = 1;
         added += ns.added;
@@ -87,6 +164,37 @@ async function getStatus({ sessionId, workspace } = {}) {
     });
 
     return { workspace: cwd, added, removed, files };
+}
+
+async function getDiff({ sessionId, workspace } = {}) {
+    const cwd = workspace || resolveWorkspace(sessionId);
+    const status = await getStatus({ sessionId, workspace: cwd });
+    if (status.error && status.files.length === 0) {
+        return { ...status, files: [] };
+    }
+
+    const paths = status.files.map(file => file.path);
+    const diffByPath = new Map();
+    if (paths.length > 0) {
+        try {
+            const trackedDiff = await run('git', ['diff', '--no-ext-diff', '--unified=80', '--no-renames', 'HEAD', '--', ...paths], cwd);
+            parseDiffByPath(trackedDiff).forEach((diff, filePath) => diffByPath.set(filePath, diff));
+        } catch (_) {
+            // Diff is optional; the status counts are still useful.
+        }
+    }
+
+    const files = status.files.map(file => ({
+        ...file,
+        diff: diffByPath.get(file.path) || (file.status === '??' ? buildUntrackedDiff(file.path, cwd) : '')
+    }));
+
+    return {
+        workspace: cwd,
+        added: status.added,
+        removed: status.removed,
+        files
+    };
 }
 
 async function getCurrentBranch({ sessionId, workspace } = {}) {
@@ -142,6 +250,7 @@ async function checkout({ sessionId, workspace, branch }) {
 
 module.exports = {
     getStatus,
+    getDiff,
     getCurrentBranch,
     listBranches,
     commit,
