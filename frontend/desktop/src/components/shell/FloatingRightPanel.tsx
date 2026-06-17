@@ -7,6 +7,10 @@
 /* Position: fixed, top-right of the viewport, floating over the chat      */
 /* area — NOT a sidebar. Auto-hides entirely when there's no workbench     */
 /* session and no git repo to show.                                        */
+/*                                                                           */
+/* Scrolling: the expanded body caps at ~70vh and scrolls; the file list   */
+/* inside Changes and the todo list inside Progress each have their own    */
+/* internal max-height so a long list scrolls within its own section.      */
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -24,7 +28,6 @@ import {
   Loader2,
   CheckSquare,
   Square,
-  X,
 } from 'lucide-react';
 import { gitApi } from '@/api/git';
 import { Button } from '@/components/ui/button';
@@ -39,6 +42,14 @@ export interface FloatingRightPanelProps {
   /** Optional className to override the floating position. */
   className?: string;
 }
+
+// Max heights for inner scroll containers so a long file list or todo list
+// scrolls within its own section instead of pushing the pill off-screen.
+const CHANGES_LIST_MAX_H = 'max-h-40';
+const TODOS_LIST_MAX_H = 'max-h-40';
+// Cap the entire expanded body so a 100-todo session doesn't push the pill
+// past the viewport — the whole body scrolls when needed.
+const BODY_MAX_H = 'max-h-[70vh]';
 
 export function FloatingRightPanel({ sessionId, todos = [], className }: FloatingRightPanelProps) {
   const [open, setOpen] = useState(true);
@@ -132,7 +143,7 @@ export function FloatingRightPanel({ sessionId, todos = [], className }: Floatin
       </button>
 
       {open && (
-        <div className="border-t border-white/[0.06]">
+        <div className={cn('border-t border-white/[0.06] overflow-y-auto', BODY_MAX_H)}>
           {/* Section: Changes */}
           {isRepo && (
             <div className="px-3 py-2 border-b border-white/[0.04]">
@@ -144,21 +155,45 @@ export function FloatingRightPanel({ sessionId, todos = [], className }: Floatin
                   Working tree clean
                 </div>
               ) : (
-                <div className="space-y-0.5 max-h-40 overflow-auto">
-                  {s!.files.slice(0, 12).map((f) => (
-                    <div key={f.path} className="flex items-center gap-1 text-[10.5px] truncate" title={f.path}>
-                      <span className="font-mono text-muted-foreground/60 w-5 text-right tabular-nums shrink-0">
-                        {f.added || ''}
-                      </span>
-                      <span className="font-mono text-muted-foreground/60 w-5 text-right tabular-nums shrink-0">
-                        {f.removed || ''}
-                      </span>
-                      <span className="truncate text-foreground/85 min-w-0">{f.path}</span>
-                    </div>
-                  ))}
-                  {s!.files.length > 12 && (
+                <div className={cn('space-y-0.5 overflow-y-auto pr-1', CHANGES_LIST_MAX_H)}>
+                  {s!.files.slice(0, 50).map((f) => {
+                    const addedCount = f.added ?? 0;
+                    const removedCount = f.removed ?? 0;
+                    return (
+                      <div
+                        key={f.path}
+                        className="flex items-center gap-1 text-[10.5px] truncate"
+                        title={f.path}
+                      >
+                        {addedCount > 0 ? (
+                          <span
+                            aria-label={`${addedCount} line${addedCount === 1 ? '' : 's'} added`}
+                            className="inline-flex items-center gap-0.5 font-mono tabular-nums text-emerald-500 w-9 justify-end shrink-0"
+                          >
+                            <Plus size={9} strokeWidth={3} />
+                            <span>{addedCount}</span>
+                          </span>
+                        ) : (
+                          <span className="w-9 shrink-0" />
+                        )}
+                        {removedCount > 0 ? (
+                          <span
+                            aria-label={`${removedCount} line${removedCount === 1 ? '' : 's'} removed`}
+                            className="inline-flex items-center gap-0.5 font-mono tabular-nums text-rose-400 w-9 justify-end shrink-0"
+                          >
+                            <Minus size={9} strokeWidth={3} />
+                            <span>{removedCount}</span>
+                          </span>
+                        ) : (
+                          <span className="w-9 shrink-0" />
+                        )}
+                        <span className="truncate text-foreground/85 min-w-0">{f.path}</span>
+                      </div>
+                    );
+                  })}
+                  {s!.files.length > 50 && (
                     <div className="text-[10px] text-muted-foreground/50 italic pt-0.5">
-                      + {s!.files.length - 12} more
+                      + {s!.files.length - 50} more files
                     </div>
                   )}
                 </div>
@@ -286,16 +321,11 @@ function BranchAndCommit({
 
 /* ── Progress (todos) section ────────────────────────────────────────── */
 
-const TODOS_VISIBLE_LIMIT = 5;
-
 function ProgressSection({ todos }: { todos: WorkbenchTodo[] }) {
-  const [expanded, setExpanded] = useState(false);
   const total = todos.length;
   const done = todos.filter(t => t.status === 'completed').length;
   const allDone = done === total;
   const active = todos.find(t => t.status === 'in_progress');
-  const visible = expanded ? todos : todos.slice(0, TODOS_VISIBLE_LIMIT);
-  const overflow = total - visible.length;
   const activeIdx = todos.findIndex(t => t.status === 'in_progress');
 
   return (
@@ -324,8 +354,11 @@ function ProgressSection({ todos }: { todos: WorkbenchTodo[] }) {
               : `${total - done} step${total - done === 1 ? '' : 's'} pending`}
         </span>
       </div>
-      <div className="space-y-0.5">
-        {visible.map((t) => {
+      {/* Scrollable todo list — the pill's body also scrolls, but having an
+          inner scroll here means a long list stays inside the Progress
+          section rather than pushing other sections off the screen. */}
+      <div className={cn('space-y-0.5 overflow-y-auto pr-1', TODOS_LIST_MAX_H)}>
+        {todos.map((t) => {
           const absoluteIndex = todos.indexOf(t);
           const code = `A${absoluteIndex + 1}`;
           const isActive = absoluteIndex === activeIdx;
@@ -367,16 +400,6 @@ function ProgressSection({ todos }: { todos: WorkbenchTodo[] }) {
             </div>
           );
         })}
-        {overflow > 0 && (
-          <button
-            type="button"
-            onClick={() => setExpanded(o => !o)}
-            className="text-[10px] text-muted-foreground/60 italic hover:text-foreground/80 pl-4 pt-0.5 transition-colors"
-            aria-expanded={expanded}
-          >
-            {expanded ? `Hide ${overflow} waiting…` : `${overflow} waiting…`}
-          </button>
-        )}
       </div>
     </div>
   );
