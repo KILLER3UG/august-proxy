@@ -1,28 +1,20 @@
-/* ── Chat-first layout (matches the screenshot) ─────────────────────── */
-/*                                                                             */
-/*  ┌────┬────────────────────────────────────────────────────────────────┐  */
-/*  │  + │ ⌘N  New session                            Search... ⌘K        │  */
-/*  │  ⌘ │   Skills & Tools                                                │  */
-/*  │  📦│   Artifacts                                                     │  */
-/*  │────│  ┌─────────────────────────┐                                  │  */
-/*  │ 🔍│  │ PINNED                   │                                  │  */
-/*  │    │  │ SESSIONS 3               │                                  │  */
-/*  │ PIN│  │   • session 1            │        <chat area>                │  */
-/*  │ SES│  │   • session 2            │                                  │  */
-/*  │    │  │   • session 3            │                                  │  */
-/*  │────│  └─────────────────────────┘                                  │  */
-/*  │ ⌂+│  ⌂ Home   + New   👤 Agents   ⏱ Cron   ⚙ Settings                 │  */
-/*  └────┴────────────────────────────────────────────────────────────────┘  */
-/*  Gateway ready · Agents · Cron       354.0k/1.0M 35% ━━━━  15:43 MiniMax M3   v2  */
+/* ── Chat-first layout ────────────────────────────────────────────── */
+/*                                                                          */
+/* The right-side info (todo list, git changes, branch) is rendered as a   */
+/* floating pill stack (FloatingRightPanel) positioned over the chat       */
+/* area — NOT as a sidebar.                                                 */
 
 import { useState, useEffect } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "@nanostores/react";
+import { useQuery } from "@tanstack/react-query";
 import { $sessions, createSession, type Session } from "@/store/sessions";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
-import { GitPanel } from "./GitPanel";
+import { FloatingRightPanel } from "./FloatingRightPanel";
+import { getWorkbenchSession } from "@/api/workbench";
+import type { WorkbenchTodo } from "@/types/workbench";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 
@@ -55,6 +47,19 @@ export function ChatLayout() {
   const active =
     sessions.find((s) => s.id === sessionId && !s.isArchived) ?? null;
 
+  // Fetch the active workbench session to feed the floating right panel
+  // (todo list). The chat thread also fetches this independently, so this
+  // is the layout-level mirror for the floating pills.
+  const workbench = useQuery({
+    queryKey: ['workbench-session', active?.workbenchSessionId],
+    queryFn: () =>
+      active?.workbenchSessionId
+        ? getWorkbenchSession(active.workbenchSessionId)
+        : Promise.resolve(null),
+    enabled: !!active?.workbenchSessionId,
+    refetchInterval: 2_000,
+  });
+  const todos: WorkbenchTodo[] = (workbench.data?.todos ?? []).slice();
 
   // Auto redirect from `/` or invalid/archived sessionId to the first non-archived session
   useEffect(() => {
@@ -119,37 +124,29 @@ export function ChatLayout() {
             }}
             onToggleRightSidebar={() => setShowRightSidebar((s) => !s)}
           />
-          <div className="flex-1 flex min-h-0 overflow-hidden">
-            <main className="flex-1 min-h-0 overflow-hidden">
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.div
-                  key={location.pathname}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                  className="h-full"
-                >
-                  <Outlet />
-                </motion.div>
-              </AnimatePresence>
-            </main>
-            <AnimatePresence initial={false}>
-              {showRightSidebar && (
-                <motion.aside
-                  key="right-rail"
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{ width: 288, opacity: 1 }}
-                  exit={{ width: 0, opacity: 0 }}
-                  transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                  className="border-l border-white/[0.06] bg-card/30 overflow-hidden shrink-0"
-                >
-                  <div className="w-72 h-full overflow-y-auto">
-                    <GitPanel sessionId={active?.id} className="border-0 rounded-none" />
-                  </div>
-                </motion.aside>
-              )}
+          <div className="flex-1 min-h-0 overflow-hidden relative">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={location.pathname}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                className="h-full"
+              >
+                <Outlet />
+              </motion.div>
             </AnimatePresence>
+
+            {/* Floating pill stack on the right edge — NOT a sidebar. Renders
+                only when there's an active chat session so it doesn't
+                overlap with the session sidebar or empty-state UIs. */}
+            {!isSettings && active && (
+              <FloatingRightPanel
+                sessionId={active.id}
+                todos={todos}
+              />
+            )}
           </div>
         </div>
       </div>

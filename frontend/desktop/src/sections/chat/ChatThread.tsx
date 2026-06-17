@@ -38,7 +38,6 @@ import type { WorkbenchBtwResult, WorkbenchSession } from '@/types/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import { WorkbenchModeSelector, WORKBENCH_GUARD_MODES, applyWorkbenchGuardMode, type WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
 import { ContextRing, estimateContextBreakdown, type ContextBreakdown } from './ChatComposer';
-import { ProgressPill } from '@/components/chat/ProgressPill';
 import { WorkbenchPlanPanel } from '@/components/chat/WorkbenchPlanPanel';
 
 export const chatRuntime = createChatRuntime();
@@ -1569,7 +1568,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         }
                       }}
                     />
-                    <ProgressPill todos={workbenchSession?.todos ?? []} />
                     {messages.map((m, i) => {
                       const isReverting = revertingIndex !== null && i > revertingIndex;
                       return (
