@@ -12,12 +12,13 @@ import { $sessions, createSession, type Session } from "@/store/sessions";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
-import { closeRightDrawer, useRightDrawer } from "./RightDrawerState";
+import { closeRightDrawer, openRightDrawer, useRightDrawer } from "./RightDrawerState";
 import { approveWorkbenchPlan, getWorkbenchSession } from "@/api/workbench";
 import { toast } from "sonner";
 import type { WorkbenchSession } from "@/types/workbench";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
+const WORKBENCH_SIDEBAR_OPEN_KEY = "august-workbench-sidebar-open";
 
 export function ChatLayout() {
   const navigate = useNavigate();
@@ -27,7 +28,7 @@ export function ChatLayout() {
     () => localStorage.getItem(SESSIONS_COLLAPSED_KEY) === "1",
   );
   const [showRightSidebar, setShowRightSidebar] = useState<boolean>(
-    () => localStorage.getItem("august-show-right-sidebar") === "1",
+    () => localStorage.getItem(WORKBENCH_SIDEBAR_OPEN_KEY) === "1",
   );
   const sessions = useStore($sessions);
   const rightDrawer = useRightDrawer();
@@ -37,7 +38,7 @@ export function ChatLayout() {
 
   useEffect(() => {
     localStorage.setItem(
-      "august-show-right-sidebar",
+      WORKBENCH_SIDEBAR_OPEN_KEY,
       showRightSidebar ? "1" : "0",
     );
   }, [showRightSidebar]);
@@ -48,12 +49,19 @@ export function ChatLayout() {
     }
   }, [rightDrawer.open, showRightSidebar]);
 
+  const openWorkbenchSidebar = () => {
+    if (!rightDrawer.sections.length && !rightDrawer.activeSection) {
+      openRightDrawer('diff');
+    }
+    setShowRightSidebar(true);
+  };
+
   useEffect(() => {
-    const handleOpen = () => setShowRightSidebar(true);
-    window.addEventListener("august-open-right-sidebar", handleOpen);
+    window.addEventListener("august-open-right-sidebar", openWorkbenchSidebar);
+    localStorage.removeItem("august-show-right-sidebar");
     return () =>
-      window.removeEventListener("august-open-right-sidebar", handleOpen);
-  }, []);
+      window.removeEventListener("august-open-right-sidebar", openWorkbenchSidebar);
+  }, [openWorkbenchSidebar]);
 
   // Fetch the active workbench session to feed the right sidebar. The chat
   // thread also fetches this independently, so this is the layout-level mirror.
@@ -102,6 +110,11 @@ export function ChatLayout() {
     }
   };
 
+  const closeWorkbenchSidebar = () => {
+    closeRightDrawer();
+    setShowRightSidebar(false);
+  };
+
   useEffect(() => {
     localStorage.setItem(SESSIONS_COLLAPSED_KEY, collapsed ? "1" : "0");
   }, [collapsed]);
@@ -139,8 +152,11 @@ export function ChatLayout() {
               navigate("/settings");
             }}
             onToggleRightSidebar={() => {
-              if (showRightSidebar) closeRightDrawer();
-              setShowRightSidebar((s) => !s);
+              if (showRightSidebar) {
+                closeWorkbenchSidebar();
+              } else {
+                openWorkbenchSidebar();
+              }
             }}
           />
           <div className="flex-1 min-h-0 overflow-hidden relative">
@@ -164,10 +180,7 @@ export function ChatLayout() {
                 workspacePath={active.workspacePath || null}
                 workbenchSession={workbenchSession}
                 onApprovePlan={approvePlan}
-                onClose={() => {
-                  closeRightDrawer();
-                  setShowRightSidebar(false);
-                }}
+                onClose={closeWorkbenchSidebar}
               />
             )}
           </div>
