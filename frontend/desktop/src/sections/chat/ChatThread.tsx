@@ -21,7 +21,6 @@ import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import { SuggestedActionBubble } from '@/components/chat/SuggestedActionBubble';
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
 import { applyToolProgress, visibleProgress, type ToolProgressEvent } from '@/lib/tool-progress';
-import { HoistedTodoPanel } from '@/components/chat/HoistedTodoPanel';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { Statusbar } from '@/components/shell/Statusbar';
@@ -1840,9 +1839,7 @@ function MessageBubble({
           onSubmit={onClarifyAnswer}
         />
       )}
-      {!isUser && message.todos && message.todos.length > 0 && (
-        <HoistedTodoPanel todos={message.todos} />
-      )}
+      {/* todos moved out of the chat area — see FloatingRightPanel */}
       {isUser ? (
         <>
           <div className="rounded-2xl border border-border/40 bg-muted/40 dark:bg-[#161618] px-4 py-2.5 text-[13px] leading-relaxed text-foreground shadow-sm max-w-[85%] ml-auto">
