@@ -95,7 +95,7 @@ export function FloatingRightPanel({ sessionId, todos = [], className }: Floatin
   return (
     <div
       className={cn(
-        'fixed top-16 right-4 z-30 w-64',
+        'fixed top-16 right-4 z-30 w-80',
         'rounded-2xl border border-white/[0.08] bg-card/85 backdrop-blur-md shadow-2xl',
         'pointer-events-auto overflow-hidden',
         className
