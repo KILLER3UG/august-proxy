@@ -159,7 +159,7 @@ export function ChatLayout() {
               }
             }}
           />
-          <div className="flex-1 min-h-0 overflow-hidden relative">
+          <div className="flex-1 min-h-0 overflow-hidden relative flex">
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={location.pathname}
@@ -167,7 +167,7 @@ export function ChatLayout() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                className="h-full"
+                className="h-full min-w-0 flex-1"
               >
                 <Outlet />
               </motion.div>
