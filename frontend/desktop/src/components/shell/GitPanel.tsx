@@ -1,8 +1,9 @@
 /* ── GitPanel ─ right-sidebar git tools (ZCode reference) ────────── */
 /* Mirrors the ZCode reference: a right-rail panel with three sections:    */
-/*   1. Changes summary (+N -N)                                            */
-/*   2. Branch selector + Commit button                                    */
-/*   3. Progress tracker (A1 → / A2 ○ / A3 ✓) — uses existing todos         */
+/*   1. Progress tracker (A1 → / A2 ○ / A3 ✓) — at the top so the user     */
+/*      can track tasks at a glance without scrolling.                    */
+/*   2. Changes summary (+N -N)                                            */
+/*   3. Branch selector + Commit button                                    */
 /*                                                                          */
 /* Polls /api/git/status, /branch, /branches every 30s.                    */
 
@@ -79,7 +80,10 @@ export function GitPanel({ sessionId, todos = [], className }: GitPanelProps) {
 
   return (
     <div className={cn('flex flex-col gap-3 p-3 text-xs', className)}>
-      {/* 1. Changes summary */}
+      {/* 1. Progress tracker (top — always visible so the user can track tasks at a glance) */}
+      {todos.length > 0 && <ProgressTracker todos={todos} />}
+
+      {/* 2. Changes summary */}
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-3">
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">Changes</span>
@@ -135,7 +139,7 @@ export function GitPanel({ sessionId, todos = [], className }: GitPanelProps) {
         )}
       </div>
 
-      {/* 2. Branch selector + Commit */}
+      {/* 3. Branch selector + Commit */}
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">Branch &amp; commit</span>
@@ -197,8 +201,6 @@ export function GitPanel({ sessionId, todos = [], className }: GitPanelProps) {
         </div>
       </div>
 
-      {/* 3. Progress tracker (ZCode reference style) */}
-      {todos.length > 0 && <ProgressTracker todos={todos} />}
     </div>
   );
 }
