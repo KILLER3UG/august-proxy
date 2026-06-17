@@ -1240,7 +1240,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, []);
   const renderComposerContent = () => {
     return (
-      <div className="max-w-3xl ml-16 md:ml-24 mr-[360px] relative">
+      <div className="relative">
         {/* Tools Dropdown */}
         {showToolsDropdown && (
           <div className="absolute bottom-full mb-2 left-2 z-10 w-64 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
