@@ -2513,8 +2513,8 @@ async function handleMessages(req, res, cleanPath, reqId) {
             // (/v1/messages) — the request is translated to OpenAI format
             // and forwarded to the matched provider.
 	            const incomingModel = typeof aReq.model === 'string' ? aReq.model.trim() : '';
-	            const aliasDetails = incomingModel ? await resolveModelAliasDetails(incomingModel) : { modelId: incomingModel, provider: '' };
-	            const requestedRaw = aliasDetails.modelId || incomingModel;
+	            let aliasDetails = incomingModel ? await resolveModelAliasDetails(incomingModel) : { modelId: incomingModel, provider: '' };
+	            let requestedRaw = aliasDetails.modelId || incomingModel;
 
 	            // Re-resolve: the first resolution may have turned a display name
 	            // (e.g. 'Sonnet 4 6-Alias') into a model ID ('claude-sonnet-4-6').
