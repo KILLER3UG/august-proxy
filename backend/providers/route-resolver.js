@@ -127,11 +127,13 @@ function toResolved(provider) {
     const config = getProviderConfig(provider.name) || {};
     const apiKey = config.apiKey || provider.resolveApiKey();
     const baseUrl = config.baseUrl || config.targetUrl || provider.resolveBaseUrl();
+    const model = config.model || config._upstreamModel || config.currentModel || provider.defaultModel;
     return {
         provider,
         name: provider.name,
         baseUrl,
         apiKey,
+        model,
         apiMode: config.apiMode || provider.apiMode,
     };
 }

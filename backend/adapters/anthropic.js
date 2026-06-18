@@ -1,4 +1,4 @@
-const { getProfile, syncClaudePublicAlias } = require('../lib/config');
+const { getProfile, syncClaudePublicAlias, getActiveProvider } = require('../lib/config');
 const { logActivity, endRequest, captureRequest, captureResponse, captureTokens, captureError } = require('../lib/logger');
 const { applySelfHealToMessages } = require('../services/workbench/selfheal');
 const { getModelContextWindow, saveModelContextWindow, loadModelContextWindow } = require('../lib/models');
@@ -13,7 +13,8 @@ const { sanitizeToolSchema } = require('../services/tools/mcp-client');
 const { executeToolBatch } = require('../services/workbench/tool-executor');
 const { isOpenAiToolCallParallelSafe, isAnthropicToolUseParallelSafe, parseOpenAiToolArgs } = require('../services/workbench/managed-tool-policy');
 const { LlmAdapterBase } = require('./base');
-const { resolveModelAlias, resolveModelAliasDetails } = require('../providers/model-list');
+const { getProviderName } = require('../providers/provider-registry');
+const { resolveModelAliasDetails } = require('../providers/model-list');
 const { SseStreamParser } = require('./sse-parser');
 const { classifyOpenAiToolCalls, classifyAnthropicToolUses, getToolNameFromOpenAiTool } = require('./tool-classification');
 const { buildSystemBlocks: buildContextSystemBlocks, isMiniMaxTarget } = require('../services/memory/context-builder');
@@ -103,11 +104,15 @@ function resolveClaudeUpstreamConfig(profile, requestedAlias) {
         };
     }
 
+    const targetUrl = aliasRoute.targetUrl || aliasRoute.url || profile.targetUrl;
+    const hasUsableTargetUrl = typeof targetUrl === 'string' && targetUrl.trim().length > 0;
+    const aliasModel = aliasRoute.currentModel || aliasRoute.model;
+
     const resolved = {
         ...profile,
         publicModelAlias: publicAlias,
-        currentModel: aliasRoute.currentModel || aliasRoute.model || profile.currentModel,
-        targetUrl: aliasRoute.targetUrl || aliasRoute.url || profile.targetUrl,
+        currentModel: hasUsableTargetUrl && aliasModel ? aliasModel : publicAlias,
+        targetUrl,
         apiKey: aliasRoute.apiKey || profile.apiKey
     };
 
@@ -2505,30 +2510,53 @@ async function handleMessages(req, res, cleanPath, reqId) {
             const aliasDetails = incomingModel ? await resolveModelAliasDetails(incomingModel) : { modelId: incomingModel, provider: '' };
             const requestedRaw = aliasDetails.modelId || incomingModel;
             const routeLookupModel = incomingModel && !isClaudeFamilyModel(incomingModel) ? incomingModel : requestedRaw;
-            if (requestedRaw && !isClaudeFamilyModel(requestedRaw)) {
+            const routeClaudeThroughSelectedProvider = isClaudeFamilyModel(incomingModel);
+            if (requestedRaw && (!isClaudeFamilyModel(requestedRaw) || routeClaudeThroughSelectedProvider)) {
                 try {
                     const { resolveProviderForModel } = require('../providers/route-resolver');
-                    const routed = resolveProviderForModel(routeLookupModel, { providerHint: aliasDetails.provider })
+                    const hintedRouted = resolveProviderForModel(routeLookupModel, { providerHint: aliasDetails.provider })
                         || resolveProviderForModel(requestedRaw, { providerHint: aliasDetails.provider });
-                    if (routed && routed.baseUrl && routed.apiKey && routed.name !== 'anthropic') {
-                        cfg.targetUrl = toOpenAiCompatibleTargetUrl(routed.baseUrl);
-                        cfg.apiKey = routed.apiKey;
-                        // Send the actual requested model upstream — not the claude
-                        // profile's _upstreamModel. Without this, a Claude Code
-                        // request for deepseek-v4 would reach opencode-zen as the
-                        // wrong model (e.g. deepseek-v4-flash) and fail/abort.
-                        cfg._upstreamModel = requestedRaw;
-                        cfg.currentModel = requestedRaw;
-                        console.log(`[Proxy Model Route]: ${requestedRaw} -> provider ${routed.name} (${routed.baseUrl})`);
+                    const activeProviderName = getActiveProvider();
+                    const activeProviderCanonicalName = activeProviderName
+                        ? (getProviderName(activeProviderName) || activeProviderName)
+                        : '';
+                    const activeRouted = activeProviderName
+                        ? resolveProviderForModel(requestedRaw, { provider: activeProviderName })
+                        : null;
+                    const routed = hintedRouted || activeRouted || resolveProviderForModel(requestedRaw, { providerHint: aliasDetails.provider });
+                    if (routed && routed.baseUrl && routed.apiKey) {
+                        const selectedBackendModel = routed.model || routed.defaultModel;
+                        const usesSelectedProviderRoute = activeProviderCanonicalName && routed.name === activeProviderCanonicalName;
+                        const backendModel = routeClaudeThroughSelectedProvider && usesSelectedProviderRoute && selectedBackendModel
+                            ? selectedBackendModel
+                            : requestedRaw;
+                        if (routed.name === 'anthropic' || routed.apiMode === 'anthropic_messages') {
+                            cfg.targetUrl = routed.baseUrl;
+                            cfg.apiKey = routed.apiKey;
+                            if (routeClaudeThroughSelectedProvider && usesSelectedProviderRoute && selectedBackendModel) {
+                                cfg._upstreamModel = backendModel;
+                                cfg.currentModel = backendModel;
+                            }
+                            console.log(`[Proxy Model Route]: ${requestedRaw} -> provider ${routed.name} (${routed.baseUrl})`);
+                        } else {
+                            cfg.targetUrl = toOpenAiCompatibleTargetUrl(routed.baseUrl);
+                            cfg.apiKey = routed.apiKey;
+                            cfg._upstreamModel = backendModel;
+                            cfg.currentModel = backendModel;
+                            console.log(`[Proxy Model Route]: ${backendModel} -> provider ${routed.name} (${routed.baseUrl})`);
+                        }
                     }
                 } catch (e) {
                     console.warn('[Proxy Model Route] resolution failed:', e.message);
                 }
             }
 
-            const upstreamModel = shouldUseAnthropicUpstream(cfg.targetUrl) && shouldPreserveClaudeAliasForAnthropicUpstream(requestModel)
-                ? requestModel
-                : (cfg._upstreamModel || getClaudeBackendModel(cfg, aReq.model));
+            const selectedClaudeBackendModel = routeClaudeThroughSelectedProvider && cfg._upstreamModel ? cfg._upstreamModel : null;
+            const upstreamModel = selectedClaudeBackendModel
+                ? selectedClaudeBackendModel
+                : shouldUseAnthropicUpstream(cfg.targetUrl) && shouldPreserveClaudeAliasForAnthropicUpstream(requestModel)
+                    ? requestModel
+                    : (cfg._upstreamModel || getClaudeBackendModel(cfg, aReq.model));
             if (cfg.publicModelAlias && upstreamModel) {
                 console.log(`[Proxy Alias Route]: ${cfg.publicModelAlias} -> ${upstreamModel}`);
             }
@@ -2778,6 +2806,10 @@ async function handleMessages(req, res, cleanPath, reqId) {
                 res.writeHead(200, { 'Content-Type': contentType });
                 res.end(clientBody);
                 return; // finishRequest() runs in finally
+            }
+
+            if (!cfg.targetUrl) {
+                throw new Error(`No targetUrl configured for Claude request using ${upstreamModel || 'unknown'}`);
             }
 
             // Per-request context isolates tool state so multiple clients can
