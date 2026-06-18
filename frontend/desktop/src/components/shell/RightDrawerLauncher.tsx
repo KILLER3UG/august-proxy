@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { ChevronDown, FileDiff, ListTodo, ClipboardList, TerminalSquare, Play } from 'lucide-react';
+import { PanelRight, PanelRightClose, FileDiff, ListTodo, ClipboardList, TerminalSquare, Play } from 'lucide-react';
 import type { RightDrawerSectionId } from './RightDrawerState';
 
 const SECTION_META: Record<RightDrawerSectionId, { label: string; Icon: typeof FileDiff }> = {
@@ -31,7 +31,8 @@ const SECTION_META: Record<RightDrawerSectionId, { label: string; Icon: typeof F
 
 const OPTIONS: RightDrawerSectionId[] = ['diff', 'terminal', 'plan', 'tasks', 'preview'];
 
-export function RightDrawerDropdown({ onSelect }: {
+export function RightDrawerDropdown({ drawerOpen, onSelect }: {
+  drawerOpen: boolean;
   onSelect: (section: RightDrawerSectionId) => void;
 }) {
   const [open, setOpen] = useState(false);

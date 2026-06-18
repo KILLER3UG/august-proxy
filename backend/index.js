@@ -436,6 +436,22 @@ const requestHandler = async (req, res) => {
         return sendJson(res, { status: 'ok', provider: providerName, config: updated });
     }
 
+    // ── User-defined model aliases ──
+    if (req.url === '/api/config/model-aliases' && req.method === 'GET') {
+        const cfg = getConfig();
+        return sendJson(res, { aliases: cfg.modelAliases || [] });
+    }
+
+    if (req.url === '/api/config/model-aliases' && req.method === 'PUT') {
+        try {
+            const body = await readJsonBody(req);
+            const cfg = getConfig();
+            cfg.modelAliases = Array.isArray(body.aliases) ? body.aliases : [];
+            saveConfig(cfg);
+            return sendJson(res, { ok: true, aliases: cfg.modelAliases });
+        } catch (e) { return sendError(res, e, 500); }
+    }
+
     // ── Env var management ──
     if (req.url === '/api/env' && req.method === 'GET') {
         return sendJson(res, { env: getEnvVars(), providers: getProviderRequiredEnvVars() });

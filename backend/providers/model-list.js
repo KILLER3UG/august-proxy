@@ -7,7 +7,7 @@
  * and friends). */
 
 const { listProviders, getProvider } = require('./provider-registry');
-const { getProviderConfig } = require('../lib/config');
+const { getConfig, getProviderConfig } = require('../lib/config');
 const { inferFromModelId, deriveModelsUrl } = require('../lib/models');
 const { resolveModelProfile } = require('../lib/model-profiles');
 const { resolveProviderForModel } = require('./route-resolver');
@@ -149,12 +149,29 @@ function normalizeAliasEntry(entry, fallbackModelId) {
     return typeof entry === 'string' ? entry : entry.modelId;
 }
 
+function findUserDefinedAlias(modelId) {
+    if (!modelId || typeof modelId !== 'string') return null;
+    try {
+        const cfg = getConfig();
+        const aliases = cfg.modelAliases || [];
+        const match = aliases.find(a => a && a.alias === modelId);
+        if (match && match.targetModel) return match;
+    } catch (_) {}
+    return null;
+}
+
 async function resolveModelAlias(modelId) {
+    // 0. Check user-defined aliases from config first.
+    const userAlias = findUserDefinedAlias(modelId);
+    if (userAlias) return userAlias.targetModel;
     const aliases = await getModelAliasMap();
     return normalizeAliasEntry(aliases.get(modelId), modelId);
 }
 
 async function resolveModelAliasDetails(modelId) {
+    // 0. Check user-defined aliases from config first.
+    const userAlias = findUserDefinedAlias(modelId);
+    if (userAlias) return { modelId: userAlias.targetModel, provider: userAlias.targetProvider || '' };
     const aliases = await getModelAliasMap();
     const entry = aliases.get(modelId);
     if (!entry) return { modelId, provider: '' };
@@ -343,6 +360,25 @@ async function getModelList() {
         if (a.isFree !== b.isFree) return a.isFree ? -1 : 1;
         return (a.id || '').localeCompare(b.id || '');
     });
+    // Inject user-defined aliases from config.
+    try {
+        const cfg = getConfig();
+        const userAliases = cfg.modelAliases || [];
+        for (const aliasDef of userAliases) {
+            if (!aliasDef || !aliasDef.alias) continue;
+            if (unique.some(m => m.id === aliasDef.alias)) continue; // don't override real models
+            unique.push({
+                id: aliasDef.alias,
+                name: aliasDef.alias,
+                provider: aliasDef.targetProvider || 'user-alias',
+                contextWindow: 128000,
+                supportsReasoning: false,
+                supportsThinking: false,
+                isFree: false,
+            });
+        }
+    } catch (_) {}
+
     return unique;
 }
 

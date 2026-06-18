@@ -406,3 +406,23 @@ export function isFreeModelId(id: string): boolean {
 export function getAggregatedModels(): Promise<AggregatedModelsResponse> {
   return api.get<AggregatedModelsResponse>('/api/models');
 }
+
+/* ── User-defined model aliases (fake IDs that route to real models) ── */
+
+export interface UserModelAlias {
+  alias: string;
+  targetModel: string;
+  targetProvider: string;
+}
+
+export interface UserModelAliasesResponse {
+  aliases: UserModelAlias[];
+}
+
+export function getUserModelAliases(): Promise<UserModelAliasesResponse> {
+  return api.get<UserModelAliasesResponse>('/api/config/model-aliases');
+}
+
+export function updateUserModelAliases(aliases: UserModelAlias[]): Promise<{ ok: boolean }> {
+  return api.put<{ ok: boolean }>('/api/config/model-aliases', { aliases });
+}
