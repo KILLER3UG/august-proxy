@@ -377,13 +377,17 @@ async function getModelList() {
         if (a.isFree !== b.isFree) return a.isFree ? -1 : 1;
         return (a.id || '').localeCompare(b.id || '');
     });
-    // Inject user-defined aliases from config.
+    // Inject user-defined aliases from config, overriding any real model
+    // with the same ID so they appear under the 'Alias' provider group.
     try {
         const cfg = getConfig();
         const userAliases = cfg.modelAliases || [];
         for (const aliasDef of userAliases) {
             if (!aliasDef || !aliasDef.alias) continue;
-            if (unique.some(m => m.id === aliasDef.alias)) continue; // don't override real models
+            // Remove any existing entry with this ID (from a real provider)
+            // so the alias takes over and appears under the 'Alias' group.
+            const existingIdx = unique.findIndex(m => m.id === aliasDef.alias);
+            if (existingIdx >= 0) unique.splice(existingIdx, 1);
             unique.push({
                 id: aliasDef.alias,
                 name: aliasDef.alias,
