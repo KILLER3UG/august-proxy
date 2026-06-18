@@ -1,10 +1,11 @@
 /* ── RightDrawer ─ multi-section Workbench sidebar ────────────────── */
 
-import type { ComponentType, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, FileDiff, ListTodo, ClipboardList, TerminalSquare, Play, Columns } from 'lucide-react';
+import { X, Columns } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
+  closeRightDrawerSection,
   useRightDrawer,
   type RightDrawerSectionId,
 } from './RightDrawerState';
@@ -15,13 +16,8 @@ import { RightDrawerTerminalSection } from './RightDrawerTerminalSection';
 import { RightDrawerPreviewSection } from './RightDrawerPreviewSection';
 import type { WorkbenchSession } from '@/types/workbench';
 
-const SECTION_META: Record<RightDrawerSectionId, { label: string; Icon: ComponentType<{ className?: string }> }> = {
-  preview: { label: 'Preview', Icon: Play },
-  diff: { label: 'Diff', Icon: FileDiff },
-  terminal: { label: 'Terminal', Icon: TerminalSquare },
-  tasks: { label: 'Tasks', Icon: ListTodo },
-  plan: { label: 'Plan', Icon: ClipboardList },
-};
+const BASE_WIDTH = 320;   // 1-2 sections
+const WIDE_WIDTH = 640;   // 3-4 sections — doubles so they don't squish
 
 export function RightDrawer({
   open,
@@ -39,7 +35,11 @@ export function RightDrawer({
   onClose: () => void;
 }) {
   const state = useRightDrawer();
-  const sectionId = state.activeSection ?? state.sections[0] ?? 'diff';
+  const sections: RightDrawerSectionId[] = state.sections.length > 0
+    ? state.sections
+    : (state.activeSection ? [state.activeSection] : ['diff']);
+
+  const width = sections.length >= 3 ? WIDE_WIDTH : BASE_WIDTH;
 
   if (!open) return null;
 
@@ -48,10 +48,11 @@ export function RightDrawer({
       <motion.aside
         key="workbench-sidebar"
         initial={{ width: 0, opacity: 0 }}
-        animate={{ width: 320, opacity: 1 }}
+        animate={{ width, opacity: 1 }}
         exit={{ width: 0, opacity: 0 }}
         transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="shrink-0 h-full min-h-0 w-80 overflow-hidden border-l border-border bg-sidebar text-sidebar-foreground"
+        className="shrink-0 h-full min-h-0 overflow-hidden border-l border-border bg-sidebar text-sidebar-foreground"
+        style={{ width }}
         aria-label="Workbench sidebar"
       >
         <div className="flex h-full min-h-0 flex-col">
@@ -67,27 +68,36 @@ export function RightDrawer({
           </div>
 
           <div className="min-h-0 flex-1 overflow-hidden p-2">
-            <DrawerSectionCard sectionId={sectionId}>
-              {sectionId === 'preview' && (
-                <RightDrawerPreviewSection
-                  sessionId={sessionId}
-                  workspacePath={workspacePath}
-                />
-              )}
-              {sectionId === 'diff' && (
-                <RightDrawerDiffSection sessionId={sessionId} />
-              )}
-              {sectionId === 'terminal' && <RightDrawerTerminalSection />}
-              {sectionId === 'tasks' && (
-                <RightDrawerTasksSection todos={workbenchSession?.todos ?? []} />
-              )}
-              {sectionId === 'plan' && (
-                <RightDrawerPlanSection
-                  session={workbenchSession}
-                  onApprove={onApprovePlan}
-                />
-              )}
-            </DrawerSectionCard>
+            {sections.length === 1 && (
+              <DrawerSectionCard
+                sectionId={sections[0]}
+                ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan }}
+              />
+            )}
+
+            {sections.length === 2 && (
+              <div className="flex h-full flex-col gap-2">
+                {sections.map((sectionId) => (
+                  <DrawerSectionCard
+                    key={sectionId}
+                    sectionId={sectionId}
+                    ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan }}
+                  />
+                ))}
+              </div>
+            )}
+
+            {sections.length >= 3 && (
+              <div className="grid h-full grid-cols-2 gap-2">
+                {sections.map((sectionId) => (
+                  <DrawerSectionCard
+                    key={sectionId}
+                    sectionId={sectionId}
+                    ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </motion.aside>
@@ -95,24 +105,66 @@ export function RightDrawer({
   );
 }
 
+function renderSection(
+  sectionId: RightDrawerSectionId,
+  ctx: {
+    sessionId: string | null;
+    workspacePath: string | null;
+    workbenchSession: WorkbenchSession | null;
+    onApprovePlan: () => Promise<void>;
+  },
+) {
+  switch (sectionId) {
+    case 'preview':
+      return (
+        <RightDrawerPreviewSection
+          sessionId={ctx.sessionId}
+          workspacePath={ctx.workspacePath}
+        />
+      );
+    case 'diff':
+      return <RightDrawerDiffSection sessionId={ctx.sessionId} />;
+    case 'terminal':
+      return <RightDrawerTerminalSection />;
+    case 'tasks':
+      return <RightDrawerTasksSection todos={ctx.workbenchSession?.todos ?? []} />;
+    case 'plan':
+      return (
+        <RightDrawerPlanSection
+          session={ctx.workbenchSession}
+          onApprove={ctx.onApprovePlan}
+        />
+      );
+  }
+}
+
 function DrawerSectionCard({
   sectionId,
-  children,
+  ctx,
 }: {
   sectionId: RightDrawerSectionId;
-  children: ReactNode;
+  ctx: {
+    sessionId: string | null;
+    workspacePath: string | null;
+    workbenchSession: WorkbenchSession | null;
+    onApprovePlan: () => Promise<void>;
+  };
 }) {
-  const meta = SECTION_META[sectionId];
-
   return (
-    <section
-      className="flex min-h-0 flex-1 overflow-hidden rounded-lg border border-border/50 bg-card shadow-sm"
-    >
-      <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
-        <meta.Icon className="size-3 text-muted-foreground/70 shrink-0" />
-        <h2 className="truncate text-[11px] font-semibold text-foreground">{meta.label}</h2>
-      </div>
-      <div className="h-full overflow-auto p-2">{children}</div>
+    <section className="relative flex min-h-0 flex-1 overflow-hidden rounded-lg border border-border/50 bg-card shadow-sm">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={() => closeRightDrawerSection(sectionId)}
+        className="absolute right-1 top-1 z-10"
+        aria-label={`Close ${sectionId} section`}
+        title="Close section"
+      >
+        <X className="size-3" />
+      </Button>
+      <div className="min-h-0 flex-1 overflow-hidden">{renderSection(sectionId, ctx)}</div>
     </section>
   );
 }
+
+

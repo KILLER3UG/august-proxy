@@ -1,211 +1,233 @@
-/* ── Settings overlay — replaces the old 12-section dashboard ─────── */
-/* Pressed via Cmd+, or the Settings button in the titlebar.            */
+/* ── Settings overlay — redesigned 10-section control panel ────────── */
+/* Replaces the old 18-tab sidebar. Sections are grouped by category,
+ * searchable globally, and the active section resolves legacy deep links
+ * (e.g. ?tab=traffic → Traffic & Activity) via the settings registry.
+ * Pressed via Cmd+, or the Settings button in the titlebar. */
 
-import { useEffect, lazy, Suspense, type ComponentType } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, lazy, Suspense, useMemo, useState, type ComponentType } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { X, SearchX } from 'lucide-react';
+import { Backdrop } from '@/components/overlays/Backdrop';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { useStore } from '@nanostores/react';
+import { $gateway } from '@/store/gateway';
 import {
-  X,
-  Heart,
-  Users,
-  Database,
-  Plug,
-  Bot,
-  Archive as ArchiveIcon,
-  Activity,
-  Search,
-  Brain,
-  MessagesSquare,
-  Network,
-  Boxes,
-  TerminalSquare,
-  CalendarClock,
-  ScrollText,
-  BarChart3,
-  type LucideIcon,
-} from "lucide-react";
-import { Backdrop } from "@/components/overlays/Backdrop";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { useStore } from "@nanostores/react";
-import { $gateway } from "@/store/gateway";
-import { Health } from "@/sections/health/Health";
-import { Providers } from "@/sections/providers/Providers";
-import { Mcp } from "@/sections/mcp/Mcp";
-import { Memory } from "@/sections/memory/Memory";
-import { August } from "@/sections/august/August";
-import { Archive } from "@/sections/archive/Archive";
+  SETTINGS_CATEGORIES,
+  SETTINGS_SECTIONS,
+  resolveLegacyTab,
+  sectionsForCategory,
+  type SettingsSection,
+} from '@/settings/settings-registry';
+import { SettingsSearch } from '@/components/settings/SettingsSearch';
+import { SettingsTooltip } from '@/components/settings/SettingsTooltip';
+import { SystemHealthSection } from '@/sections/settings/SystemHealthSection';
+import { ProfilePreferencesSection } from '@/sections/settings/ProfilePreferencesSection';
 
-/* Heavier / newer sections are code-split so they only load when opened. */
-const Overview = lazy(() => import("@/sections/overview/Overview").then((m) => ({ default: m.Overview })));
-const Traffic = lazy(() => import("@/sections/traffic/Traffic").then((m) => ({ default: m.Traffic })));
-const Usage = lazy(() => import("@/sections/usage/Usage").then((m) => ({ default: m.Usage })));
-const Inspector = lazy(() => import("@/sections/inspector/Inspector").then((m) => ({ default: m.Inspector })));
-const Conversations = lazy(() => import("@/sections/conversations/Conversations").then((m) => ({ default: m.Conversations })));
-const Thinking = lazy(() => import("@/sections/thinking/Thinking").then((m) => ({ default: m.Thinking })));
-const Logs = lazy(() => import("@/sections/logs/Logs").then((m) => ({ default: m.Logs })));
-const Connections = lazy(() => import("@/sections/connections/Connections").then((m) => ({ default: m.Connections })));
-const Models = lazy(() => import("@/sections/models/Models").then((m) => ({ default: m.Models })));
-const Agents = lazy(() => import("@/sections/agents/Agents").then((m) => ({ default: m.Agents })));
-const Terminal = lazy(() => import("@/sections/terminal/Terminal").then((m) => ({ default: m.Terminal })));
-const Automations = lazy(() => import("@/sections/automations/Automations").then((m) => ({ default: m.Automations })));
+/* Merged sections are code-split so they only load when opened. */
+const ModelProvidersSection = lazy(() =>
+  import('@/sections/settings/ModelProvidersSection').then((m) => ({ default: m.ModelProvidersSection })),
+);
+const ConversationsHistorySection = lazy(() =>
+  import('@/sections/settings/ConversationsHistorySection').then((m) => ({ default: m.ConversationsHistorySection })),
+);
+const MemoryKnowledgeSection = lazy(() =>
+  import('@/sections/settings/MemoryKnowledgeSection').then((m) => ({ default: m.MemoryKnowledgeSection })),
+);
+const ToolsConnectionsSection = lazy(() =>
+  import('@/sections/settings/ToolsConnectionsSection').then((m) => ({ default: m.ToolsConnectionsSection })),
+);
+const TrafficActivitySection = lazy(() =>
+  import('@/sections/settings/TrafficActivitySection').then((m) => ({ default: m.TrafficActivitySection })),
+);
+const ConversationInspectorSection = lazy(() =>
+  import('@/sections/settings/ConversationInspectorSection').then((m) => ({ default: m.ConversationInspectorSection })),
+);
+const AgentsAutomationSection = lazy(() =>
+  import('@/sections/settings/AgentsAutomationSection').then((m) => ({ default: m.AgentsAutomationSection })),
+);
+const DeveloperConsoleSection = lazy(() =>
+  import('@/sections/settings/DeveloperConsoleSection').then((m) => ({ default: m.DeveloperConsoleSection })),
+);
+
+/** Map section id → component to render. Static + lazy where appropriate. */
+const SECTION_COMPONENTS: Record<string, ComponentType> = {
+  'system-health': SystemHealthSection,
+  'profile-preferences': ProfilePreferencesSection,
+  'model-providers': ModelProvidersSection,
+  'conversations-history': ConversationsHistorySection,
+  'memory-knowledge': MemoryKnowledgeSection,
+  'tools-connections': ToolsConnectionsSection,
+  'traffic-activity': TrafficActivitySection,
+  'conversation-inspector': ConversationInspectorSection,
+  'agents-automation': AgentsAutomationSection,
+  'developer-console': DeveloperConsoleSection,
+};
 
 function SectionFallback() {
   return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
 }
 
-interface TabItem {
-  key: string;
-  label: string;
-  Icon: LucideIcon;
-  Component: ComponentType<any>;
-  /** Group label this tab belongs under. */
-  group: SettingGroup;
-}
-
-type SettingGroup = "Core" | "Observability" | "AI Workbench" | "MCP & Providers" | "Advanced";
-
-const GROUP_ORDER: SettingGroup[] = [
-  "Core",
-  "Observability",
-  "AI Workbench",
-  "MCP & Providers",
-  "Advanced",
-];
-
-const TABS: TabItem[] = [
-  // Core
-  { key: "health", label: "Health", Icon: Heart, Component: Health, group: "Core" },
-  { key: "providers", label: "Providers", Icon: Users, Component: Providers, group: "MCP & Providers" },
-  { key: "memory", label: "Memory", Icon: Database, Component: Memory, group: "Core" },
-  { key: "archive", label: "Archive", Icon: ArchiveIcon, Component: Archive, group: "Core" },
-
-  // Observability
-  { key: "overview", label: "Artifacts", Icon: Boxes, Component: Overview, group: "Observability" },
-  { key: "traffic", label: "Traffic", Icon: Activity, Component: Traffic, group: "Observability" },
-  { key: "usage", label: "Usage", Icon: BarChart3, Component: Usage, group: "Observability" },
-  { key: "inspector", label: "Inspector", Icon: Search, Component: Inspector, group: "Observability" },
-  { key: "conversations", label: "Conversations", Icon: MessagesSquare, Component: Conversations, group: "Observability" },
-  { key: "thinking", label: "Thinking", Icon: Brain, Component: Thinking, group: "Observability" },
-  { key: "logs", label: "Logs", Icon: ScrollText, Component: Logs, group: "Observability" },
-
-  // AI Workbench
-  { key: "agents", label: "Agents", Icon: Bot, Component: Agents, group: "AI Workbench" },
-  { key: "models", label: "Models", Icon: Boxes, Component: Models, group: "AI Workbench" },
-  { key: "terminal", label: "Terminal", Icon: TerminalSquare, Component: Terminal, group: "AI Workbench" },
-  { key: "automations", label: "Automations", Icon: CalendarClock, Component: Automations, group: "AI Workbench" },
-  { key: "connections", label: "Connections", Icon: Network, Component: Connections, group: "AI Workbench" },
-
-  // MCP & Providers
-  { key: "mcp", label: "MCP & Skills", Icon: Plug, Component: Mcp, group: "MCP & Providers" },
-
-  // Advanced
-  {
-    key: "advanced",
-    label: "August console",
-    Icon: Bot,
-    Component: August,
-    group: "Advanced",
-  },
-];
-
 export function SettingsOverlay() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
-  // Back-compat: the old "services" tab maps to "mcp".
-  const routeTab = params.get("tab");
-  const activeTab = routeTab === "services" ? "mcp" : (routeTab ?? "health");
   const g = useStore($gateway);
 
   const close = () => {
-    const preSettingsPath = sessionStorage.getItem("pre-settings-path") || "/";
+    const preSettingsPath = sessionStorage.getItem('pre-settings-path') || '/';
     navigate(preSettingsPath);
   };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (e.key === 'Escape') close();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const active = TABS.find((t) => t.key === activeTab) ?? TABS[0];
+  /* Resolve the active section, honoring legacy tab keys via the registry. */
+  const rawTab = params.get('tab');
+  const activeId = resolveLegacyTab(rawTab);
+  const active: SettingsSection =
+    SETTINGS_SECTIONS.find((s) => s.id === activeId) ?? SETTINGS_SECTIONS[0];
+
+  /* Keep the URL canonical: if the raw tab is a legacy alias, normalize it
+   * in place without triggering a navigation flicker. */
+  useEffect(() => {
+    if (rawTab && rawTab !== active.id) {
+      setParams({ tab: active.id }, { replace: true });
+    }
+  }, [rawTab, active.id, setParams]);
+
+  const select = (id: string) => setParams({ tab: id });
+
+  /* Global search across label/category/description/keywords. */
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const matches = useMemo(() => {
+    if (!q) return SETTINGS_SECTIONS;
+    return SETTINGS_SECTIONS.filter((s) => {
+      const haystack = [s.label, s.description, s.category, ...s.keywords]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [q]);
+  const matchIds = useMemo(() => new Set(matches.map((m) => m.id)), [matches]);
+
+  const ActiveComponent = SECTION_COMPONENTS[active.id] ?? SystemHealthSection;
 
   return (
     <Backdrop onClose={close}>
-      <div className="w-[min(95vw,1100px)] h-[min(90vh,720px)] rounded-xl border border-border bg-card shadow-2xl flex overflow-hidden">
-        <aside className="w-56 border-r border-border bg-sidebar text-sidebar-foreground p-3 flex flex-col overflow-hidden">
-          <div className="px-2 py-2 mb-2 shrink-0">
-            <h2 className="text-sm font-semibold flex items-center gap-2">
-              <span className="size-6 rounded-md bg-primary text-primary-foreground grid place-items-center text-[10px]">
+      <div className="flex h-[min(90vh,720px)] w-[min(95vw,1100px)] overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+        {/* ── Sidebar ─────────────────────────────────────────────── */}
+        <aside className="flex w-60 flex-col overflow-hidden border-r border-border bg-sidebar text-sidebar-foreground">
+          <div className="shrink-0 px-3 pb-2 pt-3">
+            <h2 className="flex items-center gap-2 text-sm font-semibold">
+              <span className="grid size-6 place-items-center rounded-md bg-primary text-[10px] text-primary-foreground">
                 A
               </span>
               Settings
             </h2>
-            <p className="text-[10px] text-muted-foreground mt-1 font-mono">
-              {g.status === "open" ? `running :${g.port || "?"}` : g.status}
+            <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+              {g.status === 'open' ? `running :${g.port || '?'}` : g.status}
             </p>
           </div>
-          <nav className="flex-1 space-y-0.5 overflow-y-auto">
-            {GROUP_ORDER.map((group) => {
-              const groupTabs = TABS.filter(
-                (t) => t.group === group && (!("advanced" in t && (t as any).advanced) || g.status === "open"),
-              );
-              if (groupTabs.length === 0) return null;
-              return (
-                <div key={group} className="mb-2">
-                  <p className="px-2 pt-2 pb-1 text-[9px] uppercase tracking-widest text-muted-foreground/60 font-semibold">
-                    {group}
-                  </p>
-                  {groupTabs.map((t) => (
-                    <button
-                      key={t.key}
-                      onClick={() => setParams({ tab: t.key })}
-                      className={cn(
-                        "w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition",
-                        activeTab === t.key
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50",
-                      )}
-                    >
-                      <t.Icon className="size-3.5" />
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              );
-            })}
+
+          <div className="shrink-0 px-3 pb-2">
+            <SettingsSearch value={query} onChange={setQuery} />
+          </div>
+
+          <nav className="flex-1 overflow-y-auto px-2 pb-2">
+            {matches.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
+                <SearchX className="size-5 text-muted-foreground/60" />
+                <p className="text-xs text-muted-foreground">
+                  No settings match &ldquo;{query}&rdquo;
+                </p>
+                <button
+                  onClick={() => setQuery('')}
+                  className="text-[11px] text-primary hover:underline"
+                >
+                  Clear search
+                </button>
+              </div>
+            ) : (
+              SETTINGS_CATEGORIES.map((cat) => {
+                const catSections = sectionsForCategory(cat.id).filter((s) => matchIds.has(s.id));
+                if (catSections.length === 0) return null;
+                return (
+                  <div key={cat.id} className="mb-2">
+                    <div className="flex items-center gap-1 px-2 pb-1 pt-2">
+                      <p className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                        {cat.label}
+                      </p>
+                      <SettingsTooltip content={cat.description} label={`${cat.label} category info`} />
+                    </div>
+                    {catSections.map((s) => (
+                      <NavButton
+                        key={s.id}
+                        section={s}
+                        active={active.id === s.id}
+                        onSelect={() => select(s.id)}
+                      />
+                    ))}
+                  </div>
+                );
+              })
+            )}
           </nav>
-          <div className="pt-2 border-t border-sidebar-border text-[10px] text-muted-foreground font-mono shrink-0">
-            <kbd className="rounded border border-sidebar-border bg-muted px-1">
-              esc
-            </kbd>{" "}
-            to close
+
+          <div className="shrink-0 border-t border-sidebar-border px-3 py-2 font-mono text-[10px] text-muted-foreground">
+            <kbd className="rounded border border-sidebar-border bg-muted px-1">esc</kbd> to close
           </div>
         </aside>
 
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-12 border-b border-border px-4 flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2">
-              <active.Icon className="size-4 text-muted-foreground" />
-              <h3 className="text-sm font-semibold">{active.label}</h3>
+        {/* ── Content ─────────────────────────────────────────────── */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
+            <div className="flex min-w-0 items-center gap-2">
+              <active.icon className="size-4 shrink-0 text-muted-foreground" />
+              <h3 className="truncate text-sm font-semibold">{active.label}</h3>
             </div>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={close}
-              aria-label="Close settings"
-            >
+            <Button variant="ghost" size="icon-sm" onClick={close} aria-label="Close settings">
               <X />
             </Button>
           </header>
-          <div className="flex-1 overflow-auto">
+          <div className="min-h-0 flex-1 overflow-hidden">
             <Suspense fallback={<SectionFallback />}>
-              <active.Component />
+              <ActiveComponent />
             </Suspense>
           </div>
         </div>
       </div>
     </Backdrop>
+  );
+}
+
+function NavButton({
+  section,
+  active,
+  onSelect,
+}: {
+  section: SettingsSection;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const Icon = section.icon;
+  return (
+    <button
+      onClick={onSelect}
+      className={cn(
+        'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs font-medium transition',
+        active
+          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+          : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50',
+      )}
+    >
+      <Icon className="size-3.5 shrink-0" />
+      <span className="truncate">{section.label}</span>
+    </button>
   );
 }

@@ -1544,7 +1544,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
                 className="flex-1 flex flex-col items-center justify-center px-6"
               >
-                <div className="w-full max-w-3xl ml-16 md:ml-24 mr-[360px]">
+                <div className="w-full px-4">
                   <h2 className="text-3xl font-semibold tracking-tight text-foreground/90 font-sans text-center mb-8">
                     August
                   </h2>
@@ -1570,7 +1570,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   className="flex-1 overflow-y-auto"
                   style={{ overflowAnchor: 'none' }}
                 >
-                  <div className="max-w-3xl ml-16 md:ml-24 mr-[360px] px-6 py-8 space-y-5 relative">
+                  <div className="w-full px-4 py-8 space-y-5 relative">
                     <WorkbenchPlanPanel
                       session={workbenchSession}
                       onApprove={async () => {
@@ -1635,7 +1635,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
                   className="shrink-0 z-10 w-full bg-background py-3"
                 >
-                  <div className="max-w-3xl ml-16 md:ml-24 mr-[360px]">
+                  <div className="w-full px-4">
                     <SuggestedActionBubble
                       visible={showSuggestion}
                       onSelect={(s) => {
@@ -2220,7 +2220,7 @@ function EmptyState({ onPrompt }: { onPrompt: (p: string) => void }) {
     { title: 'Add a settings overlay (Cmd+,)',      desc: 'Replace 12 top-level routes with one panel' },
   ];
   return (
-    <div className="max-w-3xl ml-16 md:ml-24 mr-[360px] px-6 py-16">
+    <div className="w-full px-6 py-16">
       <div className="text-center mb-10">
         <div className="inline-flex size-14 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white items-center justify-center mb-4 shadow-lg">
           <Sparkles className="size-7" />

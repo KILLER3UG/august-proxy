@@ -1,10 +1,9 @@
-/* ── RightDrawerTerminalSection ─ xterm.js PTY panel ───────────── */
+/* ── RightDrawerTerminalSection ─ real xterm.js PTY panel ────────── */
 
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Loader2, Plus, ShieldAlert, TerminalSquare, X, Inbox } from 'lucide-react';
+import { Check, Loader2, Plus, ShieldAlert, X, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
@@ -16,7 +15,6 @@ import {
   getTerminalSessions,
   resizeTerminalSession,
   type TerminalApproval,
-  type TerminalSession,
 } from '@/api/backend-ui';
 
 export function RightDrawerTerminalSection() {
@@ -28,6 +26,7 @@ export function RightDrawerTerminalSection() {
   const socketRef = useRef<WebSocket | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const connectedRef = useRef(false);
+  const autoSpawnRef = useRef(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['terminal-sessions'],
@@ -70,19 +69,29 @@ export function RightDrawerTerminalSection() {
     },
   });
 
-  const disposeTerminal = () => {
-    socketRef.current?.close();
-    socketRef.current = null;
-    connectedRef.current = false;
-    setSocketReady(false);
-    terminalRef.current?.dispose();
-    terminalRef.current = null;
-    fitRef.current = null;
-  };
+  // Auto-spawn a real terminal session if there are none yet.
+  useEffect(() => {
+    if (
+      !autoSpawnRef.current &&
+      !isLoading &&
+      sessions.length === 0 &&
+      !activeId &&
+      !createSession.isPending
+    ) {
+      autoSpawnRef.current = true;
+      createSession.mutate();
+    }
+  }, [isLoading, sessions.length, activeId, createSession]);
 
   useEffect(() => {
     if (!activeId) {
-      disposeTerminal();
+      socketRef.current?.close();
+      socketRef.current = null;
+      connectedRef.current = false;
+      setSocketReady(false);
+      terminalRef.current?.dispose();
+      terminalRef.current = null;
+      fitRef.current = null;
       return;
     }
 
@@ -104,7 +113,8 @@ export function RightDrawerTerminalSection() {
     const container = containerRef.current;
     if (container) {
       terminal.open(container);
-      fit.fit();
+      // Defer initial fit until after layout settles.
+      requestAnimationFrame(() => fit.fit());
     }
 
     const syncSize = () => {
@@ -112,9 +122,9 @@ export function RightDrawerTerminalSection() {
       const terminalInstance = terminalRef.current;
       const fitAddon = fitRef.current;
       if (!bounds || !terminalInstance || !fitAddon) return;
+      fitAddon.fit();
       const cols = Math.max(20, Math.floor(bounds.width / 7.5));
       const rows = Math.max(5, Math.floor(bounds.height / 16));
-      fitAddon.fit();
       terminalInstance.resize(cols, rows);
       resize.mutate({ sessionId: activeId, cols, rows });
     };
@@ -168,116 +178,76 @@ export function RightDrawerTerminalSection() {
       connectedRef.current = false;
       setSocketReady(false);
     };
-  }, [activeId]);
+  }, [activeId, resize]);
+
+  const showConnectingOverlay =
+    !socketReady && !connectedRef.current && (isLoading || createSession.isPending || !!active);
 
   return (
-    <div className="space-y-3 text-xs">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-[11px] text-muted-foreground">
-          xterm.js PTY terminal
-        </div>
+    <div className="relative h-full min-h-0 w-full">
+      {/* Floating toolbar in the top-right corner; doesn't eat terminal width. */}
+      <div className="absolute right-1 top-1 z-10 flex items-center gap-1 rounded-md bg-black/40 px-1 py-0.5 backdrop-blur-sm">
         <Button
-          variant="outline"
-          size="sm"
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => terminalRef.current?.clear()}
+          disabled={!active}
+          aria-label="Clear terminal"
+          title="Clear"
+        >
+          <Check className="size-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
           onClick={() => createSession.mutate()}
           disabled={createSession.isPending}
+          aria-label="New terminal session"
+          title="New"
         >
-          <Plus className="size-3" />
-          New
+          {createSession.isPending ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
         </Button>
+        {active && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => close.mutate(active.id)}
+            disabled={close.isPending}
+            aria-label="Close terminal session"
+            title="Close"
+          >
+            <X className="size-3" />
+          </Button>
+        )}
       </div>
 
       {approvals.length > 0 && (
-        <ApprovalList approvals={approvals} approve={approve} reject={reject} />
+        <div className="absolute left-1 right-12 top-9 z-10">
+          <ApprovalList approvals={approvals} approve={approve} reject={reject} />
+        </div>
       )}
 
-      <div className="grid grid-cols-[140px_minmax(0,1fr)] gap-3 min-h-[260px]">
-        <div className="space-y-1 overflow-auto rounded-lg border border-border/50 bg-card/40 p-1.5">
-          {sessions.length === 0 && !isLoading && (
-            <div className="py-6 text-center text-muted-foreground/60">No sessions</div>
-          )}
-          {sessions.map((session) => (
-            <button
-              key={session.id}
-              type="button"
-              onClick={() => setSelectedId(session.id)}
-              className={cn(
-                'w-full rounded-md px-2 py-1.5 text-left transition',
-                activeId === session.id ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
-              )}
-            >
-              <div className="flex items-center gap-1.5">
-                <TerminalSquare className="size-3 shrink-0" />
-                <span className="truncate font-mono text-[10.5px]">{session.title || session.id}</span>
-              </div>
-              {session.cwd && (
-                <div className={cn(
-                  'mt-0.5 truncate font-mono text-[9px]',
-                  activeId === session.id ? 'text-primary-foreground/70' : 'text-muted-foreground/55'
-                )}>
-                  {session.cwd}
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
+      {/* The xterm pane fills the entire section. */}
+      <div
+        ref={containerRef}
+        className={cn(
+          'absolute inset-0 overflow-hidden rounded-lg border border-black/20 bg-[#020617]',
+          !socketReady && !connectedRef.current && 'opacity-95'
+        )}
+      />
 
-        <div className="min-w-0 space-y-2">
-          {active ? (
-            <>
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
-                    <Badge variant="secondary" className="text-[9px]">{active.id}</Badge>
-                    <span className="truncate">{active.status}</span>
-                    {active.pty && <Badge variant="outline" className="text-[9px]">pty</Badge>}
-                    {socketReady && <Badge variant="outline" className="text-[9px]">connected</Badge>}
-                  </div>
-                  <div className="truncate text-[10px] text-muted-foreground/70">{active.cwd}</div>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => terminalRef.current?.clear()}
-                    aria-label="Clear terminal"
-                    title="Clear terminal"
-                  >
-                    <Check className="size-3" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => close.mutate(active.id)}
-                    disabled={close.isPending}
-                    aria-label="Close terminal session"
-                  >
-                    <X className="size-3" />
-                  </Button>
-                </div>
-              </div>
-
-              <div
-                ref={containerRef}
-                className={cn(
-                  'h-[220px] overflow-hidden rounded-lg border border-black/20 bg-[#020617]',
-                  !socketReady && !connectedRef.current && 'opacity-80'
-                )}
-              />
-              {!socketReady && !connectedRef.current && (
-                <div className="text-[10px] text-muted-foreground">
-                  {isLoading ? 'Loading terminal…' : 'Connecting to PTY shell…'}
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-lg border border-border/50 bg-card/40 text-center text-muted-foreground">
-              <Inbox className="size-6 text-muted-foreground/40" />
-              <div className="mt-2 text-[11px]">{isLoading ? 'Loading terminal…' : 'Create or select a terminal session.'}</div>
-            </div>
-          )}
+      {showConnectingOverlay && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] text-muted-foreground">
+          {isLoading || createSession.isPending ? 'Starting real terminal…' : 'Connecting to shell…'}
         </div>
-      </div>
+      )}
+
+      {!active && !isLoading && !createSession.isPending && (
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center text-muted-foreground">
+          <Inbox className="size-6 text-muted-foreground/40" />
+          <div className="mt-2 text-[11px]">Click + to start a terminal session.</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -292,13 +262,13 @@ function ApprovalList({
   reject: { mutate: (requestId: string) => void; isPending: boolean };
 }) {
   return (
-    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 space-y-1.5 shadow">
       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-semibold">
         <ShieldAlert className="size-3" />
         {approvals.length} approval{approvals.length > 1 ? 's' : ''} required
       </div>
       {approvals.map((approval) => (
-        <div key={approval.requestId} className="flex items-start justify-between gap-2 rounded-md border border-amber-500/20 bg-card/70 p-2">
+        <div key={approval.requestId} className="flex items-start justify-between gap-2 rounded-md border border-amber-500/20 bg-card/70 p-1.5">
           <div className="min-w-0">
             <pre className="whitespace-pre-wrap break-all text-[10.5px] font-mono text-foreground/85">
               {approval.command || approval.inputPreview || '(no command)'}

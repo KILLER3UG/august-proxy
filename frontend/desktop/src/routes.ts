@@ -1,18 +1,15 @@
 import * as React from 'react';
-import { Suspense, lazy, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import {
   LayoutDashboard,
-  Activity,
-  MessagesSquare,
-  Search,
-  Brain,
   MessageSquare,
   Settings,
   type LucideIcon,
 } from 'lucide-react';
 import { ChatThread } from '@/sections/chat/ChatThread';
 import { SettingsOverlay } from '@/components/overlays/SettingsOverlay';
+import { SETTINGS_SECTIONS } from '@/settings/settings-registry';
 
 export interface SectionRoute {
   path: string;
@@ -44,26 +41,19 @@ function ChatThreadWithParams() {
 export const SECTION_ROUTES: readonly SectionRoute[] = [
   { path: '/', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThread, { sessionId: 'demo' }), nav: true },
   { path: '/c/:sessionId', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThreadWithParams) },
-  { path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, element: React.createElement(Navigate, { to: '/settings?tab=overview', replace: true }), nav: false },
+  { path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, element: React.createElement(Navigate, { to: '/settings?tab=traffic-activity', replace: true }), nav: false },
 ] as const;
 
-export const SETTINGS_TABS: readonly SettingsTab[] = [
-  { key: 'health', label: 'Health', Icon: Activity, path: '/settings/health' },
-  { key: 'providers', label: 'Providers', Icon: LayoutDashboard, path: '/settings/providers' },
-  { key: 'mcp', label: 'MCP & Skills', Icon: Settings, path: '/settings/mcp' },
-  { key: 'memory', label: 'Memory', Icon: MessagesSquare, path: '/settings/memory' },
-  { key: 'overview', label: 'Artifacts', Icon: LayoutDashboard, path: '/settings/overview' },
-  { key: 'traffic', label: 'Traffic', Icon: Activity, path: '/settings/traffic' },
-  { key: 'inspector', label: 'Inspector', Icon: Search, path: '/settings/inspector' },
-  { key: 'conversations', label: 'Conversations', Icon: MessagesSquare, path: '/settings/conversations' },
-  { key: 'thinking', label: 'Thinking', Icon: Brain, path: '/settings/thinking' },
-  { key: 'logs', label: 'Logs', Icon: Search, path: '/settings/logs' },
-  { key: 'models', label: 'Models', Icon: LayoutDashboard, path: '/settings/models' },
-  { key: 'agents', label: 'Agents', Icon: Brain, path: '/settings/agents' },
-  { key: 'terminal', label: 'Terminal', Icon: Settings, path: '/settings/terminal' },
-  { key: 'automations', label: 'Automations', Icon: Settings, path: '/settings/automations' },
-  { key: 'connections', label: 'Connections', Icon: Settings, path: '/settings/connections' },
-] as const;
+/* Settings tabs are derived from the reduced settings registry so the
+ * sidebar, routes, and command palette all stay in sync. The legacy 18
+ * tab keys still resolve via the registry's LEGACY_TAB_MAP (see
+ * resolveLegacyTab) — we just expose the 10 canonical entries here. */
+export const SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_SECTIONS.map((section) => ({
+  key: section.id,
+  label: section.label,
+  Icon: section.icon,
+  path: `/settings/${section.id}`,
+})) as readonly SettingsTab[];
 
 export const SETTINGS_ROUTES: readonly SectionRoute[] = [
   { path: '/settings', label: 'Settings', Icon: Settings, element: React.createElement(SettingsOverlay) },

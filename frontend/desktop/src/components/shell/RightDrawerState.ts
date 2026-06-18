@@ -89,6 +89,28 @@ export function setRightDrawerSections(sections: RightDrawerSectionId[], activeS
   });
 }
 
+/**
+ * Append a section to the drawer. No-op if the section is already open
+ * (so the user can't open the same section twice). If the drawer is at
+ * its MAX_SECTIONS cap, the oldest open section is dropped to make room
+ * for the new one. The newly added section becomes the active section.
+ */
+export function addRightDrawerSection(section: RightDrawerSectionId) {
+  const current = $rightDrawer.get();
+  if (current.sections.includes(section)) {
+    // Already open — just make it the active one, no duplication.
+    $rightDrawer.set({ ...current, activeSection: section, open: true });
+    return;
+  }
+  const nextSections = [...current.sections, section].slice(-MAX_SECTIONS);
+  $rightDrawer.set({
+    ...current,
+    open: true,
+    activeSection: section,
+    sections: nextSections,
+  });
+}
+
 export function setRightDrawerDiff(diff?: GitDiffResult, selectedDiffPath?: string) {
   const current = $rightDrawer.get();
   $rightDrawer.set({

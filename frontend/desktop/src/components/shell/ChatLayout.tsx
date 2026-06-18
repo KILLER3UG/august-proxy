@@ -12,7 +12,7 @@ import { $sessions, createSession, type Session } from "@/store/sessions";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
-import { closeRightDrawer, setRightDrawerSections, useRightDrawer } from "./RightDrawerState";
+import { addRightDrawerSection, closeRightDrawer, useRightDrawer } from "./RightDrawerState";
 import { approveWorkbenchPlan, getWorkbenchSession } from "@/api/workbench";
 import { toast } from "sonner";
 import type { WorkbenchSession } from "@/types/workbench";
@@ -51,7 +51,7 @@ export function ChatLayout() {
   }, [rightDrawer.open, showRightSidebar]);
 
   const openWorkbenchSidebar = (section: RightDrawerSectionId) => {
-    setRightDrawerSections([section], section);
+    addRightDrawerSection(section);
     setShowRightSidebar(true);
   };
 
@@ -150,18 +150,23 @@ export function ChatLayout() {
             onSelectRightDrawerSection={openWorkbenchSidebar}
           />
           <div className="flex-1 min-h-0 overflow-hidden relative flex">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div
-                key={location.pathname}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                className="h-full min-w-0 flex-1"
-              >
-                <Outlet />
-              </motion.div>
-            </AnimatePresence>
+            {/* Center the chat within the remaining width after any open sidebar(s). */}
+            <div className="flex-1 flex min-w-0 justify-center">
+              <div className="flex h-full w-full max-w-3xl flex-col min-w-0 px-2">
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={location.pathname}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                    className="h-full min-w-0 flex-1"
+                  >
+                    <Outlet />
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+            </div>
 
             {!isSettings && active && (
               <RightDrawer

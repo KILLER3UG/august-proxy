@@ -1,5 +1,5 @@
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 let pty;
 try {
@@ -19,12 +19,46 @@ function id(prefix) {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+let cachedShell = null;
+
+function shellOnPath(command) {
+    // Use the platform-native lookup to avoid spawning a shell.
+    try {
+        const result = spawnSync(command, ['--version'], { stdio: 'ignore', windowsHide: true });
+        // pwsh/powershell respond to --version; cmd.exe just exits 0/1 quickly.
+        return result.status === 0 || result.status === 1;
+    } catch (e) {
+        return false;
+    }
+}
+
+function pickWindowsShell() {
+    // Prefer PowerShell 7+ (pwsh), then Windows PowerShell 5.1, then cmd.exe.
+    const candidates = [
+        { command: 'pwsh.exe',       args: ['-NoLogo', '-NoProfile', '-NoExit'] },
+        { command: 'powershell.exe', args: ['-NoLogo', '-NoProfile', '-NoExit', '-Command', '-'] },
+        { command: 'cmd.exe',        args: [] },
+    ];
+    for (const candidate of candidates) {
+        if (shellOnPath(candidate.command)) return candidate;
+    }
+    // Last-resort fallback even if nothing was found on PATH.
+    return candidates[1];
+}
+
 function defaultShell() {
     if (process.platform === 'win32') {
+        if (!cachedShell) cachedShell = pickWindowsShell();
+        const shell = cachedShell;
         return {
-            command: 'powershell.exe',
-            args: ['-NoLogo', '-NoProfile', '-NoExit', '-Command', '-'],
-            runArgs: command => ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command]
+            command: shell.command,
+            args: shell.args,
+            runArgs: command => {
+                if (shell.command === 'cmd.exe') {
+                    return ['/d', '/c', command];
+                }
+                return ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command];
+            }
         };
     }
     const command = process.env.SHELL || '/bin/sh';
