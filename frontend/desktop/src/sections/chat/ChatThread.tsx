@@ -1333,7 +1333,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         )}
 
         <div className={cn(
-          'rounded-2xl border bg-card shadow-sm transition focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary overflow-visible',
+          'w-full min-w-0 rounded-2xl border bg-card shadow-sm transition focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary overflow-visible',
           'border-border',
         )}>
           {voiceActive ? (
@@ -1383,7 +1383,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             </>
           )}
 
-          <div className="flex items-center justify-between px-1.5 pb-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-1.5 pb-1.5">
             <div className="flex items-center gap-1.5">
               <div className="relative">
                 <ToolBtn Icon={Plus} label="Composer actions" className="h-8 w-8" onClick={() => {
@@ -2482,7 +2482,7 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
             {selected.provider === 'openai-api' ? 'openai' : selected.provider}
           </span>
         )}
-        <span className="truncate max-w-[200px] font-medium text-foreground transition-all duration-200">{selected ? modelDisplayParts(selected.id || selected.name || '').name : 'model'}</span>
+        <span className="truncate max-w-[140px] font-medium text-foreground transition-all duration-200">{selected ? modelDisplayParts(selected.id || selected.name || '').name : 'model'}</span>
         <svg className={cn("size-3 shrink-0 opacity-60 ml-0.5 transition-transform duration-200", open && "rotate-180")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />
         </svg>

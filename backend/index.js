@@ -1067,6 +1067,15 @@ const requestHandler = async (req, res) => {
         }
     }
 
+    if (req.url === '/ui/terminal/resize' && req.method === 'POST') {
+        try {
+            const body = await readJsonBody(req);
+            return sendJson(res, terminalService.resizeTerminalSession(body.sessionId, body.cols, body.rows));
+        } catch (e) {
+            return sendError(res, e, 400);
+        }
+    }
+
     if (req.url === '/ui/terminal/command' && req.method === 'POST') {
         try {
             return sendJson(res, await terminalService.submitTerminalCommand(await readJsonBody(req)));

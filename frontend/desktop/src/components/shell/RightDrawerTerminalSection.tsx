@@ -1,19 +1,20 @@
-/* ── RightDrawerTerminalSection ─ compact terminal panel ──────────── */
+/* ── RightDrawerTerminalSection ─ xterm.js PTY panel ───────────── */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, Plus, ShieldAlert, TerminalSquare, X, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { Terminal as XTerm } from 'xterm';
+import { FitAddon } from 'xterm-addon-fit';
+import 'xterm/css/xterm.css';
 import {
   approveTerminalRequest,
   createTerminalSession,
   deleteTerminalSession,
-  getTerminalBuffer,
   getTerminalSessions,
-  submitTerminalCommand,
+  resizeTerminalSession,
   type TerminalApproval,
   type TerminalSession,
 } from '@/api/backend-ui';
@@ -21,7 +22,12 @@ import {
 export function RightDrawerTerminalSection() {
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [command, setCommand] = useState('');
+  const [socketReady, setSocketReady] = useState(false);
+  const terminalRef = useRef<XTerm | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const connectedRef = useRef(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['terminal-sessions'],
@@ -34,20 +40,10 @@ export function RightDrawerTerminalSection() {
   const activeId = selectedId ?? sessions[0]?.id ?? null;
   const active = sessions.find((session) => session.id === activeId) ?? null;
 
-  const { data: buffer } = useQuery({
-    queryKey: ['terminal-buffer', activeId],
-    queryFn: () => (activeId ? getTerminalBuffer(activeId) : Promise.resolve(null)),
-    enabled: !!activeId,
-    refetchInterval: 2_000,
-  });
-
-  const run = useMutation({
-    mutationFn: () => submitTerminalCommand(activeId || '', command),
-    onSuccess: () => {
-      setCommand('');
-      qc.invalidateQueries({ queryKey: ['terminal-sessions'] });
-      if (activeId) qc.invalidateQueries({ queryKey: ['terminal-buffer', activeId] });
-    },
+  const resize = useMutation({
+    mutationFn: ({ sessionId, cols, rows }: { sessionId: string; cols: number; rows: number }) =>
+      resizeTerminalSession(sessionId, cols, rows),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['terminal-sessions'] }),
   });
 
   const createSession = useMutation({
@@ -74,11 +70,111 @@ export function RightDrawerTerminalSection() {
     },
   });
 
+  const disposeTerminal = () => {
+    socketRef.current?.close();
+    socketRef.current = null;
+    connectedRef.current = false;
+    setSocketReady(false);
+    terminalRef.current?.dispose();
+    terminalRef.current = null;
+    fitRef.current = null;
+  };
+
+  useEffect(() => {
+    if (!activeId) {
+      disposeTerminal();
+      return;
+    }
+
+    const terminal = new XTerm({
+      convertEol: true,
+      cursorBlink: true,
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+      fontSize: 12,
+      theme: {
+        background: '#020617',
+        foreground: '#e5e7eb',
+      },
+    });
+    const fit = new FitAddon();
+    terminal.loadAddon(fit);
+    terminalRef.current = terminal;
+    fitRef.current = fit;
+
+    const container = containerRef.current;
+    if (container) {
+      terminal.open(container);
+      fit.fit();
+    }
+
+    const syncSize = () => {
+      const bounds = containerRef.current?.getBoundingClientRect();
+      const terminalInstance = terminalRef.current;
+      const fitAddon = fitRef.current;
+      if (!bounds || !terminalInstance || !fitAddon) return;
+      const cols = Math.max(20, Math.floor(bounds.width / 7.5));
+      const rows = Math.max(5, Math.floor(bounds.height / 16));
+      fitAddon.fit();
+      terminalInstance.resize(cols, rows);
+      resize.mutate({ sessionId: activeId, cols, rows });
+    };
+
+    const observer = new ResizeObserver(syncSize);
+    if (containerRef.current) observer.observe(containerRef.current);
+    window.addEventListener('resize', syncSize);
+
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const socket = new WebSocket(`${protocol}://${window.location.host}/ui/terminal/connect?id=${encodeURIComponent(activeId)}`);
+    socketRef.current = socket;
+
+    const onData = (data: string) => {
+      if (socket.readyState === WebSocket.OPEN) socket.send(data);
+    };
+    const onDataDisposable = terminal.onData(onData);
+
+    socket.addEventListener('open', () => {
+      connectedRef.current = true;
+      setSocketReady(true);
+      syncSize();
+      terminal.focus();
+    });
+    socket.addEventListener('message', (event) => {
+      if (typeof event.data === 'string') {
+        terminal.write(event.data);
+      } else if (event.data instanceof ArrayBuffer) {
+        terminal.write(new Uint8Array(event.data));
+      } else if (event.data instanceof Blob) {
+        event.data.arrayBuffer().then((buffer) => terminal.write(new Uint8Array(buffer)));
+      }
+    });
+    socket.addEventListener('close', () => {
+      connectedRef.current = false;
+      setSocketReady(false);
+    });
+    socket.addEventListener('error', () => {
+      connectedRef.current = false;
+      setSocketReady(false);
+    });
+
+    return () => {
+      onDataDisposable.dispose();
+      observer.disconnect();
+      window.removeEventListener('resize', syncSize);
+      if (socket.readyState <= WebSocket.OPEN) socket.close();
+      terminal.dispose();
+      terminalRef.current = null;
+      fitRef.current = null;
+      socketRef.current = null;
+      connectedRef.current = false;
+      setSocketReady(false);
+    };
+  }, [activeId]);
+
   return (
     <div className="space-y-3 text-xs">
       <div className="flex items-center justify-between gap-2">
         <div className="text-[11px] text-muted-foreground">
-          Approval-aware command runner
+          xterm.js PTY terminal
         </div>
         <Button
           variant="outline"
@@ -134,45 +230,45 @@ export function RightDrawerTerminalSection() {
                   <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
                     <Badge variant="secondary" className="text-[9px]">{active.id}</Badge>
                     <span className="truncate">{active.status}</span>
+                    {active.pty && <Badge variant="outline" className="text-[9px]">pty</Badge>}
+                    {socketReady && <Badge variant="outline" className="text-[9px]">connected</Badge>}
                   </div>
                   <div className="truncate text-[10px] text-muted-foreground/70">{active.cwd}</div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => close.mutate(active.id)}
-                  disabled={close.isPending}
-                  aria-label="Close terminal session"
-                >
-                  <X className="size-3" />
-                </Button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => terminalRef.current?.clear()}
+                    aria-label="Clear terminal"
+                    title="Clear terminal"
+                  >
+                    <Check className="size-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => close.mutate(active.id)}
+                    disabled={close.isPending}
+                    aria-label="Close terminal session"
+                  >
+                    <X className="size-3" />
+                  </Button>
+                </div>
               </div>
 
-              <div className="h-[180px] overflow-auto rounded-lg bg-black/80 p-3 font-mono text-[10.5px] leading-relaxed text-green-400/90">
-                <pre className="whitespace-pre-wrap break-all">
-                  {buffer?.buffer || '(empty buffer — run a command)'}
-                </pre>
-              </div>
-
-              <form
-                className="flex items-center gap-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (command.trim() && activeId) run.mutate();
-                }}
-              >
-                <span className="font-mono text-muted-foreground">$</span>
-                <Input
-                  value={command}
-                  onChange={(event) => setCommand(event.target.value)}
-                  placeholder="Type a command…"
-                  className="font-mono text-xs"
-                  disabled={run.isPending || !activeId}
-                />
-                <Button type="submit" size="sm" disabled={!command.trim() || !activeId || run.isPending}>
-                  {run.isPending ? <Loader2 className="size-3 animate-spin" /> : 'Run'}
-                </Button>
-              </form>
+              <div
+                ref={containerRef}
+                className={cn(
+                  'h-[220px] overflow-hidden rounded-lg border border-black/20 bg-[#020617]',
+                  !socketReady && !connectedRef.current && 'opacity-80'
+                )}
+              />
+              {!socketReady && !connectedRef.current && (
+                <div className="text-[10px] text-muted-foreground">
+                  {isLoading ? 'Loading terminal…' : 'Connecting to PTY shell…'}
+                </div>
+              )}
             </>
           ) : (
             <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-lg border border-border/50 bg-card/40 text-center text-muted-foreground">

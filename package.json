@@ -25,5 +25,8 @@
     "test:frontend": "npm run test -w frontend/desktop",
     "test:verify": "npm run test:backend && npm run test:memory && npm run test:frontend",
     "test": "npm run test:verify"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0"
   }
 }

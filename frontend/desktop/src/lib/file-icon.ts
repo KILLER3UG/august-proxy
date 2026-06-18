@@ -17,7 +17,7 @@ import {
   // Shell / scripting
   SiGnubash, SiZsh, SiPowers, SiLua, SiPerl, SiHaskell, SiClojure,
   // Web markup / styles
-  SiHtml5, SiCss, SiSass, SiLess, SiPostcss,
+  SiHtml5, SiCss3, SiSass, SiLess, SiPostcss,
   // Data / config
   SiYaml, SiMarkdown, SiDotenv,
   // Query / schema
@@ -101,7 +101,7 @@ const ICONS: Record<FileKind, { Icon: IconComp; color: string }> = {
 
   // ── Web markup / styles ──
   html:          { Icon: SiHtml5,         color: '#e34f26' },
-  css:           { Icon: SiCss,           color: '#1572b6' },
+  css:           { Icon: SiCss3,          color: '#1572b6' },
   scss:          { Icon: SiSass,          color: '#cc6699' },
   less:          { Icon: SiLess,          color: '#1d365d' },
   stylus:        { Icon: FileCog,         color: '#ff6347' },

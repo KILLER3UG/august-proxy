@@ -202,6 +202,9 @@ export interface TerminalSession {
   command?: string;
   status?: string;
   createdAt?: string;
+  cols?: number;
+  rows?: number;
+  pty?: boolean;
 }
 
 export interface TerminalApproval {
@@ -340,6 +343,10 @@ export function createTerminalSession(params?: { cwd?: string; title?: string })
 
 export function submitTerminalCommand(sessionId: string, command: string): Promise<unknown> {
   return api.post('/ui/terminal/command', { sessionId, command });
+}
+
+export function resizeTerminalSession(sessionId: string, cols: number, rows: number): Promise<unknown> {
+  return api.post('/ui/terminal/resize', { sessionId, cols, rows });
 }
 
 export function approveTerminalRequest(requestId: string, approve = true): Promise<unknown> {

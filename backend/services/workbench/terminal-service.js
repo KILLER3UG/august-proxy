@@ -1,9 +1,19 @@
 const path = require('path');
 const { spawn } = require('child_process');
 
+let pty;
+try {
+    pty = require('node-pty');
+} catch (e) {
+    console.warn('[Terminal] node-pty unavailable, falling back to stdio shells:', e.message);
+    pty = null;
+}
+
 const sessions = new Map();
 const pendingApprovals = new Map();
 const BUFFER_LIMIT = 256 * 1024;
+const DEFAULT_COLS = 80;
+const DEFAULT_ROWS = 24;
 
 function id(prefix) {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -68,20 +78,35 @@ function summarizeSession(session) {
         createdAt: session.createdAt,
         updatedAt: session.updatedAt,
         bufferLength: session.buffer.length,
-        approvedInteractive: session.approvedInteractive
+        approvedInteractive: session.approvedInteractive,
+        cols: session.cols,
+        rows: session.rows,
+        pty: Boolean(session.pty)
     };
 }
 
-function createTerminalSession({ title = 'Terminal', cwd, command, args, approvedInteractive = false } = {}) {
+function createTerminalSession({ title = 'Terminal', cwd, command, args, approvedInteractive = true, cols = DEFAULT_COLS, rows = DEFAULT_ROWS } = {}) {
     const shell = defaultShell();
     const terminalId = id('term');
     const resolvedCwd = path.resolve(cwd || process.cwd());
-    const proc = spawn(command || shell.command, args || shell.args, {
-        cwd: resolvedCwd,
-        env: { ...process.env, AUGUST_TERMINAL: '1', TERM: 'xterm-256color' },
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true
-    });
+    const env = { ...process.env, AUGUST_TERMINAL: '1', TERM: 'xterm-256color' };
+    const resolvedCols = Math.max(20, Math.min(240, Number(cols) || DEFAULT_COLS));
+    const resolvedRows = Math.max(5, Math.min(120, Number(rows) || DEFAULT_ROWS));
+    const proc = pty
+        ? pty.spawn(command || shell.command, args || shell.args, {
+            name: 'xterm-256color',
+            cwd: resolvedCwd,
+            env,
+            cols: resolvedCols,
+            rows: resolvedRows,
+            windowsHide: true
+        })
+        : spawn(command || shell.command, args || shell.args, {
+            cwd: resolvedCwd,
+            env,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            windowsHide: true
+        });
     const session = {
         id: terminalId,
         title,
@@ -90,25 +115,44 @@ function createTerminalSession({ title = 'Terminal', cwd, command, args, approve
         args: args || shell.args,
         status: 'running',
         process: proc,
+        pty: Boolean(pty),
         buffer: '',
         sockets: new Set(),
+        cols: resolvedCols,
+        rows: resolvedRows,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         approvedInteractive: approvedInteractive === true
     };
     sessions.set(terminalId, session);
-    proc.stdout.on('data', chunk => appendBuffer(session, chunk.toString()));
-    proc.stderr.on('data', chunk => appendBuffer(session, chunk.toString()));
-    proc.on('exit', code => {
-        session.status = 'exited';
-        session.updatedAt = new Date().toISOString();
-        appendBuffer(session, `\n[terminal exited with code ${code}]\n`);
-        for (const ws of session.sockets) {
-            try { ws.close(); } catch (e) {}
-        }
-        session.sockets.clear();
-    });
+
+    if (pty) {
+        proc.onData(chunk => appendBuffer(session, chunk));
+        proc.onExit(({ exitCode }) => {
+            session.status = 'exited';
+            session.updatedAt = new Date().toISOString();
+            appendBuffer(session, `\n[terminal exited with code ${exitCode}]\n`);
+            closeSockets(session);
+        });
+    } else {
+        proc.stdout.on('data', chunk => appendBuffer(session, chunk.toString()));
+        proc.stderr.on('data', chunk => appendBuffer(session, chunk.toString()));
+        proc.on('exit', code => {
+            session.status = 'exited';
+            session.updatedAt = new Date().toISOString();
+            appendBuffer(session, `\n[terminal exited with code ${code}]\n`);
+            closeSockets(session);
+        });
+    }
+
     return summarizeSession(session);
+}
+
+function closeSockets(session) {
+    for (const ws of session.sockets) {
+        try { ws.close(); } catch (e) {}
+    }
+    session.sockets.clear();
 }
 
 function listTerminalSessions() {
@@ -139,9 +183,25 @@ function writeTerminalInput(terminalId, input, { approved = false } = {}) {
         });
         return { status: 'approval_required', requestId };
     }
-    session.process.stdin.write(String(input || ''));
+    if (pty) {
+        session.process.write(String(input || ''));
+    } else if (session.process.stdin) {
+        session.process.stdin.write(String(input || ''));
+    }
     session.updatedAt = new Date().toISOString();
     return { status: 'written' };
+}
+
+function resizeTerminalSession(terminalId, cols, rows) {
+    const session = getTerminalSession(terminalId);
+    if (!session) throw new Error(`Terminal session not found: ${terminalId}`);
+    session.cols = Math.max(20, Math.min(240, Number(cols) || session.cols || DEFAULT_COLS));
+    session.rows = Math.max(5, Math.min(120, Number(rows) || session.rows || DEFAULT_ROWS));
+    if (pty && typeof session.process.resize === 'function') {
+        session.process.resize(session.cols, session.rows);
+    }
+    session.updatedAt = new Date().toISOString();
+    return summarizeSession(session);
 }
 
 function runCommandProcess(command, { cwd, timeoutMs } = {}) {
@@ -228,10 +288,14 @@ async function approveTerminalRequest(requestId, { approve = true } = {}) {
 function closeTerminalSession(terminalId) {
     const session = getTerminalSession(terminalId);
     if (!session) return false;
-    try { session.process.kill(); } catch (e) {}
-    for (const ws of session.sockets) {
-        try { ws.close(); } catch (e) {}
-    }
+    try {
+        if (pty && typeof session.process.kill === 'function') {
+            session.process.kill();
+        } else {
+            session.process.kill();
+        }
+    } catch (e) {}
+    closeSockets(session);
     sessions.delete(terminalId);
     return true;
 }
@@ -265,6 +329,7 @@ module.exports = {
     listTerminalApprovals,
     listTerminalSessions,
     readTerminalBuffer,
+    resizeTerminalSession,
     submitTerminalCommand,
     writeTerminalInput
 };
