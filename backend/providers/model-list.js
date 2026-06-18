@@ -10,7 +10,7 @@ const { listProviders, getProvider } = require('./provider-registry');
 const { getConfig, getProviderConfig } = require('../lib/config');
 const { inferFromModelId, deriveModelsUrl } = require('../lib/models');
 const { resolveModelProfile } = require('../lib/model-profiles');
-const { resolveProviderForModel } = require('./route-resolver');
+const { resolveProviderForModel, resolveProviderByName } = require('./route-resolver');
 
 let modelAliasCache = null;
 let modelAliasCacheAt = 0;
@@ -197,8 +197,14 @@ function isModelRoutableForClient(model) {
     if (model.provider === 'Alias') {
         const userAlias = findUserDefinedAlias(model.id);
         if (userAlias && userAlias.targetModel) {
+            // Try routing the target model normally (by model name).
             const routed = resolveProviderForModel(userAlias.targetModel);
-            return !!(routed && routed.baseUrl && routed.apiKey);
+            if (routed && routed.baseUrl && routed.apiKey) return true;
+            // Also try routing via the alias's explicitly configured provider.
+            if (userAlias.targetProvider) {
+                const providerRouted = resolveProviderByName(userAlias.targetProvider);
+                if (providerRouted && providerRouted.baseUrl && providerRouted.apiKey) return true;
+            }
         }
         return false;
     }

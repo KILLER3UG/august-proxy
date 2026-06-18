@@ -39,7 +39,7 @@ export function RightDrawer({
   onClose: () => void;
 }) {
   const state = useRightDrawer();
-  const sections = state.sections.length > 0 ? state.sections : [state.activeSection || 'diff'];
+  const sectionId = state.activeSection ?? state.sections[0] ?? 'diff';
 
   if (!open) return null;
 
@@ -67,31 +67,27 @@ export function RightDrawer({
           </div>
 
           <div className="min-h-0 flex-1 overflow-hidden p-2">
-            <div className="flex h-full flex-col gap-2">
-              {sections.map((sectionId) => (
-                <DrawerSectionCard key={sectionId} sectionId={sectionId} active={state.activeSection === sectionId}>
-                  {sectionId === 'preview' && (
-                    <RightDrawerPreviewSection
-                      sessionId={sessionId}
-                      workspacePath={workspacePath}
-                    />
-                  )}
-                  {sectionId === 'diff' && (
-                    <RightDrawerDiffSection sessionId={sessionId} />
-                  )}
-                  {sectionId === 'terminal' && <RightDrawerTerminalSection />}
-                  {sectionId === 'tasks' && (
-                    <RightDrawerTasksSection todos={workbenchSession?.todos ?? []} />
-                  )}
-                  {sectionId === 'plan' && (
-                    <RightDrawerPlanSection
-                      session={workbenchSession}
-                      onApprove={onApprovePlan}
-                    />
-                  )}
-                </DrawerSectionCard>
-              ))}
-            </div>
+            <DrawerSectionCard sectionId={sectionId}>
+              {sectionId === 'preview' && (
+                <RightDrawerPreviewSection
+                  sessionId={sessionId}
+                  workspacePath={workspacePath}
+                />
+              )}
+              {sectionId === 'diff' && (
+                <RightDrawerDiffSection sessionId={sessionId} />
+              )}
+              {sectionId === 'terminal' && <RightDrawerTerminalSection />}
+              {sectionId === 'tasks' && (
+                <RightDrawerTasksSection todos={workbenchSession?.todos ?? []} />
+              )}
+              {sectionId === 'plan' && (
+                <RightDrawerPlanSection
+                  session={workbenchSession}
+                  onApprove={onApprovePlan}
+                />
+              )}
+            </DrawerSectionCard>
           </div>
         </div>
       </motion.aside>
@@ -101,11 +97,9 @@ export function RightDrawer({
 
 function DrawerSectionCard({
   sectionId,
-  active,
   children,
 }: {
   sectionId: RightDrawerSectionId;
-  active: boolean;
   children: ReactNode;
 }) {
   const meta = SECTION_META[sectionId];

@@ -84,7 +84,7 @@ export function setActiveRightDrawerSection(section: RightDrawerSectionId) {
 export function setRightDrawerSections(sections: RightDrawerSectionId[], activeSection: RightDrawerSectionId = sections[0]) {
   $rightDrawer.set({
     open: true,
-    sections,
+    sections: [activeSection],
     activeSection,
   });
 }
