@@ -2516,7 +2516,7 @@ async function handleMessages(req, res, cleanPath, reqId) {
             const aliasDetails = incomingModel ? await resolveModelAliasDetails(incomingModel) : { modelId: incomingModel, provider: '' };
             const requestedRaw = aliasDetails.modelId || incomingModel;
             const routeLookupModel = incomingModel && !isClaudeFamilyModel(incomingModel) ? incomingModel : requestedRaw;
-            const routeClaudeThroughSelectedProvider = isClaudeFamilyModel(incomingModel);
+            const routeClaudeThroughSelectedProvider = isClaudeFamilyModel(requestedRaw);
             if (requestedRaw && (!isClaudeFamilyModel(requestedRaw) || routeClaudeThroughSelectedProvider)) {
                 try {
                     const { resolveProviderForModel } = require('../providers/route-resolver');
