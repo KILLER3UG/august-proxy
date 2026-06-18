@@ -4,7 +4,6 @@ import type { ComponentType, ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, FileDiff, ListTodo, ClipboardList, TerminalSquare, Play, Columns } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import {
   useRightDrawer,
   type RightDrawerSectionId,
@@ -41,7 +40,6 @@ export function RightDrawer({
 }) {
   const state = useRightDrawer();
   const sections = state.sections.length > 0 ? state.sections : [state.activeSection || 'diff'];
-  const gridClass = sections.length >= 2 ? 'grid grid-cols-2' : 'grid grid-cols-1';
 
   if (!open) return null;
 
@@ -50,10 +48,10 @@ export function RightDrawer({
       <motion.aside
         key="workbench-sidebar"
         initial={{ width: 0, opacity: 0 }}
-        animate={{ width: 256, opacity: 1 }}
+        animate={{ width: 320, opacity: 1 }}
         exit={{ width: 0, opacity: 0 }}
         transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="shrink-0 h-full min-h-0 w-64 overflow-hidden border-l border-border bg-sidebar text-sidebar-foreground"
+        className="shrink-0 h-full min-h-0 w-80 overflow-hidden border-l border-border bg-sidebar text-sidebar-foreground"
         aria-label="Workbench sidebar"
       >
         <div className="flex h-full min-h-0 flex-col">
