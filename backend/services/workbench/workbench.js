@@ -1,8 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
-const { getProfile } = require('../../lib/config');
-const { resolveActiveProvider } = require('../../providers/provider-resolver');
+const { getProfile, getProviderConfig } = require('../../lib/config');
+const { resolveActiveProvider, resolveProvider } = require('../../providers/provider-resolver');
+const { resolveProviderForModel } = require('../../providers/route-resolver');
+const { resolveModelAliasDetails } = require('../../providers/model-list');
 const { buildSystemPromptText } = require('../memory/context-builder');
 const semanticMemory = require('../memory/semantic-memory');
 const hostAgent = require('../../lib/host-agent');
@@ -58,7 +60,34 @@ const modelCatalog = require('../catalog/model-catalog');
  *   - useOpenAiFormat: true → send OpenAI /chat/completions shape
  *   - apiMode, currentModel, _upstreamModel, apiKey, etc.
  */
-function resolveWorkbenchProfile(provider) {
+function resolveWorkbenchProfile(provider, modelHint) {
+    // 0. If a specific model was requested, resolve its provider and use that.
+    if (modelHint) {
+        const resolved = resolveProviderForModel(modelHint);
+        if (resolved && resolved.baseUrl && resolved.apiKey) {
+            const apiMode = resolved.apiMode || 'openai_chat';
+            const useOpenAiFormat = apiMode !== 'anthropic_messages';
+            return {
+                targetUrl: useOpenAiFormat
+                    ? normalizeOpenAiTargetUrl({ targetUrl: resolved.baseUrl })
+                    : ensureAnthropicMessagesUrl(resolved.baseUrl),
+                apiKey: resolved.apiKey,
+                currentModel: modelHint,
+                _upstreamModel: modelHint,
+                providerName: resolved.name,
+                apiMode,
+                useOpenAiFormat,
+            };
+        }
+        // Fallback: try resolving via alias (display name from /v1/models).
+        try {
+            const aliasDetails = resolveModelAliasDetails(modelHint);
+            if (aliasDetails && aliasDetails.modelId && aliasDetails.modelId !== modelHint) {
+                return resolveWorkbenchProfile(provider, aliasDetails.modelId);
+            }
+        } catch (_) {}
+    }
+
     // 1. Try the active provider (real config: targetUrl + apiKey + model).
     try {
         const resolved = resolveActiveProvider();
@@ -193,7 +222,7 @@ function effortToOpenAiReasoningEffort(effort) {
  */
 function getWorkbenchProfile(session) {
     const provider = session?.provider === 'codex' ? 'codex' : 'claude';
-    return resolveWorkbenchProfile(provider);
+    return resolveWorkbenchProfile(provider, session?.model);
 }
 
 const sessions = new Map();
@@ -2091,10 +2120,11 @@ async function callOpenAiWorkbenchModel(session) {
     };
 }
 
-async function sendWorkbenchMessage({ sessionId, message, provider, agentId } = {}) {
+async function sendWorkbenchMessage({ sessionId, message, provider, agentId, model } = {}) {
     const session = getWorkbenchSession(sessionId);
     if (provider === 'claude' || provider === 'codex') session.provider = provider;
     if (agentId) session.agentId = resolveAgentId(agentId, session.agentId || 'build');
+    if (model) session.model = model;
     const text = String(message || '').trim();
     if (!text) throw new Error('Message is required.');
     session.messages.push({ role: 'user', content: text });
@@ -2503,10 +2533,13 @@ async function callOpenAiWorkbenchModelStream(session, emit) {
     safeEmit(emit, 'text', { content: 'Workbench stopped after the maximum tool loop count.' });
 }
 
-async function sendWorkbenchMessageStream({ sessionId, message, provider, agentId, effort } = {}, emit) {
+async function sendWorkbenchMessageStream({ sessionId, message, provider, agentId, effort, model } = {}, emit) {
     const session = getWorkbenchSession(sessionId);
     if (provider === 'claude' || provider === 'codex') session.provider = provider;
     if (agentId) session.agentId = resolveAgentId(agentId, session.agentId || 'build');
+    // Persist the user's model selection on the session so subsequent turns
+    // in this session reuse the same model.
+    if (model) session.model = model;
     // Persist the user's effort choice on the session so subsequent turns in
     // this session (/btw, /goal, goal continuation) reuse the same setting.
     const normalizedIncoming = normalizeEffort(effort);

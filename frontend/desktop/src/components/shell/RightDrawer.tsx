@@ -6,8 +6,6 @@ import { X, FileDiff, ListTodo, ClipboardList, TerminalSquare, Play, Columns } f
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
-  setActiveRightDrawerSection,
-  toggleRightDrawerSection,
   useRightDrawer,
   type RightDrawerSectionId,
 } from './RightDrawerState';
@@ -22,7 +20,7 @@ const SECTION_META: Record<RightDrawerSectionId, { label: string; Icon: Componen
   preview: { label: 'Preview', Icon: Play },
   diff: { label: 'Diff', Icon: FileDiff },
   terminal: { label: 'Terminal', Icon: TerminalSquare },
-  tasks: { label: 'Task/Todo list', Icon: ListTodo },
+  tasks: { label: 'Tasks', Icon: ListTodo },
   plan: { label: 'Plan', Icon: ClipboardList },
 };
 
@@ -59,47 +57,15 @@ export function RightDrawer({
         aria-label="Workbench sidebar"
       >
         <div className="flex h-full min-h-0 flex-col">
-          <div className="shrink-0 border-b border-border/60 bg-sidebar px-2 py-2">
-            <div className="flex items-center gap-1.5">
-              <div className="flex min-w-0 flex-wrap items-center gap-1 rounded-md border border-border/50 bg-white/[0.025] p-1">
-                <Columns className="size-3 text-muted-foreground/60 shrink-0" />
-                {Object.entries(SECTION_META).map(([id, meta]) => {
-                  const sectionId = id as RightDrawerSectionId;
-                  const open = state.sections.includes(sectionId);
-                  const active = state.activeSection === sectionId;
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => {
-                        if (open) {
-                          setActiveRightDrawerSection(sectionId);
-                        } else {
-                          toggleRightDrawerSection(sectionId);
-                        }
-                      }}
-                      className={cn(
-                        'flex items-center gap-1 rounded px-1.5 py-1 text-[10px] font-medium transition',
-                        open
-                          ? 'bg-primary text-primary-foreground'
-                          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                      )}
-                      aria-pressed={open}
-                      title={meta.label}
-                    >
-                      <meta.Icon className="size-3" />
-                      {meta.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="ml-auto shrink-0">
-                <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close Workbench sidebar">
-                  <X className="size-3.5" />
-                </Button>
-              </div>
+          <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/60 bg-sidebar px-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <Columns className="size-3 text-muted-foreground/60 shrink-0" />
+              <span className="truncate text-xs font-semibold text-foreground">Workbench</span>
             </div>
+
+            <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close Workbench sidebar">
+              <X className="size-3.5" />
+            </Button>
           </div>
 
           <div className="min-h-0 flex-1 overflow-hidden p-2">

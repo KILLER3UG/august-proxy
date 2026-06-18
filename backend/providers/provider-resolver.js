@@ -1,4 +1,4 @@
-const { getProvider } = require('./provider-registry');
+const { getProvider, listProviders } = require('./provider-registry');
 const { getConfig } = require('../lib/config');
 
 class ResolvedProvider {
@@ -168,7 +168,34 @@ function resolveActiveProvider(configOverrides = {}) {
     }
   }
 
-  return resolveProvider(active, { ...cfg[active], ...configOverrides });
+  // 1. Try the explicitly set active provider (or default).
+  const activeResult = resolveProvider(active, { ...cfg[active], ...configOverrides });
+  if (activeResult && activeResult.baseUrl && activeResult.apiKey) {
+    return activeResult;
+  }
+
+  // 2. Fallback: try any provider with an apiKey in config.
+  for (const [name, providerCfg] of Object.entries(cfg)) {
+    if (name === 'activeProvider' || name === 'claude' || name === 'codex' ||
+        name === 'bookmarks' || name === 'serviceConnections' || name === 'specialistEndpoints') continue;
+    if (providerCfg && typeof providerCfg === 'object' && providerCfg.apiKey) {
+      const result = resolveProvider(name, { ...providerCfg, ...configOverrides });
+      if (result && result.baseUrl && result.apiKey) return result;
+    }
+  }
+
+  // 3. Fallback: try any registered provider with env vars set.
+  for (const p of listProviders()) {
+    const config = cfg[p.name] || {};
+    const apiKey = config.apiKey || p.resolveApiKey();
+    if (apiKey) {
+      const result = resolveProvider(p.name, { ...config, ...configOverrides });
+      if (result && result.baseUrl && result.apiKey) return result;
+    }
+  }
+
+  // 4. Last resort: return the original attempt (likely has no key).
+  return activeResult;
 }
 
 function resolveSpecialistEndpoint(role, configOverrides = {}) {

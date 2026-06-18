@@ -48,6 +48,7 @@ export interface StreamWorkbenchChatParams {
   provider?: 'claude' | 'codex';
   agentId?: string;
   effort?: 'low' | 'medium' | 'high' | 'max';
+  model?: string;
 }
 
 /**
@@ -68,6 +69,7 @@ export async function streamWorkbenchChat(
       provider: params.provider || 'claude',
       agentId: params.agentId,
       effort: params.effort,
+      model: params.model,
     }),
     signal,
   });
