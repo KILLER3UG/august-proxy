@@ -55,6 +55,12 @@ const KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES = new Set([
     'claude-sonnet-4-6'
 ]);
 const adapterBase = new LlmAdapterBase({ profileName: 'claude', logPrefix: 'Anthropic' });
+let lastClaudeBridgeRoute = null;
+
+function rememberClaudeBridgeRoute(model, provider, baseUrl) {
+    if (!model || !provider) return;
+    lastClaudeBridgeRoute = { model, provider, baseUrl, updatedAt: Date.now() };
+}
 
 /** True for Claude family model ids (claude-*) or the public alias names. */
 function isClaudeFamilyModel(model) {
@@ -2514,6 +2520,9 @@ async function handleMessages(req, res, cleanPath, reqId) {
             if (requestedRaw && (!isClaudeFamilyModel(requestedRaw) || routeClaudeThroughSelectedProvider)) {
                 try {
                     const { resolveProviderForModel } = require('../providers/route-resolver');
+                    const rememberedRouted = routeClaudeThroughSelectedProvider && lastClaudeBridgeRoute?.model
+                        ? resolveProviderForModel(lastClaudeBridgeRoute.model, { providerHint: lastClaudeBridgeRoute.provider })
+                        : null;
                     const hintedRouted = resolveProviderForModel(routeLookupModel, { providerHint: aliasDetails.provider })
                         || resolveProviderForModel(requestedRaw, { providerHint: aliasDetails.provider });
                     const activeProviderName = getActiveProvider();
@@ -2523,27 +2532,36 @@ async function handleMessages(req, res, cleanPath, reqId) {
                     const activeRouted = activeProviderName
                         ? resolveProviderForModel(requestedRaw, { provider: activeProviderName })
                         : null;
-                    const routed = hintedRouted || activeRouted || resolveProviderForModel(requestedRaw, { providerHint: aliasDetails.provider });
+                    const routed = hintedRouted || rememberedRouted || activeRouted || resolveProviderForModel(requestedRaw, { providerHint: aliasDetails.provider });
                     if (routed && routed.baseUrl && routed.apiKey) {
                         const selectedBackendModel = routed.model || routed.defaultModel;
-                        const usesSelectedProviderRoute = activeProviderCanonicalName && routed.name === activeProviderCanonicalName;
-                        const backendModel = routeClaudeThroughSelectedProvider && usesSelectedProviderRoute && selectedBackendModel
-                            ? selectedBackendModel
-                            : requestedRaw;
+                        const usesRememberedProviderRoute = lastClaudeBridgeRoute && rememberedRouted === routed;
+                        const usesActiveProviderRoute = activeProviderCanonicalName && routed.name === activeProviderCanonicalName;
+                        const backendModel = routeClaudeThroughSelectedProvider && usesRememberedProviderRoute
+                            ? lastClaudeBridgeRoute.model
+                            : routeClaudeThroughSelectedProvider && usesActiveProviderRoute && selectedBackendModel
+                                ? selectedBackendModel
+                                : requestedRaw;
                         if (routed.name === 'anthropic' || routed.apiMode === 'anthropic_messages') {
                             cfg.targetUrl = routed.baseUrl;
                             cfg.apiKey = routed.apiKey;
-                            if (routeClaudeThroughSelectedProvider && usesSelectedProviderRoute && selectedBackendModel) {
+                            if (routeClaudeThroughSelectedProvider && usesRememberedProviderRoute) {
+                                cfg._upstreamModel = backendModel;
+                                cfg.currentModel = backendModel;
+                            } else if (routeClaudeThroughSelectedProvider && usesActiveProviderRoute && selectedBackendModel) {
                                 cfg._upstreamModel = backendModel;
                                 cfg.currentModel = backendModel;
                             }
-                            console.log(`[Proxy Model Route]: ${requestedRaw} -> provider ${routed.name} (${routed.baseUrl})`);
+                            console.log(`[Proxy Model Route]: ${backendModel} -> provider ${routed.name} (${routed.baseUrl})`);
                         } else {
                             cfg.targetUrl = toOpenAiCompatibleTargetUrl(routed.baseUrl);
                             cfg.apiKey = routed.apiKey;
                             cfg._upstreamModel = backendModel;
                             cfg.currentModel = backendModel;
                             console.log(`[Proxy Model Route]: ${backendModel} -> provider ${routed.name} (${routed.baseUrl})`);
+                        }
+                        if (!routeClaudeThroughSelectedProvider) {
+                            rememberClaudeBridgeRoute(backendModel, routed.name, routed.baseUrl);
                         }
                     }
                 } catch (e) {
