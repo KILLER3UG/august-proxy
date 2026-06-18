@@ -494,9 +494,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       if (modelsRes.ok) {
         const data = await modelsRes.json();
         const allModels: ModelItem[] = data?.models || [];
-        // Filter to only show models from providers with keys set
+        // Filter to only show models from providers with keys set,
+        // but always include user-defined alias models.
         const loadedModels = availableProviders.size > 0
-          ? allModels.filter(m => availableProviders.has(m.provider))
+          ? allModels.filter(m => availableProviders.has(m.provider) || m.provider === 'Alias')
           : allModels;
         if (loadedModels.length > 0) {
           setModels(loadedModels);

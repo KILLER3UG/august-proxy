@@ -192,6 +192,17 @@ function providerMatchesPrefix(provider, prefix) {
 }
 
 function isModelRoutableForClient(model) {
+    // User-defined aliases (provider: 'Alias') are routable if their target
+    // model can be resolved to a provider with credentials.
+    if (model.provider === 'Alias') {
+        const userAlias = findUserDefinedAlias(model.id);
+        if (userAlias && userAlias.targetModel) {
+            const routed = resolveProviderForModel(userAlias.targetModel);
+            return !!(routed && routed.baseUrl && routed.apiKey);
+        }
+        return false;
+    }
+
     const providerPrefixedId = model.provider ? `${model.provider}/${model.id}` : model.id;
     const providerRouted = resolveProviderForModel(providerPrefixedId);
     if (providerRouted && providerMatchesPrefix(providerRouted.provider, model.provider)) return true;

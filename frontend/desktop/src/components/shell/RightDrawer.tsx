@@ -67,7 +67,7 @@ export function RightDrawer({
           </div>
 
           <div className="min-h-0 flex-1 overflow-hidden p-2">
-            <div className={cn('h-full gap-2', gridClass)}>
+            <div className="flex h-full flex-col gap-2">
               {sections.map((sectionId) => (
                 <DrawerSectionCard key={sectionId} sectionId={sectionId} active={state.activeSection === sectionId}>
                   {sectionId === 'preview' && (
@@ -112,7 +112,7 @@ function DrawerSectionCard({
 
   return (
     <section
-      className="min-h-0 overflow-hidden rounded-lg border border-border/50 bg-card shadow-sm"
+      className="flex min-h-0 flex-1 overflow-hidden rounded-lg border border-border/50 bg-card shadow-sm"
     >
       <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
         <meta.Icon className="size-3 text-muted-foreground/70 shrink-0" />
