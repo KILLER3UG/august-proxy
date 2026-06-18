@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Search, Boxes, ArrowRightLeft, Calculator, Inbox, Gauge, Tag, Plus, Trash2, Save } from 'lucide-react';
+import { Search, Boxes, ArrowRightLeft, Calculator, Inbox, Gauge, Tag, Plus, Trash2, Save, RefreshCw, Power } from 'lucide-react';
 import { quotaApi, type ModelQuota } from '@/api/quota';
 import {
   getModelCatalog,
@@ -15,6 +15,7 @@ import {
   getAggregatedModels,
   getUserModelAliases,
   updateUserModelAliases,
+  restartBackend,
   isFreeModelId,
   type CatalogModel,
   type ModelAlias,
@@ -228,7 +229,7 @@ function UserAliasesTab() {
     queryKey: ['user-model-aliases'],
     queryFn: () => getUserModelAliases(),
   });
-  const { data: modelsData } = useQuery({
+  const { data: modelsData, refetch: refetchModels } = useQuery({
     queryKey: ['aggregated-models'],
     queryFn: () => getAggregatedModels(),
   });
@@ -236,6 +237,7 @@ function UserAliasesTab() {
   const [aliases, setAliases] = useState<UserModelAlias[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   // Initialise from server data once loaded.
   if (!dirty && aliasData && aliases.length === 0 && aliasData.aliases.length > 0) {
@@ -286,6 +288,18 @@ function UserAliasesTab() {
     }
   }
 
+  async function handleRestart() {
+    if (!window.confirm('Restart the backend? This will briefly interrupt active requests.')) return;
+    setRestarting(true);
+    try {
+      await restartBackend();
+    } catch {
+      // Backend will disconnect — that's expected.
+    } finally {
+      setRestarting(false);
+    }
+  }
+
   if (aliasesLoading) return <div className="text-sm text-muted-foreground p-6">Loading…</div>;
 
   return (
@@ -295,11 +309,17 @@ function UserAliasesTab() {
           Define custom model IDs that route to your chosen backend models. These will appear in the model list and can be selected in the chat dropdown.
         </p>
         <div className="flex items-center gap-2 shrink-0">
+          <Button size="sm" variant="outline" onClick={() => refetchModels()} title="Refresh model list">
+            <RefreshCw className="size-3" /> Refresh
+          </Button>
           <Button size="sm" variant="outline" onClick={addAlias}>
             <Plus className="size-3" /> Add alias
           </Button>
           <Button size="sm" onClick={save} disabled={!dirty || saving}>
             <Save className="size-3" /> {saving ? 'Saving…' : 'Save'}
+          </Button>
+          <Button size="sm" variant="destructive" onClick={handleRestart} disabled={restarting} title="Restart backend to pick up all changes">
+            <Power className="size-3" /> {restarting ? 'Restarting…' : 'Restart'}
           </Button>
         </div>
       </div>

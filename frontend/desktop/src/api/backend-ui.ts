@@ -426,3 +426,7 @@ export function getUserModelAliases(): Promise<UserModelAliasesResponse> {
 export function updateUserModelAliases(aliases: UserModelAlias[]): Promise<{ ok: boolean }> {
   return api.put<{ ok: boolean }>('/api/config/model-aliases', { aliases });
 }
+
+export function restartBackend(): Promise<{ ok: boolean }> {
+  return api.post<{ ok: boolean }>('/api/system/restart');
+}

@@ -529,6 +529,15 @@ const requestHandler = async (req, res) => {
         });
     }
 
+    // ── Backend restart (graceful exit, dev supervisor restarts) ──
+    if (req.url === '/api/system/restart' && req.method === 'POST') {
+        console.log('[System] Restart requested via API — exiting.');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, message: 'Restarting…' }));
+        setImmediate(() => process.exit(0));
+        return;
+    }
+
     // ── Workspace Files list route for explorer ──
     if (req.url.startsWith('/api/workspace/files') && req.method === 'GET') {
         try {
