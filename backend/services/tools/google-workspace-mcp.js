@@ -1,5 +1,5 @@
-const { McpServer } = require('../../node_modules/@modelcontextprotocol/sdk/dist/cjs/server/mcp.js');
-const { StdioServerTransport } = require('../../node_modules/@modelcontextprotocol/sdk/dist/cjs/server/stdio.js');
+const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
+const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
 const { getConfig, saveConfig } = require('../../lib/config');
 

@@ -6,30 +6,25 @@ import { cn } from '@/lib/utils';
 import { ChevronDown, FileDiff, ListTodo, ClipboardList, TerminalSquare, Play } from 'lucide-react';
 import type { RightDrawerSectionId } from './RightDrawerState';
 
-const SECTION_META: Record<RightDrawerSectionId, { label: string; desc: string; Icon: typeof FileDiff }> = {
+const SECTION_META: Record<RightDrawerSectionId, { label: string; Icon: typeof FileDiff }> = {
   preview: {
     label: 'Preview',
-    desc: 'Run a local browser preview',
     Icon: Play,
   },
   diff: {
     label: 'Diff',
-    desc: 'View full file changes',
     Icon: FileDiff,
   },
   terminal: {
     label: 'Terminal',
-    desc: 'Run commands and inspect output',
     Icon: TerminalSquare,
   },
   tasks: {
-    label: 'Task/Todo list',
-    desc: 'Track active Workbench todos',
+    label: 'Tasks',
     Icon: ListTodo,
   },
   plan: {
     label: 'Plan',
-    desc: 'Review the Workbench plan',
     Icon: ClipboardList,
   },
 };
@@ -69,15 +64,12 @@ export function RightDrawerDropdown({ onSelect }: {
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 6, scale: 0.97 }}
+            initial={{ opacity: 0, y: -6, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.97 }}
+            exit={{ opacity: 0, y: -6, scale: 0.97 }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-full mb-1.5 right-0 z-50 min-w-[240px] max-w-[320px] bg-popover rounded-lg shadow-2xl overflow-hidden origin-bottom-right"
+            className="absolute top-full mt-1.5 right-0 z-50 min-w-[180px] max-w-[220px] bg-popover rounded-lg shadow-2xl overflow-hidden origin-top-right"
           >
-            <div className="px-2.5 py-1 text-[10px] text-muted-foreground/50 uppercase tracking-widest font-semibold mb-0.5">
-              Workbench sections
-            </div>
             <div className="max-h-[260px] overflow-y-auto py-0.5">
               {OPTIONS.map((sectionId) => {
                 const meta = SECTION_META[sectionId];
@@ -89,11 +81,10 @@ export function RightDrawerDropdown({ onSelect }: {
                       onSelect(sectionId);
                       setOpen(false);
                     }}
-                    className="w-full text-left px-2.5 py-1.5 text-sm transition-all duration-150 flex items-center gap-2 rounded-md mx-1 hover:bg-white/5 hover:text-foreground"
+                    className="w-full text-left px-3 py-2 text-sm transition-all duration-150 flex items-center gap-2 rounded-md mx-1 hover:bg-white/5 hover:text-foreground"
                   >
                     <meta.Icon className="size-4 text-muted-foreground/70 shrink-0" />
-                    <span className="truncate flex-1 font-sans">{meta.label}</span>
-                    <span className="text-[11px] text-muted-foreground/55">{meta.desc}</span>
+                    <span className="truncate font-sans">{meta.label}</span>
                   </button>
                 );
               })}

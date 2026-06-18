@@ -58,3 +58,5 @@ frontend/desktop/src-tauri/binaries/node-*
 # Local Claude / IDE config (per-machine, never commit)
 .claude/settings.local.json
 .hermes/
+
+nul
