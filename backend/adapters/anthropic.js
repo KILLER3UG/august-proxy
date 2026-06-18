@@ -2512,10 +2512,23 @@ async function handleMessages(req, res, cleanPath, reqId) {
             // This lets OpenAI-compatible models work through Claude Code
             // (/v1/messages) — the request is translated to OpenAI format
             // and forwarded to the matched provider.
-            const incomingModel = typeof aReq.model === 'string' ? aReq.model.trim() : '';
-            const aliasDetails = incomingModel ? await resolveModelAliasDetails(incomingModel) : { modelId: incomingModel, provider: '' };
-            const requestedRaw = aliasDetails.modelId || incomingModel;
-            const routeLookupModel = incomingModel && !isClaudeFamilyModel(incomingModel) ? incomingModel : requestedRaw;
+	            const incomingModel = typeof aReq.model === 'string' ? aReq.model.trim() : '';
+	            const aliasDetails = incomingModel ? await resolveModelAliasDetails(incomingModel) : { modelId: incomingModel, provider: '' };
+	            const requestedRaw = aliasDetails.modelId || incomingModel;
+
+	            // Re-resolve: the first resolution may have turned a display name
+	            // (e.g. 'Sonnet 4 6-Alias') into a model ID ('claude-sonnet-4-6').
+	            // If that model ID is itself a user-defined alias, resolve further
+	            // to the real target (e.g. 'deepseek-v4-flash:free').
+	            if (requestedRaw) {
+	                const deepDetails = await resolveModelAliasDetails(requestedRaw);
+	                if (deepDetails.modelId && deepDetails.modelId !== requestedRaw) {
+	                    requestedRaw = deepDetails.modelId;
+	                    aliasDetails = deepDetails;
+	                }
+	            }
+
+	            const routeLookupModel = incomingModel && !isClaudeFamilyModel(incomingModel) ? incomingModel : requestedRaw;
             const routeClaudeThroughSelectedProvider = isClaudeFamilyModel(requestedRaw);
             if (requestedRaw && (!isClaudeFamilyModel(requestedRaw) || routeClaudeThroughSelectedProvider)) {
                 try {
