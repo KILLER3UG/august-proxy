@@ -370,7 +370,7 @@ async function getModelList() {
             unique.push({
                 id: aliasDef.alias,
                 name: aliasDef.alias,
-                provider: aliasDef.targetProvider || 'user-alias',
+                provider: 'Fake Alias',
                 contextWindow: 128000,
                 supportsReasoning: false,
                 supportsThinking: false,

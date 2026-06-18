@@ -20,6 +20,7 @@ import type { RightDrawerSectionId } from "./RightDrawerState";
 interface ChatTitlebarProps {
   session: Session | null;
   sidebarCollapsed: boolean;
+  rightDrawerOpen: boolean;
   onToggleSidebar: () => void;
   onSelectRightDrawerSection: (section: RightDrawerSectionId) => void;
   onSettings: () => void;
@@ -28,6 +29,7 @@ interface ChatTitlebarProps {
 export function ChatTitlebar({
   session,
   sidebarCollapsed,
+  rightDrawerOpen,
   onToggleSidebar,
   onSelectRightDrawerSection,
   onSettings,
@@ -111,7 +113,7 @@ export function ChatTitlebar({
         >
           <Volume2 className="size-4" />
         </button>
-        <RightDrawerDropdown onSelect={onSelectRightDrawerSection} />
+        <RightDrawerDropdown drawerOpen={rightDrawerOpen} onSelect={onSelectRightDrawerSection} />
 
         <div className="h-4 w-[1px] bg-border/40" />
 

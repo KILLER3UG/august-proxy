@@ -51,15 +51,14 @@ export function RightDrawerDropdown({ drawerOpen, onSelect }: {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className={cn(
-          'flex items-center gap-1.5 text-xs outline-none cursor-pointer shrink-0 h-8',
-          'text-muted-foreground hover:text-foreground transition-all duration-200',
-          'bg-muted/30 hover:bg-muted/50 rounded-md px-2 py-1',
-        )}
-        title="Open Workbench section"
+        className="size-12 flex items-center justify-center shrink-0 hover:bg-accent text-muted-foreground hover:text-foreground transition"
+        title={drawerOpen ? 'Workbench sections' : 'Open Workbench'}
       >
-        <span className="font-medium text-foreground">Workbench</span>
-        <ChevronDown className={cn('size-3 shrink-0 opacity-60 transition-transform duration-200', open && 'rotate-180')} />
+        {drawerOpen ? (
+          <PanelRightClose className="size-4" />
+        ) : (
+          <PanelRight className="size-4" />
+        )}
       </button>
 
       <AnimatePresence>

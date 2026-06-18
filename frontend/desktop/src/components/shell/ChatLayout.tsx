@@ -141,6 +141,7 @@ export function ChatLayout() {
           <ChatTitlebar
             session={active}
             sidebarCollapsed={collapsed}
+            rightDrawerOpen={showRightSidebar}
             onToggleSidebar={() => setCollapsed((c) => !c)}
             onSettings={() => {
               sessionStorage.setItem("pre-settings-path", location.pathname);
