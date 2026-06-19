@@ -29,8 +29,10 @@ import { createChatRuntime, type ChatTurnRecord } from './chat-runtime';
 import {
   createWorkbenchSession,
   streamWorkbenchChat,
+  confirmWorkbenchMutation,
   approveWorkbenchPlan,
   rejectWorkbenchPlan,
+  setWorkbenchGuardMode,
   streamPlanDecision,
   streamWorkbenchRevision,
   answerWorkbenchBtw,
@@ -74,6 +76,11 @@ export interface MessageBlock {
     status: 'running' | 'done' | 'error';
     duration?: number;
     startedAt?: number;
+    pendingApproval?: {
+      message?: string;
+      detail?: string;
+      confirmationToken?: string;
+    };
   };
 }
 
@@ -300,6 +307,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         lastMutationAt: null,
         updatedAt: new Date().toISOString(),
         todos: [],
+        guardMode: 'plan',
       };
     }
     return null;
@@ -733,6 +741,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const created = await createWorkbenchSession({
       provider: getWorkbenchProvider(),
       agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
+      guardMode: workbenchMode,
     });
     setWorkbenchSession(created);
     updateSessionWorkbenchMetadata(sessionId, {
@@ -766,6 +775,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     let assistantContent = '';
     let thinkingContent = '';
     let toolResults: NonNullable<ChatMessage['tools']> = [];
+    const pendingConfirmations = new Map<string, { message?: string; detail?: string; confirmationToken?: string }>();
     let streamBlocks: MessageBlock[] = [];
     let changedFiles: GitDiffResult | null = null;
     let beforeMutationCount = 0;
@@ -881,6 +891,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         message: applyWorkbenchGuardMode(workbenchMode, chatHistory.map(m => `${m.role}: ${m.content}`).join('\n\n') || ' '),
         provider: getWorkbenchProvider(),
         agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
+        guardMode: workbenchMode,
         effort,
         model: modelForRequest?.id,
       }, {
@@ -939,20 +950,42 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           scheduleUpdate();
         },
         onToolResult: ({ id, content, is_error }) => {
+          let parsedResult: any;
+          try {
+            parsedResult = typeof content === 'string' ? JSON.parse(content) : content;
+          } catch {
+            parsedResult = null;
+          }
+
+          if (parsedResult?.type === 'mutation_pending_confirmation') {
+            pendingConfirmations.set(id, {
+              message: parsedResult.message,
+              detail: parsedResult.detail,
+              confirmationToken: parsedResult.confirmationToken,
+            });
+          } else {
+            pendingConfirmations.delete(id);
+          }
+
           const resultText = typeof content === 'string' ? content : JSON.stringify(content);
           toolResults = toolResults.map(t => t.id === id ? {
             ...t,
-            status: is_error ? 'error' : 'done',
+            pendingApproval: parsedResult?.type === 'mutation_pending_confirmation' ? {
+              message: parsedResult.message,
+              detail: parsedResult.detail,
+              confirmationToken: parsedResult.confirmationToken,
+            } : undefined,
+            status: is_error && !parsedResult?.type ? 'error' : 'done',
             result: resultText,
-            error: is_error ? resultText : '',
+            error: is_error && !parsedResult?.type ? resultText : '',
             duration: t.startedAt ? Date.now() - t.startedAt : undefined,
           } : t);
           streamBlocks = appendBlockEvent(streamBlocks, {
             type: 'tool_result',
             id,
-            status: is_error ? 'error' : 'done',
+            status: is_error && !parsedResult?.type ? 'error' : 'done',
             summary: resultText.slice(0, 240),
-            error: is_error ? resultText.slice(0, 240) : '',
+            error: is_error && !parsedResult?.type ? resultText.slice(0, 240) : '',
             duration: toolResults.find(t => t.id === id)?.duration,
           });
           scheduleUpdate();
@@ -1579,7 +1612,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
               <WorkbenchModeSelector
                 selectedMode={workbenchMode}
-                onChange={setWorkbenchMode}
+                onChange={async (mode) => {
+                  setWorkbenchMode(mode);
+                  localStorage.setItem('august_last_workbench_guard_mode', mode);
+                  if (workbenchSession?.id) {
+                    setWorkbenchGuardMode(workbenchSession.id, mode).catch((error) => {
+                      console.warn('[ChatThread] Failed to persist guard mode:', error);
+                    });
+                  }
+                }}
               />
             </div>
             <div className="flex items-center gap-2">

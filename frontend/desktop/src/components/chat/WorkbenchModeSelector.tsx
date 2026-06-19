@@ -20,30 +20,26 @@ export interface WorkbenchGuardModeConfig {
   label: string;
   description: string;
   agentId: 'plan' | 'build';
-  prefix: string;
 }
 
 export const WORKBENCH_GUARD_MODES = {
   plan: {
     id: 'plan',
-    label: 'Plan mode',
-    description: 'Plan before editing',
+    label: 'Plan Mode',
+    description: 'Backend blocks edits, deletes, installs, updates, and commands.',
     agentId: 'plan' as const,
-    prefix: 'Create a plan first and wait for my approval before editing or changing anything: ',
   },
   full: {
     id: 'full',
-    label: 'Full access',
-    description: 'Fewer confirmations where allowed',
+    label: 'Full Access',
+    description: 'Backend allows mutations without confirmation and audits them.',
     agentId: 'build' as const,
-    prefix: 'Run this with fewer confirmations where allowed. Still respect backend approval gates: ',
   },
   ask: {
     id: 'ask',
-    label: 'Ask before changes',
-    description: 'Ask before file changes',
+    label: 'Ask Before Changes',
+    description: 'Backend requires approval before every mutation.',
     agentId: 'build' as const,
-    prefix: 'Before making any file changes or mutations, ask me for confirmation first: ',
   },
 } as const satisfies Record<WorkbenchGuardMode, WorkbenchGuardModeConfig>;
 
@@ -51,12 +47,8 @@ export function getWorkbenchGuardMode(mode: WorkbenchGuardMode) {
   return WORKBENCH_GUARD_MODES[mode];
 }
 
-export function applyWorkbenchGuardMode(mode: WorkbenchGuardMode, message: string) {
-  const guard = getWorkbenchGuardMode(mode);
-  const trimmed = message.trim();
-  if (!trimmed) return trimmed;
-  if (trimmed.startsWith('/')) return trimmed;
-  return `${guard.prefix}${trimmed}`;
+export function applyWorkbenchGuardMode(_mode: WorkbenchGuardMode, message: string) {
+  return message.trim();
 }
 
 interface WorkbenchModeSelectorProps {

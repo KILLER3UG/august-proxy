@@ -29,6 +29,8 @@ export interface WorkbenchGoal {
   lastMet: boolean;
 }
 
+export type WorkbenchGuardMode = 'plan' | 'full' | 'ask';
+
 export interface WorkbenchSession {
   id: string;
   title?: string;
@@ -46,6 +48,7 @@ export interface WorkbenchSession {
   lastMutationAt: string | null;
   updatedAt: string;
   todos: WorkbenchTodo[];
+  guardMode: WorkbenchGuardMode;
 }
 
 export interface WorkbenchAgent {

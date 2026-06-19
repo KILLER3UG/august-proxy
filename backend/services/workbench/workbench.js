@@ -226,6 +226,7 @@ function getWorkbenchProfile(session) {
 }
 
 const sessions = new Map();
+const pendingMutations = new Map();
 const WORKBENCH_SESSIONS_FILE = dataPath('august_workbench_sessions.json');
 
 function loadSessions() {
@@ -253,6 +254,33 @@ function saveSessions() {
         console.warn('Failed to save workbench sessions:', e.message);
     }
 }
+
+const PENDING_CONFIRMATION_TTL_MS = 5 * 60 * 1000;
+
+function createPendingMutation(session, toolName, args) {
+    const token = `confirm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    pendingMutations.set(token, {
+        sessionId: session.id,
+        toolName,
+        args,
+        createdAt: Date.now()
+    });
+    setTimeout(() => {
+        const pending = pendingMutations.get(token);
+        if (pending && Date.now() - pending.createdAt >= PENDING_CONFIRMATION_TTL_MS) {
+            pendingMutations.delete(token);
+        }
+    }, PENDING_CONFIRMATION_TTL_MS);
+    return token;
+}
+
+function consumePendingMutation(token) {
+    const pending = pendingMutations.get(token);
+    if (!pending) return { status: 'expired', message: 'Confirmation token expired or invalid. Resubmit the mutation request.' };
+    pendingMutations.delete(token);
+    return { status: 'ok', pending };
+}
+
 const WORKSPACE_ROOT = path.resolve(__dirname, '..', '..', '..');
 const PROJECT_ROOT = path.resolve(WORKSPACE_ROOT);
 const CONTAINER_PROJECT_ROOT = path.resolve(process.env.AUGUST_PROXY_CONTAINER_ROOT || PROJECT_ROOT);
@@ -291,6 +319,12 @@ const COMPACT_KEEP_RECENT = 12;    // keep last N messages verbatim
 const DRIFT_INTERVAL = 8;          // inject identity reminder every N tool-result turns
 const MAX_RETRIES = 2;             // upstream fetch retry count
 const GOAL_CLEAR_ALIASES = new Set(['clear', 'stop', 'off', 'reset', 'none', 'cancel']);
+const WORKBENCH_GUARD_MODES = new Set(['plan', 'full', 'ask']);
+
+function normalizeGuardMode(mode) {
+    const normalized = String(mode || '').trim().toLowerCase();
+    return WORKBENCH_GUARD_MODES.has(normalized) ? normalized : 'plan';
+}
 
 function splitConfiguredRoots(value) {
     return String(value || '')
@@ -330,12 +364,14 @@ function resolveAgentId(agentId, fallback = 'build') {
     return fallback;
 }
 
-function createWorkbenchSession({ provider = 'claude', agentId = 'build' } = {}) {
+function createWorkbenchSession({ provider = 'claude', agentId = 'build', guardMode = 'plan' } = {}) {
     const resolvedAgentId = resolveAgentId(agentId, 'build');
+    const normalizedGuardMode = normalizeGuardMode(guardMode);
     const session = {
         id: newId('wb'),
         provider: provider === 'codex' ? 'codex' : 'claude',
         agentId: resolvedAgentId,
+        guardMode: normalizedGuardMode,
         parentAgentId: null,
         inheritedPermissions: null,
         messages: [],
@@ -378,6 +414,7 @@ function summarizeSession(session) {
         agentId: agent.id,
         agentRole: agent.role,
         agentMode: agent.mode,
+        guardMode: normalizeGuardMode(session.guardMode),
         approved: session.approved,
         approvedAt: session.approvedAt,
         plan: session.plan,
@@ -858,8 +895,58 @@ function openAiToolDefinitions(session) {
     }));
 }
 
-function requireApproval(session, toolName, args) {
+const PLAN_MODE_ALLOWED_TOOLS = new Set([
+    'august__list_directory',
+    'august__search_files',
+    'august__read_file',
+    'august__diagnose_proxy',
+    'august__describe_environment',
+    'august__list_proxy_capabilities',
+    'august__list_agent_registry',
+    'august__get_activity',
+    'august__submit_plan',
+    'august__generate_session_title',
+    'august__update_todos',
+    'august__list_agent_jobs',
+    'august__get_agent_job',
+    'WebSearch',
+    'WebFetch',
+]);
+
+function isPlanModeBlocked(toolName, args = {}) {
+    if (PLAN_MODE_ALLOWED_TOOLS.has(toolName)) return false;
+    if (isMutatingWorkbenchTool(toolName, args)) return true;
+    if (/install|import|update|upgrade|chmod|chown|apt|pacman|dnf|brew|systemctl|reg\s+(add|delete)/i.test(String(toolName || ''))) return true;
+    if (/install|import|update|upgrade|apt|pacman|dnf|brew|systemctl|reg\s+(add|delete)/i.test(String(args.command || ''))) return true;
+    return false;
+}
+
+function requireApproval(session, toolName, args, toolContext = {}) {
     if (!isMutatingWorkbenchTool(toolName, args || {})) return null;
+
+    if (toolContext.approvedMutation && session.guardMode === 'ask') return null;
+
+    if (session.guardMode === 'plan') {
+        return {
+            blocked: true,
+            type: 'plan_mode_guard',
+            message: 'Plan Mode is active – I cannot execute changes. Here is my proposed plan instead.',
+            detail: `Tool: ${toolName} | Arguments: ${JSON.stringify(args)}`
+        };
+    }
+
+    if (session.guardMode === 'ask') {
+        const token = createPendingMutation(session, toolName, args);
+        return {
+            blocked: true,
+            type: 'mutation_pending_confirmation',
+            message: `I would like to execute: ${toolName}. Do you approve?`,
+            confirmationToken: token,
+            detail: `Tool: ${toolName} | Arguments: ${JSON.stringify(args)}`
+        };
+    }
+
+    if (session.guardMode === 'full') return null;
     if (session.plan && session.approved) return null;
     return {
         blocked: true,
@@ -869,6 +956,9 @@ function requireApproval(session, toolName, args) {
 }
 
 function requireAgentPermission(session, toolName, args, toolContext = {}) {
+    if (session.guardMode === 'full' && resolveAgentId(toolContext.agentId || session?.agentId || 'build', 'build') === 'build') {
+        return null;
+    }
     const agentId = resolveAgentId(toolContext.agentId || session?.agentId || 'build', 'build');
     const inheritedPermissions = toolContext.inheritedPermissions || session?.inheritedPermissions || null;
     const decision = evaluateAgentTool(agentId, toolName, inheritedPermissions);
@@ -1190,6 +1280,7 @@ function describeWorkbenchEnvironment(session) {
             hostRootsMapTo: getContainerProjectRoot(),
             note: 'Host project paths are mapped to the configured container/project root before file tools run. Desktop apps should set AUGUST_PROXY_WORKDIR and AUGUST_PROXY_ALLOWED_ROOTS to the user-approved folders.'
         },
+        guardMode: normalizeGuardMode(session?.guardMode),
         approvalGate: {
             approved: session?.approved === true,
             approvedAt: session?.approvedAt || null,
@@ -1509,6 +1600,7 @@ function recordMutation(session, toolName, args, result) {
     session.mutationLog.push({
         at,
         toolName,
+        guardMode: normalizeGuardMode(session.guardMode),
         planId: session.plan?.id || null,
         args: summarizeMutationArgs(toolName, args),
         status: result?.status || (result?.blocked ? 'blocked' : 'ok'),
@@ -1524,6 +1616,15 @@ async function executeWorkbenchTool(session, toolUse, toolContext = {}) {
     const name = toolUse.name;
     const args = toolUse.input || {};
     const mutating = isMutatingWorkbenchTool(name, args);
+    const planBlocked = session.guardMode === 'plan' && isPlanModeBlocked(name, args);
+    if (planBlocked) {
+        return {
+            blocked: true,
+            type: 'plan_mode_guard',
+            message: 'Plan Mode is active – I cannot execute changes. Here is my proposed plan instead.',
+            detail: `Tool: ${name} | Arguments: ${JSON.stringify(args)}`
+        };
+    }
     const agentBlocked = requireAgentPermission(session, name, args, toolContext);
     if (agentBlocked) return agentBlocked;
     const blocked = requireApproval(session, name, args);
@@ -1686,14 +1787,18 @@ function buildSystemPrompt(session) {
 
     const teamSkillGuide = renderTeamSkillsForSystem(activeAgent.id);
 
+    const guardModeLine = `Current guard mode: ${normalizeGuardMode(session.guardMode)}.`;
     const hardRule = [
         '',
-        '=== HARD RULE: PLAN APPROVAL BEFORE MUTATION ===',
-        'You can freely read files, search files, inspect directories, search/fetch the web, and use non-mutating discovery tools.',
-        'When the user asks you to fetch or add a skill from GitHub or the internet, search or preview first. Then submit a concrete plan and wait for approval before importing.',
-        'Any mutation anywhere on the system requires an explicit approved plan via august__submit_plan and user approval in the Workbench UI.',
+        '=== HARD RULE: GUARD MODE AND MUTATION CONTROL ===',
+        guardModeLine,
+        'You are a professional AI assistant. Do not use any titles (e.g., "sir", "ma\'am", "master", "boss"). Address the user directly and neutrally. Focus on clear, accurate, actionable information.',
+        'In Plan Mode, always present a concrete plan before answering requests that involve work, changes, troubleshooting, implementation, installation, configuration, deployment, or multi-step action. The plan must include objective, steps, risks or blockers, and verification. Do not ask to use mutating tools.',
+        'In Plan Mode, read, search, inspect, browse the web, and submit plans only. If the user asks for changes, provide a concrete plan and wait for the user to switch to Ask Before Changes or Full Access.',
+        'In Ask Before Changes mode, ask for explicit user approval before any command, file edit, delete, install, update, memory change, skill/plugin/MCP import, background task, or host desktop action.',
+        'In Full Access mode, act without waiting for confirmation, but keep changes concise and report what was done.',
+        'The backend enforces these rules even if a tool call is attempted. If a mutating tool is blocked, explain the block and provide the safest next step.',
         'A mutation means writing/editing/deleting/moving/creating files, running shell commands, changing memory, installing/importing/updating resources, launching background tasks, or using host computer controls that click/type/focus/launch/close/set clipboard.',
-        'If a mutating tool is attempted without approval, the server will cancel it and return the approval-gate reminder.',
         'The proxy system directory is: ' + getProxyRoot(),
         planLine
     ].join('\n');
@@ -1900,14 +2005,39 @@ async function callWorkbenchModel(session) {
     return useOpenAi ? callOpenAiWorkbenchModel(session) : callAnthropicWorkbenchModel(session);
 }
 
+function logPromptAudit(session, prompt) {
+    if (!process.env.AUGUST_PROMPT_LOG) return;
+    try {
+        fs.appendFileSync(process.env.AUGUST_PROMPT_LOG, JSON.stringify({
+            ts: new Date().toISOString(),
+            sessionId: session.id,
+            guardMode: normalizeGuardMode(session.guardMode),
+            agentId: session.agentId,
+            model: session.model || null,
+            systemPromptLength: prompt.length,
+            userMessageLength: String(session.messages.at(-1)?.content || '').length
+        }) + '\n');
+    } catch (_) {}
+}
+
 async function callWorkbenchModelStream(session, emit) {
+    const prompt = buildSystemPrompt(session);
+    logPromptAudit(session, prompt);
+    safeEmit(emit, 'prompt', {
+        content: prompt,
+        systemPrompt: prompt,
+        tokens: Math.round(prompt.length / 4),
+        toolUseId: 'main-turn',
+        subagentId: session.agentId || 'build'
+    });
+
     const useOpenAi = (() => {
         try { return getWorkbenchProfile(session).useOpenAiFormat; } catch { return session.provider === 'codex'; }
     })();
     if (useOpenAi) {
-        await callOpenAiWorkbenchModelStream(session, emit);
+        await callOpenAiWorkbenchModelStream(session, emit, prompt);
     } else {
-        await callAnthropicWorkbenchModelStream(session, emit);
+        await callAnthropicWorkbenchModelStream(session, emit, prompt);
     }
 }
 
@@ -2296,7 +2426,7 @@ async function parseOpenAiStream(response, onData) {
     }
 }
 
-async function callAnthropicWorkbenchModelStream(session, emit) {
+async function callAnthropicWorkbenchModelStream(session, emit, prompt) {
     const profile = getWorkbenchProfile(session);
     if (!profile.targetUrl) throw new Error('Workbench provider target URL is missing.');
     const model = profile._upstreamModel || profile.currentModel || 'claude-opus-4-6';
@@ -2310,7 +2440,7 @@ async function callAnthropicWorkbenchModelStream(session, emit) {
         const body = {
             model,
             max_tokens: brainPolicy.executionPolicy.maxTokens,
-            system: buildSystemPrompt(session),
+            system: prompt || buildSystemPrompt(session),
             messages: session.messages,
             tools: toolDefinitions(session),
             stream: true
@@ -2400,7 +2530,7 @@ async function callAnthropicWorkbenchModelStream(session, emit) {
     safeEmit(emit, 'text', { content: 'Workbench stopped after the maximum tool loop count.' });
 }
 
-async function callOpenAiWorkbenchModelStream(session, emit) {
+async function callOpenAiWorkbenchModelStream(session, emit, prompt) {
     const profile = getWorkbenchProfile(session);
     if (!profile.targetUrl) throw new Error('Workbench provider target URL is missing.');
     const model = profile._upstreamModel || profile.currentModel || 'gpt-4o';
@@ -2417,7 +2547,7 @@ async function callOpenAiWorkbenchModelStream(session, emit) {
         const body = {
             model,
             messages: [
-                { role: 'system', content: buildSystemPrompt(session) },
+                { role: 'system', content: prompt || buildSystemPrompt(session) },
                 ...toOpenAiMessages(session.messages)
             ],
             tools: openAiToolDefinitions(session),
@@ -2533,10 +2663,11 @@ async function callOpenAiWorkbenchModelStream(session, emit) {
     safeEmit(emit, 'text', { content: 'Workbench stopped after the maximum tool loop count.' });
 }
 
-async function sendWorkbenchMessageStream({ sessionId, message, provider, agentId, effort, model } = {}, emit) {
+async function sendWorkbenchMessageStream({ sessionId, message, provider, agentId, effort, model, guardMode } = {}, emit) {
     const session = getWorkbenchSession(sessionId);
     if (provider === 'claude' || provider === 'codex') session.provider = provider;
     if (agentId) session.agentId = resolveAgentId(agentId, session.agentId || 'build');
+    if (guardMode) session.guardMode = normalizeGuardMode(guardMode);
     // Persist the user's model selection on the session so subsequent turns
     // in this session reuse the same model.
     if (model) session.model = model;
@@ -2692,7 +2823,9 @@ module.exports = {
     answerWorkbenchBtw,
     approveWorkbenchPlan,
     rejectWorkbenchPlan,
+    buildSystemPrompt,
     clearWorkbenchGoal,
+    consumePendingMutation,
     createWorkbenchSession,
     deleteWorkbenchSession,
     executeWorkbenchToolBatch,
@@ -2701,11 +2834,16 @@ module.exports = {
     getSessionBrainPolicy,
     getWorkbenchGoalStatus,
     getWorkbenchSession,
+    isPlanModeBlocked,
     listWorkbenchSessions,
     listAgentRegistry,
     listProxyCapabilities,
+    normalizeGuardMode,
+    recordMutation,
+    requireApproval,
     resetWorkbenchSession,
     resolveAnyPath,
+    saveSessions,
     toDisplayPath,
     sendWorkbenchMessage,
     sendWorkbenchMessageStream,

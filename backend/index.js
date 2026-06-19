@@ -21,7 +21,7 @@ const { importCapabilityLink } = require('./services/tools/link-importer');
 const { importSkillFromLink } = require('./services/tools/skill-importer');
 const { getCapabilityHealth } = require('./services/monitoring/health');
 const { handleMemoryRoutes } = require('./routes/memory-routes');
-const { answerWorkbenchBtw, approveWorkbenchPlan, createWorkbenchSession, getWorkbenchGoalStatus, getWorkbenchSession, listAgentRegistry, listProxyCapabilities, listWorkbenchSessions, resetWorkbenchSession, sendWorkbenchMessageStream, updateWorkbenchGoal } = require('./services/workbench/workbench');
+const { answerWorkbenchBtw, approveWorkbenchPlan, consumePendingMutation, createWorkbenchSession, executeWorkbenchTool, getWorkbenchGoalStatus, getWorkbenchSession, listAgentRegistry, listProxyCapabilities, listWorkbenchSessions, normalizeGuardMode, resetWorkbenchSession, saveSessions, sendWorkbenchMessageStream, summarizeSession, updateWorkbenchGoal } = require('./services/workbench/workbench');
 const agentRegistry = require('./services/tools/agent-registry');
 const agentSessions = require('./services/tools/agent-sessions');
 const terminalService = require('./services/workbench/terminal-service');
@@ -732,6 +732,19 @@ const requestHandler = async (req, res) => {
         }
     }
 
+    if (req.url === '/ui/workbench/guard-mode' && req.method === 'POST') {
+        try {
+            const data = await readJsonBody(req);
+            const session = getWorkbenchSession(data.sessionId);
+            if (!session) return sendError(res, new Error('Session not found'), 400);
+            session.guardMode = normalizeGuardMode(data.guardMode);
+            saveSessions();
+            return sendJson(res, summarizeSession(session));
+        } catch (e) {
+            return sendError(res, e, 400);
+        }
+    }
+
     if (req.url === '/ui/workbench/chat' && req.method === 'POST') {
         try {
             const data = await readJsonBody(req, { limitBytes: 2 * 1024 * 1024 });
@@ -753,6 +766,24 @@ const requestHandler = async (req, res) => {
             } catch (_) { }
         }
         return;
+    }
+
+    if (req.url === '/ui/workbench/confirm-mutation' && req.method === 'POST') {
+        try {
+            const data = await readJsonBody(req);
+            const consumed = consumePendingMutation(data.token);
+            if (consumed.status !== 'ok') return sendJson(res, consumed);
+            const session = getWorkbenchSession(consumed.pending.sessionId);
+            if (!session) return sendError(res, new Error('Session not found'), 400);
+            const result = await executeWorkbenchTool(session, {
+                name: consumed.pending.toolName,
+                id: data.token,
+                input: consumed.pending.args
+            }, { approvedMutation: true });
+            return sendJson(res, result || { status: 'ok' });
+        } catch (e) {
+            return sendError(res, e, 400);
+        }
     }
 
     if (req.url === '/ui/workbench/approve' && req.method === 'POST') {

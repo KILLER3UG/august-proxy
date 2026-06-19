@@ -7,11 +7,51 @@ import type {
   WorkbenchCapabilities,
   WorkbenchBtwResult,
   WorkbenchEventHandlers,
+  WorkbenchGuardMode,
 } from '@/types/workbench';
 
 export interface CreateWorkbenchSessionParams {
   provider?: 'claude' | 'codex';
   agentId?: string;
+  guardMode?: WorkbenchGuardMode;
+}
+
+export async function setWorkbenchGuardMode(
+  sessionId: string,
+  guardMode: WorkbenchGuardMode
+): Promise<WorkbenchSession> {
+  const res = await fetch('/ui/workbench/guard-mode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, guardMode }),
+  });
+  if (!res.ok) throw new Error(`setWorkbenchGuardMode failed: ${res.status}`);
+  return res.json();
+}
+
+export async function confirmWorkbenchMutation(
+  token: string,
+  handlers: WorkbenchEventHandlers
+): Promise<void> {
+  const res = await fetch('/ui/workbench/confirm-mutation', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    handlers.onError?.({ message: data.message || `confirmWorkbenchMutation failed: ${res.status}` });
+    return;
+  }
+
+  const data = await res.json();
+  handlers.onToolResult?.({
+    id: token,
+    content: JSON.stringify({ type: 'mutation_confirmation_result', result: data }, null, 2),
+    is_error: !!data.blocked || !!data.error,
+  });
+  handlers.onDone?.();
 }
 
 export async function createWorkbenchSession(
@@ -23,6 +63,7 @@ export async function createWorkbenchSession(
     body: JSON.stringify({
       provider: params.provider || 'claude',
       agentId: params.agentId || 'build',
+      guardMode: params.guardMode,
     }),
   });
   if (!res.ok) throw new Error(`createWorkbenchSession failed: ${res.status}`);
@@ -47,6 +88,7 @@ export interface StreamWorkbenchChatParams {
   message: string;
   provider?: 'claude' | 'codex';
   agentId?: string;
+  guardMode?: WorkbenchGuardMode;
   effort?: 'low' | 'medium' | 'high' | 'max';
   model?: string;
 }
@@ -68,6 +110,7 @@ export async function streamWorkbenchChat(
       message: params.message,
       provider: params.provider || 'claude',
       agentId: params.agentId,
+      guardMode: params.guardMode,
       effort: params.effort,
       model: params.model,
     }),

@@ -5,6 +5,7 @@ import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ToolIcon } from '@/components/ui/ToolIcon';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { DiffView } from '@/components/chat/DiffView';
+import { confirmWorkbenchMutation } from '@/api/workbench';
 import { visibleProgress, type ProgressEntry } from '@/lib/tool-progress';
 
 /**
@@ -140,6 +141,11 @@ export interface ToolEntry {
   status: 'running' | 'done' | 'error';
   duration?: number;
   startedAt?: number;
+  pendingApproval?: {
+    message?: string;
+    detail?: string;
+    confirmationToken?: string;
+  };
   /** For web_search: structured search hits to render as linked list */
   searchHits?: Array<{ title: string; url: string; snippet?: string }>;
 }
@@ -175,8 +181,9 @@ export function ToolCallItem({
     : undefined;
 
   const hasBody = !!(
-    tool.context || tool.preview || tool.summary || tool.error || tool.inline_diff || tool.searchHits
+    tool.context || tool.preview || tool.summary || tool.error || tool.inline_diff || tool.searchHits || tool.pendingApproval
   );
+  const [approvalStatus, setApprovalStatus] = useState<'idle' | 'confirming' | 'confirmed'>('idle');
 
   const isRunning = tool.status === 'running';
   const isCommand = tool.name.startsWith('@run_command') || tool.name.startsWith('run_command');
@@ -361,6 +368,48 @@ export function ToolCallItem({
             <Section label="error" tone="error">
               <span className="text-destructive whitespace-pre-wrap">{tool.error}</span>
             </Section>
+          )}
+
+          {tool.pendingApproval && (
+            <div className="mt-2 flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/10 p-2">
+              <div className="text-xs text-foreground/90">
+                {tool.pendingApproval.message || 'This change needs approval before it can run.'}
+              </div>
+              {tool.pendingApproval.detail && (
+                <div className="text-[11px] font-mono text-muted-foreground wrap-anywhere">
+                  {tool.pendingApproval.detail}
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={approvalStatus !== 'idle'}
+                className="h-7 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-60"
+                onClick={() => {
+                  const token = tool.pendingApproval?.confirmationToken;
+                  if (!token) return;
+                  setApprovalStatus('confirming');
+                  confirmWorkbenchMutation(token, {
+                    onText: ({ content }) => {
+                      tool.summary = `${tool.summary || ''}\n${content}`.trim();
+                    },
+                    onToolUse: ({ id, name, input }) => {
+                      tool.summary = `${tool.summary || ''}\nStarted ${name}: ${JSON.stringify(input || {})}`.trim();
+                    },
+                    onToolResult: ({ content }) => {
+                      tool.summary = `${tool.summary || ''}\n${content}`.trim();
+                    },
+                    onError: ({ message }) => {
+                      tool.error = message;
+                    },
+                    onDone: () => {
+                      setApprovalStatus('confirmed');
+                    },
+                  });
+                }}
+              >
+                {approvalStatus === 'confirming' ? 'Approving…' : 'Approve'}
+              </button>
+            </div>
           )}
         </div>
       )}

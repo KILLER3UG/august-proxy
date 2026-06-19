@@ -195,9 +195,9 @@ function buildAnthropicSystemBlocks(system) {
 const AUGUST_REMINDER = {
     role: 'user',
     content: '[AUGUST] ' +
-             'Remember the AUGUST personality contract: address the user as "Sir", be direct and concise, ' +
-             'use semantic memory tools for durable facts, signal completion with "Done, Sir." ' +
-             'Continue the same reasoning chain across tool rounds.'
+             'Remember the AUGUST professional contract: use neutral, direct, concise language. ' +
+             'Do not use titles such as "sir", "ma\'am", "master", or "boss". ' +
+             'Use semantic memory tools for durable facts and continue the same reasoning chain across tool rounds.'
 };
 
 const RULE_REMINDER_MESSAGE = {
@@ -273,7 +273,7 @@ function shouldInjectReminderMessage(messages) {
 
 function shouldInjectAugustReminder(messages) {
     const toolTurns = countToolResultTurns(messages);
-    // Inject August personality reminder every 16 turns
+    // Inject August professional reminder every 16 turns
     return toolTurns > 0 && toolTurns % 16 === 0;
 }
 
@@ -1057,14 +1057,14 @@ function buildAnthropicUpstreamRequest(aReq, cfg, upstreamModelOverride, clientI
                 (Array.isArray(lastMsg?.content) && lastMsg.content.some(b => b?.type === 'tool_result'));
             if (hasToolResult) {
                 upstreamReq.messages.push(AUGUST_REMINDER);
-                console.log(`[Proxy Reminder]: Appended AUGUST personality reminder after tool_result`);
+                console.log(`[Proxy Reminder]: Appended AUGUST professional reminder after tool_result`);
             } else {
                 upstreamReq.messages = [
                     ...upstreamReq.messages.slice(0, lastIdx),
                     AUGUST_REMINDER,
                     lastMsg
                 ];
-                console.log(`[Proxy Reminder]: Injected AUGUST personality reminder at message index ${lastIdx}`);
+                console.log(`[Proxy Reminder]: Injected AUGUST professional reminder at message index ${lastIdx}`);
             }
         }
         if (shouldInjectReminderMessage(upstreamReq.messages)) {
