@@ -501,9 +501,14 @@ const requestHandler = async (req, res) => {
         const mem = process.memoryUsage();
 
         // Derive the proxy's own origin from the request host (so it works
-        // behind LAN/Tailscale hostnames), falling back to localhost:port.
-        const host = req.headers.host || `localhost:${LISTEN_PORT}`;
-        const proto = req.headers['x-forwarded-proto'] || (host.startsWith('localhost') ? 'http' : 'http');
+        // behind LAN/Tailscale hostnames), falling back to 127.0.0.1:port.
+        // When the dev server proxies here, the Host header carries
+        // `localhost:8085` — we surface 127.0.0.1 instead so the URL the
+        // user copies from System Health is stable and works on the same
+        // machine. LAN / Tailscale hostnames are preserved as-is.
+        const rawHost = req.headers.host || `127.0.0.1:${LISTEN_PORT}`;
+        const host = rawHost.replace(/^localhost(?=[:/]|$)/, '127.0.0.1');
+        const proto = req.headers['x-forwarded-proto'] || 'http';
         const origin = `${proto}://${host}`;
 
         // Active upstream provider baseUrl (key redacted) for reference.
