@@ -35,6 +35,7 @@ import {
   Trash2,
   Wrench,
 } from "lucide-react";
+import { SERVICE_LINKS } from "@/lib/service-links";
 
 interface McpServer {
   name: string;
@@ -643,6 +644,24 @@ export function Services() {
   return <MergedMcpSkills />;
 }
 
+/* ── "Where do I get this?" inline link ────────────────────────────── */
+/* Always-visible helper anchor that opens the relevant docs / console
+ * in a new tab. Used next to OAuth/API credential fields so users
+ * don't have to leave the app to Google the answer. */
+function HelpLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground hover:underline transition mt-0.5"
+    >
+      {children}
+      <ExternalLink className="size-2.5" />
+    </a>
+  );
+}
+
 function ServiceConnectionCard({
   service,
   onAuth,
@@ -866,7 +885,12 @@ function ServiceConnectionCard({
                     <label className="block text-[10px] text-muted-foreground mb-1 font-medium">
                       {tokenLabel}
                     </label>
-                    <div className="relative">
+                    <HelpLink
+                      href={isSlack ? SERVICE_LINKS.slack.botToken : SERVICE_LINKS.github.token}
+                    >
+                      Where do I get this?
+                    </HelpLink>
+                    <div className="relative mt-1">
                       <Input
                         type={showToken ? "text" : "password"}
                         value={token}
@@ -898,6 +922,9 @@ function ServiceConnectionCard({
                     <label className="block text-[10px] text-muted-foreground mb-1 font-medium">
                       Slack team ID
                     </label>
+                    <HelpLink href={SERVICE_LINKS.slack.teamId}>
+                      Where do I find this?
+                    </HelpLink>
                     <Input
                       value={teamId}
                       onChange={(e) => setSlackTeamId(e.target.value)}
@@ -932,6 +959,9 @@ function ServiceConnectionCard({
                     <label className="block text-[10px] text-muted-foreground mb-1 font-medium">
                       Google client ID
                     </label>
+                    <HelpLink href={SERVICE_LINKS.google.clientIdAndSecret}>
+                      Where do I get this?
+                    </HelpLink>
                     <Input
                       value={googleClientId}
                       onChange={(e) =>
@@ -948,6 +978,9 @@ function ServiceConnectionCard({
                     <label className="block text-[10px] text-muted-foreground mb-1 font-medium">
                       Google client secret
                     </label>
+                    <HelpLink href={SERVICE_LINKS.google.clientIdAndSecret}>
+                      Where do I get this?
+                    </HelpLink>
                     <Input
                       type="password"
                       value={googleClientSecret}
@@ -965,6 +998,9 @@ function ServiceConnectionCard({
                     <label className="block text-[10px] text-muted-foreground mb-1 font-medium">
                       Redirect URI
                     </label>
+                    <HelpLink href={SERVICE_LINKS.google.redirectUriDocs}>
+                      How do I set this in Google?
+                    </HelpLink>
                     <Input
                       value={googleRedirectUri}
                       onChange={(e) =>
