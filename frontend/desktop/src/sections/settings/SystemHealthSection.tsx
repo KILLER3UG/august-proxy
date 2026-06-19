@@ -215,9 +215,9 @@ export function SystemHealthSection() {
           </div>
         ) : (
           <div className="space-y-2">
-            <EndpointRow url={`http://localhost:${port}/v1/messages`} label="Anthropic (Claude Code)" hint="Sends /v1/messages." icon={<Brain className="size-3.5" />} />
-            <EndpointRow url={`http://localhost:${port}/v1/chat/completions`} label="OpenAI Chat Completions" hint="Sends /v1/chat/completions." icon={<Terminal className="size-3.5" />} />
-            <EndpointRow url={`http://localhost:${port}/v1/models`} label="Model list" hint="Any OpenAI-compatible client." icon={<Link2 className="size-3.5" />} />
+            <EndpointRow url="http://127.0.0.1:8085/v1/messages" label="Anthropic (Claude Code)" hint="Sends /v1/messages." icon={<Brain className="size-3.5" />} />
+            <EndpointRow url="http://127.0.0.1:8085/v1/chat/completions" label="OpenAI Chat Completions" hint="Sends /v1/chat/completions." icon={<Terminal className="size-3.5" />} />
+            <EndpointRow url="http://127.0.0.1:8085/v1/models" label="Model list" hint="Any OpenAI-compatible client." icon={<Link2 className="size-3.5" />} />
           </div>
         )}
 
