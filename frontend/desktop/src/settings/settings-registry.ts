@@ -14,6 +14,7 @@ import {
   Search,
   Bot,
   TerminalSquare,
+  ShieldCheck,
 } from 'lucide-react';
 
 /**
@@ -159,6 +160,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     category: 'advanced',
     keywords: ['developer', 'console', 'august', 'debug', 'reset', 'experimental', 'advanced'],
     legacyAliases: ['advanced'],
+  },
+
+  /* ── Task 8: Computer Access ─────────────────────────────────────── */
+  {
+    id: 'computer-access',
+    label: 'Computer Access',
+    description: 'Filesystem scope, allowed roots, and computer-use app allowlist.',
+    icon: ShieldCheck,
+    category: 'advanced',
+    keywords: ['filesystem', 'security', 'allowlist', 'host', 'computer-use', 'permission'],
   },
 ] as const;
 

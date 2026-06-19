@@ -1,4 +1,5 @@
 const path = require('path');
+const os = require('os');
 
 const DEFAULT_ALLOWED_BASE_PATHS = [
     'C:\\Users\\rober\\LocalFolders',
@@ -36,7 +37,36 @@ function isPathWithinAllowedBase(base, filePath) {
     return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
-function getAllowedBasePaths() {
+/**
+ * Read extra allowed roots from config + data-paths lazily. Wrapped in try/catch
+ * to avoid hard-loading config at module init (avoids circular dependency risk
+ * if config.js ever needs path-permissions).
+ */
+function readConfigRoots() {
+    const out = [];
+    try {
+        const { getConfig } = require('./config');
+        const cfg = getConfig();
+        const sec = cfg && cfg.security;
+        if (sec && Array.isArray(sec.allowedRoots)) out.push(...sec.allowedRoots);
+    } catch (_) { /* config not ready yet; ignore */ }
+    try {
+        const { getDataDir } = require('./data-paths');
+        const dataDir = getDataDir();
+        if (dataDir) out.push(dataDir);
+    } catch (_) { /* data-paths not ready yet; ignore */ }
+    try {
+        const tmp = os.tmpdir();
+        if (tmp) out.push(tmp);
+    } catch (_) { /* os.tmpdir() shouldn't throw; ignore anyway */ }
+    return out;
+}
+
+/**
+ * Returns the merged list of allowed base paths.
+ * @param {string[]} [extraRoots] - additional roots to merge (e.g. session CWD).
+ */
+function getAllowedBasePaths(extraRoots) {
     const workspaceRoot = process.env.AUGUST_PROXY_WORKDIR || process.env.AUGUST_WORKDIR;
     const proxyRoot = process.env.AUGUST_PROXY_ROOT || process.cwd();
     return [
@@ -47,12 +77,15 @@ function getAllowedBasePaths() {
         ...splitPathList(process.env.AUGUST_PROXY_CONTAINER_ROOTS),
         process.env.AUGUST_PROXY_CONTAINER_ROOT,
         workspaceRoot,
-        proxyRoot
+        proxyRoot,
+        ...readConfigRoots(),
+        ...(Array.isArray(extraRoots) ? extraRoots : [])
     ].filter(Boolean);
 }
 
-const ALLOWED_BASE_PATHS = getAllowedBasePaths();
-const NORMALIZED_ALLOWED_BASE_PATHS = [...new Set(ALLOWED_BASE_PATHS.map(normalizeForPermission))];
+function hasParentTraversal(command) {
+    return /(^|[\s"'`(])\.\.(?:[\\/]|$)/.test(command);
+}
 
 function extractPathsFromCommand(command) {
     if (!command || typeof command !== 'string') return [];
@@ -64,21 +97,23 @@ function extractPathsFromCommand(command) {
     return found;
 }
 
-function hasParentTraversal(command) {
-    return /(^|[\s"'`(])\.\.(?:[\\/]|$)/.test(command);
-}
-
-function checkPathPermission(filePath) {
+/**
+ * Check whether `filePath` is inside any allowed base path.
+ * @param {string} filePath
+ * @param {string[]} [extraRoots] - additional roots to merge with config + env.
+ * @returns {string|null} null if allowed, error message if denied.
+ */
+function checkPathPermission(filePath, extraRoots) {
     const resolvedPath = normalizeForPermission(filePath);
-    const isAllowed = getAllowedBasePaths().some(base => {
+    const allPaths = getAllowedBasePaths(extraRoots);
+    const isAllowed = allPaths.some(base => {
         const normalizedBase = normalizeForPermission(base);
         return isPathWithinAllowedBase(normalizedBase, resolvedPath);
     });
-    const allowedBasePaths = getAllowedBasePaths();
     if (isAllowed) return null;
     return `[August Permission Denied]\n` +
            `The path '${resolvedPath}' is outside the permitted workspace.\n` +
-           `Permitted workspace roots:\n${allowedBasePaths.map(p => `  - ${p}`).join('\n')}\n\n` +
+           `Permitted workspace roots:\n${allPaths.map(p => `  - ${p}`).join('\n')}\n\n` +
            `You do NOT have permission to access this path. ` +
            `Stop and ask the user to explicitly grant access to this location before proceeding.`;
 }
@@ -100,8 +135,6 @@ function checkCommandPaths(command) {
 }
 
 module.exports = {
-    ALLOWED_BASE_PATHS,
-    NORMALIZED_ALLOWED_BASE_PATHS,
     extractPathsFromCommand,
     hasParentTraversal,
     getAllowedBasePaths,

@@ -430,3 +430,158 @@ export function updateUserModelAliases(aliases: UserModelAlias[]): Promise<{ ok:
 export function restartBackend(): Promise<{ ok: boolean }> {
   return api.post<{ ok: boolean }>('/api/system/restart');
 }
+
+/* ── August self-management API (Task 4 + 6) ──────────────────────────── */
+
+export interface AugustSnapshot {
+  sessions?: unknown[];
+  config?: { security?: { allowedRoots: string[]; filesystemScope: 'allowlist' | 'root'; postObservationScreenshot?: boolean } };
+  providers?: unknown[];
+  models?: unknown[];
+  tools?: Array<{ name?: string; toolset?: string; description?: string }>;
+  memory?: unknown;
+  agents?: unknown[];
+  skills?: unknown[];
+}
+
+export function getAugustSnapshot(): Promise<AugustSnapshot> {
+  return api.get<AugustSnapshot>('/ui/august/snapshot');
+}
+
+export function manageAugustSessions(payload: {
+  action: 'list' | 'create' | 'update' | 'rename' | 'archive' | 'restore' | 'delete';
+  id?: string;
+  title?: string;
+  updates?: Record<string, unknown>;
+}): Promise<{ ok: boolean; session?: unknown; sessions?: unknown[] }> {
+  return api.post('/ui/august/sessions/manage', payload);
+}
+
+export function updateAugustSetting(payload: {
+  key_path: string;
+  value: unknown;
+}): Promise<{ ok: boolean; keyPath?: string; value?: unknown; rollbackId?: string }> {
+  return api.post('/ui/august/settings/update', payload);
+}
+
+export function selectAugustModel(payload: {
+  model: string;
+  provider?: string;
+}): Promise<{ ok: boolean; profile?: string; model?: string; provider?: string }> {
+  return api.post('/ui/august/models/select', payload);
+}
+
+export function manageAugustProviders(payload: {
+  action: 'upsert' | 'delete';
+  provider?: Record<string, unknown>;
+  id?: string;
+}): Promise<{ ok: boolean; provider?: unknown; id?: string; deleted?: boolean }> {
+  return api.post('/ui/august/providers/manage', payload);
+}
+
+export function manageAugustAgents(payload: {
+  action: 'upsert' | 'delete';
+  agent?: Record<string, unknown>;
+  id?: string;
+}): Promise<{ ok: boolean; agent?: unknown; id?: string; deleted?: boolean }> {
+  return api.post('/ui/august/agents/manage', payload);
+}
+
+export function manageAugustMemory(payload: {
+  action: 'set' | 'upsert' | 'delete' | 'forget';
+  key: string;
+  value?: unknown;
+  category?: string;
+  ttl_days?: number;
+}): Promise<{ ok: boolean; key?: string; value?: unknown }> {
+  return api.post('/ui/august/memory/manage', payload);
+}
+
+export function undoAugustRollback(id: string): Promise<{ ok: boolean; entry?: unknown }> {
+  return api.post(`/ui/august/rollback/${encodeURIComponent(id)}/undo`, {});
+}
+
+/* ── Computer-use app policy (Task 6) ─────────────────────────────────── */
+
+export interface AppPolicy {
+  app: string;
+  policy: 'allow' | 'ask' | 'deny';
+}
+
+export function setAugustAppPolicy(policy: AppPolicy): Promise<{ ok: boolean; app: string; policy: string }> {
+  return api.post('/ui/august/computer/app-policy', { action: 'set', ...policy });
+}
+
+export function deleteAugustAppPolicy(app: string): Promise<{ ok: boolean; app: string }> {
+  return api.post('/ui/august/computer/app-policy', { action: 'delete', app });
+}
+
+export function listAugustAppPolicies(): Promise<{ ok: boolean; policies: Record<string, 'allow' | 'ask' | 'deny'> }> {
+  return api.post('/ui/august/computer/app-policy', { action: 'list' });
+}
+
+/* ── UI events (Task 5) ──────────────────────────────────────────────── */
+
+export interface UiEvent {
+  id: string;
+  type: 'august:ui-action';
+  action: string;
+  target: string | null;
+  payload?: Record<string, unknown>;
+  at: string;
+}
+
+export function controlAugustUi(payload: {
+  action: string;
+  target: string;
+  payload?: Record<string, unknown>;
+}): Promise<{ ok: boolean; event: UiEvent }> {
+  return api.post('/ui/august/ui-action', payload);
+}
+
+export function subscribeUiEvents(since?: string): Promise<{ ok: boolean; events: UiEvent[] }> {
+  const q = since ? `?since=${encodeURIComponent(since)}` : '';
+  return api.get(`/ui/august/ui-events${q}`);
+}
+
+/* ── Audit log (Task 2) ───────────────────────────────────────────────── */
+
+export interface AuditEntry {
+  id: string;
+  at: string;
+  actor: string;
+  agentId?: string | null;
+  sessionId?: string | null;
+  action: string;
+  target?: string | null;
+  category?: string | null;
+  mode?: string | null;
+  critical?: boolean | null;
+  approved?: boolean | null;
+  approvalToken?: string | null;
+  inputSummary?: unknown;
+  beforeSummary?: unknown;
+  afterSummary?: unknown;
+  rollbackId?: string | null;
+  postObservation?: { screenshotPath?: string | null; capturedAt?: string; focusedApp?: string | null } | null;
+  result: string;
+  error?: string | null;
+}
+
+export function getAuditLog(limit = 200): Promise<{ entries: AuditEntry[] }> {
+  return api.get<{ entries: AuditEntry[] }>(`/ui/audit?limit=${limit}`);
+}
+
+export interface RollbackEntry {
+  id: string;
+  at: string;
+  type: string;
+  target: string;
+  before: unknown;
+  after: unknown;
+  status: string;
+}
+
+export function getRollbackList(limit = 100): Promise<{ items: RollbackEntry[] }> {
+  return api.get<{ items: RollbackEntry[] }>(`/ui/rollback?limit=${limit}`);
+}

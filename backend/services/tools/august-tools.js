@@ -24,6 +24,327 @@ const {
 } = require('../memory/core-memory');
 const { getDefaultSubagentConfig, loadSubagentConfig, saveSubagentConfig, subagentConfigToContextBlock } = require('./subagent-config');
 
+// Task 3: Host system tools (filesystem, shell, process, env, info, network).
+const { getSystemToolDefinitions, executeSystemTool } = require('../system/system-tools');
+const SYSTEM_TOOL_NAMES = new Set(getSystemToolDefinitions().map(t => t.function.name));
+
+// Task 5: UI automation
+const { createUiEvent, VALID_UI_ACTIONS } = require('../ui/ui-automation');
+
+function getUiControlToolDefinition() {
+    return {
+        type: 'function',
+        function: {
+            name: 'august__ui_control',
+            description: 'Control August UI state via structured events (no DOM clicks/fills): navigate routes, open/close drawer, set drawer section, change guard mode, refresh data, focus composer, or insert text into the composer. Mutating actions require approval.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    action: { type: 'string', enum: Array.from(VALID_UI_ACTIONS) },
+                    target: { type: 'string', description: 'Route, drawer section, or guard mode.' },
+                    payload: { type: 'object', description: 'Optional structured payload.' },
+                    confirmed: { type: 'boolean' }
+                },
+                required: ['action', 'target']
+            }
+        }
+    };
+}
+
+const UI_CONTROL_TOOL_NAME = 'august__ui_control';
+
+// Task 7: Intent mapping
+const { mapAugustIntent } = require('../august-api/intent-mapping');
+
+function getMapIntentToolDefinition() {
+    return {
+        type: 'function',
+        function: {
+            name: 'august__map_intent',
+            description: 'Map a natural-language August management request to a recommended August API/tool call. Read-only — does not require approval itself; the action it returns may.',
+            parameters: {
+                type: 'object',
+                properties: { text: { type: 'string', description: 'User request text.' } },
+                required: ['text']
+            }
+        }
+    };
+}
+
+const MAP_INTENT_TOOL_NAME = 'august__map_intent';
+
+async function executeUiControlTool(args = {}, ctx = {}) {
+    const safeArgs = args || {};
+    const action = String(safeArgs.action || '');
+    const target = String(safeArgs.target || '');
+    const mutatingActions = new Set(['open_drawer', 'close_drawer', 'set_drawer_section', 'set_guard_mode', 'focus_composer', 'insert_composer_text']);
+    const isMutating = mutatingActions.has(action);
+    if (isMutating && !isApproved(ctx, safeArgs)) {
+        return { ok: false, requiresApproval: true, preview: { action, target } };
+    }
+    let event;
+    try {
+        event = createUiEvent({ action, target, payload: safeArgs.payload });
+    } catch (err) {
+        return { ok: false, error: String(err && err.message || err) };
+    }
+    const { appendAuditEntry } = require('../audit/audit-log');
+    appendAuditEntry({
+        action: `ui.${action}`,
+        target,
+        category: 'ui',
+        approved: ctx.approvedMutation === true,
+        approvalToken: ctx.approvalToken || null,
+        inputSummary: { action, target, payload: safeArgs.payload },
+        result: 'ok'
+    });
+    return { ok: true, event };
+}
+
+function isUiControlTool(name) {
+    return name === UI_CONTROL_TOOL_NAME;
+}
+
+// Task 4: August self-management tools.
+const {
+    buildSnapshot,
+    listSessions, createSession, updateSession, renameSession,
+    deleteSession, archiveSession, restoreSession,
+    updateSetting, selectModel,
+    upsertProvider, deleteProvider,
+    upsertAgent, deleteAgent,
+    updateMemoryFact, deleteMemoryFact,
+    rollbackUndo
+} = require('../august-api/august-api');
+
+function augustApiToolDef(name, description, parameters, required) {
+    return { type: 'function', function: { name, description, parameters } };
+}
+
+function getAugustApiToolDefinitions() {
+    return [
+        augustApiToolDef('august__self_snapshot', 'Return August internal state: sessions, settings, providers, models, tools, memory, agents, skills.', {
+            type: 'object', properties: {}, required: []
+        }),
+        augustApiToolDef('august__sessions_manage', 'List, create, update, rename, archive, restore, or delete sessions. Mutating actions require approval.', {
+            type: 'object',
+            properties: {
+                action: { type: 'string', enum: ['list', 'create', 'update', 'rename', 'archive', 'restore', 'delete'] },
+                id: { type: 'string' },
+                title: { type: 'string' },
+                updates: { type: 'object' },
+                agent_type: { type: 'string' },
+                provider: { type: 'string' },
+                model: { type: 'string' },
+                cwd: { type: 'string' },
+                task: { type: 'string' },
+                parent_id: { type: 'string' },
+                metadata: { type: 'object' },
+                confirmed: { type: 'boolean' }
+            },
+            required: ['action']
+        }),
+        augustApiToolDef('august__settings_update', 'Update an August setting by dotted config key path. Requires approval.', {
+            type: 'object',
+            properties: {
+                key_path: { type: 'string' },
+                value: {},
+                confirmed: { type: 'boolean' }
+            },
+            required: ['key_path']
+        }),
+        augustApiToolDef('august__models_select', 'Select a model for the active profile. Requires approval.', {
+            type: 'object',
+            properties: {
+                model: { type: 'string' },
+                provider: { type: 'string' },
+                confirmed: { type: 'boolean' }
+            },
+            required: ['model']
+        }),
+        augustApiToolDef('august__providers_manage', 'Upsert or delete a provider record. Requires approval.', {
+            type: 'object',
+            properties: {
+                action: { type: 'string', enum: ['upsert', 'delete'] },
+                provider: { type: 'object' },
+                id: { type: 'string' },
+                confirmed: { type: 'boolean' }
+            },
+            required: ['action']
+        }),
+        augustApiToolDef('august__agents_manage', 'Upsert or delete an agent config. delete is critical.', {
+            type: 'object',
+            properties: {
+                action: { type: 'string', enum: ['upsert', 'delete'] },
+                agent: { type: 'object' },
+                id: { type: 'string' },
+                confirmed: { type: 'boolean' }
+            },
+            required: ['action']
+        }),
+        augustApiToolDef('august__memory_manage', 'Set (upsert) or delete a semantic memory fact. Requires approval.', {
+            type: 'object',
+            properties: {
+                action: { type: 'string', enum: ['set', 'upsert', 'delete', 'forget'] },
+                key: { type: 'string' },
+                value: {},
+                category: { type: 'string' },
+                ttl_days: { type: 'number' },
+                confirmed: { type: 'boolean' }
+            },
+            required: ['action', 'key']
+        }),
+        augustApiToolDef('august__rollback_undo', 'Undo a recorded rollback entry. Requires approval.', {
+            type: 'object',
+            properties: {
+                id: { type: 'string' },
+                confirmed: { type: 'boolean' }
+            },
+            required: ['id']
+        }),
+        // Task 6: computer-use app policy management.
+        augustApiToolDef('august__app_policy', 'Set, get, or delete a computer-use app policy (allow | ask | deny). Set/delete require approval.', {
+            type: 'object',
+            properties: {
+                action: { type: 'string', enum: ['set', 'get', 'list', 'delete'] },
+                app: { type: 'string' },
+                policy: { type: 'string', enum: ['allow', 'ask', 'deny'] },
+                confirmed: { type: 'boolean' }
+            },
+            required: ['action']
+        })
+    ];
+}
+
+async function executeAppPolicyTool(args = {}, ctx = {}) {
+    const safeArgs = args || {};
+    const { getAppPolicy, setAppPolicy, listAppPolicies, deleteAppPolicy } = require('../computer/app-allowlist');
+    const action = String(safeArgs.action || '');
+    if (action === 'get') {
+        return { ok: true, app: safeArgs.app, policy: getAppPolicy(safeArgs.app) };
+    }
+    if (action === 'list') {
+        return { ok: true, policies: listAppPolicies() };
+    }
+    if (action === 'set') {
+        if (!isApproved(ctx, safeArgs)) {
+            return { ok: false, requiresApproval: true, preview: { app: safeArgs.app, policy: safeArgs.policy } };
+        }
+        return setAppPolicy(safeArgs.app, safeArgs.policy);
+    }
+    if (action === 'delete') {
+        if (!isApproved(ctx, safeArgs)) {
+            return { ok: false, requiresApproval: true, preview: { app: safeArgs.app } };
+        }
+        return deleteAppPolicy(safeArgs.app);
+    }
+    return { ok: false, error: `Unknown app_policy action: ${action}` };
+}
+
+const AUGUST_API_TOOL_NAMES_EXTRA = new Set(['august__app_policy']);
+
+const AUGUST_API_TOOL_NAMES = new Set([
+    ...getAugustApiToolDefinitions().map(t => t.function.name),
+    ...AUGUST_API_TOOL_NAMES_EXTRA
+]);
+
+function isApproved(ctx, args) {
+    if (ctx && ctx.approvedMutation === true) return true;
+    if (args && args.confirmed === true) return true;
+    return false;
+}
+
+async function executeAugustApiTool(name, args = {}, ctx = {}) {
+    const safeArgs = args || {};
+    const action = String(safeArgs.action || '');
+
+    if (name === 'august__self_snapshot') {
+        return { ok: true, snapshot: buildSnapshot() };
+    }
+
+    if (name === 'august__sessions_manage') {
+        if (action === 'list') {
+            return { ok: true, sessions: await listSessions(safeArgs) };
+        }
+        const mutating = ['create', 'update', 'rename', 'archive', 'restore', 'delete'].includes(action);
+        if (mutating && !isApproved(ctx, safeArgs)) {
+            return { ok: false, requiresApproval: true, preview: { action, id: safeArgs.id, title: safeArgs.title } };
+        }
+        if (action === 'create') return { ok: true, session: await createSession(safeArgs) };
+        if (action === 'update') return { ok: true, session: await updateSession(safeArgs.id, safeArgs.updates || {}) };
+        if (action === 'rename') return { ok: true, session: await renameSession(safeArgs.id, safeArgs.title) };
+        if (action === 'archive') return { ok: true, session: await archiveSession(safeArgs.id) };
+        if (action === 'restore') return { ok: true, session: await restoreSession(safeArgs.id) };
+        if (action === 'delete') return await deleteSession(safeArgs.id);
+        return { ok: false, error: `Unknown sessions action: ${action}` };
+    }
+
+    if (name === 'august__settings_update') {
+        if (!isApproved(ctx, safeArgs)) {
+            return { ok: false, requiresApproval: true, preview: { key_path: safeArgs.key_path } };
+        }
+        return updateSetting(safeArgs.key_path, safeArgs.value);
+    }
+
+    if (name === 'august__models_select') {
+        if (!isApproved(ctx, safeArgs)) {
+            return { ok: false, requiresApproval: true, preview: { model: safeArgs.model, provider: safeArgs.provider } };
+        }
+        return selectModel(safeArgs.model, safeArgs.provider);
+    }
+
+    if (name === 'august__providers_manage') {
+        if (!isApproved(ctx, safeArgs)) {
+            return { ok: false, requiresApproval: true, preview: { action, id: safeArgs.id || safeArgs.provider?.id } };
+        }
+        if (action === 'upsert') return upsertProvider(safeArgs.provider);
+        if (action === 'delete') return deleteProvider(safeArgs.id || safeArgs.provider?.id);
+        return { ok: false, error: `Unknown providers action: ${action}` };
+    }
+
+    if (name === 'august__agents_manage') {
+        if (action === 'delete') {
+            if (!isApproved(ctx, safeArgs)) {
+                return { ok: false, requiresApproval: true, preview: { id: safeArgs.id || safeArgs.agent?.id }, critical: true };
+            }
+            return deleteAgent(safeArgs.id || safeArgs.agent?.id);
+        }
+        if (action === 'upsert') {
+            if (!isApproved(ctx, safeArgs)) {
+                return { ok: false, requiresApproval: true, preview: { id: safeArgs.agent?.id } };
+            }
+            return upsertAgent(safeArgs.agent);
+        }
+        return { ok: false, error: `Unknown agents action: ${action}` };
+    }
+
+    if (name === 'august__memory_manage') {
+        if (!isApproved(ctx, safeArgs)) {
+            return { ok: false, requiresApproval: true, preview: { action, key: safeArgs.key } };
+        }
+        if (action === 'set' || action === 'upsert') {
+            return updateMemoryFact({ key: safeArgs.key, value: safeArgs.value, category: safeArgs.category, ttl_days: safeArgs.ttl_days });
+        }
+        if (action === 'delete' || action === 'forget') {
+            return deleteMemoryFact(safeArgs.key);
+        }
+        return { ok: false, error: `Unknown memory action: ${action}` };
+    }
+
+    if (name === 'august__rollback_undo') {
+        if (!isApproved(ctx, safeArgs)) {
+            return { ok: false, requiresApproval: true, preview: { id: safeArgs.id } };
+        }
+        return await rollbackUndo(safeArgs.id);
+    }
+
+    if (name === 'august__app_policy') {
+        return await executeAppPolicyTool(safeArgs, ctx);
+    }
+
+    return { ok: false, error: `Unsupported August API tool: ${name}` };
+}
+
 function formatCoreMemoryBudgetError(section, budget) {
     if (budget.error) return budget.error;
     const limit = CORE_MEMORY_LIMITS[section] || budget.limit;
@@ -692,10 +1013,44 @@ function isAugustToolName(name) {
 }
 
 function getAugustToolDefinitions() {
-    return AUGUST_TOOLS;
+    return [...AUGUST_TOOLS, ...getSystemToolDefinitions(), ...getAugustApiToolDefinitions(), getUiControlToolDefinition(), getMapIntentToolDefinition()];
 }
 
 async function executeAugustToolCall(toolName, args, bypassConfirmation = false, workspacePath = null) {
+    // Route Task 7 intent mapping.
+    if (toolName === MAP_INTENT_TOOL_NAME) {
+        try {
+            const text = args && args.text ? String(args.text) : '';
+            const mapping = mapAugustIntent(text);
+            return { ok: true, mapping };
+        } catch (err) {
+            return { ok: false, error: String(err && err.message || err) };
+        }
+    }
+    // Route Task 5 UI control first.
+    if (isUiControlTool(toolName)) {
+        try {
+            return await executeUiControlTool(args || {}, { approvedMutation: !!bypassConfirmation });
+        } catch (err) {
+            return { ok: false, error: String(err && err.message || err) };
+        }
+    }
+    // Route Task 3 host system tools first.
+    if (SYSTEM_TOOL_NAMES.has(toolName)) {
+        try {
+            return await executeSystemTool(toolName, args || {}, { approvedMutation: !!bypassConfirmation });
+        } catch (err) {
+            return { ok: false, error: String(err && err.message || err) };
+        }
+    }
+    // Route Task 4 August self-management tools.
+    if (AUGUST_API_TOOL_NAMES.has(toolName)) {
+        try {
+            return await executeAugustApiTool(toolName, args || {}, { approvedMutation: !!bypassConfirmation });
+        } catch (err) {
+            return { ok: false, error: String(err && err.message || err) };
+        }
+    }
     try {
         switch (toolName) {
             case 'august__bash': {

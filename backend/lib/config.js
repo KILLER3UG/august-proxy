@@ -161,12 +161,23 @@ function normalizeGptProfile(profile) {
     return normalized;
 }
 
+function applySecurityDefaults(config) {
+    const out = config && typeof config === 'object' ? config : {};
+    const sec = out.security && typeof out.security === 'object' ? out.security : {};
+    if (!Array.isArray(sec.allowedRoots)) sec.allowedRoots = [];
+    if (sec.filesystemScope !== 'root') sec.filesystemScope = 'allowlist';
+    if (typeof sec.postObservationScreenshot !== 'boolean') sec.postObservationScreenshot = true;
+    out.security = sec;
+    return out;
+}
+
 function getConfig() {
     try {
         const stats = fs.statSync(CONFIG_PATH);
         if (!cachedConfig || stats.mtimeMs > cachedMtime) {
             const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-            cachedConfig = expandEnvVars(raw); // resolve ${env:VAR} placeholders in-memory
+            const expanded = expandEnvVars(raw); // resolve ${env:VAR} placeholders in-memory
+            cachedConfig = applySecurityDefaults(expanded);
             cachedMtime = stats.mtimeMs;
             console.log('[Config] Reloaded from disk (mtime changed)');
         }
@@ -497,4 +508,28 @@ function saveProviderConfig(providerName, providerConfig) {
   saveConfig(config);
 }
 
-module.exports = { getConfig, saveConfig, getProfile, saveProfile, syncClaudePublicAlias, syncGptPublicAlias, getProfileField, getBookmarks, saveBookmark, deleteBookmark, getActiveProvider, setActiveProvider, getProviderConfig, saveProviderConfig, getEnvVars, setEnvVar, deleteEnvVar, getProviderRequiredEnvVars, getSpecialistEndpoints, getConfiguredSpecialistEndpoint, CONFIG_PATH, ENV_PATH };
+module.exports = { getConfig, saveConfig, getProfile, saveProfile, syncClaudePublicAlias, syncGptPublicAlias, getProfileField, getBookmarks, saveBookmark, deleteBookmark, getActiveProvider, setActiveProvider, getProviderConfig, saveProviderConfig, getEnvVars, setEnvVar, deleteEnvVar, getProviderRequiredEnvVars, getSpecialistEndpoints, getConfiguredSpecialistEndpoint, CONFIG_PATH, ENV_PATH, getComputerRoots, saveComputerRoots };
+
+function getComputerRoots() {
+    const cfg = getConfig();
+    const sec = cfg.security || {};
+    return {
+        allowedRoots: Array.isArray(sec.allowedRoots) ? sec.allowedRoots.slice() : [],
+        filesystemScope: sec.filesystemScope === 'root' ? 'root' : 'allowlist',
+        postObservationScreenshot: sec.postObservationScreenshot !== false
+    };
+}
+
+function saveComputerRoots({ allowedRoots, filesystemScope, postObservationScreenshot } = {}) {
+    const cfg = getConfig();
+    cfg.security = cfg.security || {};
+    if (Array.isArray(allowedRoots)) cfg.security.allowedRoots = allowedRoots.slice();
+    if (filesystemScope === 'root' || filesystemScope === 'allowlist') {
+        cfg.security.filesystemScope = filesystemScope;
+    }
+    if (typeof postObservationScreenshot === 'boolean') {
+        cfg.security.postObservationScreenshot = postObservationScreenshot;
+    }
+    saveConfig(cfg);
+    return getComputerRoots();
+}

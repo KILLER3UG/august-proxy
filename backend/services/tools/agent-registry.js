@@ -25,6 +25,52 @@ const DELEGATE_TOOLS = new Set([
     'august__spawn_subagent'
 ]);
 
+// Task 9: New permission categories.
+const SYSTEM_TOOLS = new Set([
+    'august__system_info',
+    'august__system_exec',
+    'august__system_process',
+    'august__system_env',
+    'august__system_network',
+    'august__filesystem_list',
+    'august__filesystem_read',
+    'august__filesystem_write',
+    'august__filesystem_copy',
+    'august__filesystem_move',
+    'august__filesystem_delete'
+]);
+
+const AUGUST_API_TOOLS = new Set([
+    'august__self_snapshot',
+    'august__sessions_manage',
+    'august__settings_update',
+    'august__providers_manage',
+    'august__aliases_manage',
+    'august__models_select',
+    'august__tools_manage',
+    'august__agents_manage',
+    'august__rollback_undo'
+]);
+
+const UI_TOOLS = new Set([
+    'august__ui_control'
+]);
+
+const MEMORY_WRITE_TOOLS = new Set([
+    'august__memory_manage',
+    'august__remember',
+    'august__forget',
+    'august__learn_subagent',
+    'august__set_learned_guideline_status',
+    'august__graph_observe',
+    'august__graph_link',
+    'august__graph_index_memory'
+]);
+
+const COMPUTER_POLICY_TOOLS = new Set([
+    'august__app_policy'
+]);
+
 const TEAM_AGENT_IDS = new Set([
     'project_manager',
     'frontend_dev',
@@ -41,7 +87,10 @@ const FULL_TEAM_PERMISSIONS = {
     edit: 'allow',
     shell: 'allow',
     memory_write: 'allow',
-    delegate: 'allow'
+    delegate: 'allow',
+    system: 'allow',
+    august_api: 'allow',
+    ui: 'allow'
 };
 
 const FULL_TEAM_TOOLS = [
@@ -73,9 +122,12 @@ const DEFAULT_AGENTS = {
             edit: 'ask',
             shell: 'ask',
             memory_write: 'ask',
-            delegate: 'ask'
+            delegate: 'ask',
+            system: 'ask',
+            august_api: 'ask',
+            ui: 'ask'
         },
-        tools: ['read', 'search', 'web', 'edit', 'shell', 'memory', 'delegate']
+        tools: ['read', 'search', 'web', 'edit', 'shell', 'memory', 'delegate', 'system', 'august_api', 'ui']
     },
     project_manager: {
         id: 'project_manager',
@@ -248,12 +300,37 @@ function canCrossLoadTeamSkills(agentId = 'build') {
     return getAgent(agentId).can_cross_load_team_skills === true;
 }
 
-function classifyTool(toolName) {
+function classifyTool(toolName, args) {
     const name = String(toolName || '').replace(/^workbench_/, 'august__');
+    const a = args || {};
     if (DELEGATE_TOOLS.has(name) || /spawn_subagent|delegate/i.test(name)) return 'delegate';
+
+    // Task 9: args-aware classification for new tools.
+    if (UI_TOOLS.has(name)) {
+        // ui_control mutating actions → ui; navigate/refresh → read
+        if (a && (a.action === 'navigate' || a.action === 'refresh')) return 'read';
+        return 'ui';
+    }
+    if (name === 'august__map_intent' || name === 'august__self_snapshot') return 'read';
+    if (name === 'august__system_network') {
+        // GET = read; non-GET = shell
+        const method = String(a.method || 'GET').toUpperCase();
+        return method === 'GET' ? 'read' : 'shell';
+    }
+    if (name === 'august__system_info') return 'read';
+    if (SYSTEM_TOOLS.has(name)) {
+        // Read-only filesystem ops = read; mutating = edit/shell
+        if (name === 'august__filesystem_list' || name === 'august__filesystem_read') return 'read';
+        if (name === 'august__filesystem_write' || name === 'august__filesystem_copy' ||
+            name === 'august__filesystem_move' || name === 'august__filesystem_delete') return 'edit';
+        // shell/process/env mutations
+        return 'shell';
+    }
+    if (MEMORY_WRITE_TOOLS.has(name) || /remember|forget|memory_write|import_skill|learn/i.test(name)) return 'memory_write';
+    if (AUGUST_API_TOOLS.has(name)) return 'august_api';
+    if (COMPUTER_POLICY_TOOLS.has(name)) return 'edit';
     if (EDIT_TOOLS.has(name) || /write|edit|patch|delete|rename|move/i.test(name)) return 'edit';
     if (SHELL_TOOLS.has(name) || /bash|command|terminal|spawn|run/i.test(name)) return 'shell';
-    if (/remember|forget|memory_write|import_skill|learn/i.test(name)) return 'memory_write';
     if (/search|grep|glob|list/i.test(name)) return 'search';
     if (/web|fetch|browser/i.test(name)) return 'web';
     return 'read';
@@ -282,9 +359,9 @@ function deriveChildAgentPermissions(parentAgentId, childAgentId) {
     return permissions;
 }
 
-function evaluateAgentTool(agentId, toolName, inheritedPermissions) {
+function evaluateAgentTool(agentId, toolName, args, inheritedPermissions) {
     const permissions = inheritedPermissions || getAgent(agentId).permissions || {};
-    const category = classifyTool(toolName);
+    const category = classifyTool(toolName, args);
     return {
         agent: agentId,
         tool: toolName,
@@ -324,10 +401,16 @@ module.exports = {
     FULL_TEAM_TOOLS,
     TEAM_AGENT_IDS,
     canCrossLoadTeamSkills,
+    classifyTool,
     deriveChildAgentPermissions,
     evaluateAgentTool,
     getAgent,
     getAgents,
     renderAgentContext,
-    saveAgent
+    saveAgent,
+    SYSTEM_TOOLS,
+    AUGUST_API_TOOLS,
+    UI_TOOLS,
+    COMPUTER_POLICY_TOOLS,
+    MEMORY_WRITE_TOOLS
 };

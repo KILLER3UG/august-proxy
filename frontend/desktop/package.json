@@ -7,6 +7,7 @@
     "dev": "node ../../scripts/dev-app.mjs",
     "dev:vite": "vite",
     "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

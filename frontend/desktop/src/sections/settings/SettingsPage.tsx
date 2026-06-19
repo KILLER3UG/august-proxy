@@ -24,6 +24,7 @@ import { ToolsConnectionsSection } from './ToolsConnectionsSection';
 import { ConversationsHistorySection } from './ConversationsHistorySection';
 import { AgentsAutomationSection } from './AgentsAutomationSection';
 import { DeveloperConsoleSection } from './DeveloperConsoleSection';
+import { ComputerAccessSettings } from './ComputerAccessSettings';
 
 /** The default section when no :section param is present. The user
  *  said clicking Settings should land on Model settings. */
@@ -64,7 +65,10 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'conversations-history': ConversationsHistoryWrapper,
   'agents-automation': AgentsAutomationWrapper,
   'developer-console': DeveloperConsoleWrapper,
+  'computer-access': ComputerAccessSettingsWrapper,
 };
+
+function ComputerAccessSettingsWrapper() { return <ComputerAccessSettings />; }
 
 function UsageWrapper() { return <WorkspaceUsageSection />; }
 function MemoryWrapper() { return <WorkspaceMemorySection />; }

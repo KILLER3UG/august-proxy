@@ -12,11 +12,12 @@ import { $sessions, createSession, type Session } from "@/store/sessions";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
-import { addRightDrawerSection, closeRightDrawer, useRightDrawer } from "./RightDrawerState";
-import { approveWorkbenchPlan, getWorkbenchSession, rejectWorkbenchPlan, streamWorkbenchRevision } from "@/api/workbench";
+import { addRightDrawerSection, closeRightDrawer, setActiveRightDrawerSection, useRightDrawer } from "./RightDrawerState";
+import { approveWorkbenchPlan, getWorkbenchSession, rejectWorkbenchPlan, setWorkbenchGuardMode, streamWorkbenchRevision } from "@/api/workbench";
 import { toast } from "sonner";
 import type { WorkbenchSession } from "@/types/workbench";
 import type { RightDrawerSectionId } from "./RightDrawerState";
+import { dispatchFocusComposer, dispatchInsertComposerText, onUiAction } from "@/api/ui-events";
 
 const SESSIONS_COLLAPSED_KEY = "august-sessions-collapsed";
 const WORKBENCH_SIDEBAR_OPEN_KEY = "august-workbench-sidebar-open";
@@ -67,6 +68,56 @@ export function ChatLayout() {
     window.addEventListener('august:open-right-sidebar', handler);
     return () => window.removeEventListener('august:open-right-sidebar', handler);
   }, []);
+
+  // Task 5: listen for august:ui-action events from the LLM/tool layer.
+  // API/state actions only — no DOM clicks/fills (locked decision 3).
+  const workbenchSessionId = active?.workbenchSessionId;
+  useEffect(() => {
+    const handler = (e: { action: string; target: string; payload?: Record<string, unknown> }) => {
+      switch (e.action) {
+        case 'navigate':
+          navigate(e.target);
+          break;
+        case 'open_drawer': {
+          const section = (e.payload?.section || 'preview') as RightDrawerSectionId;
+          addRightDrawerSection(section);
+          setShowRightSidebar(true);
+          break;
+        }
+        case 'close_drawer':
+          closeRightDrawer();
+          setShowRightSidebar(false);
+          break;
+        case 'set_drawer_section': {
+          const section = e.target as RightDrawerSectionId;
+          if (['preview', 'diff', 'terminal', 'tasks', 'plan'].includes(section)) {
+            addRightDrawerSection(section);
+            setActiveRightDrawerSection(section);
+            setShowRightSidebar(true);
+          }
+          break;
+        }
+        case 'set_guard_mode':
+          if (workbenchSessionId) {
+            const mode = e.target as 'plan' | 'ask' | 'full';
+            setWorkbenchGuardMode(workbenchSessionId, mode)
+              .catch(err => toast.error(`Failed to update guard mode: ${err?.message || err}`));
+          }
+          break;
+        case 'refresh':
+          queryClient.invalidateQueries();
+          break;
+        case 'focus_composer':
+          dispatchFocusComposer();
+          break;
+        case 'insert_composer_text':
+          dispatchInsertComposerText(e.target || '');
+          break;
+      }
+    };
+    const unsubscribe = onUiAction(handler);
+    return unsubscribe;
+  }, [navigate, queryClient, workbenchSessionId]);
 
   // Fetch the active workbench session to feed the right sidebar. The chat
   // thread also fetches this independently, so this is the layout-level mirror.

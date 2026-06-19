@@ -259,6 +259,132 @@ function saveSessions() {
 
 const PENDING_CONFIRMATION_TTL_MS = 5 * 60 * 1000;
 
+// Computer-use app allowlist (Lift L1, Review #2 fix).
+// Helper exported for tests.
+async function executeHostAgentToolWithPolicy(name, args, toolContext = {}, session = null) {
+    const { getAppPolicy } = require('../computer/app-allowlist');
+    const { appendAuditEntry } = require('../audit/audit-log');
+
+    // Read-only tools do not need policy checks
+    const READ_ONLY = new Set([
+        'computer_screenshot', 'computer_screen_size', 'computer_mouse_move',
+        'computer_mouse_position', 'computer_list_windows', 'computer_clipboard_get'
+    ]);
+    if (READ_ONLY.has(name)) {
+        return await hostAgent.execute(name, args);
+    }
+
+    // Determine focused app for policy lookup (Review #4).
+    let focusedApp = null;
+    if (name === 'computer_launch') {
+        const p = args && args.path ? String(args.path) : (args && args.app ? String(args.app) : '');
+        // Keep extension in the policy key — it matches what hostAgent list_windows reports.
+        focusedApp = p ? path.basename(p) : null;
+    } else if (name === 'computer_clipboard_set') {
+        // Global mutating; use last-known foreground. Try to resolve now.
+        try {
+            const winRes = await hostAgent.execute('computer_list_windows', {});
+            const wins = (winRes && Array.isArray(winRes.windows)) ? winRes.windows : (Array.isArray(winRes) ? winRes : []);
+            const fg = wins.find(w => w && w.isForeground === true);
+            focusedApp = fg ? (fg.processName || fg.title || null) : null;
+        } catch (_) { focusedApp = null; }
+        if (!focusedApp) {
+            // Default to 'ask' since we cannot resolve the target
+            return await enforcePolicy({
+                name, args, toolContext, session,
+                focusedApp: null, policy: 'ask',
+                reason: 'clipboard_global_no_focused_app',
+                appendAuditEntry, getAppPolicy
+            });
+        }
+    } else if (name === 'computer_focus_window') {
+        // Focus change — resolve target window via list_windows matching title.
+        try {
+            const winRes = await hostAgent.execute('computer_list_windows', {});
+            const wins = (winRes && Array.isArray(winRes.windows)) ? winRes.windows : (Array.isArray(winRes) ? winRes : []);
+            const match = wins.find(w => w && w.title === args.title);
+            focusedApp = match ? (match.processName || match.title || null) : null;
+        } catch (_) { focusedApp = null; }
+    } else {
+        // Default: detect focused app via list_windows.
+        try {
+            const winRes = await hostAgent.execute('computer_list_windows', {});
+            const wins = (winRes && Array.isArray(winRes.windows)) ? winRes.windows : (Array.isArray(winRes) ? winRes : []);
+            const fg = wins.find(w => w && w.isForeground === true);
+            focusedApp = fg ? (fg.processName || fg.title || null) : null;
+        } catch (_) { focusedApp = null; }
+    }
+
+    const policy = getAppPolicy(focusedApp);
+    return await enforcePolicy({
+        name, args, toolContext, session,
+        focusedApp, policy, reason: 'standard',
+        appendAuditEntry, getAppPolicy
+    });
+}
+
+async function enforcePolicy({ name, args, toolContext, session, focusedApp, policy, reason, appendAuditEntry, getAppPolicy }) {
+    if (policy === 'deny') {
+        appendAuditEntry({
+            action: 'computer.blocked',
+            target: focusedApp || '(unknown)',
+            category: 'computer',
+            critical: false,
+            inputSummary: { tool: name, focusedApp, reason },
+            result: 'blocked'
+        });
+        return { ok: false, blocked: true, app: focusedApp, reason: `App policy is 'deny' for ${focusedApp}` };
+    }
+    if (policy === 'ask' && !(toolContext && toolContext.approvedMutation === true)) {
+        appendAuditEntry({
+            action: 'computer.requires_approval',
+            target: focusedApp || '(unknown)',
+            category: 'computer',
+            inputSummary: { tool: name, focusedApp, reason },
+            result: 'pending'
+        });
+        return { ok: false, requiresConfirmation: true, app: focusedApp, action: name, target: args };
+    }
+    // Audit allow outcome
+    const allowEntry = appendAuditEntry({
+        action: 'computer.allowed',
+        target: focusedApp || '(unknown)',
+        category: 'computer',
+        approved: !!(toolContext && toolContext.approvedMutation),
+        approvalToken: toolContext && toolContext.approvalToken,
+        inputSummary: { tool: name, focusedApp, reason },
+        result: 'ok'
+    });
+    // Task 10: post-observation screenshot
+    try {
+        const { capturePostObservation } = require('../computer/post-observation');
+        const postObservation = await capturePostObservation(name, args, focusedApp, hostAgent);
+        if (postObservation && allowEntry && allowEntry.id) {
+            // Update the existing allowEntry with the post-observation reference
+            try {
+                const fs = require('fs');
+                const path = require('path');
+                const auditPath = require('../../lib/data-paths').dataPath('august_audit_log.jsonl');
+                if (fs.existsSync(auditPath)) {
+                    const lines = fs.readFileSync(auditPath, 'utf8').split(/\r?\n/).filter(Boolean);
+                    for (let i = 0; i < lines.length; i++) {
+                        try {
+                            const obj = JSON.parse(lines[i]);
+                            if (obj.id === allowEntry.id) {
+                                obj.postObservation = postObservation;
+                                lines[i] = JSON.stringify(obj);
+                                fs.writeFileSync(auditPath, lines.join('\n') + '\n');
+                                break;
+                            }
+                        } catch (_) { /* skip */ }
+                    }
+                }
+            } catch (_) { /* best effort */ }
+        }
+    } catch (_) { /* best effort */ }
+    return await hostAgent.execute(name, args);
+}
+
 function createPendingMutation(session, toolName, args) {
     const token = `confirm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     pendingMutations.set(token, {
@@ -615,7 +741,25 @@ const MUTATING_WORKBENCH_TOOLS = new Set([
     'computer_launch',
     'computer_open_browser',
     'computer_close_browser',
-    'computer_clipboard_set'
+    'computer_clipboard_set',
+    // Task 3: Host system tools (mutating only)
+    'august__filesystem_write',
+    'august__filesystem_copy',
+    'august__filesystem_move',
+    'august__filesystem_delete',
+    'august__system_exec',
+    'august__system_process',
+    'august__system_env',
+    'august__system_network',
+    // Task 4: August self-management tools (mutating only)
+    'august__sessions_manage',
+    'august__settings_update',
+    'august__models_select',
+    'august__providers_manage',
+    'august__agents_manage',
+    'august__memory_manage',
+    'august__rollback_undo',
+    'august__app_policy'
 ]);
 
 const SAFE_COMPUTER_TOOLS = new Set([
@@ -926,7 +1070,18 @@ function isPlanModeBlocked(toolName, args = {}) {
 function requireApproval(session, toolName, args, toolContext = {}) {
     if (!isMutatingWorkbenchTool(toolName, args || {})) return null;
 
-    if (toolContext.approvedMutation && session.guardMode === 'ask') return null;
+    if (toolContext.approvedMutation) return null;
+
+    // Critical-action gate (locked decision 2): critical ops require explicit
+    // confirm-mutation even in guardMode 'full'. The critical-actions module
+    // inspects the tool name + args to flag recursive delete, system-dir
+    // mutations, env changes, package installs, service-manager commands,
+    // security.* config mutations, agent deletion, audit/rollback integrity.
+    let critical = null;
+    try {
+        const { classifyCriticalAction } = require('../permissions/critical-actions');
+        critical = classifyCriticalAction({ toolName, args: args || {} });
+    } catch (_) { /* module not loaded yet — fall through */ }
 
     if (session.guardMode === 'plan') {
         return {
@@ -937,12 +1092,16 @@ function requireApproval(session, toolName, args, toolContext = {}) {
         };
     }
 
-    if (session.guardMode === 'ask') {
+    if (session.guardMode === 'ask' || (critical && critical.critical)) {
         const token = createPendingMutation(session, toolName, args);
         return {
             blocked: true,
-            type: 'mutation_pending_confirmation',
-            message: `I would like to execute: ${toolName}. Do you approve?`,
+            type: critical && critical.critical ? 'critical_action_pending_confirmation' : 'mutation_pending_confirmation',
+            critical: !!(critical && critical.critical),
+            criticalReasons: critical && critical.critical ? critical.reasons : undefined,
+            message: critical && critical.critical
+                ? `Critical action requires explicit confirmation: ${toolName}. Reason(s): ${critical.reasons.join(', ')}.`
+                : `I would like to execute: ${toolName}. Do you approve?`,
             confirmationToken: token,
             detail: `Tool: ${toolName} | Arguments: ${JSON.stringify(args)}`
         };
@@ -963,7 +1122,7 @@ function requireAgentPermission(session, toolName, args, toolContext = {}) {
     }
     const agentId = resolveAgentId(toolContext.agentId || session?.agentId || 'build', 'build');
     const inheritedPermissions = toolContext.inheritedPermissions || session?.inheritedPermissions || null;
-    const decision = evaluateAgentTool(agentId, toolName, inheritedPermissions);
+    const decision = evaluateAgentTool(agentId, toolName, args, inheritedPermissions);
     if (decision.action !== 'deny') return null;
     return {
         blocked: true,
@@ -1677,7 +1836,7 @@ async function executeWorkbenchTool(session, toolUse, toolContext = {}) {
             saveSessions();
             result = { status: 'todos_updated', count: session.todos.length };
         }
-        else if (name.startsWith('computer_')) result = await hostAgent.execute(name, args);
+        else if (name.startsWith('computer_')) result = await executeHostAgentToolWithPolicy(name, args, toolContext, session);
         else if (name === 'august__load_skill' || name === 'workbench_load_skill') {
             const toolName = name.startsWith('workbench_') ? 'august__load_skill' : name;
             const currentAgent = resolveAgentId(toolContext.agentId || session?.agentId || 'build', 'build');
@@ -2837,6 +2996,7 @@ module.exports = {
     deleteWorkbenchSession,
     executeWorkbenchToolBatch,
     executeWorkbenchTool,
+    executeHostAgentToolWithPolicy,
     generateSessionTitle,
     getSessionBrainPolicy,
     getWorkbenchGoalStatus,

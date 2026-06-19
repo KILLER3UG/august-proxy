@@ -823,6 +823,64 @@ const requestHandler = async (req, res) => {
         return;
     }
 
+    // ----- Audit + Rollback (Task 2) -----
+    if (req.url.startsWith('/ui/audit') && req.method === 'GET') {
+        try {
+            const { readAuditEntries } = require('./services/audit/audit-log');
+            const url = new URL(req.url, 'http://localhost');
+            const limit = Number(url.searchParams.get('limit') || 200);
+            return sendJson(res, { entries: readAuditEntries({ limit }) });
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    if (req.url === '/ui/rollback' && req.method === 'GET') {
+        try {
+            const { listRollbacks } = require('./services/rollback/rollback-store');
+            const url = new URL(req.url, 'http://localhost');
+            const limit = Number(url.searchParams.get('limit') || 100);
+            return sendJson(res, { items: listRollbacks({ limit }) });
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    if (req.url.startsWith('/ui/rollback/') && req.url.endsWith('/undo') && req.method === 'POST') {
+        try {
+            const body = await readJsonBody(req).catch(() => ({}));
+            const id = req.url.split('/').slice(-2, -1)[0];
+            const { undoRollback } = require('./services/rollback/rollback-store');
+            const entry = await undoRollback(id);
+            const { appendAuditEntry } = require('./services/audit/audit-log');
+            appendAuditEntry({
+                action: 'rollback.undo',
+                target: id,
+                inputSummary: body || null,
+                result: 'ok'
+            });
+            return sendJson(res, { ok: true, entry });
+        } catch (e) {
+            return sendError(res, e, 400);
+        }
+    }
+
+    // ----- August self-management API (Task 4) -----
+    if (req.url.startsWith('/ui/august/')) {
+        try {
+            const { handleAugustApiRoute } = require('./services/august-api/august-api-routes');
+            const handled = await handleAugustApiRoute(req, res, {
+                url: req.url,
+                method: req.method,
+                sendJson,
+                sendError
+            });
+            if (handled) return handled;
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
     if (req.url === '/ui/host-files/folder' && req.method === 'POST') {
         try {
             const data = await readJsonBody(req);

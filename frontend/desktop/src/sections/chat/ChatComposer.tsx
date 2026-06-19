@@ -2,6 +2,10 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Paperclip, AtSign, Mic, Send, StopCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import {
+  FOCUS_COMPOSER_EVENT,
+  INSERT_COMPOSER_TEXT_EVENT,
+} from '@/api/ui-events';
 
 interface ModelItem {
   id: string;
@@ -102,6 +106,31 @@ export function ChatComposer({
   onSetModelVisibilityOpen,
   onSetSessionModel,
 }: ChatComposerProps) {
+  // Task 5: respond to LLM-driven UI events that target the composer.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const focusHandler = () => {
+      // Defer focus to next frame so we don't fight the React render cycle.
+      requestAnimationFrame(() => {
+        taRef.current?.focus();
+      });
+    };
+    const insertHandler = (event: Event) => {
+      const ce = event as CustomEvent<{ text: string }>;
+      const text = ce.detail?.text;
+      if (typeof text === 'string' && text.length > 0) {
+        onInsertText(text);
+        taRef.current?.focus();
+      }
+    };
+    window.addEventListener(FOCUS_COMPOSER_EVENT, focusHandler);
+    window.addEventListener(INSERT_COMPOSER_TEXT_EVENT, insertHandler);
+    return () => {
+      window.removeEventListener(FOCUS_COMPOSER_EVENT, focusHandler);
+      window.removeEventListener(INSERT_COMPOSER_TEXT_EVENT, insertHandler);
+    };
+  }, [taRef, onInsertText]);
+
   return (
     <>
       {showToolsDropdown && (

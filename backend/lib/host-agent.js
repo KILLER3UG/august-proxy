@@ -1,6 +1,6 @@
 const http = require('http');
 
-const DEFAULT_HOST = process.env.HOST_AGENT_HOST || 'host.docker.internal';
+const DEFAULT_HOST = process.env.HOST_AGENT_HOST || '127.0.0.1';
 const DEFAULT_PORT = Number(process.env.HOST_AGENT_PORT || 6312);
 const TIMEOUT = Number(process.env.HOST_AGENT_TIMEOUT || 15000);
 
@@ -251,7 +251,7 @@ async function execute(toolName, args) {
     if (status !== 'connected') {
       return {
         error: true,
-        message: 'Host computer agent is not running. Start it on your Windows host: cd backend/host-agent && npm start (listens on port 6312, connectable via host.docker.internal).',
+        message: 'Host computer agent is not running. Start it on your Windows host: cd backend/host-agent && npm start (listens on port 6312, connectable via 127.0.0.1).',
         detail: e.message
       };
     }
