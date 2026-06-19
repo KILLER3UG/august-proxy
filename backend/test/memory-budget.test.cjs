@@ -23,7 +23,7 @@ async function main() {
   assert.deepStrictEqual(checkMemoryBudget('global_context', 'x'.repeat(4000)), {
     valid: true,
     length: 4000,
-    limit: 4000,
+    limit: 60000,
     overage: 0
   });
 
@@ -44,16 +44,16 @@ async function main() {
 
   const replaceResult = await executeAugustToolCall('august__core_memory_replace', {
     section: 'global_context',
-    content: 'x'.repeat(4001)
+    content: 'x'.repeat(60001)
   });
   const replaceText = String(replaceResult);
-  assert(replaceText.includes('over the 4000 character limit'), replaceText);
+  assert(replaceText.includes('over the 60000 character limit'), replaceText);
   assert(!readAugustCoreMemory().global_context.startsWith('xxx'));
 
   assert.throws(() => {
     writeAugustCoreMemory({
       ...readAugustCoreMemory(),
-      global_context: 'x'.repeat(4001)
+      global_context: 'x'.repeat(60001)
     });
   }, CoreMemoryBudgetError);
 

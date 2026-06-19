@@ -90,11 +90,17 @@ test.before(async () => {
       AUGUST_PROXY_PORT: PORT,
       AUGUST_PROXY_SKIP_MCP_STARTUP: '1',
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    // `inherit` lets the child's stdout/stderr stream directly to the
+    // parent's terminal (preserving debug visibility) without keeping
+    // pipes open that would otherwise block the parent from exiting on
+    // Windows after `taskkill` completes.
+    stdio: 'inherit',
   });
-
-  backendChild.stdout.on('data', (chunk) => process.stdout.write(`[backend] ${chunk}`));
-  backendChild.stderr.on('data', (chunk) => process.stderr.write(`[backend] ${chunk}`));
+  // Detach the child from the parent's event loop. With `stdio: 'inherit'`
+  // there are no pipes to keep the parent alive, but `unref()` is a
+  // belt-and-braces guard so the runner can exit cleanly regardless of
+  // whether taskkill on Windows reaches the child in time.
+  backendChild.unref();
 
   await waitForServer(backendChild);
 });
