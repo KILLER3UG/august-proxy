@@ -12,7 +12,7 @@ const { getBrainConfig } = require('../services/memory/brain-orchestrator');
 const { sanitizeToolSchema } = require('../services/tools/mcp-client');
 const { executeToolBatch } = require('../services/workbench/tool-executor');
 const { isOpenAiToolCallParallelSafe, isAnthropicToolUseParallelSafe, parseOpenAiToolArgs } = require('../services/workbench/managed-tool-policy');
-const { LlmAdapterBase } = require('./base');
+const { LlmAdapterBase, MAX_MANAGED_TOOL_ROUNDS } = require('./base');
 const { getProviderName } = require('../providers/provider-registry');
 const { resolveModelAliasDetails } = require('../providers/model-list');
 const { SseStreamParser } = require('./sse-parser');
@@ -308,16 +308,82 @@ function shouldRepairManagedWebToolResult(toolName, content) {
     );
 }
 
+// Maximum number of recent messages to inspect when looking for failed
+// managed-web tool_results to repair. Repair is local-only and only matters
+// for the conversation tail — old failed fetches are not worth re-running.
+const REPAIR_SCAN_WINDOW = 24;
+
 async function repairManagedWebToolResults(anthropicMessages) {
     if (!Array.isArray(anthropicMessages) || anthropicMessages.length === 0) {
         return { messages: anthropicMessages, repairedCount: 0 };
+    }
+
+    // Short histories: scan the whole array (current behavior).
+    // Long histories: only the tail matters. We slice the last REPAIR_SCAN_WINDOW
+    // messages, then walk backwards to also include any earlier message that
+    // contains the matching tool_use for a tool_result inside the tail. This
+    // preserves tool_use/tool_result pairing so the upstream model still sees
+    // a coherent assistant+user pair after the rewrite.
+    const needsWindowing = anthropicMessages.length > REPAIR_SCAN_WINDOW;
+    let repairStartIndex = 0;
+    let repairTarget = anthropicMessages;
+
+    if (needsWindowing) {
+        const tailStart = anthropicMessages.length - REPAIR_SCAN_WINDOW;
+        const tail = anthropicMessages.slice(tailStart);
+
+        // Collect tool_use_ids referenced by tool_result blocks in the tail.
+        const referencedIds = new Set();
+        for (const message of tail) {
+            if (!message || !Array.isArray(message.content)) continue;
+            for (const block of message.content) {
+                if (block?.type === 'tool_result' && block.tool_use_id) {
+                    referencedIds.add(block.tool_use_id);
+                }
+            }
+        }
+
+        // Walk backwards through the prefix to find assistant messages that
+        // contain any of those tool_use blocks, plus any preceding messages
+        // needed to keep the conversation coherent (we don't try to be clever —
+        // we just pull back to the earliest matching assistant message).
+        let earliestNeeded = tailStart;
+        if (referencedIds.size > 0) {
+            outer: for (let i = tailStart - 1; i >= 0; i--) {
+                const message = anthropicMessages[i];
+                if (!message || !Array.isArray(message.content)) continue;
+                for (const block of message.content) {
+                    if (block?.type === 'tool_use' && referencedIds.has(block.id)) {
+                        earliestNeeded = i;
+                        break outer;
+                    }
+                }
+            }
+        }
+        repairStartIndex = earliestNeeded;
+        repairTarget = anthropicMessages.slice(repairStartIndex);
     }
 
     const repairedMessages = [];
     const toolUseById = new Map();
     let repairedCount = 0;
 
-    for (const message of anthropicMessages) {
+    // Seed the toolUseById map from the prefix so tool_results at the start of
+    // the repair window can still resolve their matching tool_use when windowing
+    // is active. We only read (not mutate) these prefix messages.
+    if (needsWindowing) {
+        for (let i = 0; i < repairStartIndex; i++) {
+            const message = anthropicMessages[i];
+            if (!message || !Array.isArray(message.content)) continue;
+            for (const block of message.content) {
+                if (block?.type === 'tool_use' && block.id) {
+                    toolUseById.set(block.id, { name: block.name, input: block.input || {} });
+                }
+            }
+        }
+    }
+
+    for (const message of repairTarget) {
         const clonedMessage = message && typeof message === 'object'
             ? {
                 ...message,
@@ -361,7 +427,12 @@ async function repairManagedWebToolResults(anthropicMessages) {
         repairedMessages.push(clonedMessage);
     }
 
-    return { messages: repairedMessages, repairedCount };
+    // Splice repaired tail back onto the untouched prefix.
+    const finalMessages = needsWindowing
+        ? anthropicMessages.slice(0, repairStartIndex).concat(repairedMessages)
+        : repairedMessages;
+
+    return { messages: finalMessages, repairedCount };
 }
 
 // ── Parse SSE stream into a complete Chat Completions JSON object ──
@@ -602,7 +673,7 @@ async function resolveManagedWebToolCalls(initialData, oReq, cfg, clientToolName
         messages: Array.isArray(oReq.messages) ? [...oReq.messages] : []
     };
 
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < MAX_MANAGED_TOOL_ROUNDS; attempt++) {
         if (parentSignal && parentSignal.aborted) {
             throw new Error('Request aborted by client');
         }
@@ -927,6 +998,12 @@ async function buildOpenAIRequest(aReq, ctx, cfg, clientId) {
         model: backendModel,
         isAnthropicPath: false
     });
+    // Clamp max_tokens into a safe range:
+    //   - floor 1024: bumps absurd upstream values like max_tokens: 1 up to a usable minimum
+    //   - default 8192: when client sends nothing and the model is not MiniMax
+    //   - ceiling 64000: matches the MiniMax high-default; bounds per-request cost
+    const preferredMaxTokens = adapterBase.resolvePreferredMaxTokens(aReq.max_tokens, backendModel);
+    oReq.max_tokens = Math.max(1024, Math.min(preferredMaxTokens || 8192, 64000));
     if (aReq.stop_sequences) oReq.stop = aReq.stop_sequences;
 
     console.log(`[Proxy Params]: max_tokens=${oReq.max_tokens}, msg_count=${openaiMessages.length}, temp=${oReq.temperature}, top_p=${oReq.top_p}, top_k=${oReq.top_k}`);
@@ -1459,16 +1536,30 @@ async function streamAnthropicSSEToClient(response, res, reqId, responseModel) {
 
     writeAnthropicSSEHeaders(res);
     let rawBody = '';
+    // JSON.stringify safely escapes quotes/control chars so we can splice the
+    // result back into another JSON document without corrupting it.
+    const escapedModel = responseModel ? JSON.stringify(responseModel) : null;
+    const modelFieldPattern = /"model"\s*:\s*"[^"]*"/g;
+    const hasModelField = (s) => typeof s === 'string' && s.includes('"model"');
+
     const parser = new SseStreamParser((event, data) => {
         if (data === '[DONE]') return;
-        let payload;
-        try {
-            payload = JSON.parse(data);
-        } catch (e) {
+        if (data === undefined || data === null) return;
+
+        // Fast path: if the chunk has no "model" field at all, just forward it.
+        // Most Anthropic SSE events (content_block_*, message_delta, ping,
+        // message_stop, error) don't carry a model field.
+        if (!escapedModel || !hasModelField(data)) {
+            res.write(`event: ${event}\ndata: ${data}\n\n`);
             return;
         }
-        rewriteModelFieldsInValue(payload, responseModel);
-        res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
+
+        // Chunk contains a "model" field — typically only message_start.
+        // Do a string-level rewrite so we avoid recursively walking the
+        // entire parsed object on every event. JSON.stringify(responseModel)
+        // gives us a properly-escaped JSON string literal we can splice in.
+        const rewritten = data.replace(modelFieldPattern, `"model":${escapedModel}`);
+        res.write(`event: ${event}\ndata: ${rewritten}\n\n`);
     });
 
     rawBody = await pipeResponseToText(response, (text) => parser.feed(text));
@@ -2114,7 +2205,7 @@ async function resolveManagedAnthropicToolUses(initialParsed, upstreamReq, cfg, 
         messages: Array.isArray(upstreamReq.messages) ? [...upstreamReq.messages] : []
     };
 
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < MAX_MANAGED_TOOL_ROUNDS; attempt++) {
         if (parentSignal && parentSignal.aborted) {
             throw new Error('Request aborted by client');
         }

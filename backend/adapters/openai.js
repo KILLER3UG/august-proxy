@@ -5,7 +5,7 @@ const { applySelfHealToMessages } = require('../services/workbench/selfheal');
 const { getModelContextWindow, saveModelContextWindow, loadModelContextWindow } = require('../lib/models');
 const { estimateTokens, formatTokenCount } = require('../lib/tokens');
 const { buildFriendlyRateLimitMessage, getRetryDelayMs, isRetryableStatus } = require('../lib/upstream');
-const { LlmAdapterBase } = require('./base');
+const { LlmAdapterBase, MAX_MANAGED_TOOL_ROUNDS } = require('./base');
 const { SseStreamParser } = require('./sse-parser');
 const { classifyOpenAiToolCalls } = require('./tool-classification');
 const { buildSystemPromptText } = require('../services/memory/context-builder');
@@ -1252,7 +1252,7 @@ async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToo
         messages: Array.isArray(oReq.messages) ? [...oReq.messages] : []
     };
 
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < MAX_MANAGED_TOOL_ROUNDS; attempt++) {
         if (parentSignal && parentSignal.aborted) {
             throw new Error('Request aborted by client');
         }
