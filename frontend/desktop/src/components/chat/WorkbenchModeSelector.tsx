@@ -1,4 +1,16 @@
-import { useState } from 'react';
+/* ── WorkbenchModeSelector — chat-side permission pill dropdown ────── */
+/* The dropdown opens upward from the "Full access" / "Plan mode" /
+ * "Ask before changes" pill next to the chat input. It was rendered as
+ * `absolute bottom-full ... z-20` inside the composer, but the chat
+ * thread column has `overflow: hidden`, so the popup got clipped at the
+ * chat-thread boundary whenever there wasn't enough room above the trigger.
+ *
+ * The dropdown panel is now portaled to `document.body` with
+ * `position: fixed` so it escapes the overflow chain entirely. The trigger
+ * button stays inline. */
+
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 
 export type WorkbenchGuardMode = 'plan' | 'full' | 'ask';
@@ -55,44 +67,100 @@ interface WorkbenchModeSelectorProps {
 
 export function WorkbenchModeSelector({ selectedMode, onChange, className }: WorkbenchModeSelectorProps) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const guard = getWorkbenchGuardMode(selectedMode);
   const options = Object.values(WORKBENCH_GUARD_MODES) as WorkbenchGuardModeConfig[];
+
+  // Position in viewport coordinates for the portaled panel. Computed from
+  // the trigger's rect whenever the dropdown opens or the page scrolls /
+  // resizes while it's open.
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const compute = () => {
+      const el = triggerRef.current;
+      const panel = panelRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const panelHeight = panel?.offsetHeight || 160;
+      const top = Math.max(8, r.top - panelHeight - 4);
+      const right = Math.max(8, window.innerWidth - r.right);
+      setPos({ top, right });
+    };
+    requestAnimationFrame(compute);
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => {
+      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('resize', compute);
+    };
+  }, [open]);
+
+  // Outside click + Escape close.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (triggerRef.current?.contains(t)) return;
+      if (panelRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const panelContent = open && pos && (
+    <div
+      ref={panelRef}
+      className="fixed z-50 w-56 bg-card border border-border rounded-xl shadow-2xl p-1.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
+      style={{ top: pos.top, right: pos.right }}
+      role="listbox"
+    >
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          onClick={() => {
+            onChange(option.id);
+            setOpen(false);
+          }}
+          className={cn(
+            'w-full text-left px-2 py-1.5 rounded-md hover:bg-muted transition',
+            selectedMode === option.id && 'bg-primary/10 text-primary'
+          )}
+          title={option.description}
+        >
+          <span className="text-xs font-medium">{option.label}</span>
+          <p className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
+            {option.description}
+          </p>
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className={cn('relative', className)}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((value) => !value)}
         className="h-8 px-2 py-1 rounded-md text-[11px] bg-muted hover:bg-muted/70 text-foreground border border-border/50 capitalize"
         title={guard.description}
+        aria-expanded={open}
+        aria-haspopup="listbox"
       >
         {guard.label}
       </button>
-
-      {open && (
-        <div className="absolute right-0 bottom-full mb-2 w-56 bg-card border border-border rounded-xl shadow-2xl p-1.5 z-20">
-          {options.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => {
-                onChange(option.id);
-                setOpen(false);
-              }}
-              className={cn(
-                'w-full text-left px-2 py-1.5 rounded-md hover:bg-muted transition',
-                selectedMode === option.id && 'bg-primary/10 text-primary'
-              )}
-              title={option.description}
-            >
-              <span className="text-xs font-medium">{option.label}</span>
-              <p className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
-                {option.description}
-              </p>
-            </button>
-          ))}
-        </div>
-      )}
+      {typeof document !== 'undefined' && createPortal(panelContent, document.body)}
     </div>
   );
 }

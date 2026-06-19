@@ -1,7 +1,9 @@
-/* ── System & Health — redesigned card dashboard (Health + Connections) */
-/* Reuses the existing /api/health/detailed + $gateway + host-agent polling
- * but presents it as beginner-friendly status cards with plain-language
- * explanations, plus the connection URLs from the old Health section. */
+/* ── System & Health — workspace-style chrome over Health + Connections */
+/* Migrated to the new visual style: big h1, `px-8 py-6`, dark
+ * `border-white/[0.06]` rounded-xl cards. Same data fetching, same
+ * fields. The old `SettingsCard` / `SettingsTooltip` modal primitives
+ * are replaced with plain `border-white/[0.06]` divs for visual
+ * consistency with the rest of the panel. */
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -18,12 +20,11 @@ import {
   Terminal,
   Wifi,
   WifiOff,
+  type LucideIcon,
 } from 'lucide-react';
 import { api } from '@/api/client';
 import { $gateway } from '@/store/gateway';
 import { getHostAgentStatus } from '@/api/backend-ui';
-import { SettingsCard } from '@/components/settings/SettingsCard';
-import { SettingsTooltip } from '@/components/settings/SettingsTooltip';
 import { Badge } from '@/components/ui/badge';
 import { PageLoader } from '@/components/PageLoader';
 
@@ -52,6 +53,36 @@ function fmtUptime(s?: number) {
   return `${m}m`;
 }
 
+function StatCard({
+  icon: Icon,
+  title,
+  description,
+  status,
+  children,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description?: React.ReactNode;
+  status?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4">
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div className="flex items-center gap-2">
+          <Icon className="size-4 text-muted-foreground" />
+          <span className="text-sm font-semibold">{title}</span>
+        </div>
+        {status}
+      </div>
+      {description && (
+        <p className="text-xs text-muted-foreground mb-2">{description}</p>
+      )}
+      <div className="text-sm">{children}</div>
+    </div>
+  );
+}
+
 function EndpointRow({
   url, label, hint, icon,
 }: {
@@ -67,7 +98,7 @@ function EndpointRow({
     setTimeout(() => setCopied(false), 1200);
   }
   return (
-    <div className="rounded-md border border-border bg-card/60 px-3 py-2.5">
+    <div className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-muted-foreground shrink-0">{icon}</span>
@@ -75,7 +106,7 @@ function EndpointRow({
         </div>
         <button
           onClick={copy}
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[10px] font-mono hover:bg-accent transition shrink-0"
+          className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-background px-2 py-1 text-[10px] font-mono hover:bg-accent transition shrink-0"
           title="Copy URL"
         >
           {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
@@ -113,129 +144,112 @@ export function SystemHealthSection() {
     : null;
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="px-6 pt-5 pb-4 shrink-0">
-        <h2 className="text-lg font-semibold tracking-tight text-foreground">System &amp; Health</h2>
-        <p className="mt-1 text-sm leading-5 text-muted-foreground">
+    <div className="px-8 py-6 space-y-4 h-full flex flex-col overflow-auto">
+      <header className="shrink-0">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">System &amp; Health</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           The proxy gateway is running and routing requests. Everything below is live.
         </p>
       </header>
-      <div className="flex-1 overflow-auto px-6 pb-6 space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <SettingsCard
-            icon={Heart}
-            title="Gateway"
-            description={
-              <span>
-                The local proxy that routes every request.{' '}
-                <SettingsTooltip content="The gateway accepts requests from apps like Claude Code or Cursor and forwards them to the right AI provider." />
-              </span>
-            }
-            status={<Badge variant={gatewayOpen ? 'success' : 'destructive'}>{gatewayOpen ? 'open' : g.status}</Badge>}
-            inert
-          >
-            <p className="font-mono text-xs text-muted-foreground">port {port}</p>
-          </SettingsCard>
 
-          <SettingsCard
-            icon={Clock}
-            title="Uptime"
-            description="How long the gateway has been running without restarting."
-            inert
-          >
-            <p className="text-2xl font-bold">{fmtUptime(data?.uptime)}</p>
-          </SettingsCard>
-
-          <SettingsCard
-            icon={Server}
-            title="Host Agent"
-            description="The helper process that runs file & terminal actions on this machine."
-            status={<Badge variant={hostConnected ? 'success' : 'secondary'}>{hostStatus}</Badge>}
-            inert
-          >
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              {hostConnected ? <Wifi className="size-3.5 text-emerald-500" /> : <WifiOff className="size-3.5" />}
-              {hostConnected ? 'Reachable and accepting commands.' : 'Not running.'}
-            </div>
-          </SettingsCard>
-
-          <SettingsCard
-            icon={Cpu}
-            title="Memory"
-            description="RAM used by the proxy process."
-            inert
-          >
-            {data?.memory ? (
-              <>
-                <p className="font-mono text-xs">
-                  {data.memory.used} MB / {data.memory.total} MB
-                </p>
-                {memPct !== null && (
-                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className={`h-full rounded-full ${memPct > 85 ? 'bg-amber-500' : 'bg-primary'}`}
-                      style={{ width: `${memPct}%` }}
-                    />
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-xs text-muted-foreground">—</p>
-            )}
-          </SettingsCard>
-        </div>
-
-        <SettingsCard
-          icon={Link2}
-          title="Connect an app"
-          description="Point any OpenAI- or Anthropic-compatible app at this proxy. Models from every provider are available on all paths."
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          icon={Heart}
+          title="Gateway"
+          description="The local proxy that routes every request."
+          status={<Badge variant={gatewayOpen ? 'success' : 'destructive'}>{gatewayOpen ? 'open' : g.status}</Badge>}
         >
-          {endpoints ? (
-            <div className="space-y-3">
-              <EndpointRow url={endpoints.anthropic.url} label={endpoints.anthropic.label} hint="ANTHROPIC_BASE_URL — Claude Code, Anthropic SDKs." icon={<Brain className="size-3.5" />} />
-              <EndpointRow url={endpoints.openai.url} label={endpoints.openai.label} hint="OPENAI_API_BASE — OpenAI SDKs, Cursor, codex CLI." icon={<Terminal className="size-3.5" />} />
-              <EndpointRow url={endpoints.models.url} label={endpoints.models.label} hint="Fetch the model list. Any OpenAI-compatible client." icon={<Link2 className="size-3.5" />} />
-            </div>
+          <p className="font-mono text-xs text-muted-foreground">port {port}</p>
+        </StatCard>
+
+        <StatCard icon={Clock} title="Uptime" description="How long the gateway has been running without restarting.">
+          <p className="text-2xl font-bold">{fmtUptime(data?.uptime)}</p>
+        </StatCard>
+
+        <StatCard
+          icon={Server}
+          title="Host Agent"
+          description="The helper process that runs file & terminal actions on this machine."
+          status={<Badge variant={hostConnected ? 'success' : 'secondary'}>{hostStatus}</Badge>}
+        >
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {hostConnected ? <Wifi className="size-3.5 text-emerald-500" /> : <WifiOff className="size-3.5" />}
+            {hostConnected ? 'Reachable and accepting commands.' : 'Not running.'}
+          </div>
+        </StatCard>
+
+        <StatCard icon={Cpu} title="Memory" description="RAM used by the proxy process.">
+          {data?.memory ? (
+            <>
+              <p className="font-mono text-xs">
+                {data.memory.used} MB / {data.memory.total} MB
+              </p>
+              {memPct !== null && (
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                  <div
+                    className={`h-full rounded-full ${memPct > 85 ? 'bg-amber-500' : 'bg-primary'}`}
+                    style={{ width: `${memPct}%` }}
+                  />
+                </div>
+              )}
+            </>
           ) : (
-            <div className="space-y-2">
-              <EndpointRow url={`http://localhost:${port}/v1/messages`} label="Anthropic (Claude Code)" hint="Sends /v1/messages." icon={<Brain className="size-3.5" />} />
-              <EndpointRow url={`http://localhost:${port}/v1/chat/completions`} label="OpenAI Chat Completions" hint="Sends /v1/chat/completions." icon={<Terminal className="size-3.5" />} />
-              <EndpointRow url={`http://localhost:${port}/v1/models`} label="Model list" hint="Any OpenAI-compatible client." icon={<Link2 className="size-3.5" />} />
-            </div>
+            <p className="text-xs text-muted-foreground">—</p>
           )}
-
-          {data?.activeUpstream?.baseUrl && (
-            <div className="mt-3 pt-2 border-t border-border/40 text-[11px] text-muted-foreground font-mono">
-              active upstream: {data.activeUpstream.provider} → {data.activeUpstream.baseUrl}
-            </div>
-          )}
-        </SettingsCard>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <SettingsCard
-            icon={Brain}
-            title="Claude"
-            description="Upstream Anthropic connectivity."
-            status={<Badge variant={data?.claude?.status === 'ok' ? 'success' : 'secondary'}>{data?.claude?.status ?? 'unknown'}</Badge>}
-            inert
-          >
-            <p className="text-xs text-muted-foreground">Anthropic API reachability.</p>
-          </SettingsCard>
-          <SettingsCard
-            icon={Terminal}
-            title="Codex"
-            description="Upstream OpenAI connectivity."
-            status={<Badge variant={data?.codex?.status === 'ok' ? 'success' : 'secondary'}>{data?.codex?.status ?? 'unknown'}</Badge>}
-            inert
-          >
-            <p className="text-xs text-muted-foreground">OpenAI API reachability.</p>
-          </SettingsCard>
-        </div>
-
-        <p className="text-[9px] text-muted-foreground font-mono">
-          🔒 The base URL works over the network this app is served from. Use a real API key from Model Providers for the upstream provider.
-        </p>
+        </StatCard>
       </div>
+
+      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <Link2 className="size-4 text-muted-foreground" />
+          <span className="text-sm font-semibold">Connect an app</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Point any OpenAI- or Anthropic-compatible app at this proxy. Models from every provider are available on all paths.
+        </p>
+        {endpoints ? (
+          <div className="space-y-3">
+            <EndpointRow url={endpoints.anthropic.url} label={endpoints.anthropic.label} hint="ANTHROPIC_BASE_URL — Claude Code, Anthropic SDKs." icon={<Brain className="size-3.5" />} />
+            <EndpointRow url={endpoints.openai.url} label={endpoints.openai.label} hint="OPENAI_API_BASE — OpenAI SDKs, Cursor, codex CLI." icon={<Terminal className="size-3.5" />} />
+            <EndpointRow url={endpoints.models.url} label={endpoints.models.label} hint="Fetch the model list. Any OpenAI-compatible client." icon={<Link2 className="size-3.5" />} />
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <EndpointRow url={`http://localhost:${port}/v1/messages`} label="Anthropic (Claude Code)" hint="Sends /v1/messages." icon={<Brain className="size-3.5" />} />
+            <EndpointRow url={`http://localhost:${port}/v1/chat/completions`} label="OpenAI Chat Completions" hint="Sends /v1/chat/completions." icon={<Terminal className="size-3.5" />} />
+            <EndpointRow url={`http://localhost:${port}/v1/models`} label="Model list" hint="Any OpenAI-compatible client." icon={<Link2 className="size-3.5" />} />
+          </div>
+        )}
+
+        {data?.activeUpstream?.baseUrl && (
+          <div className="mt-3 pt-2 border-t border-white/[0.06] text-[11px] text-muted-foreground font-mono">
+            active upstream: {data.activeUpstream.provider} → {data.activeUpstream.baseUrl}
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <StatCard
+          icon={Brain}
+          title="Claude"
+          description="Upstream Anthropic connectivity."
+          status={<Badge variant={data?.claude?.status === 'ok' ? 'success' : 'secondary'}>{data?.claude?.status ?? 'unknown'}</Badge>}
+        >
+          <p className="text-xs text-muted-foreground">Anthropic API reachability.</p>
+        </StatCard>
+        <StatCard
+          icon={Terminal}
+          title="Codex"
+          description="Upstream OpenAI connectivity."
+          status={<Badge variant={data?.codex?.status === 'ok' ? 'success' : 'secondary'}>{data?.codex?.status ?? 'unknown'}</Badge>}
+        >
+          <p className="text-xs text-muted-foreground">OpenAI API reachability.</p>
+        </StatCard>
+      </div>
+
+      <p className="text-[9px] text-muted-foreground font-mono">
+        🔒 The base URL works over the network this app is served from. Use a real API key from Model Providers for the upstream provider.
+      </p>
     </div>
   );
 }

@@ -1,10 +1,11 @@
 /* ── Agents & Automation — merges Agents/Automations/Terminal ──────── */
-/* Agent registry, scheduled automations, and terminal/approval queues all
- * surface approval-gated execution state. Unified under one workbench hub. */
+/* Migrated to the workspace-style chrome (big h1, WorkspaceTabs,
+ * larger padding). Body components (Agents/Automations/Terminal) are
+ * reused verbatim from the legacy sections. */
 
 import { useState } from 'react';
 import { Bot, CalendarClock, TerminalSquare } from 'lucide-react';
-import { SettingsTabs } from '@/components/settings/SettingsTabs';
+import { WorkspaceTabs } from '@/components/workspace/WorkspaceTabs';
 import { Agents } from '@/sections/agents/Agents';
 import { Automations } from '@/sections/automations/Automations';
 import { Terminal } from '@/sections/terminal/Terminal';
@@ -19,16 +20,16 @@ export function AgentsAutomationSection() {
   const [tab, setTab] = useState<string>('agents');
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex flex-col gap-3 px-6 pt-5 pb-3 shrink-0">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight text-foreground">Agents &amp; Automation</h2>
-          <p className="mt-1 text-sm leading-5 text-muted-foreground">
-            Manage agents and their permissions, schedule automations, and review terminal approvals.
-          </p>
-        </div>
-        <SettingsTabs value={tab} onChange={setTab} items={TABS} label="Agents & automation views" />
+    <div className="px-8 py-6 space-y-4 h-full flex flex-col">
+      <header className="shrink-0">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Agents &amp; Automation</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Manage agents and their permissions, schedule automations, and review terminal approvals.
+        </p>
       </header>
+      <div className="shrink-0">
+        <WorkspaceTabs value={tab} onChange={setTab} items={TABS} label="Agents & automation views" />
+      </div>
       <div className="flex-1 overflow-auto">
         {tab === 'agents' && <Agents />}
         {tab === 'automations' && <Automations />}

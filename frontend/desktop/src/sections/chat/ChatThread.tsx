@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { marked } from 'marked';
 import { toast } from 'sonner';
 import { useStore } from '@nanostores/react';
+import { createPortal } from 'react-dom';
 import { $sessions, setSessionStatus, clearSessionStatus, renameSession, updateSessionModel, updateSessionWorkbenchMetadata, type Session } from '@/store/sessions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
@@ -339,6 +340,110 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
   const [showCommandsDropdown, setShowCommandsDropdown] = useState(false);
   const [queuedMessage, setQueuedMessage] = useState<{ text: string; attachments: { name: string; size: string }[] } | null>(null);
+
+  // Refs for each popover trigger — used to compute the portaled panel's
+  // viewport position. We portal the panels to document.body (see
+  // renderComposerContent) so they escape the overflow:hidden chain that
+  // would otherwise clip them at the chat-thread boundary.
+  const composerActionsTriggerRef = useRef<HTMLButtonElement>(null);
+  const composerRootRef = useRef<HTMLDivElement>(null);
+
+  // Viewport positions for the three portaled popovers. Each recomputes
+  // when the corresponding dropdown opens or the page scrolls / resizes
+  // while the dropdown is open.
+  const [composerActionsPos, setComposerActionsPos] = useState<{ top: number; left: number } | null>(null);
+  const [toolsPos, setToolsPos] = useState<{ top: number; left: number } | null>(null);
+  const [commandsPos, setCommandsPos] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (!showComposerActionsDropdown) {
+      setComposerActionsPos(null);
+      return;
+    }
+    const compute = () => {
+      const el = composerActionsTriggerRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setComposerActionsPos({ top: Math.max(8, r.top - 8), left: r.left });
+    };
+    requestAnimationFrame(compute);
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => {
+      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('resize', compute);
+    };
+  }, [showComposerActionsDropdown]);
+
+  useEffect(() => {
+    if (!showToolsDropdown) {
+      setToolsPos(null);
+      return;
+    }
+    const compute = () => {
+      const el = composerRootRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setToolsPos({ top: Math.max(8, r.top - 8), left: r.left + 8 });
+    };
+    requestAnimationFrame(compute);
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => {
+      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('resize', compute);
+    };
+  }, [showToolsDropdown]);
+
+  useEffect(() => {
+    if (!showCommandsDropdown) {
+      setCommandsPos(null);
+      return;
+    }
+    const compute = () => {
+      const el = composerRootRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setCommandsPos({ top: Math.max(8, r.top - 8), left: r.left + 8 });
+    };
+    requestAnimationFrame(compute);
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => {
+      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('resize', compute);
+    };
+  }, [showCommandsDropdown]);
+
+  // Outside-click + Escape handlers for the three composer dropdowns.
+  useEffect(() => {
+    const anyOpen = showComposerActionsDropdown || showToolsDropdown || showCommandsDropdown;
+    if (!anyOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (composerActionsTriggerRef.current?.contains(t)) {
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.('[data-composer-popover]')) return;
+      setShowComposerActionsDropdown(false);
+      setShowToolsDropdown(false);
+      setShowCommandsDropdown(false);
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowComposerActionsDropdown(false);
+        setShowToolsDropdown(false);
+        setShowCommandsDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [showComposerActionsDropdown, showToolsDropdown, showCommandsDropdown]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -1262,10 +1367,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, []);
   const renderComposerContent = () => {
     return (
-      <div className="relative">
-        {/* Tools Dropdown */}
-        {showToolsDropdown && (
-          <div className="absolute bottom-full mb-2 left-2 z-10 w-64 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+      <div className="relative" ref={composerRootRef}>
+        {/* Tools Dropdown — portaled to body to escape overflow:hidden chain */}
+        {showToolsDropdown && toolsPos && createPortal(
+          <div
+            data-composer-popover
+            style={{ position: 'fixed', top: toolsPos.top, left: toolsPos.left, transform: 'translateY(-100%)' }}
+            className="z-50 w-64 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
+          >
             <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-semibold">Mention Tool</div>
             {TOOLS.map((t) => (
               <button
@@ -1280,12 +1389,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 <span className="text-[10px] text-muted-foreground">{t.desc}</span>
               </button>
             ))}
-          </div>
+          </div>,
+          document.body,
         )}
 
-        {/* Commands Dropdown — triggered by typing / */}
-        {showCommandsDropdown && (
-          <div className="absolute bottom-full mb-2 left-2 z-10 w-72 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+        {/* Commands Dropdown — triggered by typing /, portaled to body */}
+        {showCommandsDropdown && commandsPos && createPortal(
+          <div
+            data-composer-popover
+            style={{ position: 'fixed', top: commandsPos.top, left: commandsPos.left, transform: 'translateY(-100%)' }}
+            className="z-50 w-72 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
+          >
             <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-semibold">Commands & Tools</div>
             {COMMANDS.filter(c => {
               const q = input.trim().toLowerCase();
@@ -1311,7 +1425,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             }).length === 0 && input.trim() && (
               <div className="px-2.5 py-1.5 text-[11px] text-muted-foreground">No matching command. Press Enter to send as a normal message.</div>
             )}
-          </div>
+          </div>,
+          document.body,
         )}
 
         {/* Queued message pill — shown above the composer when a follow-up
@@ -1388,13 +1503,23 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-1.5 pb-1.5">
             <div className="flex items-center gap-1.5">
               <div className="relative">
-                <ToolBtn Icon={Plus} label="Composer actions" className="h-8 w-8" onClick={() => {
-                  setShowComposerActionsDropdown((value) => !value);
-                  setShowToolsDropdown(false);
-                  setShowCommandsDropdown(false);
-                }} />
-                {showComposerActionsDropdown && (
-                  <div className="absolute left-0 bottom-full mb-2 z-20 w-44 bg-card border border-border rounded-xl shadow-2xl p-1.5">
+                <ToolBtn
+                  Icon={Plus}
+                  label="Composer actions"
+                  className="h-8 w-8"
+                  buttonRef={composerActionsTriggerRef}
+                  onClick={() => {
+                    setShowComposerActionsDropdown((value) => !value);
+                    setShowToolsDropdown(false);
+                    setShowCommandsDropdown(false);
+                  }}
+                />
+                {showComposerActionsDropdown && composerActionsPos && createPortal(
+                  <div
+                    data-composer-popover
+                    style={{ position: 'fixed', top: composerActionsPos.top, left: composerActionsPos.left, transform: 'translateY(-100%)' }}
+                    className="z-50 w-44 bg-card border border-border rounded-xl shadow-2xl p-1.5"
+                  >
                     <button
                       type="button"
                       onClick={() => {
@@ -1429,7 +1554,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                       <span>Voice input</span>
                       <Mic className="size-3.5 text-muted-foreground" />
                     </button>
-                  </div>
+                  </div>,
+                  document.body,
                 )}
               </div>
 
@@ -2376,9 +2502,10 @@ function ChatCheckpoints({ messages, scrollRef }: {
   );
 }
 
-function ToolBtn({ Icon, label, onClick, className }: { Icon: any; label: string; onClick?: () => void; className?: string }) {
+function ToolBtn({ Icon, label, onClick, className, buttonRef }: { Icon: any; label: string; onClick?: () => void; className?: string; buttonRef?: React.RefObject<HTMLButtonElement | null> }) {
   return (
     <button
+      ref={buttonRef ?? undefined}
       onClick={onClick}
       className={cn('h-8 w-8 p-0 rounded-lg hover:bg-muted hover:text-foreground transition text-muted-foreground', className)}
       title={label}
@@ -2402,6 +2529,12 @@ export function formatContextWindow(num?: number): string {
 }
 
 /* ── Custom Model Dropdown ────────────────────────────────────────── */
+/* Renders the trigger inline and the dropdown panel via React portal to
+ * `document.body` with `position: fixed`. This escapes the
+ * `overflow: hidden` chain on the chat-thread column and the chat-layout
+ * main column — without this, the dropdown was clipped at the chat-thread
+ * boundary when opened in the empty/centered composer state. */
+
 function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onRefresh, onEditModels }: {
   models: ModelItem[];
   visibleModels: ModelItem[];
@@ -2414,25 +2547,106 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
   const [open, setOpen] = useState(false);
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
-  const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [scrollEnd, setScrollEnd] = useState(false);
+  // Position of the dropdown panel in viewport coordinates. Recomputed
+  // each time the dropdown opens and on scroll/resize while open.
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
 
+  const computePos = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const width = Math.max(240, Math.min(320, r.width + 80));
+    // Estimate the panel height so the initial position sits ABOVE the
+    // trigger (panel's bottom edge near r.top), not on top of it. Refined
+    // to the real height on the next frame once the panel has mounted.
+    const estHeight = 320;
+    const desiredTop = r.top - estHeight - 4;
+    const top = Math.max(8, desiredTop);
+    const right = Math.max(8, window.innerWidth - r.right);
+    return { top, right, width };
+  }, []);
+
+  const updatePosition = useCallback(() => {
+    const el = triggerRef.current;
+    const panel = listRef.current?.parentElement?.parentElement;
+    if (!el || !panel) return;
+    const r = el.getBoundingClientRect();
+    const panelHeight = panel.offsetHeight || 320;
+    const desiredTop = r.top - panelHeight - 4;
+    const top = Math.max(8, desiredTop);
+    const right = Math.max(8, window.innerWidth - r.right);
+    setPos({ top, right });
+  }, []);
+
+  // Close on outside click. Use the triggerRef as the inclusion point.
   useEffect(() => {
+    if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setSearchQuery(''); setExpandedProviders(new Set()); }
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target)) return;
+      if (listRef.current?.parentElement?.parentElement?.contains(target)) return;
+      setOpen(false);
+      setSearchQuery('');
+      setExpandedProviders(new Set());
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  }, [open]);
+
+  // Close on Escape.
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        setSearchQuery('');
+        setExpandedProviders(new Set());
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [open]);
+
+  // Recompute position on scroll/resize while open (handles the composer
+  // being in a scrollable column or the window being resized).
+  useEffect(() => {
+    if (!open) return;
+    // Set a viewport-relative position from the trigger alone, *before* the
+    // panel is mounted. Without this, the panel never renders because it
+    // gates on `pos` being truthy and `updatePosition` needs the panel
+    // already in the DOM to measure its height.
+    const initial = computePos();
+    if (initial) setPos(initial);
+    // Defer one frame so the panel mounts, then refine using its real height.
+    requestAnimationFrame(() => updatePosition());
+    const onScroll = () => updatePosition();
+    const onResize = () => updatePosition();
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [open, computePos, updatePosition]);
 
   // Focus search input when dropdown opens
   useEffect(() => {
-    if (open) setTimeout(() => searchRef.current?.focus(), 50);
-    else { setSearchQuery(''); setExpandedProviders(new Set()); }
-  }, [open]);
+    if (open) {
+      // Defer one frame so the panel is mounted before we measure.
+      requestAnimationFrame(() => {
+        updatePosition();
+        setTimeout(() => searchRef.current?.focus(), 0);
+      });
+    } else {
+      setSearchQuery('');
+      setExpandedProviders(new Set());
+    }
+  }, [open, updatePosition]);
 
   const onScroll = () => {
     const el = listRef.current;
@@ -2468,12 +2682,171 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
     return { provider, models: sorted, visible, isExpanded, total: sorted.length, showCollapse };
   });
 
+  const dropdownContent = (
+    <AnimatePresence>
+      {open && pos && (
+        <motion.div
+          initial={{ opacity: 0, y: 6, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 6, scale: 0.97 }}
+          transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+          className="fixed z-50 min-w-[240px] max-w-[320px] bg-popover rounded-lg shadow-2xl overflow-hidden origin-bottom-right"
+          style={{ top: pos.top, right: pos.right }}
+        >
+          {/* Search bar */}
+          <div className="px-1.5 pt-1.5 pb-0.5 bg-popover">
+            <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1">
+              <svg className="size-2.5 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                ref={searchRef}
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search…"
+                className="bg-transparent text-sm font-mono outline-none w-full placeholder:text-muted-foreground/50 text-foreground py-0.5"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="p-0.5 rounded hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground transition"
+                >
+                  <svg className="size-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              )}
+              {onRefresh && (
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    await onRefresh();
+                  }}
+                  className={cn(
+                    "p-0.5 rounded hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground transition",
+                    loading && "animate-spin"
+                  )}
+                  title="Refresh models list"
+                  disabled={loading}
+                >
+                  <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="relative">
+            {/* Top fade indicator */}
+            <div className={cn(
+              'absolute top-0 left-0 right-0 h-5 z-10 pointer-events-none transition-opacity',
+              'bg-gradient-to-b from-popover to-transparent',
+              scrollTop > 4 ? 'opacity-100' : 'opacity-0'
+            )} />
+            {/* Bottom fade indicator */}
+            <div className={cn(
+              'absolute bottom-0 left-0 right-0 h-5 z-10 pointer-events-none transition-opacity',
+              'bg-gradient-to-t from-popover to-transparent',
+              scrollEnd ? 'opacity-0' : 'opacity-100'
+            )} />
+
+            <div
+              ref={listRef}
+              onScroll={onScroll}
+              className="model-dropdown-list max-h-[240px] overflow-x-hidden overflow-y-auto py-0.5"
+            >
+              {loading && grouped.length === 0 ? (
+                <div className="px-2 py-1 space-y-1">
+                  <div className="skeleton-row h-4 w-20 rounded my-1" />
+                  <div className="skeleton-row h-7 w-full rounded" />
+                  <div className="skeleton-row h-7 w-full rounded" />
+                  <div className="skeleton-row h-7 w-full rounded" />
+                  <div className="skeleton-row h-4 w-24 rounded my-1" />
+                  <div className="skeleton-row h-7 w-full rounded" />
+                  <div className="skeleton-row h-7 w-full rounded" />
+                </div>
+              ) : grouped.length === 0 ? (
+                <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                  {searchQuery.trim() ? `No results for "${searchQuery.trim()}"` : 'no models loaded'}
+                </div>
+              ) : (
+                grouped.map(({ provider, visible, isExpanded, total, showCollapse }) => (
+                  <div key={provider}>
+                    <div className="px-2 py-1 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold sticky top-0 bg-popover/95 backdrop-blur z-20 flex justify-between items-center">
+                      <span>{provider}</span>
+                      <span className="text-[10px] lowercase font-mono text-muted-foreground/60">({total})</span>
+                    </div>
+                    {visible.map(m => {
+                      const { name, tag } = modelDisplayParts(m.id);
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => { onSelect(m); setOpen(false); }}
+                          className={cn(
+                            'w-full text-left px-2.5 py-1.5 text-sm transition-all duration-150 flex items-center gap-2 rounded-md mx-1',
+                            selected?.id === m.id
+                              ? 'text-primary bg-primary/10 font-semibold'
+                              : 'text-foreground/80 hover:bg-white/5 hover:text-foreground'
+                          )}
+                        >
+                          <span className="truncate flex-1 font-sans">
+                            {name}
+                            {tag && (
+                              <span className="ml-1.5 text-[10px] text-muted-foreground/50 font-normal">{tag}</span>
+                            )}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground/60 shrink-0 tabular-nums">
+                            {formatContextWindow(m.contextWindow)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {showCollapse && (
+                      <button
+                        onClick={() => {
+                          setExpandedProviders(prev => {
+                            const next = new Set(prev);
+                            if (isExpanded) next.delete(provider);
+                            else next.add(provider);
+                            return next;
+                          });
+                        }}
+                        className="w-full text-left px-2.5 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-white/5 transition"
+                      >
+                        {isExpanded ? '▲ Show less' : '▼ Show ' + (total - 5) + ' more'}
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Edit models link */}
+            {onEditModels && (
+              <div className="px-2 py-1.5 border-t border-border/20">
+                <button
+                  onClick={() => { onEditModels(); setOpen(false); }}
+                  className="w-full text-left px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition"
+                >
+                  Edit models
+                </button>
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
   return (
-    <div ref={ref} className="relative">
+    <>
       <button
-        onClick={() => setOpen(!open)}
+        ref={triggerRef}
+        onClick={() => setOpen((v: boolean) => !v)}
         className={cn(
-          'flex items-center gap-1.5 text-xs font-sans outline-none cursor-pointer shrink-0 h-8',
+          'relative flex items-center gap-1.5 text-xs font-sans outline-none cursor-pointer shrink-0 h-8',
           'text-muted-foreground hover:text-foreground transition-all duration-200',
           'bg-muted/30 hover:bg-muted/50 rounded-md px-2 py-1',
         )}
@@ -2489,162 +2862,8 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
-
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: 6, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.97 }}
-            transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute bottom-full mb-1 right-0 z-50 min-w-[240px] max-w-[320px] bg-popover rounded-lg shadow-2xl overflow-hidden origin-bottom-right"
-          >
-            {/* Search bar */}
-            <div className="px-1.5 pt-1.5 pb-0.5 bg-popover">
-              <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2 py-1">
-                <svg className="size-2.5 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-                </svg>
-                <input
-                  ref={searchRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Search…"
-                  className="bg-transparent text-sm font-mono outline-none w-full placeholder:text-muted-foreground/50 text-foreground py-0.5"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="p-0.5 rounded hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground transition"
-                  >
-                    <svg className="size-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                )}
-                {onRefresh && (
-                  <button
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      await onRefresh();
-                    }}
-                    className={cn(
-                      "p-0.5 rounded hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground transition",
-                      loading && "animate-spin"
-                    )}
-                    title="Refresh models list"
-                    disabled={loading}
-                  >
-                    <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="relative">
-              {/* Top fade indicator */}
-              <div className={cn(
-                'absolute top-0 left-0 right-0 h-5 z-10 pointer-events-none transition-opacity',
-                'bg-gradient-to-b from-popover to-transparent',
-                scrollTop > 4 ? 'opacity-100' : 'opacity-0'
-              )} />
-              {/* Bottom fade indicator */}
-              <div className={cn(
-                'absolute bottom-0 left-0 right-0 h-5 z-10 pointer-events-none transition-opacity',
-                'bg-gradient-to-t from-popover to-transparent',
-                scrollEnd ? 'opacity-0' : 'opacity-100'
-              )} />
-
-              <div
-                ref={listRef}
-                onScroll={onScroll}
-                className="model-dropdown-list max-h-[240px] overflow-x-hidden overflow-y-auto py-0.5"
-              >
-                {loading && grouped.length === 0 ? (
-                  <div className="px-2 py-1 space-y-1">
-                    <div className="skeleton-row h-4 w-20 rounded my-1" />
-                    <div className="skeleton-row h-7 w-full rounded" />
-                    <div className="skeleton-row h-7 w-full rounded" />
-                    <div className="skeleton-row h-7 w-full rounded" />
-                    <div className="skeleton-row h-4 w-24 rounded my-1" />
-                    <div className="skeleton-row h-7 w-full rounded" />
-                    <div className="skeleton-row h-7 w-full rounded" />
-                  </div>
-                ) : grouped.length === 0 ? (
-                  <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                    {searchQuery.trim() ? `No results for "${searchQuery.trim()}"` : 'no models loaded'}
-                  </div>
-                ) : (
-                  grouped.map(({ provider, visible, isExpanded, total, showCollapse }) => (
-                    <div key={provider}>
-                      <div className="px-2 py-1 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold sticky top-0 bg-popover/95 backdrop-blur z-20 flex justify-between items-center">
-                        <span>{provider}</span>
-                        <span className="text-[10px] lowercase font-mono text-muted-foreground/60">({total})</span>
-                      </div>
-                      {visible.map(m => {
-                        const { name, tag } = modelDisplayParts(m.id);
-                        return (
-                          <button
-                            key={m.id}
-                            onClick={() => { onSelect(m); setOpen(false); }}
-                            className={cn(
-                              'w-full text-left px-2.5 py-1.5 text-sm transition-all duration-150 flex items-center gap-2 rounded-md mx-1',
-                              selected?.id === m.id
-                                ? 'text-primary bg-primary/10 font-semibold'
-                                : 'text-foreground/80 hover:bg-white/5 hover:text-foreground'
-                            )}
-                          >
-                            <span className="truncate flex-1 font-sans">
-                              {name}
-                              {tag && (
-                                <span className="ml-1.5 text-[10px] text-muted-foreground/50 font-normal">{tag}</span>
-                              )}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground/60 shrink-0 tabular-nums">
-                              {formatContextWindow(m.contextWindow)}
-                            </span>
-                          </button>
-                        );
-                      })}
-                      {showCollapse && (
-                        <button
-                          onClick={() => {
-                            setExpandedProviders(prev => {
-                              const next = new Set(prev);
-                              if (isExpanded) next.delete(provider);
-                              else next.add(provider);
-                              return next;
-                            });
-                          }}
-                          className="w-full text-left px-2.5 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-white/5 transition"
-                        >
-                          {isExpanded ? '▲ Show less' : '▼ Show ' + (total - 5) + ' more'}
-                        </button>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* Edit models link */}
-              {onEditModels && (
-                <div className="px-2 py-1.5 border-t border-border/20">
-                  <button
-                    onClick={() => { onEditModels(); setOpen(false); }}
-                    className="w-full text-left px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition"
-                  >
-                    Edit models
-                  </button>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+      {typeof document !== 'undefined' && createPortal(dropdownContent, document.body)}
+    </>
   );
 }
 

@@ -434,4 +434,7 @@ module.exports = {
     resolveModelAliasDetails,
     getModelDisplayAlias,
     isFreeModelId,
+    /** Exported for the providers.json seeder (providers-routes.js) so the
+     *  seeded model lists match what the live aggregator already used to use. */
+    staticModelsFor,
 };

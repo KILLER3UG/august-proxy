@@ -8,7 +8,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { ChatThread } from '@/sections/chat/ChatThread';
-import { SettingsOverlay } from '@/components/overlays/SettingsOverlay';
+import { SettingsPage } from '@/sections/settings/SettingsPage';
 import { SETTINGS_SECTIONS } from '@/settings/settings-registry';
 
 export interface SectionRoute {
@@ -41,7 +41,7 @@ function ChatThreadWithParams() {
 export const SECTION_ROUTES: readonly SectionRoute[] = [
   { path: '/', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThread, { sessionId: 'demo' }), nav: true },
   { path: '/c/:sessionId', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThreadWithParams) },
-  { path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, element: React.createElement(Navigate, { to: '/settings?tab=traffic-activity', replace: true }), nav: false },
+  { path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, element: React.createElement(Navigate, { to: '/settings/traffic-activity', replace: true }), nav: false },
 ] as const;
 
 /* Settings tabs are derived from the reduced settings registry so the
@@ -55,9 +55,15 @@ export const SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_SECTIONS.map((sect
   path: `/settings/${section.id}`,
 })) as readonly SettingsTab[];
 
+/* Settings is now a FULL-SCREEN page (no modal). The SettingsPage
+ * component owns the left rail + content area; ChatLayout renders it
+ * full-width and hides the chat thread + right drawer when the path is
+ * /settings or /settings/:section. The :section param is resolved via
+ * the existing legacy alias map so old URLs (e.g. /settings/traffic)
+ * continue to work. */
 export const SETTINGS_ROUTES: readonly SectionRoute[] = [
-  { path: '/settings', label: 'Settings', Icon: Settings, element: React.createElement(SettingsOverlay) },
-  { path: '/settings/:tab', label: 'Settings', Icon: Settings, element: React.createElement(SettingsOverlay) },
+  { path: '/settings', label: 'Settings', Icon: Settings, element: React.createElement(SettingsPage) },
+  { path: '/settings/:section', label: 'Settings', Icon: Settings, element: React.createElement(SettingsPage) },
 ] as const;
 
 export const SECTION_NAV_ITEMS: readonly NavItem[] = SECTION_ROUTES.filter((route) => route.nav).map((route) => ({

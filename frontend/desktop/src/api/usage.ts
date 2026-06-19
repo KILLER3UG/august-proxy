@@ -27,6 +27,11 @@ export interface ModelShare {
   percent: number;
 }
 
+export interface DailyTokens {
+  date: string; // YYYY-MM-DD
+  tokens: number;
+}
+
 function withRange(path: string, range: UsageRange) {
   return `${path}?range=${range}`;
 }
@@ -35,4 +40,5 @@ export const usageApi = {
   stats:    (range: UsageRange = '30d')       => api.get<UsageStats>(withRange('/api/usage/stats', range)),
   heatmap:  (range: UsageRange = '30d')       => api.get<{ results: HeatmapCell[] }>(withRange('/api/usage/heatmap', range)),
   byModel:  (range: UsageRange = '30d')       => api.get<{ results: ModelShare[] }>(withRange('/api/usage/by-model', range)),
+  byDay:    (range: UsageRange = '30d')       => api.get<{ results: DailyTokens[] }>(withRange('/api/usage/by-day', range)),
 };

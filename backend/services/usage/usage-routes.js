@@ -4,7 +4,7 @@
 /*   • /api/usage/heatmap?range=7d|30d                                  */
 /*   • /api/usage/by-model?range=7d|30d                                 */
 
-const { getStats, getHeatmap, getByModel } = require('./usage-aggregator');
+const { getStats, getHeatmap, getByModel, getByDay } = require('./usage-aggregator');
 const { sendJson } = require('../../lib/http-utils');
 
 function parseRange(req) {
@@ -32,6 +32,11 @@ function handleUsageRoutes(req, res) {
     }
     if (req.url.startsWith('/api/usage/by-model')) {
         try { sendJson(res, { results: getByModel(parseRange(req)) }); }
+        catch (err) { return false; }
+        return true;
+    }
+    if (req.url.startsWith('/api/usage/by-day')) {
+        try { sendJson(res, { results: getByDay(parseRange(req)) }); }
         catch (err) { return false; }
         return true;
     }

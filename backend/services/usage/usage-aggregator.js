@@ -117,4 +117,22 @@ function getByModel(range = '30d') {
     return out;
 }
 
-module.exports = { getStats, getHeatmap, getByModel };
+/** Per-day token totals. Used by the Tokens-per-day bar chart. */
+function getByDay(range = '30d') {
+    const start = rangeStart(range);
+    const sessions = listSessions().filter(s => inRange(s.created_at, start));
+    const byDay = new Map();
+    for (const s of sessions) {
+        const day = ymd(s.created_at);
+        byDay.set(day, (byDay.get(day) || 0) + (s.total_tokens || 0));
+    }
+    const days = range === '7d' ? 7 : 30;
+    const out = [];
+    for (let i = days - 1; i >= 0; i--) {
+        const day = ymd(new Date(Date.now() - i * DAY_MS));
+        out.push({ date: day, tokens: byDay.get(day) || 0 });
+    }
+    return out;
+}
+
+module.exports = { getStats, getHeatmap, getByModel, getByDay };

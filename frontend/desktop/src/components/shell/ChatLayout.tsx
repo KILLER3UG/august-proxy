@@ -115,7 +115,9 @@ export function ChatLayout() {
     localStorage.setItem(SESSIONS_COLLAPSED_KEY, collapsed ? "1" : "0");
   }, [collapsed]);
 
-  // Don't show sidebar in settings overlay (the overlay has its own sidebar)
+  // Settings is a FULL-SCREEN page (not a modal). When the path is
+  // /settings/*, render the SettingsPage full-width with the chat
+  // thread + right drawer hidden. The session sidebar stays visible.
   const isSettings = location.pathname.startsWith("/settings");
 
   return (
@@ -150,9 +152,9 @@ export function ChatLayout() {
             onSelectRightDrawerSection={openWorkbenchSidebar}
           />
           <div className="flex-1 min-h-0 overflow-hidden relative flex">
-            {/* Center the chat within the remaining width after any open sidebar(s). */}
-            <div className="flex-1 flex min-w-0 justify-center">
-              <div className="flex h-full w-full max-w-3xl flex-col min-w-0 px-2">
+            {/* Settings takes the full width (its own internal layout). */}
+            {isSettings ? (
+              <div className="flex-1 min-w-0 h-full">
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.div
                     key={location.pathname}
@@ -160,23 +162,43 @@ export function ChatLayout() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                    className="h-full min-w-0 flex-1"
+                    className="h-full min-w-0"
                   >
                     <Outlet />
                   </motion.div>
                 </AnimatePresence>
               </div>
-            </div>
+            ) : (
+              <>
+                {/* Center the chat within the remaining width after any open sidebar(s). */}
+                <div className="flex-1 flex min-w-0 justify-center">
+                  <div className="flex h-full w-full max-w-3xl flex-col min-w-0 px-2">
+                    <AnimatePresence mode="wait" initial={false}>
+                      <motion.div
+                        key={location.pathname}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                        className="h-full min-w-0 flex-1"
+                      >
+                        <Outlet />
+                      </motion.div>
+                    </AnimatePresence>
+                  </div>
+                </div>
 
-            {!isSettings && active && (
-              <RightDrawer
-                open={showRightSidebar}
-                sessionId={active.id}
-                workspacePath={active.workspacePath || null}
-                workbenchSession={workbenchSession}
-                onApprovePlan={approvePlan}
-                onClose={closeWorkbenchSidebar}
-              />
+                {!isSettings && active && (
+                  <RightDrawer
+                    open={showRightSidebar}
+                    sessionId={active.id}
+                    workspacePath={active.workspacePath || null}
+                    workbenchSession={workbenchSession}
+                    onApprovePlan={approvePlan}
+                    onClose={closeWorkbenchSidebar}
+                  />
+                )}
+              </>
             )}
           </div>
         </div>

@@ -52,6 +52,33 @@ function resolveProviderForModel(model, options = {}) {
         if (p && hasCredentials(p)) return toResolved(p);
     }
 
+    // 1.5. Live model-catalog match — if any provider in providers.json
+    //      actually lists this model (live /v1/models fetch, user-added, or
+    //      built-in static), prefer it over a generic prefix match. This
+    //      prevents sibling providers (e.g. opencode-go vs opencode-zen) that
+    //      share static model-profile prefixes from stealing models that
+    //      belong to a more specific upstream.
+    //
+    //      Note: we do NOT honour `enabled: false` here as a skip — that
+    //      field is the seed default when no env-var is set, and the user
+    //      typically configures providers via the UI by setting an API key
+    //      in providers.json without flipping `enabled`. `hasCredentials`
+    //      below is the real "is this provider usable" check.
+    try {
+        const { listPublicProviders } = require('../services/providers/providers-routes');
+        const stored = listPublicProviders ? listPublicProviders() : [];
+        for (const sp of stored) {
+            if (!sp) continue;
+            const providerId = sp.id || sp.name;
+            if (!providerId) continue;
+            const profile = providers.find((x) => x.name === providerId || x.name === sp.name);
+            if (!profile || !hasCredentials(profile)) continue;
+            const models = Array.isArray(sp.models) ? sp.models : [];
+            const hit = models.find((m) => m && (m.id === model || (m.id && m.id.toLowerCase() === lowerModel)));
+            if (hit) return toResolved(profile);
+        }
+    } catch (_) { /* providers-routes not loaded yet — fall through */ }
+
     // 2–3. Model-profile matches (exact → longest prefix).
     let exactMatch = null;
     let bestPrefixMatch = null;

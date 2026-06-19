@@ -434,11 +434,37 @@ function setActiveProvider(providerName) {
 }
 
 function getProviderConfig(providerName) {
+  if (!providerName) return null;
   const config = getConfig();
+
+  /* 1. providers.json — the canonical store for user-configured providers.
+   *    Field-by-field merge with config.json so providers.json wins for the
+   *    fields the user can edit (apiKey, baseUrl, apiFormat, enabled,
+   *    autoFetch) but legacy config.json fields still flow through. */
+  try {
+    const { getStoredProviderByName } = require('../services/providers/providers-routes');
+    const stored = getStoredProviderByName(providerName);
+    if (stored) {
+      const legacyEntry =
+        (config[providerName] && typeof config[providerName] === 'object' && config[providerName]) ||
+        null;
+      const merged = { ...(legacyEntry || {}) };
+      if (stored.apiKey) merged.apiKey = stored.apiKey;
+      if (stored.baseUrl) merged.baseUrl = stored.baseUrl;
+      if (stored.apiFormat) merged.apiFormat = stored.apiFormat;
+      if (stored.enabled !== undefined) merged.enabled = stored.enabled;
+      if (stored.autoFetch !== undefined) merged.autoFetch = stored.autoFetch;
+      if (stored.id) merged._providerId = stored.id;
+      return merged;
+    }
+  } catch (_) {
+    // providers-routes module may not be loaded yet — fall through.
+  }
+
   if (config[providerName] && typeof config[providerName] === 'object') {
     return config[providerName];
   }
-  
+
   // Resolve alias configurations (e.g. anthropic -> claude, openai-codex -> codex)
   try {
     const { getProvider } = require('../providers/provider-registry');

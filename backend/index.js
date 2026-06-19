@@ -338,6 +338,16 @@ const requestHandler = async (req, res) => {
         }
     }
 
+    if (req.url.startsWith('/api/providers')) {
+        try {
+            const { handleProvidersRoutes } = require('./services/providers/providers-routes');
+            const handled = await Promise.resolve(handleProvidersRoutes(req, res));
+            if (handled) return;
+        } catch (err) {
+            return sendError(res, err, 500);
+        }
+    }
+
     if (req.url.startsWith('/api/git/')) {
         try {
             const { handleGitRoutes } = require('./services/git/git-routes');
