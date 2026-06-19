@@ -1,21 +1,24 @@
 /* ── RightDrawerPlanSection ─ Workbench plan ─────────────────────── */
+/*                                                                          */
+/* Plan actions (Reject / Revise / Accept / Accept and allow edits) live in  */
+/* the PlanProposalBanner at the bottom of the chat thread. The drawer card  */
+/* here is read-only: it just renders the plan.                             */
 
 import type { ReactNode } from 'react';
-import { FileText, FolderOpen, ShieldAlert, CheckCircle2, Wrench, AlertTriangle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { FileText, FolderOpen, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { WorkbenchSession } from '@/types/workbench';
 
 export function RightDrawerPlanSection({
   session,
-  onApprove,
 }: {
   session: WorkbenchSession | null;
-  onApprove: () => Promise<void>;
+  // Kept optional for callers that still pass them — they're ignored here.
+  onApprove?: () => Promise<void>;
+  onReject?: () => Promise<void>;
+  onRevise?: (feedback: string) => Promise<void> | void;
 }) {
   const plan = session?.plan;
-  const approved = session?.approved || !!session?.approvedAt;
 
   if (!plan) {
     return (
@@ -29,25 +32,7 @@ export function RightDrawerPlanSection({
   }
 
   return (
-    <div className="space-y-3 text-xs">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[11px] text-muted-foreground">
-            {approved ? 'Approved plan' : 'Plan awaiting approval'}
-          </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2 font-mono text-[10.5px] text-muted-foreground">
-            <span><Wrench className="inline size-3 mr-1" />{session?.mutationCount ?? 0} mutations</span>
-            <span>·</span>
-            <span>{session?.agentId}</span>
-            <span>·</span>
-            <span>{session?.provider}</span>
-          </div>
-        </div>
-        <Badge variant={approved ? 'success' : 'warning'} className="text-[9px]">
-          {approved ? <><CheckCircle2 className="size-3" /> approved</> : <><ShieldAlert className="size-3" /> approval needed</>}
-        </Badge>
-      </div>
-
+    <div className="h-full space-y-3 text-xs">
       <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 leading-relaxed text-foreground/90">
         {plan.summary}
       </div>
@@ -61,12 +46,6 @@ export function RightDrawerPlanSection({
         tone="warning"
       />
       <PlanList title="Verification" icon={<CheckCircle2 className="size-3" />} items={plan.verification} />
-
-      {!approved && (
-        <div className="flex justify-end border-t border-white/[0.06] pt-3">
-          <Button size="sm" onClick={onApprove}>Approve plan</Button>
-        </div>
-      )}
     </div>
   );
 }

@@ -3,7 +3,7 @@
 /* The right-side Workbench sidebar is rendered as a layout sidebar with    */
 /* Preview, Diff, Terminal, Tasks, and Plan sections.                       */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "@nanostores/react";
@@ -13,7 +13,7 @@ import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
 import { addRightDrawerSection, closeRightDrawer, useRightDrawer } from "./RightDrawerState";
-import { approveWorkbenchPlan, getWorkbenchSession } from "@/api/workbench";
+import { approveWorkbenchPlan, getWorkbenchSession, rejectWorkbenchPlan, streamWorkbenchRevision } from "@/api/workbench";
 import { toast } from "sonner";
 import type { WorkbenchSession } from "@/types/workbench";
 import type { RightDrawerSectionId } from "./RightDrawerState";
@@ -59,6 +59,15 @@ export function ChatLayout() {
     localStorage.removeItem("august-show-right-sidebar");
   }, []);
 
+  // Listen for the "open right sidebar" event dispatched by the PlanProposalBanner
+  // (and any other in-chat call-to-action) so the drawer opens without the
+  // caller needing access to the layout's setter.
+  useEffect(() => {
+    const handler = () => setShowRightSidebar(true);
+    window.addEventListener('august:open-right-sidebar', handler);
+    return () => window.removeEventListener('august:open-right-sidebar', handler);
+  }, []);
+
   // Fetch the active workbench session to feed the right sidebar. The chat
   // thread also fetches this independently, so this is the layout-level mirror.
   const workbench = useQuery({
@@ -71,6 +80,19 @@ export function ChatLayout() {
     refetchInterval: 2_000,
   });
   const workbenchSession: WorkbenchSession | null = workbench.data || null;
+
+  // Auto-open the Tasks section when todos first appear.
+  const hasTodosRef = useRef(false);
+  useEffect(() => {
+    const hasTodos = (workbenchSession?.todos?.length ?? 0) > 0;
+    if (hasTodos && !hasTodosRef.current) {
+      hasTodosRef.current = true;
+      addRightDrawerSection('tasks');
+      setShowRightSidebar(true);
+    } else if (!hasTodos) {
+      hasTodosRef.current = false;
+    }
+  }, [workbenchSession?.todos?.length]);
 
   // Auto redirect from `/` or invalid/archived sessionId to the first non-archived session
   useEffect(() => {
@@ -103,6 +125,29 @@ export function ChatLayout() {
       toast.success('Workbench plan approved');
     } catch (e: any) {
       toast.error('Could not approve Workbench plan', { description: e.message });
+    }
+  };
+
+  const rejectPlan = async () => {
+    if (!active?.workbenchSessionId) return;
+    try {
+      const updated = await rejectWorkbenchPlan(active.workbenchSessionId);
+      queryClient.setQueryData(['workbench-session', active.workbenchSessionId], updated);
+      toast.success('Workbench plan rejected');
+    } catch (e: any) {
+      toast.error('Could not reject Workbench plan', { description: e.message });
+    }
+  };
+
+  const revisePlan = async (feedback: string) => {
+    if (!active?.workbenchSessionId) return;
+    try {
+      await streamWorkbenchRevision(active.workbenchSessionId, feedback, {
+        onError: (data) => toast.error('Could not send plan revision', { description: data.message }),
+        onSession: () => queryClient.invalidateQueries({ queryKey: ['workbench-session', active.workbenchSessionId] }),
+      });
+    } catch (e: any) {
+      toast.error('Could not send plan revision', { description: e.message });
     }
   };
 
@@ -170,9 +215,11 @@ export function ChatLayout() {
               </div>
             ) : (
               <>
-                {/* Center the chat within the remaining width after any open sidebar(s). */}
+                {/* Center the chat within the remaining width after any open sidebar(s).
+                    The chat thread itself owns its own scrollbar (at the full
+                    width of the chat area, not inside this max-w-3xl box). */}
                 <div className="flex-1 flex min-w-0 justify-center">
-                  <div className="flex h-full w-full max-w-3xl flex-col min-w-0 px-2">
+                  <div className="flex h-full w-full max-w-3xl flex-col min-w-0">
                     <AnimatePresence mode="wait" initial={false}>
                       <motion.div
                         key={location.pathname}
@@ -195,6 +242,8 @@ export function ChatLayout() {
                     workspacePath={active.workspacePath || null}
                     workbenchSession={workbenchSession}
                     onApprovePlan={approvePlan}
+                    onRejectPlan={rejectPlan}
+                    onRevisePlan={revisePlan}
                     onClose={closeWorkbenchSidebar}
                   />
                 )}

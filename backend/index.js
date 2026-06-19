@@ -764,6 +764,15 @@ const requestHandler = async (req, res) => {
         }
     }
 
+    if (req.url === '/ui/workbench/reject' && req.method === 'POST') {
+        try {
+            const data = await readJsonBody(req);
+            return sendJson(res, rejectWorkbenchPlan(data.sessionId));
+        } catch (e) {
+            return sendError(res, e, 400);
+        }
+    }
+
     if (req.url === '/ui/workbench/reset' && req.method === 'POST') {
         try {
             const data = await readJsonBody(req);

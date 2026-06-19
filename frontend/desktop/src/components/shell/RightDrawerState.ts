@@ -28,39 +28,63 @@ export function useRightDrawer() {
 
 export function openRightDrawer(section?: RightDrawerSectionId, options: Partial<Pick<RightDrawerState, 'diff' | 'selectedDiffPath'>> = {}) {
   const current = $rightDrawer.get();
-  const nextSections = [...new Set([...current.sections, section].filter(Boolean))] as RightDrawerSectionId[];
+  const target = section ?? current.activeSection ?? SECTION_ORDER[0];
+  const nextSections = current.sections.includes(target)
+    ? current.sections
+    : [...current.sections, target].slice(-MAX_SECTIONS);
 
   $rightDrawer.set({
     ...current,
     ...options,
     open: true,
-    activeSection: section || current.activeSection || nextSections[0] || SECTION_ORDER[0],
-    sections: nextSections.slice(-MAX_SECTIONS),
+    activeSection: target,
+    sections: nextSections,
   });
 }
 
+/**
+ * Close the drawer AND reset all expanded sections. Reopening will start
+ * fresh — no sections will be restored from the previous session.
+ */
 export function closeRightDrawer() {
-  const current = $rightDrawer.get();
-  $rightDrawer.set({ ...current, open: false });
+  $rightDrawer.set({
+    open: false,
+    sections: [],
+    activeSection: undefined,
+  });
 }
 
 export function toggleRightDrawerSection(section: RightDrawerSectionId) {
   const current = $rightDrawer.get();
   const hasSection = current.sections.includes(section);
-  const nextSections = hasSection
-    ? current.sections.filter((item) => item !== section)
-    : [...current.sections, section].slice(-MAX_SECTIONS);
 
+  if (hasSection) {
+    // Closing a section — if it was the last one, the drawer stays open
+    // so the "No section selected" placeholder can render.
+    const nextSections = current.sections.filter((item) => item !== section);
+    $rightDrawer.set({
+      ...current,
+      sections: nextSections,
+      activeSection: nextSections.length > 0 ? nextSections[nextSections.length - 1] : undefined,
+    });
+    return;
+  }
+
+  // Add to the open list (cap at MAX_SECTIONS, drop oldest when full).
+  const nextSections = [...current.sections, section].slice(-MAX_SECTIONS);
   $rightDrawer.set({
     ...current,
+    open: true,
+    activeSection: section,
     sections: nextSections,
-    open: nextSections.length > 0 ? true : current.open,
-    activeSection: hasSection
-      ? (current.activeSection === section ? nextSections[nextSections.length - 1] : current.activeSection)
-      : section,
   });
 }
 
+/**
+ * Close a single section. If it was the last one, the drawer stays open
+ * (so the "No section selected" placeholder can be shown) — closing the
+ * drawer itself is a separate action.
+ */
 export function closeRightDrawerSection(section: RightDrawerSectionId) {
   const current = $rightDrawer.get();
   const nextSections = current.sections.filter((item) => item !== section);
@@ -68,7 +92,10 @@ export function closeRightDrawerSection(section: RightDrawerSectionId) {
   $rightDrawer.set({
     ...current,
     sections: nextSections,
-    activeSection: current.activeSection === section ? nextSections[nextSections.length - 1] : current.activeSection,
+    activeSection:
+      current.activeSection === section
+        ? (nextSections[nextSections.length - 1] ?? undefined)
+        : current.activeSection,
   });
 }
 
@@ -84,21 +111,19 @@ export function setActiveRightDrawerSection(section: RightDrawerSectionId) {
 export function setRightDrawerSections(sections: RightDrawerSectionId[], activeSection: RightDrawerSectionId = sections[0]) {
   $rightDrawer.set({
     open: true,
-    sections: [activeSection],
+    sections: [...new Set([activeSection, ...sections])].slice(-MAX_SECTIONS),
     activeSection,
   });
 }
 
 /**
- * Append a section to the drawer. No-op if the section is already open
- * (so the user can't open the same section twice). If the drawer is at
- * its MAX_SECTIONS cap, the oldest open section is dropped to make room
- * for the new one. The newly added section becomes the active section.
+ * Add a section to the drawer. No-op if the section is already open.
+ * Capped at MAX_SECTIONS — when full, the oldest section is dropped.
+ * Opens the drawer and sets the new section as active.
  */
 export function addRightDrawerSection(section: RightDrawerSectionId) {
   const current = $rightDrawer.get();
   if (current.sections.includes(section)) {
-    // Already open — just make it the active one, no duplication.
     $rightDrawer.set({ ...current, activeSection: section, open: true });
     return;
   }

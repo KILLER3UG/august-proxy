@@ -28,7 +28,7 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
   const removed = diff?.removed ?? files.reduce((sum, file) => sum + file.removed, 0);
 
   return (
-    <div className="space-y-3 text-xs">
+    <div className="h-full space-y-3 text-xs">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[11px] text-muted-foreground">

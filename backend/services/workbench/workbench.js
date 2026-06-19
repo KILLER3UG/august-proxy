@@ -2602,6 +2602,17 @@ function approveWorkbenchPlan(sessionId) {
     return summarizeSession(session);
 }
 
+function rejectWorkbenchPlan(sessionId) {
+    const session = getWorkbenchSession(sessionId);
+    if (!session.plan) throw new Error('No submitted plan is waiting for rejection.');
+    session.plan = null;
+    session.approved = false;
+    session.approvedAt = null;
+    session.updatedAt = new Date().toISOString();
+    saveSessions();
+    return summarizeSession(session);
+}
+
 function resetWorkbenchSession(sessionId, provider, agentId = 'build') {
     if (sessionId) {
         sessions.delete(sessionId);
@@ -2680,6 +2691,7 @@ module.exports = {
     getHostProjectRoots,
     answerWorkbenchBtw,
     approveWorkbenchPlan,
+    rejectWorkbenchPlan,
     clearWorkbenchGoal,
     createWorkbenchSession,
     deleteWorkbenchSession,

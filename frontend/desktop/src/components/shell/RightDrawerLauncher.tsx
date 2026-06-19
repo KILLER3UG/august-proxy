@@ -3,8 +3,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { PanelRight, PanelRightClose, FileDiff, ListTodo, ClipboardList, TerminalSquare, Play } from 'lucide-react';
-import type { RightDrawerSectionId } from './RightDrawerState';
+import {
+  PanelRight,
+  PanelRightClose,
+  FileDiff,
+  ListTodo,
+  ClipboardList,
+  TerminalSquare,
+  Play,
+  Check,
+} from 'lucide-react';
+import { useRightDrawer, type RightDrawerSectionId } from './RightDrawerState';
 
 const SECTION_META: Record<RightDrawerSectionId, { label: string; Icon: typeof FileDiff }> = {
   preview: {
@@ -37,6 +46,7 @@ export function RightDrawerDropdown({ drawerOpen, onSelect }: {
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const state = useRightDrawer();
 
   useEffect(() => {
     const handler = (event: MouseEvent) => {
@@ -45,6 +55,9 @@ export function RightDrawerDropdown({ drawerOpen, onSelect }: {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // Checkmarks only appear when the drawer itself is expanded.
+  const showCheck = state.open;
 
   return (
     <div ref={ref} className="relative">
@@ -73,6 +86,7 @@ export function RightDrawerDropdown({ drawerOpen, onSelect }: {
             <div className="max-h-[260px] overflow-y-auto py-0.5">
               {OPTIONS.map((sectionId) => {
                 const meta = SECTION_META[sectionId];
+                const isOpen = showCheck && state.sections.includes(sectionId);
                 return (
                   <button
                     key={sectionId}
@@ -81,10 +95,18 @@ export function RightDrawerDropdown({ drawerOpen, onSelect }: {
                       onSelect(sectionId);
                       setOpen(false);
                     }}
-                    className="w-full text-left px-3 py-2 text-sm transition-all duration-150 flex items-center gap-2 rounded-md mx-1 hover:bg-white/5 hover:text-foreground"
+                    className={cn(
+                      'w-full text-left px-3 py-2 text-sm transition-all duration-150 flex items-center gap-2 rounded-md mx-1',
+                      isOpen
+                        ? 'bg-primary/10 text-primary'
+                        : 'hover:bg-white/5 hover:text-foreground'
+                    )}
                   >
                     <meta.Icon className="size-4 text-muted-foreground/70 shrink-0" />
-                    <span className="truncate font-sans">{meta.label}</span>
+                    <span className="truncate font-sans font-semibold">{meta.label}</span>
+                    {isOpen && (
+                      <Check className="size-3.5 ml-auto text-primary shrink-0" />
+                    )}
                   </button>
                 );
               })}

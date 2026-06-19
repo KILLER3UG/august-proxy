@@ -30,6 +30,9 @@ import {
   createWorkbenchSession,
   streamWorkbenchChat,
   approveWorkbenchPlan,
+  rejectWorkbenchPlan,
+  streamPlanDecision,
+  streamWorkbenchRevision,
   answerWorkbenchBtw,
   getWorkbenchSession,
   listWorkbenchCapabilities,
@@ -39,6 +42,8 @@ import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import { WorkbenchModeSelector, WORKBENCH_GUARD_MODES, applyWorkbenchGuardMode, type WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
 import { ContextRing, estimateContextBreakdown, type ContextBreakdown } from './ChatComposer';
 import { WorkbenchPlanPanel } from '@/components/chat/WorkbenchPlanPanel';
+import { PlanProposalBanner } from '@/components/shell/PlanProposalBanner';
+import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { ChangedFilesCard } from '@/components/chat/ChangedFilesCard';
 import { gitApi, type GitDiffResult } from '@/api/git';
 
@@ -299,6 +304,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }
     return null;
   });
+
+  // Whether a plan is awaiting the user's decision. When true, the composer
+  // is replaced by the PlanProposalBanner so the user can only act on the
+  // plan (reject / revise / accept) — no new chat message can be sent.
+  const planPending = !!workbenchSession?.plan && !workbenchSession?.approved && !workbenchSession?.approvedAt;
   const [workbenchToolCount, setWorkbenchToolCount] = useState<number | null>(null);
   const [workbenchMode, setWorkbenchMode] = useState<WorkbenchGuardMode>(() => {
     const saved = localStorage.getItem('august_last_workbench_guard_mode') as WorkbenchGuardMode | null;
@@ -496,7 +506,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [sessionId]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    // The chat thread no longer owns its own scrollbar — the scroll thumb
+    // lives at the screen edge (or right-drawer left edge) in ChatLayout.
+    // We still keep `scrollRef` for checkpoint positioning, but the actual
+    // "scroll to bottom" needs to walk up to the nearest scrollable ancestor.
+    const el = scrollRef.current;
+    if (!el) return;
+    const scrollable = el.closest('.overflow-y-auto') as HTMLElement | null;
+    const target = scrollable ?? el;
+    target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' });
   }, [messages, streaming]);
 
   // Re-arm the suggested-action bubble each time a new turn starts.
@@ -1675,7 +1693,89 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     August
                   </h2>
                   <div className="w-full">
-                    {renderComposerContent()}
+                    {planPending ? (
+                      <PlanProposalBanner
+                        workbenchSession={workbenchSession}
+                        modelName={selectedModel?.name}
+                        sending={streaming}
+                        onOpenPlan={() => {
+                          addRightDrawerSection('plan');
+                          window.dispatchEvent(new CustomEvent('august:open-right-sidebar'));
+                        }}
+                        onAccept={async () => {
+                          if (!workbenchSession) return;
+                          try {
+                            const updated = await approveWorkbenchPlan(workbenchSession.id);
+                            setWorkbenchSession(updated);
+                            if (sessionId) {
+                              updateSessionWorkbenchMetadata(sessionId, {
+                                workbenchSessionId: updated.id,
+                                workbenchAgentId: updated.agentId,
+                                workbenchProvider: updated.provider,
+                              });
+                            }
+                            // Tell the model the plan was accepted but should NOT proceed.
+                            await streamPlanDecision(workbenchSession.id, 'accept', {
+                              onError: (data) => toast.error('Could not notify the model', { description: data.message }),
+                              onSession: (s) => setWorkbenchSession(s),
+                            });
+                          } catch (e: any) {
+                            toast.error('Could not approve Workbench plan', { description: e.message });
+                          }
+                        }}
+                        onAcceptAndImplement={async () => {
+                          if (!workbenchSession) return;
+                          try {
+                            const updated = await approveWorkbenchPlan(workbenchSession.id);
+                            setWorkbenchSession(updated);
+                            if (sessionId) {
+                              updateSessionWorkbenchMetadata(sessionId, {
+                                workbenchSessionId: updated.id,
+                                workbenchAgentId: updated.agentId,
+                                workbenchProvider: updated.provider,
+                              });
+                            }
+                            // Switch the guard mode to Full access so the model
+                            // can proceed with implementation.
+                            setWorkbenchMode('full');
+                            // Tell the model to proceed with implementation at Full access.
+                            await streamPlanDecision(workbenchSession.id, 'accept-and-implement', {
+                              onError: (data) => toast.error('Could not notify the model', { description: data.message }),
+                              onSession: (s) => setWorkbenchSession(s),
+                            });
+                          } catch (e: any) {
+                            toast.error('Could not approve Workbench plan', { description: e.message });
+                          }
+                        }}
+                        onReject={async () => {
+                          if (!workbenchSession) return;
+                          try {
+                            const updated = await rejectWorkbenchPlan(workbenchSession.id);
+                            setWorkbenchSession(updated);
+                            // Notify the model the plan was rejected.
+                            await streamPlanDecision(workbenchSession.id, 'reject', {
+                              onError: (data) => toast.error('Could not notify the model', { description: data.message }),
+                              onSession: (s) => setWorkbenchSession(s),
+                            });
+                          } catch (e: any) {
+                            toast.error('Could not reject Workbench plan', { description: e.message });
+                          }
+                        }}
+                        onRevise={async (feedback) => {
+                          if (!workbenchSession) return;
+                          try {
+                            await streamWorkbenchRevision(workbenchSession.id, feedback, {
+                              onError: (data) => toast.error('Could not send revision', { description: data.message }),
+                              onSession: (s) => setWorkbenchSession(s),
+                            });
+                          } catch (e: any) {
+                            toast.error('Could not send revision', { description: e.message });
+                          }
+                        }}
+                      />
+                    ) : (
+                      renderComposerContent()
+                    )}
                   </div>
                   <p className="text-[10px] text-muted-foreground/40 text-center mt-3 font-sans">
                     How can I help you code today?
@@ -1693,10 +1793,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               >
                 <div
                   ref={scrollRef}
-                  className="flex-1 overflow-y-auto"
+                  className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]"
                   style={{ overflowAnchor: 'none' }}
                 >
-                  <div className="w-full px-4 py-8 space-y-5 relative">
+                  <div className="mx-auto w-full max-w-3xl px-4 py-8 space-y-5 relative">
                     <WorkbenchPlanPanel
                       session={workbenchSession}
                       onApprove={async () => {
@@ -1711,6 +1811,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                               workbenchProvider: updated.provider,
                             });
                           }
+                          // Acknowledge acceptance to the model without triggering implementation.
+                          await streamPlanDecision(workbenchSession.id, 'accept', {
+                            onError: (data) => toast.error('Could not notify the model', { description: data.message }),
+                            onSession: (s) => setWorkbenchSession(s),
+                          });
                         } catch (e: any) {
                           toast.error("Could not approve Workbench plan", { description: e.message });
                         }
@@ -1754,25 +1859,117 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   </div>
                 </div>
 
-                {/* Composer at the bottom when there are messages */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                  className="shrink-0 z-10 w-full bg-background py-3"
-                >
-                  <div className="w-full px-4">
-                    <SuggestedActionBubble
-                      visible={showSuggestion}
-                      onSelect={(s) => {
-                        setInput(s);
-                        setSuggestionDismissed(true);
+                {/* When a plan is pending, the PlanProposalBanner replaces the
+                    composer entirely so the user can only act on the plan. */}
+                {planPending ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                    className="shrink-0 z-10 w-full bg-background py-3"
+                  >
+                    <PlanProposalBanner
+                      workbenchSession={workbenchSession}
+                      modelName={selectedModel?.name}
+                      sending={streaming}
+                      onOpenPlan={() => {
+                        addRightDrawerSection('plan');
+                        window.dispatchEvent(new CustomEvent('august:open-right-sidebar'));
                       }}
-                      onDismiss={() => setSuggestionDismissed(true)}
+                        onAccept={async () => {
+                          if (!workbenchSession) return;
+                          try {
+                            const updated = await approveWorkbenchPlan(workbenchSession.id);
+                            setWorkbenchSession(updated);
+                            if (sessionId) {
+                              updateSessionWorkbenchMetadata(sessionId, {
+                                workbenchSessionId: updated.id,
+                                workbenchAgentId: updated.agentId,
+                                workbenchProvider: updated.provider,
+                              });
+                            }
+                            // Tell the model the plan was accepted but should NOT proceed.
+                            await streamPlanDecision(workbenchSession.id, 'accept', {
+                              onError: (data) => toast.error('Could not notify the model', { description: data.message }),
+                              onSession: (s) => setWorkbenchSession(s),
+                            });
+                          } catch (e: any) {
+                            toast.error('Could not approve Workbench plan', { description: e.message });
+                          }
+                        }}
+                        onAcceptAndImplement={async () => {
+                          if (!workbenchSession) return;
+                          try {
+                            const updated = await approveWorkbenchPlan(workbenchSession.id);
+                            setWorkbenchSession(updated);
+                            if (sessionId) {
+                              updateSessionWorkbenchMetadata(sessionId, {
+                                workbenchSessionId: updated.id,
+                                workbenchAgentId: updated.agentId,
+                                workbenchProvider: updated.provider,
+                              });
+                            }
+                            // Switch the guard mode to Full access so the model
+                            // can proceed with implementation.
+                            setWorkbenchMode('full');
+                            // Tell the model to proceed with implementation at Full access.
+                            await streamPlanDecision(workbenchSession.id, 'accept-and-implement', {
+                              onError: (data) => toast.error('Could not notify the model', { description: data.message }),
+                              onSession: (s) => setWorkbenchSession(s),
+                            });
+                          } catch (e: any) {
+                            toast.error('Could not approve Workbench plan', { description: e.message });
+                          }
+                        }}
+                        onReject={async () => {
+                          if (!workbenchSession) return;
+                          try {
+                            const updated = await rejectWorkbenchPlan(workbenchSession.id);
+                            setWorkbenchSession(updated);
+                            // Notify the model the plan was rejected.
+                            await streamPlanDecision(workbenchSession.id, 'reject', {
+                              onError: (data) => toast.error('Could not notify the model', { description: data.message }),
+                              onSession: (s) => setWorkbenchSession(s),
+                            });
+                          } catch (e: any) {
+                            toast.error('Could not reject Workbench plan', { description: e.message });
+                          }
+                        }}
+                        onRevise={async (feedback) => {
+                          if (!workbenchSession) return;
+                          try {
+                            await streamWorkbenchRevision(workbenchSession.id, feedback, {
+                              onError: (data) => toast.error('Could not send revision', { description: data.message }),
+                              // The backend emits a `session` event with the new
+                              // plan after the model revises and resubmits.
+                              onSession: (s) => setWorkbenchSession(s),
+                            });
+                          } catch (e: any) {
+                            toast.error('Could not send revision', { description: e.message });
+                          }
+                        }}
                     />
-                    {renderComposerContent()}
-                  </div>
-                </motion.div>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                    className="shrink-0 z-10 w-full bg-background py-3"
+                  >
+                    <div className="mx-auto w-full max-w-3xl px-4">
+                      <SuggestedActionBubble
+                        visible={showSuggestion}
+                        onSelect={(s) => {
+                          setInput(s);
+                          setSuggestionDismissed(true);
+                        }}
+                        onDismiss={() => setSuggestionDismissed(true)}
+                      />
+                      {renderComposerContent()}
+                    </div>
+                  </motion.div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -2418,13 +2615,16 @@ function ChatCheckpoints({ messages, scrollRef }: {
   useEffect(() => {
     const container = scrollRef.current;
     if (!container || userMessages.length === 0) return;
+    // The scrollable ancestor is the screen-edge scroll container in
+    // ChatLayout, not the ref'd div (which is no longer scrollable).
+    const scrollable = container.closest('.overflow-y-auto') as HTMLElement | null ?? container;
     updatePositions();
     const onScroll = () => updatePositions();
     const onResize = () => updatePositions();
-    container.addEventListener('scroll', onScroll, { passive: true });
+    scrollable.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onResize, { passive: true });
     return () => {
-      container.removeEventListener('scroll', onScroll);
+      scrollable.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onResize);
     };
   }, [updatePositions, userMessages, scrollRef]);

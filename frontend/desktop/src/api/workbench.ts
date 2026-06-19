@@ -218,6 +218,70 @@ export async function approveWorkbenchPlan(sessionId: string): Promise<Workbench
   return res.json();
 }
 
+export async function rejectWorkbenchPlan(sessionId: string): Promise<WorkbenchSession> {
+  const res = await fetch('/ui/workbench/reject', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId }),
+  });
+  if (!res.ok) throw new Error(`rejectWorkbenchPlan failed: ${res.status}`);
+  return res.json();
+}
+
+export async function streamWorkbenchRevision(
+  sessionId: string,
+  feedback: string,
+  handlers: WorkbenchEventHandlers = {},
+): Promise<void> {
+  // Reuse the chat SSE endpoint with a feedback marker so the model treats
+  // it as a revision request rather than a brand-new instruction.
+  return streamWorkbenchChat({
+    sessionId,
+    message: `[Revision request] ${feedback}`,
+  }, handlers);
+}
+
+export type PlanDecision = 'accept' | 'accept-and-implement' | 'reject';
+
+const PLAN_DECISION_MESSAGES: Record<PlanDecision, string> = {
+  'accept': [
+    '[Plan accepted]',
+    'The user has accepted the plan. Do NOT proceed with implementation yet —',
+    'acknowledge the approval and wait for the next instruction.',
+  ].join(' '),
+  'accept-and-implement': [
+    '[Plan accepted with implementation]',
+    'The user has approved the plan and granted you Full access.',
+    'Proceed with implementing the plan now.',
+  ].join(' '),
+  'reject': [
+    '[Plan rejected]',
+    'The user has rejected the plan. Do NOT proceed with this approach —',
+    'acknowledge the rejection and wait for the next instruction.',
+  ].join(' '),
+};
+
+/**
+ * Notify the Workbench model about a plan decision (accept / accept-and-implement /
+ * reject) by sending a marker-prefixed chat message. The model uses the marker
+ * to recognise the decision and behave accordingly (acknowledge-only vs.
+ * proceed-with-implementation vs. discard-and-wait).
+ *
+ * The full SSE response stream is forwarded to the caller via the standard
+ * `WorkbenchEventHandlers` so the chat thread can render the model's reply
+ * and any tool calls in real time.
+ */
+export async function streamPlanDecision(
+  sessionId: string,
+  decision: PlanDecision,
+  handlers: WorkbenchEventHandlers = {},
+): Promise<void> {
+  return streamWorkbenchChat({
+    sessionId,
+    message: PLAN_DECISION_MESSAGES[decision],
+  }, handlers);
+}
+
 export interface ResetWorkbenchSessionParams {
   sessionId?: string;
   provider?: 'claude' | 'codex';

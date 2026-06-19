@@ -1,8 +1,7 @@
 /* ── RightDrawer ─ multi-section Workbench sidebar ────────────────── */
 
-import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Columns } from 'lucide-react';
+import { X, Columns, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   closeRightDrawerSection,
@@ -25,6 +24,8 @@ export function RightDrawer({
   workspacePath,
   workbenchSession,
   onApprovePlan,
+  onRejectPlan,
+  onRevisePlan,
   onClose,
 }: {
   open: boolean;
@@ -32,13 +33,12 @@ export function RightDrawer({
   workspacePath: string | null;
   workbenchSession: WorkbenchSession | null;
   onApprovePlan: () => Promise<void>;
+  onRejectPlan?: () => Promise<void>;
+  onRevisePlan?: (feedback: string) => void | Promise<void>;
   onClose: () => void;
 }) {
   const state = useRightDrawer();
-  const sections: RightDrawerSectionId[] = state.sections.length > 0
-    ? state.sections
-    : (state.activeSection ? [state.activeSection] : ['diff']);
-
+  const sections = state.sections;
   const width = sections.length >= 3 ? WIDE_WIDTH : BASE_WIDTH;
 
   if (!open) return null;
@@ -60,6 +60,11 @@ export function RightDrawer({
             <div className="flex min-w-0 items-center gap-2">
               <Columns className="size-3 text-muted-foreground/60 shrink-0" />
               <span className="truncate text-xs font-semibold text-foreground">Workbench</span>
+              {sections.length > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground/80">
+                  {sections.length}
+                </span>
+              )}
             </div>
 
             <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close Workbench sidebar">
@@ -68,10 +73,12 @@ export function RightDrawer({
           </div>
 
           <div className="min-h-0 flex-1 overflow-hidden p-2">
+            {sections.length === 0 && <NoSectionSelected />}
+
             {sections.length === 1 && (
               <DrawerSectionCard
                 sectionId={sections[0]}
-                ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan }}
+                ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan }}
               />
             )}
 
@@ -81,7 +88,7 @@ export function RightDrawer({
                   <DrawerSectionCard
                     key={sectionId}
                     sectionId={sectionId}
-                    ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan }}
+                    ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan }}
                   />
                 ))}
               </div>
@@ -93,7 +100,7 @@ export function RightDrawer({
                   <DrawerSectionCard
                     key={sectionId}
                     sectionId={sectionId}
-                    ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan }}
+                    ctx={{ sessionId, workspacePath, workbenchSession, onApprovePlan, onRejectPlan, onRevisePlan }}
                   />
                 ))}
               </div>
@@ -112,6 +119,8 @@ function renderSection(
     workspacePath: string | null;
     workbenchSession: WorkbenchSession | null;
     onApprovePlan: () => Promise<void>;
+    onRejectPlan?: () => Promise<void>;
+    onRevisePlan?: (feedback: string) => void | Promise<void>;
   },
 ) {
   switch (sectionId) {
@@ -133,6 +142,8 @@ function renderSection(
         <RightDrawerPlanSection
           session={ctx.workbenchSession}
           onApprove={ctx.onApprovePlan}
+          onReject={ctx.onRejectPlan}
+          onRevise={ctx.onRevisePlan}
         />
       );
   }
@@ -148,10 +159,12 @@ function DrawerSectionCard({
     workspacePath: string | null;
     workbenchSession: WorkbenchSession | null;
     onApprovePlan: () => Promise<void>;
+    onRejectPlan?: () => Promise<void>;
+    onRevisePlan?: (feedback: string) => void | Promise<void>;
   };
 }) {
   return (
-    <section className="relative flex min-h-0 flex-1 overflow-hidden rounded-lg border border-border/50 bg-card shadow-sm">
+    <section className="relative flex h-full min-h-0 overflow-hidden rounded-lg border border-border/50 bg-card shadow-sm">
       <Button
         variant="ghost"
         size="icon-sm"
@@ -162,9 +175,21 @@ function DrawerSectionCard({
       >
         <X className="size-3" />
       </Button>
-      <div className="min-h-0 flex-1 overflow-hidden">{renderSection(sectionId, ctx)}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto">{renderSection(sectionId, ctx)}</div>
     </section>
   );
 }
 
-
+function NoSectionSelected() {
+  return (
+    <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border/60 bg-card/40">
+      <div className="flex flex-col items-center text-center px-6">
+        <Inbox className="size-6 text-muted-foreground/40" />
+        <div className="mt-2 text-xs font-semibold text-foreground/80">No section selected</div>
+        <div className="mt-1 text-[10.5px] text-muted-foreground/70">
+          Pick a section from the Workbench menu to get started.
+        </div>
+      </div>
+    </div>
+  );
+}

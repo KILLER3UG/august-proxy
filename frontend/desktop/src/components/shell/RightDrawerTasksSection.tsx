@@ -1,6 +1,12 @@
 /* ── RightDrawerTasksSection ─ Workbench todo list ───────────────── */
+/*                                                                          */
+/* Color branding matches the dropdown / banner family:                      */
+/*   - active:   primary accent (indigo)                                    */
+/*   - completed: emerald                                                     */
+/*   - pending:  muted neutral                                               */
+/* Also: rounded-xl / border / bg-card / shadow-2xl on the header strip.    */
 
-import { Check, ArrowRight, Circle, CheckSquare } from 'lucide-react';
+import { Check, ArrowRight, Circle, CheckSquare, ListTodo } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { WorkbenchTodo } from '@/types/workbench';
 
@@ -11,12 +17,30 @@ export function RightDrawerTasksSection({ todos }: { todos: WorkbenchTodo[] }) {
   const activeIndex = todos.findIndex((todo) => todo.status === 'in_progress');
 
   return (
-    <div className="space-y-3 text-xs">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-[11px] text-muted-foreground">
-          {active ? 'Current step' : total > 0 ? 'All steps' : 'No todos'}
-        </div>
-        <div className="font-mono text-[10.5px] text-muted-foreground tabular-nums">{done}/{total}</div>
+    <div className="h-full space-y-3 text-xs">
+      {/* Brand strip — same surface language as the PlanProposalBanner and
+          the dropdown panels. Active = primary; no-todos = neutral. */}
+      <div
+        className={cn(
+          'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-[11px] font-semibold',
+          active
+            ? 'border-primary/30 bg-primary/5 text-primary'
+            : total > 0
+              ? 'border-emerald-500/25 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400'
+              : 'border-border bg-muted/30 text-muted-foreground'
+        )}
+      >
+        <ListTodo className="size-3 shrink-0" />
+        <span className="truncate">
+          {active
+            ? 'Current step'
+            : total > 0
+              ? 'All steps'
+              : 'No todos'}
+        </span>
+        <span className="ml-auto font-mono text-[10px] tabular-nums opacity-80">
+          {done}/{total}
+        </span>
       </div>
 
       {todos.length === 0 && (
@@ -26,8 +50,8 @@ export function RightDrawerTasksSection({ todos }: { todos: WorkbenchTodo[] }) {
       )}
 
       {active && (
-        <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
-          <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-blue-400 font-semibold">
+        <div className="rounded-lg border border-primary/25 bg-primary/5 p-3">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-primary font-semibold">
             <ArrowRight className="size-3" />
             In progress
           </div>
@@ -42,7 +66,7 @@ export function RightDrawerTasksSection({ todos }: { todos: WorkbenchTodo[] }) {
             className={cn(
               'flex items-start gap-2 rounded-lg border px-2.5 py-2',
               todo.status === 'completed' && 'border-emerald-500/15 bg-emerald-500/5',
-              todo.status === 'in_progress' && 'border-blue-500/25 bg-blue-500/5',
+              todo.status === 'in_progress' && 'border-primary/25 bg-primary/5',
               todo.status === 'pending' && 'border-border/60 bg-card/40'
             )}
           >
@@ -50,7 +74,7 @@ export function RightDrawerTasksSection({ todos }: { todos: WorkbenchTodo[] }) {
               {todo.status === 'completed' ? (
                 <Check className="size-3 text-emerald-500" />
               ) : todo.status === 'in_progress' ? (
-                <ArrowRight className="size-3 text-blue-500" />
+                <ArrowRight className="size-3 text-primary" />
               ) : (
                 <Circle className="size-3 text-muted-foreground/45" />
               )}
@@ -61,7 +85,7 @@ export function RightDrawerTasksSection({ todos }: { todos: WorkbenchTodo[] }) {
                   A{index + 1}
                 </span>
                 {index === activeIndex && (
-                  <CheckSquare className="size-3 text-blue-500" />
+                  <CheckSquare className="size-3 text-primary" />
                 )}
               </div>
               <div className={cn(

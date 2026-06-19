@@ -85,7 +85,7 @@ export function RightDrawerPreviewSection({
   const recentRequests = (requests?.completed || []).slice(0, 8);
 
   return (
-    <div className="space-y-3 text-xs">
+    <div className="h-full space-y-3 text-xs">
       <div className="flex items-center justify-between gap-2">
         <div className="text-[11px] text-muted-foreground">
           Run a local dev server and inspect the browser preview
