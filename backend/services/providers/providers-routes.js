@@ -172,6 +172,119 @@ function load() {
             console.warn('[providers] seed failed:', err.message);
         }
     }
+
+    /* Legacy hint migration: copy every model id from the now-deprecated
+     * provider-hints.js table into the matching provider's models[]. This
+     * preserves routing for any model that lived only in the JS hint
+     * table (e.g. older routes that bypassed the providers.json catalog).
+     * Gated by a `_hintsMigrated` flag persisted on the store object so
+     * it runs exactly once. */
+    if (!store._hintsMigrated) {
+        try { seedHintsIntoProviders(); } catch (err) {
+            console.warn('[providers] hints migration failed:', err.message);
+        }
+        store._hintsMigrated = true;
+        try { persist(); } catch (_) { /* best-effort */ }
+    }
+}
+
+/** Legacy model→provider hint table. Embedded here so the migration
+ *  doesn't depend on the now-deleted backend/providers/provider-hints.js.
+ *  After this migration runs once, every model below lives in
+ *  providers.json under its provider's models[], and the resolver
+ *  finds it via the catalog-first cascade. */
+const LEGACY_HINTS = {
+    // Groq
+    'llama-3.1-70b-versatile': 'groq',
+    'llama-3.1-8b-instant': 'groq',
+    'llama-3.3-70b-versatile': 'groq',
+    'mixtral-8x7b-32768': 'groq',
+    'gemma2-9b-it': 'groq',
+    // Mistral
+    'mistral-large-latest': 'mistral',
+    'mistral-small-latest': 'mistral',
+    'codestral-latest': 'mistral',
+    'pixtral-large-latest': 'mistral',
+    // Cohere
+    'command-r-plus': 'cohere',
+    'command-r': 'cohere',
+    'command-light': 'cohere',
+    // Perplexity
+    'sonar-pro': 'perplexity',
+    'sonar-plus': 'perplexity',
+    'sonar': 'perplexity',
+    // Together
+    'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo': 'together',
+    'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo': 'together',
+    'mistralai/Mixtral-8x7B-Instruct-v0.1': 'together',
+    // Fireworks
+    'accounts/fireworks/models/llama-v3p1-70b-instruct': 'fireworks',
+    'accounts/fireworks/models/mixtral-8x7b-instruct': 'fireworks',
+    // Replicate
+    'meta/meta-llama-3.1-405b-instruct': 'replicate',
+    'meta/meta-llama-3-70b-instruct': 'replicate',
+    // Cerebras
+    'llama3.1-8b': 'cerebras',
+    'llama3.1-70b': 'cerebras',
+    // Fal
+    'fal-ai/flux/schnell': 'fal',
+    'fal-ai/flux-pro': 'fal',
+    'fal-ai/aurora': 'fal',
+    // xAI Grok
+    'grok-2-latest': 'grok',
+    'grok-2': 'grok',
+    'grok-beta': 'grok',
+    // Qwen
+    'qwen-plus': 'qwen',
+    'qwen-max': 'qwen',
+    'qwen-turbo': 'qwen',
+    'qwq-32b': 'qwen',
+    // Tencent
+    'hunyuan-lite': 'tencent',
+    'hunyuan-standard': 'tencent',
+    'hunyuan-large': 'tencent',
+    // Microsoft / Azure
+    'gpt-4o': 'microsoft',
+    'gpt-4o-mini': 'microsoft',
+    'o1-preview': 'microsoft',
+    'o1-mini': 'microsoft',
+    // Local
+    'local-model': 'lmstudio',
+};
+
+/** One-time migration: copy legacy provider-hints entries into the
+ *  providers.json store. Idempotent — models that already exist are
+ *  skipped. Uses the embedded LEGACY_HINTS table so this works even
+ *  after backend/providers/provider-hints.js has been deleted. */
+function seedHintsIntoProviders() {
+    if (!LEGACY_HINTS || typeof LEGACY_HINTS !== 'object') return;
+
+    const now = new Date().toISOString();
+    let added = 0;
+    for (const [modelId, providerName] of Object.entries(LEGACY_HINTS)) {
+        if (!modelId || !providerName) continue;
+        const lowerName = String(providerName).toLowerCase();
+        const target = store.providers.find((p) =>
+            p.id === providerName || (p.name || '').toLowerCase() === lowerName
+        );
+        if (!target) continue;
+        if (!Array.isArray(target.models)) target.models = [];
+        if (target.models.some((m) => m && m.id === modelId)) continue;
+        target.models.push({
+            id: modelId,
+            name: modelId,
+            contextWindow: null,
+            reasoning: false,
+            free: false,
+            source: 'manual',
+            createdAt: now,
+            updatedAt: now,
+        });
+        added += 1;
+    }
+    if (added > 0) {
+        console.log(`[providers] migrated ${added} legacy hint model${added === 1 ? '' : 's'} into providers.json`);
+    }
 }
 
 function persist() {

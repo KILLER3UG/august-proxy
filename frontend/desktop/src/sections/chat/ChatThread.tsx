@@ -894,6 +894,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         guardMode: workbenchMode,
         effort,
         model: modelForRequest?.id,
+        modelProvider: modelForRequest?.provider,
       }, {
         onPrompt: ({ content, systemPrompt, userMessage, tokens, toolUseId, subagentId, jobId }) => {
           // The backend only emits `prompt` for sub-agent calls. Stash the

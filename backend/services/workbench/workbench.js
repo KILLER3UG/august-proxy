@@ -60,10 +60,12 @@ const modelCatalog = require('../catalog/model-catalog');
  *   - useOpenAiFormat: true → send OpenAI /chat/completions shape
  *   - apiMode, currentModel, _upstreamModel, apiKey, etc.
  */
-function resolveWorkbenchProfile(provider, modelHint) {
+function resolveWorkbenchProfile(provider, modelHint, modelProviderHint) {
     // 0. If a specific model was requested, resolve its provider and use that.
     if (modelHint) {
-        const resolved = resolveProviderForModel(modelHint);
+        const resolved = resolveProviderForModel(modelHint, {
+            providerHint: modelProviderHint || undefined,
+        });
         if (resolved && resolved.baseUrl && resolved.apiKey) {
             const apiMode = resolved.apiMode || 'openai_chat';
             const useOpenAiFormat = apiMode !== 'anthropic_messages';
@@ -83,7 +85,7 @@ function resolveWorkbenchProfile(provider, modelHint) {
         try {
             const aliasDetails = resolveModelAliasDetails(modelHint);
             if (aliasDetails && aliasDetails.modelId && aliasDetails.modelId !== modelHint) {
-                return resolveWorkbenchProfile(provider, aliasDetails.modelId);
+                return resolveWorkbenchProfile(provider, aliasDetails.modelId, modelProviderHint);
             }
         } catch (_) {}
     }
@@ -222,7 +224,7 @@ function effortToOpenAiReasoningEffort(effort) {
  */
 function getWorkbenchProfile(session) {
     const provider = session?.provider === 'codex' ? 'codex' : 'claude';
-    return resolveWorkbenchProfile(provider, session?.model);
+    return resolveWorkbenchProfile(provider, session?.model, session?.modelProvider);
 }
 
 const sessions = new Map();
@@ -2014,6 +2016,7 @@ function logPromptAudit(session, prompt) {
             guardMode: normalizeGuardMode(session.guardMode),
             agentId: session.agentId,
             model: session.model || null,
+            modelProvider: session.modelProvider || null,
             systemPromptLength: prompt.length,
             userMessageLength: String(session.messages.at(-1)?.content || '').length
         }) + '\n');
@@ -2250,11 +2253,12 @@ async function callOpenAiWorkbenchModel(session) {
     };
 }
 
-async function sendWorkbenchMessage({ sessionId, message, provider, agentId, model } = {}) {
+async function sendWorkbenchMessage({ sessionId, message, provider, agentId, model, modelProvider } = {}) {
     const session = getWorkbenchSession(sessionId);
     if (provider === 'claude' || provider === 'codex') session.provider = provider;
     if (agentId) session.agentId = resolveAgentId(agentId, session.agentId || 'build');
     if (model) session.model = model;
+    if (modelProvider) session.modelProvider = modelProvider;
     const text = String(message || '').trim();
     if (!text) throw new Error('Message is required.');
     session.messages.push({ role: 'user', content: text });
@@ -2663,7 +2667,7 @@ async function callOpenAiWorkbenchModelStream(session, emit, prompt) {
     safeEmit(emit, 'text', { content: 'Workbench stopped after the maximum tool loop count.' });
 }
 
-async function sendWorkbenchMessageStream({ sessionId, message, provider, agentId, effort, model, guardMode } = {}, emit) {
+async function sendWorkbenchMessageStream({ sessionId, message, provider, agentId, effort, model, modelProvider, guardMode } = {}, emit) {
     const session = getWorkbenchSession(sessionId);
     if (provider === 'claude' || provider === 'codex') session.provider = provider;
     if (agentId) session.agentId = resolveAgentId(agentId, session.agentId || 'build');
@@ -2671,6 +2675,9 @@ async function sendWorkbenchMessageStream({ sessionId, message, provider, agentI
     // Persist the user's model selection on the session so subsequent turns
     // in this session reuse the same model.
     if (model) session.model = model;
+    // Persist the user's model-provider selection so the resolver knows
+    // which provider to use when the model id is ambiguous.
+    if (modelProvider) session.modelProvider = modelProvider;
     // Persist the user's effort choice on the session so subsequent turns in
     // this session (/btw, /goal, goal continuation) reuse the same setting.
     const normalizedIncoming = normalizeEffort(effort);

@@ -91,6 +91,9 @@ export interface StreamWorkbenchChatParams {
   guardMode?: WorkbenchGuardMode;
   effort?: 'low' | 'medium' | 'high' | 'max';
   model?: string;
+  /** Selected provider id for the model — helps the backend route when the
+   *  model id is ambiguous across providers. */
+  modelProvider?: string;
 }
 
 /**
@@ -113,6 +116,7 @@ export async function streamWorkbenchChat(
       guardMode: params.guardMode,
       effort: params.effort,
       model: params.model,
+      modelProvider: params.modelProvider,
     }),
     signal,
   });

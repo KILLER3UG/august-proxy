@@ -1,28 +1,44 @@
 /* ── Per-model provider routing ────────────────────────────────────── */
 /* Resolves which provider + baseUrl + apiKey + apiMode should serve a
- * given model id. This mirrors the cascade already proven in the /api/chat
- * route (backend/index.js) so that the OpenAI/Anthropic-compatible
- * /v1/ endpoints route consistently — e.g. a request
- * for `deepseek-chat` from Claude Code (/v1/messages) routes to the
- * deepseek provider instead of the claude profile's targetUrl.
+ * given model id. The cascade is intentionally catalog-first: the
+ * Settings UI's `providers.json` is the source of truth, and model
+ * routing consults it before any of the older hint/profile/family
+ * fallbacks. This keeps the Settings and the routing layer aligned —
+ * a model that the user adds in Settings is routable without editing
+ * any built-in JS profiles.
  *
  * Returns null when no provider-specific match is found, in which case
- * callers keep their existing fallback (claude/codex profile). */
+ * callers keep their existing fallback (claude/codex profile / active
+ * provider).
+ */
 
 const { listProviders, getProvider } = require('./provider-registry');
 const { getProviderConfig, getActiveProvider } = require('../lib/config');
-const { getProviderHint } = require('./provider-hints');
+
+/** Map UI apiFormat to internal apiMode. */
+function uiApiFormatToApiMode(apiFormat) {
+    if (!apiFormat) return null;
+    if (apiFormat === 'anthropic') return 'anthropic_messages';
+    if (apiFormat === 'openai-chat') return 'openai_chat';
+    if (apiFormat === 'openai-responses') return 'codex_responses';
+    return null;
+}
 
 /**
  * Resolve a provider for a model id using this precedence:
- *   0. explicit provider hint from the selected model alias
- *   1. explicit provider-hint table
- *   2. exact model-profile key match
- *   3. longest model-profile prefix match
- *   4. provider name/alias prefix or segment on the model id
- *   5. well-known family prefixes (claude-, gpt-, gemini-, deepseek-)
- *   6. wildcard (*) profile match
- *   7. active provider
+ *   1. explicit providerHint / provider / providerName from caller
+ *   2. exact catalog match: any provider in providers.json whose
+ *      models[].id === model and which has credentials
+ *   3. longest catalog prefix match: provider.name / provider.id prefix
+ *      or segment on the model id
+ *
+ * Legacy provider-hints.js (route-resolver.js step 4) was removed after
+ * the seeded migration in providers-routes ran on next boot. Hinted
+ * models now live in providers.json under their provider's models[].
+ *
+ * Active-provider fallback is intentionally NOT in this cascade. It
+ * belongs in the caller (workbench.js / model-list.js / adapters) so
+ * routing and "user's current default" stay decoupled.
  *
  * Returns { provider, baseUrl, apiKey, apiMode } or null.
  */
@@ -30,138 +46,151 @@ function resolveProviderByName(providerName) {
     if (!providerName) return null;
     const rawName = String(providerName).trim();
     const p = getProvider(rawName) || getProvider(rawName.toLowerCase());
-    if (!p || !hasCredentials(p)) return null;
-    return toResolved(p);
+    if (!p || !jsProviderHasCredentials(p)) return null;
+    const resolved = toResolvedFromJsProfile(p);
+    // Prefer the display name from providers.json over the JS profile's
+    // lowercased id (e.g. "OpenCode Zen" vs "opencode-zen") so callers
+    // don't have to do a second lookup for the user-facing label.
+    try {
+        const { listPublicProviders, getStoredProviderByName } = require('../services/providers/providers-routes');
+        const storeEntry = getStoredProviderByName
+            ? getStoredProviderByName(p.name)
+            : (listPublicProviders ? listPublicProviders().find((s) => s.id === p.name) : null);
+        if (storeEntry && storeEntry.name) resolved.name = storeEntry.name;
+    } catch (_) { /* providers-routes not loaded — keep profile name */ }
+    return resolved;
 }
 
 function resolveProviderForModel(model, options = {}) {
     if (!model || typeof model !== 'string') return null;
 
-    // 0. Explicit provider hint from the selected model alias.
-    const hintedProvider = resolveProviderByName(options.providerHint || options.provider || options.providerName);
+    // 1. Explicit provider hint from caller.
+    const hintedProvider = resolveProviderByName(
+        options.providerHint || options.provider || options.providerName
+    );
     if (hintedProvider) return hintedProvider;
 
-    const providers = listProviders();
-    if (providers.length === 0) return null;
-    const lowerModel = model.toLowerCase();
-
-    // 1. Explicit provider hint.
-    const hinted = getProviderHint(model);
-    if (hinted) {
-        const p = providers.find((x) => x.name === hinted);
-        if (p && hasCredentials(p)) return toResolved(p);
-    }
-
-    // 1.5. Live model-catalog match — if any provider in providers.json
-    //      actually lists this model (live /v1/models fetch, user-added, or
-    //      built-in static), prefer it over a generic prefix match. This
-    //      prevents sibling providers (e.g. opencode-go vs opencode-zen) that
-    //      share static model-profile prefixes from stealing models that
-    //      belong to a more specific upstream.
-    //
-    //      Note: we do NOT honour `enabled: false` here as a skip — that
-    //      field is the seed default when no env-var is set, and the user
-    //      typically configures providers via the UI by setting an API key
-    //      in providers.json without flipping `enabled`. `hasCredentials`
-    //      below is the real "is this provider usable" check.
+    // 2. Exact catalog match. Iterate providers.json directly so store-only
+    //    providers (no built-in JS profile) are routable.
     try {
         const { listPublicProviders } = require('../services/providers/providers-routes');
         const stored = listPublicProviders ? listPublicProviders() : [];
+        const lowerModel = model.toLowerCase();
         for (const sp of stored) {
-            if (!sp) continue;
-            const providerId = sp.id || sp.name;
-            if (!providerId) continue;
-            const profile = providers.find((x) => x.name === providerId || x.name === sp.name);
-            if (!profile || !hasCredentials(profile)) continue;
+            if (!sp || !storeHasCredentials(sp)) continue;
             const models = Array.isArray(sp.models) ? sp.models : [];
-            const hit = models.find((m) => m && (m.id === model || (m.id && m.id.toLowerCase() === lowerModel)));
-            if (hit) return toResolved(profile);
+            const hit = models.find((m) => m && m.id && (
+                m.id === model || m.id.toLowerCase() === lowerModel
+            ));
+            if (hit) return toResolvedFromStoreEntry(sp, hit);
         }
-    } catch (_) { /* providers-routes not loaded yet — fall through */ }
+    } catch (_) {
+        // providers-routes not loaded yet — fall through to prefix match.
+    }
 
-    // 2–3. Model-profile matches (exact → longest prefix).
-    let exactMatch = null;
-    let bestPrefixMatch = null;
-    let bestPrefixLength = -1;
-    let wildcardMatch = null;
-
-    for (const p of providers) {
-        if (!hasCredentials(p)) continue;
-        if (!p.getModelProfile || !p._modelProfiles) continue;
-
-        if (p._modelProfiles[model]) {
-            exactMatch = p;
-            break;
-        }
-        const matchingKeys = Object.keys(p._modelProfiles)
-            .filter((k) => k !== '*' && lowerModel.startsWith(k.toLowerCase()))
-            .sort((a, b) => b.length - a.length);
-        if (matchingKeys.length > 0) {
-            const keyLength = matchingKeys[0].length;
-            if (!bestPrefixMatch || keyLength > bestPrefixLength) {
-                bestPrefixMatch = p;
-                bestPrefixLength = keyLength;
+    // 3. Longest catalog prefix match. Compare provider.id / provider.name
+    //    (lowercased) as prefixes of the model id; split model on / and :
+    //    so segment-based names (e.g. "opencode-go/claude-opus-4-7" →
+    //    "opencode-go") also hit.
+    try {
+        const { listPublicProviders } = require('../services/providers/providers-routes');
+        const stored = listPublicProviders ? listPublicProviders() : [];
+        const lowerModel = model.toLowerCase();
+        const segments = new Set(lowerModel.split(/[/:]+/).filter(Boolean));
+        let best = null;
+        let bestLen = -1;
+        for (const sp of stored) {
+            if (!sp || !storeHasCredentials(sp)) continue;
+            const candidates = [sp.id, sp.name].filter(Boolean).map(s => s.toLowerCase());
+            for (const cand of candidates) {
+                if (!cand) continue;
+                if (lowerModel.startsWith(cand + '/') || lowerModel.startsWith(cand + ':') || lowerModel === cand) {
+                    if (cand.length > bestLen) { best = sp; bestLen = cand.length; }
+                } else if (segments.has(cand)) {
+                    if (cand.length > bestLen) { best = sp; bestLen = cand.length; }
+                }
             }
-        } else if (!wildcardMatch && p._modelProfiles['*']) {
-            wildcardMatch = p;
         }
-    }
-    if (exactMatch) return toResolved(exactMatch);
-    if (bestPrefixMatch) return toResolved(bestPrefixMatch);
-
-    // 4. Provider name / alias prefix or segment on the model id.
-    const modelSegments = new Set(lowerModel.split(/[/:]/));
-    for (const p of providers) {
-        if (!hasCredentials(p)) continue;
-        const aliases = Array.isArray(p.aliases) ? p.aliases : [];
-        if (lowerModel.startsWith(p.name.toLowerCase()) ||
-            modelSegments.has(p.name.toLowerCase()) ||
-            aliases.some((a) => lowerModel.startsWith(a.toLowerCase()) || modelSegments.has(a.toLowerCase()))) {
-            return toResolved(p);
-        }
-    }
-
-    // 5. Well-known family prefixes.
-    let familyProvider = null;
-    if (lowerModel.startsWith('claude-')) familyProvider = 'anthropic';
-    else if (lowerModel.startsWith('gpt-') || lowerModel.startsWith('o1') || lowerModel.startsWith('o3')) familyProvider = 'openai-api';
-    else if (lowerModel.startsWith('gemini-')) familyProvider = 'gemini';
-    else if (lowerModel.startsWith('deepseek-')) familyProvider = 'deepseek';
-    if (familyProvider) {
-        const p = providers.find((x) => x.name === familyProvider);
-        if (p && hasCredentials(p)) return toResolved(p);
-    }
-
-    // 6. Wildcard profile match.
-    if (wildcardMatch) return toResolved(wildcardMatch);
-
-    // 7. Active provider (only if it actually has credentials).
-    const active = getActiveProvider();
-    if (active) {
-        const p = providers.find((x) => x.name === active);
-        if (p && hasCredentials(p)) return toResolved(p);
+        if (best) return toResolvedFromStoreEntry(best);
+    } catch (_) {
+        // providers-routes not loaded yet — fall through to no-match.
     }
 
     return null;
 }
 
-function hasCredentials(provider) {
+/* ── credential checks ─────────────────────────────────────────────── */
+
+/** True if a built-in JS provider has an env-var key or a config.json
+ *  apiKey. Mirrors the old hasCredentials but only operates on JS
+ *  profiles (has isAvailable()). */
+function jsProviderHasCredentials(provider) {
+    if (!provider) return false;
     const config = getProviderConfig(provider.name) || {};
     return !!(provider.isAvailable() || config.apiKey);
 }
 
-function toResolved(provider) {
+/** True if a providers.json store entry has credentials: either an
+ *  apiKey in providers.json itself, or — if a matching JS profile
+ *  exists — an env-var key set on that profile. */
+function storeHasCredentials(storeEntry) {
+    if (!storeEntry) return false;
+    if (storeEntry.apiKey) return true;
+    const profile = getProvider(storeEntry.id) || getProvider(storeEntry.name);
+    if (profile && typeof profile.isAvailable === 'function' && profile.isAvailable()) return true;
+    return false;
+}
+
+/* ── shape converters ─────────────────────────────────────────────── */
+
+/** Build a resolved object from a JS profile (uses getProviderConfig
+ *  for stored apiKey/baseUrl overrides and provider.resolveApiKey/BaseUrl
+ *  for env-driven defaults). */
+function toResolvedFromJsProfile(provider) {
     const config = getProviderConfig(provider.name) || {};
-    const apiKey = config.apiKey || provider.resolveApiKey();
-    const baseUrl = config.baseUrl || config.targetUrl || provider.resolveBaseUrl();
-    const model = config.model || config._upstreamModel || config.currentModel || provider.defaultModel;
     return {
         provider,
         name: provider.name,
+        baseUrl: config.baseUrl || config.targetUrl || provider.resolveBaseUrl(),
+        apiKey: config.apiKey || provider.resolveApiKey(),
+        model: config.model || config._upstreamModel || config.currentModel || provider.defaultModel,
+        apiMode: config.apiMode || provider.apiMode,
+    };
+}
+
+/** Build a resolved object from a providers.json store entry. Used
+ *  for store-only providers (no JS profile) AND for store entries
+ *  that win the cascade before their JS counterpart is consulted. */
+function toResolvedFromStoreEntry(storeEntry, modelHit) {
+    if (!storeEntry) return null;
+    const id = storeEntry.id;
+    // Pull any config.json overrides by id (e.g. config[id].apiKey) so
+    // users with both layers still get the override.
+    const config = id ? (getProviderConfig(id) || {}) : {};
+    // The apiKey precedence: store entry → config.json override → JS profile env.
+    let apiKey = storeEntry.apiKey || config.apiKey || '';
+    let baseUrl = storeEntry.baseUrl || config.baseUrl || '';
+    if (!apiKey || !baseUrl) {
+        const profile = getProvider(id) || getProvider(storeEntry.name);
+        if (profile) {
+            if (!apiKey && typeof profile.resolveApiKey === 'function') apiKey = profile.resolveApiKey();
+            if (!baseUrl && typeof profile.resolveBaseUrl === 'function') baseUrl = profile.resolveBaseUrl();
+        }
+    }
+    // apiFormat on the store entry is the canonical source-of-truth
+    // when present; fall back to the JS profile's apiMode otherwise.
+    let apiMode = uiApiFormatToApiMode(storeEntry.apiFormat);
+    if (!apiMode) {
+        const profile = getProvider(id) || getProvider(storeEntry.name);
+        apiMode = profile ? profile.apiMode : 'openai_chat';
+    }
+    return {
+        provider: null, // store-only entries don't have a JS profile handle
+        name: storeEntry.name || id,
         baseUrl,
         apiKey,
-        model,
-        apiMode: config.apiMode || provider.apiMode,
+        model: (modelHit && modelHit.id) || config.model || storeEntry.id,
+        apiMode: apiMode || config.apiMode || 'openai_chat',
     };
 }
 
