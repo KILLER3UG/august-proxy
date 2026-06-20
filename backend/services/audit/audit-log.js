@@ -99,15 +99,25 @@ function appendAuditEntry(entry) {
 }
 
 /**
- * Read the most recent `limit` entries (default 200) in chronological order.
+ * Read audit entries with optional filters.
+ *
+ * Filters (all optional):
+ *   limit, category, actor, action, since, until, summary
+ *
+ * When `summary: true`, returns aggregate counts instead of entries:
+ *   { count, byCategory, byResult, byActor, byCritical, at }
+ *
+ * Reads the whole JSONL into memory (cheap for ≤ few thousand entries).
  */
-function readAuditEntries({ limit = 200 } = {}) {
-    if (!fs.existsSync(AUDIT_LOG_PATH)) return [];
+function readAuditEntries({ limit = 200, category, actor, action, since, until, summary } = {}) {
+    if (!fs.existsSync(AUDIT_LOG_PATH)) {
+        return summary ? { count: 0, byCategory: {}, byResult: {}, byActor: {}, byCritical: { true: 0, false: 0, null: 0 }, at: new Date().toISOString() } : [];
+    }
     let raw;
     try {
         raw = fs.readFileSync(AUDIT_LOG_PATH, 'utf8');
     } catch (_) {
-        return [];
+        return summary ? { count: 0, byCategory: {}, byResult: {}, byActor: {}, byCritical: { true: 0, false: 0, null: 0 }, at: new Date().toISOString() } : [];
     }
     const lines = raw.split(/\r?\n/).filter(Boolean);
     const parsed = [];
@@ -115,8 +125,40 @@ function readAuditEntries({ limit = 200 } = {}) {
         try { parsed.push(JSON.parse(line)); }
         catch (_) { /* skip malformed line */ }
     }
-    // Tail: take last N
-    return parsed.slice(-Math.max(1, Number(limit) || 200));
+
+    if (summary) {
+        const byCategory = {};
+        const byResult = {};
+        const byActor = {};
+        const byCritical = { true: 0, false: 0, null: 0 };
+        for (const e of parsed) {
+            inc(byCategory, e.category || '(uncategorized)');
+            inc(byResult, e.result || '(unknown)');
+            inc(byActor, e.actor || '(unknown)');
+            inc(byCritical, e.critical === true ? 'true' : e.critical === false ? 'false' : 'null');
+        }
+        return {
+            count: parsed.length,
+            byCategory,
+            byResult,
+            byActor,
+            byCritical,
+            at: new Date().toISOString()
+        };
+    }
+
+    let entries = parsed;
+    if (category) entries = entries.filter(e => e.category === category);
+    if (actor)    entries = entries.filter(e => e.actor === actor);
+    if (action)   entries = entries.filter(e => e.action === action);
+    if (since)    entries = entries.filter(e => String(e.at) >= String(since));
+    if (until)    entries = entries.filter(e => String(e.at) <= String(until));
+
+    return entries.slice(-Math.max(1, Number(limit) || 200));
+}
+
+function inc(map, key) {
+    map[key] = (map[key] || 0) + 1;
 }
 
 function clearAuditLog() {

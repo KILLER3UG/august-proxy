@@ -11,15 +11,19 @@
  */
 
 import { useEffect, useState } from 'react';
-import { ShieldCheck, FolderTree, Cpu } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ShieldCheck, FolderTree, Cpu, Camera, Eye } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getAugustSnapshot,
   setAugustAppPolicy,
   listAugustAppPolicies,
   deleteAugustAppPolicy,
+  putSecurity,
+  getHostAgentHealth,
   type AugustSnapshot,
 } from '@/api/backend-ui';
+import { SettingsToggle } from '@/components/settings/SettingsToggle';
 
 interface ComputerRoots {
   allowedRoots: string[];
@@ -86,7 +90,17 @@ export function ComputerAccessSettings() {
 
   const roots = rootsQuery.data?.allowedRoots ?? [];
   const scope = rootsQuery.data?.filesystemScope ?? 'allowlist';
+  const postObs = rootsQuery.data?.postObservationScreenshot !== false;
   const apps = appsQuery.data ?? {} as AppPolicyMap;
+
+  const healthQuery = useQuery({ queryKey: ['host-agent', 'health'], queryFn: getHostAgentHealth, refetchInterval: 30_000 });
+  const observationCount = healthQuery.data?.postObservationCount ?? 0;
+  const lastObsAt = healthQuery.data?.lastObservationAt;
+
+  const toggleMutation = useMutation({
+    mutationFn: (next: boolean) => putSecurity({ postObservationScreenshot: next }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['computer-roots'] }),
+  });
 
   function addRoot() {
     if (!newRoot.trim()) return;
@@ -123,6 +137,45 @@ export function ComputerAccessSettings() {
           desktop applications August may control through the host computer agent.
         </p>
       </header>
+
+      {/* Computer Security — post-observation screenshots (Task 9) */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Camera className="size-4 text-foreground/70" />
+          <h2 className="text-base font-medium">Computer security</h2>
+        </div>
+        <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-sm font-medium">Capture post-observation screenshots</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                After every mutating computer_* action, August saves a screenshot
+                to <code className="font-mono">data/computer-observations/</code> and
+                links it to the audit entry. Disable to reduce disk usage.
+              </p>
+            </div>
+            <SettingsToggle
+              checked={postObs}
+              onCheckedChange={(v) => toggleMutation.mutate(v)}
+              label={postObs ? 'enabled' : 'disabled'}
+            />
+          </div>
+          <div className="flex items-center justify-between border-t border-white/[0.06] pt-3">
+            <div className="text-xs text-muted-foreground">
+              {observationCount === 0
+                ? 'No observations captured yet.'
+                : `${observationCount} observation${observationCount === 1 ? '' : 's'}`}
+              {lastObsAt && ` · last ${new Date(lastObsAt).toLocaleString()}`}
+            </div>
+            <Link
+              to="/settings/observability"
+              className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+            >
+              <Eye className="size-3.5" /> View observation gallery →
+            </Link>
+          </div>
+        </div>
+      </section>
 
       {/* Filesystem scope */}
       <section className="space-y-4">

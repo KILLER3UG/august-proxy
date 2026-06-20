@@ -40,7 +40,6 @@ export interface Folder {
 const DEFAULT_FOLDERS: Folder[] = [
   { id: 'f_work', name: 'Work', isCollapsed: false },
   { id: 'f_research', name: 'Research', isCollapsed: false },
-  { id: 'f_personal', name: 'Personal', isCollapsed: false },
 ];
 
 const DEFAULT_SESSIONS: Session[] = [
@@ -54,10 +53,6 @@ const DEFAULT_SESSIONS: Session[] = [
   { id: 'sess_5', title: 'Memory graph query', startedAt: new Date(Date.now() - 18000000).toISOString(), messageCount: 15, lastMessage: 'Pushed. Need review.', provider: 'opencode-go', model: 'claude-opus-4-7', folderId: 'f_research', isArchived: false },
   { id: 'sess_6', title: 'Embed terminal in chat', startedAt: new Date(Date.now() - 21600000).toISOString(), messageCount: 3, lastMessage: 'Done — committed on refactor/ui-v2.', provider: 'minimax', model: 'gpt-5', folderId: 'f_research', isArchived: false },
   { id: 'sess_7', title: 'Refactor to React 19', startedAt: new Date(Date.now() - 25200000).toISOString(), messageCount: 22, lastMessage: 'Will continue tomorrow.', provider: 'kilo', model: 'kilo/kimi-k2', folderId: 'f_research', isArchived: false },
-
-  // Personal folder
-  { id: 'sess_8', title: 'Tauri tray icon', startedAt: new Date(Date.now() - 28800000).toISOString(), messageCount: 6, lastMessage: 'Looking at the inspector now.', provider: 'openrouter', model: 'anthropic/claude-sonnet-4', folderId: 'f_personal', isArchived: false },
-  { id: 'sess_9', title: 'Ship the desktop MSI', startedAt: new Date(Date.now() - 32400000).toISOString(), messageCount: 11, lastMessage: 'Pushed. Need review.', provider: 'opencode-go', model: 'claude-opus-4-7', folderId: 'f_personal', isArchived: false },
 
   // Root level (No folder)
   { id: 'sess_10', title: 'Onboarding flow', startedAt: new Date(Date.now() - 36000000).toISOString(), messageCount: 4, lastMessage: 'Done — committed on refactor/ui-v2.', provider: 'minimax', model: 'gpt-5', folderId: null, isArchived: false },
@@ -157,11 +152,10 @@ export function restoreSession(id: string) {
     // If the folder it originally belonged to was deleted, recreate it
     const folderExists = $folders.get().some(f => f.id === sess.folderId);
     if (!folderExists) {
-      // Find original folder name from static details if it was f_work/f_research/f_personal
+      // Find original folder name from static details if it was f_work/f_research
       let folderName = 'Restored';
       if (sess.folderId === 'f_work') folderName = 'Work';
       else if (sess.folderId === 'f_research') folderName = 'Research';
-      else if (sess.folderId === 'f_personal') folderName = 'Personal';
       
       const newFolders = [...$folders.get(), { id: sess.folderId, name: folderName, isCollapsed: false }];
       $folders.set(newFolders);

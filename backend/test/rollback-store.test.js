@@ -126,6 +126,50 @@ test('listRollbacks respects limit', () => {
     clearRollbacks();
 });
 
+// ----- filter coverage (Observability Task 5) -----
+
+test('status filter narrows to available only', () => {
+    clearRollbacks();
+    recordRollback({ type: 'delete_created_file', target: '/tmp/s1', before: null, after: {} });
+    recordRollback({ type: 'delete_created_file', target: '/tmp/s2', before: null, after: {} });
+    const available = listRollbacks({ status: 'available' });
+    assert.equal(available.length, 2);
+    assert.ok(available.every(i => i.status === 'available'));
+});
+
+test('type filter narrows to a single rollback type', () => {
+    clearRollbacks();
+    recordRollback({ type: 'restore_file', target: '/tmp/t1', before: null, after: {} });
+    recordRollback({ type: 'delete_created_file', target: '/tmp/t2', before: null, after: {} });
+    recordRollback({ type: 'restore_setting', target: 'security.foo', before: null, after: {} });
+    const restoreFile = listRollbacks({ type: 'restore_file' });
+    assert.equal(restoreFile.length, 1);
+    assert.equal(restoreFile[0].type, 'restore_file');
+});
+
+test('summary mode returns aggregate counts', () => {
+    clearRollbacks();
+    recordRollback({ type: 'restore_file', target: '/tmp/s1', before: null, after: {} });
+    recordRollback({ type: 'restore_file', target: '/tmp/s2', before: null, after: {} });
+    recordRollback({ type: 'delete_created_file', target: '/tmp/s3', before: null, after: {} });
+    const s = listRollbacks({ summary: true });
+    assert.equal(s.total, 3);
+    assert.equal(s.available, 3);
+    assert.equal(s.undone, 0);
+    assert.equal(s.failed, 0);
+    assert.equal(s.byType['restore_file'], 2);
+    assert.equal(s.byType['delete_created_file'], 1);
+});
+
+test('combined status + type filters compose', () => {
+    clearRollbacks();
+    recordRollback({ type: 'restore_file', target: '/tmp/c1', before: null, after: {} });
+    recordRollback({ type: 'delete_created_file', target: '/tmp/c2', before: null, after: {} });
+    const f = listRollbacks({ status: 'available', type: 'restore_file' });
+    assert.equal(f.length, 1);
+    assert.equal(f[0].type, 'restore_file');
+});
+
 test('records are FIFO-capped at 100', () => {
     clearRollbacks();
     for (let i = 0; i < 110; i++) {

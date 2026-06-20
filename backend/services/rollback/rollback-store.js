@@ -213,9 +213,37 @@ async function undoRestoreMemoryItem(entry) {
     return false;
 }
 
-function listRollbacks({ limit = 100 } = {}) {
-    const items = load();
+/**
+ * List rollback entries with optional filters.
+ *
+ * Filters (all optional):
+ *   limit, status ('available' | 'undone' | 'failed'), type
+ *
+ * When `summary: true`, returns aggregate counts:
+ *   { available, undone, failed, total, byType, at }
+ */
+function listRollbacks({ limit = 100, status, type, summary } = {}) {
+    let items = load();
+    if (status) items = items.filter(i => i.status === status);
+    if (type)   items = items.filter(i => i.type === type);
+
+    if (summary) {
+        const byType = {};
+        for (const i of items) inc(byType, i.type || '(unknown)');
+        return {
+            available: items.filter(i => i.status === 'available').length,
+            undone:    items.filter(i => i.status === 'undone').length,
+            failed:    items.filter(i => i.status === 'failed').length,
+            total:     items.length,
+            byType,
+            at:        new Date().toISOString()
+        };
+    }
     return items.slice(-Math.max(1, Number(limit) || 100));
+}
+
+function inc(map, key) {
+    map[key] = (map[key] || 0) + 1;
 }
 
 function clearRollbacks() {

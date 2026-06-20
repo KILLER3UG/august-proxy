@@ -116,3 +116,79 @@ test('clearAuditLog removes the file', () => {
     clearAuditLog();
     assert.ok(!fs.existsSync(AUDIT_LOG_PATH));
 });
+
+// ----- filter coverage (Observability Task 5) -----
+
+test('category filter narrows results', () => {
+    clearAuditLog();
+    appendAuditEntry({ action: 'a.x', category: 'system' });
+    appendAuditEntry({ action: 'b.y', category: 'ui' });
+    appendAuditEntry({ action: 'c.z', category: 'system' });
+    const filtered = readAuditEntries({ category: 'system' });
+    assert.equal(filtered.length, 2);
+    assert.ok(filtered.every(e => e.category === 'system'));
+});
+
+test('actor filter narrows results', () => {
+    clearAuditLog();
+    appendAuditEntry({ action: 'a.x', actor: 'august' });
+    appendAuditEntry({ action: 'b.y', actor: 'user' });
+    const filtered = readAuditEntries({ actor: 'user' });
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].actor, 'user');
+});
+
+test('action filter narrows results', () => {
+    clearAuditLog();
+    appendAuditEntry({ action: 'august__bash' });
+    appendAuditEntry({ action: 'august__write_file' });
+    const filtered = readAuditEntries({ action: 'august__bash' });
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].action, 'august__bash');
+});
+
+test('since filter excludes older entries', () => {
+    clearAuditLog();
+    appendAuditEntry({ action: 'a.x', at: '2024-01-01T00:00:00.000Z' });
+    appendAuditEntry({ action: 'b.y', at: '2025-06-01T00:00:00.000Z' });
+    const filtered = readAuditEntries({ since: '2025-01-01T00:00:00.000Z' });
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].action, 'b.y');
+});
+
+test('until filter excludes newer entries', () => {
+    clearAuditLog();
+    appendAuditEntry({ action: 'a.x', at: '2024-01-01T00:00:00.000Z' });
+    appendAuditEntry({ action: 'b.y', at: '2025-06-01T00:00:00.000Z' });
+    const filtered = readAuditEntries({ until: '2024-12-31T23:59:59.000Z' });
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].action, 'a.x');
+});
+
+test('summary mode returns aggregate counts', () => {
+    clearAuditLog();
+    appendAuditEntry({ action: 'a.x', category: 'system', result: 'ok', actor: 'august', critical: true });
+    appendAuditEntry({ action: 'b.y', category: 'ui', result: 'ok', actor: 'august', critical: false });
+    appendAuditEntry({ action: 'c.z', category: 'ui', result: 'error', actor: 'user', critical: null });
+    const s = readAuditEntries({ summary: true });
+    assert.equal(s.count, 3);
+    assert.equal(s.byCategory.system, 1);
+    assert.equal(s.byCategory.ui, 2);
+    assert.equal(s.byResult.ok, 2);
+    assert.equal(s.byResult.error, 1);
+    assert.equal(s.byActor.august, 2);
+    assert.equal(s.byActor.user, 1);
+    assert.equal(s.byCritical.true, 1);
+    assert.equal(s.byCritical.false, 1);
+    assert.equal(s.byCritical.null, 1);
+});
+
+test('combined filters compose', () => {
+    clearAuditLog();
+    appendAuditEntry({ action: 'a.x', category: 'system', actor: 'august' });
+    appendAuditEntry({ action: 'b.y', category: 'system', actor: 'user' });
+    appendAuditEntry({ action: 'c.z', category: 'ui',     actor: 'august' });
+    const filtered = readAuditEntries({ category: 'system', actor: 'august' });
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].action, 'a.x');
+});

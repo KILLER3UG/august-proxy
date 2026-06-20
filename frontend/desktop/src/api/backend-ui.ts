@@ -568,8 +568,33 @@ export interface AuditEntry {
   error?: string | null;
 }
 
-export function getAuditLog(limit = 200): Promise<{ entries: AuditEntry[] }> {
-  return api.get<{ entries: AuditEntry[] }>(`/ui/audit?limit=${limit}`);
+export function getAuditLog(opts: number | { limit?: number; category?: string; actor?: string; action?: string; since?: string; until?: string; summary?: boolean } = 200): Promise<{ entries: AuditEntry[]; total?: number; at?: string }> {
+    if (typeof opts === 'number') {
+        return api.get<{ entries: AuditEntry[]; total?: number; at?: string }>(`/ui/audit?limit=${opts}`);
+    }
+    const p = new URLSearchParams();
+    if (opts.limit) p.set('limit', String(opts.limit));
+    if (opts.category) p.set('category', opts.category);
+    if (opts.actor) p.set('actor', opts.actor);
+    if (opts.action) p.set('action', opts.action);
+    if (opts.since) p.set('since', opts.since);
+    if (opts.until) p.set('until', opts.until);
+    if (opts.summary) p.set('summary', '1');
+    const qs = p.toString();
+    return api.get<{ entries: AuditEntry[]; total?: number; at?: string }>(`/ui/audit${qs ? `?${qs}` : ''}`);
+}
+
+export interface AuditSummary {
+    count: number;
+    byCategory: Record<string, number>;
+    byResult: Record<string, number>;
+    byActor: Record<string, number>;
+    byCritical: { true: number; false: number; null: number };
+    at: string;
+}
+
+export function getAuditSummary(): Promise<AuditSummary> {
+    return api.get<AuditSummary>('/ui/audit?summary=1');
 }
 
 export interface RollbackEntry {
@@ -582,6 +607,100 @@ export interface RollbackEntry {
   status: string;
 }
 
-export function getRollbackList(limit = 100): Promise<{ items: RollbackEntry[] }> {
-  return api.get<{ items: RollbackEntry[] }>(`/ui/rollback?limit=${limit}`);
+export function getRollbackList(opts: number | { limit?: number; status?: 'available' | 'undone' | 'failed'; type?: string; summary?: boolean } = 100): Promise<{ items: RollbackEntry[]; total?: number; at?: string }> {
+    if (typeof opts === 'number') {
+        return api.get<{ items: RollbackEntry[]; total?: number; at?: string }>(`/ui/rollback?limit=${opts}`);
+    }
+    const p = new URLSearchParams();
+    if (opts.limit) p.set('limit', String(opts.limit));
+    if (opts.status) p.set('status', opts.status);
+    if (opts.type) p.set('type', opts.type);
+    if (opts.summary) p.set('summary', '1');
+    const qs = p.toString();
+    return api.get<{ items: RollbackEntry[]; total?: number; at?: string }>(`/ui/rollback${qs ? `?${qs}` : ''}`);
+}
+
+export interface RollbackSummary {
+    available: number;
+    undone: number;
+    failed: number;
+    total: number;
+    byType: Record<string, number>;
+    at: string;
+}
+
+export function getRollbackSummary(): Promise<RollbackSummary> {
+    return api.get<RollbackSummary>('/ui/rollback?summary=1');
+}
+
+/* ── Post-observation screenshot gallery (Task 2) ──────────────────────── */
+
+export interface PostObservation {
+    id: string;
+    screenshotPath: string;
+    capturedAt: string;
+    focusedApp: string | null;
+    audit?: {
+        id: string;
+        at: string;
+        action: string;
+        target: string | null;
+        result: string;
+    };
+}
+
+export function getObservations(opts: { limit?: number; since?: string } = {}): Promise<{ items: PostObservation[]; total: number; at: string }> {
+    const p = new URLSearchParams();
+    if (opts.limit) p.set('limit', String(opts.limit));
+    if (opts.since) p.set('since', opts.since);
+    const qs = p.toString();
+    return api.get<{ items: PostObservation[]; total: number; at: string }>(`/ui/observations${qs ? `?${qs}` : ''}`);
+}
+
+export function getObservationUrl(id: string): string {
+    return `/ui/observations/${encodeURIComponent(id)}.png`;
+}
+
+/* ── Host-agent health (Task 3) ───────────────────────────────────────── */
+
+export interface HostAgentHealth {
+    status: 'connected' | 'disconnected' | 'error';
+    lastComputerActionAt: string | null;
+    lastComputerAction: string | null;
+    lastComputerTarget: string | null;
+    lastObservationAt: string | null;
+    lastObservedApp: string | null;
+    postObservationCount: number;
+    at: string;
+}
+
+export function getHostAgentHealth(): Promise<HostAgentHealth> {
+    return api.get<HostAgentHealth>('/ui/host-agent/health');
+}
+
+/* ── Security write-back (Task 3) ─────────────────────────────────────── */
+
+export interface SecurityConfig {
+    allowedRoots: string[];
+    filesystemScope: 'allowlist' | 'root';
+    postObservationScreenshot: boolean;
+}
+
+export function putSecurity(body: Partial<SecurityConfig>): Promise<{ ok: boolean; security: SecurityConfig }> {
+    return api.put<{ ok: boolean; security: SecurityConfig }>('/ui/security', body);
+}
+
+/* ── Observability overview (Task 3) ───────────────────────────────────── */
+
+export interface ObservabilityOverview {
+    range: '7d' | '30d';
+    audit: AuditSummary;
+    rollback: RollbackSummary;
+    appPolicy: { policies: Record<string, 'allow' | 'ask' | 'deny'>; counts: Record<'allow' | 'ask' | 'deny', number>; defaultPolicy: 'ask' };
+    hostAgent: HostAgentHealth;
+    at: string;
+}
+
+export function getObservabilityOverview(range: '7d' | '30d' = '30d'): Promise<ObservabilityOverview> {
+    return api.get<ObservabilityOverview>(`/ui/observability/overview?range=${range}`);
 }

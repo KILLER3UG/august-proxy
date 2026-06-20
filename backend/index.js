@@ -823,45 +823,37 @@ const requestHandler = async (req, res) => {
         return;
     }
 
-    // ----- Audit + Rollback (Task 2) -----
-    if (req.url.startsWith('/ui/audit') && req.method === 'GET') {
+    // ----- Observability routes (Task 2 + 3) -----
+    //   GET   /ui/audit                — filtered audit log
+    //   GET   /ui/audit?summary=1      — aggregate counts
+    //   GET   /ui/rollback             — filtered rollback list
+    //   GET   /ui/rollback?summary=1   — aggregate counts
+    //   POST  /ui/rollback/:id/undo    — perform rollback
+    //   GET   /ui/observations         — list post-observation PNGs
+    //   GET   /ui/observations/:id.png — serve single PNG
+    //   GET   /ui/host-agent/health    — status + last-action timestamps
+    //   PUT   /ui/security             — write back security config
+    //   GET   /ui/observability/overview — combined payload
+    if (
+        req.url.startsWith('/ui/audit') ||
+        req.url === '/ui/rollback' ||
+        req.url.startsWith('/ui/rollback/') ||
+        req.url.startsWith('/ui/observations') ||
+        req.url === '/ui/host-agent/health' ||
+        req.url === '/ui/security' ||
+        req.url.startsWith('/ui/observability/')
+    ) {
         try {
-            const { readAuditEntries } = require('./services/audit/audit-log');
-            const url = new URL(req.url, 'http://localhost');
-            const limit = Number(url.searchParams.get('limit') || 200);
-            return sendJson(res, { entries: readAuditEntries({ limit }) });
-        } catch (e) {
-            return sendError(res, e, 500);
-        }
-    }
-
-    if (req.url === '/ui/rollback' && req.method === 'GET') {
-        try {
-            const { listRollbacks } = require('./services/rollback/rollback-store');
-            const url = new URL(req.url, 'http://localhost');
-            const limit = Number(url.searchParams.get('limit') || 100);
-            return sendJson(res, { items: listRollbacks({ limit }) });
-        } catch (e) {
-            return sendError(res, e, 500);
-        }
-    }
-
-    if (req.url.startsWith('/ui/rollback/') && req.url.endsWith('/undo') && req.method === 'POST') {
-        try {
-            const body = await readJsonBody(req).catch(() => ({}));
-            const id = req.url.split('/').slice(-2, -1)[0];
-            const { undoRollback } = require('./services/rollback/rollback-store');
-            const entry = await undoRollback(id);
-            const { appendAuditEntry } = require('./services/audit/audit-log');
-            appendAuditEntry({
-                action: 'rollback.undo',
-                target: id,
-                inputSummary: body || null,
-                result: 'ok'
+            const { handleObservabilityRoute } = require('./services/observability/observability-routes');
+            const handled = await handleObservabilityRoute(req, res, {
+                url: req.url,
+                method: req.method,
+                sendJson,
+                sendError
             });
-            return sendJson(res, { ok: true, entry });
+            if (handled) return handled;
         } catch (e) {
-            return sendError(res, e, 400);
+            return sendError(res, e, 500);
         }
     }
 
