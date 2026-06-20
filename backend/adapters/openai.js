@@ -177,6 +177,7 @@ function createOpenAiStreamAccumulator(requestModel) {
         role: 'assistant',
         content: '',
         reasoning: '',
+        reasoningContent: '',
         toolCallsByIndex: new Map(),
         finishReason: null,
         usage: null
@@ -198,7 +199,10 @@ function accumulateOpenAiChunk(state, chunk) {
     if (typeof delta.role === 'string') state.role = delta.role;
     if (typeof delta.content === 'string') state.content += delta.content;
     if (typeof delta.reasoning === 'string') state.reasoning += delta.reasoning;
-    if (typeof delta.reasoning_content === 'string') state.reasoning += delta.reasoning_content;
+    if (typeof delta.reasoning_content === 'string') {
+        state.reasoning += delta.reasoning_content;
+        state.reasoningContent += delta.reasoning_content;
+    }
 
     if (Array.isArray(delta.tool_calls)) {
         for (const toolCall of delta.tool_calls) {
@@ -236,6 +240,7 @@ function buildOpenAiAggregatedFromStream(state) {
         content: state.content || ''
     };
     if (state.reasoning) message.reasoning = state.reasoning;
+    if (state.reasoningContent) message.reasoning_content = state.reasoningContent;
     if (toolCalls.length > 0) message.tool_calls = toolCalls;
 
     return {
@@ -1274,11 +1279,14 @@ async function resolveManagedOpenAiToolCalls(initialParsed, oReq, cfg, clientToo
 
         emitOpenAiMessageContent(msg, onToolEvent, streamFirstTurn, attempt);
 
-        requestPayload.messages.push({
+        const newMsg = {
             role: 'assistant',
             content: msg.content || null,
             tool_calls: toolCalls
-        });
+        };
+        if (msg.reasoning) newMsg.reasoning = msg.reasoning;
+        if (msg.reasoning_content) newMsg.reasoning_content = msg.reasoning_content;
+        requestPayload.messages.push(newMsg);
 
         const toolResults = await executeManagedOpenAiToolCalls(managedToolCalls, requestPayload.tools, requestPayload.messages, workspacePath, onToolEvent, parentSignal);
         toolResults.forEach(res => requestPayload.messages.push(res));
