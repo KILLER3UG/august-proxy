@@ -875,6 +875,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     run: (handlers: { onError?: (data: { message: string }) => void } & Record<string, any>) => Promise<void>,
   ) => {
     if (!sessionId) return;
+    setSessionStatus(sessionId, 'working');
     const assistantMsgId = `a${Date.now()}`;
     const turn = chatRuntime.startTurn({
       sessionId,
@@ -899,6 +900,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       setQueuedMessage,
       gitApi,
       streamUpdateIntervalMs: STREAM_UPDATE_INTERVAL_MS,
+      initialMutationCount: workbenchSession?.mutationCount,
       appendBlockEvent,
     });
     // Wrap the user's onError so the toast still fires alongside the
@@ -915,6 +917,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     } catch (e: any) {
       console.error('[streamPlanTurn] error:', e);
       finalize('error');
+    } finally {
+      finalize('done');
     }
   };
 
@@ -956,6 +960,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       setQueuedMessage,
       gitApi,
       streamUpdateIntervalMs: STREAM_UPDATE_INTERVAL_MS,
+      initialMutationCount: workbenchSession?.mutationCount,
       appendBlockEvent,
     });
 
@@ -1737,7 +1742,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                       const planRevisionNumber = submitPlanCountInThis > 0
                         ? messages.slice(0, i + 1)
                             .flatMap(msg => msg.blocks || [])
-                            .filter(b => b.tool?.name === 'august__submit_plan').length
+                            .filter(b => b.tool?.name === 'august__submit_plan').length + 1
                         : null;
                       return (
                         <div
@@ -1849,12 +1854,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         onRevise={async (feedback) => {
                           if (!workbenchSession) return;
                           try {
-                            await streamWorkbenchRevision(workbenchSession.id, feedback, {
-                              onError: (data) => toast.error('Could not send revision', { description: data.message }),
-                              // The backend emits a `session` event with the new
-                              // plan after the model revises and resubmits.
-                              onSession: (s) => setWorkbenchSession(s),
-                            });
+                            await streamPlanTurn(handlers => streamWorkbenchRevision(workbenchSession.id, feedback, handlers));
                           } catch (e: any) {
                             toast.error('Could not send revision', { description: e.message });
                           }

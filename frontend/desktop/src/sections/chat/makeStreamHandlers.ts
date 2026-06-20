@@ -67,6 +67,7 @@ export interface MakeStreamHandlersOptions {
 
   gitApi: { diff: (sessionId: string) => Promise<GitDiffResult> };
   streamUpdateIntervalMs: number;
+  initialMutationCount?: number;
 
   /** Pure reducer that merges a new SSE event into the streamBlocks
    *  array. Lives in ChatThread.tsx so the composer and the factory
@@ -105,6 +106,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     setQueuedMessage,
     gitApi,
     streamUpdateIntervalMs,
+    initialMutationCount,
     appendBlockEvent,
   } = opts;
 
@@ -115,7 +117,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   const pendingConfirmations = new Map<string, { message?: string; detail?: string; confirmationToken?: string }>();
   let streamBlocks: MessageBlock[] = [];
   let changedFiles: GitDiffResult | null = null;
-  let beforeMutationCount = 0;
+  let beforeMutationCount = initialMutationCount ?? 0;
   let latestMutationCount = 0;
   let latestWorkbenchTodos: any[] = [];
   const thinkingStart = Date.now();

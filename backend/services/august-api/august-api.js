@@ -424,6 +424,9 @@ function listTools() {
 function upsertTool(kind, name, configData) {
     if (kind === 'mcp') {
         if (!name) return errResult('name is required for MCP tools');
+        const config = require('../../lib/config');
+        const currentMcp = Array.isArray(config.getConfig().mcpServers) ? config.getConfig().mcpServers : [];
+        const beforeMcp = currentMcp.find(server => server?.name === name) || null;
         const { saveCustomMcpServer } = require('../tools/mcp-registry');
         const result = saveCustomMcpServer({ name, ...(configData || {}) });
         const { recordRollback } = require('../rollback/rollback-store');
@@ -431,8 +434,8 @@ function upsertTool(kind, name, configData) {
             type: 'restore_array_entry',
             target: name,
             meta: { arrayKey: 'mcpServers', matchField: 'name', entryKey: name },
-            before: { value: null },
-            after: { value: { name } }
+            before: { value: beforeMcp },
+            after: { value: result }
         });
         const { appendAuditEntry } = require('../audit/audit-log');
         appendAuditEntry({
@@ -446,6 +449,9 @@ function upsertTool(kind, name, configData) {
     }
     if (kind === 'plugin') {
         if (!name) return errResult('name is required for plugins');
+        const config = require('../../lib/config');
+        const currentPlugins = Array.isArray(config.getConfig().customPlugins) ? config.getConfig().customPlugins : [];
+        const beforePlugin = currentPlugins.find(plugin => plugin?.name === name) || null;
         const { savePlugin } = require('../tools/plugins');
         const result = savePlugin({ name, ...(configData || {}) });
         const { recordRollback } = require('../rollback/rollback-store');
@@ -453,8 +459,8 @@ function upsertTool(kind, name, configData) {
             type: 'restore_array_entry',
             target: name,
             meta: { arrayKey: 'customPlugins', matchField: 'name', entryKey: name },
-            before: { value: null },
-            after: { value: { name } }
+            before: { value: beforePlugin },
+            after: { value: result }
         });
         const { appendAuditEntry } = require('../audit/audit-log');
         appendAuditEntry({
@@ -472,6 +478,9 @@ function upsertTool(kind, name, configData) {
 function deleteTool(kind, name) {
     if (kind === 'mcp') {
         if (!name) return errResult('name is required for MCP tools');
+        const config = require('../../lib/config');
+        const currentMcp = Array.isArray(config.getConfig().mcpServers) ? config.getConfig().mcpServers : [];
+        const beforeMcp = currentMcp.find(server => server?.name === name) || null;
         const { deleteMcpServer } = require('../tools/mcp-registry');
         deleteMcpServer(name);
         const { recordRollback } = require('../rollback/rollback-store');
@@ -479,7 +488,7 @@ function deleteTool(kind, name) {
             type: 'restore_array_entry',
             target: name,
             meta: { arrayKey: 'mcpServers', matchField: 'name', entryKey: name },
-            before: { value: { name } },
+            before: { value: beforeMcp },
             after: { value: null }
         });
         const { appendAuditEntry } = require('../audit/audit-log');
@@ -493,6 +502,9 @@ function deleteTool(kind, name) {
     }
     if (kind === 'plugin') {
         if (!name) return errResult('name is required for plugins');
+        const config = require('../../lib/config');
+        const currentPlugins = Array.isArray(config.getConfig().customPlugins) ? config.getConfig().customPlugins : [];
+        const beforePlugin = currentPlugins.find(plugin => plugin?.name === name) || null;
         const { deletePlugin } = require('../tools/plugins');
         deletePlugin(name);
         const { recordRollback } = require('../rollback/rollback-store');
@@ -500,7 +512,7 @@ function deleteTool(kind, name) {
             type: 'restore_array_entry',
             target: name,
             meta: { arrayKey: 'customPlugins', matchField: 'name', entryKey: name },
-            before: { value: { name } },
+            before: { value: beforePlugin },
             after: { value: null }
         });
         const { appendAuditEntry } = require('../audit/audit-log');

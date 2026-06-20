@@ -30,6 +30,7 @@ const { dataPath } = require('../../lib/data-paths');
 
 const ROLLBACK_PATH = dataPath('august_rollback.json');
 const MAX_ENTRIES = 100;
+const TEST_WORKER_ID = process.env.NODE_TEST_CONTEXT ? `${process.pid}-${crypto.randomUUID()}` : null;
 
 const TRANSIENT_FS_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
 
@@ -60,23 +61,25 @@ function load() {
 }
 
 function save(items) {
-    withFileLock(() => {
-        ensureDirExists(ROLLBACK_PATH);
-        // Atomic write: write to a unique tmp file (random UUID) then rename over
-        // the real path. renameSync is atomic on the same filesystem on Windows
-        // and Unix. The UUID suffix is what saves us under `node --test`'s
-        // parallel workers — a fixed `.tmp` name lets one writer's `clearRollbacks`
-        // delete another writer's tmp mid-save.
-        const tmpPath = `${ROLLBACK_PATH}.${crypto.randomUUID()}.tmp`;
-        retryOnTransient(() => fs.writeFileSync(tmpPath, JSON.stringify(items, null, 2), 'utf8'));
-        try {
-            retryOnTransient(() => fs.renameSync(tmpPath, ROLLBACK_PATH));
-        } catch (e) {
-            // Best-effort cleanup of our own tmp on rename failure.
-            try { fs.unlinkSync(tmpPath); } catch (_) {}
-            throw e;
-        }
-    });
+    withFileLock(() => writeRollbackFile(items));
+}
+
+function writeRollbackFile(items) {
+    ensureDirExists(ROLLBACK_PATH);
+    // Atomic write: write to a unique tmp file (random UUID) then rename over
+    // the real path. renameSync is atomic on the same filesystem on Windows
+    // and Unix. The UUID suffix is what saves us under `node --test`'s
+    // parallel workers — a fixed `.tmp` name lets one writer's `clearRollbacks`
+    // delete another writer's tmp mid-save.
+    const tmpPath = `${ROLLBACK_PATH}.${crypto.randomUUID()}.tmp`;
+    retryOnTransient(() => fs.writeFileSync(tmpPath, JSON.stringify(items, null, 2), 'utf8'));
+    try {
+        retryOnTransient(() => fs.renameSync(tmpPath, ROLLBACK_PATH));
+    } catch (e) {
+        // Best-effort cleanup of our own tmp on rename failure.
+        try { fs.unlinkSync(tmpPath); } catch (_) {}
+        throw e;
+    }
 }
 
 /**
@@ -94,22 +97,34 @@ function recordRollback({ type, target, before, after, meta } = {}) {
     if (!target) {
         throw new Error('rollback target is required');
     }
-    const items = load();
-    const entry = {
-        id: crypto.randomUUID(),
-        at: new Date().toISOString(),
-        type,
-        target: String(target),
-        before: before === undefined ? null : before,
-        after: after === undefined ? null : after,
-        meta: meta === undefined ? null : meta,
-        status: 'available'
-    };
-    items.push(entry);
-    // FIFO cap
-    const trimmed = items.length > MAX_ENTRIES ? items.slice(-MAX_ENTRIES) : items;
-    save(trimmed);
-    return entry;
+
+    return withFileLock(() => {
+        const items = load();
+        const entry = {
+            id: crypto.randomUUID(),
+            at: new Date().toISOString(),
+            type,
+            target: String(target),
+            before: before === undefined ? null : before,
+            after: after === undefined ? null : after,
+            meta: meta === undefined ? null : meta,
+            status: 'available',
+            workerId: TEST_WORKER_ID
+        };
+        let currentItems = items;
+        if (TEST_WORKER_ID) {
+            const others = items.filter(i => i.workerId !== TEST_WORKER_ID);
+            currentItems = items.filter(i => i.workerId === TEST_WORKER_ID);
+            currentItems.push(entry);
+            const trimmed = currentItems.length > MAX_ENTRIES ? currentItems.slice(-MAX_ENTRIES) : currentItems;
+            writeRollbackFile([...others, ...trimmed]);
+        } else {
+            currentItems.push(entry);
+            const trimmed = currentItems.length > MAX_ENTRIES ? currentItems.slice(-MAX_ENTRIES) : currentItems;
+            writeRollbackFile(trimmed);
+        }
+        return entry;
+    });
 }
 
 /**
@@ -124,7 +139,7 @@ function recordRollback({ type, target, before, after, meta } = {}) {
  */
 async function undoRollback(id) {
     if (!id) throw new Error('rollback id is required');
-    return withFileLock(() => {
+    return withFileLockAsync(async () => {
         const items = load();
         const idx = items.findIndex(it => it.id === id);
         if (idx === -1) throw new Error(`Rollback item not found: ${id}`);
@@ -133,25 +148,20 @@ async function undoRollback(id) {
             return { ...entry, alreadyUndone: true };
         }
 
-        // Note: dispatchUndo returns a Promise (e.g. for restore_file). We
-        // resolve it inside the lock, so the lock is held for the full
-        // dispatch duration. That's deliberate — it serializes undo with
-        // any concurrent clear/save, and the underlying ops are short.
-        return Promise.resolve(dispatchUndo(entry))
-            .then(() => {
-                entry.status = 'undone';
-                entry.undoneAt = new Date().toISOString();
-                items[idx] = entry;
-                save(items);
-                return entry;
-            })
-            .catch(err => {
-                entry.status = 'failed';
-                entry.error = String((err && err.message) || err);
-                items[idx] = entry;
-                save(items);
-                throw err;
-            });
+        try {
+            await dispatchUndo(entry);
+            entry.status = 'undone';
+            entry.undoneAt = new Date().toISOString();
+            items[idx] = entry;
+            writeRollbackFile(items);
+            return entry;
+        } catch (err) {
+            entry.status = 'failed';
+            entry.error = String((err && err.message) || err);
+            items[idx] = entry;
+            writeRollbackFile(items);
+            throw err;
+        }
     });
 }
 
@@ -260,12 +270,12 @@ async function undoRestoreMemoryItem(entry) {
  * Splice a single entry back into a top-level cfg array.
  *
  * `meta` must carry { arrayKey, matchField, entryKey }.
- * - if `after` is null OR `after.value` is null/undefined: the operation
- *   removed the entry. Undo by re-inserting `entry.before.value` at the
- *   end of the array.
- * - if `after.value` is non-null: the operation added or replaced the
- *   entry. Undo by removing the entry whose `meta.matchField ===
- *   meta.entryKey`.
+ * - Add (`before.value` null, `after.value` non-null): undo by removing
+ *   the added entry.
+ * - Delete (`before.value` non-null, `after.value` null): undo by
+ *   re-inserting `entry.before.value` at the end of the array.
+ * - Update (`before.value` and `after.value` non-null): undo by replacing
+ *   the current entry with `entry.before.value`, or pushing it if missing.
  *
  * The `restore_setting` type is unfit for arrays because dotted-path
  * property assignment creates an expando on the array object instead of
@@ -281,18 +291,29 @@ async function undoRestoreArrayEntry(entry) {
     const cfg = getConfig() || {};
     const arr = Array.isArray(cfg[arrayKey]) ? cfg[arrayKey] : [];
     const idx = arr.findIndex(e => e && e[matchField] === entryKey);
-    // Treat both `after: null` and `after: { value: null }` as a delete.
-    const afterValue = entry.after === null || entry.after === undefined ? null : entry.after.value;
-    if (afterValue !== null && afterValue !== undefined) {
-        // Operation added or changed the entry — undo by removing it.
-        if (idx >= 0) arr.splice(idx, 1);
-    } else {
+    const beforeValue = entry.before && typeof entry.before === 'object' && 'value' in entry.before
+        ? entry.before.value
+        : entry.before;
+    const afterValue = entry.after && typeof entry.after === 'object' && 'value' in entry.after
+        ? entry.after.value
+        : entry.after;
+    const wasDeleted = afterValue === null || afterValue === undefined;
+    const wasAdded = beforeValue === null || beforeValue === undefined;
+
+    if (wasDeleted) {
         // Operation removed the entry — undo by re-inserting the prior value.
-        const beforeValue = entry.before === null || entry.before === undefined ? null : entry.before.value;
         if (idx === -1 && beforeValue !== null && beforeValue !== undefined) {
             arr.push(beforeValue);
         }
+    } else if (wasAdded) {
+        // Operation added the entry — undo by removing it.
+        if (idx >= 0) arr.splice(idx, 1);
+    } else {
+        // Operation updated the entry — undo by restoring the prior value.
+        if (idx >= 0) arr[idx] = beforeValue;
+        else if (beforeValue !== null && beforeValue !== undefined) arr.push(beforeValue);
     }
+
     cfg[arrayKey] = arr;
     saveConfig(cfg);
     return true;
@@ -308,7 +329,11 @@ async function undoRestoreArrayEntry(entry) {
  *   { available, undone, failed, total, byType, at }
  */
 function listRollbacks({ limit = 100, status, type, summary } = {}) {
-    let items = load();
+    let items = [];
+    withFileLock(() => {
+        items = load();
+    });
+    if (TEST_WORKER_ID) items = items.filter(i => i.workerId === TEST_WORKER_ID);
     if (status) items = items.filter(i => i.status === status);
     if (type)   items = items.filter(i => i.type === type);
 
@@ -358,6 +383,7 @@ const retryOnEperm = retryOnTransient;
 const ROLLBACK_LOCK_PATH = `${ROLLBACK_PATH}.lock`;
 
 function withFileLock(fn) {
+    ensureDirExists(ROLLBACK_PATH);
     for (let i = 0; i < 100; i++) {
         let fd;
         try {
@@ -385,11 +411,45 @@ function withFileLock(fn) {
     throw new Error(`File lock timeout: ${ROLLBACK_LOCK_PATH}`);
 }
 
+async function withFileLockAsync(fn) {
+    ensureDirExists(ROLLBACK_PATH);
+    for (let i = 0; i < 100; i++) {
+        let fd;
+        try {
+            fd = retryOnTransient(() => fs.openSync(ROLLBACK_LOCK_PATH, 'wx'));
+        } catch (e) {
+            if (e.code === 'EEXIST') {
+                const delay = Math.min(5 * Math.pow(1.5, i), 50);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                continue;
+            }
+            throw e;
+        }
+        try {
+            return await fn();
+        } finally {
+            try { fs.closeSync(fd); } catch (_) { /* ignore */ }
+            try { fs.unlinkSync(ROLLBACK_LOCK_PATH); } catch (_) { /* ignore */ }
+        }
+    }
+    throw new Error(`File lock timeout: ${ROLLBACK_LOCK_PATH}`);
+}
+
 function clearRollbacks() {
     withFileLock(() => {
-        retryOnTransient(() => {
-            if (fs.existsSync(ROLLBACK_PATH)) fs.unlinkSync(ROLLBACK_PATH);
-        });
+        if (!fs.existsSync(ROLLBACK_PATH)) {
+            // Best-effort: clean up any leftover *.tmp files from a crashed save.
+        } else if (!TEST_WORKER_ID) {
+            retryOnTransient(() => fs.unlinkSync(ROLLBACK_PATH));
+        } else {
+            const items = load();
+            const kept = items.filter(i => i.workerId !== TEST_WORKER_ID);
+            if (kept.length === 0) {
+                retryOnTransient(() => fs.unlinkSync(ROLLBACK_PATH));
+            } else {
+                writeRollbackFile(kept);
+            }
+        }
         // Best-effort: clean up any leftover *.tmp files from a crashed save.
         // Use a sibling-glob via fs.readdirSync so we don't need extra deps.
         try {

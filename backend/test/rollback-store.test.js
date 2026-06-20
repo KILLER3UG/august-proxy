@@ -242,6 +242,37 @@ test('restore_array_entry: undo re-inserts a previously deleted entry', async ()
     clearRollbacks();
 });
 
+test('restore_array_entry: undo restores a previously updated entry', async () => {
+    clearRollbacks();
+    const { getConfig, saveConfig } = require('../lib/config');
+    const cfg = getConfig();
+    const before = { alias: 'unit-test-update', targetModel: 'gpt-4', targetProvider: 'openai' };
+    const after = { alias: 'unit-test-update', targetModel: 'claude-opus-4-6', targetProvider: 'anthropic' };
+    const original = Array.isArray(cfg.modelAliases) ? [...cfg.modelAliases] : [];
+    cfg.modelAliases = [...original.filter(a => a.alias !== 'unit-test-update'), after];
+    saveConfig(cfg);
+
+    const rec = recordRollback({
+        type: 'restore_array_entry',
+        target: 'unit-test-update',
+        meta: { arrayKey: 'modelAliases', matchField: 'alias', entryKey: 'unit-test-update' },
+        before: { value: before },
+        after: { value: after }
+    });
+
+    await undoRollback(rec.id);
+
+    const restored = getConfig().modelAliases.find(a => a.alias === 'unit-test-update');
+    assert.ok(restored, 'undo should restore the updated alias');
+    assert.equal(restored.targetModel, 'gpt-4');
+    assert.equal(restored.targetProvider, 'openai');
+
+    // Restore prior state
+    cfg.modelAliases = original;
+    saveConfig(cfg);
+    clearRollbacks();
+});
+
 test('restore_array_entry: throws when meta is missing required fields', async () => {
     clearRollbacks();
     const rec = recordRollback({

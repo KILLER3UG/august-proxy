@@ -102,7 +102,7 @@ describe('appendBlockEvent — derived badge counter (consumer-side logic)', () 
     if (inThis === 0) return null;
     return messages.slice(0, index + 1)
       .flatMap(m => m.blocks || [])
-      .filter(b => b.tool?.name === 'august__submit_plan').length;
+      .filter(b => b.tool?.name === 'august__submit_plan').length + 1;
   }
 
   it('returns null for messages without submit_plan calls', () => {
@@ -114,21 +114,21 @@ describe('appendBlockEvent — derived badge counter (consumer-side logic)', () 
     expect(derivePlanRevisionNumber(messages, 1)).toBeNull();
   });
 
-  it('returns 1 for the first submit_plan call', () => {
+  it('returns 2 for the first submit_plan call', () => {
     const messages = [
       { blocks: [{ tool: { name: 'august__submit_plan' } }] },
     ];
-    expect(derivePlanRevisionNumber(messages, 0)).toBe(1);
+    expect(derivePlanRevisionNumber(messages, 0)).toBe(2);
   });
 
-  it('returns the cumulative count for subsequent submit_plan calls', () => {
+  it('returns the displayed cumulative count for subsequent submit_plan calls', () => {
     const messages = [
       { blocks: [{ tool: { name: 'august__submit_plan' } }] },
       { blocks: [{ tool: { name: 'august__write_file' } }] },
       { blocks: [{ tool: { name: 'august__submit_plan' } }] },
     ];
-    expect(derivePlanRevisionNumber(messages, 0)).toBe(1);
+    expect(derivePlanRevisionNumber(messages, 0)).toBe(2);
     expect(derivePlanRevisionNumber(messages, 1)).toBeNull();
-    expect(derivePlanRevisionNumber(messages, 2)).toBe(2);
+    expect(derivePlanRevisionNumber(messages, 2)).toBe(3);
   });
 });

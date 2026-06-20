@@ -6,12 +6,35 @@ const path = require('path');
 
 const api = require('../services/august-api/august-api');
 const { clearAuditLog, readAuditEntries } = require('../services/audit/audit-log');
-const { clearRollbacks } = require('../services/rollback/rollback-store');
+const { clearRollbacks, listRollbacks, undoRollback } = require('../services/rollback/rollback-store');
 
 test.beforeEach(() => {
     clearAuditLog();
     clearRollbacks();
 });
+
+const { getConfig, saveConfig } = require('../lib/config');
+
+function captureConfigArray(key) {
+    const cfg = getConfig();
+    return {
+        key,
+        had: Object.prototype.hasOwnProperty.call(cfg, key),
+        value: Array.isArray(cfg[key]) ? [...cfg[key]] : undefined,
+    };
+}
+
+function restoreConfigArray(snapshot) {
+    const cfg = getConfig();
+    if (snapshot.had) cfg[snapshot.key] = snapshot.value;
+    else delete cfg[snapshot.key];
+    saveConfig(cfg);
+}
+
+function latestRollbackForTarget(target, arrayKey) {
+    const items = listRollbacks({ limit: 100 });
+    return [...items].reverse().find(item => item.target === target && item.meta?.arrayKey === arrayKey);
+}
 
 test('snapshot includes all required domains', () => {
     const snap = api.buildSnapshot();
@@ -193,4 +216,81 @@ test('tools_manage delete with unknown kind returns error', () => {
     const r = api.deleteTool('invalid', 'test');
     assert.equal(r.ok, false);
     assert.match(r.error || '', /unknown kind/i);
+});
+
+test('tools_manage MCP upsert update undo restores previous entry', async () => {
+    const name = `unit-mcp-update-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const snapshot = captureConfigArray('mcpServers');
+    try {
+        const first = api.upsertTool('mcp', name, { command: 'node', args: ['--version'], timeoutMs: 20000 });
+        assert.equal(first.ok, true);
+        const second = api.upsertTool('mcp', name, { command: 'node', args: ['--version'], timeoutMs: 30000 });
+        assert.equal(second.ok, true);
+        const rb = latestRollbackForTarget(name, 'mcpServers');
+        assert.ok(rb, 'MCP update rollback should be recorded');
+        await undoRollback(rb.id);
+        const current = getConfig().mcpServers.find(server => server?.name === name);
+        assert.ok(current, 'undo should restore the previous MCP entry');
+        assert.equal(current.timeoutMs, 20000);
+    } finally {
+        restoreConfigArray(snapshot);
+    }
+});
+
+test('tools_manage plugin upsert update undo restores previous entry', async () => {
+    const name = `unit-plugin-update-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const snapshot = captureConfigArray('customPlugins');
+    try {
+        const first = api.upsertTool('plugin', name, { description: 'first', skills: ['a'] });
+        assert.equal(first.ok, true);
+        const second = api.upsertTool('plugin', name, { description: 'second', skills: ['b'] });
+        assert.equal(second.ok, true);
+        const rb = latestRollbackForTarget(name, 'customPlugins');
+        assert.ok(rb, 'plugin update rollback should be recorded');
+        await undoRollback(rb.id);
+        const current = getConfig().customPlugins.find(plugin => plugin?.name === name);
+        assert.ok(current, 'undo should restore the previous plugin entry');
+        assert.equal(current.description, 'first');
+        assert.deepEqual(current.skills, ['a']);
+    } finally {
+        restoreConfigArray(snapshot);
+    }
+});
+
+test('tools_manage MCP delete undo re-inserts previous entry', async () => {
+    const name = `unit-mcp-delete-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const snapshot = captureConfigArray('mcpServers');
+    try {
+        const created = api.upsertTool('mcp', name, { command: 'node', args: ['--version'] });
+        assert.equal(created.ok, true);
+        const deleted = api.deleteTool('mcp', name);
+        assert.equal(deleted.ok, true);
+        const rb = latestRollbackForTarget(name, 'mcpServers');
+        assert.ok(rb, 'MCP delete rollback should be recorded');
+        await undoRollback(rb.id);
+        const current = getConfig().mcpServers.find(server => server?.name === name);
+        assert.ok(current, 'undo should re-insert the deleted MCP entry');
+        assert.equal(current.command, 'node');
+    } finally {
+        restoreConfigArray(snapshot);
+    }
+});
+
+test('tools_manage plugin delete undo re-inserts previous entry', async () => {
+    const name = `unit-plugin-delete-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const snapshot = captureConfigArray('customPlugins');
+    try {
+        const created = api.upsertTool('plugin', name, { description: 'delete me' });
+        assert.equal(created.ok, true);
+        const deleted = api.deleteTool('plugin', name);
+        assert.equal(deleted.ok, true);
+        const rb = latestRollbackForTarget(name, 'customPlugins');
+        assert.ok(rb, 'plugin delete rollback should be recorded');
+        await undoRollback(rb.id);
+        const current = getConfig().customPlugins.find(plugin => plugin?.name === name);
+        assert.ok(current, 'undo should re-insert the deleted plugin entry');
+        assert.equal(current.description, 'delete me');
+    } finally {
+        restoreConfigArray(snapshot);
+    }
 });

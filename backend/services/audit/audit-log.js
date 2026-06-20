@@ -25,6 +25,7 @@ const { dataPath } = require('../../lib/data-paths');
 const { redactForDisplay, maskSecretValue, SENSITIVE_KEY_PATTERN } = require('../../lib/redact');
 
 const AUDIT_LOG_PATH = dataPath('august_audit_log.jsonl');
+const TEST_WORKER_ID = process.env.NODE_TEST_CONTEXT ? `${process.pid}-${crypto.randomUUID()}` : null;
 
 const FREE_TEXT_PATTERNS = [
     { rx: /sk-[A-Za-z0-9_-]{12,}/g, repl: 'sk-***REDACTED***' },
@@ -77,6 +78,7 @@ function appendAuditEntry(entry) {
         actor: entry.actor || 'august',
         agentId: entry.agentId || null,
         sessionId: entry.sessionId || null,
+        workerId: TEST_WORKER_ID,
         action: String(entry.action || 'unknown'),
         target: entry.target || null,
         category: entry.category || null,
@@ -93,8 +95,8 @@ function appendAuditEntry(entry) {
         result: entry.result || 'ok',
         error: entry.error ? String(entry.error) : null
     };
+    ensureDirExists(AUDIT_LOG_PATH);
     withFileLock(() => {
-        ensureDirExists(AUDIT_LOG_PATH);
         retryOnTransient(() => fs.appendFileSync(AUDIT_LOG_PATH, JSON.stringify(record) + '\n', 'utf8'));
     });
     return record;
@@ -112,21 +114,27 @@ function appendAuditEntry(entry) {
  * Reads the whole JSONL into memory (cheap for ≤ few thousand entries).
  */
 function readAuditEntries({ limit = 200, category, actor, action, since, until, summary } = {}) {
-    if (!fs.existsSync(AUDIT_LOG_PATH)) {
-        return summary ? { count: 0, byCategory: {}, byResult: {}, byActor: {}, byCritical: { true: 0, false: 0, null: 0 }, at: new Date().toISOString() } : [];
-    }
-    let raw;
-    try {
-        raw = fs.readFileSync(AUDIT_LOG_PATH, 'utf8');
-    } catch (_) {
-        return summary ? { count: 0, byCategory: {}, byResult: {}, byActor: {}, byCritical: { true: 0, false: 0, null: 0 }, at: new Date().toISOString() } : [];
-    }
-    const lines = raw.split(/\r?\n/).filter(Boolean);
-    const parsed = [];
-    for (const line of lines) {
-        try { parsed.push(JSON.parse(line)); }
-        catch (_) { /* skip malformed line */ }
-    }
+    let parsed = [];
+    withFileLock(() => {
+        if (!fs.existsSync(AUDIT_LOG_PATH)) {
+            parsed = [];
+            return;
+        }
+        let raw;
+        try {
+            raw = fs.readFileSync(AUDIT_LOG_PATH, 'utf8');
+        } catch (_) {
+            parsed = [];
+            return;
+        }
+        const lines = raw.split(/\r?\n/).filter(Boolean);
+        for (const line of lines) {
+            try { parsed.push(JSON.parse(line)); }
+            catch (_) { /* skip malformed line */ }
+        }
+    });
+
+    if (TEST_WORKER_ID) parsed = parsed.filter(e => e.workerId === TEST_WORKER_ID);
 
     if (summary) {
         const byCategory = {};
@@ -206,6 +214,7 @@ const retryOnEperm = retryOnTransient;
 const AUDIT_LOCK_PATH = `${AUDIT_LOG_PATH}.lock`;
 
 function withFileLock(fn) {
+    ensureDirExists(AUDIT_LOG_PATH);
     for (let i = 0; i < 100; i++) {
         let fd;
         try {
@@ -234,12 +243,34 @@ function withFileLock(fn) {
 }
 
 function clearAuditLog() {
+    ensureDirExists(AUDIT_LOG_PATH);
     withFileLock(() => {
-        retryOnTransient(() => {
-            if (fs.existsSync(AUDIT_LOG_PATH)) {
-                fs.unlinkSync(AUDIT_LOG_PATH);
+        if (!fs.existsSync(AUDIT_LOG_PATH)) return;
+        if (!TEST_WORKER_ID) {
+            retryOnTransient(() => fs.unlinkSync(AUDIT_LOG_PATH));
+            return;
+        }
+        let raw;
+        try {
+            raw = fs.readFileSync(AUDIT_LOG_PATH, 'utf8');
+        } catch (_) {
+            return;
+        }
+        const lines = raw.split(/\r?\n/);
+        const kept = lines.filter(line => {
+            if (!line) return false;
+            try {
+                const obj = JSON.parse(line);
+                return obj.workerId !== TEST_WORKER_ID;
+            } catch (_) {
+                return true;
             }
         });
+        if (kept.length === 0) {
+            retryOnTransient(() => fs.unlinkSync(AUDIT_LOG_PATH));
+        } else {
+            retryOnTransient(() => fs.writeFileSync(AUDIT_LOG_PATH, kept.join('\n') + '\n', 'utf8'));
+        }
     });
 }
 

@@ -109,12 +109,13 @@ test('limit parameter caps returned entries', () => {
     assert.equal(capped[1].action, 'bulk.4');
 });
 
-test('clearAuditLog removes the file', () => {
+test("clearAuditLog removes this worker's entries", () => {
     clearAuditLog();
     appendAuditEntry({ action: 'transient.test' });
     assert.ok(fs.existsSync(AUDIT_LOG_PATH));
     clearAuditLog();
-    assert.ok(!fs.existsSync(AUDIT_LOG_PATH));
+    const remaining = readAuditEntries({ limit: 10 });
+    assert.equal(remaining.length, 0, 'no entries from this worker should remain after clearAuditLog');
 });
 
 // ----- filter coverage (Observability Task 5) -----
