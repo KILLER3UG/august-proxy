@@ -115,3 +115,82 @@ test('audit entries are written with category=august_api', async () => {
     const cats = entries.map(e => e.category);
     assert.ok(cats.includes('august_api'));
 });
+
+// ── Alias management ──
+
+test('aliases_manage list returns empty initially', () => {
+    const r = api.listAliases();
+    assert.equal(r.ok, true);
+    assert.ok(Array.isArray(r.aliases));
+});
+
+test('aliases_manage upsert creates alias', () => {
+    const r = api.upsertAlias('test-alias-1', 'gpt-4-turbo', 'openai');
+    assert.equal(r.ok, true);
+    assert.equal(r.alias, 'test-alias-1');
+
+    const listed = api.listAliases();
+    assert.ok(listed.aliases.some(a => a.alias === 'test-alias-1'));
+});
+
+test('aliases_manage upsert updates existing alias', () => {
+    api.upsertAlias('test-alias-1', 'gpt-4-turbo', 'openai');
+    const r = api.upsertAlias('test-alias-1', 'claude-opus-4-6', 'anthropic');
+    assert.equal(r.ok, true);
+    assert.equal(r.targetModel, 'claude-opus-4-6');
+});
+
+test('aliases_manage delete removes alias', () => {
+    api.upsertAlias('test-alias-del', 'gpt-4', 'openai');
+    const r = api.deleteAlias('test-alias-del');
+    assert.equal(r.ok, true);
+    assert.equal(r.deleted, true);
+
+    const listed = api.listAliases();
+    assert.equal(listed.aliases.some(a => a.alias === 'test-alias-del'), false);
+});
+
+test('aliases_manage delete returns error for missing alias', () => {
+    const r = api.deleteAlias('nonexistent-alias');
+    assert.equal(r.ok, false);
+});
+
+test('aliases_manage upsert requires targetModel', () => {
+    const r = api.upsertAlias('foo', null, null);
+    assert.equal(r.ok, false);
+    assert.equal(r.code, 'error');
+});
+
+test('aliases_manage writes audit and rollback entries', () => {
+    clearAuditLog();
+    clearRollbacks();
+    const r = api.upsertAlias('test-audit-alias', 'claude-3-opus', null);
+    assert.equal(r.ok, true);
+    assert.ok(r.rollbackId);
+
+    const entries = readAuditEntries({ limit: 50 });
+    const last = entries[entries.length - 1];
+    assert.equal(last.action, 'aliases.upsert');
+    assert.equal(last.category, 'august_api');
+});
+
+// ── Tool management ──
+
+test('tools_manage list returns mcp and plugins keys', () => {
+    const r = api.listTools();
+    assert.equal(r.ok, true);
+    assert.ok(Array.isArray(r.mcp));
+    assert.ok(Array.isArray(r.plugins));
+});
+
+test('tools_manage upsert with unknown kind returns error', () => {
+    const r = api.upsertTool('invalid', 'test', {});
+    assert.equal(r.ok, false);
+    assert.match(r.error || '', /unknown kind/i);
+});
+
+test('tools_manage delete with unknown kind returns error', () => {
+    const r = api.deleteTool('invalid', 'test');
+    assert.equal(r.ok, false);
+    assert.match(r.error || '', /unknown kind/i);
+});

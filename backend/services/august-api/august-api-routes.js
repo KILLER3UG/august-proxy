@@ -132,6 +132,26 @@ async function handleAugustApiRoute(req, res, { url, method, sendJson, sendError
         return sendError(res, new Error(`Unknown app-policy action: ${action}`), 400);
     }
 
+    // ----- Aliases management -----
+    if (url === '/ui/august/aliases/manage' && method === 'POST') {
+        const body = await readJsonBody(req);
+        const action = body.action;
+        if (action === 'list') return sendJson(res, api.listAliases());
+        if (action === 'upsert') return sendJson(res, api.upsertAlias(body.alias, body.targetModel, body.targetProvider));
+        if (action === 'delete') return sendJson(res, api.deleteAlias(body.alias));
+        return sendError(res, new Error(`Unknown aliases action: ${action}`), 400);
+    }
+
+    // ----- Tool management (MCP + plugins) -----
+    if (url === '/ui/august/tools/manage' && method === 'POST') {
+        const body = await readJsonBody(req);
+        const action = body.action;
+        if (action === 'list') return sendJson(res, api.listTools());
+        if (action === 'upsert') return sendJson(res, api.upsertTool(body.kind, body.name, body.config));
+        if (action === 'delete') return sendJson(res, api.deleteTool(body.kind, body.name));
+        return sendError(res, new Error(`Unknown tools action: ${action}`), 400);
+    }
+
     // ----- Task 5: UI automation -----
     if (url === '/ui/august/ui-action' && method === 'POST') {
         const body = await readJsonBody(req);

@@ -26,6 +26,7 @@ import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { Statusbar } from '@/components/shell/Statusbar';
 import { createChatRuntime, type ChatTurnRecord } from './chat-runtime';
+import { makeStreamHandlers } from './makeStreamHandlers';
 import {
   createWorkbenchSession,
   streamWorkbenchChat,
@@ -82,6 +83,13 @@ export interface MessageBlock {
       confirmationToken?: string;
     };
   };
+  /** Set on a tool_call block whose name === 'august__submit_plan'.
+   *  The MessageBubble header reads this flag to render a "Revised
+   *  plan vN" badge so the user can see at a glance that the
+   *  assistant message corresponds to a plan revision, not a fresh
+   *  plan or a non-plan response. Derived counter (v1, v2, …) lives
+   *  in the bubble rendering — see MessageBubble for the math. */
+  isRevisedPlan?: boolean;
 }
 
 export interface ChatMessage {
@@ -140,6 +148,109 @@ interface ModelItem {
   isFree?: boolean;
   supportsReasoning?: boolean;
   supportsThinking?: boolean;
+}
+
+/**
+ * Pure reducer that merges a new SSE event into the streamBlocks array.
+ *
+ * Lives at module scope (not inside the component) so the
+ * `makeStreamHandlers` factory in `./makeStreamHandlers.ts` can import
+ * the same merging logic the composer uses. The composer continues to
+ * call it via a closure reference passed in as a factory option, but
+ * the underlying implementation is here.
+ *
+ * For `tool_call` events where `event.isRevisedPlan` is true, the
+ * resulting block carries `isRevisedPlan: true` so the message header
+ * can render a "Revised plan vN" badge without re-scanning tool args.
+ */
+export function appendBlockEvent(
+  prevBlocks: MessageBlock[],
+  event: {
+    type: 'thinking' | 'text' | 'content' | 'tool_call' | 'command' | 'tool_progress' | 'tool_result';
+    content?: string;
+    name?: string;
+    id?: string;
+    context?: string;
+    preview?: string;
+    summary?: string;
+    error?: string;
+    status?: 'running' | 'done' | 'error';
+    duration?: number;
+    isRevisedPlan?: boolean;
+  }
+): MessageBlock[] {
+  const blocks = [...prevBlocks];
+  const lastBlock = blocks[blocks.length - 1];
+
+  if (event.type === 'thinking') {
+    const text = event.content || '';
+    if (lastBlock && lastBlock.type === 'thinking') {
+      lastBlock.content = (lastBlock.content || '') + text;
+    } else {
+      blocks.push({
+        id: `b_think_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type: 'thinking',
+        content: text
+      });
+    }
+  } else if (event.type === 'text' || event.type === 'content') {
+    const text = event.content || '';
+    if (lastBlock && lastBlock.type === 'final_output') {
+      lastBlock.content = (lastBlock.content || '') + text;
+    } else {
+      blocks.push({
+        id: `b_out_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type: 'final_output',
+        content: text
+      });
+    }
+  } else if (event.type === 'tool_call' || event.type === 'command') {
+    const isCommand = event.type === 'command' || event.name?.startsWith('@run_command') || event.name?.startsWith('run_command');
+    blocks.push({
+      id: `b_tool_${event.id || Date.now()}`,
+      type: isCommand ? 'command' : 'tool_call',
+      tool: {
+        id: event.id || `tc_${Date.now()}`,
+        name: event.name || 'tool',
+        context: event.context || '',
+        status: event.status || 'running',
+        startedAt: Date.now()
+      },
+      // Pass the "this is a submit_plan call" flag through to the
+      // block so MessageBubble can render the "Revised plan vN"
+      // badge from a derived counter (see MessageBubble).
+      ...(event.isRevisedPlan ? { isRevisedPlan: true } : {}),
+    });
+  } else if (event.type === 'tool_progress') {
+    const targetIdx = blocks.findIndex(b => b.tool && b.tool.id === event.id);
+    if (targetIdx !== -1) {
+      const target = { ...blocks[targetIdx] };
+      if (target.tool) {
+        target.tool = {
+          ...target.tool,
+          preview: (target.tool.preview || '') + (event.preview || '')
+        };
+      }
+      blocks[targetIdx] = target;
+    }
+  } else if (event.type === 'tool_result') {
+    const targetIdx = blocks.findIndex(b => b.tool && b.tool.id === event.id);
+    if (targetIdx !== -1) {
+      const target = { ...blocks[targetIdx] };
+      if (target.tool) {
+        target.tool = {
+          ...target.tool,
+          status: event.status || 'done',
+          summary: event.summary || '',
+          error: event.error || '',
+          duration: event.duration
+        };
+      }
+      blocks[targetIdx] = target;
+    }
+  }
+
+  return blocks;
 }
 
 export function modelFromSession(session: Pick<Session, 'model' | 'provider'> | null): ModelItem | null {
@@ -752,6 +863,61 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return created;
   };
 
+  /**
+   * Helper for banner/panel click handlers. Wraps the streaming
+   * infrastructure in one place so the four banner callbacks (and the
+   * one panel callback) all share the exact same setup that the
+   * composer uses in `generateAIResponse`. The `run` callback
+   * receives the assembled handler bundle and is expected to start
+   * the appropriate `stream*` call (e.g. `streamPlanDecision`).
+   */
+  const streamPlanTurn = async (
+    run: (handlers: { onError?: (data: { message: string }) => void } & Record<string, any>) => Promise<void>,
+  ) => {
+    if (!sessionId) return;
+    const assistantMsgId = `a${Date.now()}`;
+    const turn = chatRuntime.startTurn({
+      sessionId,
+      assistantMsgId,
+      transport: 'none',
+    });
+    const { handlers, finalize } = makeStreamHandlers({
+      sessionId,
+      assistantMsgId,
+      initialMessages: messages,
+      setMessages,
+      persistMessages,
+      setSessionStatus,
+      setWorkbenchSession,
+      setSubagentPrompts,
+      setToolProgress,
+      setWorkbenchBtw,
+      isTurnVisible,
+      finishTurn,
+      turn,
+      queuedMessage: null, // banner actions never queue
+      setQueuedMessage,
+      gitApi,
+      streamUpdateIntervalMs: STREAM_UPDATE_INTERVAL_MS,
+      appendBlockEvent,
+    });
+    // Wrap the user's onError so the toast still fires alongside the
+    // factory's stream-error handler (which writes the ⚠️ block).
+    const wrappedHandlers = {
+      ...handlers,
+      onError: (data: { message: string }) => {
+        toast.error('Could not notify the model', { description: data.message });
+        handlers.onError?.(data);
+      },
+    };
+    try {
+      await run(wrappedHandlers as any);
+    } catch (e: any) {
+      console.error('[streamPlanTurn] error:', e);
+      finalize('error');
+    }
+  };
+
   const generateAIResponse = async (chatHistory: ChatMessage[]) => {
     const turnSessionId = sessionId;
     const isCurrentTurn = () => isTurnVisible(turnSessionId);
@@ -768,126 +934,45 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     });
     const abortController = turn.controller;
 
-    const thinkingStart = Date.now();
-    let thinkingEnd: number | null = null;
-    let workbenchSessionId = workbenchSession?.id || activeSession?.workbenchSessionId || null;
-    let latestWorkbenchTodos = workbenchSession?.todos ?? [];
-    let assistantContent = '';
-    let thinkingContent = '';
-    let toolResults: NonNullable<ChatMessage['tools']> = [];
-    const pendingConfirmations = new Map<string, { message?: string; detail?: string; confirmationToken?: string }>();
-    let streamBlocks: MessageBlock[] = [];
-    let changedFiles: GitDiffResult | null = null;
-    let beforeMutationCount = 0;
-    let latestMutationCount = 0;
-    let finished = false;
-    let hadError = false;
-
-    const nextMessages = [...chatHistory, createAssistantPlaceholder(assistantMsgId)];
-    setMessages(nextMessages);
-    persistMessages(turnSessionId, nextMessages);
-    // Reset per-turn UI state: the sub-agent prompt map only ever carries
-    // disclosures from the active turn, so clear it as we start streaming.
-    setSubagentPrompts(new Map());
-
-    const update = () => {
-      updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
-        msg.id === assistantMsgId ? {
-          ...msg,
-          content: assistantContent,
-          thinking: thinkingContent || undefined,
-          tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
-          blocks: streamBlocks,
-          todos: latestWorkbenchTodos.length > 0 ? latestWorkbenchTodos : undefined,
-          changedFiles: changedFiles || undefined,
-        } : msg
-      ));
-    };
-
-    let updateTimeout: number | null = null;
-    let lastFlushAt = 0;
-    const flushUpdate = () => {
-      updateTimeout = null;
-      lastFlushAt = performance.now();
-      update();
-    };
-    const scheduleUpdate = () => {
-      if (updateTimeout !== null) return;
-      const now = performance.now();
-      const delay = Math.max(0, STREAM_UPDATE_INTERVAL_MS - (now - lastFlushAt));
-      updateTimeout = window.setTimeout(flushUpdate, delay);
-    };
-    const cancelPendingUpdate = () => {
-      if (updateTimeout !== null) {
-        window.clearTimeout(updateTimeout);
-        updateTimeout = null;
-      }
-    };
-
-    const finalize = (status: 'done' | 'error' | 'aborted') => {
-      if (finished) return;
-      finished = true;
-      cancelPendingUpdate();
-      updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
-        msg.id === assistantMsgId ? {
-          ...msg,
-          content: assistantContent,
-          thinking: thinkingContent || undefined,
-          thinkingDuration: thinkingEnd
-            ? Math.round((thinkingEnd - thinkingStart) / 100) / 10
-            : thinkingContent.trim()
-              ? Math.round((Date.now() - thinkingStart) / 100) / 10
-              : undefined,
-          tools: toolResults && toolResults.length > 0 ? toolResults : undefined,
-          blocks: streamBlocks,
-          todos: latestWorkbenchTodos.length > 0 ? latestWorkbenchTodos : undefined,
-          changedFiles: changedFiles || undefined,
-        } : msg
-      ));
-      if (status === 'done' || status === 'error') {
-        if (isCurrentTurn()) setSessionStatus(turnSessionId, status === 'done' ? 'done' : 'error');
-      }
-      finishTurn(turn, status);
-
-      // Drain the message queue: if the user queued a follow-up while this
-      // turn was streaming, append it as a user message and start the next
-      // turn. Drain on any terminal status (done / aborted / error) so the
-      // user isn't left with a stuck queue after Stop or a failure.
-      if (queuedMessage && isCurrentTurn()) {
-        const next = queuedMessage;
-        setQueuedMessage(null);
-        const userMsg: ChatMessage = {
-          id: `m${Date.now()}`,
-          role: 'user',
-          content: next.text,
-          timestamp: new Date().toISOString()
-        };
-        setMessages(prev => {
-          const withQueued = [...prev, userMsg];
-          persistMessages(sessionId, withQueued);
-          // Schedule the next turn after this state update is applied.
-          queueMicrotask(() => { void generateAIResponse(withQueued); });
-          return withQueued;
-        });
-      }
-    };
+    // Build the streaming handler bundle via the shared factory. The
+    // composer's local `appendBlockEvent` is the same module-level
+    // function the factory uses (passed in to keep the closure
+    // signature symmetric between the composer and the banner).
+    const { handlers, finalize } = makeStreamHandlers({
+      sessionId: turnSessionId,
+      assistantMsgId,
+      initialMessages: messages,
+      setMessages,
+      persistMessages,
+      setSessionStatus,
+      setWorkbenchSession,
+      setSubagentPrompts,
+      setToolProgress,
+      setWorkbenchBtw,
+      isTurnVisible,
+      finishTurn,
+      turn,
+      queuedMessage,
+      setQueuedMessage,
+      gitApi,
+      streamUpdateIntervalMs: STREAM_UPDATE_INTERVAL_MS,
+      appendBlockEvent,
+    });
 
     try {
       const session = await ensureWorkbenchSession();
       if (!session) {
-        updateAssistantMessage(turnSessionId, assistantMsgId, prev => prev.map(msg =>
+        // Push a placeholder error message into the assistant bubble.
+        setMessages(prev => prev.map(msg =>
           msg.id === assistantMsgId ? { ...msg, content: '⚠️ Could not initialize Workbench session.' } : msg
         ));
         finalize('error');
         return;
       }
-      workbenchSessionId = session.id;
-      beforeMutationCount = session.mutationCount;
-      latestMutationCount = session.mutationCount;
       chatRuntime.setTransport(turn.turnId, 'http');
 
       await streamWorkbenchChat({
-        sessionId: workbenchSessionId,
+        sessionId: session.id,
         message: applyWorkbenchGuardMode(workbenchMode, chatHistory.map(m => `${m.role}: ${m.content}`).join('\n\n') || ' '),
         provider: getWorkbenchProvider(),
         agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
@@ -895,144 +980,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         effort,
         model: modelForRequest?.id,
         modelProvider: modelForRequest?.provider,
-      }, {
-        onPrompt: ({ content, systemPrompt, userMessage, tokens, toolUseId, subagentId, jobId }) => {
-          // The backend only emits `prompt` for sub-agent calls. Stash the
-          // disclosure keyed by the parent tool_use id so it can be rendered
-          // directly under the matching subagent tool call block — never
-          // as a free-floating disclosure at the end of the turn.
-          const key = toolUseId || (jobId ? `subagent-${jobId}` : `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-          setSubagentPrompts(prev => {
-            const next = new Map(prev);
-            next.set(key, {
-              content,
-              systemPrompt: systemPrompt ?? '',
-              userMessage: userMessage ?? '',
-              tokens: tokens ?? 0,
-              subagentId: subagentId || undefined,
-              jobId: jobId || undefined,
-            });
-            return next;
-          });
-        },
-        onThinking: ({ content }) => {
-          if (!thinkingEnd && content.trim()) {
-            thinkingEnd = Date.now();
-          }
-          thinkingContent += content;
-          streamBlocks = appendBlockEvent(streamBlocks, { type: 'thinking', content });
-          scheduleUpdate();
-        },
-        onText: ({ content }) => {
-          if (!thinkingEnd && thinkingContent.trim()) {
-            thinkingEnd = Date.now();
-          }
-          assistantContent += content;
-          streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content });
-          scheduleUpdate();
-        },
-        onToolUse: ({ id, name, input }) => {
-          toolResults = [...toolResults, {
-            name,
-            context: JSON.stringify(input || {}, null, 2),
-            id,
-            status: 'running',
-            summary: Object.keys(input || {}).join(', '),
-            error: '',
-            startedAt: Date.now(),
-          }];
-          streamBlocks = appendBlockEvent(streamBlocks, {
-            type: name.startsWith('@run_command') || name.startsWith('run_command') ? 'command' : 'tool_call',
-            name,
-            id,
-            context: JSON.stringify(input || {}, null, 2),
-            status: 'running',
-          });
-          scheduleUpdate();
-        },
-        onToolResult: ({ id, content, is_error }) => {
-          let parsedResult: any;
-          try {
-            parsedResult = typeof content === 'string' ? JSON.parse(content) : content;
-          } catch {
-            parsedResult = null;
-          }
+      }, handlers, abortController.signal);
 
-          if (parsedResult?.type === 'mutation_pending_confirmation') {
-            pendingConfirmations.set(id, {
-              message: parsedResult.message,
-              detail: parsedResult.detail,
-              confirmationToken: parsedResult.confirmationToken,
-            });
-          } else {
-            pendingConfirmations.delete(id);
-          }
-
-          const resultText = typeof content === 'string' ? content : JSON.stringify(content);
-          toolResults = toolResults.map(t => t.id === id ? {
-            ...t,
-            pendingApproval: parsedResult?.type === 'mutation_pending_confirmation' ? {
-              message: parsedResult.message,
-              detail: parsedResult.detail,
-              confirmationToken: parsedResult.confirmationToken,
-            } : undefined,
-            status: is_error && !parsedResult?.type ? 'error' : 'done',
-            result: resultText,
-            error: is_error && !parsedResult?.type ? resultText : '',
-            duration: t.startedAt ? Date.now() - t.startedAt : undefined,
-          } : t);
-          streamBlocks = appendBlockEvent(streamBlocks, {
-            type: 'tool_result',
-            id,
-            status: is_error && !parsedResult?.type ? 'error' : 'done',
-            summary: resultText.slice(0, 240),
-            error: is_error && !parsedResult?.type ? resultText.slice(0, 240) : '',
-            duration: toolResults.find(t => t.id === id)?.duration,
-          });
-          scheduleUpdate();
-        },
-        onSession: (sessionState) => {
-          latestWorkbenchTodos = sessionState.todos ?? [];
-          latestMutationCount = sessionState.mutationCount;
-          setWorkbenchSession(sessionState);
-          scheduleUpdate();
-        },
-        onToolProgress: (event) => {
-          // Phase 1.5: live "Reading… / Read" sub-list under in-flight tool
-          // calls. applyToolProgress is a pure reducer (lib/tool-progress.ts);
-          // see __tests__/tool-progress.test.ts for the contract.
-          const e: ToolProgressEvent = {
-            id: event.id,
-            phase: event.phase,
-            paths: event.paths,
-            path: event.path,
-          };
-          setToolProgress(prev => applyToolProgress(prev, e));
-        },
-        onBtw: (result) => {
-          setWorkbenchBtw(result);
-        },
-        onDone: async () => {
-          if (latestMutationCount > beforeMutationCount && turnSessionId) {
-            try {
-              const diff = await gitApi.diff(turnSessionId);
-              if (diff.files.length > 0) changedFiles = diff;
-            } catch (e) {
-              console.warn('[ChatThread] Failed to load changed files:', e);
-            }
-          }
-          finalize('done');
-        },
-        onError: ({ message }) => {
-          hadError = true;
-          assistantContent += `\n\n⚠️ Workbench error: ${message}`;
-          streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: `\n\n⚠️ Workbench error: ${message}` });
-          scheduleUpdate();
-          finalize('error');
-        },
-      }, abortController.signal);
-
-      if (!finished) finalize(hadError ? 'error' : 'done');
+      // `onDone` inside handlers already calls finalize('done'). If the
+      // stream ended without a `done` event (e.g. abrupt close), finalize
+      // here as a fallback.
     } catch (e: any) {
       if (e?.name === 'AbortError') {
         clearSessionStatus(turnSessionId);
@@ -1040,97 +992,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         return;
       }
       console.error(e);
-      assistantContent += `\n\n⚠️ Connection error: ${e.message}`;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: `\n\n⚠️ Connection error: ${e.message}` });
-      update();
+      // The factory's onError handler already appends the ⚠️ message and
+      // calls finalize('error') for stream-level errors. This catch only
+      // fires for pre-stream errors (e.g. ensureWorkbenchSession threw).
+      setMessages(prev => prev.map(msg =>
+        msg.id === assistantMsgId ? { ...msg, content: (msg.content || '') + `\n\n⚠️ Connection error: ${e.message}` } : msg
+      ));
       finalize('error');
     }
   };
-
-  function appendBlockEvent(
-    prevBlocks: MessageBlock[],
-    event: {
-      type: 'thinking' | 'text' | 'content' | 'tool_call' | 'command' | 'tool_progress' | 'tool_result';
-      content?: string;
-      name?: string;
-      id?: string;
-      context?: string;
-      preview?: string;
-      summary?: string;
-      error?: string;
-      status?: 'running' | 'done' | 'error';
-      duration?: number;
-    }
-  ): MessageBlock[] {
-    const blocks = [...prevBlocks];
-    const lastBlock = blocks[blocks.length - 1];
-
-    if (event.type === 'thinking') {
-      const text = event.content || '';
-      if (lastBlock && lastBlock.type === 'thinking') {
-        lastBlock.content = (lastBlock.content || '') + text;
-      } else {
-        blocks.push({
-          id: `b_think_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          type: 'thinking',
-          content: text
-        });
-      }
-    } else if (event.type === 'text' || event.type === 'content') {
-      const text = event.content || '';
-      if (lastBlock && lastBlock.type === 'final_output') {
-        lastBlock.content = (lastBlock.content || '') + text;
-      } else {
-        blocks.push({
-          id: `b_out_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          type: 'final_output',
-          content: text
-        });
-      }
-    } else if (event.type === 'tool_call' || event.type === 'command') {
-      const isCommand = event.type === 'command' || event.name?.startsWith('@run_command') || event.name?.startsWith('run_command');
-      blocks.push({
-        id: `b_tool_${event.id || Date.now()}`,
-        type: isCommand ? 'command' : 'tool_call',
-        tool: {
-          id: event.id || `tc_${Date.now()}`,
-          name: event.name || 'tool',
-          context: event.context || '',
-          status: event.status || 'running',
-          startedAt: Date.now()
-        }
-      });
-    } else if (event.type === 'tool_progress') {
-      const targetIdx = blocks.findIndex(b => b.tool && b.tool.id === event.id);
-      if (targetIdx !== -1) {
-        const target = { ...blocks[targetIdx] };
-        if (target.tool) {
-          target.tool = {
-            ...target.tool,
-            preview: (target.tool.preview || '') + (event.preview || '')
-          };
-        }
-        blocks[targetIdx] = target;
-      }
-    } else if (event.type === 'tool_result') {
-      const targetIdx = blocks.findIndex(b => b.tool && b.tool.id === event.id);
-      if (targetIdx !== -1) {
-        const target = { ...blocks[targetIdx] };
-        if (target.tool) {
-          target.tool = {
-            ...target.tool,
-            status: event.status || 'done',
-            summary: event.summary || '',
-            error: event.error || '',
-            duration: event.duration
-          };
-        }
-        blocks[targetIdx] = target;
-      }
-    }
-
-    return blocks;
-  }
 
   const send = async () => {
     let text = input.trim();
@@ -1757,10 +1627,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                               });
                             }
                             // Tell the model the plan was accepted but should NOT proceed.
-                            await streamPlanDecision(workbenchSession.id, 'accept', {
-                              onError: (data) => toast.error('Could not notify the model', { description: data.message }),
-                              onSession: (s) => setWorkbenchSession(s),
-                            });
+                            // Use the full streaming bundle so the chat thread
+                            // renders the model's reply (thinking, text, tool
+                            // calls) the same way a normal composer message does.
+                            await streamPlanTurn(handlers => streamPlanDecision(workbenchSession.id, 'accept', handlers));
                           } catch (e: any) {
                             toast.error('Could not approve Workbench plan', { description: e.message });
                           }
@@ -1781,10 +1651,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             // can proceed with implementation.
                             setWorkbenchMode('full');
                             // Tell the model to proceed with implementation at Full access.
-                            await streamPlanDecision(workbenchSession.id, 'accept-and-implement', {
-                              onError: (data) => toast.error('Could not notify the model', { description: data.message }),
-                              onSession: (s) => setWorkbenchSession(s),
-                            });
+                            await streamPlanTurn(handlers => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers));
                           } catch (e: any) {
                             toast.error('Could not approve Workbench plan', { description: e.message });
                           }
@@ -1795,10 +1662,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             const updated = await rejectWorkbenchPlan(workbenchSession.id);
                             setWorkbenchSession(updated);
                             // Notify the model the plan was rejected.
-                            await streamPlanDecision(workbenchSession.id, 'reject', {
-                              onError: (data) => toast.error('Could not notify the model', { description: data.message }),
-                              onSession: (s) => setWorkbenchSession(s),
-                            });
+                            await streamPlanTurn(handlers => streamPlanDecision(workbenchSession.id, 'reject', handlers));
                           } catch (e: any) {
                             toast.error('Could not reject Workbench plan', { description: e.message });
                           }
@@ -1806,10 +1670,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         onRevise={async (feedback) => {
                           if (!workbenchSession) return;
                           try {
-                            await streamWorkbenchRevision(workbenchSession.id, feedback, {
-                              onError: (data) => toast.error('Could not send revision', { description: data.message }),
-                              onSession: (s) => setWorkbenchSession(s),
-                            });
+                            await streamPlanTurn(handlers => streamWorkbenchRevision(workbenchSession.id, feedback, handlers));
                           } catch (e: any) {
                             toast.error('Could not send revision', { description: e.message });
                           }
@@ -1854,10 +1715,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             });
                           }
                           // Acknowledge acceptance to the model without triggering implementation.
-                          await streamPlanDecision(workbenchSession.id, 'accept', {
-                            onError: (data) => toast.error('Could not notify the model', { description: data.message }),
-                            onSession: (s) => setWorkbenchSession(s),
-                          });
+                          // Use the full streaming bundle so the chat thread renders the
+                          // model's reply (thinking, text, tool calls) the same way a
+                          // normal composer message does.
+                          await streamPlanTurn(handlers => streamPlanDecision(workbenchSession.id, 'accept', handlers));
                         } catch (e: any) {
                           toast.error("Could not approve Workbench plan", { description: e.message });
                         }
@@ -1865,6 +1726,19 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     />
                     {messages.map((m, i) => {
                       const isReverting = revertingIndex !== null && i > revertingIndex;
+                      // Derive the "Revised plan vN" badge version number.
+                      // Count `august__submit_plan` tool calls cumulatively
+                      // across messages up to and including this one. If
+                      // this message contains at least one, render the
+                      // badge with the cumulative count.
+                      const submitPlanCountInThis = (m.blocks || []).filter(
+                        b => b.tool?.name === 'august__submit_plan'
+                      ).length;
+                      const planRevisionNumber = submitPlanCountInThis > 0
+                        ? messages.slice(0, i + 1)
+                            .flatMap(msg => msg.blocks || [])
+                            .filter(b => b.tool?.name === 'august__submit_plan').length
+                        : null;
                       return (
                         <div
                           key={m.id}
@@ -1882,6 +1756,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             onRegenerate={() => handleRegenerate(i)}
                             toolProgress={toolProgress}
                             subagentPrompts={subagentPrompts}
+                            planRevisionNumber={planRevisionNumber}
                           />
                         </div>
                       );
@@ -1931,10 +1806,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                               });
                             }
                             // Tell the model the plan was accepted but should NOT proceed.
-                            await streamPlanDecision(workbenchSession.id, 'accept', {
-                              onError: (data) => toast.error('Could not notify the model', { description: data.message }),
-                              onSession: (s) => setWorkbenchSession(s),
-                            });
+                            // Use the full streaming bundle so the chat thread
+                            // renders the model's reply (thinking, text, tool
+                            // calls) the same way a normal composer message does.
+                            await streamPlanTurn(handlers => streamPlanDecision(workbenchSession.id, 'accept', handlers));
                           } catch (e: any) {
                             toast.error('Could not approve Workbench plan', { description: e.message });
                           }
@@ -1955,10 +1830,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             // can proceed with implementation.
                             setWorkbenchMode('full');
                             // Tell the model to proceed with implementation at Full access.
-                            await streamPlanDecision(workbenchSession.id, 'accept-and-implement', {
-                              onError: (data) => toast.error('Could not notify the model', { description: data.message }),
-                              onSession: (s) => setWorkbenchSession(s),
-                            });
+                            await streamPlanTurn(handlers => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers));
                           } catch (e: any) {
                             toast.error('Could not approve Workbench plan', { description: e.message });
                           }
@@ -1969,10 +1841,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             const updated = await rejectWorkbenchPlan(workbenchSession.id);
                             setWorkbenchSession(updated);
                             // Notify the model the plan was rejected.
-                            await streamPlanDecision(workbenchSession.id, 'reject', {
-                              onError: (data) => toast.error('Could not notify the model', { description: data.message }),
-                              onSession: (s) => setWorkbenchSession(s),
-                            });
+                            await streamPlanTurn(handlers => streamPlanDecision(workbenchSession.id, 'reject', handlers));
                           } catch (e: any) {
                             toast.error('Could not reject Workbench plan', { description: e.message });
                           }
@@ -2109,6 +1978,13 @@ function MessageBubble({
   onClarifyAnswer,
   toolProgress,
   subagentPrompts,
+  /** If this message contains a `august__submit_plan` tool call,
+   *  `planRevisionNumber` is the cumulative count of submit_plan
+   *  calls across the session up to and including this message.
+   *  Rendered as a "Revised plan vN" badge in the bubble header.
+   *  Derived in the parent so each bubble's number is the global
+   *  session position rather than a per-message index. */
+  planRevisionNumber,
 }: {
   message: ChatMessage;
   isLast?: boolean;
@@ -2130,6 +2006,7 @@ function MessageBubble({
     subagentId?: string;
     jobId?: string;
   }>;
+  planRevisionNumber?: number | null;
 }) {
   const [showActions, setShowActions] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -2308,6 +2185,27 @@ function MessageBubble({
       ) : (
         <>
           <div className="flex flex-col w-full gap-2">
+            {planRevisionNumber != null && (
+              <div
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-300 text-[11px] font-medium border border-blue-500/20 w-fit"
+                aria-label={`Revised plan v${planRevisionNumber}`}
+              >
+                <svg
+                  className="w-3 h-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M21 12a9 9 0 1 1-9-9c2.39 0 4.68.94 6.36 2.64L21 8" />
+                  <path d="M21 3v5h-5" />
+                </svg>
+                <span>Revised plan v{planRevisionNumber}</span>
+              </div>
+            )}
             {showRaw ? (
               <div className="p-3 bg-muted/40 rounded-xl border border-border/50 text-xs font-mono text-muted-foreground whitespace-pre-wrap overflow-x-auto leading-relaxed">
                 {JSON.stringify(message, null, 2)}

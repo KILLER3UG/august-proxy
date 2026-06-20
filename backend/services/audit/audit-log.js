@@ -54,17 +54,17 @@ function redactValue(value) {
         // For objects, prefer the existing structured redactForDisplay for keys
         // matching the sensitive pattern; fall back to stringifying + free-text
         // redaction otherwise (catches secrets embedded in free text).
-        const hasSensitiveKey = Object.keys(value).some(k => SENSITIVE_KEY_PATTERN.test(k));
-        if (hasSensitiveKey) {
+        const keys = Object.keys(value);
+        if (keys.some(k => SENSITIVE_KEY_PATTERN.test(k))) {
             return redactForDisplay(value);
         }
-        return redactForDisplay(value);
+        return patternRedact(JSON.stringify(value));
     }
     return value;
 }
 
 function ensureDirExists(filePath) {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    retryOnEperm(() => fs.mkdirSync(path.dirname(filePath), { recursive: true }));
 }
 
 /**
@@ -93,8 +93,10 @@ function appendAuditEntry(entry) {
         result: entry.result || 'ok',
         error: entry.error ? String(entry.error) : null
     };
-    ensureDirExists(AUDIT_LOG_PATH);
-    fs.appendFileSync(AUDIT_LOG_PATH, JSON.stringify(record) + '\n', 'utf8');
+    withFileLock(() => {
+        ensureDirExists(AUDIT_LOG_PATH);
+        retryOnTransient(() => fs.appendFileSync(AUDIT_LOG_PATH, JSON.stringify(record) + '\n', 'utf8'));
+    });
     return record;
 }
 
@@ -161,10 +163,84 @@ function inc(map, key) {
     map[key] = (map[key] || 0) + 1;
 }
 
-function clearAuditLog() {
-    if (fs.existsSync(AUDIT_LOG_PATH)) {
-        fs.unlinkSync(AUDIT_LOG_PATH);
+/**
+ * Retry a synchronous fs operation up to 5 times with exponential backoff
+ * when Windows throws a transient file-system error from concurrent
+ * test-writer contention. EBUSY covers "file is being read by another
+ * process" (common on Windows from anti-virus or indexer); EACCES covers
+ * "permission denied" from AV/EDR scanners. Other errors propagate
+ * immediately.
+ */
+const TRANSIENT_FS_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+
+function retryOnTransient(fn, maxRetries = 5) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return fn();
+        } catch (e) {
+            if (TRANSIENT_FS_CODES.has(e.code) && attempt < maxRetries) {
+                const delay = Math.min(10 * Math.pow(2, attempt - 1), 200);
+                Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
+                continue;
+            }
+            throw e;
+        }
     }
+}
+
+// Back-compat alias. Older test files and any module that re-exports the
+// old name keep working.
+const retryOnEperm = retryOnTransient;
+
+/**
+ * Cross-process file lock used to serialize concurrent workers (e.g.
+ * `node --test` parallel workers) that touch the same on-disk file.
+ *
+ * Strategy: try to atomically create `${path}.lock`. `fs.openSync(p, 'wx')`
+ * succeeds exactly once across all processes; everyone else gets EEXIST
+ * and retries with exponential backoff. The lock file is removed in a
+ * finally block so a crashed worker leaves no orphan (modulo process
+ * death between open and unlink — acceptable since stale locks are
+ * removed by the next successful acquirer in its backoff sweep).
+ */
+const AUDIT_LOCK_PATH = `${AUDIT_LOG_PATH}.lock`;
+
+function withFileLock(fn) {
+    for (let i = 0; i < 100; i++) {
+        let fd;
+        try {
+            // Wrap the open itself in retryOnTransient to absorb the
+            // Windows-specific case where the open fails with EPERM/EBUSY/
+            // EACCES (rather than EEXIST) because another worker still has
+            // the lock file open with shared access. EEXIST is the normal
+            // "lock held" case and falls through to the outer wait loop.
+            fd = retryOnTransient(() => fs.openSync(AUDIT_LOCK_PATH, 'wx'));
+        } catch (e) {
+            if (e.code === 'EEXIST') {
+                const delay = Math.min(5 * Math.pow(1.5, i), 50);
+                Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
+                continue;
+            }
+            throw e;
+        }
+        try {
+            return fn();
+        } finally {
+            try { fs.closeSync(fd); } catch (_) { /* ignore */ }
+            try { fs.unlinkSync(AUDIT_LOCK_PATH); } catch (_) { /* ignore */ }
+        }
+    }
+    throw new Error(`File lock timeout: ${AUDIT_LOCK_PATH}`);
+}
+
+function clearAuditLog() {
+    withFileLock(() => {
+        retryOnTransient(() => {
+            if (fs.existsSync(AUDIT_LOG_PATH)) {
+                fs.unlinkSync(AUDIT_LOG_PATH);
+            }
+        });
+    });
 }
 
 module.exports = {

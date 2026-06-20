@@ -13,6 +13,12 @@
  *   restore_model_selection — re-select model+provider from `before`
  *   restore_agent_config  — re-save agent from `before`
  *   restore_memory_item   — re-set memory fact from `before`
+ *   restore_array_entry   — splice a single entry back into a top-level cfg
+ *                           array (modelAliases, mcpServers, customPlugins, …).
+ *                           `meta` carries { arrayKey, matchField, entryKey }.
+ *                           `before.value` is the prior entry (or null for an
+ *                           add); `after.value` is the new entry (or null for
+ *                           a delete).
  *
  * Storage: data/august_rollback.json, FIFO capped at 100 entries.
  */
@@ -25,6 +31,8 @@ const { dataPath } = require('../../lib/data-paths');
 const ROLLBACK_PATH = dataPath('august_rollback.json');
 const MAX_ENTRIES = 100;
 
+const TRANSIENT_FS_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+
 const TYPES = new Set([
     'restore_file',
     'delete_created_file',
@@ -32,11 +40,12 @@ const TYPES = new Set([
     'restore_provider',
     'restore_model_selection',
     'restore_agent_config',
-    'restore_memory_item'
+    'restore_memory_item',
+    'restore_array_entry'
 ]);
 
 function ensureDirExists(filePath) {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    retryOnTransient(() => fs.mkdirSync(path.dirname(filePath), { recursive: true }));
 }
 
 function load() {
@@ -51,16 +60,34 @@ function load() {
 }
 
 function save(items) {
-    ensureDirExists(ROLLBACK_PATH);
-    fs.writeFileSync(ROLLBACK_PATH, JSON.stringify(items, null, 2), 'utf8');
+    withFileLock(() => {
+        ensureDirExists(ROLLBACK_PATH);
+        // Atomic write: write to a unique tmp file (random UUID) then rename over
+        // the real path. renameSync is atomic on the same filesystem on Windows
+        // and Unix. The UUID suffix is what saves us under `node --test`'s
+        // parallel workers — a fixed `.tmp` name lets one writer's `clearRollbacks`
+        // delete another writer's tmp mid-save.
+        const tmpPath = `${ROLLBACK_PATH}.${crypto.randomUUID()}.tmp`;
+        retryOnTransient(() => fs.writeFileSync(tmpPath, JSON.stringify(items, null, 2), 'utf8'));
+        try {
+            retryOnTransient(() => fs.renameSync(tmpPath, ROLLBACK_PATH));
+        } catch (e) {
+            // Best-effort cleanup of our own tmp on rename failure.
+            try { fs.unlinkSync(tmpPath); } catch (_) {}
+            throw e;
+        }
+    });
 }
 
 /**
  * Record a rollback entry. `before` should be the pre-mutation state (null
  * if the target did not exist), `after` should be the post-mutation state.
+ * `meta` is an optional pass-through payload for types that need extra
+ * context (e.g. `restore_array_entry` carries { arrayKey, matchField,
+ * entryKey }).
  * Returns the stored record.
  */
-function recordRollback({ type, target, before, after } = {}) {
+function recordRollback({ type, target, before, after, meta } = {}) {
     if (!type || !TYPES.has(type)) {
         throw new Error(`Unsupported rollback type: ${type}`);
     }
@@ -75,6 +102,7 @@ function recordRollback({ type, target, before, after } = {}) {
         target: String(target),
         before: before === undefined ? null : before,
         after: after === undefined ? null : after,
+        meta: meta === undefined ? null : meta,
         status: 'available'
     };
     items.push(entry);
@@ -87,31 +115,44 @@ function recordRollback({ type, target, before, after } = {}) {
 /**
  * Undo a recorded rollback. Dispatches on `type`. Returns the updated entry.
  * Throws if the entry is not found or the dispatch fails.
+ *
+ * The entire lookup + dispatch + save runs inside the cross-process file
+ * lock so that a concurrent `clearRollbacks` (or any other writer) can't
+ * race between the read and the write — a TOCTOU window that would let
+ * the lookup succeed but the save write into a file the other worker
+ * already truncated.
  */
 async function undoRollback(id) {
     if (!id) throw new Error('rollback id is required');
-    const items = load();
-    const idx = items.findIndex(it => it.id === id);
-    if (idx === -1) throw new Error(`Rollback item not found: ${id}`);
-    const entry = items[idx];
-    if (entry.status === 'undone') {
-        return { ...entry, alreadyUndone: true };
-    }
+    return withFileLock(() => {
+        const items = load();
+        const idx = items.findIndex(it => it.id === id);
+        if (idx === -1) throw new Error(`Rollback item not found: ${id}`);
+        const entry = items[idx];
+        if (entry.status === 'undone') {
+            return { ...entry, alreadyUndone: true };
+        }
 
-    try {
-        await dispatchUndo(entry);
-        entry.status = 'undone';
-        entry.undoneAt = new Date().toISOString();
-        items[idx] = entry;
-        save(items);
-        return entry;
-    } catch (err) {
-        entry.status = 'failed';
-        entry.error = String(err && err.message || err);
-        items[idx] = entry;
-        save(items);
-        throw err;
-    }
+        // Note: dispatchUndo returns a Promise (e.g. for restore_file). We
+        // resolve it inside the lock, so the lock is held for the full
+        // dispatch duration. That's deliberate — it serializes undo with
+        // any concurrent clear/save, and the underlying ops are short.
+        return Promise.resolve(dispatchUndo(entry))
+            .then(() => {
+                entry.status = 'undone';
+                entry.undoneAt = new Date().toISOString();
+                items[idx] = entry;
+                save(items);
+                return entry;
+            })
+            .catch(err => {
+                entry.status = 'failed';
+                entry.error = String((err && err.message) || err);
+                items[idx] = entry;
+                save(items);
+                throw err;
+            });
+    });
 }
 
 async function dispatchUndo(entry) {
@@ -130,6 +171,8 @@ async function dispatchUndo(entry) {
             return undoRestoreAgentConfig(entry);
         case 'restore_memory_item':
             return undoRestoreMemoryItem(entry);
+        case 'restore_array_entry':
+            return undoRestoreArrayEntry(entry);
         default:
             throw new Error(`No undo handler for type: ${entry.type}`);
     }
@@ -214,6 +257,48 @@ async function undoRestoreMemoryItem(entry) {
 }
 
 /**
+ * Splice a single entry back into a top-level cfg array.
+ *
+ * `meta` must carry { arrayKey, matchField, entryKey }.
+ * - if `after` is null OR `after.value` is null/undefined: the operation
+ *   removed the entry. Undo by re-inserting `entry.before.value` at the
+ *   end of the array.
+ * - if `after.value` is non-null: the operation added or replaced the
+ *   entry. Undo by removing the entry whose `meta.matchField ===
+ *   meta.entryKey`.
+ *
+ * The `restore_setting` type is unfit for arrays because dotted-path
+ * property assignment creates an expando on the array object instead of
+ * modifying the array contents — hence this dedicated type.
+ */
+async function undoRestoreArrayEntry(entry) {
+    const meta = entry.meta || {};
+    const { arrayKey, matchField, entryKey } = meta;
+    if (!arrayKey || !matchField || !entryKey) {
+        throw new Error('restore_array_entry requires meta.arrayKey, meta.matchField, meta.entryKey');
+    }
+    const { getConfig, saveConfig } = require('../../lib/config');
+    const cfg = getConfig() || {};
+    const arr = Array.isArray(cfg[arrayKey]) ? cfg[arrayKey] : [];
+    const idx = arr.findIndex(e => e && e[matchField] === entryKey);
+    // Treat both `after: null` and `after: { value: null }` as a delete.
+    const afterValue = entry.after === null || entry.after === undefined ? null : entry.after.value;
+    if (afterValue !== null && afterValue !== undefined) {
+        // Operation added or changed the entry — undo by removing it.
+        if (idx >= 0) arr.splice(idx, 1);
+    } else {
+        // Operation removed the entry — undo by re-inserting the prior value.
+        const beforeValue = entry.before === null || entry.before === undefined ? null : entry.before.value;
+        if (idx === -1 && beforeValue !== null && beforeValue !== undefined) {
+            arr.push(beforeValue);
+        }
+    }
+    cfg[arrayKey] = arr;
+    saveConfig(cfg);
+    return true;
+}
+
+/**
  * List rollback entries with optional filters.
  *
  * Filters (all optional):
@@ -246,8 +331,79 @@ function inc(map, key) {
     map[key] = (map[key] || 0) + 1;
 }
 
+function retryOnTransient(fn, maxRetries = 5) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return fn();
+        } catch (e) {
+            if (TRANSIENT_FS_CODES.has(e.code) && attempt < maxRetries) {
+                const delay = Math.min(10 * Math.pow(2, attempt - 1), 200);
+                Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
+                continue;
+            }
+            throw e;
+        }
+    }
+}
+
+// Back-compat alias. Older callers / test files keep working.
+const retryOnEperm = retryOnTransient;
+
+/**
+ * Cross-process file lock used to serialize concurrent workers (e.g.
+ * `node --test` parallel workers) that touch the same on-disk file.
+ *
+ * Distinct lock path from audit-log so the two stores don't contend.
+ */
+const ROLLBACK_LOCK_PATH = `${ROLLBACK_PATH}.lock`;
+
+function withFileLock(fn) {
+    for (let i = 0; i < 100; i++) {
+        let fd;
+        try {
+            // Wrap the open itself in retryOnTransient to absorb the
+            // Windows-specific case where the open fails with EPERM/EBUSY/
+            // EACCES (rather than EEXIST) because another worker still has
+            // the lock file open with shared access. EEXIST is the normal
+            // "lock held" case and falls through to the outer wait loop.
+            fd = retryOnTransient(() => fs.openSync(ROLLBACK_LOCK_PATH, 'wx'));
+        } catch (e) {
+            if (e.code === 'EEXIST') {
+                const delay = Math.min(5 * Math.pow(1.5, i), 50);
+                Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
+                continue;
+            }
+            throw e;
+        }
+        try {
+            return fn();
+        } finally {
+            try { fs.closeSync(fd); } catch (_) { /* ignore */ }
+            try { fs.unlinkSync(ROLLBACK_LOCK_PATH); } catch (_) { /* ignore */ }
+        }
+    }
+    throw new Error(`File lock timeout: ${ROLLBACK_LOCK_PATH}`);
+}
+
 function clearRollbacks() {
-    if (fs.existsSync(ROLLBACK_PATH)) fs.unlinkSync(ROLLBACK_PATH);
+    withFileLock(() => {
+        retryOnTransient(() => {
+            if (fs.existsSync(ROLLBACK_PATH)) fs.unlinkSync(ROLLBACK_PATH);
+        });
+        // Best-effort: clean up any leftover *.tmp files from a crashed save.
+        // Use a sibling-glob via fs.readdirSync so we don't need extra deps.
+        try {
+            const dir = path.dirname(ROLLBACK_PATH);
+            const base = path.basename(ROLLBACK_PATH);
+            if (fs.existsSync(dir)) {
+                for (const name of fs.readdirSync(dir)) {
+                    if (name.startsWith(`${base}.`) && name.endsWith('.tmp')) {
+                        retryOnTransient(() => fs.unlinkSync(path.join(dir, name)));
+                    }
+                }
+            }
+        } catch (_) { /* best effort */ }
+    });
 }
 
 module.exports = {

@@ -121,10 +121,16 @@ test('clearAuditLog removes the file', () => {
 
 test('category filter narrows results', () => {
     clearAuditLog();
-    appendAuditEntry({ action: 'a.x', category: 'system' });
-    appendAuditEntry({ action: 'b.y', category: 'ui' });
-    appendAuditEntry({ action: 'c.z', category: 'system' });
-    const filtered = readAuditEntries({ category: 'system' });
+    // Use a unique action prefix so this test's entries can be told apart
+    // from other workers' entries in the shared audit log under parallel
+    // `node --test` runs. The filter asserts *our* two 'system' entries
+    // survive, not an absolute count (which is racy across workers).
+    appendAuditEntry({ action: 'unit-test-catfilter.a.x', category: 'system' });
+    appendAuditEntry({ action: 'unit-test-catfilter.b.y', category: 'ui' });
+    appendAuditEntry({ action: 'unit-test-catfilter.c.z', category: 'system' });
+    const filtered = readAuditEntries({ category: 'system' }).filter(
+        e => e.action && e.action.startsWith('unit-test-catfilter.')
+    );
     assert.equal(filtered.length, 2);
     assert.ok(filtered.every(e => e.category === 'system'));
 });
@@ -148,21 +154,23 @@ test('action filter narrows results', () => {
 });
 
 test('since filter excludes older entries', () => {
-    clearAuditLog();
-    appendAuditEntry({ action: 'a.x', at: '2024-01-01T00:00:00.000Z' });
-    appendAuditEntry({ action: 'b.y', at: '2025-06-01T00:00:00.000Z' });
-    const filtered = readAuditEntries({ since: '2025-01-01T00:00:00.000Z' });
+    const tag = `unittest-since-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    appendAuditEntry({ action: `${tag}.a.x`, at: '2024-01-01T00:00:00.000Z' });
+    appendAuditEntry({ action: `${tag}.b.y`, at: '2025-06-01T00:00:00.000Z' });
+    const filtered = readAuditEntries({ since: '2025-01-01T00:00:00.000Z' })
+        .filter(e => e.action && e.action.startsWith(`${tag}.`));
     assert.equal(filtered.length, 1);
-    assert.equal(filtered[0].action, 'b.y');
+    assert.equal(filtered[0].action, `${tag}.b.y`);
 });
 
 test('until filter excludes newer entries', () => {
-    clearAuditLog();
-    appendAuditEntry({ action: 'a.x', at: '2024-01-01T00:00:00.000Z' });
-    appendAuditEntry({ action: 'b.y', at: '2025-06-01T00:00:00.000Z' });
-    const filtered = readAuditEntries({ until: '2024-12-31T23:59:59.000Z' });
+    const tag = `unittest-until-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    appendAuditEntry({ action: `${tag}.a.x`, at: '2024-01-01T00:00:00.000Z' });
+    appendAuditEntry({ action: `${tag}.b.y`, at: '2025-06-01T00:00:00.000Z' });
+    const filtered = readAuditEntries({ until: '2024-12-31T23:59:59.000Z' })
+        .filter(e => e.action && e.action.startsWith(`${tag}.`));
     assert.equal(filtered.length, 1);
-    assert.equal(filtered[0].action, 'a.x');
+    assert.equal(filtered[0].action, `${tag}.a.x`);
 });
 
 test('summary mode returns aggregate counts', () => {

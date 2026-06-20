@@ -46,6 +46,13 @@ test('isPostObservationEnabled respects config toggle', () => {
 });
 
 test('capturePostObservation writes PNG to disk and emits audit entry', async () => {
+    // Defensive: ensure the toggle is on at the start of this test, regardless
+    // of what other workers have written to data/config.json. The toggling
+    // tests above clean up after themselves via try/finally, but a parallel
+    // worker running `restore_setting` undo against the same config file can
+    // land its write between this worker's getConfig() calls and leave the
+    // resolved config in an unexpected state.
+    saveComputerRoots({ postObservationScreenshot: true });
     clearAuditLog();
     const { capturePostObservation } = require('../services/computer/post-observation');
     const fakeBase64Png = Buffer.from([

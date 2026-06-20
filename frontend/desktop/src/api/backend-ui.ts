@@ -501,6 +501,28 @@ export function undoAugustRollback(id: string): Promise<{ ok: boolean; entry?: u
   return api.post(`/ui/august/rollback/${encodeURIComponent(id)}/undo`, {});
 }
 
+/* ── Model aliases management ──────────────────────────────────────────── */
+
+export function manageAugustAliases(payload: {
+  action: 'list' | 'upsert' | 'delete';
+  alias?: string;
+  targetModel?: string;
+  targetProvider?: string;
+}): Promise<{ ok: boolean; aliases?: Array<{ alias: string; targetModel: string }>; alias?: string; deleted?: boolean }> {
+  return api.post('/ui/august/aliases/manage', payload);
+}
+
+/* ── Tool management (MCP + plugins) ──────────────────────────────────── */
+
+export function manageAugustTools(payload: {
+  action: 'list' | 'upsert' | 'delete';
+  kind?: 'mcp' | 'plugin';
+  name?: string;
+  config?: Record<string, unknown>;
+}): Promise<{ ok: boolean; tools?: unknown; tool?: unknown; name?: string; deleted?: boolean }> {
+  return api.post('/ui/august/tools/manage', payload);
+}
+
 /* ── Computer-use app policy (Task 6) ─────────────────────────────────── */
 
 export interface AppPolicy {

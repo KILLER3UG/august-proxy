@@ -114,6 +114,8 @@ const {
     upsertProvider, deleteProvider,
     upsertAgent, deleteAgent,
     updateMemoryFact, deleteMemoryFact,
+    listAliases, upsertAlias, deleteAlias,
+    listTools, upsertTool, deleteTool,
     rollbackUndo
 } = require('../august-api/august-api');
 
@@ -209,6 +211,28 @@ function getAugustApiToolDefinitions() {
                 action: { type: 'string', enum: ['set', 'get', 'list', 'delete'] },
                 app: { type: 'string' },
                 policy: { type: 'string', enum: ['allow', 'ask', 'deny'] },
+                confirmed: { type: 'boolean' }
+            },
+            required: ['action']
+        }),
+        augustApiToolDef('august__aliases_manage', 'List, upsert, or delete model aliases. Upsert/delete require approval.', {
+            type: 'object',
+            properties: {
+                action: { type: 'string', enum: ['list', 'upsert', 'delete'] },
+                alias: { type: 'string' },
+                targetModel: { type: 'string' },
+                targetProvider: { type: 'string' },
+                confirmed: { type: 'boolean' }
+            },
+            required: ['action']
+        }),
+        augustApiToolDef('august__tools_manage', 'List, upsert, or delete MCP servers and plugins. Upsert/delete require approval.', {
+            type: 'object',
+            properties: {
+                action: { type: 'string', enum: ['list', 'upsert', 'delete'] },
+                kind: { type: 'string', enum: ['mcp', 'plugin'] },
+                name: { type: 'string' },
+                config: { type: 'object' },
                 confirmed: { type: 'boolean' }
             },
             required: ['action']
@@ -340,6 +364,32 @@ async function executeAugustApiTool(name, args = {}, ctx = {}) {
 
     if (name === 'august__app_policy') {
         return await executeAppPolicyTool(safeArgs, ctx);
+    }
+
+    if (name === 'august__aliases_manage') {
+        if (action === 'list') return { ok: true, aliases: listAliases().aliases };
+        if (!isApproved(ctx, safeArgs)) {
+            return { ok: false, requiresApproval: true, preview: { action, alias: safeArgs.alias } };
+        }
+        if (action === 'upsert') return upsertAlias(safeArgs.alias, safeArgs.targetModel, safeArgs.targetProvider);
+        if (action === 'delete') return deleteAlias(safeArgs.alias);
+        return { ok: false, error: `Unknown aliases action: ${action}` };
+    }
+
+    if (name === 'august__tools_manage') {
+        if (action === 'list') {
+            const t = listTools();
+            // Mirror the aliases list shape: { ok, mcp, plugins } — not the
+            // double-wrapped `{ ok, tools: { ok, mcp, plugins } }` that the
+            // unspread `ok()` call would produce.
+            return { ok: true, mcp: t.mcp, plugins: t.plugins };
+        }
+        if (!isApproved(ctx, safeArgs)) {
+            return { ok: false, requiresApproval: true, preview: { action, kind: safeArgs.kind, name: safeArgs.name } };
+        }
+        if (action === 'upsert') return upsertTool(safeArgs.kind, safeArgs.name, safeArgs.config);
+        if (action === 'delete') return deleteTool(safeArgs.kind, safeArgs.name);
+        return { ok: false, error: `Unknown tools action: ${action}` };
     }
 
     return { ok: false, error: `Unsupported August API tool: ${name}` };

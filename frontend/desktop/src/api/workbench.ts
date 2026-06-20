@@ -280,11 +280,21 @@ export async function streamWorkbenchRevision(
   feedback: string,
   handlers: WorkbenchEventHandlers = {},
 ): Promise<void> {
-  // Reuse the chat SSE endpoint with a feedback marker so the model treats
-  // it as a revision request rather than a brand-new instruction.
+  // Reuse the chat SSE endpoint with a feedback marker. The marker
+  // tells the model this is a revision request: it should produce a
+  // thinking block + a new plan (either by calling august__submit_plan,
+  // which makes the banner re-appear, or by emitting a "Revised plan:"
+  // text block the user can read inline).
   return streamWorkbenchChat({
     sessionId,
-    message: `[Revision request] ${feedback}`,
+    message: [
+      '[Revision request]',
+      `User feedback: ${feedback}`,
+      'Emit a short thinking block summarising the user feedback, then either:',
+      '(a) call the august__submit_plan tool with a revised plan (this re-opens the plan banner), or',
+      '(b) emit a "Revised plan v2: …" text block with the revised plan inline.',
+      'Either way, end with a brief final paragraph confirming the revision and asking the user to review.',
+    ].join(' '),
   }, handlers);
 }
 
@@ -293,18 +303,21 @@ export type PlanDecision = 'accept' | 'accept-and-implement' | 'reject';
 const PLAN_DECISION_MESSAGES: Record<PlanDecision, string> = {
   'accept': [
     '[Plan accepted]',
-    'The user has accepted the plan. Do NOT proceed with implementation yet —',
-    'acknowledge the approval and wait for the next instruction.',
+    'The user accepted the plan but has NOT granted implementation yet.',
+    'Emit a short thinking block summarising the approved scope, then a brief final paragraph confirming approval and asking what to do next.',
+    'Do NOT call any tools — the user explicitly chose "accept without implementation".',
   ].join(' '),
   'accept-and-implement': [
     '[Plan accepted with implementation]',
-    'The user has approved the plan and granted you Full access.',
-    'Proceed with implementing the plan now.',
+    'The user accepted the plan and granted you Full access.',
+    'Emit a thinking block that enumerates each step in the plan in order.',
+    'Then make one tool call per step (no batching). When all steps are done, emit a final summary that lists what was changed and what remains.',
   ].join(' '),
   'reject': [
     '[Plan rejected]',
-    'The user has rejected the plan. Do NOT proceed with this approach —',
-    'acknowledge the rejection and wait for the next instruction.',
+    'The user rejected the plan.',
+    'Emit a short thinking block explaining what was rejected and why, then a final paragraph acknowledging the rejection and offering to try a different direction.',
+    'Do NOT call any tools — the user explicitly chose "reject".',
   ].join(' '),
 };
 

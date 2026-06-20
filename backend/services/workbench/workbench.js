@@ -759,7 +759,9 @@ const MUTATING_WORKBENCH_TOOLS = new Set([
     'august__agents_manage',
     'august__memory_manage',
     'august__rollback_undo',
-    'august__app_policy'
+    'august__app_policy',
+    'august__aliases_manage',
+    'august__tools_manage'
 ]);
 
 const SAFE_COMPUTER_TOOLS = new Set([

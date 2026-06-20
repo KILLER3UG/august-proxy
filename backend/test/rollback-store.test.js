@@ -24,6 +24,7 @@ test('TYPES set contains all supported rollback types', () => {
     assert.ok(TYPES.has('restore_model_selection'));
     assert.ok(TYPES.has('restore_agent_config'));
     assert.ok(TYPES.has('restore_memory_item'));
+    assert.ok(TYPES.has('restore_array_entry'));
 });
 
 test('recordRollback rejects unsupported type', () => {
@@ -82,18 +83,15 @@ test('restore_setting: undo restores previous config value', async () => {
     const before = loadPermissionProfile();
 
     saveComputerRoots({ filesystemScope: 'root' });
-    recordRollback({
+    const rec = recordRollback({
         type: 'restore_setting',
         target: 'security.filesystemScope',
         before: { value: before.filesystemScope },
         after: { value: 'root' }
     });
-    const items = listRollbacks();
-    await undoRollback(items[0].id);
+    await undoRollback(rec.id);
     const after = loadPermissionProfile();
     assert.equal(after.filesystemScope, before.filesystemScope);
-
-    clearRollbacks();
 });
 
 test('undoRollback throws for unknown id', async () => {
@@ -117,13 +115,14 @@ test('undoRollback returns alreadyUndone on second call', async () => {
 });
 
 test('listRollbacks respects limit', () => {
-    clearRollbacks();
+    const tag = `unittest-limit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     for (let i = 0; i < 5; i++) {
-        recordRollback({ type: 'delete_created_file', target: `/tmp/r-${i}`, before: null, after: {} });
+        recordRollback({ type: 'delete_created_file', target: `${tag}/r-${i}`, before: null, after: {} });
     }
-    assert.equal(listRollbacks({ limit: 100 }).length, 5);
-    assert.equal(listRollbacks({ limit: 2 }).length, 2);
-    clearRollbacks();
+    const all = listRollbacks({ limit: 100 }).filter(it => it.target && it.target.startsWith(`${tag}/`));
+    assert.equal(all.length, 5);
+    const capped = listRollbacks({ limit: 2 }).filter(it => it.target && it.target.startsWith(`${tag}/`));
+    assert.equal(capped.length, 2);
 });
 
 // ----- filter coverage (Observability Task 5) -----
@@ -180,5 +179,78 @@ test('records are FIFO-capped at 100', () => {
     // Oldest is i=10, newest is i=109
     assert.equal(items[0].target, '/tmp/r-10');
     assert.equal(items[99].target, '/tmp/r-109');
+    clearRollbacks();
+});
+
+// ----- restore_array_entry: array-backed config rollback -----
+
+test('restore_array_entry: undo removes a freshly added entry', async () => {
+    clearRollbacks();
+    const { getConfig, saveConfig } = require('../lib/config');
+    const cfg = getConfig();
+    const original = Array.isArray(cfg.modelAliases) ? [...cfg.modelAliases] : [];
+    cfg.modelAliases = [...original, { alias: 'unit-test-add', targetModel: 'gpt-4', targetProvider: null }];
+    saveConfig(cfg);
+
+    const rec = recordRollback({
+        type: 'restore_array_entry',
+        target: 'unit-test-add',
+        meta: { arrayKey: 'modelAliases', matchField: 'alias', entryKey: 'unit-test-add' },
+        before: { value: null },
+        after: { value: { alias: 'unit-test-add', targetModel: 'gpt-4', targetProvider: null } }
+    });
+
+    await undoRollback(rec.id);
+
+    const after = getConfig();
+    const present = (after.modelAliases || []).some(a => a.alias === 'unit-test-add');
+    assert.equal(present, false, 'undo should remove the added alias');
+
+    // Restore prior state
+    cfg.modelAliases = original;
+    saveConfig(cfg);
+    clearRollbacks();
+});
+
+test('restore_array_entry: undo re-inserts a previously deleted entry', async () => {
+    clearRollbacks();
+    const { getConfig, saveConfig } = require('../lib/config');
+    const cfg = getConfig();
+    const prior = { alias: 'unit-test-del', targetModel: 'gpt-4', targetProvider: 'openai' };
+    const original = Array.isArray(cfg.modelAliases) ? [...cfg.modelAliases] : [];
+    cfg.modelAliases = [...original.filter(a => a.alias !== 'unit-test-del')];
+    saveConfig(cfg);
+
+    const rec = recordRollback({
+        type: 'restore_array_entry',
+        target: 'unit-test-del',
+        meta: { arrayKey: 'modelAliases', matchField: 'alias', entryKey: 'unit-test-del' },
+        before: { value: prior },
+        after: { value: null }
+    });
+
+    await undoRollback(rec.id);
+
+    const after = getConfig();
+    const present = (after.modelAliases || []).find(a => a.alias === 'unit-test-del');
+    assert.ok(present, 'undo should re-insert the deleted alias');
+    assert.equal(present.targetModel, 'gpt-4');
+
+    // Restore prior state
+    cfg.modelAliases = original;
+    saveConfig(cfg);
+    clearRollbacks();
+});
+
+test('restore_array_entry: throws when meta is missing required fields', async () => {
+    clearRollbacks();
+    const rec = recordRollback({
+        type: 'restore_array_entry',
+        target: 'x',
+        meta: { arrayKey: 'modelAliases' }, // missing matchField, entryKey
+        before: { value: null },
+        after: { value: null }
+    });
+    await assert.rejects(() => undoRollback(rec.id), /meta\./);
     clearRollbacks();
 });

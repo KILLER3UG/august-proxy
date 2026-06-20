@@ -340,6 +340,181 @@ function deleteMemoryFact(key) {
     return ok({ key, deleted: true, rollbackId: rb.id });
 }
 
+// ---------- Aliases ----------
+function listAliases() {
+    const config = require('../../lib/config');
+    const cfg = config.getConfig();
+    return ok({ aliases: cfg.modelAliases || [] });
+}
+
+function upsertAlias(alias, targetModel, targetProvider) {
+    if (!alias) return errResult('alias is required');
+    if (!targetModel) return errResult('targetModel is required');
+    const config = require('../../lib/config');
+    const cfg = config.getConfig();
+    const aliases = Array.isArray(cfg.modelAliases) ? [...cfg.modelAliases] : [];
+    const idx = aliases.findIndex(a => a && a.alias === alias);
+    const before = idx >= 0 ? { ...aliases[idx] } : null;
+    const entry = { alias, targetModel, targetProvider: targetProvider || null };
+    if (idx >= 0) aliases[idx] = entry;
+    else aliases.push(entry);
+    cfg.modelAliases = aliases;
+    config.saveConfig(cfg);
+
+    const { recordRollback } = require('../rollback/rollback-store');
+    const rb = recordRollback({
+        type: 'restore_array_entry',
+        target: alias,
+        meta: { arrayKey: 'modelAliases', matchField: 'alias', entryKey: alias },
+        before: { value: before },
+        after: { value: entry }
+    });
+
+    const { appendAuditEntry } = require('../audit/audit-log');
+    appendAuditEntry({
+        action: 'aliases.upsert',
+        target: alias,
+        category: 'august_api',
+        beforeSummary: before,
+        afterSummary: entry,
+        rollbackId: rb.id
+    });
+    return ok({ alias, targetModel, rollbackId: rb.id });
+}
+
+function deleteAlias(alias) {
+    if (!alias) return errResult('alias is required');
+    const config = require('../../lib/config');
+    const cfg = config.getConfig();
+    const aliases = Array.isArray(cfg.modelAliases) ? [...cfg.modelAliases] : [];
+    const idx = aliases.findIndex(a => a && a.alias === alias);
+    if (idx === -1) return errResult(`alias not found: ${alias}`);
+    const before = aliases[idx];
+    aliases.splice(idx, 1);
+    cfg.modelAliases = aliases;
+    config.saveConfig(cfg);
+
+    const { recordRollback } = require('../rollback/rollback-store');
+    const rb = recordRollback({
+        type: 'restore_array_entry',
+        target: alias,
+        meta: { arrayKey: 'modelAliases', matchField: 'alias', entryKey: alias },
+        before: { value: before },
+        after: { value: null }
+    });
+
+    const { appendAuditEntry } = require('../audit/audit-log');
+    appendAuditEntry({
+        action: 'aliases.delete',
+        target: alias,
+        category: 'august_api',
+        beforeSummary: before,
+        rollbackId: rb.id
+    });
+    return ok({ alias, deleted: true, rollbackId: rb.id });
+}
+
+// ---------- Tool Management (MCP + plugins) ----------
+function listTools() {
+    const { getMcpServersForUi } = require('../tools/mcp-registry');
+    const { getPlugins } = require('../tools/plugins');
+    return ok({ mcp: getMcpServersForUi(), plugins: getPlugins() });
+}
+
+function upsertTool(kind, name, configData) {
+    if (kind === 'mcp') {
+        if (!name) return errResult('name is required for MCP tools');
+        const { saveCustomMcpServer } = require('../tools/mcp-registry');
+        const result = saveCustomMcpServer({ name, ...(configData || {}) });
+        const { recordRollback } = require('../rollback/rollback-store');
+        const rb = recordRollback({
+            type: 'restore_array_entry',
+            target: name,
+            meta: { arrayKey: 'mcpServers', matchField: 'name', entryKey: name },
+            before: { value: null },
+            after: { value: { name } }
+        });
+        const { appendAuditEntry } = require('../audit/audit-log');
+        appendAuditEntry({
+            action: 'tools.upsert_mcp',
+            target: name,
+            category: 'august_api',
+            inputSummary: { kind, name },
+            rollbackId: rb.id
+        });
+        return ok({ tool: result, rollbackId: rb.id });
+    }
+    if (kind === 'plugin') {
+        if (!name) return errResult('name is required for plugins');
+        const { savePlugin } = require('../tools/plugins');
+        const result = savePlugin({ name, ...(configData || {}) });
+        const { recordRollback } = require('../rollback/rollback-store');
+        const rb = recordRollback({
+            type: 'restore_array_entry',
+            target: name,
+            meta: { arrayKey: 'customPlugins', matchField: 'name', entryKey: name },
+            before: { value: null },
+            after: { value: { name } }
+        });
+        const { appendAuditEntry } = require('../audit/audit-log');
+        appendAuditEntry({
+            action: 'tools.upsert_plugin',
+            target: name,
+            category: 'august_api',
+            inputSummary: { kind, name },
+            rollbackId: rb.id
+        });
+        return ok({ tool: result, rollbackId: rb.id });
+    }
+    return errResult(`unknown kind: ${kind}. Use 'mcp' or 'plugin'.`);
+}
+
+function deleteTool(kind, name) {
+    if (kind === 'mcp') {
+        if (!name) return errResult('name is required for MCP tools');
+        const { deleteMcpServer } = require('../tools/mcp-registry');
+        deleteMcpServer(name);
+        const { recordRollback } = require('../rollback/rollback-store');
+        const rb = recordRollback({
+            type: 'restore_array_entry',
+            target: name,
+            meta: { arrayKey: 'mcpServers', matchField: 'name', entryKey: name },
+            before: { value: { name } },
+            after: { value: null }
+        });
+        const { appendAuditEntry } = require('../audit/audit-log');
+        appendAuditEntry({
+            action: 'tools.delete_mcp',
+            target: name,
+            category: 'august_api',
+            rollbackId: rb.id
+        });
+        return ok({ name, deleted: true, rollbackId: rb.id });
+    }
+    if (kind === 'plugin') {
+        if (!name) return errResult('name is required for plugins');
+        const { deletePlugin } = require('../tools/plugins');
+        deletePlugin(name);
+        const { recordRollback } = require('../rollback/rollback-store');
+        const rb = recordRollback({
+            type: 'restore_array_entry',
+            target: name,
+            meta: { arrayKey: 'customPlugins', matchField: 'name', entryKey: name },
+            before: { value: { name } },
+            after: { value: null }
+        });
+        const { appendAuditEntry } = require('../audit/audit-log');
+        appendAuditEntry({
+            action: 'tools.delete_plugin',
+            target: name,
+            category: 'august_api',
+            rollbackId: rb.id
+        });
+        return ok({ name, deleted: true, rollbackId: rb.id });
+    }
+    return errResult(`unknown kind: ${kind}. Use 'mcp' or 'plugin'.`);
+}
+
 // ---------- Rollback ----------
 async function rollbackUndo(id) {
     const { undoRollback } = require('../rollback/rollback-store');
@@ -371,5 +546,11 @@ module.exports = {
     deleteAgent,
     updateMemoryFact,
     deleteMemoryFact,
+    listAliases,
+    upsertAlias,
+    deleteAlias,
+    listTools,
+    upsertTool,
+    deleteTool,
     rollbackUndo
 };
