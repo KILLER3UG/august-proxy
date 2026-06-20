@@ -10,7 +10,7 @@ import {
   Boxes,
   Brain,
   Plug,
-  Activity,
+
   Search,
   Bot,
   TerminalSquare,
@@ -49,8 +49,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   { id: 'chat',           label: 'Chat & Models',  description: 'Providers, model catalog, and conversation history.' },
   { id: 'memory',         label: 'Memory',          description: 'Knowledge graph, facts, vectors, and prompts.' },
   { id: 'tools',          label: 'Tools',           description: 'MCP servers, skills, and connected accounts.' },
-  { id: 'monitoring',     label: 'Monitoring',      description: 'Live traffic, request details, and logs.' },
-  { id: 'observability',  label: 'Observability',   description: 'Audit log, rollback history, post-observation screenshots, host-agent health.' },
+  { id: 'activity',       label: 'Activity',        description: 'Audit log, rollback history, post-observation screenshots, host-agent health, and traffic.' },
   { id: 'debug',          label: 'Debugging',       description: 'Inspect raw requests and assistant thinking.' },
   { id: 'advanced',       label: 'Advanced',        description: 'Agents, automations, developer surfaces, and computer access.' },
 ] as const;
@@ -122,15 +121,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     legacyAliases: ['mcp', 'skills', 'commands', 'connections', 'services'],
   },
 
-  /* ── Monitoring ──────────────────────────────────────────────────── */
+  /* ── Observability (Task 7) — absorbed Traffic & Activity ────────── */
   {
-    id: 'traffic-activity',
-    label: 'Traffic & Activity',
-    description: 'Summary dashboard, requests, details, thinking, and logs.',
-    icon: Activity,
-    category: 'monitoring',
-    keywords: ['traffic', 'activity', 'log', 'overview', 'artifacts', 'usage', 'request', 'token', 'cost', 'error'],
-    legacyAliases: ['overview', 'artifacts', 'traffic', 'logs', 'activity', 'usage'],
+    id: 'observability',
+    label: 'Observability',
+    description: 'Audit log, rollback history, post-observation screenshots, host-agent health, and traffic — all in one place.',
+    icon: LineChart,
+    category: 'activity',
+    keywords: ['audit', 'rollback', 'observation', 'screenshot', 'log', 'history', 'security', 'compliance', 'undo', 'health', 'host', 'traffic', 'activity', 'usage', 'request', 'token', 'cost', 'error', 'artifacts'],
+    legacyAliases: ['traffic-activity', 'overview', 'logs', 'traffic', 'activity', 'usage', 'artifacts', 'audit', 'rollback', 'observations'],
   },
 
   /* ── Debugging ───────────────────────────────────────────────────── */
@@ -172,17 +171,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: ShieldCheck,
     category: 'advanced',
     keywords: ['filesystem', 'security', 'allowlist', 'host', 'computer-use', 'permission'],
-  },
-
-  /* ── Observability (Task 7) ────────────────────────────────────────── */
-  {
-    id: 'observability',
-    label: 'Observability',
-    description: 'Audit log, rollback history, post-observation screenshots, and host-agent health.',
-    icon: LineChart,
-    category: 'observability',
-    keywords: ['audit', 'rollback', 'observation', 'screenshot', 'log', 'history', 'security', 'compliance', 'undo', 'health', 'host'],
-    legacyAliases: ['audit', 'rollback', 'observations'],
   },
 ] as const;
 

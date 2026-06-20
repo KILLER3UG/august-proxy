@@ -1,9 +1,22 @@
 // ── Local Web Tools ──
 // Provides web_search and web_fetch managed tools executed locally (not sent to upstream).
 // These are called by adapters when the model requests web search/fetch tool calls.
+//
+// Search backends (configurable via WEB_SEARCH_BACKEND env var):
+//   "duckduckgo" (default) — HTML scrape, no API key needed
+//   "brave"                — Brave Search API free tier (BRAVE_SEARCH_API_KEY)
+//   "searxng"              — Self-hosted SearXNG instance (SEARXNG_URL)
+//
+// Fetch uses turndown for HTML→Markdown conversion, with Cloudflare 403 retry.
 
 const https = require('https');
 const http = require('http');
+const TurndownService = require('turndown');
+
+const turndown = new TurndownService({
+  headingStyle: 'atx',
+  codeBlockStyle: 'fenced',
+});
 
 // Block internal/private IP ranges
 const BLOCKED_RANGES = [
@@ -19,7 +32,7 @@ const BLOCKED_RANGES = [
 
 function isBlockedHost(hostname) {
   try {
-    const normalized = hostname.replace(/:\d+$/, ''); // strip port
+    const normalized = hostname.replace(/:\d+$/, '');
     return BLOCKED_RANGES.some(r => r.test(normalized));
   } catch {
     return true;
@@ -38,8 +51,8 @@ function httpsGet(url, timeout = 15000, extraHeaders = {}) {
       timeout,
       headers: {
         'User-Agent': 'AugustProxy/1.0',
-        ...extraHeaders
-      }
+        ...extraHeaders,
+      },
     };
     const req = protocol.get(url, options, res => {
       let data = '';
@@ -71,64 +84,48 @@ function extractTitle(html) {
   return match ? match[1].trim() : '';
 }
 
-// ── web_search ──
-async function webSearch(query, maxResults = 5) {
-  // html.duckduckgo.com/html/ is the static page that returns real web results.
-  // api.duckduckgo.com only returns Instant Answers (topic summaries) which are
-  // almost always empty for general queries.
+// ── Backend selection (env var, default: duckduckgo) ──
+function getSearchBackend() {
+  return (process.env.WEB_SEARCH_BACKEND || 'duckduckgo').toLowerCase();
+}
+
+// ── DuckDuckGo search (default, no API key needed) ──
+async function duckduckgoSearch(query, maxResults) {
   const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
   let res;
   try {
     res = await httpsGet(url, 15000, {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      'Accept-Language': 'en-US,en;q=0.9'
+      'Accept-Language': 'en-US,en;q=0.9',
     });
   } catch (e) {
-    return {
-      results: [],
-      query,
-      count: 0,
-      note: `Search provider unavailable: ${e.message}`
-    };
+    return { results: [], query, count: 0, note: `Search provider unavailable: ${e.message}` };
   }
 
   if (res.status !== 200) {
-    return {
-      results: [],
-      query,
-      count: 0,
-      note: `Search provider returned status ${res.status}`
-    };
+    return { results: [], query, count: 0, note: `Search provider returned status ${res.status}` };
   }
 
   const results = [];
   const html = res.body;
-
-  // Each result lives inside <div class="result ...">...</div>
-  // We match lazily up to the closing </div></div> pair.
   const resultBlockRe = /<div class="result(?:\s[^"]*)?"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/gi;
   let blockMatch;
 
   while ((blockMatch = resultBlockRe.exec(html)) !== null && results.length < maxResults) {
     const block = blockMatch[1];
-
-    // Title link: <a class="result__a" href="/l/?uddg=...&...">Title text</a>
-    const linkRe   = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i;
-    // Snippet:    <a class="result__snippet">snippet text</a>
-    const snipRe   = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i;
-
+    const linkRe = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i;
+    const snipRe = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i;
     const linkMatch = linkRe.exec(block);
     const snipMatch = snipRe.exec(block);
     if (!linkMatch) continue;
 
-    // DuckDuckGo wraps the real URL in a redirect — extract via uddg param
     let href = linkMatch[1];
     try {
       const uddg = new URL('https://html.duckduckgo.com' + href).searchParams.get('uddg');
       if (uddg) href = decodeURIComponent(uddg);
-    } catch { /* keep href as-is if URL parsing fails */ }
+    } catch { /* keep href as-is */ }
 
-    const title   = stripHtml(linkMatch[2]).trim();
+    const title = stripHtml(linkMatch[2]).trim();
     const snippet = snipMatch ? stripHtml(snipMatch[1]).trim().substring(0, 250) : '';
 
     if (title && href) {
@@ -139,25 +136,155 @@ async function webSearch(query, maxResults = 5) {
   if (results.length === 0) {
     return {
       results: [], query, count: 0,
-      note: 'No results found — DuckDuckGo may have blocked the request or returned no hits for this query.'
+      note: 'No results found — DuckDuckGo may have blocked the request or returned no hits for this query.',
     };
   }
 
   return { results, query, count: results.length };
 }
 
-// ── web_fetch ──
-async function webFetch(url) {
-  const res = await httpsGet(url);
-  if (res.status >= 400) throw new Error(`Fetch failed with status ${res.status}`);
+// ── Brave Search API (free tier, requires BRAVE_SEARCH_API_KEY) ──
+async function braveSearch(query, maxResults) {
+  const apiKey = process.env.BRAVE_SEARCH_API_KEY;
+  if (!apiKey) throw new Error('BRAVE_SEARCH_API_KEY environment variable is not set');
 
-  const content = stripHtml(res.body).substring(0, 4000);
-  const title = extractTitle(res.body) || url;
-  const textContent = content.length > 0 ? content : '(no readable text content)';
+  const count = Math.min(maxResults, 20);
+  const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`;
+  let res;
+  try {
+    res = await httpsGet(url, 15000, {
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip',
+      'X-Subscription-Token': apiKey,
+    });
+  } catch (e) {
+    return { results: [], query, count: 0, note: `Brave Search unavailable: ${e.message}` };
+  }
 
-  return { title, url, content: textContent, status: res.status };
+  if (res.status !== 200) {
+    return { results: [], query, count: 0, note: `Brave Search returned status ${res.status}` };
+  }
+
+  let data;
+  try { data = JSON.parse(res.body); } catch (e) {
+    return { results: [], query, count: 0, note: 'Brave Search returned invalid JSON' };
+  }
+
+  const webResults = data.web?.results || [];
+  const results = webResults.slice(0, maxResults).map(item => ({
+    title: item.title || '',
+    url: item.url || '',
+    snippet: (item.description || '').substring(0, 300),
+  }));
+
+  return { results, query, count: results.length };
 }
 
+// ── SearXNG (self-hosted, requires SEARXNG_URL) ──
+async function searxngSearch(query, maxResults) {
+  const baseUrl = process.env.SEARXNG_URL;
+  if (!baseUrl) throw new Error('SEARXNG_URL environment variable is not set');
+
+  const normalizedBase = baseUrl.replace(/\/+$/, '');
+  const url = `${normalizedBase}/search?q=${encodeURIComponent(query)}&format=json&pageno=1&language=en-US`;
+  let res;
+  try {
+    res = await httpsGet(url, 15000, {
+      'Accept': 'application/json',
+      'User-Agent': 'AugustProxy/1.0',
+    });
+  } catch (e) {
+    return { results: [], query, count: 0, note: `SearXNG unavailable: ${e.message}` };
+  }
+
+  if (res.status !== 200) {
+    return { results: [], query, count: 0, note: `SearXNG returned status ${res.status}` };
+  }
+
+  let data;
+  try { data = JSON.parse(res.body); } catch (e) {
+    return { results: [], query, count: 0, note: 'SearXNG returned invalid JSON' };
+  }
+
+  const rawResults = data.results || [];
+  const results = rawResults.slice(0, maxResults).map(item => ({
+    title: item.title || '',
+    url: item.url || '',
+    snippet: (item.content || '').substring(0, 300),
+  }));
+
+  return { results, query, count: results.length };
+}
+
+// ── web_search dispatcher ──
+async function webSearch(query, maxResults = 5) {
+  const backend = getSearchBackend();
+
+  if (backend === 'brave') {
+    try {
+      return await braveSearch(query, maxResults);
+    } catch (e) {
+      console.warn(`[Web] Brave Search failed: ${e.message}. Falling back to DuckDuckGo.`);
+      return await duckduckgoSearch(query, maxResults);
+    }
+  }
+
+  if (backend === 'searxng') {
+    try {
+      return await searxngSearch(query, maxResults);
+    } catch (e) {
+      console.warn(`[Web] SearXNG failed: ${e.message}. Falling back to DuckDuckGo.`);
+      return await duckduckgoSearch(query, maxResults);
+    }
+  }
+
+  return await duckduckgoSearch(query, maxResults);
+}
+
+// ── web_fetch with turndown markdown + Cloudflare 403 retry ──
+async function webFetch(url) {
+  let res;
+  try {
+    res = await httpsGet(url);
+  } catch (e) {
+    throw new Error(`Fetch failed: ${e.message}`);
+  }
+
+  // Cloudflare challenge retry: if 403 with CF challenge, retry with plain UA
+  if (res.status === 403 && /cf-mitigated|cf-challenge|cf-ray/i.test(res.body)) {
+    console.warn(`[Web] Cloudflare challenge detected for ${url}, retrying with different UA`);
+    try {
+      const retryRes = await httpsGet(url, 15000, { 'User-Agent': 'AugustProxyFetch/1.0' });
+      if (retryRes.status < 400) {
+        res = retryRes;
+      }
+    } catch { /* keep original response */ }
+  }
+
+  if (res.status >= 400) throw new Error(`Fetch failed with status ${res.status}`);
+
+  // Strip scripts, styles, and hidden elements before markdown conversion
+  const cleanedHtml = res.body
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
+    .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+    .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+    .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '');
+
+  const title = extractTitle(cleanedHtml);
+  const rawMarkdown = turndown.turndown(cleanedHtml);
+  const content = rawMarkdown.replace(/\n{3,}/g, '\n\n').substring(0, 50000).trim();
+
+  return {
+    title,
+    url,
+    content: content || '(no readable content)',
+    status: res.status,
+  };
+}
+
+// ── Normalization helpers ──
 function normalizeManagedWebToolName(toolName) {
   if (toolName === 'WebSearch' || toolName === 'mcp__workspace__web_search') return 'web_search';
   if (toolName === 'WebFetch' || toolName === 'mcp__workspace__web_fetch') return 'web_fetch';
@@ -190,7 +317,7 @@ const MANAGED_WEB_TOOLS = new Set([
   'WebSearch',
   'WebFetch',
   'mcp__workspace__web_search',
-  'mcp__workspace__web_fetch'
+  'mcp__workspace__web_fetch',
 ]);
 
 function isManagedWebToolName(name) {
@@ -203,61 +330,61 @@ function getManagedWebToolDefinitions() {
       type: 'function',
       function: {
         name: 'web_search',
-        description: 'Search the public web using DuckDuckGo. Returns titles, URLs, and snippets.',
+        description: 'Search the public web using DuckDuckGo (default), Brave Search, or SearXNG. Returns titles, URLs, and snippets.',
         parameters: {
           type: 'object',
           properties: {
             query: { type: 'string', description: 'The search query.' },
-            max_results: { type: 'number', description: 'Max results to return (default 5, max 10).' }
+            max_results: { type: 'number', description: 'Max results to return (default 5, max 20).' },
           },
-          required: ['query']
-        }
-      }
+          required: ['query'],
+        },
+      },
     },
     {
       type: 'function',
       function: {
         name: 'web_fetch',
-        description: 'Fetch and extract readable text content from a public URL.',
+        description: 'Fetch a public URL and convert the page to clean Markdown. Private/local network addresses are blocked. Handles Cloudflare challenges automatically.',
         parameters: {
           type: 'object',
           properties: {
-            url: { type: 'string', description: 'The URL to fetch.' }
+            url: { type: 'string', description: 'The URL to fetch.' },
           },
-          required: ['url']
-        }
-      }
+          required: ['url'],
+        },
+      },
     },
     {
       type: 'function',
       function: {
         name: 'WebSearch',
-        description: 'Search the public web using DuckDuckGo. Claude-compatible alias resolved locally by the proxy.',
+        description: 'Search the public web using DuckDuckGo (default), Brave Search, or SearXNG. Claude-compatible alias resolved locally by the proxy.',
         parameters: {
           type: 'object',
           properties: {
             query: { type: 'string', description: 'The search query.' },
             prompt: { type: 'string', description: 'Compatibility alias for query.' },
-            max_results: { type: 'number', description: 'Max results to return (default 5, max 10).' }
+            max_results: { type: 'number', description: 'Max results to return (default 5, max 20).' },
           },
-          required: ['query']
-        }
-      }
+          required: ['query'],
+        },
+      },
     },
     {
       type: 'function',
       function: {
         name: 'WebFetch',
-        description: 'Fetch and extract readable text from a public URL. Claude-compatible alias resolved locally by the proxy.',
+        description: 'Fetch a public URL and convert the page to clean Markdown. Claude-compatible alias resolved locally by the proxy. Handles Cloudflare challenges.',
         parameters: {
           type: 'object',
           properties: {
             url: { type: 'string', description: 'The URL to fetch.' },
-            prompt: { type: 'string', description: 'Compatibility alias for url.' }
+            prompt: { type: 'string', description: 'Compatibility alias for url.' },
           },
-          required: ['url']
-        }
-      }
+          required: ['url'],
+        },
+      },
     },
     {
       type: 'function',
@@ -269,27 +396,27 @@ function getManagedWebToolDefinitions() {
           properties: {
             query: { type: 'string', description: 'The search query.' },
             prompt: { type: 'string', description: 'Compatibility alias for query.' },
-            max_results: { type: 'number', description: 'Max results to return (default 5, max 10).' }
+            max_results: { type: 'number', description: 'Max results to return (default 5, max 20).' },
           },
-          required: ['query']
-        }
-      }
+          required: ['query'],
+        },
+      },
     },
     {
       type: 'function',
       function: {
         name: 'mcp__workspace__web_fetch',
-        description: 'Workspace-compatible public page fetch alias resolved locally by the proxy.',
+        description: 'Workspace-compatible public page fetch alias resolved locally by the proxy. Converts to Markdown.',
         parameters: {
           type: 'object',
           properties: {
             url: { type: 'string', description: 'The URL to fetch.' },
-            prompt: { type: 'string', description: 'Compatibility alias for url.' }
+            prompt: { type: 'string', description: 'Compatibility alias for url.' },
           },
-          required: ['url']
-        }
-      }
-    }
+          required: ['url'],
+        },
+      },
+    },
   ];
 }
 

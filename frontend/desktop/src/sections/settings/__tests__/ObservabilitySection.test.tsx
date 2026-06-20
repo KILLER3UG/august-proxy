@@ -105,4 +105,34 @@ describe('ObservabilitySection', () => {
         // The host-agent status text should be 'disconnected' (lowercased)
         expect(screen.getAllByText(/disconnected/i).length).toBeGreaterThan(0);
     });
+
+    it('renders all 6 subtabs in the tablist', () => {
+        render(<ObservabilitySection />);
+        for (const label of ['Overview', 'Audit', 'Rollback', 'Observations', 'Traffic', 'Logs']) {
+            expect(screen.getByRole('tab', { name: label })).toBeInTheDocument();
+        }
+    });
+
+    it('switches to the Traffic subtab and shows the period filter chips', async () => {
+        render(<ObservabilitySection />);
+        fireEvent.click(screen.getByRole('tab', { name: 'Traffic' }));
+        await waitFor(() => {
+            expect(screen.getByRole('tab', { name: 'Traffic' })).toHaveAttribute('aria-selected', 'true');
+        });
+        // The TrafficSubtab renders its own "Period" filter chip group
+        expect(screen.getByText(/^Period$/i)).toBeInTheDocument();
+    });
+
+    it('switches to the Logs subtab and shows the level filter chips', async () => {
+        render(<ObservabilitySection />);
+        fireEvent.click(screen.getByRole('tab', { name: 'Logs' }));
+        await waitFor(() => {
+            expect(screen.getByRole('tab', { name: 'Logs' })).toHaveAttribute('aria-selected', 'true');
+        });
+        // LogsSubtab renders an "All / Info / Warn / Error" level chip row
+        const buttons = screen.getAllByRole('button');
+        const labels = buttons.map(b => b.textContent?.trim());
+        // Level chips should be present (in addition to the subtab buttons)
+        expect(labels).toEqual(expect.arrayContaining(['All', 'Info', 'Warn', 'Error']));
+    });
 });

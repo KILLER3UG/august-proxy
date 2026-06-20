@@ -15,7 +15,6 @@ import {
 import { WorkspaceShell, type WorkspaceSectionMeta } from '@/components/workspace/WorkspaceShell';
 import { WorkspaceUsageSection } from '@/sections/workspace/WorkspaceUsageSection';
 import { WorkspaceMemorySection } from '@/sections/workspace/WorkspaceMemorySection';
-import { WorkspaceTrafficSection } from '@/sections/workspace/WorkspaceTrafficSection';
 import { WorkspaceInspectorSection } from '@/sections/workspace/WorkspaceInspectorSection';
 import { WorkspaceModelsSection } from '@/sections/workspace/WorkspaceModelsSection';
 import { WorkspaceGeneralSection } from '@/sections/workspace/WorkspaceGeneralSection';
@@ -57,7 +56,6 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   usage: UsageWrapper,
   memory: MemoryWrapper,
   'memory-knowledge': MemoryWrapper,
-  'traffic-activity': TrafficWrapper,
   'conversation-inspector': InspectorWrapper,
   'model-providers': ModelsWrapper,
   'profile-preferences': GeneralWrapper,
@@ -67,6 +65,8 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'agents-automation': AgentsAutomationWrapper,
   'developer-console': DeveloperConsoleWrapper,
   'computer-access': ComputerAccessSettingsWrapper,
+  // traffic-activity is now an alias for observability (handled by
+  // resolveLegacyTab + legacyAliases in the registry), so no entry here.
   observability: ObservabilitySectionWrapper,
 };
 
@@ -75,7 +75,6 @@ function ObservabilitySectionWrapper() { return <ObservabilitySection />; }
 
 function UsageWrapper() { return <WorkspaceUsageSection />; }
 function MemoryWrapper() { return <WorkspaceMemorySection />; }
-function TrafficWrapper() { return <WorkspaceTrafficSection />; }
 function InspectorWrapper() { return <WorkspaceInspectorSection />; }
 function ModelsWrapper() { return <WorkspaceModelsSection />; }
 function GeneralWrapper() { return <WorkspaceGeneralSection />; }

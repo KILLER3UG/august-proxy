@@ -15,9 +15,9 @@ import {
   type PendingRequest,
   type ActivityEntry,
   type StatsResponse,
-  type Period,
 } from '@/api/backend-ui';
 
+export type Period = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'year';
 export type StatusFilter = 'all' | 'ok' | 'err';
 
 /** Normalized row so renderers stay mock-shape-agnostic. */

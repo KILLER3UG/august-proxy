@@ -49,7 +49,7 @@ export function AuditTimeline() {
                     <select
                         value={category}
                         onChange={e => setCategory(e.target.value)}
-                        className="rounded-md border border-white/[0.08] bg-background/40 px-2 py-1 text-sm"
+                        className="rounded-md border border-white/[0.08] bg-secondary px-2 py-1 text-sm text-foreground"
                         aria-label="Category filter"
                     >
                         {CATEGORIES.map(c => <option key={c} value={c}>{c || 'all categories'}</option>)}
@@ -59,12 +59,12 @@ export function AuditTimeline() {
                         value={actor}
                         onChange={e => setActor(e.target.value)}
                         placeholder="actor (e.g. august)"
-                        className="rounded-md border border-white/[0.08] bg-background/40 px-2 py-1 text-sm"
+                        className="rounded-md border border-white/[0.08] bg-secondary px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground"
                     />
                     <select
                         value={String(sinceDays)}
                         onChange={e => setSinceDays(Number(e.target.value))}
-                        className="rounded-md border border-white/[0.08] bg-background/40 px-2 py-1 text-sm"
+                        className="rounded-md border border-white/[0.08] bg-secondary px-2 py-1 text-sm text-foreground"
                         aria-label="Time range"
                     >
                         <option value="1">last 24h</option>

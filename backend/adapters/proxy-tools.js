@@ -51,7 +51,7 @@ function getManagedAnthropicWebToolDefinitions() {
     return [
         {
             name: 'WebSearch',
-            description: 'Search the public web for relevant pages. Use only for external/public information. Do not combine this tool with any other tool in the same turn.',
+            description: 'Search the public web for relevant pages. Supports DuckDuckGo (default), Brave Search, and SearXNG backends. Use only for external/public information. Do not combine this tool with any other tool in the same turn.',
             input_schema: {
                 type: 'object',
                 properties: {
@@ -65,7 +65,7 @@ function getManagedAnthropicWebToolDefinitions() {
                     },
                     max_results: {
                         type: 'integer',
-                        description: 'Maximum number of results to return.'
+                        description: 'Maximum number of results to return (max 20).'
                     }
                 },
                 required: ['query']
@@ -73,7 +73,7 @@ function getManagedAnthropicWebToolDefinitions() {
         },
         {
             name: 'WebFetch',
-            description: 'Fetch and summarize a public webpage by URL. Private/local network addresses are blocked. Do not combine this tool with any other tool in the same turn.',
+            description: 'Fetch a public webpage by URL and convert it to clean Markdown. Private/local network addresses are blocked. Do not combine this tool with any other tool in the same turn.',
             input_schema: {
                 type: 'object',
                 properties: {
@@ -91,7 +91,7 @@ function getManagedAnthropicWebToolDefinitions() {
         },
         {
             name: 'mcp__workspace__web_search',
-            description: 'Search the public web for relevant pages. Workspace-compatible alias for third-party Claude clients. Do not combine this tool with any other tool in the same turn.',
+            description: 'Search the public web for relevant pages. Supports DuckDuckGo (default), Brave Search, and SearXNG backends. Workspace-compatible alias for third-party Claude clients. Do not combine this tool with any other tool in the same turn.',
             input_schema: {
                 type: 'object',
                 properties: {
@@ -105,7 +105,7 @@ function getManagedAnthropicWebToolDefinitions() {
                     },
                     max_results: {
                         type: 'integer',
-                        description: 'Maximum number of results to return.'
+                        description: 'Maximum number of results to return (max 20).'
                     }
                 },
                 required: ['query']
@@ -113,7 +113,7 @@ function getManagedAnthropicWebToolDefinitions() {
         },
         {
             name: 'mcp__workspace__web_fetch',
-            description: 'Fetch and summarize a public webpage by URL. Workspace-compatible alias for third-party Claude clients. Private/local network addresses are blocked. Do not combine this tool with any other tool in the same turn.',
+            description: 'Fetch a public webpage by URL and convert it to clean Markdown. Workspace-compatible alias for third-party Claude clients. Private/local network addresses are blocked. Do not combine this tool with any other tool in the same turn.',
             input_schema: {
                 type: 'object',
                 properties: {
@@ -258,13 +258,13 @@ function getCanonicalManagedOpenAiWebTools() {
             type: 'function',
             function: {
                 name: 'WebSearch',
-                description: 'Search the public web for relevant pages. Use only for external/public information.',
+                description: 'Search the public web for relevant pages. Supports DuckDuckGo (default), Brave Search, and SearXNG backends.',
                 parameters: {
                     type: 'object',
                     properties: {
                         query: { type: 'string', description: 'The web search query.' },
                         prompt: { type: 'string', description: 'Compatibility alias for query.' },
-                        max_results: { type: 'integer', description: 'Maximum number of results.' }
+                        max_results: { type: 'integer', description: 'Maximum number of results (max 20).' }
                     },
                     required: ['query']
                 }
@@ -274,7 +274,7 @@ function getCanonicalManagedOpenAiWebTools() {
             type: 'function',
             function: {
                 name: 'WebFetch',
-                description: 'Fetch and summarize a public webpage by URL. Private/local network addresses are blocked.',
+                description: 'Fetch a public webpage by URL and convert it to clean Markdown. Private/local network addresses are blocked.',
                 parameters: {
                     type: 'object',
                     properties: {
@@ -289,13 +289,13 @@ function getCanonicalManagedOpenAiWebTools() {
             type: 'function',
             function: {
                 name: 'mcp__workspace__web_search',
-                description: 'Search the public web for relevant pages. Workspace-compatible alias.',
+                description: 'Search the public web for relevant pages. Supports DuckDuckGo (default), Brave Search, and SearXNG backends. Workspace-compatible alias.',
                 parameters: {
                     type: 'object',
                     properties: {
                         query: { type: 'string', description: 'The web search query.' },
                         prompt: { type: 'string', description: 'Compatibility alias for query.' },
-                        max_results: { type: 'integer', description: 'Maximum number of results.' }
+                        max_results: { type: 'integer', description: 'Maximum number of results (max 20).' }
                     },
                     required: ['query']
                 }
@@ -305,7 +305,7 @@ function getCanonicalManagedOpenAiWebTools() {
             type: 'function',
             function: {
                 name: 'mcp__workspace__web_fetch',
-                description: 'Fetch and summarize a public webpage by URL. Workspace-compatible alias.',
+                description: 'Fetch a public webpage by URL and convert it to clean Markdown. Workspace-compatible alias.',
                 parameters: {
                     type: 'object',
                     properties: {

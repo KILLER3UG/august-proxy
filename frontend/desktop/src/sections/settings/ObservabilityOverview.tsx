@@ -5,6 +5,7 @@ import { Activity, AlertTriangle, Camera, History, ShieldCheck, Wifi } from 'luc
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusPill, variantForHostStatus, variantForAppPolicy } from '@/components/workspace/StatusPill';
+import { WorkspaceDonut, type DonutSlice } from '@/components/workspace/WorkspaceDonut';
 import { usageApi } from '@/api/usage';
 import {
     getObservabilityOverview,
@@ -33,6 +34,14 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
     const observations = o.hostAgent.postObservationCount;
     const allowedApps = o.appPolicy.counts.allow;
     const deniedApps = o.appPolicy.counts.deny;
+
+    // Model-usage donut slices (from usageApi.byModel) + center label
+    const donutSlices: DonutSlice[] = (byModel.data?.results ?? []).map(r => ({
+        label: r.model,
+        value: r.tokens,
+        percent: r.percent
+    }));
+    const donutCenter = formatCompact(totalTokens30d);
 
     return (
         <div className="space-y-6">
@@ -75,8 +84,29 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
                 </Card>
             </div>
 
-            {/* Tokens-per-day + Allowlist */}
+            {/* Model-usage donut + Tokens-per-day bar chart (matches Usage screenshot) */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Model usage</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        {donutSlices.length > 0 ? (
+                            <WorkspaceDonut
+                                slices={donutSlices}
+                                centerLabel={donutCenter}
+                                centerSub="tokens"
+                                formatValue={formatCompact}
+                            />
+                        ) : (
+                            <SettingsEmptyState
+                                title="No model usage yet"
+                                description="Once you have chat sessions in the last 30 days, the model breakdown will appear here."
+                            />
+                        )}
+                    </CardContent>
+                </Card>
+
                 <Card>
                     <CardHeader>
                         <CardTitle>Tokens per day</CardTitle>
@@ -89,7 +119,10 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
                         )}
                     </CardContent>
                 </Card>
+            </div>
 
+            {/* App allowlist */}
+            <div className="grid grid-cols-1 gap-4">
                 <Card>
                     <CardHeader>
                         <CardTitle>App allowlist</CardTitle>
