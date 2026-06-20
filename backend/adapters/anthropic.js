@@ -2715,7 +2715,13 @@ async function handleMessages(req, res, cleanPath, reqId) {
                     toolNames: upstreamReq.tools?.map(t => t.name) || [],
                     managedLocalToolNames: Array.from(ctx.managedLocalToolNames)
                 }));
-                captureRequest(reqId, { ...upstreamReq, model: clientFacingModel, endpoint: cleanPath });
+                captureRequest(reqId, { ...upstreamReq, model: clientFacingModel, endpoint: cleanPath }, {
+                    model: clientFacingModel,
+                    provider: cfg.providerName || cfg.name || 'anthropic',
+                    source: 'v1-anthropic',
+                    inputCostPer1M: cfg.inputCostPer1M || 0,
+                    outputCostPer1M: cfg.outputCostPer1M || 0,
+                });
 
                 let response;
                 let attempts = 0;
@@ -2941,7 +2947,13 @@ async function handleMessages(req, res, cleanPath, reqId) {
             console.log(`[Proxy Debug Claude]: incoming_model=${aReq.model || 'unknown'} public_model=${requestModel} backend_model=${upstreamModel} target=${cfg.targetUrl || 'unknown'}`);
 
             // Capture request for debug UI
-            captureRequest(reqId, { ...oReq, model: clientFacingModel, endpoint: cleanPath });
+            captureRequest(reqId, { ...oReq, model: clientFacingModel, endpoint: cleanPath }, {
+                model: clientFacingModel,
+                provider: cfg.providerName || cfg.name || 'anthropic',
+                source: 'v1-anthropic-openai-translation',
+                inputCostPer1M: cfg.inputCostPer1M || 0,
+                outputCostPer1M: cfg.outputCostPer1M || 0,
+            });
 
             let response;
             let attempts = 0;
@@ -3114,7 +3126,13 @@ async function handleCountTokens(req, res, cleanPath, reqId) {
                 : getClaudeBackendModel(cfg, aReq.model);
             console.log(`[Proxy Debug CountTokens]: incoming_model=${aReq.model || 'unknown'} public_model=${requestModel} backend_model=${upstreamModel} target=${cfg.targetUrl || 'unknown'}`);
 
-            captureRequest(reqId, { ...aReq, model: clientFacingModel, endpoint: cleanPath });
+            captureRequest(reqId, { ...aReq, model: clientFacingModel, endpoint: cleanPath }, {
+                model: clientFacingModel,
+                provider: cfg.providerName || cfg.name || 'anthropic',
+                source: 'v1-anthropic',
+                inputCostPer1M: cfg.inputCostPer1M || 0,
+                outputCostPer1M: cfg.outputCostPer1M || 0,
+            });
 
             const targetUrl = cfg.targetUrl
                 ? cfg.targetUrl.replace(/\/v1\/messages$/, '') + '/v1/messages/count_tokens'

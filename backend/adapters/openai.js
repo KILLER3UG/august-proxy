@@ -600,7 +600,13 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             }
 
             // Capture request for debug UI
-            captureRequest(reqId, { ...oReq, model: cfg.currentModel, endpoint: cleanPath });
+            captureRequest(reqId, { ...oReq, model: cfg.currentModel, endpoint: cleanPath }, {
+                model: requestModel,
+                provider: cfg.providerName || cfg.name || 'openai',
+                source: 'v1-openai',
+                inputCostPer1M: cfg.inputCostPer1M || 0,
+                outputCostPer1M: cfg.outputCostPer1M || 0,
+            });
 
             // Translate Responses API input format (if present) to Chat Completions messages
             translateResponsesInput(oReq);

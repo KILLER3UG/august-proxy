@@ -67,6 +67,28 @@ CREATE TABLE IF NOT EXISTS tool_results (
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS usage_events (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id          TEXT NOT NULL REFERENCES sessions(id),
+  request_id          TEXT DEFAULT '',
+  source              TEXT DEFAULT 'unknown',
+  request_type        TEXT DEFAULT '',
+  model               TEXT DEFAULT '',
+  provider            TEXT DEFAULT '',
+  input_tokens        INTEGER DEFAULT 0,
+  output_tokens       INTEGER DEFAULT 0,
+  cache_creation_input_tokens INTEGER DEFAULT 0,
+  cache_read_input_tokens     INTEGER DEFAULT 0,
+  total_tokens        INTEGER DEFAULT 0,
+  input_cost_per_1m   REAL DEFAULT 0.0,
+  output_cost_per_1m  REAL DEFAULT 0.0,
+  input_cost          REAL DEFAULT 0.0,
+  output_cost         REAL DEFAULT 0.0,
+  total_cost          REAL DEFAULT 0.0,
+  metadata            TEXT DEFAULT '{}',
+  created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS compression_locks (
   session_id  TEXT PRIMARY KEY REFERENCES sessions(id),
   locked_at   TEXT NOT NULL DEFAULT (datetime('now')),
@@ -81,6 +103,9 @@ CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at);
 CREATE INDEX IF NOT EXISTS idx_tool_results_session ON tool_results(session_id);
 CREATE INDEX IF NOT EXISTS idx_tool_results_message ON tool_results(message_id);
+CREATE INDEX IF NOT EXISTS idx_usage_events_session ON usage_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_usage_events_created ON usage_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_usage_events_model ON usage_events(model);
 
 -- FTS5 virtual tables for full-text search
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
@@ -250,6 +275,7 @@ function listSessions(opts = {}) {
 }
 
 function deleteSession(id) {
+  db.prepare('DELETE FROM usage_events WHERE session_id=?').run(id);
   db.prepare('DELETE FROM tool_results WHERE session_id=?').run(id);
   db.prepare('DELETE FROM messages WHERE session_id=?').run(id);
   db.prepare('DELETE FROM compression_locks WHERE session_id=?').run(id);
@@ -403,6 +429,98 @@ function getToolResults(sessionId, opts = {}) {
   return db.prepare(sql).all(...params);
 }
 
+// ── Usage Event Storage ──
+
+function recordUsageEvent({
+  sessionId,
+  requestId = '',
+  source = 'unknown',
+  requestType = '',
+  model = '',
+  provider = '',
+  inputTokens = 0,
+  outputTokens = 0,
+  cacheCreationInputTokens = 0,
+  cacheReadInputTokens = 0,
+  totalTokens = 0,
+  inputCostPer1M = 0,
+  outputCostPer1M = 0,
+  inputCost = 0,
+  outputCost = 0,
+  totalCost = 0,
+  metadata = {},
+} = {}) {
+  if (!ready || !sessionId) return null;
+
+  const normalizedTotalTokens = Number(totalTokens) || Number(inputTokens || 0) + Number(outputTokens || 0);
+  if (normalizedTotalTokens <= 0 && Number(inputCost || 0) <= 0 && Number(outputCost || 0) <= 0) {
+    return null;
+  }
+
+  const result = db.prepare(`
+    INSERT INTO usage_events (
+      session_id, request_id, source, request_type, model, provider,
+      input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_tokens,
+      input_cost_per_1m, output_cost_per_1m, input_cost, output_cost, total_cost, metadata, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    sessionId,
+    requestId || '',
+    source || 'unknown',
+    requestType || '',
+    model || '',
+    provider || '',
+    Number(inputTokens || 0),
+    Number(outputTokens || 0),
+    Number(cacheCreationInputTokens || 0),
+    Number(cacheReadInputTokens || 0),
+    normalizedTotalTokens,
+    Number(inputCostPer1M || 0),
+    Number(outputCostPer1M || 0),
+    Number(inputCost || 0),
+    Number(outputCost || 0),
+    Number(totalCost || 0),
+    json(metadata || {}),
+    now()
+  );
+
+  db.prepare(`
+    UPDATE sessions
+    SET total_tokens = total_tokens + ?,
+        total_cost = total_cost + ?,
+        model = COALESCE(NULLIF(?, ''), model),
+        provider = COALESCE(NULLIF(?, ''), provider),
+        updated_at = ?
+    WHERE id = ?
+  `).run(normalizedTotalTokens, Number(totalCost || 0), model || '', provider || '', now(), sessionId);
+
+  const row = getSessionUsageEvent(result.lastInsertRowid);
+  return row;
+}
+
+function getSessionUsageEvent(id) {
+  const row = db.prepare('SELECT * FROM usage_events WHERE id = ?').get(id);
+  if (!row) return null;
+  try { row.metadata = JSON.parse(row.metadata || '{}'); } catch (e) { row.metadata = {}; }
+  return row;
+}
+
+function listUsageEvents(sessionId, opts = {}) {
+  if (!ready) return [];
+  const { limit, offset, order = 'desc' } = opts;
+  let sql = 'SELECT * FROM usage_events WHERE 1=1';
+  const params = [];
+  if (sessionId) { sql += ' AND session_id=?'; params.push(sessionId); }
+  sql += ` ORDER BY created_at ${order === 'asc' ? 'ASC' : 'DESC'}, id ${order === 'asc' ? 'ASC' : 'DESC'}`;
+  if (limit) { sql += ' LIMIT ?'; params.push(limit); }
+  if (offset) { sql += ' OFFSET ?'; params.push(offset); }
+  const rows = db.prepare(sql).all(...params);
+  for (const row of rows) {
+    try { row.metadata = JSON.parse(row.metadata || '{}'); } catch (e) { row.metadata = {}; }
+  }
+  return rows;
+}
+
 // ── Compression Locks ──
 
 function acquireCompressionLock(sessionId, holder, ttlSeconds = 300) {
@@ -504,6 +622,7 @@ module.exports = {
   appendMessage, getMessages, getMessagesAround, rewindToMessage, replaceMessages, countMessages,
   searchSessions, searchMessages,
   storeToolResult, getToolResults,
+  recordUsageEvent, listUsageEvents,
   acquireCompressionLock, releaseCompressionLock,
   getDbPath: () => DB_PATH,
   isReady: () => ready

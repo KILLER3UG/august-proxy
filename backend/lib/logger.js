@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { getConfig, getProfile } = require('./config');
 const { dataPath } = require('./data-paths');
+const { normalizeUsage } = require('../services/usage/usage-normalizer');
+const { recordUsage } = require('../services/usage/usage-recorder');
 
 const REQUEST_LOG_FILE = dataPath('request-log.json');
 const DEFAULT_REQUEST_LOG_LIMIT = 5000;
@@ -288,10 +290,23 @@ function finalizeRequest(id, start, result) {
     const profile = start.clientType === 'claude' || start.clientType === 'codex'
         ? getProfile(start.clientType)
         : null;
-    const inputCostRate = Number(profile?.inputCostPer1M || 0);
-    const outputCostRate = Number(profile?.outputCostPer1M || 0);
-    const inputCost = inputCostRate > 0 ? (inputTokens / 1000000) * inputCostRate : 0;
-    const outputCost = outputCostRate > 0 ? (outputTokens / 1000000) * outputCostRate : 0;
+    const usage = normalizeUsage({
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
+        model: result.model || start.model || details?.model || 'unknown',
+        provider: details?.provider || start.clientType,
+        source: details?.source || 'request-log',
+        requestType: details?.requestType || 'unknown',
+        sessionId: details?.sessionId,
+        requestId: id,
+        inputCostPer1M: details?.inputCostPer1M || profile?.inputCostPer1M || 0,
+        outputCostPer1M: details?.outputCostPer1M || profile?.outputCostPer1M || 0,
+    });
+    const inputCostRate = usage.inputCostPer1M;
+    const outputCostRate = usage.outputCostPer1M;
+    const inputCost = usage.inputCost;
+    const outputCost = usage.outputCost;
     const endedAt = Date.now();
 
     const entry = {
@@ -300,7 +315,7 @@ function finalizeRequest(id, start, result) {
         timestamp: endedAt,
         clientType: start.clientType,
         endpoint: start.endpoint,
-        model: result.model || start.model || 'unknown',
+        model: usage.model,
         status: result.status,
         durationMs: endedAt - start.startTime,
         error: result.error || null,
@@ -312,8 +327,8 @@ function finalizeRequest(id, start, result) {
         outputCostRate,
         inputCost,
         outputCost,
-        totalCost: inputCost + outputCost,
-        requestType: details ? details.requestType : 'unknown'
+        totalCost: usage.totalCost,
+        requestType: usage.requestType || (details ? details.requestType : 'unknown')
     };
     requestLog.unshift(normalizeRequestEntry(entry));
     trimRequestLog();
@@ -499,8 +514,13 @@ function determineRequestType(body) {
     return 'Chat';
 }
 
+function extractSessionId(requestBody) {
+    if (!requestBody || typeof requestBody !== 'object') return '';
+    return String(requestBody.sessionId || requestBody.session_id || requestBody.metadata?.sessionId || requestBody.metadata?.session_id || '');
+}
+
 // ── Capture request/response details for debug inspector ──
-function captureRequest(reqId, requestBody) {
+function captureRequest(reqId, requestBody, metadata = {}) {
     const requestType = determineRequestType(requestBody);
     requestDetails.set(reqId, {
         reqId,
@@ -515,7 +535,13 @@ function captureRequest(reqId, requestBody) {
         error: null,
         status: 'pending',
         inputTokens: 0,
-        outputTokens: 0
+        outputTokens: 0,
+        model: metadata.model || requestBody?.model || 'unknown',
+        provider: metadata.provider || requestBody?.provider || '',
+        source: metadata.source || 'adapter',
+        sessionId: metadata.sessionId || extractSessionId(requestBody),
+        inputCostPer1M: metadata.inputCostPer1M || 0,
+        outputCostPer1M: metadata.outputCostPer1M || 0,
     });
     // Keep only last N
     if (requestDetails.size > MAX_DETAILS) {
@@ -589,6 +615,23 @@ function captureTokens(reqId, inputTokens, outputTokens) {
     if (!details) return;
     if (inputTokens  > 0) details.inputTokens  = inputTokens;
     if (outputTokens > 0) details.outputTokens = outputTokens;
+
+    const totalTokens = (inputTokens || 0) + (outputTokens || 0);
+    if (totalTokens <= 0) return;
+    recordUsage({
+        sessionId: details.sessionId,
+        requestId: reqId,
+        source: details.source || 'adapter',
+        requestType: details.requestType,
+        model: details.model || 'unknown',
+        provider: details.provider || 'unknown',
+        inputTokens,
+        outputTokens,
+        totalTokens,
+        inputCostPer1M: details.inputCostPer1M || 0,
+        outputCostPer1M: details.outputCostPer1M || 0,
+        metadata: { logger: true },
+    });
 }
 
 function captureError(reqId, error) {

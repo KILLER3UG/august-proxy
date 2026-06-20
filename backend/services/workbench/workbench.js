@@ -13,6 +13,8 @@ const { getAugustToolDefinitions, executeAugustToolCall, isAugustToolName } = re
 const { getCoworkToolDefinitions, executeCoworkToolCall, isCoworkToolName } = require('../tools/cowork-tools');
 const { executeManagedWebTool, isManagedWebToolName, getManagedWebToolDefinitions } = require('../tools/local-web');
 const { extractAndSaveMemories } = require('../memory/auto-memory');
+const { normalizeUsage } = require('../usage/usage-normalizer');
+const { recordUsage } = require('../usage/usage-recorder');
 const { getBrainDiagnostics } = require('../memory/brain-diagnostics');
 const { getBrainConfig, getWorkbenchMaxToolLoops, planBrainTurn } = require('../memory/brain-orchestrator');
 const { getCapabilityHealth } = require('../monitoring/health');
@@ -2204,6 +2206,22 @@ function logPromptAudit(session, prompt) {
     } catch (_) {}
 }
 
+function recordWorkbenchUsage(session, profile, usage, { source = 'workbench' } = {}) {
+    const normalized = normalizeUsage({
+        usage,
+        model: profile._upstreamModel || profile.currentModel || session.model || 'unknown',
+        provider: profile.providerName || 'workbench',
+        source,
+        requestType: 'workbench',
+        sessionId: session.id,
+        requestId: `${session.id}:${Date.now()}`,
+        inputCostPer1M: profile.inputCostPer1M || 0,
+        outputCostPer1M: profile.outputCostPer1M || 0,
+        metadata: { workbench: true },
+    });
+    recordUsage(normalized);
+}
+
 async function callWorkbenchModelStream(session, emit, signal) {
     const prompt = buildSystemPrompt(session);
     logPromptAudit(session, prompt);
@@ -2263,6 +2281,7 @@ async function callAnthropicWorkbenchModel(session) {
         const raw = await response.text();
         if (!response.ok) throw new Error(`Workbench upstream error ${response.status}: ${raw.slice(0, 500)}`);
         const data = JSON.parse(raw);
+        recordWorkbenchUsage(session, profile, data.usage, { source: 'workbench:anthropic' });
         const content = Array.isArray(data.content) ? data.content : [];
         session.messages.push({ role: 'assistant', content });
         extractAndSyncTodos(session);
@@ -2397,6 +2416,7 @@ async function callOpenAiWorkbenchModel(session) {
         const raw = await response.text();
         if (!response.ok) throw new Error(`Workbench upstream error ${response.status}: ${raw.slice(0, 500)}`);
         const data = JSON.parse(raw);
+        recordWorkbenchUsage(session, profile, data.usage, { source: 'workbench:openai' });
         const message = data.choices?.[0]?.message || {};
         const content = openAiMessageToAnthropicContent(message);
         // Skip persisting an empty assistant turn — strict OpenAI-compatible
@@ -2644,6 +2664,7 @@ async function callAnthropicWorkbenchModelStream(session, emit, prompt, signal) 
 
     let loops = 0;
     while (loops < getWorkbenchMaxToolLoops()) {
+        const usage = { input_tokens: 0, output_tokens: 0 };
         loops++;
         const brainPolicy = getSessionBrainPolicy(session);
         const modelEntry = modelCatalog.get(model);
@@ -2714,8 +2735,18 @@ async function callAnthropicWorkbenchModelStream(session, emit, prompt, signal) 
                 case 'message_stop': {
                     break;
                 }
+                case 'message_start': {
+                    usage.input_tokens = data.message?.usage?.input_tokens || usage.input_tokens || 0;
+                    break;
+                }
+                case 'message_delta': {
+                    usage.output_tokens = data.usage?.output_tokens || usage.output_tokens || 0;
+                    break;
+                }
             }
         }, signal);
+
+        recordWorkbenchUsage(session, profile, usage, { source: 'workbench:anthropic-stream' });
 
         const content = Object.values(blocks).sort((a, b) => (a.index || 0) - (b.index || 0));
         for (const b of content) { delete b.index; delete b._inputPart; }
@@ -2748,6 +2779,7 @@ async function callOpenAiWorkbenchModelStream(session, emit, prompt, signal) {
 
     let loops = 0;
     while (loops < getWorkbenchMaxToolLoops()) {
+        let usage = null;
         loops++;
         const brainPolicy = getSessionBrainPolicy(session);
         const modelEntry = modelCatalog.get(model);
@@ -2787,6 +2819,7 @@ async function callOpenAiWorkbenchModelStream(session, emit, prompt, signal) {
 
         await parseOpenAiStream(response, (eventType, data) => {
             if (eventType === '[DONE]') return;
+            if (data.usage) usage = data.usage;
             const choice = data.choices?.[0];
             if (!choice) return;
             const delta = choice.delta || {};
@@ -2829,6 +2862,8 @@ async function callOpenAiWorkbenchModelStream(session, emit, prompt, signal) {
                 }
             }
         }, signal);
+
+        recordWorkbenchUsage(session, profile, usage, { source: 'workbench:openai-stream' });
 
         const content = [];
         if (thinkingBuffer) content.push({ type: 'thinking', thinking: thinkingBuffer });

@@ -1,15 +1,15 @@
 /* ── usage-aggregator ─ aggregate token usage from session-store ── */
-/* Reads from the existing SQLite session store (sessions + messages    */
-/* tables) and produces three views used by the Settings → Usage tab:    */
+/* Reads from the existing SQLite session store and produces three views   */
+/* used by the Settings → Usage tab:                                      */
 /*   • getStats(range)   — totals + favorite model + active-day count  */
 /*   • getHeatmap(range) — per-day message count (for the GitHub-style  */
 /*                         activity heatmap)                            */
 /*   • getByModel(range) — token share per model (for the donut chart) */
 /*                                                                       */
-/* All read-only; data is whatever the adapters have written to the     */
-/* session store. No new schema required.                                */
+/* All read-only; data is whatever the adapters and Workbench have written */
+/* to the session store. Usage events are preferred when available.        */
 
-const { listSessions, getMessages } = require('../storage/session-store');
+const { listSessions, listUsageEvents } = require('../storage/session-store');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -28,16 +28,31 @@ function inRange(iso, start) {
     return new Date(iso).getTime() >= start.getTime();
 }
 
-/** Top-level stats: total tokens, sessions, messages, active days, current streak, favorite model. */
-function getStats(range = '30d') {
+function usageEventsInRange(range = '30d') {
+    const start = rangeStart(range);
+    return listUsageEvents().filter(e => inRange(e.created_at, start));
+}
+
+function sessionsAndLegacyUsage(range = '30d') {
     const start = rangeStart(range);
     const sessions = listSessions().filter(s => inRange(s.created_at, start));
-    const totalTokens = sessions.reduce((sum, s) => sum + (s.total_tokens || 0), 0);
+    const usageEvents = usageEventsInRange(range);
+    const sessionsWithUsage = new Set(usageEvents.map(e => e.session_id).filter(Boolean));
+    const legacySessions = sessions.filter(s => !sessionsWithUsage.has(s.id));
+    return { sessions, usageEvents, legacySessions };
+}
+
+/** Top-level stats: total tokens, sessions, messages, active days, current streak, favorite model. */
+function getStats(range = '30d') {
+    const { sessions, usageEvents, legacySessions } = sessionsAndLegacyUsage(range);
+    const totalTokens = usageEvents.reduce((sum, e) => sum + (e.total_tokens || 0), 0)
+        + legacySessions.reduce((sum, s) => sum + (s.total_tokens || 0), 0);
     const messages = sessions.reduce((sum, s) => sum + (s.message_count || 0), 0);
 
-    // Active days: distinct YMD of any session created_at
+    // Active days: usage event days plus legacy session-created days.
     const activeDays = new Set();
-    sessions.forEach(s => activeDays.add(ymd(s.created_at)));
+    usageEvents.forEach(s => activeDays.add(ymd(s.created_at)));
+    legacySessions.forEach(s => activeDays.add(ymd(s.created_at)));
 
     // Current streak: walk back from today, counting consecutive days
     // that have at least one session.
@@ -51,7 +66,11 @@ function getStats(range = '30d') {
 
     // Favorite model
     const byModel = new Map();
-    sessions.forEach(s => {
+    usageEvents.forEach(s => {
+        const key = s.model || 'unknown';
+        byModel.set(key, (byModel.get(key) || 0) + (s.total_tokens || 0));
+    });
+    legacySessions.forEach(s => {
         const key = s.model || 'unknown';
         byModel.set(key, (byModel.get(key) || 0) + (s.total_tokens || 0));
     });
@@ -99,10 +118,13 @@ function getHeatmap(range = '30d') {
 
 /** Token share per model. Used by the donut chart. */
 function getByModel(range = '30d') {
-    const start = rangeStart(range);
-    const sessions = listSessions().filter(s => inRange(s.created_at, start));
+    const { usageEvents, legacySessions } = sessionsAndLegacyUsage(range);
     const byModel = new Map();
-    sessions.forEach(s => {
+    usageEvents.forEach(s => {
+        const key = s.model || 'unknown';
+        byModel.set(key, (byModel.get(key) || 0) + (s.total_tokens || 0));
+    });
+    legacySessions.forEach(s => {
         const key = s.model || 'unknown';
         byModel.set(key, (byModel.get(key) || 0) + (s.total_tokens || 0));
     });
@@ -119,10 +141,13 @@ function getByModel(range = '30d') {
 
 /** Per-day token totals. Used by the Tokens-per-day bar chart. */
 function getByDay(range = '30d') {
-    const start = rangeStart(range);
-    const sessions = listSessions().filter(s => inRange(s.created_at, start));
+    const { usageEvents, legacySessions } = sessionsAndLegacyUsage(range);
     const byDay = new Map();
-    for (const s of sessions) {
+    for (const s of usageEvents) {
+        const day = ymd(s.created_at);
+        byDay.set(day, (byDay.get(day) || 0) + (s.total_tokens || 0));
+    }
+    for (const s of legacySessions) {
         const day = ymd(s.created_at);
         byDay.set(day, (byDay.get(day) || 0) + (s.total_tokens || 0));
     }
