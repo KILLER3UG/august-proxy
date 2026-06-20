@@ -28,13 +28,13 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
   const removed = diff?.removed ?? files.reduce((sum, file) => sum + file.removed, 0);
 
   return (
-    <div className="h-full space-y-3 text-xs">
+    <div className="h-full space-y-3 drawer-section-text">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[11px] text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             {diff ? `${files.length} changed file${files.length === 1 ? '' : 's'}` : 'No diff loaded yet'}
           </div>
-          <div className="mt-0.5 flex items-center gap-2 font-mono text-[10.5px] tabular-nums">
+          <div className="mt-0.5 flex items-center gap-2 font-mono text-xs tabular-nums">
             {added > 0 && <span className="text-emerald-500">+{added}</span>}
             {removed > 0 && <span className="text-rose-400">-{removed}</span>}
             {!added && !removed && <span className="text-muted-foreground/60">0</span>}
@@ -88,14 +88,14 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
               >
                 <div className="flex min-w-0 items-center gap-2">
                   <FileIcon name={file.path} size={13} className="shrink-0" />
-                  <span className="truncate font-mono text-[11px] text-foreground/85" title={file.path}>
+                  <span className="truncate font-mono text-xs text-foreground/85" title={file.path}>
                     {file.path}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {file.status && <Badge variant="secondary" className="text-[9px]">{file.status}</Badge>}
-                  <span className="font-mono text-[10px] text-emerald-500">+{file.added}</span>
-                  <span className="font-mono text-[10px] text-rose-400">-{file.removed}</span>
+                  {file.status && <Badge variant="secondary" className="text-[10px]">{file.status}</Badge>}
+                  <span className="font-mono text-xs text-emerald-500">+{file.added}</span>
+                  <span className="font-mono text-xs text-rose-400">-{file.removed}</span>
                   <ArrowRight className="size-3 text-muted-foreground/50" />
                   <FileText className="size-3 text-muted-foreground/50" />
                 </div>

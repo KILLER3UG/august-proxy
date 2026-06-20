@@ -2,12 +2,11 @@
 /* The main view. User/assistant messages with proper avatars + bubbles.  */
 /* Tool calls render as inline cards. Right rail optional.                  */
 
-import { useState, useRef, useEffect, useMemo, useCallback, type KeyboardEvent } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type KeyboardEvent } from 'react';
 import { Send, Paperclip, Mic, AtSign, Plus, Sparkles, ChevronRight, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw } from 'lucide-react';
 import { cn, formatTimeAgo } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
-import { marked } from 'marked';
 import { toast } from 'sonner';
 import { useStore } from '@nanostores/react';
 import { createPortal } from 'react-dom';
@@ -26,6 +25,7 @@ import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { Statusbar } from '@/components/shell/Statusbar';
 import { createChatRuntime, type ChatTurnRecord } from './chat-runtime';
+import { Markdown } from './ChatMarkdown';
 import { makeStreamHandlers } from './makeStreamHandlers';
 import {
   createWorkbenchSession,
@@ -54,12 +54,6 @@ export const chatRuntime = createChatRuntime();
 let visibleSessionId: string | null = null;
 let visibleGeneration = 0;
 
-// Configure marked to support GitHub Flavored Markdown and breaks
-marked.use({
-  gfm: true,
-  breaks: true
-});
-
 const STREAM_UPDATE_INTERVAL_MS = 24;
 
 export interface MessageBlock {
@@ -83,12 +77,6 @@ export interface MessageBlock {
       confirmationToken?: string;
     };
   };
-  /** Set on a tool_call block whose name === 'august__submit_plan'.
-   *  The MessageBubble header reads this flag to render a "Revised
-   *  plan vN" badge so the user can see at a glance that the
-   *  assistant message corresponds to a plan revision, not a fresh
-   *  plan or a non-plan response. Derived counter (v1, v2, …) lives
-   *  in the bubble rendering — see MessageBubble for the math. */
   isRevisedPlan?: boolean;
 }
 
@@ -159,9 +147,6 @@ interface ModelItem {
  * call it via a closure reference passed in as a factory option, but
  * the underlying implementation is here.
  *
- * For `tool_call` events where `event.isRevisedPlan` is true, the
- * resulting block carries `isRevisedPlan: true` so the message header
- * can render a "Revised plan vN" badge without re-scanning tool args.
  */
 export function appendBlockEvent(
   prevBlocks: MessageBlock[],
@@ -216,9 +201,6 @@ export function appendBlockEvent(
         status: event.status || 'running',
         startedAt: Date.now()
       },
-      // Pass the "this is a submit_plan call" flag through to the
-      // block so MessageBubble can render the "Revised plan vN"
-      // badge from a derived counter (see MessageBubble).
       ...(event.isRevisedPlan ? { isRevisedPlan: true } : {}),
     });
   } else if (event.type === 'tool_progress') {
@@ -354,22 +336,71 @@ const COMMANDS = [
   { name: '/provider', desc: 'Switch provider: /provider <name>' },
 ];
 
+const MESSAGES_STORAGE_PREFIX = 'chat_messages_';
+const COMPOSER_DRAFT_PREFIX = 'august_composer_draft_';
+
+const messagesStorageKey = (sessionId: string | null) => sessionId ? `${MESSAGES_STORAGE_PREFIX}${sessionId}` : null;
+const composerDraftStorageKey = (sessionId: string | null) => sessionId ? `${COMPOSER_DRAFT_PREFIX}${sessionId}` : null;
+
+function loadMessagesForSession(sessionId: string | null): ChatMessage[] {
+  const key = messagesStorageKey(sessionId);
+  if (!key) return buildDemoThread(sessionId);
+
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved) return JSON.parse(saved);
+  } catch {}
+
+  return buildDemoThread(sessionId);
+}
+
+function loadComposerDraft(sessionId: string | null): string {
+  const key = composerDraftStorageKey(sessionId);
+  if (!key) return '';
+
+  try {
+    return localStorage.getItem(key) || '';
+  } catch {
+    return '';
+  }
+}
+
+function persistComposerDraft(sessionId: string | null, value: string) {
+  const key = composerDraftStorageKey(sessionId);
+  if (!key) return;
+
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
+}
+
+function clearComposerDraft(sessionId: string | null) {
+  const key = composerDraftStorageKey(sessionId);
+  if (!key) return;
+
+  try {
+    localStorage.removeItem(key);
+  } catch {}
+}
+
+function persistMessages(sessionId: string | null, value: ChatMessage[]) {
+  const key = messagesStorageKey(sessionId);
+  if (!key) return;
+
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
 export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const sessions = useStore($sessions);
   const activeSession = useMemo(() => sessions.find(s => s.id === sessionId), [sessions, sessionId]);
   const workspacePath = activeSession?.workspacePath || null;
 
-  const storageKey = sessionId ? `chat_messages_${sessionId}` : null;
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    if (storageKey) {
-      try {
-        const saved = localStorage.getItem(storageKey);
-        if (saved) return JSON.parse(saved);
-      } catch {}
-    }
-    return buildDemoThread(sessionId);
-  });
-  const [input, setInput] = useState('');
+  const storageKey = messagesStorageKey(sessionId);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => loadMessagesForSession(sessionId));
+  const [input, setInput] = useState(() => loadComposerDraft(sessionId));
+  const [loadedSessionId, setLoadedSessionId] = useState<string | null>(sessionId);
   const [runtimeVersion, setRuntimeVersion] = useState(0);
   const streaming = chatRuntime.isSessionStreaming(sessionId);
   // Suggested follow-up bubble — visible after a turn completes and before
@@ -579,6 +610,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(false);
 
+  const scrollToBottomImmediate = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const scrollable = el.closest('.overflow-y-auto') as HTMLElement | null;
+    const target = scrollable ?? el;
+    target.scrollTop = target.scrollHeight;
+  }, []);
+
   const isTurnVisible = (turnSessionId: string | null) => mountedRef.current && visibleSessionId === turnSessionId;
 
   const finishTurn = (turn: ChatTurnRecord, status: 'done' | 'error' | 'aborted' = 'done') => {
@@ -624,17 +663,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     visibleSessionId = sessionId;
   }, [sessionId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!sessionId || loadedSessionId !== sessionId) return;
     // The chat thread no longer owns its own scrollbar — the scroll thumb
     // lives at the screen edge (or right-drawer left edge) in ChatLayout.
     // We still keep `scrollRef` for checkpoint positioning, but the actual
     // "scroll to bottom" needs to walk up to the nearest scrollable ancestor.
-    const el = scrollRef.current;
-    if (!el) return;
-    const scrollable = el.closest('.overflow-y-auto') as HTMLElement | null;
-    const target = scrollable ?? el;
-    target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' });
-  }, [messages, streaming]);
+    scrollToBottomImmediate();
+  }, [sessionId, loadedSessionId, messages, streaming, scrollToBottomImmediate]);
 
   // Re-arm the suggested-action bubble each time a new turn starts.
   useEffect(() => {
@@ -642,21 +678,19 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [streaming]);
 
   useEffect(() => {
-    const key = sessionId ? `chat_messages_${sessionId}` : null;
-    if (key) {
-      try {
-        const saved = localStorage.getItem(key);
-        if (saved) { setMessages(JSON.parse(saved)); return; }
-      } catch {}
-    }
-    setMessages(buildDemoThread(sessionId));
+    setMessages(loadMessagesForSession(sessionId));
+    setInput(loadComposerDraft(sessionId));
+    setLoadedSessionId(sessionId);
   }, [sessionId]);
 
   // Persist messages to localStorage on every change
   useEffect(() => {
-    if (!storageKey) return;
-    try { localStorage.setItem(storageKey, JSON.stringify(messages)); } catch {}
-  }, [messages, storageKey]);
+    persistMessages(sessionId, messages);
+  }, [messages, sessionId]);
+
+  useEffect(() => {
+    persistComposerDraft(sessionId, input);
+  }, [input, sessionId]);
 
   // Persist effort choice to localStorage on every change
   useEffect(() => {
@@ -769,19 +803,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const currentModel = selectedModel || null;
   const modelForRequest = currentModel || modelFromSession(activeSession || null);
 
-  const storageKeyFor = (id: string | null) => id ? `chat_messages_${id}` : null;
-  const persistMessages = (id: string | null, value: ChatMessage[]) => {
-    const key = storageKeyFor(id);
-    if (!key) return;
-    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-  };
 
   const updateAssistantMessage = useCallback((
     turnSessionId: string | null,
     assistantMsgId: string,
     updater: (messages: ChatMessage[]) => ChatMessage[]
   ) => {
-    const key = storageKeyFor(turnSessionId);
+    const key = messagesStorageKey(turnSessionId);
     if (turnSessionId === sessionId && mountedRef.current) {
       setMessages(prev => {
         const next = updater(prev);
@@ -872,7 +900,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
    * the appropriate `stream*` call (e.g. `streamPlanDecision`).
    */
   const streamPlanTurn = async (
-    run: (handlers: { onError?: (data: { message: string }) => void } & Record<string, any>) => Promise<void>,
+    run: (handlers: { onError?: (data: { message: string }) => void } & Record<string, any>, signal: AbortSignal) => Promise<void>,
   ) => {
     if (!sessionId) return;
     setSessionStatus(sessionId, 'working');
@@ -882,10 +910,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       assistantMsgId,
       transport: 'none',
     });
+    const abortController = turn.controller;
     const { handlers, finalize } = makeStreamHandlers({
       sessionId,
       assistantMsgId,
-      initialMessages: messages,
+      initialMessages: sessionId === loadedSessionId ? messages : loadMessagesForSession(sessionId),
       setMessages,
       persistMessages,
       setSessionStatus,
@@ -913,12 +942,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       },
     };
     try {
-      await run(wrappedHandlers as any);
+      await run(wrappedHandlers as any, abortController.signal);
+      finalize(abortController.signal.aborted ? 'aborted' : 'done');
     } catch (e: any) {
+      if (e?.name === 'AbortError') {
+        clearSessionStatus(sessionId);
+        finalize('aborted');
+        return;
+      }
       console.error('[streamPlanTurn] error:', e);
       finalize('error');
-    } finally {
-      finalize('done');
     }
   };
 
@@ -945,7 +978,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const { handlers, finalize } = makeStreamHandlers({
       sessionId: turnSessionId,
       assistantMsgId,
-      initialMessages: messages,
+      initialMessages: chatHistory,
       setMessages,
       persistMessages,
       setSessionStatus,
@@ -1008,6 +1041,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   };
 
   const send = async () => {
+    if (!sessionId || loadedSessionId !== sessionId) return;
+
     let text = input.trim();
     if (!text && attachments.length === 0) return;
 
@@ -1025,10 +1060,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (slashMatch) {
       const cmd = slashMatch[1].toLowerCase();
       const arg = String(slashMatch[2] || '').trim();
-      setInput('');
-      setAttachments([]);
-      setShowToolsDropdown(false);
-      setShowCommandsDropdown(false);
       if (cmd === 'help') {
         const helpText = COMMANDS.map(c => `${c.name}  —  ${c.desc}`).join('\n');
         toast.info(`Available commands:\n\n${helpText}`, { duration: 12000 });
@@ -1037,6 +1068,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       if (cmd === 'clear') {
         setMessages([]);
         persistMessages(sessionId, []);
+        setInput('');
+        setAttachments([]);
+        setShowToolsDropdown(false);
+        setShowCommandsDropdown(false);
+        clearComposerDraft(sessionId);
         return;
       }
       if (cmd === 'new') {
@@ -1051,7 +1087,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       }
       // /btw, /goal, /reset, /debug, /model, /provider, /unknown — fall
       // through and let the backend (or the workbench parser) handle it.
-      // Restore the text since we cleared it above.
     }
 
     // Queue when streaming instead of dropping the message. The next turn
@@ -1065,10 +1100,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       return;
     }
 
+    const currentMessages = sessionId === loadedSessionId ? messages : loadMessagesForSession(sessionId);
+
     // Auto-generate title from the first user request. Skip slash commands
     // (e.g. "/debug …", "/model …") so the session isn't named after a
     // command, and collapse whitespace/newlines for a clean single-line title.
-    if (messages.length === 0 && sessionId) {
+    if (currentMessages.length === 0 && sessionId) {
       const isCommand = /^\s*\/[a-zA-Z][\w-]*\b/.test(text);
       if (!isCommand) {
         const cleaned = text.replace(/\s+/g, ' ').trim();
@@ -1083,6 +1120,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }
 
     setInput('');
+    clearComposerDraft(sessionId);
     setAttachments([]);
     setShowToolsDropdown(false);
     setShowCommandsDropdown(false);
@@ -1094,7 +1132,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       timestamp: new Date().toISOString()
     };
 
-    const nextMessages = [...messages, userMsg];
+    const nextMessages = [...currentMessages, userMsg];
     setMessages(nextMessages);
     persistMessages(sessionId, nextMessages);
     // Pass the FULL message history — `generateAIResponse` builds the new
@@ -1135,7 +1173,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     setTimeout(() => {
       setInput(userMsg.content);
-      setMessages(messages.slice(0, userMsgIndex));
+      setMessages(prev => {
+        const next = prev.slice(0, userMsgIndex);
+        persistMessages(sessionId, next);
+        return next;
+      });
       setRevertingIndex(null);
 
       toast.success("Conversation reverted", {
@@ -1144,7 +1186,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         action: {
           label: "Undo",
           onClick: () => {
-            setMessages(originalMessages);
+            setMessages(prev => {
+              persistMessages(sessionId, originalMessages);
+              return originalMessages;
+            });
             setInput(originalInput);
           }
         }
@@ -1160,7 +1205,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (!msg || msg.role !== 'user') return;
     const nextCount = messages.length - index - 1;
     if (nextCount > 0 && !confirm(`Editing this message will remove ${nextCount} follow-up message${nextCount > 1 ? 's' : ''}. Continue?`)) return;
-    setMessages(messages.slice(0, index).concat({ ...msg, content: newText.trim() }));
+    setMessages(prev => {
+      const current = prev[index];
+      if (!current || current.role !== 'user') return prev;
+      const next = prev.slice(0, index).concat({ ...current, content: newText.trim() });
+      persistMessages(sessionId, next);
+      return next;
+    });
   };
 
   // ── Regenerate: remove assistant response, re-send user message ──
@@ -1178,6 +1229,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (!msg || msg.role !== 'user') return;
     const trimmed = messages.slice(0, userIndex + 1);
     setMessages(trimmed);
+    persistMessages(sessionId, trimmed);
     await generateAIResponse([msg]);
   };
 
@@ -1539,7 +1591,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   <StopCircle className="size-3" /> Stop
                 </Button>
               ) : (
-                <Button onClick={send} disabled={!input.trim() && attachments.length === 0} size="sm">
+                <Button onClick={send} disabled={!sessionId || loadedSessionId !== sessionId || (!input.trim() && attachments.length === 0)} size="sm">
                   <Send className="size-3" />
                   Send
                   <kbd className="ml-1 rounded bg-muted/20 border border-border/20 px-1 text-[10px] font-mono">↵</kbd>
@@ -1635,7 +1687,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             // Use the full streaming bundle so the chat thread
                             // renders the model's reply (thinking, text, tool
                             // calls) the same way a normal composer message does.
-                            await streamPlanTurn(handlers => streamPlanDecision(workbenchSession.id, 'accept', handlers));
+                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
                           } catch (e: any) {
                             toast.error('Could not approve Workbench plan', { description: e.message });
                           }
@@ -1656,7 +1708,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             // can proceed with implementation.
                             setWorkbenchMode('full');
                             // Tell the model to proceed with implementation at Full access.
-                            await streamPlanTurn(handlers => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers));
+                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers, signal));
                           } catch (e: any) {
                             toast.error('Could not approve Workbench plan', { description: e.message });
                           }
@@ -1667,7 +1719,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             const updated = await rejectWorkbenchPlan(workbenchSession.id);
                             setWorkbenchSession(updated);
                             // Notify the model the plan was rejected.
-                            await streamPlanTurn(handlers => streamPlanDecision(workbenchSession.id, 'reject', handlers));
+                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'reject', handlers, signal));
                           } catch (e: any) {
                             toast.error('Could not reject Workbench plan', { description: e.message });
                           }
@@ -1675,7 +1727,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         onRevise={async (feedback) => {
                           if (!workbenchSession) return;
                           try {
-                            await streamPlanTurn(handlers => streamWorkbenchRevision(workbenchSession.id, feedback, handlers));
+                            await streamPlanTurn((handlers, signal) => streamWorkbenchRevision(workbenchSession.id, feedback, handlers, signal));
                           } catch (e: any) {
                             toast.error('Could not send revision', { description: e.message });
                           }
@@ -1723,7 +1775,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                           // Use the full streaming bundle so the chat thread renders the
                           // model's reply (thinking, text, tool calls) the same way a
                           // normal composer message does.
-                          await streamPlanTurn(handlers => streamPlanDecision(workbenchSession.id, 'accept', handlers));
+                          await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
                         } catch (e: any) {
                           toast.error("Could not approve Workbench plan", { description: e.message });
                         }
@@ -1731,19 +1783,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     />
                     {messages.map((m, i) => {
                       const isReverting = revertingIndex !== null && i > revertingIndex;
-                      // Derive the "Revised plan vN" badge version number.
-                      // Count `august__submit_plan` tool calls cumulatively
-                      // across messages up to and including this one. If
-                      // this message contains at least one, render the
-                      // badge with the cumulative count.
-                      const submitPlanCountInThis = (m.blocks || []).filter(
-                        b => b.tool?.name === 'august__submit_plan'
-                      ).length;
-                      const planRevisionNumber = submitPlanCountInThis > 0
-                        ? messages.slice(0, i + 1)
-                            .flatMap(msg => msg.blocks || [])
-                            .filter(b => b.tool?.name === 'august__submit_plan').length + 1
-                        : null;
                       return (
                         <div
                           key={m.id}
@@ -1761,7 +1800,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             onRegenerate={() => handleRegenerate(i)}
                             toolProgress={toolProgress}
                             subagentPrompts={subagentPrompts}
-                            planRevisionNumber={planRevisionNumber}
                           />
                         </div>
                       );
@@ -1814,7 +1852,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             // Use the full streaming bundle so the chat thread
                             // renders the model's reply (thinking, text, tool
                             // calls) the same way a normal composer message does.
-                            await streamPlanTurn(handlers => streamPlanDecision(workbenchSession.id, 'accept', handlers));
+                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
                           } catch (e: any) {
                             toast.error('Could not approve Workbench plan', { description: e.message });
                           }
@@ -1835,7 +1873,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             // can proceed with implementation.
                             setWorkbenchMode('full');
                             // Tell the model to proceed with implementation at Full access.
-                            await streamPlanTurn(handlers => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers));
+                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers, signal));
                           } catch (e: any) {
                             toast.error('Could not approve Workbench plan', { description: e.message });
                           }
@@ -1846,7 +1884,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             const updated = await rejectWorkbenchPlan(workbenchSession.id);
                             setWorkbenchSession(updated);
                             // Notify the model the plan was rejected.
-                            await streamPlanTurn(handlers => streamPlanDecision(workbenchSession.id, 'reject', handlers));
+                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'reject', handlers, signal));
                           } catch (e: any) {
                             toast.error('Could not reject Workbench plan', { description: e.message });
                           }
@@ -1854,7 +1892,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         onRevise={async (feedback) => {
                           if (!workbenchSession) return;
                           try {
-                            await streamPlanTurn(handlers => streamWorkbenchRevision(workbenchSession.id, feedback, handlers));
+                            await streamPlanTurn((handlers, signal) => streamWorkbenchRevision(workbenchSession.id, feedback, handlers, signal));
                           } catch (e: any) {
                             toast.error('Could not send revision', { description: e.message });
                           }
@@ -1936,7 +1974,7 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
         duration={duration}
         elapsed={isGenerating ? elapsed : undefined}
       >
-        <div className="pl-3 border-l border-foreground/15 leading-relaxed py-1 thought-content text-[13px]">
+        <div className="pl-3 border-l border-foreground/15 py-1 thought-content chat-thought-text">
           <Markdown content={text} />
         </div>
       </ThinkingDisclosure>
@@ -1978,13 +2016,6 @@ function MessageBubble({
   onClarifyAnswer,
   toolProgress,
   subagentPrompts,
-  /** If this message contains a `august__submit_plan` tool call,
-   *  `planRevisionNumber` is the cumulative count of submit_plan
-   *  calls across the session up to and including this message.
-   *  Rendered as a "Revised plan vN" badge in the bubble header.
-   *  Derived in the parent so each bubble's number is the global
-   *  session position rather than a per-message index. */
-  planRevisionNumber,
 }: {
   message: ChatMessage;
   isLast?: boolean;
@@ -2006,7 +2037,6 @@ function MessageBubble({
     subagentId?: string;
     jobId?: string;
   }>;
-  planRevisionNumber?: number | null;
 }) {
   const [showActions, setShowActions] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -2049,6 +2079,7 @@ function MessageBubble({
     if (isUser) return [];
     return getDisplayBlocks(message.blocks, message.thinking, message.tools, message.content);
   }, [message.blocks, message.thinking, message.tools, message.content, isUser]);
+  const showPendingThinking = !isUser && isLast && streaming && !showRaw && !displayBlocks.some(block => block.type === 'thinking');
 
   const handleCopy = () => {
     const textToCopy = message.content;
@@ -2104,7 +2135,7 @@ function MessageBubble({
       {/* todos are rendered in the layout-level Workbench sidebar */}
       {isUser ? (
         <>
-          <div className="rounded-2xl border border-border/40 bg-muted/40 dark:bg-[#161618] px-4 py-2.5 text-[13px] leading-relaxed text-foreground shadow-sm max-w-[85%] ml-auto">
+          <div className="rounded-2xl border border-border/40 bg-muted/40 dark:bg-[#161618] px-4 py-2.5 chat-message-text text-foreground shadow-sm max-w-[85%] ml-auto">
             {editing ? (
               <div className="flex flex-col gap-2">
                 <textarea
@@ -2185,33 +2216,24 @@ function MessageBubble({
       ) : (
         <>
           <div className="flex flex-col w-full gap-2">
-            {planRevisionNumber != null && (
-              <div
-                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-300 text-[11px] font-medium border border-blue-500/20 w-fit"
-                aria-label={`Revised plan v${planRevisionNumber}`}
-              >
-                <svg
-                  className="w-3 h-3"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
-                  <path d="M21 12a9 9 0 1 1-9-9c2.39 0 4.68.94 6.36 2.64L21 8" />
-                  <path d="M21 3v5h-5" />
-                </svg>
-                <span>Revised plan v{planRevisionNumber}</span>
-              </div>
-            )}
             {showRaw ? (
               <div className="p-3 bg-muted/40 rounded-xl border border-border/50 text-xs font-mono text-muted-foreground whitespace-pre-wrap overflow-x-auto leading-relaxed">
                 {JSON.stringify(message, null, 2)}
               </div>
             ) : (
               <AnimatePresence initial={false}>
+                {showPendingThinking && (
+                  <motion.div
+                    key="pending-thinking"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.12, ease: 'easeOut' }}
+                    className="chat-streaming-block"
+                  >
+                    <ReasoningBlock text="" isGenerating />
+                  </motion.div>
+                )}
                 {displayBlocks.map((block, index) => {
                   const key = block.id || `${block.type}_${index}`;
                   const renderBlock = () => {
@@ -2265,7 +2287,7 @@ function MessageBubble({
                       if (!block.content) return null;
                       return (
                         <div className={cn(
-                          "text-[13px] leading-relaxed text-foreground/90 space-y-3 max-w-none",
+                          "chat-message-text text-foreground/90 space-y-3 max-w-none",
                           isLast && streaming && "streaming-markdown-content"
                         )}>
                           <Markdown content={block.content} />
@@ -3249,35 +3271,3 @@ export function parseThinkingAndContent(rawContent: string, existingThinking?: s
   return { thinking: thinking.trim(), content: content.trim() };
 }
 
-function Markdown({ content }: { content: string }) {
-  if (!content) return null;
-  const blocks = useMemo(() => {
-    return marked.lexer(content)
-      .filter(token => token.type !== 'space')
-      .map((token, index) => {
-        const raw = token.raw ?? '';
-        let html = '';
-        try {
-          html = marked.parser([token]) as string;
-        } catch {
-          html = marked.parse(raw) as string;
-        }
-        return {
-          key: `${index}-${token.type}-${raw.slice(0, 32).replace(/\s+/g, '')}`,
-          html
-        };
-      });
-  }, [content]);
-
-  return (
-    <div className="markdown-content">
-      {blocks.map(block => (
-        <div
-          key={block.key}
-          className="markdown-token"
-          dangerouslySetInnerHTML={{ __html: block.html }}
-        />
-      ))}
-    </div>
-  );
-}

@@ -59,9 +59,9 @@ export function RightDrawer({
           <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/60 bg-sidebar px-3">
             <div className="flex min-w-0 items-center gap-2">
               <Columns className="size-3 text-muted-foreground/60 shrink-0" />
-              <span className="truncate text-xs font-semibold text-foreground">Workbench</span>
+              <span className="truncate text-sm font-semibold text-foreground">Workbench</span>
               {sections.length > 0 && (
-                <span className="ml-1 inline-flex items-center justify-center rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground/80">
+                <span className="ml-1 inline-flex items-center justify-center rounded-md bg-white/5 px-1.5 py-0.5 text-xs font-semibold text-muted-foreground/80">
                   {sections.length}
                 </span>
               )}
@@ -185,8 +185,8 @@ function NoSectionSelected() {
     <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border/60 bg-card/40">
       <div className="flex flex-col items-center text-center px-6">
         <Inbox className="size-6 text-muted-foreground/40" />
-        <div className="mt-2 text-xs font-semibold text-foreground/80">No section selected</div>
-        <div className="mt-1 text-[10.5px] text-muted-foreground/70">
+        <div className="mt-2 text-sm font-semibold text-foreground/80">No section selected</div>
+        <div className="mt-1 text-xs text-muted-foreground/70">
           Pick a section from the Workbench menu to get started.
         </div>
       </div>

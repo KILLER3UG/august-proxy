@@ -265,10 +265,6 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         id,
         context: JSON.stringify(input || {}, null, 2),
         status: 'running',
-        // Mark submit_plan calls so the renderer can show a "Revised plan v2"
-        // badge in the message header. The reducer passes this flag through
-        // to the block as `isRevisedPlan: true`.
-        isRevisedPlan: name === 'august__submit_plan',
       } as any);
       scheduleUpdate();
     },

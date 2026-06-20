@@ -83,6 +83,10 @@ export async function getWorkbenchSession(sessionId: string): Promise<WorkbenchS
   return res.json();
 }
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
+}
+
 export interface StreamWorkbenchChatParams {
   sessionId: string;
   message: string;
@@ -139,7 +143,9 @@ export async function streamWorkbenchChat(
 
   try {
     while (true) {
+      throwIfAborted(signal);
       const { done, value } = await reader.read();
+      throwIfAborted(signal);
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
 
@@ -160,9 +166,11 @@ export async function streamWorkbenchChat(
           const dataStr = line.slice(5).trim();
           if (!dataStr) continue;
           try {
+            throwIfAborted(signal);
             const payload = JSON.parse(dataStr);
             dispatchWorkbenchEvent(currentEvent, payload, handlers);
-          } catch {
+          } catch (e: any) {
+            if (e?.name === 'AbortError') throw e;
             // Ignore non-JSON data lines
           }
         }
@@ -170,7 +178,7 @@ export async function streamWorkbenchChat(
       buffer = buffer.slice(lineStart);
     }
   } catch (e: any) {
-    if (e?.name === 'AbortError') return;
+    if (e?.name === 'AbortError') throw e;
     handlers.onError?.({ message: e?.message || 'Stream read error' });
   }
 }
@@ -279,12 +287,14 @@ export async function streamWorkbenchRevision(
   sessionId: string,
   feedback: string,
   handlers: WorkbenchEventHandlers = {},
+  signal?: AbortSignal,
 ): Promise<void> {
   // Reuse the chat SSE endpoint with a feedback marker. The marker
   // tells the model this is a revision request: it should produce a
   // thinking block + a new plan (either by calling august__submit_plan,
-  // which makes the banner re-appear, or by emitting a "Revised plan:"
-  // text block the user can read inline).
+  // which makes the banner re-appear, or by emitting the revised plan
+  // as normal assistant text inline). No version prefix is added — the
+  // plan appears as a regular assistant message.
   return streamWorkbenchChat({
     sessionId,
     message: [
@@ -292,10 +302,10 @@ export async function streamWorkbenchRevision(
       `User feedback: ${feedback}`,
       'Emit a short thinking block summarising the user feedback, then either:',
       '(a) call the august__submit_plan tool with a revised plan (this re-opens the plan banner), or',
-      '(b) emit a "Revised plan v2: …" text block with the revised plan inline.',
+      '(b) emit the revised plan inline as normal assistant text.',
       'Either way, end with a brief final paragraph confirming the revision and asking the user to review.',
     ].join(' '),
-  }, handlers);
+  }, handlers, signal);
 }
 
 export type PlanDecision = 'accept' | 'accept-and-implement' | 'reject';
@@ -335,11 +345,12 @@ export async function streamPlanDecision(
   sessionId: string,
   decision: PlanDecision,
   handlers: WorkbenchEventHandlers = {},
+  signal?: AbortSignal,
 ): Promise<void> {
   return streamWorkbenchChat({
     sessionId,
     message: PLAN_DECISION_MESSAGES[decision],
-  }, handlers);
+  }, handlers, signal);
 }
 
 export interface ResetWorkbenchSessionParams {

@@ -1292,23 +1292,40 @@ function replaceText(args) {
     return { status: 'replaced', path: toDisplayPath(filePath), replacements: 1 };
 }
 
-function runCommand(args) {
+function runCommand(args, signal) {
     return new Promise(resolve => {
         const timeout = Math.max(1000, Math.min(120000, Number(args.timeout_ms || 30000)));
-        execFile(process.platform === 'win32' ? 'powershell.exe' : 'sh', process.platform === 'win32'
+        let child = null;
+        let settled = false;
+        const finish = (payload) => {
+            if (settled) return;
+            settled = true;
+            if (signal) signal.removeEventListener('abort', onAbort);
+            resolve(payload);
+        };
+        const onAbort = () => {
+            try { child?.kill(); } catch (_) {}
+            finish({ status: 'error', exitCode: 130, stdout: '', stderr: 'Command aborted by user.' });
+        };
+        if (signal?.aborted) {
+            onAbort();
+            return;
+        }
+        child = execFile(process.platform === 'win32' ? 'powershell.exe' : 'sh', process.platform === 'win32'
             ? ['-NoProfile', '-Command', String(args.command || '')]
             : ['-lc', String(args.command || '')], {
             cwd: WORKSPACE_ROOT,
             timeout,
             maxBuffer: 1024 * 1024
         }, (error, stdout, stderr) => {
-            resolve({
+            finish({
                 status: error ? 'error' : 'ok',
                 exitCode: error?.code ?? 0,
                 stdout: String(stdout || '').slice(-20000),
                 stderr: String(stderr || '').slice(-20000)
             });
         });
+        if (signal) signal.addEventListener('abort', onAbort, { once: true });
     });
 }
 
@@ -1584,6 +1601,7 @@ async function executeSubAgent(session, args, toolContext = {}) {
     let subResult = '';
     let subLoops = 0;
     while (subLoops < 4) {
+        throwIfAborted(toolContext.signal);
         subLoops++;
         try {
             const headers = useOpenAi
@@ -1593,7 +1611,7 @@ async function executeSubAgent(session, args, toolContext = {}) {
                 ? { model, messages: [{ role: 'system', content: subPrompt }, ...subMessages], tools: openAiToolDefinitions(session), tool_choice: 'auto', stream: false }
                 : { model, max_tokens: 1024, system: subPrompt, messages: subMessages, tools: toolDefinitions(session) };
 
-            const res = await fetch(targetUrl, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(120000) });
+            const res = await fetch(targetUrl, { method: 'POST', headers, body: JSON.stringify(body), signal: signalWithTimeout(toolContext.signal, 120000) });
             const raw = await res.text();
             if (!res.ok) {
                 const message = `Sub-agent upstream error: ${raw.slice(0, 300)}`;
@@ -1635,7 +1653,8 @@ async function executeSubAgent(session, args, toolContext = {}) {
                 parentAgentId,
                 inheritedPermissions,
                 parentJobId: job.id,
-                depth: depth + 1
+                depth: depth + 1,
+                signal: toolContext.signal
             });
             appendAgentJobToolResult(job.id, 'tool_results', results, { loop: subLoops });
             if (useOpenAi) {
@@ -1778,6 +1797,7 @@ function recordMutation(session, toolName, args, result) {
 async function executeWorkbenchTool(session, toolUse, toolContext = {}) {
     const name = toolUse.name;
     const args = toolUse.input || {};
+    throwIfAborted(toolContext.signal);
     const mutating = isMutatingWorkbenchTool(name, args);
     const planBlocked = session.guardMode === 'plan' && isPlanModeBlocked(name, args);
     if (planBlocked) {
@@ -1818,7 +1838,7 @@ async function executeWorkbenchTool(session, toolUse, toolContext = {}) {
         else if (name === 'august__replace_text' || name === 'workbench_replace_text') result = replaceText(args);
         else if (name === 'august__run_command' || name === 'workbench_run_command') {
             progress('running', { message: 'starting command' });
-            result = await runCommand(args);
+            result = await runCommand(args, toolContext.signal);
             progress('done');
         }
         else if (name === 'august__spawn_subagent' || name === 'workbench_spawn_subagent') result = await executeSubAgent(session, args, { ...toolContext, toolUseId: toolUse.id });
@@ -2184,7 +2204,7 @@ function logPromptAudit(session, prompt) {
     } catch (_) {}
 }
 
-async function callWorkbenchModelStream(session, emit) {
+async function callWorkbenchModelStream(session, emit, signal) {
     const prompt = buildSystemPrompt(session);
     logPromptAudit(session, prompt);
     safeEmit(emit, 'prompt', {
@@ -2199,9 +2219,9 @@ async function callWorkbenchModelStream(session, emit) {
         try { return getWorkbenchProfile(session).useOpenAiFormat; } catch { return session.provider === 'codex'; }
     })();
     if (useOpenAi) {
-        await callOpenAiWorkbenchModelStream(session, emit, prompt);
+        await callOpenAiWorkbenchModelStream(session, emit, prompt, signal);
     } else {
-        await callAnthropicWorkbenchModelStream(session, emit, prompt);
+        await callAnthropicWorkbenchModelStream(session, emit, prompt, signal);
     }
 }
 
@@ -2448,8 +2468,9 @@ function appendGoalContinueMessage(session, evaluation) {
     session.updatedAt = new Date().toISOString();
 }
 
-async function continueGoalUntilReached(session, emit) {
+async function continueGoalUntilReached(session, emit, signal) {
     while (session.goal && session.goal.status === 'active') {
+        throwIfAborted(signal);
         const evaluation = await evaluateWorkbenchGoal(session);
         const now = new Date().toISOString();
         session.goal.turns = Number(session.goal.turns || 0) + 1;
@@ -2469,11 +2490,11 @@ async function continueGoalUntilReached(session, emit) {
 
         safeEmit(emit, 'goal', { goal: summarizeGoal(session.goal), lastGoal: summarizeGoal(session.lastGoal), event: 'continue' });
         appendGoalContinueMessage(session, evaluation);
-        await callWorkbenchModelStream(session, emit);
+        await callWorkbenchModelStream(session, emit, signal);
     }
 }
 
-async function handleGoalCommand(session, arg, emit) {
+async function handleGoalCommand(session, arg, emit, signal) {
     const lower = String(arg || '').trim().toLowerCase();
     if (!arg || lower === 'status') {
         const current = summarizeGoal(session.goal);
@@ -2504,8 +2525,8 @@ async function handleGoalCommand(session, arg, emit) {
         ].join('\n')
     });
     session.updatedAt = new Date().toISOString();
-    await callWorkbenchModelStream(session, emit);
-    await continueGoalUntilReached(session, emit);
+    await callWorkbenchModelStream(session, emit, signal);
+    await continueGoalUntilReached(session, emit, signal);
 }
 
 function getWorkbenchGoalStatus(sessionId) {
@@ -2535,6 +2556,27 @@ function safeEmit(emit, type, data) {
     try { emit(type, data); } catch (_) { throw new Error('SSE connection closed'); }
 }
 
+function createAbortError(message = 'Request aborted by client') {
+    const error = new Error(message);
+    error.name = 'AbortError';
+    return error;
+}
+
+function throwIfAborted(signal) {
+    if (signal?.aborted) throw createAbortError();
+}
+
+function signalWithTimeout(signal, timeoutMs) {
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    if (!signal) return timeoutSignal;
+    if (typeof AbortSignal.any === 'function') return AbortSignal.any([signal, timeoutSignal]);
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal.addEventListener('abort', abort, { once: true });
+    timeoutSignal.addEventListener('abort', abort, { once: true });
+    return controller.signal;
+}
+
 /**
  * Emit a `tool_progress` event for a tool call. Used by read tools to surface
  * the in-flight "Reading <file>" → "Read <file>" sub-list in the UI.
@@ -2549,12 +2591,14 @@ function safeEmitProgress(emit, payload) {
     try { emit('tool_progress', payload); } catch (_) { /* SSE closed */ }
 }
 
-async function parseAnthropicStream(response, onEvent) {
+async function parseAnthropicStream(response, onEvent, signal) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buf = '', eventType = '', eventData = '';
     while (true) {
+        throwIfAborted(signal);
         const { done, value } = await reader.read();
+        throwIfAborted(signal);
         if (done) break;
         buf += decoder.decode(value, { stream: true });
         const lines = buf.split('\n');
@@ -2571,12 +2615,14 @@ async function parseAnthropicStream(response, onEvent) {
     if (eventType && eventData && eventData !== '[DONE]') { try { onEvent(eventType, JSON.parse(eventData)); } catch (_) {} }
 }
 
-async function parseOpenAiStream(response, onData) {
+async function parseOpenAiStream(response, onData, signal) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buf = '';
     while (true) {
+        throwIfAborted(signal);
         const { done, value } = await reader.read();
+        throwIfAborted(signal);
         if (done) break;
         buf += decoder.decode(value, { stream: true });
         const lines = buf.split('\n');
@@ -2591,7 +2637,7 @@ async function parseOpenAiStream(response, onData) {
     }
 }
 
-async function callAnthropicWorkbenchModelStream(session, emit, prompt) {
+async function callAnthropicWorkbenchModelStream(session, emit, prompt, signal) {
     const profile = getWorkbenchProfile(session);
     if (!profile.targetUrl) throw new Error('Workbench provider target URL is missing.');
     const model = profile._upstreamModel || profile.currentModel || 'claude-opus-4-6';
@@ -2624,7 +2670,7 @@ async function callAnthropicWorkbenchModelStream(session, emit, prompt) {
             method: 'POST',
             headers: buildHeaders(profile.apiKey),
             body: JSON.stringify(body),
-            signal: AbortSignal.timeout(300000)
+            signal: signalWithTimeout(signal, 300000)
         });
         if (!response.ok) {
             const raw = await response.text();
@@ -2669,7 +2715,7 @@ async function callAnthropicWorkbenchModelStream(session, emit, prompt) {
                     break;
                 }
             }
-        });
+        }, signal);
 
         const content = Object.values(blocks).sort((a, b) => (a.index || 0) - (b.index || 0));
         for (const b of content) { delete b.index; delete b._inputPart; }
@@ -2682,7 +2728,7 @@ async function callAnthropicWorkbenchModelStream(session, emit, prompt) {
             return;
         }
 
-        const toolResults = await executeWorkbenchToolBatch(session, toolUses, { emit });
+        const toolResults = await executeWorkbenchToolBatch(session, toolUses, { emit, signal });
         toolResults.forEach(result => safeEmit(emit, 'tool_result', {
             id: result.tool_use_id,
             content: result.content,
@@ -2695,7 +2741,7 @@ async function callAnthropicWorkbenchModelStream(session, emit, prompt) {
     safeEmit(emit, 'text', { content: 'Workbench stopped after the maximum tool loop count.' });
 }
 
-async function callOpenAiWorkbenchModelStream(session, emit, prompt) {
+async function callOpenAiWorkbenchModelStream(session, emit, prompt, signal) {
     const profile = getWorkbenchProfile(session);
     if (!profile.targetUrl) throw new Error('Workbench provider target URL is missing.');
     const model = profile._upstreamModel || profile.currentModel || 'gpt-4o';
@@ -2728,7 +2774,7 @@ async function callOpenAiWorkbenchModelStream(session, emit, prompt) {
                 ...(profile.apiKey ? { Authorization: `Bearer ${profile.apiKey}` } : {})
             },
             body: JSON.stringify(body),
-            signal: AbortSignal.timeout(300000)
+            signal: signalWithTimeout(signal, 300000)
         });
         if (!response.ok) {
             const raw = await response.text();
@@ -2782,7 +2828,7 @@ async function callOpenAiWorkbenchModelStream(session, emit, prompt) {
                     safeEmit(emit, 'tool_use', { id: tc.id || newId('toolu'), name: tc.name, input });
                 }
             }
-        });
+        }, signal);
 
         const content = [];
         if (thinkingBuffer) content.push({ type: 'thinking', thinking: thinkingBuffer });
@@ -2815,7 +2861,7 @@ async function callOpenAiWorkbenchModelStream(session, emit, prompt) {
             return;
         }
 
-        const toolResults = await executeWorkbenchToolBatch(session, toolUses, { emit });
+        const toolResults = await executeWorkbenchToolBatch(session, toolUses, { emit, signal });
         toolResults.forEach(result => safeEmit(emit, 'tool_result', {
             id: result.tool_use_id,
             content: result.content,
@@ -2828,7 +2874,9 @@ async function callOpenAiWorkbenchModelStream(session, emit, prompt) {
     safeEmit(emit, 'text', { content: 'Workbench stopped after the maximum tool loop count.' });
 }
 
-async function sendWorkbenchMessageStream({ sessionId, message, provider, agentId, effort, model, modelProvider, guardMode } = {}, emit) {
+async function sendWorkbenchMessageStream({ sessionId, message, provider, agentId, effort, model, modelProvider, guardMode } = {}, emit, options = {}) {
+    const signal = options.signal;
+    throwIfAborted(signal);
     const session = getWorkbenchSession(sessionId);
     if (provider === 'claude' || provider === 'codex') session.provider = provider;
     if (agentId) session.agentId = resolveAgentId(agentId, session.agentId || 'build');
@@ -2848,7 +2896,7 @@ async function sendWorkbenchMessageStream({ sessionId, message, provider, agentI
 
     const slash = parseWorkbenchSlashCommand(text);
     if (slash?.command === 'goal') {
-        await handleGoalCommand(session, slash.arg, emit);
+        await handleGoalCommand(session, slash.arg, emit, signal);
         safeEmit(emit, 'session', summarizeSession(session));
         return;
     }
@@ -2874,8 +2922,8 @@ async function sendWorkbenchMessageStream({ sessionId, message, provider, agentI
     // executeSubAgent / executeTeamRun so the UI can attach it to the
     // specific tool-call block that triggered the sub-agent.
 
-    await callWorkbenchModelStream(session, emit);
-    await continueGoalUntilReached(session, emit);
+    await callWorkbenchModelStream(session, emit, signal);
+    await continueGoalUntilReached(session, emit, signal);
 
     // Background auto-memory extraction
     try {

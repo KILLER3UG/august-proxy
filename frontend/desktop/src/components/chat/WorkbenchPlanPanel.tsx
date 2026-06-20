@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { Markdown } from '@/sections/chat/ChatMarkdown';
 import type { WorkbenchPlan, WorkbenchSession, WorkbenchTodo } from '@/types/workbench';
 
 export function WorkbenchPlanPanel({
@@ -33,15 +34,19 @@ export function WorkbenchPlanPanel({
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3 text-xs">
-        <p className="text-foreground/90">{plan.summary}</p>
+      <CardContent className="space-y-3 plan-section-text">
+        {plan.summary && (
+          <div className="text-foreground/90">
+            <Markdown content={plan.summary} />
+          </div>
+        )}
 
         <PlanList title="Steps" icon={<FileText className="size-3" />} items={plan.steps} />
         <PlanList title="Files" icon={<FolderOpen className="size-3" />} items={plan.files} />
         <PlanList title="Risks" icon={<ShieldAlert className="size-3" />} items={plan.risks} />
         <PlanList title="Verification" icon={<CheckCircle2 className="size-3" />} items={plan.verification} />
 
-        <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-muted-foreground">
           <span><Wrench className="inline size-3 mr-1" />{session.mutationCount} mutations</span>
           <span>·</span>
           <span>{session.agentId}</span>
@@ -66,17 +71,17 @@ function PlanList({ title, icon, items }: { title: string; icon: ReactNode; item
 
   return (
     <div className="space-y-1">
-      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+      <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
         {icon}
         {title}
       </div>
       <ul className="space-y-1">
         {items.map((item, index) => (
           <li key={`${title}-${index}`} className={cn(
-            'rounded-md border border-border/60 bg-card/70 px-2.5 py-2 leading-relaxed',
+            'rounded-md border border-border/60 bg-card/70 px-2.5 py-2 plan-section-text',
             title === 'Risks' && 'border-amber-500/30 bg-amber-500/5'
           )}>
-            {item}
+            <Markdown content={item} />
           </li>
         ))}
       </ul>
@@ -103,16 +108,16 @@ export function TodoSummary({ todos }: { todos?: WorkbenchTodo[] }) {
   return (
     <div className="mx-auto max-w-3xl rounded-lg border border-border bg-card">
       <div className="flex items-center justify-between px-3 py-2">
-        <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+        <span className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
           Todos
         </span>
-        <span className="font-mono tabular-nums text-[10.5px] text-muted-foreground/80">
+        <span className="font-mono tabular-nums text-xs text-muted-foreground/80">
           {done}/{total}
         </span>
       </div>
       <div className="space-y-0.5 px-3 pb-3">
         {visible.map(todo => (
-          <div key={todo.id} className="flex items-center gap-2 text-xs">
+          <div key={todo.id} className="flex items-center gap-2 text-sm">
             <span className="w-3 inline-flex justify-center shrink-0 text-muted-foreground/80">
               {todo.status === 'completed' ? (
                 <Check className="size-3 text-emerald-500" />
@@ -136,7 +141,7 @@ export function TodoSummary({ todos }: { todos?: WorkbenchTodo[] }) {
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className="text-[10px] text-muted-foreground/60 italic hover:text-foreground pl-5 pt-0.5"
+            className="text-xs text-muted-foreground/60 italic hover:text-foreground pl-5 pt-0.5"
           >
             + {overflow} waiting…
           </button>
@@ -145,7 +150,7 @@ export function TodoSummary({ todos }: { todos?: WorkbenchTodo[] }) {
           <button
             type="button"
             onClick={() => setExpanded(false)}
-            className="text-[10px] text-muted-foreground/60 italic hover:text-foreground pl-5"
+            className="text-xs text-muted-foreground/60 italic hover:text-foreground pl-5"
           >
             show less
           </button>

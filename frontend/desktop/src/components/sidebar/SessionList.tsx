@@ -197,7 +197,7 @@ export function SessionList({
             <span className="flex items-center gap-2">
               <Plus className="size-3.5" /> New session
             </span>
-            <kbd className="text-[9px] text-muted-foreground font-mono bg-muted/20 px-1 py-0.5 rounded border border-border/20">
+              <kbd className="text-[10px] text-muted-foreground font-mono bg-muted/20 px-1 py-0.5 rounded border border-border/20">
               ctrl N
             </kbd>
           </button>
@@ -223,7 +223,7 @@ export function SessionList({
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Search sessions..."
-              className="w-full pl-8 pr-2 py-1 text-[11px] bg-white/5 rounded-md border border-transparent focus:border-white/10 focus:bg-white/10 outline-none transition text-sidebar-foreground placeholder:text-muted-foreground"
+              className="w-full pl-8 pr-2 py-1 text-xs bg-white/5 rounded-md border border-transparent focus:border-white/10 focus:bg-white/10 outline-none transition text-sidebar-foreground placeholder:text-muted-foreground"
             />
           </div>
         </div>
@@ -354,7 +354,7 @@ export function SessionList({
                           />
                         ))}
                         {folderSessions.length === 0 && (
-                          <p className="py-1 text-[10px] text-muted-foreground/30 italic pl-1.5">
+                          <p className="py-1 text-xs text-muted-foreground/30 italic pl-1.5">
                             Empty folder
                           </p>
                         )}
@@ -421,7 +421,7 @@ export function SessionList({
                           />
                         ))}
                         {uncategorizedSessions.length === 0 && (
-                          <p className="py-1 text-[10px] text-muted-foreground/30 italic pl-1.5">
+                          <p className="py-1 text-xs text-muted-foreground/30 italic pl-1.5">
                             No other chats
                           </p>
                         )}
@@ -468,12 +468,12 @@ function Section({
     <div>
       <div className="flex items-center justify-between mb-1.5 px-2">
         <div className="flex items-center gap-1.5">
-          <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/75 font-bold">
-            {title}
-          </h3>
-          <span className="text-[10px] text-muted-foreground/50 font-mono">
-            ({count})
-          </span>
+            <h3 className="text-xs uppercase tracking-wider text-muted-foreground/75 font-bold">
+              {title}
+            </h3>
+            <span className="text-xs text-muted-foreground/50 font-mono">
+              ({count})
+            </span>
         </div>
         {title === "SESSIONS" && onNewFolder && onUploadFolder && (
           <div className="flex items-center gap-1">
@@ -498,7 +498,7 @@ function Section({
         )}
       </div>
       {count === 0 && title === "PINNED" ? (
-        <p className="px-2 py-1 text-[10px] text-muted-foreground/40 italic">
+        <p className="px-2 py-1 text-xs text-muted-foreground/40 italic">
           {empty ?? "No items"}
         </p>
       ) : (
@@ -546,10 +546,10 @@ function FolderHeader({
         ) : (
           <FolderOpen className="size-3.5 text-muted-foreground/70 shrink-0" />
         )}
-        <span className="truncate text-[12px] font-semibold text-foreground/85">
+        <span className="truncate text-sm font-semibold text-foreground/85">
           {folder.name}
         </span>
-        <span className="text-[10px] text-muted-foreground/50 font-mono">
+        <span className="text-xs text-muted-foreground/50 font-mono">
           ({count})
         </span>
       </div>
@@ -620,10 +620,10 @@ function UncategorizedHeader({
           )}
         />
         <MessageSquare className="size-3.5 text-muted-foreground/70 shrink-0" />
-        <span className="truncate text-[12px] font-semibold text-foreground/85">
+        <span className="truncate text-sm font-semibold text-foreground/85">
           Other Chats
         </span>
-        <span className="text-[10px] text-muted-foreground/50 font-mono">
+        <span className="text-xs text-muted-foreground/50 font-mono">
           ({count})
         </span>
       </div>
@@ -701,7 +701,7 @@ function SessionRow({
           }}
           onBlur={handleSaveRename}
           onClick={(e) => e.stopPropagation()}
-          className="bg-muted border border-border/80 px-1.5 py-0.5 rounded text-[11px] w-full outline-none text-foreground"
+          className="bg-muted border border-border/80 px-1.5 py-0.5 rounded text-xs w-full outline-none text-foreground"
         />
       </div>
     );
@@ -757,7 +757,7 @@ function SessionRow({
           )}
           <p
             className={cn(
-              "truncate flex-1 text-[14px]",
+              "truncate flex-1 session-list-title",
               active ? "text-foreground font-semibold" : "text-foreground/75",
             )}
           >
@@ -772,15 +772,15 @@ function SessionRow({
               exit={{ opacity: 0, height: 0 }}
               className="flex items-center gap-1 ml-3 overflow-hidden"
             >
-              <span className="text-[10px] text-amber-400/80 font-medium">
-                {modelDisplayParts(session.model).name}
-              </span>
-              <span className="text-[10px] text-amber-400/50">is</span>
+                <span className="text-xs text-amber-400/80 font-medium">
+                  {modelDisplayParts(session.model).name}
+                </span>
+                <span className="text-xs text-amber-400/50">is</span>
               <span className="flex items-center gap-px">
                 {["w", "o", "r", "k", "i", "n", "g"].map((ch, i) => (
                   <motion.span
                     key={i}
-                    className="text-[10px] text-amber-400/70 font-medium inline-block"
+                    className="text-xs text-amber-400/70 font-medium inline-block"
                     animate={{ opacity: [0.3, 1, 0.3], y: [1, -1, 1] }}
                     transition={{
                       duration: 0.8,
@@ -801,11 +801,11 @@ function SessionRow({
               exit={{ opacity: 0, height: 0 }}
               className="flex items-center gap-1 ml-3 overflow-hidden"
             >
-              <span className="text-[10px] text-emerald-400/80 font-medium">
+              <span className="text-xs text-emerald-400/80 font-medium">
                 {modelDisplayParts(session.model).name}
               </span>
               <motion.span
-                className="text-[10px] text-emerald-400/60 font-medium"
+                className="text-xs text-emerald-400/60 font-medium"
                 animate={{ opacity: [0.4, 1, 0.4] }}
                 transition={{ duration: 1.5, repeat: Infinity }}
               >
@@ -820,10 +820,10 @@ function SessionRow({
               exit={{ opacity: 0, height: 0 }}
               className="flex items-center gap-1 ml-3 overflow-hidden"
             >
-              <span className="text-[10px] text-red-400/80 font-medium">
+              <span className="text-xs text-red-400/80 font-medium">
                 {modelDisplayParts(session.model).name}
               </span>
-              <span className="text-[10px] text-red-400/60 font-medium">
+              <span className="text-xs text-red-400/60 font-medium">
                 error
               </span>
             </motion.div>
@@ -864,7 +864,7 @@ function SessionRow({
       {/* Kebab action dropdown */}
       {showMenu && (
         <div
-          className="absolute right-1 top-7 z-50 w-36 bg-popover rounded-md shadow-2xl py-1 text-[11px] animate-in fade-in slide-in-from-top-1 duration-100"
+          className="absolute right-1 top-7 z-50 w-36 bg-popover rounded-md shadow-2xl py-1 text-xs animate-in fade-in slide-in-from-top-1 duration-100"
           onClick={(e) => e.stopPropagation()}
         >
           <button

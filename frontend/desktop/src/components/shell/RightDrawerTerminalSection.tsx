@@ -99,7 +99,7 @@ export function RightDrawerTerminalSection() {
       convertEol: true,
       cursorBlink: true,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-      fontSize: 12,
+      fontSize: 14,
       theme: {
         background: '#020617',
         foreground: '#e5e7eb',

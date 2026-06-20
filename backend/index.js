@@ -751,6 +751,12 @@ const requestHandler = async (req, res) => {
     }
 
     if (req.url === '/ui/workbench/chat' && req.method === 'POST') {
+        const abortCtrl = new AbortController();
+        const abortIfOpen = () => {
+            if (!res.writableEnded && !abortCtrl.signal.aborted) abortCtrl.abort();
+        };
+        req.on('aborted', abortIfOpen);
+        res.on('close', abortIfOpen);
         try {
             const data = await readJsonBody(req, { limitBytes: 2 * 1024 * 1024 });
             res.writeHead(200, {
@@ -760,15 +766,28 @@ const requestHandler = async (req, res) => {
                 'X-Accel-Buffering': 'no'
             });
             await sendWorkbenchMessageStream(data, (type, payload) => {
+                if (abortCtrl.signal.aborted || res.destroyed || res.writableEnded) {
+                    const error = new Error('Request aborted by client');
+                    error.name = 'AbortError';
+                    throw error;
+                }
                 res.write(`event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`);
-            });
-            res.write('event: done\ndata: {}\n\n');
-            res.end();
-        } catch (e) {
-            try {
-                res.write(`event: error\ndata: ${JSON.stringify({ message: e.message })}\n\n`);
+            }, { signal: abortCtrl.signal });
+            if (!abortCtrl.signal.aborted && !res.writableEnded) {
+                res.write('event: done\ndata: {}\n\n');
                 res.end();
-            } catch (_) { }
+            }
+        } catch (e) {
+            const aborted = e?.name === 'AbortError' || abortCtrl.signal.aborted || e?.message === 'SSE connection closed';
+            if (!aborted) {
+                try {
+                    res.write(`event: error\ndata: ${JSON.stringify({ message: e.message })}\n\n`);
+                    res.end();
+                } catch (_) { }
+            }
+        } finally {
+            req.off('aborted', abortIfOpen);
+            res.off('close', abortIfOpen);
         }
         return;
     }

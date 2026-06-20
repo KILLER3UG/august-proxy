@@ -63,10 +63,10 @@ export function PlanProposalBanner({
 
   const modelLabel = modelName?.trim() || 'The model';
 
-  const submitRevision = async () => {
+  const submitRevision = () => {
     const text = feedback.trim();
     if (!text || sending) return;
-    await onRevise(text);
+    void onRevise(text);
     setFeedback('');
     setRevising(false);
   };
@@ -76,7 +76,7 @@ export function PlanProposalBanner({
       <div className="rounded-xl border border-border bg-card p-3 shadow-2xl">
         {/* Top row: title + open plan link — matches dropdown header style */}
         <div className="flex items-center justify-between gap-3 px-2 py-1.5">
-          <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-foreground/90">
+          <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-foreground/90">
             <span className="truncate">
               <span className="font-semibold">{modelLabel}</span> proposed a plan
             </span>
@@ -84,7 +84,7 @@ export function PlanProposalBanner({
           <button
             type="button"
             onClick={onOpenPlan}
-            className="text-[11px] font-semibold text-primary hover:underline shrink-0"
+            className="text-sm font-semibold text-primary hover:underline shrink-0"
           >
             Open plan
           </button>
@@ -119,7 +119,7 @@ export function PlanProposalBanner({
                 rows={3}
                 className={cn(
                   'w-full resize-none rounded-md border border-border bg-muted',
-                  'px-2.5 py-2 mt-1 text-xs text-foreground placeholder:text-muted-foreground/60',
+                  'px-2.5 py-2 mt-1 text-sm text-foreground placeholder:text-muted-foreground/60',
                   'outline-none focus:border-primary/60 transition',
                 )}
               />
@@ -146,7 +146,6 @@ export function PlanProposalBanner({
                 setRevising(true);
               }
             }}
-            disabled={sending}
           >
             {revising ? <Check className="size-3" /> : <PencilLine className="size-3" />}
             {revising ? 'Cancel' : 'Revise…'}
@@ -161,7 +160,7 @@ export function PlanProposalBanner({
             >
               <Send className="size-3" />
               Send
-              <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-[9.5px] font-mono">↵</kbd>
+              <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-[10px] font-mono">↵</kbd>
             </BannerButton>
           ) : (
             <>
@@ -170,7 +169,7 @@ export function PlanProposalBanner({
               </BannerButton>
               <BannerButton primary onClick={onAcceptAndImplement} disabled={sending} className="ml-auto">
                 Accept and allow edits
-                <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-[9.5px] font-mono">Ctrl ↵</kbd>
+                <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-[10px] font-mono">Ctrl ↵</kbd>
               </BannerButton>
             </>
           )}
@@ -203,7 +202,7 @@ function BannerButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'inline-flex items-center justify-center gap-1.5 rounded-md text-xs font-medium',
+        'inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium',
         'px-2 py-1.5 transition-colors',
         primary
           ? 'bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50'

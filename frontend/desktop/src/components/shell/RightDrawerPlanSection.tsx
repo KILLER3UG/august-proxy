@@ -7,6 +7,7 @@
 import type { ReactNode } from 'react';
 import { FileText, FolderOpen, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Markdown } from '@/sections/chat/ChatMarkdown';
 import type { WorkbenchSession } from '@/types/workbench';
 
 export function RightDrawerPlanSection({
@@ -22,8 +23,8 @@ export function RightDrawerPlanSection({
 
   if (!plan) {
     return (
-      <div className="space-y-3 text-xs">
-        <div className="text-[11px] text-muted-foreground">No plan yet</div>
+      <div className="space-y-3 drawer-section-text">
+        <div className="text-xs text-muted-foreground">No plan yet</div>
         <div className="rounded-lg border border-border/50 bg-card/60 p-4 text-center text-muted-foreground">
           The Workbench plan will appear here after the model creates one.
         </div>
@@ -32,10 +33,12 @@ export function RightDrawerPlanSection({
   }
 
   return (
-    <div className="h-full space-y-3 text-xs">
-      <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 leading-relaxed text-foreground/90">
-        {plan.summary}
-      </div>
+    <div className="h-full space-y-3 drawer-section-text">
+      {plan.summary && (
+        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 plan-section-text">
+          <Markdown content={plan.summary} />
+        </div>
+      )}
 
       <PlanList title="Steps" icon={<FileText className="size-3" />} items={plan.steps} />
       <PlanList title="Files" icon={<FolderOpen className="size-3" />} items={plan.files} />
@@ -65,7 +68,7 @@ function PlanList({
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+      <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
         {icon}
         {title}
       </div>
@@ -74,13 +77,13 @@ function PlanList({
           <div
             key={`${title}-${index}`}
             className={cn(
-              'rounded-lg border px-2.5 py-2 leading-relaxed',
+              'rounded-lg border px-2.5 py-2 plan-section-text',
               tone === 'warning'
                 ? 'border-amber-500/25 bg-amber-500/5'
                 : 'border-border/60 bg-card/40'
             )}
           >
-            {item}
+            <Markdown content={item} />
           </div>
         ))}
       </div>

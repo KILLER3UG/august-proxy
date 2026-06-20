@@ -17,12 +17,12 @@ export function RightDrawerTasksSection({ todos }: { todos: WorkbenchTodo[] }) {
   const activeIndex = todos.findIndex((todo) => todo.status === 'in_progress');
 
   return (
-    <div className="h-full space-y-3 text-xs">
+    <div className="h-full space-y-3 drawer-section-text">
       {/* Brand strip — same surface language as the PlanProposalBanner and
           the dropdown panels. Active = primary; no-todos = neutral. */}
       <div
         className={cn(
-          'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-[11px] font-semibold',
+          'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-semibold',
           active
             ? 'border-primary/30 bg-primary/5 text-primary'
             : total > 0
@@ -38,7 +38,7 @@ export function RightDrawerTasksSection({ todos }: { todos: WorkbenchTodo[] }) {
               ? 'All steps'
               : 'No todos'}
         </span>
-        <span className="ml-auto font-mono text-[10px] tabular-nums opacity-80">
+        <span className="ml-auto font-mono text-xs tabular-nums opacity-80">
           {done}/{total}
         </span>
       </div>
@@ -51,7 +51,7 @@ export function RightDrawerTasksSection({ todos }: { todos: WorkbenchTodo[] }) {
 
       {active && (
         <div className="rounded-lg border border-primary/25 bg-primary/5 p-3">
-          <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-primary font-semibold">
+            <div className="mb-1 flex items-center gap-1.5 text-xs uppercase tracking-wider text-primary font-semibold">
             <ArrowRight className="size-3" />
             In progress
           </div>
@@ -81,7 +81,7 @@ export function RightDrawerTasksSection({ todos }: { todos: WorkbenchTodo[] }) {
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-[10px] text-muted-foreground/55 tabular-nums">
+                <span className="font-mono text-xs text-muted-foreground/55 tabular-nums">
                   A{index + 1}
                 </span>
                 {index === activeIndex && (

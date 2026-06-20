@@ -287,9 +287,45 @@ input::placeholder {
   transition: opacity 0.25s ease;
 }
 
+/* ── Shared typography classes ────────────────────────────────────── */
+.chat-message-text {
+  font-size: 0.9375rem;
+  line-height: 1.65;
+}
+
+.chat-thought-text {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.drawer-section-text {
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.drawer-muted-text {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.plan-section-text {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.session-list-title {
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.session-list-meta {
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
 /* ── Markdown Content Styling ────────────────────────────────────── */
 .markdown-content {
-  font-size: 0.8125rem !important;
+  font-size: 0.9375rem !important;
   line-height: 1.65;
   overflow-wrap: break-word;
 }
@@ -334,9 +370,9 @@ input::placeholder {
   margin-bottom: 0.5rem;
   color: var(--dt-foreground);
 }
-.markdown-content h1 { font-size: 1.05rem; }
-.markdown-content h2 { font-size: 0.95rem; }
-.markdown-content h3 { font-size: 0.85rem; }
+.markdown-content h1 { font-size: 1.25rem; }
+.markdown-content h2 { font-size: 1.1rem; }
+.markdown-content h3 { font-size: 1rem; }
 
 /* Lists */
 .markdown-content ul,

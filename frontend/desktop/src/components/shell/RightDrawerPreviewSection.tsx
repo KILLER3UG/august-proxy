@@ -85,12 +85,12 @@ export function RightDrawerPreviewSection({
   const recentRequests = (requests?.completed || []).slice(0, 8);
 
   return (
-    <div className="h-full space-y-3 text-xs">
+    <div className="h-full space-y-3 drawer-section-text">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-[11px] text-muted-foreground">
+        <div className="text-xs text-muted-foreground">
           Run a local dev server and inspect the browser preview
         </div>
-        <Badge variant="secondary" className="text-[9px]">
+        <Badge variant="secondary" className="text-[10px]">
           <Globe className="size-3" />
           local preview
         </Badge>
@@ -137,10 +137,10 @@ export function RightDrawerPreviewSection({
             >
               <div className="flex items-center gap-1.5">
                 <Globe className="size-3 shrink-0" />
-                <span className="truncate font-mono text-[10.5px]">{session.title || session.id}</span>
+                <span className="truncate font-mono text-xs">{session.title || session.id}</span>
               </div>
               <div className={cn(
-                'mt-0.5 truncate text-[9px]',
+                'mt-0.5 truncate text-[10px]',
                 active?.id === session.id ? 'text-primary-foreground/70' : 'text-muted-foreground/55'
               )}>
                 {session.status}
@@ -154,11 +154,11 @@ export function RightDrawerPreviewSection({
             <>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
-                    <Badge variant="secondary" className="text-[9px]">{active.id}</Badge>
+                  <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+                    <Badge variant="secondary" className="text-[10px]">{active.id}</Badge>
                     <span>{active.status}</span>
                   </div>
-                  <div className="mt-1 truncate text-[10px] text-muted-foreground/70">{active.cwd}</div>
+                  <div className="mt-1 truncate text-xs text-muted-foreground/70">{active.cwd}</div>
                 </div>
                 <Button
                   variant="ghost"
@@ -177,7 +177,7 @@ export function RightDrawerPreviewSection({
                   <input
                     value={url}
                     onChange={(event) => setPreviewUrl(event.target.value)}
-                    className="min-w-0 flex-1 bg-transparent text-[11px] font-mono outline-none"
+                    className="min-w-0 flex-1 bg-transparent text-xs font-mono outline-none"
                   />
                 </div>
               )}

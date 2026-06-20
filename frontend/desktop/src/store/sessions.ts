@@ -138,6 +138,7 @@ export function deleteSession(id: string) {
   $sessions.set(updated);
   saveSessionsToStorage(updated);
   localStorage.removeItem(`chat_messages_${id}`);
+  localStorage.removeItem(`august_composer_draft_${id}`);
 }
 
 export function archiveSession(id: string) {
@@ -181,6 +182,7 @@ export function clearAllSessions(includeArchived: boolean = true) {
   sessions.forEach(s => {
     if (includeArchived || !s.isArchived) {
       localStorage.removeItem(`chat_messages_${s.id}`);
+      localStorage.removeItem(`august_composer_draft_${s.id}`);
     }
   });
 
