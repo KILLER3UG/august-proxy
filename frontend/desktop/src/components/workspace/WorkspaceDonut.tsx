@@ -12,7 +12,7 @@ export interface DonutSlice {
   color?: string;
 }
 
-const DEFAULT_COLORS = [
+export const DEFAULT_COLORS = [
   '#3b7eff',
   '#4ade80',
   '#f59e0b',
@@ -22,6 +22,23 @@ const DEFAULT_COLORS = [
   '#ec4899',
   '#84cc16',
 ];
+
+const COLOR_CACHE = new Map<string, string>();
+/**
+ * Stable model → color mapping. Same model always renders in the same
+ * color across the donut and the Tokens-per-day chart, so the legend
+ * matches the bar segments.
+ */
+export function modelColor(model: string): string {
+  if (COLOR_CACHE.has(model)) return COLOR_CACHE.get(model)!;
+  let hash = 5381;
+  for (let i = 0; i < model.length; i++) {
+    hash = ((hash << 5) + hash + model.charCodeAt(i)) | 0;
+  }
+  const color = DEFAULT_COLORS[Math.abs(hash) % DEFAULT_COLORS.length];
+  COLOR_CACHE.set(model, color);
+  return color;
+}
 
 interface Props {
   slices: DonutSlice[];
@@ -60,7 +77,7 @@ export function WorkspaceDonut({
             const dash = `${len} ${C - len}`;
             const off = -offset;
             offset += len;
-            const color = s.color ?? DEFAULT_COLORS[i % DEFAULT_COLORS.length];
+            const color = s.color ?? modelColor(s.label);
             return (
               <circle
                 key={s.label + i}
@@ -100,7 +117,7 @@ export function WorkspaceDonut({
 
       <div className="flex-1 min-w-0 space-y-1.5">
         {visible.map((s, i) => {
-          const color = s.color ?? DEFAULT_COLORS[i % DEFAULT_COLORS.length];
+          const color = s.color ?? modelColor(s.label);
           return (
             <div key={s.label + i} className="flex items-center gap-2 text-xs">
               <span

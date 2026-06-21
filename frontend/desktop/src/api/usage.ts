@@ -30,6 +30,7 @@ export interface ModelShare {
 export interface DailyTokens {
   date: string; // YYYY-MM-DD
   tokens: number;
+  models: { model: string; tokens: number }[];
 }
 
 function withRange(path: string, range: UsageRange) {

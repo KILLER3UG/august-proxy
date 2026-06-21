@@ -1,11 +1,12 @@
 /* ── ObservabilityOverview — at-a-glance tab ─────────────────────────── */
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Activity, AlertTriangle, Camera, History, ShieldCheck, Wifi } from 'lucide-react';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusPill, variantForHostStatus, variantForAppPolicy } from '@/components/workspace/StatusPill';
-import { WorkspaceDonut, type DonutSlice } from '@/components/workspace/WorkspaceDonut';
+import { WorkspaceDonut, modelColor, type DonutSlice } from '@/components/workspace/WorkspaceDonut';
 import { usageApi } from '@/api/usage';
 import {
     getObservabilityOverview,
@@ -38,11 +39,14 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
     const allowedApps = o.appPolicy.counts.allow;
     const deniedApps = o.appPolicy.counts.deny;
 
-    // Model-usage donut slices (from usageApi.byModel) + center label
+    // Model-usage donut slices (from usageApi.byModel) + center label.
+    // We compute `color` here so the donut and the Tokens-per-day chart
+    // use the same color for the same model.
     const donutSlices: DonutSlice[] = (byModel.data?.results ?? []).map(r => ({
         label: r.model,
         value: r.tokens,
-        percent: r.percent
+        percent: r.percent,
+        color: modelColor(r.model),
     }));
     const donutCenter = formatCompact(totalTokens30d);
 
@@ -215,30 +219,87 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
     );
 }
 
-function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number }> }) {
+// Shared with WorkspaceDonut so a model keeps the same color across
+// the donut and the Tokens-per-day chart.
+
+function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number; models: { model: string; tokens: number }[] }> }) {
     const max = Math.max(1, ...rows.map(r => r.tokens));
     const recent = rows.slice(-14);
     // "Today" in the same UTC-day key the backend uses, so the highlighted
     // bar matches the row the aggregator is actively growing.
     const todayKey = new Date().toISOString().slice(0, 10);
+    const [hover, setHover] = useState<number | null>(null);
+    const hoverRow = hover !== null ? recent[hover] : null;
+
     return (
-        <div className="flex items-end gap-1 h-24">
-            {recent.map(r => {
-                const isToday = r.date === todayKey;
-                return (
-                    <div
-                        key={r.date}
-                        className={cn(
-                            'flex-1 rounded-t transition relative',
-                            isToday
-                                ? 'bg-emerald-400 hover:bg-emerald-300 ring-1 ring-emerald-300/40'
-                                : 'bg-primary/70 hover:bg-primary'
+        <div className="relative">
+            <div
+                className="flex items-end gap-1 h-24"
+                onMouseLeave={() => setHover(null)}
+            >
+                {recent.map((r, i) => {
+                    const isToday = r.date === todayKey;
+                    const heightPct = Math.max(2, (r.tokens / max) * 100);
+                    return (
+                        <div
+                            key={r.date}
+                            className={cn(
+                                'flex-1 rounded-t overflow-hidden flex flex-col-reverse transition relative cursor-pointer',
+                                isToday && 'ring-1 ring-emerald-300/50'
+                            )}
+                            style={{ height: `${heightPct}%` }}
+                            onMouseEnter={() => setHover(i)}
+                            onFocus={() => setHover(i)}
+                            tabIndex={0}
+                        >
+                            {r.models.length === 0 ? (
+                                <div className={cn(
+                                    'flex-1',
+                                    isToday ? 'bg-emerald-400/60' : 'bg-primary/70'
+                                )} />
+                            ) : r.models.map(m => (
+                                <div
+                                    key={m.model}
+                                    className="w-full transition-opacity hover:opacity-80"
+                                    style={{
+                                        backgroundColor: modelColor(m.model),
+                                        flexGrow: Math.max(0.001, m.tokens),
+                                    }}
+                                    title={`${m.model}: ${formatCompact(m.tokens)} tokens`}
+                                />
+                            ))}
+                        </div>
+                    );
+                })}
+            </div>
+
+            {hoverRow && (
+                <div
+                    className="absolute z-10 left-1/2 -translate-x-1/2 -top-2 -translate-y-full pointer-events-none"
+                    role="tooltip"
+                >
+                    <div className="rounded-md border border-white/[0.08] bg-zinc-900/95 backdrop-blur px-3 py-2 text-xs shadow-xl min-w-[180px]">
+                        <div className="flex items-center justify-between gap-3 text-foreground font-semibold">
+                            <span>{hoverRow.date}{hoverRow.date === todayKey ? ' (today)' : ''}</span>
+                            <span className="tabular-nums">{formatCompact(hoverRow.tokens)}</span>
+                        </div>
+                        {hoverRow.models.length > 0 && (
+                            <div className="mt-1.5 space-y-1">
+                                {hoverRow.models.map(m => (
+                                    <div key={m.model} className="flex items-center gap-2 text-muted-foreground">
+                                        <span
+                                            className="size-2 rounded-full shrink-0"
+                                            style={{ backgroundColor: modelColor(m.model) }}
+                                        />
+                                        <span className="flex-1 truncate text-foreground/90">{m.model}</span>
+                                        <span className="tabular-nums">{formatCompact(m.tokens)}</span>
+                                    </div>
+                                ))}
+                            </div>
                         )}
-                        style={{ height: `${Math.max(2, (r.tokens / max) * 100)}%` }}
-                        title={`${r.date}${isToday ? ' (today)' : ''}: ${formatCompact(r.tokens)} tokens`}
-                    />
-                );
-            })}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
