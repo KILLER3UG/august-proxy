@@ -23,7 +23,7 @@ export function RightDrawerPlanSection({
 
   if (!plan) {
     return (
-      <div className="space-y-3 drawer-section-text">
+      <div className="chat-message-text text-foreground/90 space-y-3 max-w-none">
         <div className="text-xs text-muted-foreground">No plan yet</div>
         <div className="rounded-lg border border-border/50 bg-card/60 p-4 text-center text-muted-foreground">
           The Workbench plan will appear here after the model creates one.
@@ -33,9 +33,9 @@ export function RightDrawerPlanSection({
   }
 
   return (
-    <div className="h-full space-y-3 drawer-section-text">
+    <div className="h-full chat-message-text text-foreground/90 space-y-3 max-w-none">
       {plan.summary && (
-        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 plan-section-text">
+        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 chat-message-text text-foreground/90 space-y-3 max-w-none">
           <Markdown content={plan.summary} />
         </div>
       )}
@@ -77,7 +77,7 @@ function PlanList({
           <div
             key={`${title}-${index}`}
             className={cn(
-              'rounded-lg border px-2.5 py-2 plan-section-text',
+              'rounded-lg border px-2.5 py-2 chat-message-text text-foreground/90 space-y-3 max-w-none',
               tone === 'warning'
                 ? 'border-amber-500/25 bg-amber-500/5'
                 : 'border-border/60 bg-card/40'

@@ -1,5 +1,6 @@
 /* ── RightDrawer ─ multi-section Workbench sidebar ────────────────── */
 
+import { useEffect, useState, type CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, Columns, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,8 +16,25 @@ import { RightDrawerTerminalSection } from './RightDrawerTerminalSection';
 import { RightDrawerPreviewSection } from './RightDrawerPreviewSection';
 import type { WorkbenchSession } from '@/types/workbench';
 
-const BASE_WIDTH = 320;   // 1-2 sections
-const WIDE_WIDTH = 640;   // 3-4 sections — doubles so they don't squish
+const DEFAULT_BASE_WIDTH = 320;   // 1-2 sections
+const DEFAULT_WIDE_WIDTH = 640;   // 3-4 sections — doubles so they don't squish
+const BASE_WIDTH_KEY = 'august-right-drawer-width-base';
+const WIDE_WIDTH_KEY = 'august-right-drawer-width-wide';
+const MIN_WIDTH = 200;
+const MAX_VIEWPORT_FRACTION = 0.8;
+
+function loadStoredWidth(key: string, fallback: number): number {
+  if (typeof window === 'undefined') return fallback;
+  const raw = window.localStorage.getItem(key);
+  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(parsed)) return fallback;
+  return clampWidth(parsed);
+}
+
+function clampWidth(value: number): number {
+  const max = Math.max(MIN_WIDTH, Math.floor(window.innerWidth * MAX_VIEWPORT_FRACTION));
+  return Math.min(max, Math.max(MIN_WIDTH, value));
+}
 
 export function RightDrawer({
   open,
@@ -39,9 +57,66 @@ export function RightDrawer({
 }) {
   const state = useRightDrawer();
   const sections = state.sections;
-  const width = sections.length >= 3 ? WIDE_WIDTH : BASE_WIDTH;
+  const isWide = sections.length >= 3;
+  const [baseWidth, setBaseWidth] = useState<number>(() => loadStoredWidth(BASE_WIDTH_KEY, DEFAULT_BASE_WIDTH));
+  const [wideWidth, setWideWidth] = useState<number>(() => loadStoredWidth(WIDE_WIDTH_KEY, DEFAULT_WIDE_WIDTH));
+  const [isDragging, setIsDragging] = useState(false);
+
+  const width = isWide ? wideWidth : baseWidth;
+  const setWidth = isWide ? setWideWidth : setBaseWidth;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(BASE_WIDTH_KEY, String(baseWidth));
+  }, [baseWidth]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(WIDE_WIDTH_KEY, String(wideWidth));
+  }, [wideWidth]);
+
+  // Stop dragging if the component unmounts mid-drag.
+  useEffect(() => {
+    if (!isDragging) return;
+    const stop = () => setIsDragging(false);
+    window.addEventListener('mouseup', stop);
+    window.addEventListener('touchend', stop);
+    return () => {
+      window.removeEventListener('mouseup', stop);
+      window.removeEventListener('touchend', stop);
+    };
+  }, [isDragging]);
+
+  const startResize = (clientX: number) => {
+    const startX = clientX;
+    const startW = width;
+    setIsDragging(true);
+
+    const onMove = (ev: MouseEvent | TouchEvent) => {
+      const next = 'touches' in ev && ev.touches.length
+        ? ev.touches[0].clientX
+        : (ev as MouseEvent).clientX;
+      // Right drawer expands when dragged left (delta is negative on leftward drag).
+      const delta = startX - next;
+      setWidth(clampWidth(startW + delta));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove as (e: MouseEvent) => void);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove as (e: TouchEvent) => void);
+      window.removeEventListener('touchend', onUp);
+      setIsDragging(false);
+    };
+
+    window.addEventListener('mousemove', onMove as (e: MouseEvent) => void);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove as (e: TouchEvent) => void, { passive: true });
+    window.addEventListener('touchend', onUp);
+  };
 
   if (!open) return null;
+
+  const asideStyle: CSSProperties = { width };
 
   return (
     <AnimatePresence initial={false}>
@@ -50,11 +125,25 @@ export function RightDrawer({
         initial={{ width: 0, opacity: 0 }}
         animate={{ width, opacity: 1 }}
         exit={{ width: 0, opacity: 0 }}
-        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="shrink-0 h-full min-h-0 overflow-hidden border-l border-border bg-sidebar text-sidebar-foreground"
-        style={{ width }}
+        transition={{ duration: isDragging ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
+        className="relative shrink-0 h-full min-h-0 overflow-hidden border-l border-border bg-sidebar text-sidebar-foreground"
+        style={asideStyle}
         aria-label="Workbench sidebar"
       >
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize workbench sidebar"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            startResize(e.clientX);
+          }}
+          onTouchStart={(e) => {
+            if (e.touches.length) startResize(e.touches[0].clientX);
+          }}
+          className={`absolute top-0 left-0 z-20 h-full w-1 cursor-col-resize select-none touch-none transition-colors hover:bg-primary/40 ${isDragging ? 'bg-primary/50' : 'bg-transparent'}`}
+        />
+
         <div className="flex h-full min-h-0 flex-col">
           <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/60 bg-sidebar px-3">
             <div className="flex min-w-0 items-center gap-2">

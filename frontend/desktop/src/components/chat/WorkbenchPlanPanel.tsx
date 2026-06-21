@@ -34,7 +34,7 @@ export function WorkbenchPlanPanel({
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3 plan-section-text">
+      <CardContent className="chat-message-text text-foreground/90 space-y-3 max-w-none">
         {plan.summary && (
           <div className="text-foreground/90">
             <Markdown content={plan.summary} />
@@ -78,7 +78,7 @@ function PlanList({ title, icon, items }: { title: string; icon: ReactNode; item
       <ul className="space-y-1">
         {items.map((item, index) => (
           <li key={`${title}-${index}`} className={cn(
-            'rounded-md border border-border/60 bg-card/70 px-2.5 py-2 plan-section-text',
+            'rounded-md border border-border/60 bg-card/70 px-2.5 py-2 chat-message-text text-foreground/90 space-y-3 max-w-none',
             title === 'Risks' && 'border-amber-500/30 bg-amber-500/5'
           )}>
             <Markdown content={item} />

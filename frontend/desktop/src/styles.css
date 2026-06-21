@@ -413,6 +413,11 @@ input::placeholder {
   border: 1px solid rgba(226, 232, 240, 0.1);
   border-radius: 0.5rem;
 }
+
+.markdown-code-block > pre {
+  margin-top: 0;
+  padding-right: 4rem; /* leave room for the copy button */
+}
 .markdown-content pre code {
   background-color: transparent;
   padding: 0;
