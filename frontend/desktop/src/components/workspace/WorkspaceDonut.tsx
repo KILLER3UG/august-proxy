@@ -27,16 +27,18 @@ const COLOR_CACHE = new Map<string, string>();
 /**
  * Stable model → color mapping. Same model always renders in the same
  * color across the donut and the Tokens-per-day chart, so the legend
- * matches the bar segments.
+ * matches the bar segments. Tolerates undefined / null / non-string
+ * inputs by falling back to a default color.
  */
-export function modelColor(model: string): string {
-  if (COLOR_CACHE.has(model)) return COLOR_CACHE.get(model)!;
+export function modelColor(model: unknown): string {
+  const key = typeof model === 'string' ? model : '';
+  if (COLOR_CACHE.has(key)) return COLOR_CACHE.get(key)!;
   let hash = 5381;
-  for (let i = 0; i < model.length; i++) {
-    hash = ((hash << 5) + hash + model.charCodeAt(i)) | 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) + hash + key.charCodeAt(i)) | 0;
   }
   const color = DEFAULT_COLORS[Math.abs(hash) % DEFAULT_COLORS.length];
-  COLOR_CACHE.set(model, color);
+  COLOR_CACHE.set(key, color);
   return color;
 }
 

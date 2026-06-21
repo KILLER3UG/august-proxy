@@ -158,7 +158,14 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
                         <CardTitle>Tokens per day</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <ErrorBoundary fallback={<p className="text-sm text-muted-foreground">Tokens per day unavailable.</p>}>
+                        <ErrorBoundary
+                            fallback={(err) => (
+                                <div className="rounded-md border border-rose-500/30 bg-rose-500/5 p-3 text-sm">
+                                    <p className="font-semibold text-rose-300">Tokens per day render error</p>
+                                    <pre className="mt-1 whitespace-pre-wrap text-xs text-rose-200/80">{err?.message}</pre>
+                                </div>
+                            )}
+                        >
                             {byDay.data && byDay.data.results && byDay.data.results.length > 0 ? (
                                 <TokensByDayBars rows={byDay.data.results} />
                             ) : (
