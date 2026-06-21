@@ -19,7 +19,7 @@
  * (Aliases). No hardcoded providers in the frontend — every entry comes
  * from the backend. */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   RefreshCw,
@@ -133,18 +133,25 @@ function ProvidersTab() {
   const [mode, setMode] = useState<'add' | 'edit' | 'empty'>('empty');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showAddModel, setShowAddModel] = useState(false);
+  // Track whether the initial auto-select has happened so the effect
+  // doesn't run again when the user clicks "Add provider" (which sets
+  // selectedId to null) and immediately re-selects the first provider.
+  const didInitRef = useRef(false);
 
-  // Auto-select the first provider when data loads.
+  // Auto-select the first provider on the initial load only.
   useEffect(() => {
-    if (selectedId == null && providers.length > 0) {
+    if (didInitRef.current) return;
+    if (listQ.isLoading) return;
+    didInitRef.current = true;
+    if (providers.length > 0) {
       setSelectedId(providers[0].id);
       setMode('edit');
-    } else if (selectedId == null) {
-      setMode('add');
     } else {
-      setMode(providers.find((p) => p.id === selectedId) ? 'edit' : 'add');
+      setMode('add');
     }
-  }, [providers, selectedId]);
+    // Only re-run when the providers query transitions out of loading.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listQ.isLoading]);
 
   const selected = providers.find((p) => p.id === selectedId) ?? null;
 

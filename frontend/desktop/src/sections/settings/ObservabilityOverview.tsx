@@ -222,7 +222,7 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
 // Shared with WorkspaceDonut so a model keeps the same color across
 // the donut and the Tokens-per-day chart.
 
-function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number; models: { model: string; tokens: number }[] }> }) {
+function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number; models?: { model: string; tokens: number }[] }> }) {
     const max = Math.max(1, ...rows.map(r => r.tokens));
     const recent = rows.slice(-14);
     // "Today" in the same UTC-day key the backend uses, so the highlighted
@@ -240,6 +240,7 @@ function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number;
                 {recent.map((r, i) => {
                     const isToday = r.date === todayKey;
                     const heightPct = Math.max(2, (r.tokens / max) * 100);
+                    const segments = r.models ?? [];
                     return (
                         <div
                             key={r.date}
@@ -252,12 +253,12 @@ function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number;
                             onFocus={() => setHover(i)}
                             tabIndex={0}
                         >
-                            {r.models.length === 0 ? (
+                            {segments.length === 0 ? (
                                 <div className={cn(
                                     'flex-1',
                                     isToday ? 'bg-emerald-400/60' : 'bg-primary/70'
                                 )} />
-                            ) : r.models.map(m => (
+                            ) : segments.map(m => (
                                 <div
                                     key={m.model}
                                     className="w-full transition-opacity hover:opacity-80"
