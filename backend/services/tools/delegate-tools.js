@@ -26,7 +26,7 @@ const modelResolver = require('../../providers/model-resolver');
 
 // ── Constants ──
 
-const MAX_DELEGATION_DEPTH = 3;
+const MAX_DELEGATION_DEPTH = 4;
 const MAX_TASKS_PER_CALL = 10;
 const MAX_TASK_LENGTH = 8000;
 

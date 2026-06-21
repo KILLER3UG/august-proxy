@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const util = require('util');
 const execPromise = util.promisify(exec);
-const readTimestamps = new Map();
+const fileReadCache = require('./file-read-cache');
 
 const { checkCommandPaths, checkPathPermission, extractPathsFromCommand } = require('../../lib/path-permissions');
 const { dataPath } = require('../../lib/data-paths');
@@ -592,6 +592,27 @@ const AUGUST_TOOLS = [
     {
         type: 'function',
         function: {
+            name: 'august__file_history',
+            description: 'Returns the most recent audit-logged mutations for a file path (writes, patches, deletes, moves). Backed by the existing August audit log — no extra storage required. Useful before patching a file to see who last touched it and when.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    path: {
+                        type: 'string',
+                        description: 'Absolute or relative path to the file.'
+                    },
+                    limit: {
+                        type: 'number',
+                        description: 'Maximum number of entries to return (default 20, max 100).'
+                    }
+                },
+                required: ['path']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'august__write_file',
             description: 'Creates or overwrites a file on the host machine. You MUST show the user the target path and ask for confirmation before calling this tool with confirmed=true. Always call once without confirmed to preview; the proxy will prompt the user for approval.',
             parameters: {
@@ -1130,6 +1151,21 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                 return stdout || '[Command executed successfully with no output]';
             }
 
+            case 'august__file_history': {
+                const { resolveAnyPath, toDisplayPath } = require('../workbench/workbench');
+                const { getFileHistory, countFileHistory } = require('../audit/file-history');
+                const target = resolveAnyPath(args.path, workspacePath);
+                const limit = Math.max(1, Math.min(100, Number(args.limit) || 20));
+                const history = getFileHistory(target, { limit });
+                const total = countFileHistory(target);
+                return {
+                    path: toDisplayPath(target, workspacePath),
+                    total,
+                    count: history.length,
+                    entries: history
+                };
+            }
+
             case 'august__read_file': {
                 const { resolveAnyPath, toDisplayPath } = require('../workbench/workbench');
                 const readPath = resolveAnyPath(args.path, workspacePath);
@@ -1144,10 +1180,7 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                 const maxChars = Math.max(1000, Math.min(80000, Number(args.max_chars || 20000)));
                 const text = fs.readFileSync(readPath, 'utf8');
 
-                try {
-                    const stat = fs.statSync(readPath);
-                    readTimestamps.set(readPath, stat.mtimeMs);
-                } catch (e) { /* ignore */ }
+                fileReadCache.recordRead(readPath, text, { readBy: 'august__read_file' });
 
                 return {
                     path: toDisplayPath(readPath, workspacePath),
@@ -1165,23 +1198,29 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                 const pathViolation = checkPathPermission(writePath);
                 if (pathViolation) return pathViolation;
 
-                // Check staleness
+                // Check staleness — content-aware via fileReadCache.
                 let staleWarning = null;
-                const oldMtime = readTimestamps.get(writePath);
-                if (oldMtime !== undefined && fs.existsSync(writePath)) {
-                    const currentMtime = fs.statSync(writePath).mtimeMs;
-                    if (currentMtime !== oldMtime) {
-                        staleWarning = `Warning: ${args.path} was modified since you last read it (external edit or concurrent agent).`;
-                    }
+                let staleBlockReason = null;
+                let staleSnippet = null;
+                const staleness = fileReadCache.detectStale(writePath, { requireReRead: true });
+                if (staleness.stale) {
+                    staleWarning = `Warning: ${args.path} was modified since you last read it (${staleness.reason}; external edit or concurrent agent). Re-read before writing.`;
+                    staleBlockReason = staleness.reason;
+                    const preview = fileReadCache.readPreviewSnippet(writePath, { maxChars: 200 });
+                    if (preview.ok) staleSnippet = preview;
                 }
 
                 // ── Confirmation gate ──
-                if (!bypassConfirmation && !args.confirmed) {
+                if (!bypassConfirmation && (!args.confirmed || (staleBlockReason && !args.reReadFirst))) {
                     let confirmMsg = `[August Confirmation Required]\n` +
                            `The AI wants to write a file to the following path:\n\n` +
                            `  ${writePath}\n\n`;
                     if (staleWarning) {
-                        confirmMsg += `⚠️  ${staleWarning}\n\n`;
+                        confirmMsg += `⚠️  ${staleWarning}\n`;
+                        if (staleSnippet && staleSnippet.content) {
+                            confirmMsg += `\nCurrent on-disk content (first ${staleSnippet.content.length} chars):\n${staleSnippet.content}${staleSnippet.truncated ? '\n...(truncated)' : ''}\n`;
+                        }
+                        confirmMsg += `\nRe-call august__read_file on this path first, then retry with confirmed=true AND reReadFirst=true.\n\n`;
                     }
                     confirmMsg += `Content preview (first 300 chars):\n${String(args.content || '').slice(0, 300)}${String(args.content || '').length > 300 ? '\n...(truncated)' : ''}\n\n` +
                            `To approve, call this tool again with the same arguments and confirmed=true.\n` +
@@ -1195,10 +1234,7 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                 }
                 fs.writeFileSync(writePath, String(args.content || ''), 'utf8');
 
-                try {
-                    const stat = fs.statSync(writePath);
-                    readTimestamps.set(writePath, stat.mtimeMs);
-                } catch (e) { /* ignore */ }
+                fileReadCache.recordRead(writePath, String(args.content || ''), { readBy: 'august__write_file' });
 
                 const result = {
                     status: 'written',
@@ -1246,13 +1282,12 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
 
                 // Check staleness warnings
                 const staleWarnings = [];
+                const staleBlocks = [];
                 for (const p of affectedPaths) {
-                    const oldMtime = readTimestamps.get(p);
-                    if (oldMtime !== undefined && fs.existsSync(p)) {
-                        const currentMtime = fs.statSync(p).mtimeMs;
-                        if (currentMtime !== oldMtime) {
-                            staleWarnings.push(`Warning: ${toDisplayPath(p, workspacePath)} was modified since you last read it (external edit or concurrent agent).`);
-                        }
+                    const staleness = fileReadCache.detectStale(p, { requireReRead: true });
+                    if (staleness.stale) {
+                        staleWarnings.push(`Warning: ${toDisplayPath(p, workspacePath)} was modified since you last read it (${staleness.reason}; external edit or concurrent agent). Re-read before patching.`);
+                        staleBlocks.push({ path: p, reason: staleness.reason });
                     }
                 }
                 const warningMsg = staleWarnings.length > 0 ? staleWarnings.join('\n') : null;
@@ -1262,16 +1297,16 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                     read_file_raw(filePath) {
                         const p = resolveAnyPath(filePath, workspacePath);
                         if (!fs.existsSync(p)) return { error: "File not found" };
-                        return { content: fs.readFileSync(p, 'utf8'), error: null };
+                        const content = fs.readFileSync(p, 'utf8');
+                        fileReadCache.recordRead(p, content, { readBy: 'august__patch' });
+                        return { content, error: null };
                     },
                     write_file(filePath, content) {
                         const p = resolveAnyPath(filePath, workspacePath);
                         const dir = path.dirname(p);
                         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
                         fs.writeFileSync(p, content, 'utf8');
-                        try {
-                            readTimestamps.set(p, fs.statSync(p).mtimeMs);
-                        } catch (e) { /* ignore */ }
+                        fileReadCache.recordRead(p, content, { readBy: 'august__patch' });
                         return { error: null };
                     },
                     delete_file(filePath) {
@@ -1279,6 +1314,7 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                         if (fs.existsSync(p)) {
                             fs.unlinkSync(p);
                         }
+                        fileReadCache.invalidate(p);
                         return { error: null };
                     },
                     move_file(filePath, newPath) {
@@ -1287,17 +1323,14 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                         const dir = path.dirname(np);
                         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
                         fs.renameSync(p, np);
-                        try {
-                            if (fs.existsSync(np)) {
-                                readTimestamps.set(np, fs.statSync(np).mtimeMs);
-                            }
-                        } catch (e) { /* ignore */ }
+                        fileReadCache.invalidate(p);
+                        fileReadCache.invalidate(np);
                         return { error: null };
                     }
                 };
 
                 // If not confirmed, do validation and show preview
-                if (!bypassConfirmation && !args.confirmed) {
+                if (!bypassConfirmation && (!args.confirmed || (staleBlocks.length > 0 && !args.reReadFirst))) {
                     if (mode === 'replace') {
                         const readResult = fileOps.read_file_raw(args.path);
                         if (readResult.error) {
@@ -1322,7 +1355,8 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                         }
                         confirmMsg += `Find (old_string):\n${args.old_string}\n\n` +
                                       `Replace (new_string):\n${args.new_string}\n\n` +
-                                      `To approve, call this tool again with the same arguments and confirmed=true.`;
+                                      `To approve, call this tool again with the same arguments and confirmed=true.` +
+                                      (staleBlocks.length > 0 ? ` Also pass reReadFirst=true after re-reading the file.` : '');
                         return confirmMsg;
                     } else {
                         const parsed = parseV4APatch(args.patch);

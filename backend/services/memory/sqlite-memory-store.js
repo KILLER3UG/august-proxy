@@ -310,6 +310,49 @@ CREATE INDEX IF NOT EXISTS idx_memories_lifecycle ON memories(lifecycle_status, 
 CREATE INDEX IF NOT EXISTS idx_memory_facts_category ON memory_facts(category, lifecycle_status);
 CREATE INDEX IF NOT EXISTS idx_memory_proposals_status ON memory_proposals(status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_model_observations_model ON model_observations(model_id, created_at);
+
+CREATE TABLE IF NOT EXISTS memory_relationships (
+    id TEXT PRIMARY KEY,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    relationship TEXT NOT NULL,
+    weight REAL DEFAULT 1.0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rel_source ON memory_relationships(source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_rel_target ON memory_relationships(target_type, target_id);
+
+CREATE TABLE IF NOT EXISTS session_topics (
+    session_id TEXT PRIMARY KEY,
+    topic TEXT NOT NULL,
+    parent_topic TEXT,
+    confidence REAL DEFAULT 0.75,
+    classified_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_topics_topic ON session_topics(topic, classified_at);
+
+CREATE TABLE IF NOT EXISTS agent_tree (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT REFERENCES agent_tree(id),
+    session_id TEXT,
+    parent_session_id TEXT,
+    agent_id TEXT NOT NULL,
+    parent_agent_id TEXT,
+    depth INTEGER NOT NULL DEFAULT 0,
+    task TEXT,
+    status TEXT NOT NULL,
+    scope TEXT,
+    started_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT,
+    result_summary TEXT,
+    metadata_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_tree_parent ON agent_tree(parent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_tree_session ON agent_tree(session_id, depth);
+CREATE INDEX IF NOT EXISTS idx_agent_tree_status ON agent_tree(status, updated_at);
 `);
     } catch (error) {
         if (isSqliteCorruption(error)) {
@@ -435,6 +478,49 @@ CREATE INDEX IF NOT EXISTS idx_memories_lifecycle ON memories(lifecycle_status, 
 CREATE INDEX IF NOT EXISTS idx_memory_facts_category ON memory_facts(category, lifecycle_status);
 CREATE INDEX IF NOT EXISTS idx_memory_proposals_status ON memory_proposals(status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_model_observations_model ON model_observations(model_id, created_at);
+
+CREATE TABLE IF NOT EXISTS memory_relationships (
+    id TEXT PRIMARY KEY,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    relationship TEXT NOT NULL,
+    weight REAL DEFAULT 1.0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rel_source ON memory_relationships(source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_rel_target ON memory_relationships(target_type, target_id);
+
+CREATE TABLE IF NOT EXISTS session_topics (
+    session_id TEXT PRIMARY KEY,
+    topic TEXT NOT NULL,
+    parent_topic TEXT,
+    confidence REAL DEFAULT 0.75,
+    classified_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_topics_topic ON session_topics(topic, classified_at);
+
+CREATE TABLE IF NOT EXISTS agent_tree (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT REFERENCES agent_tree(id),
+    session_id TEXT,
+    parent_session_id TEXT,
+    agent_id TEXT NOT NULL,
+    parent_agent_id TEXT,
+    depth INTEGER NOT NULL DEFAULT 0,
+    task TEXT,
+    status TEXT NOT NULL,
+    scope TEXT,
+    started_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT,
+    result_summary TEXT,
+    metadata_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_tree_parent ON agent_tree(parent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_tree_session ON agent_tree(session_id, depth);
+CREATE INDEX IF NOT EXISTS idx_agent_tree_status ON agent_tree(status, updated_at);
 `);
             } catch (retryError) {
                 return false;
@@ -1310,11 +1396,14 @@ function getMemoryStoreStatus() {
 
 module.exports = {
     SQLITE_MEMORY_FILE: getSqliteMemoryFile(),
+    allSql,
     closeMemoryStore,
     createMemoryProposal,
     deleteMemory,
     deleteMemoryFact,
     deleteProviderEvent,
+    ensureMemorySchema,
+    getDriverName,
     getMemoryProposal,
     getMemoryStoreStatus,
     getSchemaMeta,
@@ -1330,6 +1419,7 @@ module.exports = {
     recordModelObservation,
     recordProviderEvent,
     recordRetentionDecision,
+    runPrepared,
     searchMemoryFacts,
     searchMemoryFts,
     setSchemaMeta,

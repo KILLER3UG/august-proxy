@@ -421,3 +421,60 @@ export async function answerWorkbenchBtw(
   if (!res.ok) throw new Error(`answerWorkbenchBtw failed: ${res.status}`);
   return res.json();
 }
+
+/* ── Brain orchestrator settings ──────────────────────────────────────── */
+
+export interface BrainConfig {
+  enabled: boolean;
+  adaptivePolicy: boolean;
+  failureLearning: boolean;
+  graphMemory: boolean;
+  agentJobs: boolean;
+  hierarchicalAgents: boolean;
+  adapterParallelTools: boolean;
+  parallelReadTools: boolean;
+  reviewLearnedGuidelines: boolean;
+  maxAgentDepth: number;
+  maxWorkbenchToolLoops: number;
+}
+
+export type BrainConfigSource = 'persisted' | 'session' | 'fallback';
+
+export interface BrainConfigResponse {
+  source: BrainConfigSource;
+  config: BrainConfig;
+  defaults: BrainConfig;
+  sessionId?: string | null;
+  session?: { id: string; task: string | null } | null;
+}
+
+export async function getBrainConfig(): Promise<BrainConfigResponse> {
+  const res = await fetch('/ui/brain/config');
+  if (!res.ok) throw new Error(`getBrainConfig failed: ${res.status}`);
+  return res.json();
+}
+
+export async function saveBrainConfig(updates: Partial<BrainConfig>): Promise<{ ok: boolean; config: BrainConfig; defaults: BrainConfig }> {
+  const res = await fetch('/ui/brain/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates || {}),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `saveBrainConfig failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function resetBrainConfig(): Promise<{ ok: boolean; config: BrainConfig; defaults: BrainConfig }> {
+  const res = await fetch('/ui/brain/config/reset', { method: 'POST' });
+  if (!res.ok) throw new Error(`resetBrainConfig failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getBrainConfigFromSession(sessionId: string): Promise<BrainConfigResponse> {
+  const res = await fetch(`/ui/brain/config/from-session?sessionId=${encodeURIComponent(sessionId)}`);
+  if (!res.ok) throw new Error(`getBrainConfigFromSession failed: ${res.status}`);
+  return res.json();
+}

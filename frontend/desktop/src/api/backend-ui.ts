@@ -395,6 +395,9 @@ export interface AggregatedModel {
 
 export interface AggregatedModelsResponse {
   models: AggregatedModel[];
+  hasMore?: boolean;
+  total?: number;
+  nextOffset?: number | null;
 }
 
 export function isFreeModelId(id: string): boolean {
@@ -403,8 +406,21 @@ export function isFreeModelId(id: string): boolean {
   return lower.includes(':free') || lower.includes('-free') || lower.endsWith('free');
 }
 
-export function getAggregatedModels(): Promise<AggregatedModelsResponse> {
-  return api.get<AggregatedModelsResponse>('/api/models');
+export interface AggregatedModelsOptions {
+  skeleton?: boolean;
+  refresh?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export function getAggregatedModels(opts: AggregatedModelsOptions = {}): Promise<AggregatedModelsResponse> {
+    const params = new URLSearchParams();
+    if (opts.skeleton) params.set('skeleton', 'true');
+    if (opts.refresh) params.set('refresh', 'true');
+    if (opts.limit) params.set('limit', String(opts.limit));
+    if (opts.offset) params.set('offset', String(opts.offset));
+    const qs = params.toString();
+    return api.get<AggregatedModelsResponse>(`/api/models${qs ? `?${qs}` : ''}`);
 }
 
 /* ── User-defined model aliases (fake IDs that route to real models) ── */

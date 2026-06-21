@@ -7,6 +7,8 @@ const { resolveProviderForModel } = require('../../providers/route-resolver');
 const { resolveModelAliasDetails } = require('../../providers/model-list');
 const { buildSystemPromptText } = require('../memory/context-builder');
 const semanticMemory = require('../memory/semantic-memory');
+const topicIndex = require('../memory/topic-index');
+const agentTree = require('../tools/agent-tree');
 const hostAgent = require('../../lib/host-agent');
 const { getMcpToolDefinitions, executeMcpToolCall, isMcpToolName } = require('../tools/mcp-client');
 const { getAugustToolDefinitions, executeAugustToolCall, isAugustToolName } = require('../tools/august-tools');
@@ -233,6 +235,25 @@ function getWorkbenchProfile(session) {
 
 const sessions = new Map();
 const pendingMutations = new Map();
+
+/**
+ * The sessionStatusEmitter fans out `session_status` SSE events to any
+ * subscriber whose callback is registered via `subscribeSessionStatus`.
+ * Subscribers receive `{ sessionId, status, pendingTool, pendingToken,
+ * updatedAt, reason? }`. The approval banner in the UI subscribes once per
+ * session and updates when the status flips between
+ * `running ↔ awaiting_approval ↔ idle`.
+ */
+const sessionStatusSubscribers = new Set();
+function subscribeSessionStatus(callback) {
+    sessionStatusSubscribers.add(callback);
+    return () => sessionStatusSubscribers.delete(callback);
+}
+function sessionStatusEmitter(type, payload) {
+    for (const cb of sessionStatusSubscribers) {
+        try { cb(type, payload); } catch (_) { /* subscriber died; remove next tick */ }
+    }
+}
 const WORKBENCH_SESSIONS_FILE = dataPath('august_workbench_sessions.json');
 
 function loadSessions() {
@@ -397,20 +418,74 @@ function createPendingMutation(session, toolName, args) {
         args,
         createdAt: Date.now()
     });
+    // Flip the session into the "awaiting_approval" state so the UI banner
+    // has a single source of truth. We do not modify `session.plan` or
+    // `session.approved` — those track plan-mode approval, not the per-action
+    // critical-mutation gate.
+    try {
+        if (session) {
+            session.status = 'awaiting_approval';
+            session.updatedAt = new Date().toISOString();
+            saveSessions();
+            // Emit an SSE event so the UI updates without polling.
+            safeEmit(sessionStatusEmitter, 'session_status', {
+                sessionId: session.id,
+                status: 'awaiting_approval',
+                pendingTool: toolName,
+                pendingToken: token,
+                updatedAt: session.updatedAt
+            });
+        }
+    } catch (_) { /* best-effort */ }
     setTimeout(() => {
         const pending = pendingMutations.get(token);
         if (pending && Date.now() - pending.createdAt >= PENDING_CONFIRMATION_TTL_MS) {
             pendingMutations.delete(token);
+            // If the session is still awaiting approval after TTL, drop it
+            // back to idle so the user is not stuck.
+            try {
+                const sess = sessions.get(pending.sessionId);
+                if (sess && sess.status === 'awaiting_approval') {
+                    sess.status = 'idle';
+                    sess.updatedAt = new Date().toISOString();
+                    saveSessions();
+                    safeEmit(sessionStatusEmitter, 'session_status', {
+                        sessionId: sess.id,
+                        status: 'idle',
+                        pendingTool: null,
+                        pendingToken: null,
+                        updatedAt: sess.updatedAt,
+                        reason: 'expired'
+                    });
+                }
+            } catch (_) { /* best-effort */ }
         }
     }, PENDING_CONFIRMATION_TTL_MS);
     return token;
 }
 
-function consumePendingMutation(token) {
+function consumePendingMutation(token, { reject = false } = {}) {
     const pending = pendingMutations.get(token);
     if (!pending) return { status: 'expired', message: 'Confirmation token expired or invalid. Resubmit the mutation request.' };
     pendingMutations.delete(token);
-    return { status: 'ok', pending };
+    // Flip the session back to running (approved) or idle (rejected).
+    try {
+        const sess = sessions.get(pending.sessionId);
+        if (sess) {
+            sess.status = reject ? 'idle' : 'running';
+            sess.updatedAt = new Date().toISOString();
+            saveSessions();
+            safeEmit(sessionStatusEmitter, 'session_status', {
+                sessionId: sess.id,
+                status: sess.status,
+                pendingTool: null,
+                pendingToken: null,
+                updatedAt: sess.updatedAt,
+                reason: reject ? 'rejected' : 'approved'
+            });
+        }
+    } catch (_) { /* best-effort */ }
+    return { status: reject ? 'rejected' : 'ok', pending };
 }
 
 const WORKSPACE_ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -496,7 +571,7 @@ function resolveAgentId(agentId, fallback = 'build') {
     return fallback;
 }
 
-function createWorkbenchSession({ provider = 'claude', agentId = 'build', guardMode = 'plan' } = {}) {
+function createWorkbenchSession({ provider = 'claude', agentId = 'build', guardMode = 'plan', task = null, goal = null } = {}) {
     const resolvedAgentId = resolveAgentId(agentId, 'build');
     const normalizedGuardMode = normalizeGuardMode(guardMode);
     const session = {
@@ -510,8 +585,9 @@ function createWorkbenchSession({ provider = 'claude', agentId = 'build', guardM
         plan: null,
         approved: false,
         approvedAt: null,
-        goal: null,
-        lastGoal: null,
+        goal,
+        lastGoal: goal,
+        task: task || null,
         mutationLog: [],
         todos: [],
         createdAt: new Date().toISOString(),
@@ -520,6 +596,15 @@ function createWorkbenchSession({ provider = 'claude', agentId = 'build', guardM
     loadSessions();
     sessions.set(session.id, session);
     saveSessions();
+    // Auto-classify topic from task text so the Memory tab can group this
+    // session with siblings. Failure here is non-fatal — the session still
+    // works, it just won't show up in the topic sidebar.
+    try {
+        const seedText = task || goal || (Array.isArray(session.messages) && session.messages[0]?.content) || '';
+        if (seedText) topicIndex.indexSession({ sessionId: session.id, taskText: seedText });
+    } catch (e) {
+        // Best-effort; never block session creation.
+    }
     return summarizeSession(session);
 }
 
@@ -528,6 +613,40 @@ function getWorkbenchSession(id) {
     if (id && sessions.has(id)) return sessions.get(id);
     const newSession = createWorkbenchSession();
     return sessions.get(newSession.id);
+}
+
+/**
+ * Lightweight status surface for the UI's approval banner. Looks up the
+ * pending mutation (if any) for the session and returns a flat object the
+ * UI can consume without parsing the full session payload.
+ */
+function getWorkbenchSessionStatus(sessionId) {
+    loadSessions();
+    const session = sessions.get(sessionId);
+    if (!session) return null;
+    let pending = null;
+    for (const [token, p] of pendingMutations.entries()) {
+        if (p.sessionId === sessionId) {
+            pending = {
+                token,
+                toolName: p.toolName,
+                args: p.args,
+                createdAt: p.createdAt
+            };
+            break;
+        }
+    }
+    return {
+        sessionId,
+        status: session.status || 'idle',
+        pendingTool: pending?.toolName || null,
+        pendingToken: pending?.token || null,
+        pendingArgs: pending?.args || null,
+        pendingCreatedAt: pending?.createdAt || null,
+        updatedAt: session.updatedAt || null,
+        guardMode: session.guardMode || 'plan',
+        approved: !!session.approved
+    };
 }
 
 function listWorkbenchSessions() {
@@ -1541,7 +1660,7 @@ async function executeSubAgent(session, args, toolContext = {}) {
     if (!targetUrl) return { status: 'error', message: 'Provider target URL missing.' };
 
     const brainConfig = getBrainConfig();
-    const maxDepth = Math.max(1, Math.min(5, Number(brainConfig.maxAgentDepth || 2)));
+    const maxDepth = Math.max(1, Math.min(5, Number(brainConfig.maxAgentDepth || 4)));
     const depth = Math.max(0, Number(args.depth ?? toolContext.depth ?? 0) || 0);
     if (depth >= maxDepth) {
         return {
@@ -1571,6 +1690,30 @@ async function executeSubAgent(session, args, toolContext = {}) {
         status: 'running'
     });
     appendAgentJobMessage(job.id, 'user', task, { depth, parentAgentId, childAgentId });
+
+    // Mirror into the durable SQLite agent_tree so the UI can render a
+    // hierarchical tree view without parsing the agent_jobs JSON.
+    try {
+        agentTree.recordSpawn({
+            id: job.id,
+            parentId: args.parent_job_id || toolContext.parentJobId || null,
+            sessionId: session?.id || null,
+            parentSessionId: toolContext.parentSessionId || null,
+            agentId: childAgentId,
+            parentAgentId,
+            depth,
+            scope,
+            task,
+            status: 'running',
+            metadata: {
+                model,
+                provider: subResolution?.provider || session?.provider || null,
+                alias: subResolution?.alias || parentAlias || null
+            }
+        });
+    } catch (e) {
+        // Non-fatal: agent-tree is a UI surface, not a critical path.
+    }
 
     // If the resolver had to fall back, surface a warning event to the UI so
     // the user can see *why* the sub-agent may behave differently from the
@@ -1652,6 +1795,7 @@ async function executeSubAgent(session, args, toolContext = {}) {
             if (!res.ok) {
                 const message = `Sub-agent upstream error: ${raw.slice(0, 300)}`;
                 failAgentJob(job.id, message, { loops: subLoops });
+                try { agentTree.recordResult(job.id, { status: 'failed', resultSummary: message }); } catch (_) {}
                 return { status: 'error', jobId: job.id, message };
             }
             const data = JSON.parse(raw);
@@ -1700,10 +1844,12 @@ async function executeSubAgent(session, args, toolContext = {}) {
             }
         } catch (e) {
             failAgentJob(job.id, e, { loops: subLoops });
+            try { agentTree.recordResult(job.id, { status: 'failed', resultSummary: e?.message || String(e) }); } catch (_) {}
             return { status: 'error', jobId: job.id, message: `Sub-agent error: ${e.message}` };
         }
     }
     completeAgentJob(job.id, subResult || '(no text output)', { loops: subLoops });
+    try { agentTree.recordResult(job.id, { status: 'completed', resultSummary: subResult || '(no text output)' }); } catch (_) {}
     return {
         status: 'ok',
         jobId: job.id,
@@ -3181,6 +3327,8 @@ module.exports = {
     clearWorkbenchGoal,
     consumePendingMutation,
     createWorkbenchSession,
+    getWorkbenchSessionStatus,
+    subscribeSessionStatus,
     deleteWorkbenchSession,
     executeWorkbenchToolBatch,
     executeWorkbenchTool,

@@ -90,6 +90,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     legacyAliases: ['models', 'providers'],
   },
   {
+    id: 'brain-orchestrator',
+    label: 'Brain Orchestrator',
+    description: 'Tune the per-turn policy: adaptive rules, agent depth, parallel tools, failure learning.',
+    icon: Brain,
+    category: 'chat',
+    keywords: ['brain', 'orchestrator', 'policy', 'agent depth', 'subagent', 'tool loop', 'parallel'],
+    legacyAliases: ['brain'],
+  },
+  {
     id: 'conversations-history',
     label: 'Conversations & History',
     description: 'Chat sessions, archived history, and export/import.',

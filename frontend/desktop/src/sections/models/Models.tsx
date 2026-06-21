@@ -73,10 +73,18 @@ export function Models() {
 
 function CatalogTab() {
   const [q, setQ] = useState('');
-  const { data, isLoading } = useQuery({
-    queryKey: ['aggregated-models'],
-    queryFn: () => getAggregatedModels(),
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
+  const { data: skeletonData } = useQuery({
+    queryKey: ['aggregated-models-skeleton'],
+    queryFn: () => getAggregatedModels({ skeleton: true }),
+    staleTime: 30_000,
   });
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['aggregated-models', page],
+    queryFn: () => getAggregatedModels({ limit: PAGE_SIZE, offset: page * PAGE_SIZE }),
+  });
+  const showSkeleton = isLoading || (isFetching && (data?.models?.length ?? 0) === 0);
 
   // Free models first, then alphabetical — mirrors the server sort but
   // applied client-side so the search filter stays stable.
@@ -106,7 +114,16 @@ function CatalogTab() {
   const total = grouped.reduce((sum, [, list]) => sum + list.length, 0);
   const freeCount = grouped.reduce((sum, [, list]) => sum + list.filter((m) => m.isFree).length, 0);
 
-  if (isLoading) return <div className="text-sm text-muted-foreground p-6">Loading catalog…</div>;
+  if (isLoading || showSkeleton) return (
+    <div className="space-y-2 p-3" data-testid="models-skeleton">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+        Warming model cache…
+      </div>
+      {[0, 1, 2, 3, 4, 5].map((i) => (
+        <div key={i} className="h-10 rounded-md bg-muted/30 animate-pulse" />
+      ))}
+    </div>
+  );
 
   return (
     <div className="space-y-3 h-full flex flex-col">
@@ -144,6 +161,18 @@ function CatalogTab() {
             ))}
           </div>
         </Card>
+      )}
+      {data?.hasMore && (
+        <div className="flex justify-center pt-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={isFetching}
+          >
+            {isFetching ? 'Loading…' : 'Load more'}
+          </Button>
+        </div>
       )}
     </div>
   );

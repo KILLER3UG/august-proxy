@@ -298,7 +298,74 @@ const requestHandler = async (req, res) => {
         return res.end();
     }
 
+    // ── Brain config (must come BEFORE the memory-routes catch-all which would 404 /ui/brain/*) ──
+    if (req.url === '/ui/brain/config' || req.url.startsWith('/ui/brain/config?')) {
+        if (req.method === 'GET') {
+            try {
+                const { getBrainConfigForSettings, listWorkbenchSessions } = require('./services/memory/brain-orchestrator');
+                const { getWorkbenchSession } = require('./services/workbench/workbench');
+                let sessionId = null;
+                try {
+                    const recent = (listWorkbenchSessions() || [])[0];
+                    if (recent && recent.id) sessionId = recent.id;
+                } catch (_) { /* no sessions yet */ }
+                const payload = getBrainConfigForSettings({ sessionId });
+                const sessionPayload = sessionId ? getWorkbenchSession(sessionId) : null;
+                return sendJson(res, { ...payload, sessionId, session: sessionPayload ? { id: sessionPayload.id, task: sessionPayload.task || sessionPayload.lastGoal || null } : null });
+            } catch (e) { return sendError(res, e, 500); }
+        }
+        if (req.method === 'PUT') {
+            try {
+                const body = await readJsonBody(req);
+                const { saveBrainConfig, DEFAULT_FEATURES } = require('./services/memory/brain-orchestrator');
+                const merged = saveBrainConfig(body || {});
+                try {
+                    const audit = require('./services/audit/audit-log');
+                    audit.appendAuditEntry({
+                        actor: 'user', action: 'brain_config_update', category: 'config',
+                        target: 'cfg.brainOrchestrator', args: { before: body || {}, after: merged }, result: 'ok'
+                    });
+                } catch (_) {}
+                return sendJson(res, { ok: true, config: merged, defaults: DEFAULT_FEATURES });
+            } catch (e) {
+                if (e && e.code === 'EBRAIN_UNKNOWN_KEY') return sendError(res, e, 400);
+                return sendError(res, e, 400);
+            }
+        }
+    }
+    if ((req.url === '/ui/brain/config/reset' || req.url.startsWith('/ui/brain/config/reset?')) && req.method === 'POST') {
+        try {
+            const { resetBrainConfig, DEFAULT_FEATURES } = require('./services/memory/brain-orchestrator');
+            const next = resetBrainConfig();
+            try {
+                const audit = require('./services/audit/audit-log');
+                audit.appendAuditEntry({
+                    actor: 'user', action: 'brain_config_update', category: 'config',
+                    target: 'cfg.brainOrchestrator', args: { action: 'reset', after: next }, result: 'ok'
+                });
+            } catch (_) {}
+            return sendJson(res, { ok: true, config: next, defaults: DEFAULT_FEATURES });
+        } catch (e) { return sendError(res, e, 500); }
+    }
+    if (req.url.startsWith('/ui/brain/config/from-session') && req.method === 'GET') {
+        try {
+            const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+            const sessionId = parsed.searchParams.get('sessionId');
+            if (!sessionId) return sendJson(res, { error: 'sessionId query param is required' }, 400);
+            const { getBrainConfigForSettings } = require('./services/memory/brain-orchestrator');
+            return sendJson(res, getBrainConfigForSettings({ sessionId }));
+        } catch (e) { return sendError(res, e, 500); }
+    }
+
     if (await handleMemoryRoutes(req, res, req.url)) return;
+
+    // ── Agents tree API ───────────────────────────────────────────────
+    if (req.url.startsWith('/ui/agents/')) {
+        const { handleAgentsRoutes } = require('./routes/agents-routes');
+        const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+        const handled = handleAgentsRoutes(req, res, parsed.pathname, parsed);
+        if (handled !== false) return;
+    }
 
     if (req.url === '/ui/config' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -659,14 +726,26 @@ const requestHandler = async (req, res) => {
     }
 
     // ── Aggregate models from all active providers ──
-    if (req.url === '/api/models' && req.method === 'GET') {
+    if ((req.url === '/api/models' || req.url.startsWith('/api/models?')) && req.method === 'GET') {
         try {
             const { getModelList } = require('./providers/model-list');
-            const models = await getModelList();
-            return sendJson(res, { models });
+            const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+            const skeleton = parsed.searchParams.get('skeleton') === 'true';
+            const refresh = parsed.searchParams.get('refresh') === 'true';
+            const limit = Math.max(0, parseInt(parsed.searchParams.get('limit') || '0', 10) || 0);
+            const offset = Math.max(0, parseInt(parsed.searchParams.get('offset') || '0', 10) || 0);
+            const result = await getModelList({ skeleton, refresh, limit, offset });
+            if (skeleton) {
+                const { modelListCache: cache } = require('./providers/model-list');
+                res.setHeader('X-August-Models-Cache', cache ? 'warm' : 'pending');
+            }
+            if (Array.isArray(result)) {
+                return sendJson(res, { models: result, hasMore: false, total: result.length });
+            }
+            return sendJson(res, result);
         } catch (e) {
             console.error('[Proxy /api/models] error:', e.message);
-            return sendJson(res, { models: [] });
+            return sendJson(res, { models: [], hasMore: false, total: 0 });
         }
     }
 
@@ -702,6 +781,84 @@ const requestHandler = async (req, res) => {
                 agentJobs: listAgentJobs({ status: 'all', limit: 1 }).count
             }
         });
+    }
+
+    // GET /ui/brain/config — { config, defaults, source }
+    if (req.url === '/ui/brain/config' && req.method === 'GET') {
+        try {
+            const { getBrainConfigForSettings, listWorkbenchSessions } = require('./services/memory/brain-orchestrator');
+            const { getWorkbenchSession } = require('./services/workbench/workbench');
+            let sessionId = null;
+            try {
+                const recent = (listWorkbenchSessions() || [])[0];
+                if (recent && recent.id) sessionId = recent.id;
+            } catch (_) { /* no sessions yet */ }
+            const payload = getBrainConfigForSettings({ sessionId });
+            const sessionPayload = sessionId ? getWorkbenchSession(sessionId) : null;
+            return sendJson(res, { ...payload, sessionId, session: sessionPayload ? { id: sessionPayload.id, task: sessionPayload.task || sessionPayload.lastGoal || null } : null });
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    // PUT /ui/brain/config — body: partial DEFAULT_FEATURES
+    if (req.url === '/ui/brain/config' && req.method === 'PUT') {
+        try {
+            const body = await readJsonBody(req);
+            const { saveBrainConfig, DEFAULT_FEATURES } = require('./services/memory/brain-orchestrator');
+            const merged = saveBrainConfig(body || {});
+            try {
+                const audit = require('./services/audit/audit-log');
+                audit.appendAuditEntry({
+                    actor: 'user',
+                    action: 'brain_config_update',
+                    category: 'config',
+                    target: 'cfg.brainOrchestrator',
+                    args: { before: body || {}, after: merged },
+                    result: 'ok'
+                });
+            } catch (_) { /* audit is best-effort */ }
+            return sendJson(res, { ok: true, config: merged, defaults: DEFAULT_FEATURES });
+        } catch (e) {
+            if (e && e.code === 'EBRAIN_UNKNOWN_KEY') return sendError(res, e, 400);
+            return sendError(res, e, 400);
+        }
+    }
+
+    // POST /ui/brain/config/reset — clear persisted config
+    if (req.url === '/ui/brain/config/reset' && req.method === 'POST') {
+        try {
+            const { resetBrainConfig, DEFAULT_FEATURES } = require('./services/memory/brain-orchestrator');
+            const next = resetBrainConfig();
+            try {
+                const audit = require('./services/audit/audit-log');
+                audit.appendAuditEntry({
+                    actor: 'user',
+                    action: 'brain_config_update',
+                    category: 'config',
+                    target: 'cfg.brainOrchestrator',
+                    args: { action: 'reset', after: next },
+                    result: 'ok'
+                });
+            } catch (_) {}
+            return sendJson(res, { ok: true, config: next, defaults: DEFAULT_FEATURES });
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
+    }
+
+    // GET /ui/brain/config/from-session?sessionId=<id>
+    if (req.url.startsWith('/ui/brain/config/from-session') && req.method === 'GET') {
+        try {
+            const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+            const sessionId = parsed.searchParams.get('sessionId');
+            if (!sessionId) return sendJson(res, { error: 'sessionId query param is required' }, 400);
+            const { getBrainConfigForSettings } = require('./services/memory/brain-orchestrator');
+            const payload = getBrainConfigForSettings({ sessionId });
+            return sendJson(res, payload);
+        } catch (e) {
+            return sendError(res, e, 500);
+        }
     }
 
     if (req.url === '/ui/workbench/session' && req.method === 'POST') {
@@ -819,7 +976,10 @@ const requestHandler = async (req, res) => {
     if (req.url === '/ui/workbench/confirm-mutation' && req.method === 'POST') {
         try {
             const data = await readJsonBody(req);
-            const consumed = consumePendingMutation(data.token);
+            const consumed = consumePendingMutation(data.token, { reject: !!data.reject });
+            if (consumed.status === 'rejected') {
+                return sendJson(res, { status: 'rejected', message: 'User denied the pending mutation.' });
+            }
             if (consumed.status !== 'ok') return sendJson(res, consumed);
             const session = getWorkbenchSession(consumed.pending.sessionId);
             if (!session) return sendError(res, new Error('Session not found'), 400);
@@ -831,6 +991,20 @@ const requestHandler = async (req, res) => {
             return sendJson(res, result || { status: 'ok' });
         } catch (e) {
             return sendError(res, e, 400);
+        }
+    }
+
+    // GET /ui/workbench/session/:id/status → lightweight approval state
+    if (req.url.startsWith('/ui/workbench/session/') && req.url.endsWith('/status') && req.method === 'GET') {
+        try {
+            const sessionId = decodeURIComponent(req.url.split('/')[4] || '');
+            if (!sessionId) return sendJson(res, { error: 'session id is required' }, 400);
+            const { getWorkbenchSessionStatus } = require('./services/workbench/workbench');
+            const status = getWorkbenchSessionStatus(sessionId);
+            if (!status) return sendJson(res, { error: 'Session not found', sessionId }, 404);
+            return sendJson(res, status);
+        } catch (e) {
+            return sendError(res, e, 500);
         }
     }
 
@@ -1798,7 +1972,21 @@ const requestHandler = async (req, res) => {
     if (cleanPath.includes('/v1/models') && req.method === 'GET') {
         try {
             const { getModelListOpenAI } = require('./providers/model-list');
-            const payload = await getModelListOpenAI({ includeClientAliases: true, filterRoutable: true });
+            const parsedV1 = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+            const limit = Math.max(0, parseInt(parsedV1.searchParams.get('limit') || '0', 10) || 0);
+            const offset = Math.max(0, parseInt(parsedV1.searchParams.get('offset') || '0', 10) || 0);
+            const skeleton = parsedV1.searchParams.get('skeleton') === 'true';
+            if (skeleton) {
+                const { modelListCache: cache } = require('./providers/model-list');
+                res.setHeader('X-August-Models-Cache', cache ? 'warm' : 'pending');
+            }
+            const payload = await getModelListOpenAI({
+                includeClientAliases: true,
+                filterRoutable: true,
+                limit,
+                offset,
+                skeleton
+            });
             return sendJson(res, payload);
         } catch (e) {
             console.error('[Proxy /v1/models] error:', e.message);
@@ -2164,6 +2352,12 @@ const wss = new WebSocketServer({ noServer: true });
 function startServer() {
     server.listen(LISTEN_PORT, '0.0.0.0', () => {
         console.log('[bridge] Server is listening...');
+        // Pre-warm the model list cache so the first /api/models call after
+        // boot is instant. Fire-and-forget; logs the duration either way.
+        try {
+            const { prewarmModelList } = require('./providers/model-list');
+            prewarmModelList().catch(() => {});
+        } catch (_) { /* prewarm is best-effort */ }
     });
 
     server.on('upgrade', (req, socket, head) => {

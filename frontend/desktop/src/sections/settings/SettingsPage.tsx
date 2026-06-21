@@ -18,6 +18,7 @@ import { WorkspaceMemorySection } from '@/sections/workspace/WorkspaceMemorySect
 import { WorkspaceInspectorSection } from '@/sections/workspace/WorkspaceInspectorSection';
 import { WorkspaceModelsSection } from '@/sections/workspace/WorkspaceModelsSection';
 import { WorkspaceGeneralSection } from '@/sections/workspace/WorkspaceGeneralSection';
+import { BrainSettings } from '@/sections/overview/BrainSettings';
 import { SystemHealthSection } from './SystemHealthSection';
 import { ToolsConnectionsSection } from './ToolsConnectionsSection';
 import { ConversationsHistorySection } from './ConversationsHistorySection';
@@ -58,6 +59,7 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'memory-knowledge': MemoryWrapper,
   'conversation-inspector': InspectorWrapper,
   'model-providers': ModelsWrapper,
+  'brain-orchestrator': BrainWrapper,
   'profile-preferences': GeneralWrapper,
   'system-health': SystemHealthWrapper,
   'tools-connections': ToolsConnectionsWrapper,
@@ -77,6 +79,7 @@ function UsageWrapper() { return <WorkspaceUsageSection />; }
 function MemoryWrapper() { return <WorkspaceMemorySection />; }
 function InspectorWrapper() { return <WorkspaceInspectorSection />; }
 function ModelsWrapper() { return <WorkspaceModelsSection />; }
+function BrainWrapper() { return <BrainSettings />; }
 function GeneralWrapper() { return <WorkspaceGeneralSection />; }
 function SystemHealthWrapper() { return <SystemHealthSection />; }
 function ToolsConnectionsWrapper() { return <ToolsConnectionsSection />; }

@@ -16,6 +16,207 @@ let modelAliasCache = null;
 let modelAliasCacheAt = 0;
 const MODEL_ALIAS_CACHE_TTL_MS = 60000;
 
+// ── Model list cache (5 min TTL) ────────────────────────────────────────
+// The aggregated list of every provider's models is expensive to rebuild
+// (network calls per provider). A stale-on-read pattern lets the first
+// caller see the previous result immediately while a background refresh
+// fills in fresh data.
+let modelListCache = null;
+let modelListCacheAt = 0;
+const MODEL_LIST_CACHE_TTL_MS = 5 * 60 * 1000;
+let modelListRefreshInFlight = null;
+
+function invalidateModelListCache() {
+    modelListCache = null;
+    modelListCacheAt = 0;
+}
+
+/**
+ * Fetch one provider's models with a hard timeout. Never throws — failures
+ * are returned as `{ ok: false, error }` so the caller can drop the provider
+ * from the aggregated list without aborting the rest of the fetch.
+ */
+async function fetchProviderModelsWithTimeout(p, timeoutMs = 5000) {
+    const config = getProviderConfig(p.name) || {};
+    const apiKey = config.apiKey || p.resolveApiKey();
+    const baseUrl = config.baseUrl || config.targetUrl || p.resolveBaseUrl();
+
+    let models = [];
+    let liveOk = false;
+
+    try {
+        const modelsUrl = deriveModelsUrl(baseUrl);
+        if (modelsUrl && apiKey) {
+            const fetchRes = await fetch(modelsUrl, {
+                headers: { Authorization: `Bearer ${apiKey}` },
+                signal: AbortSignal.timeout(timeoutMs),
+            });
+            if (fetchRes.ok) {
+                const data = await fetchRes.json();
+                const list = data.data || data.models || data || [];
+                models = list.map((m) => ({
+                    id: m.id,
+                    name: m.id,
+                    provider: p.name,
+                    contextWindow: getContextWindowForModel(m.id, p, m.context_length),
+                }));
+                liveOk = true;
+            }
+        }
+    } catch (e) {
+        console.warn(`[Proxy Models] Failed to fetch models for ${p.name}:`, e.message);
+    }
+
+    // Fallback to static known models for providers without a models API.
+    if (models.length === 0) {
+        let staticModels = staticModelsFor(p.name);
+        if (staticModels.length === 0) {
+            if (p.defaultModel) staticModels.push({ id: p.defaultModel, contextWindow: 128000 });
+            if (p.fallbackModels) p.fallbackModels.forEach((m) => staticModels.push({ id: m, contextWindow: 128000 }));
+        }
+        models = staticModels.map((m) => ({
+            id: m.id,
+            name: m.id,
+            provider: p.name,
+            contextWindow: getContextWindowForModel(m.id, p, m.contextWindow),
+        }));
+    }
+
+    // Always include any explicitly configured models for this provider.
+    const configuredModelIds = new Set();
+    if (config.currentModel) configuredModelIds.add(config.currentModel);
+    if (config.model) configuredModelIds.add(config.model);
+    if (config._upstreamModel) configuredModelIds.add(config._upstreamModel);
+    if (config.contextModelId) configuredModelIds.add(config.contextModelId);
+    if (Array.isArray(config.models)) {
+        config.models.forEach((m) => {
+            if (typeof m === 'string') configuredModelIds.add(m);
+            else if (m && m.id) configuredModelIds.add(m.id);
+        });
+    }
+    for (const mid of configuredModelIds) {
+        if (!models.some((m) => m.id === mid)) {
+            models.push({
+                id: mid,
+                name: mid,
+                provider: p.name,
+                contextWindow: getContextWindowForModel(mid, p, config.contextWindow),
+            });
+        }
+    }
+
+    const mappedModels = models.map((m) => {
+        const provProfile = p.getModelProfile(m.id);
+        const globalProfile = resolveModelProfile(m.id);
+        const supportsThinking = !!(provProfile?.supportsThinking || globalProfile?.supportsThinking);
+        const supportsReasoning = !!(provProfile?.supportsReasoning || provProfile?.supportsThinking || globalProfile?.supportsReasoning || globalProfile?.supportsThinking);
+        return {
+            ...m,
+            supportsReasoning,
+            supportsThinking,
+            isFree: isFreeModelId(m.id),
+        };
+    });
+
+    return { ok: true, provider: p.name, models: mappedModels, liveOk };
+}
+
+/**
+ * Aggregate every provider's models in parallel. Each provider runs
+ * independently so a slow / failing provider no longer blocks the rest.
+ */
+async function aggregateModels() {
+    const providers = listProviders();
+    const enabled = providers.filter((p) => {
+        const config = getProviderConfig(p.name) || {};
+        const apiKey = config.apiKey || p.resolveApiKey();
+        return p.isAvailable() || !!apiKey;
+    });
+
+    const results = await Promise.allSettled(
+        enabled.map((p) => fetchProviderModelsWithTimeout(p, 5000))
+    );
+
+    const allModels = [];
+    for (const r of results) {
+        if (r.status === 'fulfilled' && r.value?.models) {
+            allModels.push(...r.value.models);
+        } else if (r.status === 'rejected') {
+            console.warn('[Proxy Models] Provider aggregation rejected:', r.reason?.message || r.reason);
+        }
+    }
+
+    // De-duplicate by id, free models first.
+    const unique = Array.from(new Map(allModels.map((m) => [m.id, m])).values());
+    unique.sort((a, b) => {
+        if (a.isFree !== b.isFree) return a.isFree ? -1 : 1;
+        return (a.id || '').localeCompare(b.id || '');
+    });
+
+    // Inject user-defined aliases from config, overriding any real model
+    // with the same ID so they appear under the 'Alias' provider group.
+    try {
+        const cfg = getConfig();
+        const userAliases = cfg.modelAliases || [];
+        for (const aliasDef of userAliases) {
+            if (!aliasDef || !aliasDef.alias) continue;
+            const existingIdx = unique.findIndex(m => m.id === aliasDef.alias);
+            if (existingIdx >= 0) unique.splice(existingIdx, 1);
+            unique.push({
+                id: aliasDef.alias,
+                name: aliasDef.alias,
+                provider: 'Alias',
+                contextWindow: 128000,
+                supportsReasoning: false,
+                supportsThinking: false,
+                isFree: false,
+            });
+        }
+    } catch (_) {}
+
+    return unique;
+}
+
+/**
+ * Refresh the model list cache in the background. Coalesces concurrent
+ * refreshes via `modelListRefreshInFlight` so the first caller after
+ * expiry triggers exactly one refresh.
+ */
+function refreshInBackground() {
+    if (modelListRefreshInFlight) return modelListRefreshInFlight;
+    modelListRefreshInFlight = (async () => {
+        try {
+            const fresh = await aggregateModels();
+            modelListCache = fresh;
+            modelListCacheAt = Date.now();
+            return fresh;
+        } catch (e) {
+            console.warn('[Proxy Models] Background refresh failed:', e.message);
+            return modelListCache || [];
+        } finally {
+            modelListRefreshInFlight = null;
+        }
+    })();
+    return modelListRefreshInFlight;
+}
+
+/**
+ * Pre-warm the cache on app startup. Best-effort; logs and swallows errors.
+ */
+async function prewarmModelList({ logPrefix = '[Proxy PreWarm]' } = {}) {
+    const t0 = Date.now();
+    try {
+        const list = await aggregateModels();
+        modelListCache = list;
+        modelListCacheAt = Date.now();
+        console.log(`${logPrefix} model list cached in ${Date.now() - t0}ms (${list.length} models)`);
+        return list;
+    } catch (e) {
+        console.warn(`${logPrefix} model list warmup failed:`, e.message);
+        return [];
+    }
+}
+
 function isFreeModelId(id) {
     if (typeof id !== 'string') return false;
     const lower = id.toLowerCase();
@@ -138,7 +339,8 @@ function buildModelAliasMap(models) {
 async function getModelAliasMap() {
     const now = Date.now();
     if (modelAliasCache && now - modelAliasCacheAt < MODEL_ALIAS_CACHE_TTL_MS) return modelAliasCache;
-    const models = await getModelList();
+    const result = await getModelList();
+    const models = Array.isArray(result) ? result : (result.models || []);
     modelAliasCache = buildModelAliasMap(models);
     modelAliasCacheAt = now;
     return modelAliasCache;
@@ -278,134 +480,67 @@ function staticModelsFor(providerName) {
  *   { id, name, provider, contextWindow, supportsReasoning, supportsThinking, isFree }
  *
  * Free models are NOT filtered out here; callers decide how to sort/filter.
+ *
+ * Options:
+ *   { skeleton = false }  → if true, returns `{ models: [], hasMore: false, total: 0 }` immediately
+ *                            and triggers a background refresh.
+ *   { limit = 0, offset = 0 } → pagination over the aggregated list.
+ *   { refresh = false }  → force a synchronous refresh (skips cache).
  */
-async function getModelList() {
-    const providers = listProviders();
-    const allModels = [];
+async function getModelList(options = {}) {
+    const { skeleton = false, limit = 0, offset = 0, refresh = false } = options || {};
 
-    for (const p of providers) {
-        const config = getProviderConfig(p.name) || {};
-        const apiKey = config.apiKey || p.resolveApiKey();
-        const baseUrl = config.baseUrl || config.targetUrl || p.resolveBaseUrl();
-        const enabled = p.isAvailable() || !!config.apiKey;
-
-        if (!enabled) continue;
-
-        let models = [];
-
-        // Try a live fetch from the provider's /models endpoint.
-        try {
-            const modelsUrl = deriveModelsUrl(baseUrl);
-            if (modelsUrl && apiKey) {
-                const fetchRes = await fetch(modelsUrl, {
-                    headers: { Authorization: `Bearer ${apiKey}` },
-                    signal: AbortSignal.timeout(5000),
-                });
-                if (fetchRes.ok) {
-                    const data = await fetchRes.json();
-                    const list = data.data || data.models || data || [];
-                    models = list.map((m) => ({
-                        id: m.id,
-                        name: m.id,
-                        provider: p.name,
-                        contextWindow: getContextWindowForModel(m.id, p, m.context_length),
-                    }));
-                }
-            }
-        } catch (e) {
-            console.warn(`[Proxy Models] Failed to fetch models for ${p.name}:`, e.message);
+    if (skeleton) {
+        // Trigger a background refresh without blocking.
+        if (!modelListCache || (Date.now() - modelListCacheAt) >= MODEL_LIST_CACHE_TTL_MS) {
+            refreshInBackground();
         }
-
-        // Fallback to static known models for providers without a models API.
-        if (models.length === 0) {
-            let staticModels = staticModelsFor(p.name);
-            if (staticModels.length === 0) {
-                if (p.defaultModel) staticModels.push({ id: p.defaultModel, contextWindow: 128000 });
-                if (p.fallbackModels) p.fallbackModels.forEach((m) => staticModels.push({ id: m, contextWindow: 128000 }));
-            }
-            models = staticModels.map((m) => ({
-                id: m.id,
-                name: m.id,
-                provider: p.name,
-                contextWindow: getContextWindowForModel(m.id, p, m.contextWindow),
-            }));
-        }
-
-        // Always include any explicitly configured models for this provider.
-        const configuredModelIds = new Set();
-        if (config.currentModel) configuredModelIds.add(config.currentModel);
-        if (config.model) configuredModelIds.add(config.model);
-        if (config._upstreamModel) configuredModelIds.add(config._upstreamModel);
-        if (config.contextModelId) configuredModelIds.add(config.contextModelId);
-        if (Array.isArray(config.models)) {
-            config.models.forEach((m) => {
-                if (typeof m === 'string') configuredModelIds.add(m);
-                else if (m && m.id) configuredModelIds.add(m.id);
-            });
-        }
-        for (const mid of configuredModelIds) {
-            if (!models.some((m) => m.id === mid)) {
-                models.push({
-                    id: mid,
-                    name: mid,
-                    provider: p.name,
-                    contextWindow: getContextWindowForModel(mid, p, config.contextWindow),
-                });
-            }
-        }
-
-        // Attach reasoning/thinking flags + isFree marker.
-        const mappedModels = models.map((m) => {
-            const provProfile = p.getModelProfile(m.id);
-            const globalProfile = resolveModelProfile(m.id);
-            const supportsThinking = !!(provProfile?.supportsThinking || globalProfile?.supportsThinking);
-            const supportsReasoning = !!(provProfile?.supportsReasoning || provProfile?.supportsThinking || globalProfile?.supportsReasoning || globalProfile?.supportsThinking);
-            return {
-                ...m,
-                supportsReasoning,
-                supportsThinking,
-                isFree: isFreeModelId(m.id),
-            };
-        });
-
-        allModels.push(...mappedModels);
+        return { models: [], hasMore: false, total: modelListCache ? modelListCache.length : 0 };
     }
 
-    // De-duplicate by id, free models first.
-    const unique = Array.from(new Map(allModels.map((m) => [m.id, m])).values());
-    unique.sort((a, b) => {
-        if (a.isFree !== b.isFree) return a.isFree ? -1 : 1;
-        return (a.id || '').localeCompare(b.id || '');
-    });
-    // Inject user-defined aliases from config, overriding any real model
-    // with the same ID so they appear under the 'Alias' provider group.
-    try {
-        const cfg = getConfig();
-        const userAliases = cfg.modelAliases || [];
-        for (const aliasDef of userAliases) {
-            if (!aliasDef || !aliasDef.alias) continue;
-            // Remove any existing entry with this ID (from a real provider)
-            // so the alias takes over and appears under the 'Alias' group.
-            const existingIdx = unique.findIndex(m => m.id === aliasDef.alias);
-            if (existingIdx >= 0) unique.splice(existingIdx, 1);
-            unique.push({
-                id: aliasDef.alias,
-                name: aliasDef.alias,
-                provider: 'Alias',
-                contextWindow: 128000,
-                supportsReasoning: false,
-                supportsThinking: false,
-                isFree: false,
-            });
-        }
-    } catch (_) {}
+    if (refresh) {
+        const fresh = await aggregateModels();
+        modelListCache = fresh;
+        modelListCacheAt = Date.now();
+        return paginate(fresh, limit, offset);
+    }
 
-    return unique;
+    if (modelListCache && (Date.now() - modelListCacheAt) < MODEL_LIST_CACHE_TTL_MS) {
+        return paginate(modelListCache, limit, offset);
+    }
+
+    if (modelListCache) {
+        // Stale-while-revalidate: return stale and refresh in background.
+        refreshInBackground();
+        return paginate(modelListCache, limit, offset);
+    }
+
+    // Cold path: aggregate synchronously and cache.
+    const fresh = await aggregateModels();
+    modelListCache = fresh;
+    modelListCacheAt = Date.now();
+    return paginate(fresh, limit, offset);
+}
+
+function paginate(list, limit, offset) {
+    const total = list.length;
+    if (!limit || limit <= 0) {
+        return { models: list, hasMore: false, total };
+    }
+    const start = Math.max(0, offset || 0);
+    const end = start + limit;
+    return {
+        models: list.slice(start, end),
+        hasMore: end < total,
+        total,
+        nextOffset: end < total ? end : null
+    };
 }
 
 /** Convert the aggregated list to OpenAI-style { object: "list", data: [...] }. */
-async function getModelListOpenAI({ includeClientAliases = false, filterRoutable = false } = {}) {
-    const models = await getModelList();
+async function getModelListOpenAI({ includeClientAliases = false, filterRoutable = false, limit = 0, offset = 0, skeleton = false } = {}) {
+    const result = await getModelList({ skeleton, limit, offset });
+    const models = Array.isArray(result) ? result : (result.models || []);
     const created = Math.floor(Date.now() / 1000);
     const visibleModels = filterRoutable ? models.filter(isModelRoutableForClient) : models;
     const aliases = includeClientAliases ? buildModelAliasMap(visibleModels) : new Map();
@@ -421,15 +556,23 @@ async function getModelListOpenAI({ includeClientAliases = false, filterRoutable
             owned_by: model.provider,
         });
     }
-    return {
+    const out = {
         object: 'list',
         data,
     };
+    if (!Array.isArray(result) && result && typeof result === 'object') {
+        out.has_more = !!result.hasMore;
+        out.total = result.total;
+        if (result.nextOffset !== undefined && result.nextOffset !== null) out.next_offset = result.nextOffset;
+    }
+    return out;
 }
 
 module.exports = {
     getModelList,
     getModelListOpenAI,
+    prewarmModelList,
+    invalidateModelListCache,
     resolveModelAlias,
     resolveModelAliasDetails,
     getModelDisplayAlias,

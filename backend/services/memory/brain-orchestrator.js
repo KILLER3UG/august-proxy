@@ -11,7 +11,7 @@ const DEFAULT_FEATURES = {
     adapterParallelTools: true,
     parallelReadTools: true,
     reviewLearnedGuidelines: true,
-    maxAgentDepth: 2,
+    maxAgentDepth: 4,
     maxWorkbenchToolLoops: 12
 };
 
@@ -142,10 +142,114 @@ function getWorkbenchMaxToolLoops() {
     return Number.isFinite(value) && value > 0 ? Math.min(value, 100) : DEFAULT_FEATURES.maxWorkbenchToolLoops;
 }
 
+/**
+ * Source resolution for the Brain Settings page.
+ *
+ *   - 'persisted' — the user has saved a `cfg.brainOrchestrator` block;
+ *                   return it verbatim.
+ *   - 'session'   — the user hasn't persisted anything, but they have at
+ *                   least one chat session. We run `planBrainTurn` on that
+ *                   session's most-recent message and project its
+ *                   `executionPolicy` onto the `DEFAULT_FEATURES` keys.
+ *   - 'fallback'  — no persisted config and no session; return
+ *                   `DEFAULT_FEATURES`.
+ *
+ * The returned `config` always contains the same keys as `DEFAULT_FEATURES`
+ * so the form can render without conditionally checking each input.
+ */
+function getBrainConfigForSettings({ sessionId = null, plan = null } = {}) {
+    const cfg = getConfig();
+    const persisted = cfg.brainOrchestrator;
+    if (persisted && typeof persisted === 'object' && Object.keys(persisted).length > 0) {
+        return { source: 'persisted', config: { ...DEFAULT_FEATURES, ...persisted }, defaults: DEFAULT_FEATURES };
+    }
+
+    let sessionPlan = plan;
+    if (!sessionPlan && sessionId) {
+        sessionPlan = planBrainTurn({ session: { id: sessionId }, provider: 'claude', model: '', requestKind: 'settings' });
+    }
+
+    if (sessionPlan && sessionPlan.executionPolicy) {
+        const p = sessionPlan.executionPolicy;
+        const projected = {
+            enabled: true,
+            adaptivePolicy: true,
+            failureLearning: p.failureRetryLimit > 0,
+            graphMemory: p.memoryDepth !== 'targeted',
+            agentJobs: true,
+            hierarchicalAgents: !!p.allowSubagents,
+            adapterParallelTools: true,
+            parallelReadTools: !!p.allowParallelReads,
+            reviewLearnedGuidelines: true,
+            maxAgentDepth: Number(p.maxSubagentDepth) > 0 ? Number(p.maxSubagentDepth) : DEFAULT_FEATURES.maxAgentDepth,
+            maxWorkbenchToolLoops: Number(p.maxTokens) > 0 ? Math.max(1, Math.min(100, Math.round(Number(p.maxTokens) / 1000))) : DEFAULT_FEATURES.maxWorkbenchToolLoops
+        };
+        return { source: 'session', config: projected, defaults: DEFAULT_FEATURES, sessionId };
+    }
+
+    return { source: 'fallback', config: { ...DEFAULT_FEATURES }, defaults: DEFAULT_FEATURES };
+}
+
+/**
+ * Persist a partial brain-orchestrator config update. Unknown keys are
+ * rejected (HTTP 400); numeric ranges are clamped. Returns the merged
+ * config that ends up on disk.
+ */
+function saveBrainConfig(updates = {}) {
+    const cfg = getConfig();
+    if (!updates || typeof updates !== 'object') {
+        throw new Error('updates must be an object');
+    }
+    const allowed = new Set(Object.keys(DEFAULT_FEATURES));
+    const merged = { ...DEFAULT_FEATURES, ...(cfg.brainOrchestrator || {}) };
+
+    for (const [key, value] of Object.entries(updates)) {
+        if (!allowed.has(key)) {
+            const err = new Error(`Unknown brain config key: ${key}`);
+            err.code = 'EBRAIN_UNKNOWN_KEY';
+            throw err;
+        }
+        if (typeof value === 'boolean') {
+            merged[key] = !!value;
+            continue;
+        }
+        if (typeof value === 'number') {
+            if (key === 'maxAgentDepth') {
+                merged[key] = Math.max(1, Math.min(5, Math.round(value)));
+            } else if (key === 'maxWorkbenchToolLoops') {
+                merged[key] = Math.max(1, Math.min(100, Math.round(value)));
+            } else {
+                merged[key] = value;
+            }
+            continue;
+        }
+        merged[key] = value;
+    }
+
+    cfg.brainOrchestrator = merged;
+    const { saveConfig } = require('../../lib/config');
+    saveConfig(cfg);
+    return merged;
+}
+
+function resetBrainConfig() {
+    const cfg = getConfig();
+    if (cfg.brainOrchestrator) {
+        delete cfg.brainOrchestrator;
+        const { saveConfig } = require('../../lib/config');
+        saveConfig(cfg);
+    }
+    return { ...DEFAULT_FEATURES };
+}
+
 module.exports = {
     classifyTask,
+    DEFAULT_FEATURES,
     getBrainConfig,
+    getBrainConfigForSettings,
     getWorkbenchMaxToolLoops,
     planBrainTurn,
-    policyForTask
+    policyForTask,
+    resetBrainConfig,
+    saveBrainConfig
 };

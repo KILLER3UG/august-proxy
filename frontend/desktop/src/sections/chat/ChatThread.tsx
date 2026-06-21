@@ -23,6 +23,7 @@ import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
 import { applyToolProgress, visibleProgress, type ToolProgressEvent } from '@/lib/tool-progress';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
+import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
 import { Statusbar } from '@/components/shell/Statusbar';
 import { createChatRuntime, type ChatTurnRecord } from './chat-runtime';
 import { Markdown } from './ChatMarkdown';
@@ -1612,6 +1613,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
       />
       <div className="flex-1 flex flex-col min-w-0 bg-background h-full overflow-hidden relative">
+        <ApprovalBanner sessionId={workbenchSession?.id ?? null} />
         {workbenchBtw && (
           <WorkbenchBtwDrawer
             result={workbenchBtw}
