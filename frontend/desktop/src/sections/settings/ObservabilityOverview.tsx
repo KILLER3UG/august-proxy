@@ -92,12 +92,40 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
                     </CardHeader>
                     <CardContent>
                         {donutSlices.length > 0 ? (
-                            <WorkspaceDonut
-                                slices={donutSlices}
-                                centerLabel={donutCenter}
-                                centerSub="tokens"
-                                formatValue={formatCompact}
-                            />
+                            <>
+                                <WorkspaceDonut
+                                    slices={donutSlices}
+                                    centerLabel={donutCenter}
+                                    centerSub="tokens"
+                                    formatValue={formatCompact}
+                                />
+                                {(() => {
+                                    const top = byModel.data?.results?.[0];
+                                    if (!top) return null;
+                                    return (
+                                        <div className="mt-4 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">
+                                                        Top model
+                                                    </div>
+                                                    <div className="mt-0.5 text-sm font-semibold text-foreground truncate">
+                                                        {top.model || 'unknown'}
+                                                    </div>
+                                                </div>
+                                                <div className="shrink-0 text-right">
+                                                    <div className="text-lg font-semibold tabular-nums text-white">
+                                                        {top.percent.toFixed(1)}%
+                                                    </div>
+                                                    <div className="text-[10px] text-muted-foreground/70">
+                                                        share
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </>
                         ) : (
                             <SettingsEmptyState
                                 title="No model usage yet"

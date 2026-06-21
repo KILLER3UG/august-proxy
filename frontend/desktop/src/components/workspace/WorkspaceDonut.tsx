@@ -81,7 +81,7 @@ export function WorkspaceDonut({
           y="48"
           textAnchor="middle"
           dominantBaseline="central"
-          className="fill-foreground"
+          className="fill-white"
           style={{ fontSize: 13, fontWeight: 600 }}
         >
           {centerLabel ?? total.toLocaleString()}
@@ -91,7 +91,7 @@ export function WorkspaceDonut({
           y="62"
           textAnchor="middle"
           dominantBaseline="central"
-          className="fill-muted-foreground"
+          className="fill-white/70"
           style={{ fontSize: 7 }}
         >
           {centerSub}
