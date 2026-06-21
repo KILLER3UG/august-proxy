@@ -768,11 +768,13 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                         oReq.metadata = { ...(oReq.metadata || {}), parentAlias: inherited.parentAlias };
                     }
                     console.log(`[Proxy Sub-Agent Route] session=${modelSessionId} incoming="${requestedModel}" → upstream="${inherited.resolution.model}" via "${inherited.resolution.provider}" action="${inherited.action}"`);
-                } else if (inherited && inherited.action && inherited.action.startsWith('reject_')) {
+                } else if (inherited && inherited.action && (inherited.action.startsWith('reject_') || inherited.action === 'alias_resolution_failed')) {
                     requestStatus = 'error';
                     requestError = inherited.action === 'reject_first_non_alias'
                         ? 'First request in a session must be an alias.'
-                        : 'Sub-agent request but no alias resolved yet.';
+                        : inherited.action === 'alias_resolution_failed'
+                            ? 'Sub-agent fallback could not resolve: the configured fallback model is a display alias and the catalog cannot translate it. Save a canonical backend id (e.g. "claude-opus-4-7" or "minimax-m3") in Settings → Model settings → Fallback, or wait for the catalog to warm up.'
+                            : 'Sub-agent request but no alias resolved yet.';
                     res.writeHead(400, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ error: { message: requestError, type: 'invalid_request_error' } }));
                     finishRequest();

@@ -2801,11 +2801,13 @@ async function handleMessages(req, res, cleanPath, reqId) {
                         console.warn('[Proxy Model Route] inherited resolution failed:', e.message);
                         emitProxy('proxy_model_route', 'error', `inherited resolution failed: ${e.message}`);
                     }
-                } else if (inherited && inherited.action && inherited.action.startsWith('reject_')) {
+                } else if (inherited && inherited.action && (inherited.action.startsWith('reject_') || inherited.action === 'alias_resolution_failed')) {
                     requestStatus = 'error';
                     requestError = inherited.action === 'reject_first_non_alias'
                         ? 'First request in a session must be an alias.'
-                        : 'Sub-agent request but no alias resolved yet.';
+                        : inherited.action === 'alias_resolution_failed'
+                            ? 'Sub-agent fallback could not resolve: the configured fallback model is a display alias and the catalog cannot translate it. Save a canonical backend id (e.g. "claude-opus-4-7" or "minimax-m3") in Settings → Model settings → Fallback, or wait for the catalog to warm up.'
+                            : 'Sub-agent request but no alias resolved yet.';
                     res.writeHead(400, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({
                         type: 'error',
