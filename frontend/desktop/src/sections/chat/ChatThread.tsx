@@ -26,7 +26,16 @@ import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
 import { Statusbar } from '@/components/shell/Statusbar';
-import { createChatRuntime, type ChatTurnRecord } from './chat-runtime';
+import { chatRuntime, type ChatTurnRecord } from './chat-runtime';
+import {
+  $sessionStreamStates,
+  getOrInitSessionStreamState,
+  updateSessionStreamState,
+  startChatStream,
+  stopChatStream,
+  syncActiveStreams,
+  appendBlockEvent,
+} from './chat-stream-manager';
 import { Markdown } from './ChatMarkdown';
 import { makeStreamHandlers } from './makeStreamHandlers';
 import {
@@ -52,7 +61,6 @@ import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { ChangedFilesCard } from '@/components/chat/ChangedFilesCard';
 import { gitApi, type GitDiffResult } from '@/api/git';
 
-export const chatRuntime = createChatRuntime();
 let visibleSessionId: string | null = null;
 let visibleGeneration = 0;
 
@@ -140,102 +148,7 @@ interface ModelItem {
   supportsThinking?: boolean;
 }
 
-/**
- * Pure reducer that merges a new SSE event into the streamBlocks array.
- *
- * Lives at module scope (not inside the component) so the
- * `makeStreamHandlers` factory in `./makeStreamHandlers.ts` can import
- * the same merging logic the composer uses. The composer continues to
- * call it via a closure reference passed in as a factory option, but
- * the underlying implementation is here.
- *
- */
-export function appendBlockEvent(
-  prevBlocks: MessageBlock[],
-  event: {
-    type: 'thinking' | 'text' | 'content' | 'tool_call' | 'command' | 'tool_progress' | 'tool_result';
-    content?: string;
-    name?: string;
-    id?: string;
-    context?: string;
-    preview?: string;
-    summary?: string;
-    error?: string;
-    status?: 'running' | 'done' | 'error';
-    duration?: number;
-    isRevisedPlan?: boolean;
-  }
-): MessageBlock[] {
-  const blocks = [...prevBlocks];
-  const lastBlock = blocks[blocks.length - 1];
 
-  if (event.type === 'thinking') {
-    const text = event.content || '';
-    if (lastBlock && lastBlock.type === 'thinking') {
-      lastBlock.content = (lastBlock.content || '') + text;
-    } else {
-      blocks.push({
-        id: `b_think_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        type: 'thinking',
-        content: text
-      });
-    }
-  } else if (event.type === 'text' || event.type === 'content') {
-    const text = event.content || '';
-    if (lastBlock && lastBlock.type === 'final_output') {
-      lastBlock.content = (lastBlock.content || '') + text;
-    } else {
-      blocks.push({
-        id: `b_out_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        type: 'final_output',
-        content: text
-      });
-    }
-  } else if (event.type === 'tool_call' || event.type === 'command') {
-    const isCommand = event.type === 'command' || event.name?.startsWith('@run_command') || event.name?.startsWith('run_command');
-    blocks.push({
-      id: `b_tool_${event.id || Date.now()}`,
-      type: isCommand ? 'command' : 'tool_call',
-      tool: {
-        id: event.id || `tc_${Date.now()}`,
-        name: event.name || 'tool',
-        context: event.context || '',
-        status: event.status || 'running',
-        startedAt: Date.now()
-      },
-      ...(event.isRevisedPlan ? { isRevisedPlan: true } : {}),
-    });
-  } else if (event.type === 'tool_progress') {
-    const targetIdx = blocks.findIndex(b => b.tool && b.tool.id === event.id);
-    if (targetIdx !== -1) {
-      const target = { ...blocks[targetIdx] };
-      if (target.tool) {
-        target.tool = {
-          ...target.tool,
-          preview: (target.tool.preview || '') + (event.preview || '')
-        };
-      }
-      blocks[targetIdx] = target;
-    }
-  } else if (event.type === 'tool_result') {
-    const targetIdx = blocks.findIndex(b => b.tool && b.tool.id === event.id);
-    if (targetIdx !== -1) {
-      const target = { ...blocks[targetIdx] };
-      if (target.tool) {
-        target.tool = {
-          ...target.tool,
-          status: event.status || 'done',
-          summary: event.summary || '',
-          error: event.error || '',
-          duration: event.duration
-        };
-      }
-      blocks[targetIdx] = target;
-    }
-  }
-
-  return blocks;
-}
 
 export function modelFromSession(session: Pick<Session, 'model' | 'provider'> | null): ModelItem | null {
   if (!session?.model) return null;
@@ -397,10 +310,33 @@ function persistMessages(sessionId: string | null, value: ChatMessage[]) {
 export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const sessions = useStore($sessions);
   const activeSession = useMemo(() => sessions.find(s => s.id === sessionId), [sessions, sessionId]);
-  const workspacePath = activeSession?.workspacePath || null;
+  const [streamState, setStreamState] = useState(() => getOrInitSessionStreamState(sessionId));
 
-  const storageKey = messagesStorageKey(sessionId);
-  const [messages, setMessages] = useState<ChatMessage[]>(() => loadMessagesForSession(sessionId));
+  useEffect(() => {
+    const current = getOrInitSessionStreamState(sessionId);
+    setStreamState(current);
+
+    let lastState = current;
+    const unsubscribe = $sessionStreamStates.subscribe((states) => {
+      const next = states[sessionId || ''] || getOrInitSessionStreamState(sessionId);
+      if (next !== lastState) {
+        lastState = next;
+        setStreamState(next);
+      }
+    });
+    return unsubscribe;
+  }, [sessionId]);
+
+  const messages = streamState.messages;
+  const setMessages = (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+    if (!sessionId) return;
+    updateSessionStreamState(sessionId, prev => {
+      const next = typeof updater === 'function' ? updater(prev.messages) : updater;
+      persistMessages(sessionId, next);
+      return { messages: next };
+    });
+  };
+
   const [input, setInput] = useState(() => loadComposerDraft(sessionId));
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(sessionId);
   const [runtimeVersion, setRuntimeVersion] = useState(0);
@@ -413,49 +349,36 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // august__run_team calls (and only for the sub-agents they spawn); we
   // store those payloads here so each one can be rendered directly under
   // the matching tool call block. Cleared on each new turn.
-  const [subagentPrompts, setSubagentPrompts] = useState<Map<string, {
-    content: string;
-    systemPrompt: string;
-    userMessage: string;
-    tokens: number;
-    subagentId?: string;
-    jobId?: string;
-  }>>(() => new Map());
+  const subagentPrompts = streamState.subagentPrompts;
+  const setSubagentPrompts = (updater: any) => {
+    if (!sessionId) return;
+    updateSessionStreamState(sessionId, prev => {
+      const next = typeof updater === 'function' ? updater(prev.subagentPrompts) : updater;
+      return { subagentPrompts: next };
+    });
+  };
   // Live tool-progress state: per-tool-id list of { path, status: 'reading' | 'read' }
   // entries, used to render the "Reading X" / "Read X" sub-list under
   // in-flight tool calls. Reset on each new turn.
-  const [toolProgress, setToolProgress] = useState<Map<string, ReadonlyArray<{ path: string; status: 'reading' | 'read' }>>>(
-    () => new Map()
-  );
+  const toolProgress = streamState.toolProgress;
+  const setToolProgress = (updater: any) => {
+    if (!sessionId) return;
+    updateSessionStreamState(sessionId, prev => {
+      const next = typeof updater === 'function' ? updater(prev.toolProgress) : updater;
+      return { toolProgress: next };
+    });
+  };
   const hasAssistantTurn = messages.some(m => m.role === 'assistant' && m.content.length > 0);
   const showSuggestion = !streaming && !input.trim() && hasAssistantTurn && !suggestionDismissed;
   const [models, setModels] = useState<ModelItem[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(loadHiddenModels);
   const [showModelVisibility, setShowModelVisibility] = useState(false);
-  const [workbenchSession, setWorkbenchSession] = useState<WorkbenchSession | null>(() => {
-    if (activeSession?.workbenchSessionId) {
-      return {
-        id: activeSession.workbenchSessionId,
-        provider: activeSession.workbenchProvider || 'claude',
-        agentId: activeSession.workbenchAgentId || 'build',
-        agentRole: activeSession.workbenchAgentId || 'build',
-        agentMode: 'assistant',
-        approved: false,
-        approvedAt: null,
-        plan: null,
-        goal: null,
-        lastGoal: null,
-        messageCount: 0,
-        mutationCount: 0,
-        lastMutationAt: null,
-        updatedAt: new Date().toISOString(),
-        todos: [],
-        guardMode: 'plan',
-      };
-    }
-    return null;
-  });
+  const workbenchSession = streamState.workbenchSession;
+  const setWorkbenchSession = (session: any) => {
+    if (!sessionId) return;
+    updateSessionStreamState(sessionId, () => ({ workbenchSession: session }));
+  };
 
   // Whether a plan is awaiting the user's decision. When true, the composer
   // is replaced by the PlanProposalBanner so the user can only act on the
@@ -466,7 +389,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const saved = localStorage.getItem('august_last_workbench_guard_mode') as WorkbenchGuardMode | null;
     return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'plan';
   });
-  const [workbenchBtw, setWorkbenchBtw] = useState<WorkbenchBtwResult | null>(null);
+  const workbenchBtw = streamState.workbenchBtw;
+  const setWorkbenchBtw = (btw: any) => {
+    if (!sessionId) return;
+    updateSessionStreamState(sessionId, () => ({ workbenchBtw: btw }));
+  };
 
   const toggleModelVisibility = (modelId: string) => {
     setHiddenModels(prev => {
@@ -661,6 +588,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   useEffect(() => chatRuntime.subscribe(() => setRuntimeVersion((value) => value + 1)), []);
 
+
+
   useEffect(() => {
     visibleSessionId = sessionId;
   }, [sessionId]);
@@ -680,7 +609,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [streaming]);
 
   useEffect(() => {
-    setMessages(loadMessagesForSession(sessionId));
     setInput(loadComposerDraft(sessionId));
     setLoadedSessionId(sessionId);
   }, [sessionId]);
@@ -893,6 +821,20 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return created;
   };
 
+  useEffect(() => {
+    syncActiveStreams(ensureWorkbenchSession);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncActiveStreams(ensureWorkbenchSession);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   /**
    * Helper for banner/panel click handlers. Wraps the streaming
    * infrastructure in one place so the four banner callbacks (and the
@@ -959,87 +901,19 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   const generateAIResponse = async (chatHistory: ChatMessage[]) => {
     const turnSessionId = sessionId;
-    const isCurrentTurn = () => isTurnVisible(turnSessionId);
     if (!turnSessionId) return;
     if (!chatRuntime.canStartTurn(turnSessionId)) return;
 
-    setSessionStatus(turnSessionId, 'working');
-
-    const assistantMsgId = `a${Date.now()}`;
-    const turn = chatRuntime.startTurn({
-      sessionId: turnSessionId,
-      assistantMsgId,
-      transport: 'none',
+    await startChatStream(turnSessionId, {
+      message: applyWorkbenchGuardMode(workbenchMode, chatHistory.map(m => `${m.role}: ${m.content}`).join('\n\n') || ' '),
+      chatHistory,
+      workbenchMode,
+      effort,
+      model: modelForRequest?.id,
+      modelProvider: modelForRequest?.provider,
+      getWorkbenchProvider,
+      ensureWorkbenchSession,
     });
-    const abortController = turn.controller;
-
-    // Build the streaming handler bundle via the shared factory. The
-    // composer's local `appendBlockEvent` is the same module-level
-    // function the factory uses (passed in to keep the closure
-    // signature symmetric between the composer and the banner).
-    const { handlers, finalize } = makeStreamHandlers({
-      sessionId: turnSessionId,
-      assistantMsgId,
-      initialMessages: chatHistory,
-      setMessages,
-      persistMessages,
-      setSessionStatus,
-      setWorkbenchSession,
-      setSubagentPrompts,
-      setToolProgress,
-      setWorkbenchBtw,
-      isTurnVisible,
-      finishTurn,
-      turn,
-      queuedMessage,
-      setQueuedMessage,
-      gitApi,
-      streamUpdateIntervalMs: STREAM_UPDATE_INTERVAL_MS,
-      initialMutationCount: workbenchSession?.mutationCount,
-      appendBlockEvent,
-    });
-
-    try {
-      const session = await ensureWorkbenchSession();
-      if (!session) {
-        // Push a placeholder error message into the assistant bubble.
-        setMessages(prev => prev.map(msg =>
-          msg.id === assistantMsgId ? { ...msg, content: '⚠️ Could not initialize Workbench session.' } : msg
-        ));
-        finalize('error');
-        return;
-      }
-      chatRuntime.setTransport(turn.turnId, 'http');
-
-      await streamWorkbenchChat({
-        sessionId: session.id,
-        message: applyWorkbenchGuardMode(workbenchMode, chatHistory.map(m => `${m.role}: ${m.content}`).join('\n\n') || ' '),
-        provider: getWorkbenchProvider(),
-        agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
-        guardMode: workbenchMode,
-        effort,
-        model: modelForRequest?.id,
-        modelProvider: modelForRequest?.provider,
-      }, handlers, abortController.signal);
-
-      // `onDone` inside handlers already calls finalize('done'). If the
-      // stream ended without a `done` event (e.g. abrupt close), finalize
-      // here as a fallback.
-    } catch (e: any) {
-      if (e?.name === 'AbortError') {
-        clearSessionStatus(turnSessionId);
-        finalize('aborted');
-        return;
-      }
-      console.error(e);
-      // The factory's onError handler already appends the ⚠️ message and
-      // calls finalize('error') for stream-level errors. This catch only
-      // fires for pre-stream errors (e.g. ensureWorkbenchSession threw).
-      setMessages(prev => prev.map(msg =>
-        msg.id === assistantMsgId ? { ...msg, content: (msg.content || '') + `\n\n⚠️ Connection error: ${e.message}` } : msg
-      ));
-      finalize('error');
-    }
   };
 
   const send = async () => {
@@ -1145,12 +1019,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   };
 
   const stop = () => {
-    const activeTurnId = chatRuntime.getLatestActiveTurnId(sessionId);
-    const turn = activeTurnId ? chatRuntime.getTurn(activeTurnId) : null;
-    if (turn) {
-      abortTurn(turn);
-      if (sessionId) clearSessionStatus(sessionId);
-    }
+    if (sessionId) stopChatStream(sessionId);
   };
 
   // ── Revert: delete user message and all subsequent messages, put text back into chat input ──
@@ -2257,6 +2126,7 @@ function MessageBubble({
                           <ToolCallItemComp
                             tool={block.tool}
                             progress={block.tool.id ? toolProgress?.get(block.tool.id) : undefined}
+                            agentIdOverride={promptEntries[0]?.subagentId}
                           />
                           {promptEntries.length > 0 && (
                             <div className="ml-3 mt-1 flex flex-col gap-1">

@@ -58,13 +58,26 @@ function extractAgentId(context?: string): string | null {
   try {
     const parsed = JSON.parse(context);
     if (parsed && typeof parsed === 'object') {
-      const v = (parsed as Record<string, unknown>)['agent_id'];
-      if (typeof v === 'string' && v.length > 0) return v;
+      for (const key of ['agent_id', 'agent', 'subagent_type']) {
+        const v = (parsed as Record<string, unknown>)[key];
+        if (typeof v === 'string' && v.length > 0) return v;
+      }
     }
   } catch {
     /* not JSON — ignore */
   }
   return null;
+}
+
+/**
+ * Format milliseconds to MM:SS format.
+ */
+function formatTimer(ms: number): string {
+  const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (num: number) => String(num).padStart(2, '0');
+  return `${pad(minutes)}:${pad(seconds)}`;
 }
 
 function truncate(s: string, n: number): string {
@@ -178,14 +191,17 @@ export interface ToolEntry {
 export function ToolCallItem({
   tool,
   progress,
+  agentIdOverride,
 }: {
   tool: ToolEntry;
   /** Optional live "Reading… / Read" sub-list emitted by the workbench. */
   progress?: ReadonlyArray<ProgressEntry>;
+  agentIdOverride?: string;
 }) {
   const [userOverride, setUserOverride] = useState<boolean | null>(null);
   const open = userOverride ?? tool.status === 'error';
 
+  const [mountedAt] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (tool.status !== 'running') return;
@@ -193,10 +209,34 @@ export function ToolCallItem({
     return () => window.clearInterval(id);
   }, [tool.status]);
 
-  const hasTimestamps = tool.duration !== undefined || (tool.status === 'running' && tool.startedAt !== undefined);
+  let startedAtMs: number | undefined = undefined;
+  if (tool.startedAt) {
+    if (typeof tool.startedAt === 'number') {
+      startedAtMs = tool.startedAt;
+    } else if (typeof tool.startedAt === 'string') {
+      const parsedNum = Number(tool.startedAt);
+      if (!isNaN(parsedNum)) {
+        startedAtMs = parsedNum;
+      } else {
+        const parsedDate = new Date(tool.startedAt).getTime();
+        if (!isNaN(parsedDate)) {
+          startedAtMs = parsedDate;
+        }
+      }
+    } else if ((tool.startedAt as any) instanceof Date) {
+      startedAtMs = (tool.startedAt as Date).getTime();
+    }
+  }
+
+  if (tool.status === 'running' && (!startedAtMs || isNaN(startedAtMs))) {
+    startedAtMs = mountedAt;
+  }
+
+  const hasTimestamps = tool.duration !== undefined || (tool.status === 'running' && startedAtMs !== undefined);
   const elapsed = hasTimestamps
-    ? tool.duration ?? (tool.startedAt ? now - tool.startedAt : undefined)
+    ? tool.duration ?? (startedAtMs ? now - startedAtMs : undefined)
     : undefined;
+
 
   const hasBody = !!(
     tool.context || tool.preview || tool.summary || tool.error || tool.inline_diff || tool.searchHits || tool.pendingApproval
@@ -215,14 +255,16 @@ export function ToolCallItem({
   // shows the full text.
   const commandText = isCommand ? extractCommand(tool.context) : null;
   const filename = !isCommand ? extractFilename(tool.context) : null;
-  const agentId = extractAgentId(tool.context);
+  const agentId = agentIdOverride || extractAgentId(tool.context);
+
   const label = getToolLabel(tool.name, {
     agentId: agentId ?? undefined,
     filename: filename ?? undefined,
     command: commandText ?? undefined,
+    status: tool.status
   });
   const labelTitle = isCommand && commandText && commandText.length > 120 ? commandText : undefined;
-  const displayLabel = elapsed !== undefined ? `${label} · ${fmtElapsed(elapsed)}` : label;
+  const displayLabel = elapsed !== undefined ? `${label} · ${formatTimer(elapsed)}` : label;
 
   return (
     <div className="text-xs text-muted-foreground w-full py-0.5" data-slot="tool-block">

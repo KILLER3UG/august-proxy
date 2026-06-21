@@ -32,6 +32,8 @@ const { registerBuiltinProviders } = require('./providers/builtin');
 const { resolveProvider, resolveActiveProvider } = require('./providers/provider-resolver');
 const { getActiveProvider, setActiveProvider, getProviderConfig, saveProviderConfig, getEnvVars, setEnvVar, deleteEnvVar, getProviderRequiredEnvVars } = require('./lib/config');
 
+const activeGenerations = new Map();
+
 const MCP_GLOBAL_ENV_KEYS = [
   { key: 'GOOGLE_OAUTH_CLIENT_ID', sensitive: false },
   { key: 'GOOGLE_OAUTH_CLIENT_SECRET', sensitive: true },
@@ -948,46 +950,185 @@ const requestHandler = async (req, res) => {
     }
 
     if (req.url === '/ui/workbench/chat' && req.method === 'POST') {
-        const abortCtrl = new AbortController();
-        const abortIfOpen = () => {
-            if (!res.writableEnded && !abortCtrl.signal.aborted) abortCtrl.abort();
-        };
-        req.on('aborted', abortIfOpen);
-        res.on('close', abortIfOpen);
         try {
             const data = await readJsonBody(req, { limitBytes: 2 * 1024 * 1024 });
+            const sessionId = data.sessionId;
+            if (!sessionId) {
+                return sendJson(res, { error: 'sessionId is required' }, 400);
+            }
+
+            // Abort any existing generation for this session ID first
+            let gen = activeGenerations.get(sessionId);
+            if (gen && gen.status === 'streaming') {
+                if (gen.abortController) {
+                    gen.abortController.abort();
+                }
+                gen.status = 'aborted';
+                const event = { type: 'aborted', payload: {}, timestamp: Date.now() };
+                gen.events.push(event);
+                for (const listener of gen.listeners) {
+                    try { listener(event); } catch (_) {}
+                }
+            }
+
+            // Initialize new generation state
+            const generationAbortCtrl = new AbortController();
+            gen = {
+                events: [],
+                status: 'streaming',
+                abortController: generationAbortCtrl,
+                listeners: new Set()
+            };
+            activeGenerations.set(sessionId, gen);
+
+            // Start generation in background
+            sendWorkbenchMessageStream(data, (type, payload) => {
+                const event = { type, payload, timestamp: Date.now() };
+                gen.events.push(event);
+                for (const listener of gen.listeners) {
+                    try { listener(event); } catch (_) {}
+                }
+            }, { signal: generationAbortCtrl.signal })
+            .then(() => {
+                if (gen.status === 'streaming') {
+                    gen.status = 'done';
+                    const event = { type: 'done', payload: {}, timestamp: Date.now() };
+                    gen.events.push(event);
+                    for (const listener of gen.listeners) {
+                        try { listener(event); } catch (_) {}
+                    }
+                }
+            })
+            .catch((err) => {
+                const isAbort = err?.name === 'AbortError' || generationAbortCtrl.signal.aborted;
+                if (gen.status === 'streaming') {
+                    gen.status = isAbort ? 'aborted' : 'error';
+                    const event = {
+                        type: isAbort ? 'aborted' : 'error',
+                        payload: { message: err?.message || 'Unknown error' },
+                        timestamp: Date.now()
+                    };
+                    gen.events.push(event);
+                    for (const listener of gen.listeners) {
+                        try { listener(event); } catch (_) {}
+                    }
+                }
+            });
+
+            // Write SSE response headers
             res.writeHead(200, {
                 'Content-Type': 'text/event-stream',
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive',
                 'X-Accel-Buffering': 'no'
             });
-            await sendWorkbenchMessageStream(data, (type, payload) => {
-                if (abortCtrl.signal.aborted || res.destroyed || res.writableEnded) {
-                    const error = new Error('Request aborted by client');
-                    error.name = 'AbortError';
-                    throw error;
+
+            // Stream events to the active requester
+            const clientListener = (event) => {
+                res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`);
+                if (event.type === 'done' || event.type === 'error' || event.type === 'aborted') {
+                    res.end();
                 }
-                res.write(`event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`);
-            }, { signal: abortCtrl.signal });
-            if (!abortCtrl.signal.aborted && !res.writableEnded) {
-                res.write('event: done\ndata: {}\n\n');
+            };
+
+            // Send any initial events that might have run instantly
+            for (const event of gen.events) {
+                res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`);
+            }
+
+            if (gen.status === 'streaming') {
+                gen.listeners.add(clientListener);
+                req.on('close', () => {
+                    gen.listeners.delete(clientListener);
+                });
+            } else {
                 res.end();
             }
         } catch (e) {
-            const aborted = e?.name === 'AbortError' || abortCtrl.signal.aborted || e?.message === 'SSE connection closed';
-            if (!aborted) {
-                try {
-                    res.write(`event: error\ndata: ${JSON.stringify({ message: e.message })}\n\n`);
-                    res.end();
-                } catch (_) { }
-            }
-        } finally {
-            req.off('aborted', abortIfOpen);
-            res.off('close', abortIfOpen);
+            return sendError(res, e, 400);
         }
         return;
     }
+
+    if (req.url.startsWith('/ui/workbench/chat/stream') && req.method === 'GET') {
+        const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+        const sessionId = url.searchParams.get('sessionId');
+        if (!sessionId) {
+            return sendJson(res, { error: 'sessionId is required' }, 400);
+        }
+
+        res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        });
+
+        const gen = activeGenerations.get(sessionId);
+        if (!gen) {
+            // No active stream, just write done and exit
+            res.write('event: done\ndata: {}\n\n');
+            res.end();
+            return;
+        }
+
+        // Replay all events of the current turn
+        for (const event of gen.events) {
+            res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`);
+        }
+
+        if (gen.status === 'streaming') {
+            const clientListener = (event) => {
+                res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`);
+                if (event.type === 'done' || event.type === 'error' || event.type === 'aborted') {
+                    res.end();
+                }
+            };
+            gen.listeners.add(clientListener);
+            req.on('close', () => {
+                gen.listeners.delete(clientListener);
+            });
+        } else {
+            res.end();
+        }
+        return;
+    }
+
+    if (req.url === '/ui/workbench/chat/stop' && req.method === 'POST') {
+        try {
+            const data = await readJsonBody(req);
+            const sessionId = data.sessionId;
+            if (!sessionId) {
+                return sendJson(res, { error: 'sessionId is required' }, 400);
+            }
+            const gen = activeGenerations.get(sessionId);
+            if (gen && gen.status === 'streaming') {
+                if (gen.abortController) {
+                    gen.abortController.abort();
+                }
+                gen.status = 'aborted';
+                const event = { type: 'aborted', payload: {}, timestamp: Date.now() };
+                gen.events.push(event);
+                for (const listener of gen.listeners) {
+                    try { listener(event); } catch (_) {}
+                }
+            }
+            return sendJson(res, { status: 'ok' });
+        } catch (e) {
+            return sendError(res, e, 400);
+        }
+    }
+
+    if (req.url === '/ui/workbench/chat/active' && req.method === 'GET') {
+        const active = {};
+        for (const [sessionId, gen] of activeGenerations.entries()) {
+            if (gen.status === 'streaming') {
+                active[sessionId] = gen.status;
+            }
+        }
+        return sendJson(res, active);
+    }
+
 
     if (req.url === '/ui/workbench/confirm-mutation' && req.method === 'POST') {
         try {

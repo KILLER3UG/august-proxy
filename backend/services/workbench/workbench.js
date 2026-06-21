@@ -1759,22 +1759,7 @@ async function executeSubAgent(session, args, toolContext = {}) {
     let subPrompt;
     if (isDynamic) {
         console.info(`[Workbench] Using dynamic sub-agent prompt for job ${job.id}`);
-        subPrompt = [
-            basePrompt,
-            '\n=== MANDATORY SECURITY & OPERATIONAL CONSTRAINTS ===',
-            `Sub-agent profile: ${childAgent.id} (${childAgent.role}). Goal: ${childAgent.goal}`,
-            `Work scope: ${scope}.${scopeNote}`,
-            `Parent agent profile: ${parentAgentId}. Your effective inherited permissions are: ${Object.entries(inheritedPermissions).map(([key, value]) => `${key}:${value}`).join(', ')}.`,
-            `Durable job id: ${job.id}. Current delegation depth: ${depth}. Max delegation depth: ${maxDepth}.`,
-            'Your task is: ' + task,
-            'You have access to the same registered tools, but the server enforces your inherited permissions before the approval gate.',
-            'Read/search/explore freely when your profile permits it, but do not perform any mutation unless the parent session already has an approved plan and your inherited permissions allow that tool category.',
-            'A mutation means writing/editing/deleting/moving files, running shell commands, changing memory, launching background tasks, or controlling the host desktop.',
-            'If a mutation is required and approval is not active, stop and report the exact plan the parent should submit for user approval.',
-            'If you are a coordinator and delegation is allowed, spawn child sub-agents only for clearly separate subtasks and include parent_job_id plus depth+1.',
-            teamSkillGuide ? `=== TEAM SKILLS OWNED BY THIS AGENT ===\n${teamSkillGuide}\nTo load one of these skills, call august__load_skill with the skill name and agent_id=${childAgentId}.` : '',
-            'Keep your response concise and actionable.'
-        ].filter(Boolean).join('\n');
+        subPrompt = basePrompt;
     } else {
         subPrompt = [
             'You are a focused sub-agent spawned by the main AI Workbench agent.',
@@ -3019,6 +3004,7 @@ async function callAnthropicWorkbenchModelStream(session, emit, prompt, signal) 
                     if (block && block.type === 'tool_use' && block._inputPart) {
                         try { block.input = JSON.parse(block._inputPart); } catch (_) {}
                         delete block._inputPart;
+                        safeEmit(emit, 'tool_use', { id: block.id, name: block.name, input: block.input || {} });
                     }
                     break;
                 }

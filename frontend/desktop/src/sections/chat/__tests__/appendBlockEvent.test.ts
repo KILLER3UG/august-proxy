@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { appendBlockEvent } from '../ChatThread';
+import { appendBlockEvent } from '../chat-stream-manager';
 
 describe('appendBlockEvent — basic event merging', () => {
   it('creates a normal tool_call block for august__submit_plan', () => {

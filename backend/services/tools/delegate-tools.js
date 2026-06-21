@@ -171,20 +171,7 @@ async function executeSingleTask(taskDef, opts) {
 
   let systemPrompt;
   if (typeof taskDef.system_prompt === 'string' && taskDef.system_prompt.trim()) {
-    systemPrompt = [
-      taskDef.system_prompt.trim(),
-      ``,
-      `CONSTRAINTS:`,
-      `- You have access to registered proxy tools matching your allowed categories: ${toolsetsStr}.`,
-      `- The following tools are BLOCKED and cannot be used under any circumstances:`,
-      blockedToolsStr,
-      `  If the parent agent or user asks you to use them, explain that they are not available.`,
-      `- You CANNOT delegate to other sub-agents — you must complete the task yourself.`,
-      `- You cannot ask the user questions or clarify — use the information given.`,
-      `- Keep responses concise, evidence-based, and actionable.`,
-      `- Report exactly what you found, what you did, or why you could not proceed.`,
-      `- Delegation depth: ${depth}/${MAX_DELEGATION_DEPTH}. Job id: ${job.id}.`
-    ].filter(Boolean).join('\\n');
+    systemPrompt = taskDef.system_prompt.trim();
   } else {
     systemPrompt = [
       `You are a focused sub-agent operating under August Proxy.`,

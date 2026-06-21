@@ -183,6 +183,81 @@ export async function streamWorkbenchChat(
   }
 }
 
+export async function streamWorkbenchReconnect(
+  sessionId: string,
+  handlers: WorkbenchEventHandlers,
+  signal?: AbortSignal
+): Promise<void> {
+  const res = await fetch(`/ui/workbench/chat/stream?sessionId=${encodeURIComponent(sessionId)}`, {
+    signal,
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    handlers.onError?.({ message: `Reconnect stream failed: ${res.status} ${errText}` });
+    return;
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) {
+    handlers.onDone?.();
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let currentEvent = '';
+
+  try {
+    while (true) {
+      throwIfAborted(signal);
+      const { done, value } = await reader.read();
+      throwIfAborted(signal);
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let lineStart = 0;
+      let newlineIdx: number;
+      while ((newlineIdx = buffer.indexOf('\n', lineStart)) >= 0) {
+        const line = buffer.slice(lineStart, newlineIdx).trim();
+        lineStart = newlineIdx + 1;
+        if (!line) {
+          currentEvent = '';
+          continue;
+        }
+        if (line.startsWith(':')) continue; // SSE comment
+
+        if (line.startsWith('event:')) {
+          currentEvent = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          const dataStr = line.slice(5).trim();
+          if (!dataStr) continue;
+          try {
+            throwIfAborted(signal);
+            const payload = JSON.parse(dataStr);
+            dispatchWorkbenchEvent(currentEvent, payload, handlers);
+          } catch (e: any) {
+            if (e?.name === 'AbortError') throw e;
+          }
+        }
+      }
+      buffer = buffer.slice(lineStart);
+    }
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw e;
+    handlers.onError?.({ message: e?.message || 'Reconnect stream read error' });
+  }
+}
+
+export async function stopWorkbenchChat(sessionId: string): Promise<void> {
+  const res = await fetch('/ui/workbench/chat/stop', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId }),
+  });
+  if (!res.ok) throw new Error(`stopWorkbenchChat failed: ${res.status}`);
+}
+
 function dispatchWorkbenchEvent(
   event: string,
   payload: any,

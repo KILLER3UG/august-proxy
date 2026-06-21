@@ -250,15 +250,22 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       scheduleUpdate();
     },
     onToolUse: ({ id, name, input }) => {
-      toolResults = [...toolResults, {
+      const existingIdx = toolResults.findIndex(t => t.id === id);
+      const toolEntry = {
         name,
         context: JSON.stringify(input || {}, null, 2),
         id,
-        status: 'running',
+        status: 'running' as const,
         summary: Object.keys(input || {}).join(', '),
         error: '',
-        startedAt: Date.now(),
-      }];
+        startedAt: existingIdx !== -1 ? toolResults[existingIdx].startedAt : Date.now(),
+      };
+      if (existingIdx !== -1) {
+        toolResults = toolResults.map((t, idx) => idx === existingIdx ? toolEntry : t);
+      } else {
+        toolResults = [...toolResults, toolEntry];
+      }
+
       streamBlocks = appendBlockEvent(streamBlocks, {
         type: name.startsWith('@run_command') || name.startsWith('run_command') ? 'command' : 'tool_call',
         name,

@@ -48,14 +48,14 @@ function sessionKey(sessionId: string | null) {
   return sessionId ?? GLOBAL_SESSION_KEY;
 }
 
-export function getActiveSessionIds(snapshot: ChatRuntimeSnapshot = chatRuntimeForStatusbar.snapshot()) {
+export function getActiveSessionIds(snapshot: ChatRuntimeSnapshot = chatRuntime.snapshot()) {
   return Array.from(new Set(snapshot.activeTurns.map((turn) => turn.sessionId).filter(Boolean) as string[]));
 }
 
 export function subscribeActiveSessions(callback: (sessionIds: string[]) => void) {
-  const sync = () => callback(getActiveSessionIds(chatRuntimeForStatusbar.snapshot()));
+  const sync = () => callback(getActiveSessionIds(chatRuntime.snapshot()));
   sync();
-  return chatRuntimeForStatusbar.subscribe(sync);
+  return chatRuntime.subscribe(sync);
 }
 
 export function createChatRuntime(): ChatRuntime {
@@ -190,4 +190,4 @@ export function createChatRuntime(): ChatRuntime {
   return runtime;
 }
 
-const chatRuntimeForStatusbar = createChatRuntime();
+export const chatRuntime = createChatRuntime();
