@@ -450,7 +450,30 @@ const requestHandler = async (req, res) => {
     // ── User-defined model aliases ──
     if (req.url === '/api/config/model-aliases' && req.method === 'GET') {
         const cfg = getConfig();
-        return sendJson(res, { aliases: cfg.modelAliases || [] });
+        const rawAliases = cfg.modelAliases || [];
+        // Also expose the prettified display alias (the one shown in the
+        // chat dropdown, e.g. "Opus 4.7-Alias") so the frontend can map
+        // the prettified name recorded in usage events back to the backend
+        // model. Without this, the observability page only sees the
+        // canonical id (e.g. "claude-opus-4.7") while usage events record
+        // the prettified name — the two never match.
+        let displayAliasFor = null;
+        try {
+            const { getModelDisplayAlias } = require('./providers/model-list');
+            displayAliasFor = getModelDisplayAlias;
+        } catch (_) { /* optional */ }
+        const aliases = rawAliases.map(a => {
+            const displayAlias = displayAliasFor && a.alias
+                ? displayAliasFor({ id: a.alias, provider: 'Alias' })
+                : '';
+            return {
+                alias: a.alias,
+                targetModel: a.targetModel,
+                targetProvider: a.targetProvider,
+                displayAlias: displayAlias || a.alias,
+            };
+        });
+        return sendJson(res, { aliases });
     }
 
     if (req.url === '/api/config/model-aliases' && req.method === 'PUT') {

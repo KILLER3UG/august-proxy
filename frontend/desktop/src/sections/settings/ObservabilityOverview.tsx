@@ -10,9 +10,11 @@ import { WorkspaceDonut, modelColor, type DonutSlice } from '@/components/worksp
 import { usageApi } from '@/api/usage';
 import {
     getObservabilityOverview,
+    getModelAliases,
+    getUserModelAliases,
     type ObservabilityOverview as OverviewPayload
 } from '@/api/backend-ui';
-import { formatTimeAgo } from '@/lib/utils';
+import { cn, formatTimeAgo } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
@@ -24,6 +26,12 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
     const usage = useQuery({ queryKey: ['usage', 'stats', '30d'], queryFn: () => usageApi.stats('30d'), refetchInterval: refetchMs });
     const byDay = useQuery({ queryKey: ['usage', 'byDay', '30d'], queryFn: () => usageApi.byDay('30d'), refetchInterval: refetchMs });
     const byModel = useQuery({ queryKey: ['usage', 'byModel', '30d'], queryFn: () => usageApi.byModel('30d'), refetchInterval: refetchMs });
+    // Alias lookups so we can show "alias(backend)" next to the alias the
+    // usage events recorded. Both catalog aliases (e.g. short names set in
+    // model-catalog.json) and user-defined aliases from /api/config are
+    // merged into one map keyed by the alias string.
+    const catalogAliases = useQuery({ queryKey: ['models', 'aliases'], queryFn: () => getModelAliases(), refetchInterval: refetchMs });
+    const userAliases = useQuery({ queryKey: ['models', 'userAliases'], queryFn: () => getUserModelAliases(), refetchInterval: refetchMs });
 
     if (overview.isLoading || usage.isLoading) {
         return <SettingsEmptyState title="Loading…" description="Fetching the at-a-glance view." />;
@@ -40,11 +48,38 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
     const allowedApps = o.appPolicy.counts.allow;
     const deniedApps = o.appPolicy.counts.deny;
 
+    // Build alias -> backend model id map. We only add entries where the
+    // alias resolves to a different model id, otherwise the suffix would
+    // be redundant (e.g. when an alias just renames itself).
+    const aliasBackendMap = new Map<string, string>();
+    for (const a of catalogAliases.data?.aliases ?? []) {
+        if (a.alias && a.resolvesTo && a.alias !== a.resolvesTo) {
+            aliasBackendMap.set(a.alias, a.resolvesTo);
+        }
+    }
+    for (const a of userAliases.data?.aliases ?? []) {
+        if (!a.alias || !a.targetModel || a.alias === a.targetModel) continue;
+        // Index by the canonical id (e.g. "claude-opus-4.7") so calls that
+        // record the alias id directly still resolve.
+        aliasBackendMap.set(a.alias, a.targetModel);
+        // Index by the prettified display alias (e.g. "Opus 4.7-Alias")
+        // — that's the string recorded in usage events when the user picks
+        // the alias from the chat dropdown.
+        if (a.displayAlias && a.displayAlias !== a.alias) {
+            aliasBackendMap.set(a.displayAlias, a.targetModel);
+        }
+    }
+    const formatModelLabel = (model: string): string => {
+        const backend = aliasBackendMap.get(model);
+        return backend ? `${model}(${backend})` : model;
+    };
+
     // Model-usage donut slices (from usageApi.byModel) + center label.
     // We compute `color` here so the donut and the Tokens-per-day chart
-    // use the same color for the same model.
+    // use the same color for the same alias (color stays keyed on the
+    // alias, not the formatted label, so legend + bars match).
     const donutSlices: DonutSlice[] = (byModel.data?.results ?? []).map(r => ({
-        label: r.model,
+        label: formatModelLabel(r.model),
         value: r.tokens,
         percent: r.percent,
         color: modelColor(r.model),
@@ -127,7 +162,7 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
                                                             Top model
                                                         </div>
                                                         <div className="mt-0.5 text-sm font-semibold text-foreground truncate">
-                                                            {top.model || 'unknown'}
+                                                            {formatModelLabel(top.model || 'unknown')}
                                                         </div>
                                                     </div>
                                                     <div className="shrink-0 text-right">
@@ -167,7 +202,7 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
                             )}
                         >
                             {byDay.data && byDay.data.results && byDay.data.results.length > 0 ? (
-                                <TokensByDayBars rows={byDay.data.results} />
+                                <TokensByDayBars rows={byDay.data.results} formatModelLabel={formatModelLabel} />
                             ) : (
                                 <SettingsEmptyState title="No token usage yet" description="Activity will appear here as you work." />
                             )}
@@ -243,7 +278,7 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
 // Shared with WorkspaceDonut so a model keeps the same color across
 // the donut and the Tokens-per-day chart.
 
-function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number; models?: { model: string; tokens: number }[] }> }) {
+function TokensByDayBars({ rows, formatModelLabel }: { rows: Array<{ date: string; tokens: number; models?: { model: string; tokens: number }[] }>; formatModelLabel?: (model: string) => string }) {
     const safeRows = (rows ?? []).map(r => ({
         date: String(r.date ?? ''),
         tokens: Number(r.tokens) || 0,
@@ -256,51 +291,81 @@ function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number;
     const todayKey = new Date().toISOString().slice(0, 10);
     const [hover, setHover] = useState<number | null>(null);
     const hoverRow = hover !== null ? recent[hover] : null;
+    // Scale so the tallest bar reaches ~94% of the container, leaving a
+    // small breathing room at the top for the line overlay.
+    const SCALE = 0.94;
+    // Fall back to identity when the parent didn't pass a formatter (e.g.
+    // when this component is used in isolation).
+    const label = formatModelLabel ?? ((m: string) => m);
 
     return (
-        <div className="relative">
+        <div className="relative" style={{ marginTop: '125px' }}>
             <div
-                className="flex items-end gap-1 h-24"
+                className="relative h-16"
                 onMouseLeave={() => setHover(null)}
             >
+                <div className="absolute inset-0 flex items-end gap-1">
+                    {recent.map((r, i) => {
+                        const isToday = r.date === todayKey;
+                        const rowTotal = r.tokens || r.models.reduce((s, m) => s + (m.tokens || 0), 0);
+                        const heightPct = Math.max(2, (rowTotal / max) * 100 * SCALE);
+                        return (
+                            <div
+                                key={r.date || i}
+                                className={cn(
+                                    'flex-1 rounded-t overflow-hidden flex flex-col justify-end transition relative cursor-pointer',
+                                    isToday && 'ring-1 ring-emerald-300/50'
+                                )}
+                                style={{ height: `${heightPct}%` }}
+                                onMouseEnter={() => setHover(i)}
+                                onFocus={() => setHover(i)}
+                                tabIndex={0}
+                            >
+                                {r.models.length === 0 ? (
+                                    <div
+                                        className={cn(
+                                            'w-full rounded-t',
+                                            isToday ? 'bg-emerald-400/60' : 'bg-primary/70'
+                                        )}
+                                        style={{ height: '100%' }}
+                                    />
+                                ) : r.models.map(m => {
+                                    const pct = rowTotal > 0 ? (m.tokens / rowTotal) * 100 : 0;
+                                    return (
+                                        <div
+                                            key={m.model}
+                                            className="w-full transition-opacity hover:opacity-80"
+                                            style={{
+                                                backgroundColor: modelColor(m.model),
+                                                height: `${pct}%`,
+                                            }}
+                                            title={`${label(m.model)}: ${formatCompact(m.tokens)} tokens`}
+                                        />
+                                    );
+                                })}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* Date axis */}
+            <div className="mt-1 flex items-end gap-1 text-[10px] text-muted-foreground/80 tabular-nums">
                 {recent.map((r, i) => {
                     const isToday = r.date === todayKey;
-                    const rowTotal = r.tokens || r.models.reduce((s, m) => s + (m.tokens || 0), 0);
-                    const heightPct = Math.max(2, (rowTotal / max) * 100);
+                    // Label first, last, today, and every ~3rd bar to avoid clutter.
+                    const showLabel =
+                        i === 0 ||
+                        i === recent.length - 1 ||
+                        isToday ||
+                        recent.length <= 7 ||
+                        i % Math.max(1, Math.ceil(recent.length / 5)) === 0;
+                    const [, mm, dd] = r.date.split('-');
+                    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    const monthLabel = monthNames[parseInt(mm, 10) - 1] || mm;
                     return (
-                        <div
-                            key={r.date || i}
-                            className={cn(
-                                'flex-1 rounded-t overflow-hidden flex flex-col justify-end transition relative cursor-pointer',
-                                isToday && 'ring-1 ring-emerald-300/50'
-                            )}
-                            style={{ height: `${heightPct}%` }}
-                            onMouseEnter={() => setHover(i)}
-                            onFocus={() => setHover(i)}
-                            tabIndex={0}
-                        >
-                            {r.models.length === 0 ? (
-                                <div
-                                    className={cn(
-                                        'w-full rounded-t',
-                                        isToday ? 'bg-emerald-400/60' : 'bg-primary/70'
-                                    )}
-                                    style={{ height: '100%' }}
-                                />
-                            ) : r.models.map(m => {
-                                const pct = rowTotal > 0 ? (m.tokens / rowTotal) * 100 : 0;
-                                return (
-                                    <div
-                                        key={m.model}
-                                        className="w-full transition-opacity hover:opacity-80"
-                                        style={{
-                                            backgroundColor: modelColor(m.model),
-                                            height: `${pct}%`,
-                                        }}
-                                        title={`${m.model}: ${formatCompact(m.tokens)} tokens`}
-                                    />
-                                );
-                            })}
+                        <div key={r.date || i} className="flex-1 text-center">
+                            {showLabel ? `${monthLabel} ${parseInt(dd, 10)}` : ''}
                         </div>
                     );
                 })}
@@ -324,7 +389,7 @@ function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number;
                                             className="size-2 rounded-full shrink-0"
                                             style={{ backgroundColor: modelColor(m.model) }}
                                         />
-                                        <span className="flex-1 truncate text-foreground/90">{m.model}</span>
+                                        <span className="flex-1 truncate text-foreground/90">{label(m.model)}</span>
                                         <span className="tabular-nums">{formatCompact(m.tokens)}</span>
                                     </div>
                                 ))}

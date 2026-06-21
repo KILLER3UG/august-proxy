@@ -413,6 +413,10 @@ export interface UserModelAlias {
   alias: string;
   targetModel: string;
   targetProvider: string;
+  /** Prettified display name as shown in the chat dropdown
+   *  (e.g. "Opus 4.7-Alias"). Matches the value usage events record,
+   *  so the observability page can format "alias(backend)" correctly. */
+  displayAlias?: string;
 }
 
 export interface UserModelAliasesResponse {
