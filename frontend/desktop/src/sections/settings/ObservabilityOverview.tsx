@@ -52,6 +52,14 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
     const donutCenter = formatCompact(totalTokens30d);
 
     return (
+        <ErrorBoundary
+            fallback={(err) => (
+                <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-4 text-sm">
+                    <p className="font-semibold text-rose-300">Observability render error</p>
+                    <pre className="mt-2 whitespace-pre-wrap text-xs text-rose-200/80">{err?.message}</pre>
+                </div>
+            )}
+        >
         <div className="space-y-6">
             {/* Stat cards row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -196,6 +204,7 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
                 </Card>
             </div>
         </div>
+        </ErrorBoundary>
     );
 }
 
