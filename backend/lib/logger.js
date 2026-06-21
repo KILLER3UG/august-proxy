@@ -516,7 +516,58 @@ function determineRequestType(body) {
 
 function extractSessionId(requestBody) {
     if (!requestBody || typeof requestBody !== 'object') return '';
-    return String(requestBody.sessionId || requestBody.session_id || requestBody.metadata?.sessionId || requestBody.metadata?.session_id || '');
+    return String(
+        requestBody.sessionId ||
+        requestBody.session_id ||
+        requestBody.metadata?.sessionId ||
+        requestBody.metadata?.session_id ||
+        requestBody.user ||
+        requestBody.metadata?.user_id ||
+        ''
+    );
+}
+
+/**
+ * Synthetic sessionId for /v1 traffic that does not carry any conversation
+ * identifier. Aggregates one row per provider/model/day so the Settings →
+ * Usage page shows non-zero totals even for anonymous external-client traffic
+ * (e.g. Claude Desktop calling the proxy without a sessionId field).
+ * Format: `proxy:<provider>:<model>:<YYYY-MM-DD>`.
+ */
+function syntheticSessionId({ provider, model, date = new Date() } = {}) {
+    const dateBucket = date.toISOString().slice(0, 10);
+    const safeProvider = String(provider || 'unknown').replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const safeModel = String(model || 'unknown').replace(/[^a-zA-Z0-9_.-]/g, '_');
+    return `proxy:${safeProvider}:${safeModel}:${dateBucket}`;
+}
+
+/**
+ * Resolve the final sessionId for a /v1 request. Order:
+ *   1. metadata.sessionId (adapters pass explicit IDs)
+ *   2. body.sessionId / body.session_id / body.metadata.sessionId / body.metadata.session_id
+ *   3. body.user (OpenAI common) / body.metadata.user_id (Anthropic common)
+ *   4. headers x-session-id / x-conversation-id / x-request-id
+ *   5. synthetic `proxy:<provider>:<model>:<date>`
+ * Every request gets a value so usage_events are always written.
+ */
+function resolveSessionId(requestBody, metadata = {}) {
+    const fromMeta = String(metadata.sessionId || '').trim();
+    if (fromMeta) return fromMeta;
+
+    const fromBody = extractSessionId(requestBody).trim();
+    if (fromBody) return fromBody;
+
+    const headers = metadata.headers && typeof metadata.headers === 'object' ? metadata.headers : {};
+    const headerKeys = ['x-session-id', 'x-conversation-id', 'x-request-id', 'x-correlation-id'];
+    for (const key of headerKeys) {
+        const value = String(headers[key] || '').trim();
+        if (value) return value;
+    }
+
+    return syntheticSessionId({
+        provider: metadata.provider,
+        model: metadata.model || requestBody?.model,
+    });
 }
 
 // ── Capture request/response details for debug inspector ──
@@ -539,7 +590,7 @@ function captureRequest(reqId, requestBody, metadata = {}) {
         model: metadata.model || requestBody?.model || 'unknown',
         provider: metadata.provider || requestBody?.provider || '',
         source: metadata.source || 'adapter',
-        sessionId: metadata.sessionId || extractSessionId(requestBody),
+        sessionId: resolveSessionId(requestBody, metadata),
         inputCostPer1M: metadata.inputCostPer1M || 0,
         outputCostPer1M: metadata.outputCostPer1M || 0,
     });
@@ -702,5 +753,6 @@ module.exports = {
     getFilteredRequests, getStats,
     captureRequest, captureResponse, captureTokens, captureError, getRequestDetails, getRequestDetail,
     getConversations,
-    addSSEClient, removeSSEClient
+    addSSEClient, removeSSEClient,
+    extractSessionId, resolveSessionId, syntheticSessionId
 };

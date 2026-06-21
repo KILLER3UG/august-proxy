@@ -366,76 +366,68 @@ async function runCronJobNowHandler(args) {
 
 // ── Scheduler Engine ──
 
-function startCronScheduler() {
-  if (_schedulerRunning) {
-    console.log('[CronScheduler] Scheduler is already running.');
-    return false;
-  }
+// ── One-shot tick (no internal setInterval) ──
+// The server-wide tick lives in backend/services/scheduler. This function
+// does one pass: read jobs, find due ones, fire-and-forget executeJob for
+// each. Errors in one job do not stop the others. Returns a small summary.
+async function runDueCronJobs() {
+    const jobs = readCronJobs();
+    const now = Date.now();
+    const nowDate = new Date();
 
-  _schedulerRunning = true;
-  _lastCheckTime = Date.now();
-
-  console.log('[CronScheduler] Starting cron scheduler (checking every 30 seconds)...');
-
-  _schedulerInterval = setInterval(() => {
-    try {
-      const jobs = readCronJobs();
-      const now = Date.now();
-      const nowDate = new Date();
-
-      for (const job of jobs) {
+    const due = [];
+    for (const job of jobs) {
         if (!job.enabled) continue;
 
         const interval = parseScheduleInterval(job.schedule);
         let shouldRun = false;
 
         if (interval === 'cron') {
-          // Cron expression — check if current time matches
-          if (matchesCronExpression(job.schedule, nowDate)) {
-            // Only trigger once per minute (cache last cron trigger)
-            const lastRun = job.lastRun ? new Date(job.lastRun).getTime() : 0;
-            if (now - lastRun >= 60000) {
-              shouldRun = true;
+            if (matchesCronExpression(job.schedule, nowDate)) {
+                const lastRun = job.lastRun ? new Date(job.lastRun).getTime() : 0;
+                if (now - lastRun >= 60000) shouldRun = true;
             }
-          }
         } else if (typeof interval === 'number') {
-          // Interval-based
-          const lastRun = job.lastRun ? new Date(job.lastRun).getTime() : 0;
-          if (now - lastRun >= interval) {
-            shouldRun = true;
-          }
+            const lastRun = job.lastRun ? new Date(job.lastRun).getTime() : 0;
+            if (now - lastRun >= interval) shouldRun = true;
         }
 
-        if (shouldRun) {
-          console.log(`[CronScheduler] Executing job: ${job.name}`);
-          executeJob(job).catch(err => {
-            console.error(`[CronScheduler] Job "${job.name}" failed:`, err.message);
-          });
-        }
-      }
-
-      _lastCheckTime = Date.now();
-    } catch (e) {
-      console.error('[CronScheduler] Error during check cycle:', e.message);
+        if (shouldRun) due.push(job);
     }
-  }, 30000); // Check every 30 seconds
 
-  return true;
+    const results = [];
+    for (const job of due) {
+        try {
+            console.log(`[CronScheduler] Executing job: ${job.name}`);
+            const result = await executeJob(job);
+            results.push({ name: job.name, ok: true, status: result?.status });
+        } catch (err) {
+            console.error(`[CronScheduler] Job "${job.name}" failed:`, err.message);
+            results.push({ name: job.name, ok: false, error: err.message });
+        }
+    }
+    _lastCheckTime = new Date().toISOString();
+    return { ran: results.length, results, at: _lastCheckTime };
+}
+
+// ── Legacy boot helpers (kept for backward compat with tools/missing/index.js) ──
+// New code should use backend/services/scheduler directly. These helpers are
+// no-ops with a one-time deprecation warning so old call paths still load.
+let _deprecationWarned = false;
+function startCronScheduler() {
+    if (!_deprecationWarned) {
+        console.warn('[CronScheduler] startCronScheduler() is deprecated; use backend/services/scheduler. Returning true as no-op.');
+        _deprecationWarned = true;
+    }
+    return true;
 }
 
 function stopCronScheduler() {
-  if (!_schedulerRunning) return false;
-  if (_schedulerInterval) {
-    clearInterval(_schedulerInterval);
-    _schedulerInterval = null;
-  }
-  _schedulerRunning = false;
-  console.log('[CronScheduler] Stopped.');
-  return true;
+    return true;
 }
 
 function isSchedulerRunning() {
-  return _schedulerRunning;
+    return false;
 }
 
 // ── Tool Definitions ──
@@ -506,6 +498,7 @@ module.exports = {
   startCronScheduler,
   stopCronScheduler,
   isSchedulerRunning,
+  runDueCronJobs,
   listCronJobsHandler,
   createCronJobHandler,
   removeCronJobHandler,

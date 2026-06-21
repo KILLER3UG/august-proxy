@@ -15,6 +15,7 @@ const { executeManagedWebTool, isManagedWebToolName, getManagedWebToolDefinition
 const { extractAndSaveMemories } = require('../memory/auto-memory');
 const { normalizeUsage } = require('../usage/usage-normalizer');
 const { recordUsage } = require('../usage/usage-recorder');
+const summarizingCompactor = require('../memory/context-compressor');
 const { getBrainDiagnostics } = require('../memory/brain-diagnostics');
 const { getBrainConfig, getWorkbenchMaxToolLoops, planBrainTurn } = require('../memory/brain-orchestrator');
 const { getCapabilityHealth } = require('../monitoring/health');
@@ -2239,7 +2240,7 @@ function logPromptAudit(session, prompt) {
     } catch (_) {}
 }
 
-function recordWorkbenchUsage(session, profile, usage, { source = 'workbench' } = {}) {
+function recordWorkbenchUsage(session, profile, usage, { source = 'workbench', metadataOverride, force = false } = {}) {
     const normalized = normalizeUsage({
         usage,
         model: profile._upstreamModel || profile.currentModel || session.model || 'unknown',
@@ -2250,9 +2251,55 @@ function recordWorkbenchUsage(session, profile, usage, { source = 'workbench' } 
         requestId: `${session.id}:${Date.now()}`,
         inputCostPer1M: profile.inputCostPer1M || 0,
         outputCostPer1M: profile.outputCostPer1M || 0,
-        metadata: { workbench: true },
+        metadata: { ...(metadataOverride || {}), workbench: true },
     });
-    recordUsage(normalized);
+    recordUsage({ ...normalized, force });
+}
+
+/**
+ * Compact a Workbench session's message list using the summarizing
+ * compressor when the AUGUST_SUMMARIZING_COMPACTOR flag is on. No-op when
+ * the flag is off, when session-store is not ready, or when under threshold.
+ * On success, replaces session.messages with the compacted list and emits a
+ * 'compaction' SSE event so the frontend can surface what happened.
+ */
+async function maybeCompactSession(session, profile, tools, emit) {
+    if (!summarizingCompactor.isFeatureEnabled()) return null;
+    if (!session || !session.id || !Array.isArray(session.messages)) return null;
+    if (!sessionStore.isReady()) return null;
+
+    const model = profile?._upstreamModel || profile?.currentModel || session.model || 'unknown';
+    let contextWindow = 0;
+    try {
+        const { getModelContextWindow } = require('../../lib/models');
+        contextWindow = Number(getModelContextWindow(model) || 0);
+    } catch (_) { /* lib/models optional */ }
+    const threshold = contextWindow > 0 ? Math.floor(contextWindow * 0.88) : 28000;
+
+    const result = await summarizingCompactor.compactWithLock(
+        session.id,
+        session.messages,
+        tools,
+        threshold,
+        { headCount: 4, tailCount: 6 }
+    );
+    if (!result || !result.changed) return result || null;
+
+    session.messages = result.messages;
+    if (emit && typeof emit === 'function') {
+        try {
+            safeEmit(emit, 'compaction', {
+                headCount: result.summary.headCount,
+                tailCount: result.summary.tailCount,
+                compressedCount: result.summary.compressedCount,
+                originalTokens: result.summary.originalTokens,
+                compressedTokens: result.summary.compressedTokens,
+                underThreshold: result.summary.underThreshold,
+                threshold,
+            });
+        } catch (_) { /* best effort */ }
+    }
+    return result;
 }
 
 async function callWorkbenchModelStream(session, emit, signal) {
@@ -2269,10 +2316,29 @@ async function callWorkbenchModelStream(session, emit, signal) {
     const useOpenAi = (() => {
         try { return getWorkbenchProfile(session).useOpenAiFormat; } catch { return session.provider === 'codex'; }
     })();
-    if (useOpenAi) {
-        await callOpenAiWorkbenchModelStream(session, emit, prompt, signal);
-    } else {
-        await callAnthropicWorkbenchModelStream(session, emit, prompt, signal);
+    try {
+        if (useOpenAi) {
+            await callOpenAiWorkbenchModelStream(session, emit, prompt, signal);
+        } else {
+            await callAnthropicWorkbenchModelStream(session, emit, prompt, signal);
+        }
+    } catch (err) {
+        // Record a failed turn so the Settings → Usage page shows the attempt
+        // even when the model call threw before any usage arrived. The `force`
+        // flag tells session-store.recordUsageEvent to skip the zero-cost
+        // short-circuit so the row is written with zero tokens + a failed flag
+        // instead of a fake marker token.
+        try {
+            const profile = (() => { try { return getWorkbenchProfile(session); } catch { return {}; } })();
+            recordWorkbenchUsage(session, profile, { input_tokens: 0, output_tokens: 0 }, {
+                source: 'workbench:error',
+                metadataOverride: { failed: true, error: err?.message || String(err) },
+                force: true,
+            });
+        } catch (writeErr) {
+            console.warn('[Workbench] Failed to record error-path usage:', writeErr.message);
+        }
+        throw err;
     }
 }
 
@@ -2702,12 +2768,14 @@ async function callAnthropicWorkbenchModelStream(session, emit, prompt, signal) 
         const brainPolicy = getSessionBrainPolicy(session);
         const modelEntry = modelCatalog.get(model);
         const effectiveEffort = resolveEffectiveEffort(undefined, session, modelEntry);
+        const tools = toolDefinitions(session);
+        await maybeCompactSession(session, profile, tools, emit);
         const body = {
             model,
             max_tokens: brainPolicy.executionPolicy.maxTokens,
             system: prompt || buildSystemPrompt(session),
             messages: session.messages,
-            tools: toolDefinitions(session),
+            tools,
             stream: true
         };
         if (modelEntry && modelEntry.supportsThinking) {
@@ -2820,13 +2888,15 @@ async function callOpenAiWorkbenchModelStream(session, emit, prompt, signal) {
         const openAiEffort = modelEntry && modelEntry.supportsReasoning
             ? effortToOpenAiReasoningEffort(effectiveEffort)
             : null;
+        const tools = openAiToolDefinitions(session);
+        await maybeCompactSession(session, profile, tools, emit);
         const body = {
             model,
             messages: [
                 { role: 'system', content: prompt || buildSystemPrompt(session) },
                 ...toOpenAiMessages(session.messages)
             ],
-            tools: openAiToolDefinitions(session),
+            tools,
             tool_choice: 'auto',
             stream: true,
             max_tokens: brainPolicy.executionPolicy.maxTokens

@@ -449,11 +449,12 @@ function recordUsageEvent({
   outputCost = 0,
   totalCost = 0,
   metadata = {},
+  force = false,
 } = {}) {
   if (!ready || !sessionId) return null;
 
   const normalizedTotalTokens = Number(totalTokens) || Number(inputTokens || 0) + Number(outputTokens || 0);
-  if (normalizedTotalTokens <= 0 && Number(inputCost || 0) <= 0 && Number(outputCost || 0) <= 0) {
+  if (!force && normalizedTotalTokens <= 0 && Number(inputCost || 0) <= 0 && Number(outputCost || 0) <= 0) {
     return null;
   }
 

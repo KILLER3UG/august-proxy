@@ -440,6 +440,49 @@ function parseSSEToJSON(sseText) {
     return adapterBase.parseOpenAIChatSSE(sseText);
 }
 
+// ── Extract a session identifier from an Anthropic Messages body ──
+// Order: explicit sessionId → metadata.user_id (Anthropic common) →
+// metadata.sessionId → sessionId. Returns '' when nothing usable is present;
+// the logger will then fall back to headers and finally a synthetic key so
+// usage is always persisted.
+function deriveSessionIdFromAnthropic(body, req) {
+    if (body && typeof body === 'object') {
+        const fromBody = body.sessionId || body.session_id
+            || body.metadata?.sessionId || body.metadata?.session_id
+            || body.metadata?.user_id;
+        if (fromBody) return String(fromBody);
+    }
+    if (req && req.headers) {
+        const headerKeys = ['x-session-id', 'x-conversation-id', 'x-request-id', 'x-correlation-id'];
+        for (const key of headerKeys) {
+            const value = req.headers[key];
+            if (value) return String(value);
+        }
+    }
+    return '';
+}
+
+// ── Safely copy relevant request headers into a plain object ──
+// `req.headers` may be a Headers instance (global fetch API) or a plain
+// object; normalize so the logger can read x-session-id etc.
+function extractRequestHeaders(req) {
+    if (!req || !req.headers) return {};
+    const out = {};
+    const keys = ['x-session-id', 'x-conversation-id', 'x-request-id', 'x-correlation-id', 'user-agent', 'x-august-client'];
+    if (typeof req.headers.get === 'function') {
+        for (const key of keys) {
+            const v = req.headers.get(key);
+            if (v) out[key] = v;
+        }
+    } else if (typeof req.headers === 'object') {
+        for (const key of keys) {
+            const v = req.headers[key];
+            if (v) out[key] = String(v);
+        }
+    }
+    return out;
+}
+
 // ── Parse native Anthropic SSE stream into a complete Anthropic JSON object ──
 function parseAnthropicSSEToJSON(sseText) {
     const lines = sseText.split('\n');
@@ -2721,6 +2764,8 @@ async function handleMessages(req, res, cleanPath, reqId) {
                     source: 'v1-anthropic',
                     inputCostPer1M: cfg.inputCostPer1M || 0,
                     outputCostPer1M: cfg.outputCostPer1M || 0,
+                    sessionId: deriveSessionIdFromAnthropic(upstreamReq, req),
+                    headers: extractRequestHeaders(req),
                 });
 
                 let response;

@@ -243,6 +243,17 @@ function dispatchWorkbenchEvent(
     case 'btw':
       handlers.onBtw?.(payload as WorkbenchBtwResult);
       break;
+    case 'compaction':
+      handlers.onCompaction?.({
+        headCount: Number(payload?.headCount) || 0,
+        tailCount: Number(payload?.tailCount) || 0,
+        compressedCount: Number(payload?.compressedCount) || 0,
+        originalTokens: Number(payload?.originalTokens) || 0,
+        compressedTokens: Number(payload?.compressedTokens) || 0,
+        underThreshold: payload?.underThreshold === true,
+        threshold: Number(payload?.threshold) || undefined,
+      });
+      break;
     case 'prompt':
       handlers.onPrompt?.({
         content: payload?.content || '',

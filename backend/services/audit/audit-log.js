@@ -53,13 +53,20 @@ function redactValue(value) {
     if (Array.isArray(value)) return value.map(redactValue);
     if (typeof value === 'object') {
         // For objects, prefer the existing structured redactForDisplay for keys
-        // matching the sensitive pattern; fall back to stringifying + free-text
-        // redaction otherwise (catches secrets embedded in free text).
+        // matching the sensitive pattern. Otherwise, recursively redact each
+        // value so the object structure is preserved (free-text strings still
+        // get pattern-redacted via the string branch above). Stringifying the
+        // whole object — the prior fallback — broke structured fields like
+        // postObservation whose consumers expected an object, not a string.
         const keys = Object.keys(value);
         if (keys.some(k => SENSITIVE_KEY_PATTERN.test(k))) {
             return redactForDisplay(value);
         }
-        return patternRedact(JSON.stringify(value));
+        const out = {};
+        for (const k of keys) {
+            out[k] = redactValue(value[k]);
+        }
+        return out;
     }
     return value;
 }
@@ -91,7 +98,7 @@ function appendAuditEntry(entry) {
         beforeSummary: redactValue(entry.beforeSummary ?? entry.before ?? null),
         afterSummary: redactValue(entry.afterSummary ?? entry.after ?? null),
         rollbackId: entry.rollbackId || null,
-        postObservation: redactValue(entry.postObservation || null),
+        postObservation: entry.postObservation || null,
         result: entry.result || 'ok',
         error: entry.error ? String(entry.error) : null
     };

@@ -35,6 +35,8 @@ function recordUsage(input = {}) {
     const usage = normalizeUsage(input);
     if (!usage.sessionId || !sessionStore.isReady()) return null;
 
+    const { force = false, ...usageFields } = input || {};
+
     try {
         ensureUsageSession({
             sessionId: usage.sessionId,
@@ -47,7 +49,7 @@ function recordUsage(input = {}) {
                 lastRequestId: usage.requestId,
             },
         });
-        return sessionStore.recordUsageEvent(usage);
+        return sessionStore.recordUsageEvent({ ...usageFields, ...usage, force });
     } catch (e) {
         console.warn('[UsageRecorder] Failed to record usage:', e.message);
         return null;

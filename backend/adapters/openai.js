@@ -30,6 +30,48 @@ function parseSSEToJSON(sseText) {
     return adapterBase.parseOpenAIChatSSE(sseText);
 }
 
+// ── Extract a session identifier from an OpenAI Chat Completions body ──
+// Order: explicit sessionId → user field (OpenAI common) → metadata.sessionId.
+// Returns '' when nothing usable is present; the logger will then fall back
+// to headers and finally a synthetic proxy:* key so usage is always persisted.
+function deriveSessionIdFromOpenAi(body, req) {
+    if (body && typeof body === 'object') {
+        const fromBody = body.sessionId || body.session_id
+            || body.metadata?.sessionId || body.metadata?.session_id
+            || body.user;
+        if (fromBody) return String(fromBody);
+    }
+    if (req && req.headers) {
+        const headerKeys = ['x-session-id', 'x-conversation-id', 'x-request-id', 'x-correlation-id'];
+        for (const key of headerKeys) {
+            const value = req.headers[key];
+            if (value) return String(value);
+        }
+    }
+    return '';
+}
+
+// ── Safely copy relevant request headers into a plain object ──
+// `req.headers` may be a Headers instance (global fetch API) or a plain
+// object; normalize so the logger can read x-session-id etc.
+function extractRequestHeaders(req) {
+    if (!req || !req.headers) return {};
+    const out = {};
+    const keys = ['x-session-id', 'x-conversation-id', 'x-request-id', 'x-correlation-id', 'user-agent', 'x-august-client'];
+    if (typeof req.headers.get === 'function') {
+        for (const key of keys) {
+            const v = req.headers.get(key);
+            if (v) out[key] = v;
+        }
+    } else if (typeof req.headers === 'object') {
+        for (const key of keys) {
+            const v = req.headers[key];
+            if (v) out[key] = String(v);
+        }
+    }
+    return out;
+}
+
 // ── Translate Responses API content parts to plain text ──
 function translateResponsesContent(content) {
     if (typeof content === 'string') return content;
@@ -606,6 +648,8 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 source: 'v1-openai',
                 inputCostPer1M: cfg.inputCostPer1M || 0,
                 outputCostPer1M: cfg.outputCostPer1M || 0,
+                sessionId: deriveSessionIdFromOpenAi(oReq, req),
+                headers: extractRequestHeaders(req),
             });
 
             // Translate Responses API input format (if present) to Chat Completions messages

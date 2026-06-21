@@ -201,3 +201,58 @@ test('combined filters compose', () => {
     assert.equal(filtered.length, 1);
     assert.equal(filtered[0].action, 'a.x');
 });
+
+test('structured fields without sensitive keys preserve object shape on round-trip', () => {
+    clearAuditLog();
+    // postObservation, inputSummary (object), and other structured fields
+    // should round-trip as objects, not as JSON strings. The prior redactValue
+    // fell back to JSON.stringify for objects without a sensitive key, which
+    // broke consumers like listObservationsSync that read .screenshotPath.
+    appendAuditEntry({
+        action: 'computer.post_observation',
+        category: 'computer',
+        target: 'computer_type',
+        postObservation: {
+            screenshotPath: 'C:/tmp/obs.png',
+            capturedAt: '2026-06-21T00:00:00.000Z',
+            focusedApp: 'notepad.exe',
+        },
+        inputSummary: {
+            step: 'click',
+            coordinates: { x: 100, y: 200 },
+            notes: 'plain text',
+        },
+    });
+    const entries = readAuditEntries({ action: 'computer.post_observation' });
+    assert.equal(entries.length, 1);
+    // postObservation must be an object, not a stringified JSON.
+    assert.equal(typeof entries[0].postObservation, 'object');
+    assert.ok(entries[0].postObservation);
+    assert.equal(entries[0].postObservation.screenshotPath, 'C:/tmp/obs.png');
+    assert.equal(entries[0].postObservation.focusedApp, 'notepad.exe');
+    // inputSummary must also be an object with nested structure preserved.
+    assert.equal(typeof entries[0].inputSummary, 'object');
+    assert.equal(entries[0].inputSummary.step, 'click');
+    assert.equal(entries[0].inputSummary.coordinates.x, 100);
+    assert.equal(entries[0].inputSummary.coordinates.y, 200);
+});
+
+test('structured fields with sensitive keys still use redactForDisplay', () => {
+    clearAuditLog();
+    appendAuditEntry({
+        action: 'secrets.test',
+        inputSummary: {
+            apiKey: 'sk-1234567890abcdefghij',
+            step: 'auth',
+        },
+    });
+    const entries = readAuditEntries({ action: 'secrets.test' });
+    assert.equal(entries.length, 1);
+    const input = entries[0].inputSummary;
+    assert.equal(typeof input, 'object');
+    assert.equal(input.step, 'auth');
+    // The secret value should be redacted to maskSecretValue's
+    // "<first 6>...<last 4>" form, not the whole object stringified.
+    assert.notEqual(input.apiKey, 'sk-1234567890abcdefghij');
+    assert.equal(input.apiKey, 'sk-123...ghij');
+});

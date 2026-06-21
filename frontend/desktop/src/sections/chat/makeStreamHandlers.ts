@@ -327,6 +327,16 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     onBtw: (result) => {
       setWorkbenchBtw(result);
     },
+    onCompaction: (info) => {
+      // When the summarizing compressor collapses the middle of the
+      // conversation, surface a small inline notice so the user can see
+      // it happened. The notice is part of the assistant turn so it
+      // disappears if the turn is rolled back.
+      const notice = `\n\n📦 Context compacted — kept the first ${info.headCount} and last ${info.tailCount} messages; summarized ${info.compressedCount} middle messages (~${info.originalTokens} → ~${info.compressedTokens} tokens).`;
+      assistantContent += notice;
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: notice });
+      scheduleUpdate();
+    },
     onDone: async () => {
       if (latestMutationCount > beforeMutationCount && sessionId) {
         try {

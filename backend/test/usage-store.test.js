@@ -66,3 +66,46 @@ test('recordUsageEvent persists usage and updates session totals', async () => {
     assert.equal(Number(session.total_cost), 0.0002);
     assert.equal(session.model, 'gpt-test');
 });
+
+test('recordUsageEvent respects force=true even when tokens and cost are zero', async () => {
+    await init();
+    const sessionId = `usage-force-${Date.now()}`;
+    createSession({
+        id: sessionId,
+        title: 'Force-write usage test',
+        agent_type: 'usage-test',
+        provider: 'workbench',
+        model: 'test-model',
+    });
+
+    // Without force, the zero-token + zero-cost row is short-circuited to null.
+    const skipped = recordUsageEvent({
+        sessionId,
+        source: 'unit-test',
+        model: 'test-model',
+        inputTokens: 0,
+        outputTokens: 0,
+        metadata: { case: 'no-force' },
+    });
+    assert.equal(skipped, null);
+
+    // With force=true, the row is written even with zero tokens.
+    const event = recordUsageEvent({
+        sessionId,
+        source: 'workbench:error',
+        model: 'test-model',
+        inputTokens: 0,
+        outputTokens: 0,
+        force: true,
+        metadata: { failed: true, error: 'simulated' },
+    });
+    assert.ok(event && event.id);
+    assert.equal(event.input_tokens, 0);
+    assert.equal(event.output_tokens, 0);
+    assert.equal(event.total_tokens, 0);
+    assert.deepEqual(event.metadata, { failed: true, error: 'simulated' });
+
+    const events = listUsageEvents(sessionId, { order: 'asc' });
+    assert.equal(events.length, 1);
+    assert.equal(events[0].source, 'workbench:error');
+});

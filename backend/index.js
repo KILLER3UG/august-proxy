@@ -69,7 +69,8 @@ function updateMcpGlobalEnvFromUi(entries = []) {
 const sessionStore = require('./services/storage/session-store');
 const toolRegistry = require('./services/tools/tool-registry');
 const mcpOAuth = require('./services/tools/mcp-oauth');
-const { startCronScheduler, readCronJobs, createCronJobHandler, removeCronJobHandler, runCronJobNowHandler } = require('./services/tools/missing/cron-tools');
+const { readCronJobs, createCronJobHandler, removeCronJobHandler, runCronJobNowHandler, runDueCronJobs } = require('./services/tools/missing/cron-tools');
+const scheduler = require('./services/scheduler');
 const { registerMissingTools } = require('./services/tools/missing/index');
 const { registerBrowserTools, cleanup: cleanupBrowserTools } = require('./services/tools/browser-tools');
 const { registerVisionTools } = require('./services/tools/vision-tools');
@@ -2155,11 +2156,6 @@ function startServer() {
         socket.destroy();
     });
 
-    setInterval(() => {
-        automationJobs.runDueAutomations().catch(e => {
-            console.warn('[automations] tick failed:', e.message);
-        });
-    }, 60000).unref();
 
     // Initialize MCP servers after the HTTP listener is available so the dashboard
     // remains reachable while uvx/npx tools warm their package caches.
@@ -2262,12 +2258,19 @@ try {
     console.warn('[ModelCatalog] Init skipped:', e.message);
 }
 
-// ── Start Cron Scheduler ──
+// ── Start Unified Scheduler ──
+// One tick every 30 seconds drives both the LLM-facing cron-jobs runner and
+// the UI-facing automation-jobs runner. Replaces the previous dual setInterval
+// (cron-tools 30s + automation-jobs 60s) so there is exactly one tick log per
+// cycle and the boot path is a single clearInterval call.
 try {
-    startCronScheduler();
-    console.log('[Cron] Scheduler started');
+    scheduler.start([
+        scheduler.runner('cron-jobs', runDueCronJobs),
+        scheduler.runner('automation-jobs', automationJobs.runDueAutomations),
+    ]);
+    console.log('[Scheduler] Started (cron-jobs + automation-jobs)');
 } catch (e) {
-    console.warn('[Cron] Scheduler start skipped:', e.message);
+    console.warn('[Scheduler] start skipped:', e.message);
 }
 
 
