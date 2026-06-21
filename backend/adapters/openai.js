@@ -1,5 +1,6 @@
 const { getProfile } = require('../lib/config');
 const { resolveModelAlias, resolveModelAliasDetails } = require('../providers/model-list');
+const sessionModelInheritance = require('../providers/session-model-inheritance');
 const { logActivity, endRequest, captureRequest, captureResponse, captureTokens, captureError } = require('../lib/logger');
 const { applySelfHealToMessages } = require('../services/workbench/selfheal');
 const { getModelContextWindow, saveModelContextWindow, loadModelContextWindow } = require('../lib/models');
@@ -42,13 +43,34 @@ function deriveSessionIdFromOpenAi(body, req) {
         if (fromBody) return String(fromBody);
     }
     if (req && req.headers) {
-        const headerKeys = ['x-session-id', 'x-conversation-id', 'x-request-id', 'x-correlation-id'];
+        const headerKeys = ['x-session-id', 'x-conversation-id', 'x-claude-code-session-id', 'x-request-id', 'x-correlation-id'];
         for (const key of headerKeys) {
             const value = req.headers[key];
             if (value) return String(value);
         }
     }
     return '';
+}
+
+function deriveModelInheritanceSessionIdFromOpenAi(body, req) {
+    if (body && typeof body === 'object') {
+        const fromBody = body.sessionId || body.session_id
+            || body.metadata?.sessionId || body.metadata?.session_id;
+        if (fromBody) return String(fromBody);
+    }
+    if (req && req.headers) {
+        const headerKeys = ['x-session-id', 'x-conversation-id', 'x-claude-code-session-id'];
+        for (const key of headerKeys) {
+            const value = req.headers[key];
+            if (value) return String(value);
+        }
+    }
+    return '';
+}
+
+function shouldApplySessionModelInheritance(model, metadata, headers) {
+    const parentAlias = sessionModelInheritance.getParentAliasFromRequest({ metadata }, { headers });
+    return Boolean(parentAlias || sessionModelInheritance.isAliasCandidate(model));
 }
 
 // ── Safely copy relevant request headers into a plain object ──
@@ -641,6 +663,9 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 return res.end(JSON.stringify({ error: { message: 'Invalid JSON in request body' } }));
             }
 
+            const sessionId = deriveSessionIdFromOpenAi(oReq, req);
+            const modelSessionId = deriveModelInheritanceSessionIdFromOpenAi(oReq, req);
+
             // Capture request for debug UI
             captureRequest(reqId, { ...oReq, model: cfg.currentModel, endpoint: cleanPath }, {
                 model: requestModel,
@@ -648,7 +673,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 source: 'v1-openai',
                 inputCostPer1M: cfg.inputCostPer1M || 0,
                 outputCostPer1M: cfg.outputCostPer1M || 0,
-                sessionId: deriveSessionIdFromOpenAi(oReq, req),
+                sessionId,
                 headers: extractRequestHeaders(req),
             });
 
@@ -687,7 +712,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             const requestedModel = oReq.model || 'gpt-5.4';
             const aliasDetails = requestedModel ? await resolveModelAliasDetails(requestedModel) : { modelId: requestedModel, provider: '' };
             const requestedRaw = aliasDetails.modelId || requestedModel;
-            const routeLookupModel = requestedModel && !looksLikeProviderAlias(requestedModel) ? requestedModel : requestedRaw;
+            let routeLookupModel = requestedModel && !looksLikeProviderAlias(requestedModel) ? requestedModel : requestedRaw;
             requestModel = cfg._upstreamModel || cfg.currentModel || requestedRaw || requestedModel;
 
             // Handle explicit aliases (just like in Claude profile)
@@ -710,6 +735,38 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                     const extractedAliasDetails = await resolveModelAliasDetails(extractedModel);
                     requestModel = extractedAliasDetails.modelId || extractedModel;
                     console.log(`[Proxy Hijack]: Using model from CLI: ${requestModel}`);
+                }
+            }
+
+            if (modelSessionId && shouldApplySessionModelInheritance(requestedModel, oReq.metadata, req.headers)) {
+                const inherited = await sessionModelInheritance.resolveInheritedModel({
+                    sessionId: modelSessionId,
+                    model: requestedModel,
+                    metadata: oReq.metadata,
+                    headers: req.headers,
+                    logger: console,
+                    customResolver: (input) => ({
+                        alias: input,
+                        provider: aliasDetails.provider || cfg.providerName || cfg.name || 'openai',
+                        model: requestModel || requestedRaw || input,
+                        isFallback: false,
+                    }),
+                });
+                if (inherited && inherited.resolution) {
+                    requestModel = inherited.resolution.model;
+                    routeLookupModel = requestModel;
+                    if (inherited.parentAlias) {
+                        oReq.metadata = { ...(oReq.metadata || {}), parentAlias: inherited.parentAlias };
+                    }
+                } else if (inherited && inherited.action && inherited.action.startsWith('reject_')) {
+                    requestStatus = 'error';
+                    requestError = inherited.action === 'reject_first_non_alias'
+                        ? 'First request in a session must be an alias.'
+                        : 'Sub-agent request but no alias resolved yet.';
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: { message: requestError, type: 'invalid_request_error' } }));
+                    finishRequest();
+                    return;
                 }
             }
             oReq.model = requestModel;

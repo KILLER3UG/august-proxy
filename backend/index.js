@@ -2482,8 +2482,8 @@ try {
 // cycle and the boot path is a single clearInterval call.
 try {
     scheduler.start([
-        scheduler.runner('cron-jobs', runDueCronJobs),
-        scheduler.runner('automation-jobs', automationJobs.runDueAutomations),
+        scheduler.runner('cron-jobs', runDueCronJobs, { type: 'I/O', priority: 'low' }),
+        scheduler.runner('automation-jobs', automationJobs.runDueAutomations, { type: 'I/O', priority: 'low' }),
     ]);
     console.log('[Scheduler] Started (cron-jobs + automation-jobs)');
 } catch (e) {

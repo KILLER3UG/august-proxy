@@ -15,6 +15,7 @@ const { isOpenAiToolCallParallelSafe, isAnthropicToolUseParallelSafe, parseOpenA
 const { LlmAdapterBase, MAX_MANAGED_TOOL_ROUNDS } = require('./base');
 const { getProviderName } = require('../providers/provider-registry');
 const { resolveModelAliasDetails } = require('../providers/model-list');
+const sessionModelInheritance = require('../providers/session-model-inheritance');
 const { SseStreamParser } = require('./sse-parser');
 const { classifyOpenAiToolCalls, classifyAnthropicToolUses, getToolNameFromOpenAiTool } = require('./tool-classification');
 const { buildSystemBlocks: buildContextSystemBlocks, isMiniMaxTarget } = require('../services/memory/context-builder');
@@ -453,13 +454,34 @@ function deriveSessionIdFromAnthropic(body, req) {
         if (fromBody) return String(fromBody);
     }
     if (req && req.headers) {
-        const headerKeys = ['x-session-id', 'x-conversation-id', 'x-request-id', 'x-correlation-id'];
+        const headerKeys = ['x-session-id', 'x-conversation-id', 'x-claude-code-session-id', 'x-request-id', 'x-correlation-id'];
         for (const key of headerKeys) {
             const value = req.headers[key];
             if (value) return String(value);
         }
     }
     return '';
+}
+
+function deriveModelInheritanceSessionIdFromAnthropic(body, req) {
+    if (body && typeof body === 'object') {
+        const fromBody = body.sessionId || body.session_id
+            || body.metadata?.sessionId || body.metadata?.session_id;
+        if (fromBody) return String(fromBody);
+    }
+    if (req && req.headers) {
+        const headerKeys = ['x-session-id', 'x-conversation-id', 'x-claude-code-session-id'];
+        for (const key of headerKeys) {
+            const value = req.headers[key];
+            if (value) return String(value);
+        }
+    }
+    return '';
+}
+
+function shouldApplySessionModelInheritance(model, metadata, headers) {
+    const parentAlias = sessionModelInheritance.getParentAliasFromRequest({ metadata }, { headers });
+    return Boolean(parentAlias || sessionModelInheritance.isAliasCandidate(model));
 }
 
 // ── Safely copy relevant request headers into a plain object ──
@@ -2634,6 +2656,8 @@ async function handleMessages(req, res, cleanPath, reqId) {
         try {
             const aReq = JSON.parse(body);
             const baseCfg = getProfile('claude');
+            const sessionId = deriveSessionIdFromAnthropic(aReq, req);
+            const modelSessionId = deriveModelInheritanceSessionIdFromAnthropic(aReq, req);
             requestModel = resolveClaudePublicModelAlias(aReq.model);
             clientFacingModel = resolveClaudeClientFacingModel(aReq.model);
             syncClaudePublicAlias(requestModel);
@@ -2717,11 +2741,60 @@ async function handleMessages(req, res, cleanPath, reqId) {
             }
 
             const selectedClaudeBackendModel = routeClaudeThroughSelectedProvider && cfg._upstreamModel ? cfg._upstreamModel : null;
-            const upstreamModel = selectedClaudeBackendModel
+            const modelForInheritance = typeof aReq.model === 'string' ? aReq.model : requestModel;
+            let upstreamModel = selectedClaudeBackendModel
                 ? selectedClaudeBackendModel
                 : shouldUseAnthropicUpstream(cfg.targetUrl) && shouldPreserveClaudeAliasForAnthropicUpstream(requestModel)
                     ? requestModel
                     : (cfg._upstreamModel || getClaudeBackendModel(cfg, aReq.model));
+            if (modelSessionId && shouldApplySessionModelInheritance(modelForInheritance, aReq.metadata, req.headers)) {
+                const inherited = await sessionModelInheritance.resolveInheritedModel({
+                    sessionId: modelSessionId,
+                    model: modelForInheritance,
+                    metadata: aReq.metadata,
+                    headers: req.headers,
+                    logger: console,
+                    customResolver: (input) => ({
+                        alias: input,
+                        provider: aliasDetails.provider || cfg.providerName || cfg.name || 'anthropic',
+                        model: upstreamModel,
+                        isFallback: false,
+                    }),
+                });
+                if (inherited && inherited.resolution) {
+                    upstreamModel = inherited.resolution.model;
+                    cfg._upstreamModel = upstreamModel;
+                    cfg.currentModel = upstreamModel;
+                    if (inherited.parentAlias) {
+                        aReq.metadata = { ...(aReq.metadata || {}), parentAlias: inherited.parentAlias };
+                    }
+                    try {
+                        const { resolveProviderForModel } = require('../providers/route-resolver');
+                        const routed = resolveProviderForModel(upstreamModel, { providerHint: inherited.resolution.provider });
+                        if (routed && routed.baseUrl && routed.apiKey) {
+                            cfg.targetUrl = routed.apiMode === 'anthropic_messages' || routed.name === 'anthropic'
+                                ? routed.baseUrl
+                                : toOpenAiCompatibleTargetUrl(routed.baseUrl);
+                            cfg.apiKey = routed.apiKey;
+                            if (routed.apiMode) cfg.apiMode = routed.apiMode;
+                            console.log(`[Proxy Model Route]: ${upstreamModel} -> provider ${routed.name} (${routed.baseUrl})`);
+                        }
+                    } catch (e) {
+                        console.warn('[Proxy Model Route] inherited resolution failed:', e.message);
+                    }
+                } else if (inherited && inherited.action && inherited.action.startsWith('reject_')) {
+                    requestStatus = 'error';
+                    requestError = inherited.action === 'reject_first_non_alias'
+                        ? 'First request in a session must be an alias.'
+                        : 'Sub-agent request but no alias resolved yet.';
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        type: 'error',
+                        error: { type: 'invalid_request_error', message: requestError }
+                    }));
+                    return;
+                }
+            }
             if (cfg.publicModelAlias && upstreamModel) {
                 console.log(`[Proxy Alias Route]: ${cfg.publicModelAlias} -> ${upstreamModel}`);
             }
@@ -2764,7 +2837,7 @@ async function handleMessages(req, res, cleanPath, reqId) {
                     source: 'v1-anthropic',
                     inputCostPer1M: cfg.inputCostPer1M || 0,
                     outputCostPer1M: cfg.outputCostPer1M || 0,
-                    sessionId: deriveSessionIdFromAnthropic(upstreamReq, req),
+                    sessionId,
                     headers: extractRequestHeaders(req),
                 });
 

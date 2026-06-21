@@ -36,6 +36,23 @@ test('tick invokes every runner in order and aggregates results', async () => {
     assert.deepEqual(result.results[1].result, { count: 2 });
 });
 
+test('runner metadata is preserved in tick results', async () => {
+    const a = scheduler.runner('a', async () => 'ok', { type: 'I/O', priority: 'low' });
+    const result = await scheduler.tick([a], { logger: { log() {}, warn() {} } });
+    assert.equal(result.results[0].metadata.type, 'I/O');
+    assert.equal(result.results[0].metadata.priority, 'low');
+    assert.equal(typeof result.results[0].durationMs, 'number');
+});
+
+test('tick returns profiling metadata', async () => {
+    const a = scheduler.runner('a', async () => 'ok');
+    const result = await scheduler.tick([a], { logger: { log() {}, warn() {} } });
+    assert.equal(typeof result.durationMs, 'number');
+    assert.ok(result.startedAt);
+    assert.equal(result.dbPool, 'n/a');
+    assert.ok(result.memoryRss === null || typeof result.memoryRss === 'number');
+});
+
 test('a throwing runner does not block subsequent runners', async () => {
     const calls = [];
     const a = scheduler.runner('a', async () => { calls.push('a'); throw new Error('boom'); });

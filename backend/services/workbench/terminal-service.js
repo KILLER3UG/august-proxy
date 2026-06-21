@@ -12,6 +12,7 @@ try {
 const sessions = new Map();
 const pendingApprovals = new Map();
 const BUFFER_LIMIT = 256 * 1024;
+const COMMAND_OUTPUT_LIMIT = 1024 * 1024;
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 
@@ -100,6 +101,13 @@ function appendBuffer(session, text) {
     for (const ws of session.sockets) {
         try { ws.send(text); } catch (e) { /* socket closed */ }
     }
+}
+
+function appendBoundedOutput(current, chunk, limit = COMMAND_OUTPUT_LIMIT) {
+    const next = current + String(chunk || '');
+    if (next.length <= limit) return next;
+    const marker = `\n[terminal output truncated to last ${limit} bytes]\n`;
+    return marker + next.slice(Math.max(0, next.length - limit));
 }
 
 function summarizeSession(session) {
@@ -249,11 +257,11 @@ function runCommandProcess(command, { cwd, timeoutMs } = {}) {
             windowsHide: true
         });
         let output = '';
-        child.stdout.on('data', chunk => { output += chunk.toString(); });
-        child.stderr.on('data', chunk => { output += chunk.toString(); });
+        child.stdout.on('data', chunk => { output = appendBoundedOutput(output, chunk.toString()); });
+        child.stderr.on('data', chunk => { output = appendBoundedOutput(output, chunk.toString()); });
         const timeout = Number(timeoutMs) > 0 ? setTimeout(() => {
             timedOut = true;
-            output += `\n[command timed out after ${Number(timeoutMs)}ms]\n`;
+            output = appendBoundedOutput(output, `\n[command timed out after ${Number(timeoutMs)}ms]\n`);
             try { child.kill(); } catch (e) {}
         }, Number(timeoutMs)) : null;
         child.on('error', error => {
