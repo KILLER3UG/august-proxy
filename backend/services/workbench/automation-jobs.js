@@ -291,6 +291,7 @@ async function runDueAutomations() {
         const due = store.jobs
             .map((job, index) => ({ job: normalizeJob(job), index }))
             .filter(item => item.job.enabled && item.job.nextRunAt && Date.parse(item.job.nextRunAt) <= now);
+        let changed = false;
         const runs = [];
         for (const item of due) {
             const result = await executeJob(item.job);
@@ -311,8 +312,9 @@ async function runDueAutomations() {
                 };
             }
             runs.push(run);
+            changed = true;
         }
-        writeStore(store);
+        if (changed) writeStore(store);
         return { ran: runs.length, runs };
     } finally {
         tickInFlight = false;

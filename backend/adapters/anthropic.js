@@ -1,5 +1,5 @@
 const { getProfile, syncClaudePublicAlias, getActiveProvider } = require('../lib/config');
-const { logActivity, endRequest, captureRequest, captureResponse, captureTokens, captureError } = require('../lib/logger');
+const { logActivity, endRequest, captureRequest, captureResponse, captureTokens, captureError, emitLogEvent } = require('../lib/logger');
 const { applySelfHealToMessages } = require('../services/workbench/selfheal');
 const { getModelContextWindow, saveModelContextWindow, loadModelContextWindow } = require('../lib/models');
 const { estimateTokens, formatTokenCount } = require('../lib/tokens');
@@ -19,6 +19,12 @@ const sessionModelInheritance = require('../providers/session-model-inheritance'
 const { SseStreamParser } = require('./sse-parser');
 const { classifyOpenAiToolCalls, classifyAnthropicToolUses, getToolNameFromOpenAiTool } = require('./tool-classification');
 const { buildSystemBlocks: buildContextSystemBlocks, isMiniMaxTarget } = require('../services/memory/context-builder');
+
+let _emitLogEvent = () => {};
+try { _emitLogEvent = emitLogEvent || require('../lib/logger').emitLogEvent; } catch (_) {}
+function emitProxy(category, level, message, metadata = null) {
+    try { _emitLogEvent({ category, level, message, metadata }); } catch (_) {}
+}
 const {
     MANAGED_WEB_TOOL_NAMES,
     isManagedWebToolName,
@@ -173,8 +179,10 @@ function buildOpenAISystemPrompt(system) {
     const provided = systemBlocksToText(system);
     if (provided.length > 8000) {
         console.warn(`[Proxy System Prompt]: OpenAI system prompt is ${provided.length} chars — may be truncated by upstream model. Consider reducing system prompt size.`);
+        emitProxy('proxy_system_prompt', 'warn', `OpenAI system prompt is ${provided.length} chars — may be truncated`);
     } else {
         console.log(`[Proxy System Prompt]: OpenAI system prompt length=${provided.length} chars`);
+        emitProxy('proxy_system_prompt', 'info', `OpenAI system prompt length=${provided.length} chars`, { chars: provided.length });
     }
     return provided;
 }
@@ -184,8 +192,10 @@ function buildAnthropicSystemBlocks(system) {
     const totalChars = blocks.reduce((sum, b) => sum + (b.text || '').length, 0);
     if (totalChars > 8000) {
         console.warn(`[Proxy System Prompt]: Anthropic system blocks total ${totalChars} chars — may be truncated by upstream model.`);
+        emitProxy('proxy_system_prompt', 'warn', `Anthropic system blocks total ${totalChars} chars — may be truncated`);
     } else {
         console.log(`[Proxy System Prompt]: Anthropic system blocks total=${totalChars} chars`);
+        emitProxy('proxy_system_prompt', 'info', `Anthropic system blocks total=${totalChars} chars`, { chars: totalChars });
     }
     return blocks;
 }
@@ -622,6 +632,7 @@ function translateTools(anthropicTools, ctx) {
     ]);
     if (injected.length > 0) {
         console.log('[Proxy Tools]: Injected OpenAI-compatible proxy tools:', injected);
+        emitProxy('proxy_tools', 'info', `Injected OpenAI-compatible proxy tools (${Array.isArray(injected) ? injected.length : 0})`);
     }
     rememberManagedLocalToolDefinitions(translated, ctx);
     ctx.lastKnownTools = translated;
@@ -1090,12 +1101,14 @@ async function buildOpenAIRequest(aReq, ctx, cfg, clientId) {
         oReq.tools = translateTools(aReq.tools, ctx);
     } else if (hasToolMessages && ctx.lastKnownTools.length > 0) {
         console.log('[Proxy Tools]: Reusing cached tools for tool-result turn');
+        emitProxy('proxy_tools', 'info', 'Reusing cached tools for tool-result turn');
         oReq.tools = ctx.lastKnownTools;
         rememberManagedLocalToolDefinitions(oReq.tools, ctx);
     } else {
         oReq.tools = getProxyOpenAiToolDefinitions();
         rememberManagedLocalToolDefinitions(oReq.tools, ctx);
         console.log('[Proxy Tools]: Injected default OpenAI-compatible MCP/August/Cowork/web tools');
+        emitProxy('proxy_tools', 'info', 'Injected default OpenAI-compatible MCP/August/Cowork/web tools');
     }
 
     return oReq;
@@ -2724,12 +2737,14 @@ async function handleMessages(req, res, cleanPath, reqId) {
                                 cfg.currentModel = backendModel;
                             }
                             console.log(`[Proxy Model Route]: ${backendModel} -> provider ${routed.name} (${routed.baseUrl})`);
+                            emitProxy('proxy_model_route', 'info', `${backendModel} → provider ${routed.name}`, { backendModel, provider: routed.name });
                         } else {
                             cfg.targetUrl = toOpenAiCompatibleTargetUrl(routed.baseUrl);
                             cfg.apiKey = routed.apiKey;
                             cfg._upstreamModel = backendModel;
                             cfg.currentModel = backendModel;
                             console.log(`[Proxy Model Route]: ${backendModel} -> provider ${routed.name} (${routed.baseUrl})`);
+                            emitProxy('proxy_model_route', 'info', `${backendModel} → provider ${routed.name}`, { backendModel, provider: routed.name });
                         }
                         if (!routeClaudeThroughSelectedProvider) {
                             rememberClaudeBridgeRoute(backendModel, routed.name, routed.baseUrl);
@@ -2737,6 +2752,7 @@ async function handleMessages(req, res, cleanPath, reqId) {
                     }
                 } catch (e) {
                     console.warn('[Proxy Model Route] resolution failed:', e.message);
+                    emitProxy('proxy_model_route', 'error', `resolution failed: ${e.message}`);
                 }
             }
 
@@ -2778,9 +2794,11 @@ async function handleMessages(req, res, cleanPath, reqId) {
                             cfg.apiKey = routed.apiKey;
                             if (routed.apiMode) cfg.apiMode = routed.apiMode;
                             console.log(`[Proxy Model Route]: ${upstreamModel} -> provider ${routed.name} (${routed.baseUrl})`);
+                            emitProxy('proxy_model_route', 'info', `${upstreamModel} → provider ${routed.name}`, { backendModel: upstreamModel, provider: routed.name });
                         }
                     } catch (e) {
                         console.warn('[Proxy Model Route] inherited resolution failed:', e.message);
+                        emitProxy('proxy_model_route', 'error', `inherited resolution failed: ${e.message}`);
                     }
                 } else if (inherited && inherited.action && inherited.action.startsWith('reject_')) {
                     requestStatus = 'error';
@@ -2826,6 +2844,7 @@ async function handleMessages(req, res, cleanPath, reqId) {
                     upstreamReq.stream = true;
                 }
                 console.log(`[Proxy Debug Claude]: incoming_model=${aReq.model || 'unknown'} public_model=${requestModel} backend_model=${upstreamModel} target=${cfg.targetUrl || 'unknown'}`);
+                emitProxy('proxy_debug', 'info', `Claude: incoming=${aReq.model} public=${requestModel} backend=${upstreamModel}`, { incomingModel: aReq.model, publicModel: requestModel, backendModel: upstreamModel });
                 console.log('[Proxy Debug Tools]:', JSON.stringify({ 
                     toolCount: upstreamReq.tools?.length || 0,
                     toolNames: upstreamReq.tools?.map(t => t.name) || [],
@@ -2906,6 +2925,7 @@ async function handleMessages(req, res, cleanPath, reqId) {
                         toolCount: upstreamReq.tools?.length || 0,
                         toolNames: upstreamReq.tools?.map(t => t.name).slice(0, 10) || []
                     });
+                    emitProxy('error', 'error', `Minimax rejected request: HTTP ${response.status}`, { status: response.status, upstreamModel });
                     throw new Error(
                         response.status === 429
                             ? buildFriendlyRateLimitMessage(response.status, rawBody, attempts)
@@ -2916,8 +2936,11 @@ async function handleMessages(req, res, cleanPath, reqId) {
                 const contentType = response.headers.get('content-type') || 'application/json';
                 let clientBody = rewriteAnthropicResponseModel(rawBody, contentType, clientFacingModel);
                 console.log('[Proxy Debug Claude Upstream Headers]:', JSON.stringify(summarizeHeaders(response.headers)));
+                emitProxy('proxy_debug', 'info', 'Claude upstream headers received');
                 console.log('[Proxy Debug Claude Upstream Body]:', JSON.stringify(extractModelHintsFromBody(rawBody, contentType)));
+                emitProxy('proxy_debug', 'info', 'Claude upstream body parsed');
                 console.log('[Proxy Debug Claude Client Body]:', JSON.stringify(extractModelHintsFromBody(clientBody, contentType)));
+                emitProxy('proxy_debug', 'info', 'Claude client body rewritten');
                 
                 // Log if response contains tool_use blocks
                 if (contentType.includes('application/json')) {
@@ -3063,6 +3086,7 @@ async function handleMessages(req, res, cleanPath, reqId) {
             const ctx = { lastKnownTools: [], managedLocalToolNames: new Set() };
             const oReq = await buildOpenAIRequest(aReq, ctx, cfg, clientId);
             console.log(`[Proxy Debug Claude]: incoming_model=${aReq.model || 'unknown'} public_model=${requestModel} backend_model=${upstreamModel} target=${cfg.targetUrl || 'unknown'}`);
+            emitProxy('proxy_debug', 'info', `Claude→OpenAI: incoming=${aReq.model} backend=${upstreamModel}`, { incomingModel: aReq.model, publicModel: requestModel, backendModel: upstreamModel });
 
             // Capture request for debug UI
             captureRequest(reqId, { ...oReq, model: clientFacingModel, endpoint: cleanPath }, {
@@ -3163,6 +3187,7 @@ async function handleMessages(req, res, cleanPath, reqId) {
                 backendModel: upstreamModel,
                 finishReason: data?.choices?.[0]?.finish_reason || null
             }));
+            emitProxy('proxy_debug', 'info', `Claude→OpenAI upstream: model=${data?.model} finish=${data?.choices?.[0]?.finish_reason}`, { upstreamModel: data?.model, publicModel: requestModel, backendModel: upstreamModel, finishReason: data?.choices?.[0]?.finish_reason });
 
             captureResponse(reqId, data);
 
@@ -3174,10 +3199,13 @@ async function handleMessages(req, res, cleanPath, reqId) {
             const upChoice = data.choices?.[0];
             const finishReason = upChoice?.finish_reason || 'N/A';
             console.log(`[Proxy Upstream]: finish_reason="${finishReason}", content_len=${upChoice?.message?.content?.length || 0}, max_tokens_sent=${oReq.max_tokens || 'default'}`);
+            emitProxy('proxy_upstream', 'info', `finish_reason="${finishReason}" content_len=${upChoice?.message?.content?.length || 0}`, { finishReason, contentLen: upChoice?.message?.content?.length || 0 });
             if (finishReason === 'length') {
                 console.warn(`[Proxy WARNING]: Upstream stopped due to max_tokens limit! Response was truncated.`);
+                emitProxy('proxy_upstream', 'warn', 'Upstream stopped due to max_tokens limit — response was truncated', { finishReason });
             }
             console.log(`[Proxy Upstream]: usage in=${upInputTokens} out=${upOutputTokens}, reasoning=${!!(upChoice?.message?.reasoning || upChoice?.message?.reasoning_content)}`);
+            emitProxy('proxy_upstream', 'info', `usage in=${upInputTokens} out=${upOutputTokens}`, { tokensIn: upInputTokens, tokensOut: upOutputTokens, upstreamModel });
 
             const preludeEvents = [];
             if (ctx.managedLocalToolNames.size > 0) {
@@ -3243,6 +3271,7 @@ async function handleCountTokens(req, res, cleanPath, reqId) {
                 ? requestModel
                 : getClaudeBackendModel(cfg, aReq.model);
             console.log(`[Proxy Debug CountTokens]: incoming_model=${aReq.model || 'unknown'} public_model=${requestModel} backend_model=${upstreamModel} target=${cfg.targetUrl || 'unknown'}`);
+            emitProxy('proxy_debug', 'info', `CountTokens: incoming=${aReq.model} backend=${upstreamModel}`, { incomingModel: aReq.model, publicModel: requestModel, backendModel: upstreamModel });
 
             captureRequest(reqId, { ...aReq, model: clientFacingModel, endpoint: cleanPath }, {
                 model: clientFacingModel,
@@ -3273,7 +3302,9 @@ async function handleCountTokens(req, res, cleanPath, reqId) {
                 throw new Error(`Upstream Error (${response.status}): ${rawBody}`);
             }
             console.log('[Proxy Debug CountTokens Headers]:', JSON.stringify(summarizeHeaders(response.headers)));
+            emitProxy('proxy_debug', 'info', 'CountTokens headers received');
             console.log('[Proxy Debug CountTokens Body]:', rawBody);
+            emitProxy('proxy_debug', 'info', `CountTokens body received (${rawBody.length} bytes)`);
 
             try {
                 const parsed = JSON.parse(rawBody);

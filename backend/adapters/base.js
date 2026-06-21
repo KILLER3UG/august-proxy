@@ -2,6 +2,12 @@ const { buildFriendlyRateLimitMessage, getRetryDelayMs, isRetryableStatus } = re
 const { estimateTokens, formatTokenCount } = require('../lib/tokens');
 const { buildSystemBlocks, buildSystemPromptText, isMiniMaxModel } = require('../services/memory/context-builder');
 
+let _emitLogEvent = () => {};
+try { _emitLogEvent = require('../lib/logger').emitLogEvent; } catch (_) {}
+function emitProxy(category, level, message, metadata = null) {
+    try { _emitLogEvent({ category, level, message, metadata }); } catch (_) {}
+}
+
 const DEFAULT_MINIMAX_TEMPERATURE = 1;
 const DEFAULT_MINIMAX_TOP_P = 0.95;
 const DEFAULT_MINIMAX_TOP_K = 40;
@@ -106,8 +112,10 @@ class LlmAdapterBase {
         if (this.isMiniMaxModel(model)) {
             const outputReserve = requestedMaxTokens || DEFAULT_MINIMAX_MAX_TOKENS;
             console.log(`[Proxy Context]: MiniMax combined-budget threshold: ${formatTokenCount(threshold)} (${formatTokenCount(Math.max(contextWindow || 0, DEFAULT_MINIMAX_TOTAL_WINDOW))} total - ${formatTokenCount(outputReserve)} output - ${formatTokenCount(DEFAULT_MINIMAX_THINKING_RESERVE)} thinking - ${formatTokenCount(DEFAULT_MINIMAX_SAFETY_BUFFER)} safety)`);
+            emitProxy('proxy_context', 'info', `MiniMax combined-budget threshold: ${formatTokenCount(threshold)}`, { threshold, totalWindow: Math.max(contextWindow || 0, DEFAULT_MINIMAX_TOTAL_WINDOW), outputReserve });
         }
         console.log(`[Proxy Context]: model=${model}, window=${formatTokenCount(contextWindow)}, estimated=${formatTokenCount(estimatedTokens)}, threshold=${formatTokenCount(threshold)}`);
+        emitProxy('proxy_context', 'info', `model=${model} window=${formatTokenCount(contextWindow)} estimated=${formatTokenCount(estimatedTokens)}`, { model, contextWindow, estimatedTokens, threshold });
     }
 
     async fetchWithRetries(url, fetchOptions, {
@@ -210,6 +218,7 @@ function parseOpenAIChatSSE(sseText) {
         usage: usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
     };
     console.log(`[Proxy SSE Parse]: content_len=${fullContent.length}, reasoning_len=${fullReasoning.length}, tools=${normalizedToolCalls.length}, finish_reason=${finishReason}`);
+    emitProxy('proxy_debug', 'info', `SSE parse: content_len=${fullContent.length} reasoning_len=${fullReasoning.length} tools=${normalizedToolCalls.length}`, { contentLen: fullContent.length, reasoningLen: fullReasoning.length, toolCount: normalizedToolCalls.length, finishReason });
     return result;
 }
 

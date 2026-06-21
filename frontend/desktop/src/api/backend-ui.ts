@@ -765,3 +765,35 @@ export interface ObservabilityOverview {
 export function getObservabilityOverview(range: '7d' | '30d' = '30d'): Promise<ObservabilityOverview> {
     return api.get<ObservabilityOverview>(`/ui/observability/overview?range=${range}`);
 }
+
+/* ── Live log event stream (Settings → Backend Monitor) ─────────────── */
+
+export type LogLevel = 'info' | 'warn' | 'error' | 'debug';
+export type LogCategory =
+    | 'proxy_incoming'
+    | 'proxy_upstream'
+    | 'proxy_debug'
+    | 'proxy_model_route'
+    | 'proxy_context'
+    | 'proxy_tools'
+    | 'proxy_system_prompt'
+    | 'auto_memory'
+    | 'scheduler'
+    | 'security'
+    | 'error'
+    | 'info';
+
+export interface LogEvent {
+    id: string;
+    timestamp: number;
+    category: LogCategory | string;
+    level: LogLevel;
+    message: string;
+    metadata: Record<string, unknown> | null;
+    raw: string | null;
+}
+
+export function getRecentLogs(limit = 200): Promise<{ events: LogEvent[]; count: number }> {
+    const n = Math.max(1, Math.min(2000, Number(limit) || 200));
+    return api.get<{ events: LogEvent[]; count: number }>(`/api/logs/recent?limit=${n}`);
+}

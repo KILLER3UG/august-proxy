@@ -10,6 +10,12 @@ const { LlmAdapterBase, MAX_MANAGED_TOOL_ROUNDS } = require('./base');
 const { SseStreamParser } = require('./sse-parser');
 const { classifyOpenAiToolCalls } = require('./tool-classification');
 const { buildSystemPromptText } = require('../services/memory/context-builder');
+
+let _emitLogEvent = () => {};
+try { _emitLogEvent = require('../lib/logger').emitLogEvent; } catch (_) {}
+function emitProxy(category, level, message, metadata = null) {
+    try { _emitLogEvent({ category, level, message, metadata }); } catch (_) {}
+}
 const { sanitizeToolSchema } = require('../services/tools/mcp-client');
 const {
     MANAGED_WEB_TOOL_NAMES,
@@ -697,14 +703,17 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 const combined = buildSystemPromptText(existing, systemPromptOptions);
                 if (combined.length > 8000) {
                     console.warn(`[Proxy System Prompt]: Codex system prompt is ${combined.length} chars — may be truncated by upstream model.`);
+                    emitProxy('proxy_system_prompt', 'warn', `Codex system prompt is ${combined.length} chars — may be truncated`);
                 } else {
                     console.log(`[Proxy System Prompt]: Codex system prompt length=${combined.length} chars`);
+                    emitProxy('proxy_system_prompt', 'info', `Codex system prompt length=${combined.length} chars`, { chars: combined.length });
                 }
                 oReq.messages[existingSystemIdx].content = combined;
             } else {
                 // Inject the shared Claude-shaped memory hierarchy plus provider instructions.
                 const windowsSystemPrompt = buildSystemPromptText(null, systemPromptOptions);
                 console.log(`[Proxy System Prompt]: Codex system prompt length=${windowsSystemPrompt.length} chars (injected)`);
+                emitProxy('proxy_system_prompt', 'info', `Codex system prompt length=${windowsSystemPrompt.length} chars (injected)`, { chars: windowsSystemPrompt.length });
                 oReq.messages.unshift({ role: 'system', content: windowsSystemPrompt });
             }
 
@@ -786,9 +795,11 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                     cfg.currentModel = requestModel;
                     if (routed.apiMode) cfg.apiMode = routed.apiMode;
                     console.log(`[Proxy Model Route]: ${requestModel} -> provider ${routed.name} (${routed.baseUrl})`);
+                    emitProxy('proxy_model_route', 'info', `${requestModel} → provider ${routed.name}`, { backendModel: requestModel, provider: routed.name });
                 }
             } catch (e) {
                 console.warn('[Proxy Model Route] resolution failed:', e.message);
+                emitProxy('proxy_model_route', 'error', `resolution failed: ${e.message}`);
             }
 
             // ── Smart context compaction (only when approaching model's limit) ──
@@ -859,6 +870,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
 
             logActivity('AGENT', `Request using ${oReq.model}`);
             console.log(`[Proxy Upstream]: Sending request to ${cfg.targetUrl} for model ${oReq.model}`);
+            emitProxy('proxy_upstream', 'info', `Sending request to ${cfg.targetUrl}`, { targetUrl: cfg.targetUrl, model: oReq.model });
 
             // Codex Responses API expects Responses-format SSE, but upstream speaks Chat Completions.
             // Force non-streaming upstream so we can translate JSON -> Responses SSE.
@@ -881,11 +893,13 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                 const injected = appendMissingOpenAiTools(oReq.tools, getProxyOpenAiToolDefinitions());
                 if (injected.length > 0) {
                     console.log('[Proxy Tools]: Injected OpenAI-compatible proxy tools:', injected);
+                    emitProxy('proxy_tools', 'info', `Injected OpenAI-compatible proxy tools (${injected.length})`, { count: injected.length });
                 }
             } else {
                 // Dumb client (no tools sent): inject all proxy tools so August tools are available
                 oReq.tools = getProxyOpenAiToolDefinitions();
                 console.log('[Proxy Tools]: Injected default proxy tools (MCP/August/Cowork/web)');
+                emitProxy('proxy_tools', 'info', 'Injected default proxy tools (MCP/August/Cowork/web)');
             }
             // ── Sanitize tool schemas for OpenAI JSON Schema compliance ──
             // Client-provided tools may have invalid JSON Schema (e.g. tuple-style `items` arrays
@@ -955,6 +969,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
             }
 
             console.log(`[Proxy Upstream]: Received status ${response.status}`);
+                emitProxy('proxy_upstream', 'info', `Received status ${response.status}`, { status: response.status, model: oReq.model });
 
             const upstreamIsStream = response.headers.get('content-type')?.includes('text/event-stream');
 
@@ -985,9 +1000,11 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                     const contentLen = choice?.message?.content?.length || 0;
                     const toolCallCount = choice?.message?.tool_calls?.length || 0;
                     console.log(`[Proxy Upstream]: finish_reason="${finishReason}", content_len=${contentLen}, tool_calls=${toolCallCount}`);
+                        emitProxy('proxy_upstream', 'info', `finish_reason="${finishReason}" content_len=${contentLen} tool_calls=${toolCallCount}`, { finishReason, contentLen, toolCallCount, model: oReq.model });
                     // Warn if model stopped due to token limit — this is the #1 cause of incomplete responses
                     if (finishReason === 'length') {
                         console.warn(`[Proxy WARNING]: Upstream stopped due to max_tokens limit! Response was truncated. Consider using a model with larger output capacity.`);
+                        emitProxy('proxy_upstream', 'warn', 'Upstream stopped due to max_tokens limit — response was truncated', { finishReason, model: oReq.model });
                     }
                     const respId = 'resp_' + Math.random().toString(36).substr(2, 9);
                     const createdAt = Math.floor(Date.now() / 1000);

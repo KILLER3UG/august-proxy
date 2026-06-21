@@ -16,6 +16,15 @@
 const DEFAULT_TICK_MS = 30_000;
 const DEFAULT_SLOW_RUNNER_MS = 1_000;
 
+let emitLogEvent = null;
+try {
+    // Lazy-load so unit tests that stub the logger module don't pull the
+    // websocket/ring-buffer machinery into the test sandbox.
+    emitLogEvent = require('../../lib/logger').emitLogEvent;
+} catch (_) {
+    emitLogEvent = () => {};
+}
+
 let tickInterval = null;
 let tickInFlight = false;
 let lastTickAt = null;
@@ -70,11 +79,13 @@ async function safeRun(label, runner, metadata = {}, options = {}) {
         logger.log(`[Scheduler] Runner completed: "${label}" - took ${(durationMs / 1000).toFixed(1)}s, CPU: ${cpuPct == null ? 'n/a' : `${cpuPct}%`}, Memory: ${memoryDeltaBytes == null ? 'n/a' : `${memoryDeltaBytes >= 0 ? '+' : ''}${formatBytes(memoryDeltaBytes)}`}`);
         if (durationMs > slowRunnerMs) {
             logger.warn(`[Scheduler] Runner "${label}" exceeded ${slowRunnerMs}ms (${durationMs}ms)`);
+            try { emitLogEvent({ category: 'scheduler', level: 'warn', message: `Runner "${label}" exceeded ${slowRunnerMs}ms (${durationMs}ms)`, metadata: { runner: label, durationMs } }); } catch (_) {}
         }
         return { runner: label, ok: true, result, at: nowIso(), durationMs, cpuPercent: cpuPct, memoryDeltaBytes, metadata };
     } catch (err) {
         const durationMs = Date.now() - startedAtMs;
         logger.warn(`[Scheduler] ${label} tick failed:`, err.message);
+        try { emitLogEvent({ category: 'scheduler', level: 'error', message: `${label} tick failed: ${err.message}`, metadata: { runner: label, error: err.message } }); } catch (_) {}
         return { runner: label, ok: false, error: err.message, at: nowIso(), durationMs, metadata };
     }
 }
@@ -143,9 +154,11 @@ function start(runners, { tickMs = DEFAULT_TICK_MS, logger = console, maxConcurr
             const t = await tick(runners, { logger, maxConcurrentRunners, slowRunnerMs });
             if (t.ran != null) {
                 logger.log(`[System] Scheduler tick: ${t.ran} runners, ${t.durationMs}ms | CPU: ${t.cpuPercent == null ? 'n/a' : `${t.cpuPercent}%`} | Memory: ${t.memoryRss == null ? 'n/a' : formatBytes(t.memoryRss)} | DB pool: ${t.dbPool || 'n/a'}`);
+                try { emitLogEvent({ category: 'scheduler', level: 'info', message: `tick — ${t.ran} runners, ${t.durationMs}ms`, metadata: { ran: t.ran, durationMs: t.durationMs, cpuPercent: t.cpuPercent, memoryRss: t.memoryRss } }); } catch (_) {}
             }
         } catch (e) {
             logger.warn('[Scheduler] tick threw unexpectedly:', e.message);
+            try { emitLogEvent({ category: 'scheduler', level: 'error', message: `tick threw unexpectedly: ${e.message}`, metadata: { error: e.message } }); } catch (_) {}
         }
     }, tickMs);
     // unref so the timer does not hold the event loop open on shutdown

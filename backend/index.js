@@ -4,7 +4,7 @@ const { WebSocketServer } = require('ws');
 const fs = require('fs');
 const path = require('path');
 const { getConfig, saveConfig, getProfile, saveProfile, getBookmarks, saveBookmark, deleteBookmark } = require('./lib/config');
-const { getActivityLog, startRequest, endRequest, getRequestLog, getPendingRequests, getFilteredRequests, getStats, getRequestDetails, getRequestDetail, getConversations, addSSEClient, removeSSEClient } = require('./lib/logger');
+const { getActivityLog, startRequest, endRequest, getRequestLog, getPendingRequests, getFilteredRequests, getStats, getRequestDetails, getRequestDetail, getConversations, addSSEClient, removeSSEClient, emitLogEvent, getRecentLogEvents, addLogWSClient, removeLogWSClient } = require('./lib/logger');
 const anthropicAdapter = require('./adapters/anthropic');
 const openaiAdapter = require('./adapters/openai');
 const { getMcpServerStatus, restartMcpServers, startMcpServers } = require('./services/tools/mcp-client');
@@ -269,6 +269,7 @@ const requestHandler = async (req, res) => {
 
     if (originalUrl.includes('/v1/')) {
         console.log(`[Proxy Incoming]: ${req.method} ${originalUrl} -> Normalized: ${cleanPath}`);
+        try { emitLogEvent({ category: 'proxy_incoming', level: 'info', message: `${req.method} ${originalUrl} → ${cleanPath}`, metadata: { method: req.method, url: originalUrl, normalized: cleanPath } }); } catch (_) {}
     }
     if ((req.headers['user-agent'] || '').toLowerCase().includes('claude')) {
         console.log('[Proxy Debug Bridge Claude Headers]:', JSON.stringify({
@@ -1655,6 +1656,12 @@ const requestHandler = async (req, res) => {
         return res.end(JSON.stringify(getConversations(period, periodContext)));
     }
 
+    if (req.url.startsWith('/api/logs/recent') && req.method === 'GET') {
+        const url = new URL(req.url, `http://${req.headers.host}`);
+        const limit = Number(url.searchParams.get('limit')) || 200;
+        return sendJson(res, { events: getRecentLogEvents(limit), count: getRecentLogEvents(limit).length });
+    }
+
     if (req.url === '/ui/save' && req.method === 'POST') {
         let body = '';
         req.on('data', chunk => { body += chunk; });
@@ -2153,6 +2160,7 @@ const requestHandler = async (req, res) => {
 
         if (providedKey !== expectedKey && !isLocal) {
             console.warn(`[Security Alert]: Blocked unauthorized access attempt to ${cleanPath} from IP ${ip}`);
+            try { emitLogEvent({ category: 'security', level: 'error', message: `Blocked unauthorized access to ${cleanPath} from ${ip}`, metadata: { ip, path: cleanPath, method: req.method } }); } catch (_) {}
             res.writeHead(401, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: { type: 'authentication_error', message: 'Unauthorized: Invalid August Core Security Key' } }));
             return endRequest(reqId, { status: 'error', error: 'Blocked by Security Gateway (Invalid Key)' });
@@ -2501,6 +2509,24 @@ function startServer() {
             const terminalId = url.searchParams.get('id');
             wss.handleUpgrade(req, socket, head, (ws) => {
                 terminalService.handleTerminalConnection(ws, terminalId);
+            });
+            return;
+        }
+        if (url.pathname === '/ui/logs/stream') {
+            wss.handleUpgrade(req, socket, head, (ws) => {
+                addLogWSClient(ws);
+                ws.on('close', () => removeLogWSClient(ws));
+                ws.on('error', () => removeLogWSClient(ws));
+                // Heartbeat: keep proxies (LAN/Tailscale) from killing idle sockets
+                const ping = setInterval(() => {
+                    try {
+                        if (ws.readyState === 1) ws.ping();
+                        else clearInterval(ping);
+                    } catch (_) {
+                        clearInterval(ping);
+                    }
+                }, 25000);
+                ws.on('close', () => clearInterval(ping));
             });
             return;
         }

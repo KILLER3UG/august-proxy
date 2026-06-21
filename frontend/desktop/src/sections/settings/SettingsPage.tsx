@@ -26,6 +26,7 @@ import { AgentsAutomationSection } from './AgentsAutomationSection';
 import { DeveloperConsoleSection } from './DeveloperConsoleSection';
 import { ComputerAccessSettings } from './ComputerAccessSettings';
 import { ObservabilitySection } from './ObservabilitySection';
+import { BackendMonitorSection } from './BackendMonitorSection';
 
 /** The default section when no :section param is present. The user
  *  said clicking Settings should land on Model settings. */
@@ -70,10 +71,12 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   // traffic-activity is now an alias for observability (handled by
   // resolveLegacyTab + legacyAliases in the registry), so no entry here.
   observability: ObservabilitySectionWrapper,
+  'backend-monitor': BackendMonitorWrapper,
 };
 
 function ComputerAccessSettingsWrapper() { return <ComputerAccessSettings />; }
 function ObservabilitySectionWrapper() { return <ObservabilitySection />; }
+function BackendMonitorWrapper() { return <BackendMonitorSection />; }
 
 function UsageWrapper() { return <WorkspaceUsageSection />; }
 function MemoryWrapper() { return <WorkspaceMemorySection />; }

@@ -16,6 +16,7 @@ import {
   TerminalSquare,
   ShieldCheck,
   LineChart,
+  Radio,
 } from 'lucide-react';
 
 /**
@@ -180,6 +181,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: ShieldCheck,
     category: 'advanced',
     keywords: ['filesystem', 'security', 'allowlist', 'host', 'computer-use', 'permission'],
+  },
+
+  /* ── Backend Monitor (real-time log stream) ──────────────────────── */
+  {
+    id: 'backend-monitor',
+    label: 'Backend Monitor',
+    description: 'Real-time stream of proxy, memory, scheduler, and tool events from the August backend.',
+    icon: Radio,
+    category: 'debug',
+    keywords: ['logs', 'live', 'console', 'stream', 'events', 'debug', 'monitor', 'websocket', 'proxy', 'memory', 'scheduler', 'tokens'],
   },
 ] as const;
 

@@ -747,6 +747,66 @@ function getConversations(period, context = {}) {
     return grouped;
 }
 
+// ── Live log event stream for Settings → Backend Monitor ──
+// Bounded ring buffer + WebSocket fanout. Per-event frames so the
+// UI can stream without server-side throttling. The emitter also
+// keeps writing the original console.log line so terminal/logfile
+// consumers keep working unchanged.
+
+const MAX_LOG_EVENTS = 5000;
+const LOG_WS_SNAPSHOT_LIMIT = 200;
+const logEventRing = [];
+
+function getRecentLogEvents(limit = 100) {
+    const n = Math.max(1, Math.min(MAX_LOG_EVENTS, Number(limit) || 100));
+    return logEventRing.slice(0, n);
+}
+
+const logWSClients = new Set();
+
+function addLogWSClient(ws) {
+    logWSClients.add(ws);
+    try {
+        ws.send(JSON.stringify({ type: 'snapshot', events: logEventRing.slice(0, LOG_WS_SNAPSHOT_LIMIT) }));
+    } catch (e) {
+        logWSClients.delete(ws);
+    }
+}
+
+function removeLogWSClient(ws) {
+    logWSClients.delete(ws);
+}
+
+function _broadcastLogEvent(event) {
+    if (logWSClients.size === 0) return;
+    const payload = JSON.stringify({ type: 'event', event });
+    for (const ws of [...logWSClients]) {
+        try {
+            if (ws.readyState === 1 /* OPEN */) ws.send(payload);
+            else logWSClients.delete(ws);
+        } catch (e) {
+            logWSClients.delete(ws);
+        }
+    }
+}
+
+let _logEventCounter = 0;
+function emitLogEvent({ category = 'info', level = 'info', message = '', metadata = null, raw = null } = {}) {
+    const event = {
+        id: `log_${Date.now()}_${(_logEventCounter++).toString(36)}`,
+        timestamp: Date.now(),
+        category: String(category),
+        level: String(level),
+        message: String(message),
+        metadata: metadata || null,
+        raw: raw || null,
+    };
+    logEventRing.unshift(event);
+    if (logEventRing.length > MAX_LOG_EVENTS) logEventRing.length = MAX_LOG_EVENTS;
+    _broadcastLogEvent(event);
+    return event;
+}
+
 module.exports = {
     logActivity, getActivityLog,
     startRequest, endRequest, getRequestLog, getPendingRequests,
@@ -754,5 +814,6 @@ module.exports = {
     captureRequest, captureResponse, captureTokens, captureError, getRequestDetails, getRequestDetail,
     getConversations,
     addSSEClient, removeSSEClient,
-    extractSessionId, resolveSessionId, syntheticSessionId
+    extractSessionId, resolveSessionId, syntheticSessionId,
+    emitLogEvent, getRecentLogEvents, addLogWSClient, removeLogWSClient,
 };

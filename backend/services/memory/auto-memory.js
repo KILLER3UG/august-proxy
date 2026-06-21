@@ -1,5 +1,12 @@
 const { readAugustCoreMemory, writeAugustCoreMemory, checkMemoryBudget, CoreMemoryBudgetError } = require('./core-memory');
 
+let emitLogEvent = () => {};
+try { emitLogEvent = require('../../lib/logger').emitLogEvent; } catch (_) {}
+
+function amLog(level, message, metadata = null) {
+    try { emitLogEvent({ category: 'auto_memory', level, message, metadata }); } catch (_) {}
+}
+
 /**
  * Extract plain text from a message content field.
  * Handles string content, Anthropic content arrays [{type:'text',text:'...'}],
@@ -125,6 +132,7 @@ function recordLearningRun(base, updates = {}) {
         appendLearningHistory(record);
     } catch (historyErr) {
         console.warn(`[Auto-Memory] Failed to persist learning history: ${historyErr.message}`);
+            amLog('error', `Failed to persist learning history: ${historyErr.message}`);
     }
     return record;
 }
@@ -238,6 +246,7 @@ async function saveCheckpointToVectorDb(cfg, topic, summary) {
             embeddingSource: `local-fallback:${summarizeSnippet(reason, 80) || 'embedding unavailable'}`
         });
         console.warn(`[Auto-Memory] Saved checkpoint with local vector fallback: ${reason}`);
+            amLog('warn', `Saved checkpoint with local vector fallback: ${reason}`);
         return saved;
     };
 
@@ -281,6 +290,7 @@ async function saveCheckpointToVectorDb(cfg, topic, summary) {
 
         saveCheckpointWithEmbedding(topic, summary, vector, { embeddingSource: 'provider' });
         console.log(`[Auto-Memory] ✓ Saved checkpoint to Infinite Vector Database.`);
+        amLog('info', '✓ Saved checkpoint to Infinite Vector Database.');
     } catch (err) {
         fallbackSave(err.message);
     }
@@ -337,12 +347,14 @@ async function extractAndSaveMemories(userMessages, assistantContent, cfg, upstr
         const recentUserMsgs = (userMessages || []).filter(m => m.role === 'user').slice(-2);
         if (recentUserMsgs.length === 0) {
             console.log('[Auto-Memory] Skipped: no user messages found in conversation');
+            amLog('info', 'Skipped: no user messages found in conversation');
             finish('skipped', { reason: 'no user messages' });
             return;
         }
 
         const textOnlyMessages = recentUserMsgs.map(m => {
             console.log(`[Auto-Memory] Raw user message content: ${JSON.stringify(m.content)}`);
+                amLog('debug', `Raw user message: ${JSON.stringify(m.content).slice(0, 200)}`);
             return {
                 role: 'user',
                 content: extractTextFromContent(m.content)
@@ -351,6 +363,7 @@ async function extractAndSaveMemories(userMessages, assistantContent, cfg, upstr
 
         if (textOnlyMessages.length === 0) {
             console.log('[Auto-Memory] Skipped: user messages contained no text (images/files only)');
+            amLog('info', 'Skipped: user messages contained no text (images/files only)');
             finish('skipped', { reason: 'no user text' });
             return;
         }
@@ -358,11 +371,13 @@ async function extractAndSaveMemories(userMessages, assistantContent, cfg, upstr
         const assistantText = extractAssistantText(assistantContent);
         if (!assistantText || assistantText.length < 10) {
             console.log('[Auto-Memory] Skipped: assistant response too short or empty');
+            amLog('info', 'Skipped: assistant response too short or empty');
             finish('skipped', { reason: 'short assistant response' });
             return;
         }
 
         console.log(`[Auto-Memory] Starting extraction... (${textOnlyMessages.length} user msgs, ${assistantText.length} chars assistant text, model=${upstreamModel})`);
+        amLog('info', `Starting extraction… (${textOnlyMessages.length} msgs, ${assistantText.length} chars, model=${upstreamModel})`, { upstreamModel, messageCount: textOnlyMessages.length, assistantChars: assistantText.length });
 
         const semanticFactsText = semanticMemory.getAllFacts()
             .map(f => `- ${f.key} (${f.category}): ${f.value}`)
@@ -429,6 +444,7 @@ Respond ONLY with valid JSON in this exact format:
         let fallbackReason = null;
         if (isAnthropicNative) {
             console.log(`[Auto-Memory] Using Anthropic-native format -> ${targetUrl}`);
+            amLog('info', `Using Anthropic-native format → ${targetUrl}`, { format: 'anthropic', targetUrl });
             const anthropicPayload = {
                 model: upstreamModel || 'claude-sonnet-4-6',
                 max_tokens: 500,
@@ -456,6 +472,7 @@ Respond ONLY with valid JSON in this exact format:
                 targetUrl = targetUrl.replace('/anthropic', '/v1/text/chatcompletion_v2');
             }
             console.log(`[Auto-Memory] Using OpenAI-compatible format -> ${targetUrl}`);
+            amLog('info', `Using OpenAI-compatible format → ${targetUrl}`, { format: 'openai', targetUrl });
 
             const memModel = resolveMemoryExtractionModel(cfg, upstreamModel, isAnthropicNative, targetUrl);
             
@@ -490,6 +507,7 @@ Respond ONLY with valid JSON in this exact format:
             const errBody = await response.text().catch(() => '');
             fallbackReason = `HTTP ${response.status}: ${errBody.slice(0, 200)}`;
             console.warn(`[Auto-Memory] Extraction API returned ${fallbackReason}. Using local fallback checkpoint.`);
+            amLog('warn', `Extraction API returned ${fallbackReason}. Using local fallback checkpoint.`);
             extracted = fallbackExtraction(textOnlyMessages, assistantText, fallbackReason);
         } else {
             const data = await response.json();
@@ -497,6 +515,7 @@ Respond ONLY with valid JSON in this exact format:
             if (extractionProviderError) {
                 fallbackReason = extractionProviderError;
                 console.warn(`[Auto-Memory] Extraction provider error: ${fallbackReason}. Using local fallback checkpoint.`);
+                amLog('warn', `Extraction provider error: ${fallbackReason}. Using local fallback checkpoint.`);
                 extracted = fallbackExtraction(textOnlyMessages, assistantText, fallbackReason);
             } else {
                 const jsonStr = extractModelJsonText(data);
@@ -504,14 +523,17 @@ Respond ONLY with valid JSON in this exact format:
                 if (!jsonStr) {
                     fallbackReason = 'empty extraction response';
                     console.log('[Auto-Memory] Extraction model returned empty content; using local fallback checkpoint.');
+                    amLog('warn', 'Extraction model returned empty content; using local fallback checkpoint.');
                     extracted = fallbackExtraction(textOnlyMessages, assistantText, fallbackReason);
                 } else {
                     console.log(`[Auto-Memory] Raw extraction response: ${jsonStr.slice(0, 200)}`);
+                    amLog('debug', `Raw extraction response: ${jsonStr.slice(0, 200)}`);
                     try {
                         extracted = JSON.parse(cleanJsonPayload(jsonStr));
                     } catch (parseErr) {
                         fallbackReason = parseErr.message;
                         console.warn(`[Auto-Memory] Extraction JSON parse failed: ${fallbackReason}. Using local fallback checkpoint.`);
+                        amLog('warn', `Extraction JSON parse failed: ${fallbackReason}. Using local fallback checkpoint.`);
                         extracted = fallbackExtraction(textOnlyMessages, assistantText, fallbackReason);
                     }
                 }
@@ -567,6 +589,7 @@ Respond ONLY with valid JSON in this exact format:
             const reason = 'global_context budget exceeded';
             const warning = `${reason}: ${candidateContext.length}/${budget.limit} chars, over by ${budget.overage}`;
             console.warn(`[Auto-Memory] ${warning}. Core memory write skipped.`);
+            amLog('warn', `${warning}. Core memory write skipped.`);
             finish('skipped', {
                 reason,
                 warning,
@@ -617,8 +640,10 @@ Respond ONLY with valid JSON in this exact format:
             memory.global_context = candidateContext;
             writeAugustCoreMemory(memory);
             console.log(`[Auto-Memory] ✓ Background core memory extraction successful. Added ${addedFacts.length} facts, deleted ${deletedFacts.length} facts, queued ${pendingGuidelines} learned guideline(s) for review, added checkpoint: ${!!checkpoint}.`);
+            amLog('info', `✓ Background extraction successful: +${addedFacts.length} facts, -${deletedFacts.length}, ${pendingGuidelines} guideline(s), checkpoint=${!!checkpoint}`, { added: addedFacts.length, deleted: deletedFacts.length, pendingGuidelines, checkpoint: !!checkpoint });
         } else {
             console.log('[Auto-Memory] No new persistent core facts found in this turn.');
+            amLog('info', 'No new persistent core facts found in this turn.');
         }
 
         const savedSemanticFacts = [];
@@ -644,11 +669,13 @@ Respond ONLY with valid JSON in this exact format:
                         semCount++;
                     } catch (err) {
                         console.warn(`[Auto-Memory] Failed to save semantic fact ${fact.key}: ${err.message}`);
+                        amLog('warn', `Failed to save semantic fact ${fact.key}: ${err.message}`);
                     }
                 }
             }
             if (semCount > 0) {
                 console.log(`[Auto-Memory] ✓ Extracted and saved ${semCount} semantic facts (source: ${sourceId})`);
+                amLog('info', `✓ Extracted and saved ${semCount} semantic facts (source: ${sourceId})`, { semCount, sourceId });
             }
         }
 
@@ -656,8 +683,10 @@ Respond ONLY with valid JSON in this exact format:
             const { indexCoreMemory } = require('./graph-memory');
             indexCoreMemory();
             console.log('[Auto-Memory] ✓ Synced extracted memory into local graph memory.');
+            amLog('info', '✓ Synced extracted memory into local graph memory.');
         } catch (graphErr) {
             console.warn(`[Auto-Memory] Graph memory sync skipped: ${graphErr.message}`);
+            amLog('warn', `Graph memory sync skipped: ${graphErr.message}`);
         }
 
         const changed = modified || savedSemanticFacts.length > 0 || pendingGuidelines > 0;
@@ -675,6 +704,7 @@ Respond ONLY with valid JSON in this exact format:
 
     } catch (e) {
         console.warn('[Auto-Memory] Background extraction failed:', e.message);
+        amLog('error', `Background extraction failed: ${e.message}`);
         require('fs').appendFileSync(require('path').join(__dirname, 'debug.txt'), new Date().toISOString() + ' ERROR: ' + e.message + '\n' + e.stack + '\n');
         finish('failed', {
             error: e.message,
