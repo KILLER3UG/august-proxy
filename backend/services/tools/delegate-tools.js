@@ -22,6 +22,7 @@ const path = require('path');
 const agentSessions = require('./agent-sessions');
 const agentJobs = require('./agent-jobs');
 const agentRegistry = require('./agent-registry');
+const modelResolver = require('../../providers/model-resolver');
 
 // ── Constants ──
 
@@ -87,7 +88,7 @@ const delegateTaskSchema = z.object({
  * self-contained and returns a simplified result structure.
  *
  * @param {object} taskDef     { id, title, description, agent_id, toolsets }
- * @param {object} opts        { goal, context, toolsets, parentDepth }
+ * @param {object} opts        { goal, context, toolsets, parentDepth, parentContext }
  * @returns {Promise<{task_id, status, summary}>}
  */
 async function executeSingleTask(taskDef, opts) {
@@ -115,11 +116,26 @@ async function executeSingleTask(taskDef, opts) {
     };
   }
 
+  // Capture the parent's model alias from the caller context so the sub-agent
+  // inherits it (instead of falling back to the active provider's raw upstream
+  // model — which is the original bug). The parentContext may carry a session
+  // object directly, or model/modelProvider fields supplied by the caller.
+  const parentContext = opts.parentContext || {};
+  const parentModel = parentContext.model
+    || (parentContext.session && parentContext.session.model)
+    || null;
+  const parentModelProvider = parentContext.modelProvider
+    || (parentContext.session && parentContext.session.modelProvider)
+    || null;
+
   // Create a durable agent job for tracking
   const job = agentJobs.createAgentJob({
     agentId: childAgentId,
     task: taskDef.description,
-    status: 'running'
+    status: 'running',
+    alias: parentModel,
+    resolvedProvider: null,
+    isModelFallback: false
   });
 
   agentJobs.appendAgentJobMessage(job.id, 'user', taskDef.description, {
@@ -202,12 +218,23 @@ async function executeSingleTask(taskDef, opts) {
 
     if (workbench && typeof workbench.sendWorkbenchMessage === 'function') {
       // Use workbench to run the sub-agent with full tool loop support
-      // This gives the child agent access to all registered proxy tools
+      // This gives the child agent access to all registered proxy tools.
+      // Propagate the parent's model alias so the sub-agent resolves it
+      // freshly (instead of inheriting the active provider's raw upstream id).
       const subSession = workbench.getWorkbenchSession();
-      const result = await workbench.sendWorkbenchMessage(subSession.id, systemPrompt, {
+      const subOpts = {
         agentId: childAgentId,
         maxLoops: 4
-      });
+      };
+      if (parentModel) subOpts.model = parentModel;
+      if (parentModelProvider) subOpts.modelProvider = parentModelProvider;
+      // When the parent context carries no alias at all, default to 'default'
+      // so the workbench resolves to the active provider's default model
+      // (rather than an undefined model slot).
+      if (!parentModel && !parentModelProvider) {
+        subOpts.model = modelResolver.getDefaultAlias();
+      }
+      const result = await workbench.sendWorkbenchMessage(subSession.id, systemPrompt, subOpts);
 
       resultText = typeof result?.assistant === 'string'
         ? result.assistant
@@ -227,7 +254,17 @@ async function executeSingleTask(taskDef, opts) {
         throw new Error('No provider configured for sub-agent execution');
       }
 
-      const model = profile._upstreamModel || profile.currentModel || 'claude-sonnet-4-20250514';
+      // Re-resolve the parent's alias through the centralized ModelResolver.
+      // Falls back to the active provider if the alias can't be mapped, so
+      // the sub-agent never carries a stale raw backend id.
+      const resolution = modelResolver.resolveOrFallback(
+        parentModel,
+        { defaultAlias: modelResolver.getDefaultAlias() }
+      );
+      const model = (resolution && resolution.model)
+        || profile._upstreamModel
+        || profile.currentModel
+        || 'claude-sonnet-4-20250514';
       const fetchFn = typeof fetch !== 'undefined' ? fetch : require('node-fetch');
 
       const body = {
@@ -306,13 +343,23 @@ async function executeSingleTask(taskDef, opts) {
 async function delegateTaskHandler(args, ctx = {}) {
   const { goal, tasks, context, toolsets, parent_depth } = delegateTaskSchema.parse(args);
 
+  // Pull the parent's model alias from the runtime context so each sub-agent
+  // inherits it. The caller is expected to populate `ctx.session` (the parent
+  // workbench session) or `ctx.model` / `ctx.modelProvider` directly.
+  const parentContext = {
+    session: ctx && ctx.session ? ctx.session : null,
+    model: (ctx && ctx.model) || (ctx && ctx.session && ctx.session.model) || null,
+    modelProvider: (ctx && ctx.modelProvider) || (ctx && ctx.session && ctx.session.modelProvider) || null,
+  };
+
   const results = [];
   for (const taskDef of tasks) {
     const result = await executeSingleTask(taskDef, {
       goal,
       context,
       toolsets,
-      parentDepth: parent_depth
+      parentDepth: parent_depth,
+      parentContext,
     });
     results.push(result);
   }

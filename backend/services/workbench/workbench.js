@@ -44,6 +44,7 @@ const {
 const { renderTeamSkillsForSystem } = require('../tools/skills');
 const { getTeamSkills } = require('../tools/skills');
 const modelCatalog = require('../catalog/model-catalog');
+const modelResolver = require('../../providers/model-resolver');
 
 /**
  * Resolve the provider profile for a Workbench turn.
@@ -1526,7 +1527,16 @@ async function executeSubAgent(session, args, toolContext = {}) {
     const profile = getWorkbenchProfile(session);
     const useOpenAi = profile.useOpenAiFormat;
     const targetUrl = profile.targetUrl;
-    const model = profile._upstreamModel || profile.currentModel || 'claude-opus-4-6';
+    // Re-resolve the parent's alias through the centralized ModelResolver so the
+    // sub-agent never inherits a stale raw backend id from the parent's
+    // profile. The parent's session.model is the user-facing alias; if it's
+    // missing, fall back to the profile's display alias or the default.
+    const parentAlias = session?.model || profile.publicModelAlias || profile.currentModel || null;
+    const subResolution = modelResolver.resolveOrFallback(parentAlias, {
+        providerHint: profile.providerName,
+        defaultAlias: modelResolver.getDefaultAlias(),
+    });
+    const model = subResolution?.model || profile._upstreamModel || profile.currentModel || 'claude-opus-4-6';
     if (!targetUrl) return { status: 'error', message: 'Provider target URL missing.' };
 
     const brainConfig = getBrainConfig();
@@ -1549,13 +1559,36 @@ async function executeSubAgent(session, args, toolContext = {}) {
         depth,
         agentId: childAgentId,
         parentAgentId,
-        provider: session?.provider,
+        provider: subResolution?.provider || session?.provider || null,
         model,
+        // Alias-tracking fields (used by the UI to surface fallback warnings).
+        alias: subResolution?.alias || parentAlias || null,
+        resolvedProvider: subResolution?.provider || null,
+        isModelFallback: !!subResolution?.isFallback,
         scope,
         task,
         status: 'running'
     });
     appendAgentJobMessage(job.id, 'user', task, { depth, parentAgentId, childAgentId });
+
+    // If the resolver had to fall back, surface a warning event to the UI so
+    // the user can see *why* the sub-agent may behave differently from the
+    // parent (e.g. a different provider's model is in use).
+    if (subResolution && subResolution.isFallback) {
+        try {
+            safeEmit(toolContext.emit, 'warning', {
+                toolUseId: toolContext.toolUseId || `subagent-${job.id}`,
+                jobId: job.id,
+                kind: 'model_fallback',
+                message: `Sub-agent alias '${subResolution.alias}' could not be resolved; using active provider '${subResolution.provider}' with model '${subResolution.model}'.`,
+                alias: subResolution.alias,
+                provider: subResolution.provider,
+                model: subResolution.model,
+            });
+        } catch (emitErr) {
+            console.warn('[Workbench] sub-agent fallback warning emit failed:', emitErr.message);
+        }
+    }
 
     const subPrompt = [
         'You are a focused sub-agent spawned by the main AI Workbench agent.',

@@ -91,6 +91,15 @@ function createAgentJob(input = {}) {
         parentAgentId: input.parentAgentId || null,
         provider: input.provider || null,
         model: input.model || null,
+        // Alias-tracking fields populated by ModelResolver. `alias` is the
+        // user-facing name (e.g. 'claude-3-5-sonnet'), `resolvedProvider` is
+        // the provider the alias was routed to, `isModelFallback` is true when
+        // the alias couldn't be resolved and the active provider was used
+        // instead. The UI surfaces these so the user can see when a sub-agent
+        // is running with a different model than the parent.
+        alias: input.alias || null,
+        resolvedProvider: input.resolvedProvider || null,
+        isModelFallback: input.isModelFallback === true,
         scope: input.scope || null,
         task: summarizeText(input.task, 2400),
         status: input.status || 'running',
