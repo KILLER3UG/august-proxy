@@ -15,10 +15,13 @@ import { formatTimeAgo } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
 export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'overview' | 'audit' | 'rollback' | 'observations') => void }) {
-    const overview = useQuery({ queryKey: ['observability', 'overview'], queryFn: () => getObservabilityOverview('30d') });
-    const usage = useQuery({ queryKey: ['usage', 'stats', '30d'], queryFn: () => usageApi.stats('30d') });
-    const byDay = useQuery({ queryKey: ['usage', 'byDay', '30d'], queryFn: () => usageApi.byDay('30d') });
-    const byModel = useQuery({ queryKey: ['usage', 'byModel', '30d'], queryFn: () => usageApi.byModel('30d') });
+    // Poll every 5s so the "Tokens per day" bar for today grows in real time
+    // and the model-usage donut + stats stay current as new events land.
+    const refetchMs = 5000;
+    const overview = useQuery({ queryKey: ['observability', 'overview'], queryFn: () => getObservabilityOverview('30d'), refetchInterval: refetchMs });
+    const usage = useQuery({ queryKey: ['usage', 'stats', '30d'], queryFn: () => usageApi.stats('30d'), refetchInterval: refetchMs });
+    const byDay = useQuery({ queryKey: ['usage', 'byDay', '30d'], queryFn: () => usageApi.byDay('30d'), refetchInterval: refetchMs });
+    const byModel = useQuery({ queryKey: ['usage', 'byModel', '30d'], queryFn: () => usageApi.byModel('30d'), refetchInterval: refetchMs });
 
     if (overview.isLoading || usage.isLoading) {
         return <SettingsEmptyState title="Loading…" description="Fetching the at-a-glance view." />;
@@ -215,16 +218,27 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
 function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number }> }) {
     const max = Math.max(1, ...rows.map(r => r.tokens));
     const recent = rows.slice(-14);
+    // "Today" in the same UTC-day key the backend uses, so the highlighted
+    // bar matches the row the aggregator is actively growing.
+    const todayKey = new Date().toISOString().slice(0, 10);
     return (
         <div className="flex items-end gap-1 h-24">
-            {recent.map(r => (
-                <div
-                    key={r.date}
-                    className="flex-1 bg-primary/70 rounded-t hover:bg-primary transition"
-                    style={{ height: `${Math.max(2, (r.tokens / max) * 100)}%` }}
-                    title={`${r.date}: ${formatCompact(r.tokens)} tokens`}
-                />
-            ))}
+            {recent.map(r => {
+                const isToday = r.date === todayKey;
+                return (
+                    <div
+                        key={r.date}
+                        className={cn(
+                            'flex-1 rounded-t transition relative',
+                            isToday
+                                ? 'bg-emerald-400 hover:bg-emerald-300 ring-1 ring-emerald-300/40'
+                                : 'bg-primary/70 hover:bg-primary'
+                        )}
+                        style={{ height: `${Math.max(2, (r.tokens / max) * 100)}%` }}
+                        title={`${r.date}${isToday ? ' (today)' : ''}: ${formatCompact(r.tokens)} tokens`}
+                    />
+                );
+            })}
         </div>
     );
 }

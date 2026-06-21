@@ -168,17 +168,23 @@ function Donut({ data, total }: { data: { model: string; tokens: number; percent
 export function Usage() {
   const [range, setRange] = useState<UsageRange>('30d');
 
+  // Poll every 5s so stats, heatmap, and by-model stay current as new
+  // usage events land. Stops on unmount.
+  const refetchMs = 5000;
   const stats = useQuery({
     queryKey: ['usage', 'stats', range],
     queryFn: () => usageApi.stats(range),
+    refetchInterval: refetchMs,
   });
   const heatmap = useQuery({
     queryKey: ['usage', 'heatmap', range],
     queryFn: () => usageApi.heatmap(range),
+    refetchInterval: refetchMs,
   });
   const byModel = useQuery({
     queryKey: ['usage', 'by-model', range],
     queryFn: () => usageApi.byModel(range),
+    refetchInterval: refetchMs,
   });
 
   if (stats.isLoading || heatmap.isLoading || byModel.isLoading) {
