@@ -560,16 +560,60 @@ const requestHandler = async (req, res) => {
     // ── Sub-agent fallback settings ──
     if (req.url === '/api/config/subagent-fallback' && req.method === 'GET') {
         const cfg = getConfig();
-        return sendJson(res, { config: cfg.subAgentFallback || {} });
+        const fb = cfg.subAgentFallback && typeof cfg.subAgentFallback === 'object' ? cfg.subAgentFallback : {};
+        const config = {
+            enabled: typeof fb.enabled === 'boolean' ? fb.enabled : false,
+            mode: typeof fb.mode === 'string' ? fb.mode : 'session_only',
+            provider: typeof fb.provider === 'string' ? fb.provider : '',
+            model: typeof fb.model === 'string' ? fb.model : '',
+        };
+        return sendJson(res, { config });
     }
 
     if (req.url === '/api/config/subagent-fallback' && req.method === 'PUT') {
         try {
             const body = await readJsonBody(req);
+            const incoming = body.config && typeof body.config === 'object' ? body.config : {};
+            const next = {
+                enabled: typeof incoming.enabled === 'boolean' ? incoming.enabled : false,
+                mode: typeof incoming.mode === 'string' ? incoming.mode : 'session_only',
+                provider: typeof incoming.provider === 'string' ? incoming.provider : '',
+                model: typeof incoming.model === 'string' ? incoming.model : '',
+            };
+            if (next.enabled && (!next.provider || !next.model)) {
+                return sendError(res, new Error('Provider and model are required when fallback is enabled'), 400);
+            }
             const cfg = getConfig();
-            cfg.subAgentFallback = body.config && typeof body.config === 'object' ? body.config : {};
+            cfg.subAgentFallback = next;
             saveConfig(cfg);
             return sendJson(res, { ok: true, config: cfg.subAgentFallback });
+        } catch (e) { return sendError(res, e, 500); }
+    }
+
+    if (req.url === '/api/config/subagent-fallback/test' && req.method === 'POST') {
+        try {
+            const body = await readJsonBody(req);
+            const probeModel = (body && typeof body.model === 'string' && body.model) ? body.model : 'probe-non-alias';
+            const { resolveInheritedModel } = require('./providers/session-model-inheritance');
+            const { getConfig } = require('./lib/config');
+            const cfg = getConfig();
+            const fb = cfg.subAgentFallback || {};
+            const result = await resolveInheritedModel({
+                sessionId: 'probe-' + Date.now(),
+                model: probeModel,
+                logger: console,
+            });
+            let translationWarning = null;
+            if (fb.enabled && fb.model) {
+                try {
+                    const { resolveModelAliasDetails } = require('./providers/model-list');
+                    const details = await resolveModelAliasDetails(fb.model);
+                    if (!details || !details.modelId || details.modelId === fb.model) {
+                        translationWarning = `Configured fallback model "${fb.model}" did not translate — catalog may be cold. Save a canonical backend id (e.g. "minimax-m3") instead of a display alias.`;
+                    }
+                } catch (_) { /* leave warning null */ }
+            }
+            return sendJson(res, { ok: true, result, translationWarning });
         } catch (e) { return sendError(res, e, 500); }
     }
 
