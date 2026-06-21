@@ -7,6 +7,7 @@ import { FileIcon } from '@/components/ui/FileIcon';
 import { DiffView } from '@/components/chat/DiffView';
 import { confirmWorkbenchMutation } from '@/api/workbench';
 import { visibleProgress, type ProgressEntry } from '@/lib/tool-progress';
+import { getToolLabel } from '@/lib/tool-labels';
 
 /**
  * Extract a filename hint from a tool's JSON context (best-effort).
@@ -42,6 +43,23 @@ function extractCommand(context?: string): string | null {
         const v = (parsed as Record<string, unknown>)[key];
         if (typeof v === 'string' && v.length > 0) return v;
       }
+    }
+  } catch {
+    /* not JSON — ignore */
+  }
+  return null;
+}
+
+/**
+ * Best-effort extraction of the agent_id parameter from a tool's context.
+ */
+function extractAgentId(context?: string): string | null {
+  if (!context) return null;
+  try {
+    const parsed = JSON.parse(context);
+    if (parsed && typeof parsed === 'object') {
+      const v = (parsed as Record<string, unknown>)['agent_id'];
+      if (typeof v === 'string' && v.length > 0) return v;
     }
   } catch {
     /* not JSON — ignore */
@@ -196,11 +214,14 @@ export function ToolCallItem({
   // user is scanning the list. Truncate long commands with a tooltip that
   // shows the full text.
   const commandText = isCommand ? extractCommand(tool.context) : null;
-  const label = isCommand
-    ? (commandText ? `Executed: ${truncate(commandText, 120)}` : `Executed: ${toolNameForIcon}`)
-    : toolNameForIcon;
-  const labelTitle = isCommand && commandText && commandText.length > 120 ? commandText : undefined;
   const filename = !isCommand ? extractFilename(tool.context) : null;
+  const agentId = extractAgentId(tool.context);
+  const label = getToolLabel(tool.name, {
+    agentId: agentId ?? undefined,
+    filename: filename ?? undefined,
+    command: commandText ?? undefined,
+  });
+  const labelTitle = isCommand && commandText && commandText.length > 120 ? commandText : undefined;
   const displayLabel = elapsed !== undefined ? `${label} · ${fmtElapsed(elapsed)}` : label;
 
   return (

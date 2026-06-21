@@ -171,13 +171,24 @@ function applySecurityDefaults(config) {
     return out;
 }
 
+function applyFallbackDefaults(config) {
+    const out = config && typeof config === 'object' ? config : {};
+    const fallback = out.subAgentFallback && typeof out.subAgentFallback === 'object' ? out.subAgentFallback : {};
+    if (typeof fallback.enabled !== 'boolean') fallback.enabled = false;
+    if (typeof fallback.mode !== 'string') fallback.mode = 'session_only';
+    if (typeof fallback.provider !== 'string') fallback.provider = '';
+    if (typeof fallback.model !== 'string') fallback.model = '';
+    out.subAgentFallback = fallback;
+    return out;
+}
+
 function getConfig() {
     try {
         const stats = fs.statSync(CONFIG_PATH);
         if (!cachedConfig || stats.mtimeMs > cachedMtime) {
             const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
             const expanded = expandEnvVars(raw); // resolve ${env:VAR} placeholders in-memory
-            cachedConfig = applySecurityDefaults(expanded);
+            cachedConfig = applyFallbackDefaults(applySecurityDefaults(expanded));
             cachedMtime = stats.mtimeMs;
             console.log('[Config] Reloaded from disk (mtime changed)');
         }

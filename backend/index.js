@@ -553,6 +553,22 @@ const requestHandler = async (req, res) => {
         } catch (e) { return sendError(res, e, 500); }
     }
 
+    // ── Sub-agent fallback settings ──
+    if (req.url === '/api/config/subagent-fallback' && req.method === 'GET') {
+        const cfg = getConfig();
+        return sendJson(res, { config: cfg.subAgentFallback || {} });
+    }
+
+    if (req.url === '/api/config/subagent-fallback' && req.method === 'PUT') {
+        try {
+            const body = await readJsonBody(req);
+            const cfg = getConfig();
+            cfg.subAgentFallback = body.config && typeof body.config === 'object' ? body.config : {};
+            saveConfig(cfg);
+            return sendJson(res, { ok: true, config: cfg.subAgentFallback });
+        } catch (e) { return sendError(res, e, 500); }
+    }
+
     // ── Env var management ──
     if (req.url === '/api/env' && req.method === 'GET') {
         return sendJson(res, { env: getEnvVars(), providers: getProviderRequiredEnvVars() });

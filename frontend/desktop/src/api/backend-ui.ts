@@ -447,6 +447,25 @@ export function updateUserModelAliases(aliases: UserModelAlias[]): Promise<{ ok:
   return api.put<{ ok: boolean }>('/api/config/model-aliases', { aliases });
 }
 
+export interface SubAgentFallbackConfig {
+  enabled: boolean;
+  mode: 'off' | 'session_only' | 'marked_subagent_only' | 'always';
+  provider: string;
+  model: string;
+}
+
+export interface SubAgentFallbackResponse {
+  config: SubAgentFallbackConfig;
+}
+
+export function getSubAgentFallback(): Promise<SubAgentFallbackResponse> {
+  return api.get<SubAgentFallbackResponse>('/api/config/subagent-fallback');
+}
+
+export function updateSubAgentFallback(config: SubAgentFallbackConfig): Promise<{ ok: boolean }> {
+  return api.put<{ ok: boolean }>('/api/config/subagent-fallback', { config });
+}
+
 export function restartBackend(): Promise<{ ok: boolean }> {
   return api.post<{ ok: boolean }>('/api/system/restart');
 }

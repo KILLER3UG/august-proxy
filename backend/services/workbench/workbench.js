@@ -1042,7 +1042,8 @@ function getAllTools() {
                     parent_job_id: { type: 'string', description: 'Optional parent durable job id when a sub-agent delegates a child job.' },
                     depth: { type: 'number', description: 'Current delegation depth. The proxy enforces the configured max depth.' },
                     scope: { type: 'string', enum: ['project', 'frontend', 'backend', 'qa', 'docs', 'deploy'], description: 'Optional work scope. Example: use deployment with scope=frontend for frontend-only deploy.' },
-                    task: { type: 'string', description: 'The specific task for the sub-agent to complete. Be precise about what to do and what to report back.' }
+                    task: { type: 'string', description: 'The specific task for the sub-agent to complete. Be precise about what to do and what to report back.' },
+                    system_prompt: { type: 'string', description: 'Optional custom system prompt for the sub-agent. When provided, replaces the default template entirely. The proxy appends essential constraints (blocked tools, depth limits) automatically.' }
                 },
                 required: ['task']
             }
@@ -1734,23 +1735,65 @@ async function executeSubAgent(session, args, toolContext = {}) {
         }
     }
 
-    const subPrompt = [
-        'You are a focused sub-agent spawned by the main AI Workbench agent.',
-        `Sub-agent profile: ${childAgent.id} (${childAgent.role}). Goal: ${childAgent.goal}`,
-        `Work scope: ${scope}.${scopeNote}`,
-        `Parent agent profile: ${parentAgentId}. Your effective inherited permissions are: ${Object.entries(inheritedPermissions).map(([key, value]) => `${key}:${value}`).join(', ')}.`,
-        `Durable job id: ${job.id}. Current delegation depth: ${depth}. Max delegation depth: ${maxDepth}.`,
-        'Your task is: ' + task,
-        'You have access to the same registered tools, but the server enforces your inherited permissions before the approval gate.',
-        'Read/search/explore freely when your profile permits it, but do not perform any mutation unless the parent session already has an approved plan and your inherited permissions allow that tool category.',
-        'A mutation means writing/editing/deleting/moving files, running shell commands, changing memory, launching background tasks, or controlling the host desktop.',
-        'If a mutation is required and approval is not active, stop and report the exact plan the parent should submit for user approval.',
-        'If you are a coordinator and delegation is allowed, spawn child sub-agents only for clearly separate subtasks and include parent_job_id plus depth+1.',
-        teamSkillGuide ? `=== TEAM SKILLS OWNED BY THIS AGENT ===\n${teamSkillGuide}\nTo load one of these skills, call august__load_skill with the skill name and agent_id=${childAgentId}.` : '',
-        'For exploration tasks, report concrete evidence: exact files read, commands/tools used, key findings, and any limits or uncertainty.',
-        'Do not claim comprehensive understanding unless the evidence supports it. Todo or task-list updates are internal state, not project file updates.',
-        'Keep your response concise and actionable.'
-    ].join('\n');
+    let basePrompt = '';
+    let isDynamic = false;
+
+    if (typeof args.system_prompt === 'string' && args.system_prompt.trim()) {
+        basePrompt = args.system_prompt.trim();
+        isDynamic = true;
+    } else {
+        // Fallback: check subagent-config
+        try {
+            const { loadSubagentConfig, getDefaultSubagentConfig } = require('../tools/subagent-config');
+            const subCfg = loadSubagentConfig();
+            const defCfg = getDefaultSubagentConfig();
+            if (subCfg?.current?.system_prompt && subCfg.current.system_prompt !== defCfg?.current?.system_prompt) {
+                basePrompt = subCfg.current.system_prompt.trim();
+                isDynamic = true;
+            }
+        } catch (e) {
+            console.warn('[Workbench] Failed to check customized subagent config:', e.message);
+        }
+    }
+
+    let subPrompt;
+    if (isDynamic) {
+        console.info(`[Workbench] Using dynamic sub-agent prompt for job ${job.id}`);
+        subPrompt = [
+            basePrompt,
+            '\n=== MANDATORY SECURITY & OPERATIONAL CONSTRAINTS ===',
+            `Sub-agent profile: ${childAgent.id} (${childAgent.role}). Goal: ${childAgent.goal}`,
+            `Work scope: ${scope}.${scopeNote}`,
+            `Parent agent profile: ${parentAgentId}. Your effective inherited permissions are: ${Object.entries(inheritedPermissions).map(([key, value]) => `${key}:${value}`).join(', ')}.`,
+            `Durable job id: ${job.id}. Current delegation depth: ${depth}. Max delegation depth: ${maxDepth}.`,
+            'Your task is: ' + task,
+            'You have access to the same registered tools, but the server enforces your inherited permissions before the approval gate.',
+            'Read/search/explore freely when your profile permits it, but do not perform any mutation unless the parent session already has an approved plan and your inherited permissions allow that tool category.',
+            'A mutation means writing/editing/deleting/moving files, running shell commands, changing memory, launching background tasks, or controlling the host desktop.',
+            'If a mutation is required and approval is not active, stop and report the exact plan the parent should submit for user approval.',
+            'If you are a coordinator and delegation is allowed, spawn child sub-agents only for clearly separate subtasks and include parent_job_id plus depth+1.',
+            teamSkillGuide ? `=== TEAM SKILLS OWNED BY THIS AGENT ===\n${teamSkillGuide}\nTo load one of these skills, call august__load_skill with the skill name and agent_id=${childAgentId}.` : '',
+            'Keep your response concise and actionable.'
+        ].filter(Boolean).join('\n');
+    } else {
+        subPrompt = [
+            'You are a focused sub-agent spawned by the main AI Workbench agent.',
+            `Sub-agent profile: ${childAgent.id} (${childAgent.role}). Goal: ${childAgent.goal}`,
+            `Work scope: ${scope}.${scopeNote}`,
+            `Parent agent profile: ${parentAgentId}. Your effective inherited permissions are: ${Object.entries(inheritedPermissions).map(([key, value]) => `${key}:${value}`).join(', ')}.`,
+            `Durable job id: ${job.id}. Current delegation depth: ${depth}. Max delegation depth: ${maxDepth}.`,
+            'Your task is: ' + task,
+            'You have access to the same registered tools, but the server enforces your inherited permissions before the approval gate.',
+            'Read/search/explore freely when your profile permits it, but do not perform any mutation unless the parent session already has an approved plan and your inherited permissions allow that tool category.',
+            'A mutation means writing/editing/deleting/moving files, running shell commands, changing memory, launching background tasks, or controlling the host desktop.',
+            'If a mutation is required and approval is not active, stop and report the exact plan the parent should submit for user approval.',
+            'If you are a coordinator and delegation is allowed, spawn child sub-agents only for clearly separate subtasks and include parent_job_id plus depth+1.',
+            teamSkillGuide ? `=== TEAM SKILLS OWNED BY THIS AGENT ===\n${teamSkillGuide}\nTo load one of these skills, call august__load_skill with the skill name and agent_id=${childAgentId}.` : '',
+            'For exploration tasks, report concrete evidence: exact files read, commands/tools used, key findings, and any limits or uncertainty.',
+            'Do not claim comprehensive understanding unless the evidence supports it. Todo or task-list updates are internal state, not project file updates.',
+            'Keep your response concise and actionable.'
+        ].join('\n');
+    }
 
     // Emit the assembled sub-agent prompt as a `prompt` SSE event so the UI
     // can attach a collapsible PROMPT disclosure to the parent tool-call

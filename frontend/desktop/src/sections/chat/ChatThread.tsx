@@ -21,6 +21,7 @@ import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import { SuggestedActionBubble } from '@/components/chat/SuggestedActionBubble';
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
 import { applyToolProgress, visibleProgress, type ToolProgressEvent } from '@/lib/tool-progress';
+import { getToolLabel } from '@/lib/tool-labels';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
@@ -1806,18 +1807,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         </div>
                       );
                     })}
-                    {streaming && (() => {
-                      // Live-thinking placeholder: the assistant bubble is
-                      // created immediately, but no thinking/content block may
-                      // exist on the first render. Show the disclosure label
-                      // now so it stays synced with the streamed thoughts.
-                      const lastMsg = messages[messages.length - 1];
-                      if (!lastMsg || lastMsg.role !== 'assistant') {
-                        return <ReasoningBlock text='' isGenerating />;
-                      }
-                      const parsed = parseThinkingAndContent(lastMsg.content, lastMsg.thinking);
-                      return (!parsed.thinking && !parsed.content) ? <ReasoningBlock text='' isGenerating /> : null;
-                    })()}
                   </div>
                 </div>
 
@@ -2081,7 +2070,7 @@ function MessageBubble({
     if (isUser) return [];
     return getDisplayBlocks(message.blocks, message.thinking, message.tools, message.content);
   }, [message.blocks, message.thinking, message.tools, message.content, isUser]);
-  const showPendingThinking = !isUser && isLast && streaming && !showRaw && !displayBlocks.some(block => block.type === 'thinking');
+  const showPendingThinking = !isUser && isLast && streaming && !showRaw && displayBlocks.length === 0;
 
   const handleCopy = () => {
     const textToCopy = message.content;
@@ -2223,7 +2212,7 @@ function MessageBubble({
                 {JSON.stringify(message, null, 2)}
               </div>
             ) : (
-              <AnimatePresence initial={false}>
+              <AnimatePresence initial={false} mode="wait">
                 {showPendingThinking && (
                   <motion.div
                     key="pending-thinking"
@@ -2425,7 +2414,7 @@ function ToolCallCard({
           >
             <span className={cn('thinking-text', tool.status === 'running' && 'animating')}>
               <span className="thinking-label">
-                {Array.from(tool.name).map((ch, i) => (
+                {Array.from(getToolLabel(tool.name)).map((ch, i) => (
                   <span
                     key={i}
                     className={cn('thinking-char', i === 0 && 'thinking-cap')}

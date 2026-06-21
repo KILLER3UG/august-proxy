@@ -39,12 +39,12 @@ const RESOLVER_FIXTURE = {
     },
 };
 
-function injectMocks() {
+function injectMocks(fallbackConfig) {
     require.cache[CONFIG_PATH] = {
         id: CONFIG_PATH,
         filename: CONFIG_PATH,
         loaded: true,
-        exports: { getConfig: () => ({ modelAliases: USER_ALIASES }) },
+        exports: { getConfig: () => ({ modelAliases: USER_ALIASES, subAgentFallback: fallbackConfig }) },
     };
     require.cache[RESOLVER_PATH] = {
         id: RESOLVER_PATH,
@@ -222,5 +222,76 @@ test('clearSession removes the alias map', async () => {
     assert.equal(inherit.getSessionState('sess-I').aliases.size, 1);
     inherit.clearSession('sess-I');
     assert.equal(inherit.getSessionState('sess-I'), null);
+});
+
+test('sub-agent fallback: session_only mode resolves when session exists', async () => {
+    const fallback = { enabled: true, mode: 'session_only', provider: 'minimax', model: 'MiniMax-M3' };
+    const inherit = injectMocks(fallback);
+    const out = await inherit.resolveInheritedModel({
+        sessionId: 'sess-fallback-1',
+        model: 'unknown-model-name',
+        logger: silentLogger(),
+    });
+    assert.equal(out.action, 'use_alias');
+    assert.equal(out.resolution.provider, 'minimax');
+    assert.equal(out.resolution.model, 'MiniMax-M3');
+});
+
+test('sub-agent fallback: session_only mode rejects when session is missing', async () => {
+    const fallback = { enabled: true, mode: 'session_only', provider: 'minimax', model: 'MiniMax-M3' };
+    const inherit = injectMocks(fallback);
+    const out = await inherit.resolveInheritedModel({
+        sessionId: '',
+        model: 'unknown-model-name',
+        logger: silentLogger(),
+    });
+    assert.equal(out, null);
+});
+
+test('sub-agent fallback: marked_subagent_only mode resolves when marked', async () => {
+    const fallback = { enabled: true, mode: 'marked_subagent_only', provider: 'minimax', model: 'MiniMax-M3' };
+    const inherit = injectMocks(fallback);
+    const out = await inherit.resolveInheritedModel({
+        sessionId: 'sess-fallback-2',
+        model: 'unknown-model-name',
+        metadata: { subAgent: true },
+        logger: silentLogger(),
+    });
+    assert.equal(out.action, 'use_alias');
+    assert.equal(out.resolution.model, 'MiniMax-M3');
+});
+
+test('sub-agent fallback: marked_subagent_only mode rejects when not marked', async () => {
+    const fallback = { enabled: true, mode: 'marked_subagent_only', provider: 'minimax', model: 'MiniMax-M3' };
+    const inherit = injectMocks(fallback);
+    const out = await inherit.resolveInheritedModel({
+        sessionId: 'sess-fallback-3',
+        model: 'unknown-model-name',
+        logger: silentLogger(),
+    });
+    assert.equal(out.action, 'reject_first_non_alias');
+});
+
+test('sub-agent fallback: always mode always resolves', async () => {
+    const fallback = { enabled: true, mode: 'always', provider: 'minimax', model: 'MiniMax-M3' };
+    const inherit = injectMocks(fallback);
+    const out = await inherit.resolveInheritedModel({
+        sessionId: 'sess-fallback-4',
+        model: 'unknown-model-name',
+        logger: silentLogger(),
+    });
+    assert.equal(out.action, 'use_alias');
+    assert.equal(out.resolution.model, 'MiniMax-M3');
+});
+
+test('sub-agent fallback: disabled fallback rejects', async () => {
+    const fallback = { enabled: false, mode: 'always', provider: 'minimax', model: 'MiniMax-M3' };
+    const inherit = injectMocks(fallback);
+    const out = await inherit.resolveInheritedModel({
+        sessionId: 'sess-fallback-5',
+        model: 'unknown-model-name',
+        logger: silentLogger(),
+    });
+    assert.equal(out.action, 'reject_first_non_alias');
 });
 

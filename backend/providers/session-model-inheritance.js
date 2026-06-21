@@ -212,6 +212,45 @@ async function resolveInheritedModel({ sessionId, model, parentAlias, metadata, 
     // ── No alias entries yet ──
     if (!hasAliasEntries) {
         if (!isAlias) {
+            // Check fallback settings
+            let fallbackAllowed = false;
+            let fallbackConfig = null;
+            try {
+                const { getConfig } = require('../lib/config');
+                const cfg = getConfig();
+                if (cfg && cfg.subAgentFallback && cfg.subAgentFallback.enabled) {
+                    fallbackConfig = cfg.subAgentFallback;
+                    const mode = fallbackConfig.mode || 'session_only';
+                    if (mode === 'always') {
+                        fallbackAllowed = true;
+                    } else if (mode === 'session_only') {
+                        if (sessionId) fallbackAllowed = true;
+                    } else if (mode === 'marked_subagent_only') {
+                        const isMarked = (metadata && (metadata.subAgent === true || metadata.isSubAgent === true || metadata.agentRole === 'subagent' || metadata.parentAlias || metadata.parentSessionId))
+                            || (headers && (headers['x-august-subagent'] === '1' || headers['x-parent-alias']));
+                        if (isMarked) fallbackAllowed = true;
+                    }
+                }
+            } catch (err) {
+                log.warn(`[Session ${sessionId}] Error reading sub-agent fallback config: ${err.message}`);
+            }
+
+            if (fallbackAllowed && fallbackConfig && fallbackConfig.model && fallbackConfig.provider) {
+                log.log(`[Session ${sessionId}] First request "${model}" is not an alias. Using sub-agent fallback resolution: ${fallbackConfig.model} via ${fallbackConfig.provider}.`);
+                try {
+                    const alias = model; // use requested model as the alias/sentinel key
+                    const resolution = { provider: fallbackConfig.provider, model: fallbackConfig.model };
+                    await recordAliasResolution({ sessionId, alias, resolution, logger });
+                    return {
+                        resolution,
+                        parentAlias: alias,
+                        action: 'use_alias',
+                    };
+                } catch (err) {
+                    log.warn(`[Session ${sessionId}] Fallback resolution failed for "${model}": ${err.message}`);
+                }
+            }
+
             log.log(`[Session ${sessionId}] Sub-agent request but no alias resolved yet – rejecting.`);
             return {
                 resolution: null,

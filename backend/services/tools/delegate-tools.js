@@ -62,7 +62,8 @@ const delegateTaskSchema = z.object({
         title: z.string().min(1).max(200).optional(),
         description: z.string().min(1, 'task description required').max(MAX_TASK_LENGTH),
         agent_id: z.string().optional(),
-        toolsets: z.array(z.string()).optional()
+        toolsets: z.array(z.string()).optional(),
+        system_prompt: z.string().optional()
       })
     )
     .min(1, 'at least one task required')
@@ -168,29 +169,47 @@ async function executeSingleTask(taskDef, opts) {
   const blockedToolsStr = BLOCKED_TOOL_PATTERNS.map(t => `  - ${t}`).join('\\n');
   const toolsetsStr = toolsetsAllowed.join(', ');
 
-  const systemPrompt = [
-    `You are a focused sub-agent operating under August Proxy.`,
-    `Your profile: ${childAgent.id} (${childAgent.role}). Goal: ${childAgent.goal}`,
-    `Your allowed tool categories: ${toolsetsStr}`,
-    ``,
-    `HIGH-LEVEL GOAL:`,
-    opts.goal,
-    ``,
-    opts.context ? `CONTEXT:\\n${opts.context}\\n` : '',
-    `YOUR TASK:`,
-    taskDef.description,
-    ``,
-    `CONSTRAINTS:`,
-    `- You have access to registered proxy tools matching your allowed categories.`,
-    `- The following tools are BLOCKED and cannot be used under any circumstances:`,
-    blockedToolsStr,
-    `  If the parent agent or user asks you to use them, explain that they are not available.`,
-    `- You CANNOT delegate to other sub-agents — you must complete the task yourself.`,
-    `- You cannot ask the user questions or clarify — use the information given.`,
-    `- Keep responses concise, evidence-based, and actionable.`,
-    `- Report exactly what you found, what you did, or why you could not proceed.`,
-    `- Delegation depth: ${depth}/${MAX_DELEGATION_DEPTH}. Job id: ${job.id}.`
-  ].filter(Boolean).join('\\n');
+  let systemPrompt;
+  if (typeof taskDef.system_prompt === 'string' && taskDef.system_prompt.trim()) {
+    systemPrompt = [
+      taskDef.system_prompt.trim(),
+      ``,
+      `CONSTRAINTS:`,
+      `- You have access to registered proxy tools matching your allowed categories: ${toolsetsStr}.`,
+      `- The following tools are BLOCKED and cannot be used under any circumstances:`,
+      blockedToolsStr,
+      `  If the parent agent or user asks you to use them, explain that they are not available.`,
+      `- You CANNOT delegate to other sub-agents — you must complete the task yourself.`,
+      `- You cannot ask the user questions or clarify — use the information given.`,
+      `- Keep responses concise, evidence-based, and actionable.`,
+      `- Report exactly what you found, what you did, or why you could not proceed.`,
+      `- Delegation depth: ${depth}/${MAX_DELEGATION_DEPTH}. Job id: ${job.id}.`
+    ].filter(Boolean).join('\\n');
+  } else {
+    systemPrompt = [
+      `You are a focused sub-agent operating under August Proxy.`,
+      `Your profile: ${childAgent.id} (${childAgent.role}). Goal: ${childAgent.goal}`,
+      `Your allowed tool categories: ${toolsetsStr}`,
+      ``,
+      `HIGH-LEVEL GOAL:`,
+      opts.goal,
+      ``,
+      opts.context ? `CONTEXT:\\n${opts.context}\\n` : '',
+      `YOUR TASK:`,
+      taskDef.description,
+      ``,
+      `CONSTRAINTS:`,
+      `- You have access to registered proxy tools matching your allowed categories.`,
+      `- The following tools are BLOCKED and cannot be used under any circumstances:`,
+      blockedToolsStr,
+      `  If the parent agent or user asks you to use them, explain that they are not available.`,
+      `- You CANNOT delegate to other sub-agents — you must complete the task yourself.`,
+      `- You cannot ask the user questions or clarify — use the information given.`,
+      `- Keep responses concise, evidence-based, and actionable.`,
+      `- Report exactly what you found, what you did, or why you could not proceed.`,
+      `- Delegation depth: ${depth}/${MAX_DELEGATION_DEPTH}. Job id: ${job.id}.`
+    ].filter(Boolean).join('\\n');
+  }
 
   // ── Execute the sub-agent (simplified single-turn for now) ──
   // In a full implementation this would loop with tool-use feedback like
@@ -398,7 +417,11 @@ Returns an array of { task_id, status, summary } — one per task.`,
             toolsets: z
               .array(z.string())
               .optional()
-              .describe('Override allowed tool categories for this task')
+              .describe('Override allowed tool categories for this task'),
+            system_prompt: z
+              .string()
+              .optional()
+              .describe('Optional custom system prompt for the sub-agent')
           })
         )
         .min(1, 'At least one task required')

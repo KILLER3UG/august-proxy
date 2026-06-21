@@ -49,8 +49,11 @@ import {
   updateUserModelAliases,
   getAggregatedModels,
   restartBackend,
+  getSubAgentFallback,
+  updateSubAgentFallback,
   type UserModelAlias,
   type AggregatedModel,
+  type SubAgentFallbackConfig,
 } from '@/api/backend-ui';
 import { WorkspaceField } from '@/components/workspace/WorkspaceField';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
@@ -587,6 +590,33 @@ function AliasesTab() {
   const [saving, setSaving] = useState(false);
   const [restarting, setRestarting] = useState(false);
 
+  const fallbackQ = useQuery({
+    queryKey: ['subagent-fallback-config'],
+    queryFn: () => getSubAgentFallback(),
+  });
+  const providersQ = useQuery({
+    queryKey: ['ws-providers'],
+    queryFn: () => providersApi.list(),
+  });
+  const providers = providersQ.data ?? [];
+
+  const [fallbackConfig, setFallbackConfig] = useState<SubAgentFallbackConfig>({
+    enabled: false,
+    mode: 'session_only',
+    provider: '',
+    model: '',
+  });
+  const [fallbackEdits, setFallbackEdits] = useState<SubAgentFallbackConfig | null>(null);
+
+  useEffect(() => {
+    if (fallbackQ.data && fallbackEdits === null) {
+      setFallbackConfig(fallbackQ.data.config);
+    }
+  }, [fallbackQ.data, fallbackEdits]);
+
+  const activeFallback = fallbackEdits ?? fallbackConfig;
+  const fallbackDirty = fallbackEdits !== null && JSON.stringify(fallbackEdits) !== JSON.stringify(fallbackConfig);
+
   const restartMut = useMutation({
     mutationFn: () => restartBackend(),
     onSuccess: () => toast.success('Backend restart requested'),
@@ -771,6 +801,128 @@ function AliasesTab() {
         {dirty && (
           <Badge variant="warning" className="text-[10px]">unsaved changes</Badge>
         )}
+
+        {/* Sub-agent fallback settings section */}
+        <div className="mt-8 pt-6 border-t border-white/[0.06] space-y-4">
+          <div>
+            <p className="text-sm font-semibold">Sub-agent fallback settings</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Configure a fallback model for incoming sub-agent/tool-call requests when there are no active alias sessions.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 rounded-lg border border-white/[0.06] bg-black/10">
+                <div>
+                  <p className="text-xs font-semibold">Enable fallback</p>
+                  <p className="text-[10px] text-muted-foreground">Route unknown/non-alias model requests to the fallback model.</p>
+                </div>
+                <WorkspaceToggle
+                  checked={activeFallback.enabled}
+                  onChange={(checked) => {
+                    const next = { ...activeFallback, enabled: checked };
+                    setFallbackEdits(next);
+                  }}
+                  id="subagent-fallback-enabled"
+                />
+              </div>
+
+              <WorkspaceField label="Fallback mode" id="subagent-fallback-mode">
+                <WorkspaceSelect
+                  value={activeFallback.mode}
+                  onChange={(e) => {
+                    const next = { ...activeFallback, mode: e.target.value as any };
+                    setFallbackEdits(next);
+                  }}
+                  options={[
+                    { value: 'session_only', label: 'Session only (highly recommended)' },
+                    { value: 'marked_subagent_only', label: 'Marked sub-agent only' },
+                    { value: 'always', label: 'Always' },
+                    { value: 'off', label: 'Off' }
+                  ]}
+                  disabled={!activeFallback.enabled}
+                />
+              </WorkspaceField>
+            </div>
+
+            <div className="space-y-4">
+              <WorkspaceField label="Provider" id="subagent-fallback-provider">
+                <select
+                  value={activeFallback.provider}
+                  onChange={(e) => {
+                    const p = e.target.value;
+                    const firstModel = availableModels.find((m) => m.provider === p)?.id || '';
+                    const next = { ...activeFallback, provider: p, model: firstModel };
+                    setFallbackEdits(next);
+                  }}
+                  className="h-9 w-full rounded-md border border-white/[0.06] bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+                  disabled={!activeFallback.enabled}
+                >
+                  <option value="" disabled>Select a provider…</option>
+                  {providers.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.displayName || p.name}
+                    </option>
+                  ))}
+                </select>
+              </WorkspaceField>
+
+              <WorkspaceField label="Model" id="subagent-fallback-model">
+                <select
+                  value={activeFallback.model}
+                  onChange={(e) => {
+                    const next = { ...activeFallback, model: e.target.value };
+                    setFallbackEdits(next);
+                  }}
+                  className="h-9 w-full rounded-md border border-white/[0.06] bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+                  disabled={!activeFallback.enabled || !activeFallback.provider}
+                >
+                  <option value="" disabled>Select a model…</option>
+                  {(availableModels.filter(m => m.provider === activeFallback.provider)).map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.id}{m.isFree ? ' (free)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </WorkspaceField>
+            </div>
+          </div>
+
+          {activeFallback.enabled && activeFallback.mode === 'always' && (
+            <div className="p-3 rounded-lg border border-yellow-500/20 bg-yellow-500/5 text-yellow-500 text-xs flex gap-2">
+              <span className="font-semibold shrink-0">Warning:</span>
+              <span>Always mode may route misspelled model names to the fallback instead of failing with an error.</span>
+            </div>
+          )}
+
+          {activeFallback.enabled && activeFallback.provider && activeFallback.model && (
+            <p className="text-[10px] text-muted-foreground font-mono">
+              Unknown sub-agent model requests will route to <code className="text-[10px] text-foreground">{activeFallback.model}</code> via <code className="text-[10px] text-foreground">{activeFallback.provider}</code>.
+            </p>
+          )}
+
+          {fallbackDirty && (
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button size="sm" variant="outline" onClick={() => setFallbackEdits(null)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={async () => {
+                try {
+                  await updateSubAgentFallback(activeFallback);
+                  setFallbackConfig(activeFallback);
+                  setFallbackEdits(null);
+                  qc.invalidateQueries({ queryKey: ['subagent-fallback-config'] });
+                  toast.success('Saved fallback settings');
+                } catch (e: unknown) {
+                  toast.error(e instanceof Error ? e.message : 'Save failed');
+                }
+              }}>
+                <Check className="size-3" /> Save fallback settings
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
