@@ -101,14 +101,19 @@ export interface StreamWorkbenchChatParams {
 }
 
 /**
- * Stream a Workbench chat turn. Parses named SSE events from
- * POST /ui/workbench/chat and dispatches to the provided handlers.
+ * Stream a Workbench chat turn. Kicks off a new generation via POST
+ * /ui/workbench/chat and returns the starting `sinceSeq` so the caller
+ * can attach an SSE subscriber that won't replay events already seen.
+ * The function awaits the response body for backwards compatibility —
+ * older callers consume events from the POST stream itself, newer
+ * callers open /ui/workbench/chat/stream with `sinceSeq` and ignore
+ * whatever this function returns from the body.
  */
 export async function streamWorkbenchChat(
   params: StreamWorkbenchChatParams,
   handlers: WorkbenchEventHandlers,
   signal?: AbortSignal
-): Promise<void> {
+): Promise<{ sinceSeq?: number }> {
   const res = await fetch('/ui/workbench/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -128,15 +133,42 @@ export async function streamWorkbenchChat(
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
     handlers.onError?.({ message: `Workbench chat failed: ${res.status} ${errText}` });
-    return;
+    return {};
+  }
+
+  // New contract: the POST returns a JSON body with the `sinceSeq` cursor
+  // for the live SSE stream. Older servers (or proxies) may still return
+  // an SSE stream — fall back to parsing it as before.
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    try {
+      const body = await res.json();
+      if (Number.isFinite(body?.sinceSeq)) {
+        handlers.onStarted?.({ sinceSeq: body.sinceSeq });
+        return { sinceSeq: body.sinceSeq };
+      }
+    } catch (_) {
+      // Fall through to legacy SSE parsing.
+    }
+    handlers.onDone?.();
+    return {};
   }
 
   const reader = res.body?.getReader();
   if (!reader) {
     handlers.onDone?.();
-    return;
+    return {};
   }
 
+  await readSseStream(reader, handlers, signal);
+  return {};
+}
+
+async function readSseStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  handlers: WorkbenchEventHandlers,
+  signal?: AbortSignal
+): Promise<void> {
   const decoder = new TextDecoder();
   let buffer = '';
   let currentEvent = '';
@@ -162,6 +194,10 @@ export async function streamWorkbenchChat(
 
         if (line.startsWith('event:')) {
           currentEvent = line.slice(6).trim();
+        } else if (line.startsWith('id:')) {
+          const idStr = line.slice(3).trim();
+          const n = Number(idStr);
+          if (Number.isFinite(n) && handlers.onSeq) handlers.onSeq(n);
         } else if (line.startsWith('data:')) {
           const dataStr = line.slice(5).trim();
           if (!dataStr) continue;
@@ -186,11 +222,12 @@ export async function streamWorkbenchChat(
 export async function streamWorkbenchReconnect(
   sessionId: string,
   handlers: WorkbenchEventHandlers,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  sinceSeq?: number
 ): Promise<void> {
-  const res = await fetch(`/ui/workbench/chat/stream?sessionId=${encodeURIComponent(sessionId)}`, {
-    signal,
-  });
+  const qs = new URLSearchParams({ sessionId });
+  if (Number.isFinite(sinceSeq)) qs.set('sinceSeq', String(sinceSeq));
+  const res = await fetch(`/ui/workbench/chat/stream?${qs.toString()}`, { signal });
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
@@ -204,49 +241,7 @@ export async function streamWorkbenchReconnect(
     return;
   }
 
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let currentEvent = '';
-
-  try {
-    while (true) {
-      throwIfAborted(signal);
-      const { done, value } = await reader.read();
-      throwIfAborted(signal);
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let lineStart = 0;
-      let newlineIdx: number;
-      while ((newlineIdx = buffer.indexOf('\n', lineStart)) >= 0) {
-        const line = buffer.slice(lineStart, newlineIdx).trim();
-        lineStart = newlineIdx + 1;
-        if (!line) {
-          currentEvent = '';
-          continue;
-        }
-        if (line.startsWith(':')) continue; // SSE comment
-
-        if (line.startsWith('event:')) {
-          currentEvent = line.slice(6).trim();
-        } else if (line.startsWith('data:')) {
-          const dataStr = line.slice(5).trim();
-          if (!dataStr) continue;
-          try {
-            throwIfAborted(signal);
-            const payload = JSON.parse(dataStr);
-            dispatchWorkbenchEvent(currentEvent, payload, handlers);
-          } catch (e: any) {
-            if (e?.name === 'AbortError') throw e;
-          }
-        }
-      }
-      buffer = buffer.slice(lineStart);
-    }
-  } catch (e: any) {
-    if (e?.name === 'AbortError') throw e;
-    handlers.onError?.({ message: e?.message || 'Reconnect stream read error' });
-  }
+  await readSseStream(reader, handlers, signal);
 }
 
 export async function stopWorkbenchChat(sessionId: string): Promise<void> {
@@ -340,6 +335,72 @@ function dispatchWorkbenchEvent(
         jobId: payload?.jobId,
       });
       break;
+    case 'started':
+      handlers.onStarted?.({ sinceSeq: payload?.sinceSeq });
+      break;
+    case 'subagent_start':
+      handlers.onSubagentStart?.({
+        jobId: String(payload?.jobId || ''),
+        agentId: String(payload?.agentId || ''),
+        parentJobId: payload?.parentJobId ?? null,
+        parentToolUseId: payload?.parentToolUseId,
+        scope: payload?.scope,
+        depth: Number.isFinite(payload?.depth) ? Number(payload.depth) : undefined,
+        task: payload?.task,
+      });
+      break;
+    case 'subagent_done':
+      handlers.onSubagentDone?.({
+        jobId: String(payload?.jobId || ''),
+        agentId: String(payload?.agentId || ''),
+        status: (['completed', 'failed', 'cancelled'].includes(payload?.status)
+          ? payload.status
+          : 'completed') as 'completed' | 'failed' | 'cancelled',
+        message: payload?.message,
+        result: payload?.result,
+      });
+      break;
+    case 'warning':
+      handlers.onWarning?.({
+        kind: payload?.kind,
+        message: payload?.message,
+        jobId: payload?.jobId,
+        toolUseId: payload?.toolUseId,
+        ...payload,
+      });
+      break;
+    case 'subagent_text':
+      handlers.onSubagentText?.({
+        jobId: String(payload?.jobId || ''),
+        agentId: String(payload?.agentId || ''),
+        content: String(payload?.content || ''),
+      });
+      break;
+    case 'subagent_tool_call':
+      handlers.onSubagentToolCall?.({
+        jobId: String(payload?.jobId || ''),
+        agentId: String(payload?.agentId || ''),
+        id: String(payload?.id || ''),
+        name: String(payload?.name || ''),
+        input: payload?.input || {},
+        status: payload?.status,
+      });
+      break;
+    case 'subagent_tool_result':
+      handlers.onSubagentToolResult?.({
+        jobId: String(payload?.jobId || ''),
+        agentId: String(payload?.agentId || ''),
+        id: String(payload?.id || ''),
+        content: payload?.content,
+        is_error: payload?.is_error,
+        status: payload?.is_error ? 'error' : 'done',
+      });
+      break;
+    case 'aborted':
+      // Aborted is terminal; the runtime treats it like `done`. The
+      // explicit `aborted` event lets the runtime distinguish if it wants.
+      handlers.onDone?.();
+      break;
     case 'done':
       handlers.onDone?.();
       break;
@@ -381,7 +442,7 @@ export async function streamWorkbenchRevision(
   // which makes the banner re-appear, or by emitting the revised plan
   // as normal assistant text inline). No version prefix is added — the
   // plan appears as a regular assistant message.
-  return streamWorkbenchChat({
+  await streamWorkbenchChat({
     sessionId,
     message: [
       '[Revision request]',
@@ -433,7 +494,7 @@ export async function streamPlanDecision(
   handlers: WorkbenchEventHandlers = {},
   signal?: AbortSignal,
 ): Promise<void> {
-  return streamWorkbenchChat({
+  await streamWorkbenchChat({
     sessionId,
     message: PLAN_DECISION_MESSAGES[decision],
   }, handlers, signal);

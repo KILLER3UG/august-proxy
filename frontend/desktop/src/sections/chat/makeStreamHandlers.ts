@@ -31,6 +31,7 @@ import type { WorkbenchEventHandlers, WorkbenchSession } from '@/types/workbench
 import type { GitDiffResult } from '@/api/git';
 import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
 import { applyToolProgress } from '@/lib/tool-progress';
+import { applySubagentEvent } from './chat-stream-manager';
 
 export interface MakeStreamHandlersOptions {
   sessionId: string;
@@ -232,6 +233,80 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         });
         return next;
       });
+      // Also seed the live sub-agent container so the parent tool call
+      // can render the nested block immediately, even if a separate
+      // `subagent_start` event arrives later (or was missed during a
+      // reconnect).
+      if (jobId) {
+        applySubagentEvent(sessionId, {
+          type: 'subagent_start',
+          jobId,
+          agentId: subagentId || 'subagent',
+          parentToolUseId: toolUseId,
+        });
+      }
+    },
+    onSubagentStart: (data) => {
+      if (!data?.jobId) return;
+      applySubagentEvent(sessionId, {
+        type: 'subagent_start',
+        jobId: data.jobId,
+        agentId: data.agentId,
+        parentToolUseId: data.parentToolUseId,
+        scope: data.scope,
+        task: data.task,
+        depth: data.depth,
+      });
+    },
+    onSubagentDone: (data) => {
+      if (!data?.jobId) return;
+      applySubagentEvent(sessionId, {
+        type: 'subagent_done',
+        jobId: data.jobId,
+        status: data.status,
+        message: data.message,
+        result: data.result,
+      });
+    },
+    onSubagentText: (data) => {
+      if (!data?.jobId) return;
+      applySubagentEvent(sessionId, {
+        type: 'subagent_text',
+        jobId: data.jobId,
+        content: data.content || '',
+      });
+    },
+    onSubagentToolCall: (data) => {
+      if (!data?.jobId) return;
+      applySubagentEvent(sessionId, {
+        type: 'subagent_tool_call',
+        jobId: data.jobId,
+        id: data.id,
+        name: data.name,
+        input: data.input,
+        status: data.status || 'running',
+      });
+    },
+    onSubagentToolResult: (data) => {
+      if (!data?.jobId) return;
+      applySubagentEvent(sessionId, {
+        type: 'subagent_tool_result',
+        jobId: data.jobId,
+        id: data.id,
+        content: data.content,
+        is_error: data.is_error,
+        status: data.status || (data.is_error ? 'error' : 'done'),
+      });
+    },
+    onStarted: ({ sinceSeq }) => {
+      // The backend reports the seq of the 'started' event so callers
+      // can attach an SSE subscriber that doesn't replay already-seen
+      // events. We don't need to act on it here (the subscriber is
+      // independent), but we expose it for debugging via a console hint.
+      if (Number.isFinite(sinceSeq)) {
+        // eslint-disable-next-line no-console
+        console.debug('[makeStreamHandlers] chat turn started at seq', sinceSeq);
+      }
     },
     onThinking: ({ content }) => {
       if (!thinkingEnd && content.trim()) {

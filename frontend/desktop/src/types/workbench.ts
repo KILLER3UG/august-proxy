@@ -158,6 +158,73 @@ export interface WorkbenchEventHandlers {
     /** Durable job id of the sub-agent run, if available. */
     jobId?: string;
   }) => void;
+  /**
+   * Emitted exactly once when the backend registers a new chat turn for
+   * the session. The `sinceSeq` is the seq the live SSE stream will start
+   * from — clients use it to attach via `sinceSeq=` on reconnect so they
+   * don't replay events they've already consumed.
+   */
+  onStarted?: (data: { sinceSeq?: number }) => void;
+  /** Fired once per `id:` SSE frame so the subscriber can record the
+   *  highest seq it has consumed (used for `sinceSeq` on reconnect). */
+  onSeq?: (seq: number) => void;
+  /** Emitted when a sub-agent (`august__spawn_subagent` / `august__run_team`)
+   *  begins. The chat thread renders a nested sub-agent block under the
+   *  matching parent `tool_call`, keyed by `parentToolUseId`. */
+  onSubagentStart?: (data: {
+    jobId: string;
+    agentId: string;
+    parentJobId?: string | null;
+    parentToolUseId?: string;
+    scope?: string;
+    depth?: number;
+    task?: string;
+  }) => void;
+  /** Emitted when a sub-agent finishes. `status` is `completed` / `failed`
+   *  / `cancelled` (the last mirrors the parent turn's aborted state). */
+  onSubagentDone?: (data: {
+    jobId: string;
+    agentId: string;
+    status: 'completed' | 'failed' | 'cancelled';
+    message?: string;
+    result?: string;
+  }) => void;
+  /** Text block emitted from inside a running sub-agent. Rendered as a
+   *  `final_output` block inside the matching nested sub-agent block. */
+  onSubagentText?: (data: {
+    jobId: string;
+    agentId: string;
+    content: string;
+  }) => void;
+  /** Tool call inside a running sub-agent. Rendered as a `tool_call`
+   *  block inside the matching nested sub-agent block. */
+  onSubagentToolCall?: (data: {
+    jobId: string;
+    agentId: string;
+    id: string;
+    name: string;
+    input: Record<string, any>;
+    status?: 'running' | 'done' | 'error';
+  }) => void;
+  /** Tool result for a sub-agent tool call. Collapses the matching
+   *  `tool_call` to its final state. */
+  onSubagentToolResult?: (data: {
+    jobId: string;
+    agentId: string;
+    id: string;
+    content: any;
+    is_error?: boolean;
+    status?: 'done' | 'error';
+  }) => void;
+  /** Generic warnings (e.g. model fallback when a sub-agent alias couldn't
+   *  be resolved). */
+  onWarning?: (data: {
+    kind?: string;
+    message?: string;
+    jobId?: string;
+    toolUseId?: string;
+    [k: string]: any;
+  }) => void;
   onDone?: () => void;
   onError?: (data: { message: string }) => void;
 }

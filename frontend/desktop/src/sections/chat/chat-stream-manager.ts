@@ -17,9 +17,31 @@ export interface SessionStreamState {
     subagentId?: string;
     jobId?: string;
   }>;
+  /** Live sub-agent containers keyed by the agent job id. Each container
+   *  holds its own `blocks` array so thinking/text/tool_call/tool_result
+   *  events for the sub-agent are rendered nested under the parent
+   *  `august__spawn_subagent` / `august__run_team` tool call. */
+  subagentBlocks: Map<string, SubagentBlockState>;
   toolProgress: Map<string, ReadonlyArray<{ path: string; status: 'reading' | 'read' }>>;
   workbenchBtw: any;
   workbenchSession: WorkbenchSession | null;
+}
+
+export interface SubagentBlockState {
+  id: string;
+  jobId: string;
+  parentToolId: string;
+  agentId: string;
+  scope?: string;
+  task?: string;
+  depth?: number;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  startedAt: number;
+  finishedAt?: number;
+  /** Inner blocks (thinking/text/tool_call/tool_result) — same shape as
+   *  the parent message's blocks. */
+  blocks: MessageBlock[];
+  error?: string;
 }
 
 // Global store for the stream states of all sessions
@@ -27,6 +49,35 @@ export const $sessionStreamStates = atom<Record<string, SessionStreamState>>({})
 
 // Keep track of active fetch AbortControllers on the client
 const activeStreamControllers = new Map<string, AbortController>();
+
+/**
+ * Per-session SSE subscriber that holds the live GET /ui/workbench/chat/stream
+ * connection. Independent of the per-turn AbortController above — detaching
+ * this subscriber (e.g. when the user switches sessions) does NOT stop the
+ * backend generation; the connection is just closed client-side. Other
+ * subscribers (e.g. another tab) can re-attach via `sinceSeq` and replay
+ * the missed events from the persistent chat-event-log.
+ */
+const sessionSubscribers = new Map<string, {
+  controller: AbortController;
+  lastSeq: number;
+}>();
+
+const LAST_SEQ_PREFIX = 'chat_last_seq_';
+const SUB_LAST_SEQ = (sessionId: string) => `${LAST_SEQ_PREFIX}${sessionId}`;
+
+function readLastSeq(sessionId: string): number {
+  try {
+    const raw = localStorage.getItem(SUB_LAST_SEQ(sessionId));
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch (_) { return 0; }
+}
+
+function writeLastSeq(sessionId: string, seq: number) {
+  if (!Number.isFinite(seq) || seq <= 0) return;
+  try { localStorage.setItem(SUB_LAST_SEQ(sessionId), String(seq)); } catch (_) {}
+}
 
 const MESSAGES_STORAGE_PREFIX = 'chat_messages_';
 
@@ -49,6 +100,7 @@ export function getOrInitSessionStreamState(sessionId: string | null): SessionSt
     return {
       messages: [],
       subagentPrompts: new Map(),
+      subagentBlocks: new Map(),
       toolProgress: new Map(),
       workbenchBtw: null,
       workbenchSession: null,
@@ -88,6 +140,7 @@ export function getOrInitSessionStreamState(sessionId: string | null): SessionSt
   const state: SessionStreamState = {
     messages: initialMessages,
     subagentPrompts: new Map(),
+    subagentBlocks: new Map(),
     toolProgress: new Map(),
     workbenchBtw: null,
     workbenchSession,
@@ -366,14 +419,121 @@ export async function syncActiveStreams(ensureWorkbenchSession: () => Promise<an
     const res = await fetch('/ui/workbench/chat/active');
     if (!res.ok) return;
     const active: Record<string, string> = await res.json();
-    for (const [sessionId, status] of Object.entries(active)) {
-      if (status === 'streaming') {
-        reconnectChatStream(sessionId, ensureWorkbenchSession);
+    for (const sessionId of Object.keys(active)) {
+      if (active[sessionId] === 'streaming') {
+        // Re-attach the per-session SSE subscriber if we don't have one.
+        // The subscriber is independent of any per-turn AbortController —
+        // it stays attached across tab/session switches and only detaches
+        // when the backend reports the turn finished or the SSE closes.
+        ensureSessionSubscriber(sessionId);
       }
     }
   } catch (err) {
     console.warn('Failed to sync active streams:', err);
   }
+}
+
+/**
+ * Attach (or re-attach) the per-session SSE subscriber that pulls events
+ * from GET /ui/workbench/chat/stream. The subscriber is idempotent: if
+ * one is already attached for `sessionId` it is left alone. The reducer
+ * updates `subagentBlocks` (so background sub-agents appear in the chat
+ * thread even when no per-turn handler is active) and bumps the stored
+ * `lastSeq` so subsequent reconnects don't replay events.
+ */
+export function ensureSessionSubscriber(sessionId: string): void {
+  if (!sessionId) return;
+  if (sessionSubscribers.has(sessionId)) return;
+  const controller = new AbortController();
+  const sinceSeq = readLastSeq(sessionId);
+  const entry = { controller, lastSeq: sinceSeq };
+  sessionSubscribers.set(sessionId, entry);
+
+  const handlers: import('@/types/workbench').WorkbenchEventHandlers = {
+    onSeq: (seq) => {
+      if (seq > entry.lastSeq) {
+        entry.lastSeq = seq;
+        writeLastSeq(sessionId, seq);
+      }
+    },
+    onSubagentStart: (data) => {
+      if (!data?.jobId) return;
+      applySubagentEvent(sessionId, {
+        type: 'subagent_start',
+        jobId: data.jobId,
+        agentId: data.agentId,
+        parentToolUseId: data.parentToolUseId,
+        scope: data.scope,
+        task: data.task,
+        depth: data.depth,
+      });
+    },
+    onSubagentDone: (data) => {
+      if (!data?.jobId) return;
+      applySubagentEvent(sessionId, {
+        type: 'subagent_done',
+        jobId: data.jobId,
+        status: data.status,
+        message: data.message,
+        result: data.result,
+      });
+    },
+    onSubagentText: (data) => {
+      if (!data?.jobId) return;
+      applySubagentEvent(sessionId, {
+        type: 'subagent_text',
+        jobId: data.jobId,
+        content: data.content || '',
+      });
+    },
+    onSubagentToolCall: (data) => {
+      if (!data?.jobId) return;
+      applySubagentEvent(sessionId, {
+        type: 'subagent_tool_call',
+        jobId: data.jobId,
+        id: data.id,
+        name: data.name,
+        input: data.input,
+        status: data.status || 'running',
+      });
+    },
+    onSubagentToolResult: (data) => {
+      if (!data?.jobId) return;
+      applySubagentEvent(sessionId, {
+        type: 'subagent_tool_result',
+        jobId: data.jobId,
+        id: data.id,
+        content: data.content,
+        is_error: data.is_error,
+        status: data.status || (data.is_error ? 'error' : 'done'),
+      });
+    },
+  };
+
+  streamWorkbenchReconnect(sessionId, handlers, controller.signal, sinceSeq)
+    .catch((err) => {
+      if (err?.name !== 'AbortError') {
+        console.warn('[chat-stream-manager] subscriber error:', err?.message || err);
+      }
+    })
+    .finally(() => {
+      // If the controller is still ours (not aborted), drop the entry so
+      // a later sync can re-attach. Aborted means we intentionally stopped.
+      if (!controller.signal.aborted) {
+        sessionSubscribers.delete(sessionId);
+      }
+    });
+}
+
+export function detachSessionSubscriber(sessionId: string): void {
+  const entry = sessionSubscribers.get(sessionId);
+  if (!entry) return;
+  entry.controller.abort();
+  sessionSubscribers.delete(sessionId);
+}
+
+export function getSessionSubscriberLastSeq(sessionId: string): number {
+  return sessionSubscribers.get(sessionId)?.lastSeq ?? readLastSeq(sessionId);
 }
 
 export function appendBlockEvent(
@@ -474,4 +634,117 @@ export function appendBlockEvent(
   }
 
   return blocks;
+}
+
+/**
+ * Apply a backend SSE event to the per-session `subagentBlocks` map. Used
+ * by the per-session SSE subscriber (and by the per-turn reducer when it
+ * wants to surface sub-agent events). Events that don't target a sub-agent
+ * (no `jobId`) are no-ops.
+ *
+ * Returns `true` when the event mutated state, so callers can decide
+ * whether to trigger a re-render.
+ */
+export function applySubagentEvent(
+  sessionId: string,
+  event:
+    | { type: 'subagent_start'; jobId: string; agentId: string; parentToolUseId?: string; scope?: string; task?: string; depth?: number }
+    | { type: 'subagent_thinking'; jobId: string; content?: string }
+    | { type: 'subagent_text'; jobId: string; content?: string }
+    | { type: 'subagent_tool_call'; jobId: string; id: string; name: string; input?: any; context?: string; status?: 'running' | 'done' | 'error' }
+    | { type: 'subagent_tool_result'; jobId: string; id: string; content?: any; is_error?: boolean; status?: 'done' | 'error' | 'running'; summary?: string; error?: string; duration?: number }
+    | { type: 'subagent_done'; jobId: string; status?: 'completed' | 'failed' | 'cancelled'; message?: string; result?: string }
+): boolean {
+  if (!sessionId || !event?.jobId) return false;
+  const jobId = event.jobId;
+  let mutated = false;
+
+  if (event.type === 'subagent_start') {
+    updateSessionStreamState(sessionId, (prev) => {
+      const blocks = new Map(prev.subagentBlocks);
+      if (blocks.has(jobId)) return {};
+      blocks.set(jobId, {
+        id: `sb_${jobId}`,
+        jobId,
+        parentToolId: event.parentToolUseId || `subagent-${jobId}`,
+        agentId: event.agentId,
+        scope: event.scope,
+        task: event.task,
+        depth: event.depth,
+        status: 'running',
+        startedAt: Date.now(),
+        blocks: [],
+      });
+      mutated = true;
+      return { subagentBlocks: blocks };
+    });
+    return mutated;
+  }
+
+  if (event.type === 'subagent_done') {
+    updateSessionStreamState(sessionId, (prev) => {
+      const blocks = new Map(prev.subagentBlocks);
+      const current = blocks.get(jobId);
+      if (!current) return {};
+      const status = event.status === 'failed' ? 'failed'
+        : event.status === 'cancelled' ? 'cancelled'
+        : 'completed';
+      blocks.set(jobId, {
+        ...current,
+        status,
+        finishedAt: Date.now(),
+        error: event.message,
+      });
+      mutated = true;
+      return { subagentBlocks: blocks };
+    });
+    return mutated;
+  }
+
+  // For thinking/text/tool_call/tool_result events, mutate the inner
+  // blocks array via appendBlockEvent (same reducer as the parent).
+  updateSessionStreamState(sessionId, (prev) => {
+    const blocks = new Map(prev.subagentBlocks);
+    const current = blocks.get(jobId);
+    if (!current) return {};
+    if (event.type === 'subagent_thinking') {
+      const inner = appendBlockEvent(current.blocks, { type: 'thinking', content: event.content || '' });
+      blocks.set(jobId, { ...current, blocks: inner });
+      mutated = true;
+    } else if (event.type === 'subagent_text') {
+      const inner = appendBlockEvent(current.blocks, { type: 'text', content: event.content || '' });
+      blocks.set(jobId, { ...current, blocks: inner });
+      mutated = true;
+    } else if (event.type === 'subagent_tool_call') {
+      const context = event.context
+        || (event.input && Object.keys(event.input).length > 0
+          ? JSON.stringify(event.input, null, 2)
+          : '');
+      const inner = appendBlockEvent(current.blocks, {
+        type: 'tool_call',
+        id: event.id,
+        name: event.name,
+        context,
+        status: event.status || 'running',
+      });
+      blocks.set(jobId, { ...current, blocks: inner });
+      mutated = true;
+    } else if (event.type === 'subagent_tool_result') {
+      const resultStr = typeof event.content === 'string'
+        ? event.content
+        : event.content != null ? JSON.stringify(event.content) : '';
+      const inner = appendBlockEvent(current.blocks, {
+        type: 'tool_result',
+        id: event.id,
+        status: (event.status || (event.is_error ? 'error' : 'done')) as 'done' | 'error',
+        summary: event.summary || resultStr.slice(0, 240),
+        error: event.error || (event.is_error ? resultStr.slice(0, 240) : ''),
+        duration: event.duration,
+      });
+      blocks.set(jobId, { ...current, blocks: inner });
+      mutated = true;
+    }
+    return { subagentBlocks: blocks };
+  });
+  return mutated;
 }

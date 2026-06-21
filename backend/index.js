@@ -79,6 +79,7 @@ const { registerVisionTools } = require('./services/tools/vision-tools');
 const { registerDelegateTools } = require('./services/tools/delegate-tools');
 const { registerExecuteTools } = require('./services/tools/execute-tools');
 const { handleServiceConnectionRoutes } = require('./services/tools/service-connections');
+const chatEventLog = require('./services/workbench/chat-event-log');
 
 // ── New SPA (Vite/React/Tailwind v4) ──
 // The React SPA in web-dist/ is the only user UI. All non-API GET requests serve it.
@@ -964,11 +965,7 @@ const requestHandler = async (req, res) => {
                     gen.abortController.abort();
                 }
                 gen.status = 'aborted';
-                const event = { type: 'aborted', payload: {}, timestamp: Date.now() };
-                gen.events.push(event);
-                for (const listener of gen.listeners) {
-                    try { listener(event); } catch (_) {}
-                }
+                chatEventLog.append(sessionId, 'aborted', {});
             }
 
             // Initialize new generation state
@@ -981,73 +978,47 @@ const requestHandler = async (req, res) => {
             };
             activeGenerations.set(sessionId, gen);
 
-            // Start generation in background
+            // Emit a single 'started' event on the chat event log so a fresh
+            // subscriber (or one catching up after a tab switch) sees the
+            // turn boundary. The seq counter is the cursor the client uses
+            // to reconnect via `sinceSeq`.
+            const startEntry = chatEventLog.append(sessionId, 'started', {
+                sinceSeq: chatEventLog.currentSeq(sessionId)
+            });
+            const sinceSeq = startEntry ? startEntry.seq : 0;
+
+            // Start generation in background. Each event from the workbench
+            // stream is appended to the persistent chat event log; SSE
+            // subscribers attached via `chatEventLog.subscribe` get the same
+            // events through fan-out, so tabs/connections never block each
+            // other and a reconnect replays missed events automatically.
             sendWorkbenchMessageStream(data, (type, payload) => {
-                const event = { type, payload, timestamp: Date.now() };
-                gen.events.push(event);
-                for (const listener of gen.listeners) {
-                    try { listener(event); } catch (_) {}
-                }
+                chatEventLog.append(sessionId, type, payload || {});
             }, { signal: generationAbortCtrl.signal })
             .then(() => {
                 if (gen.status === 'streaming') {
                     gen.status = 'done';
-                    const event = { type: 'done', payload: {}, timestamp: Date.now() };
-                    gen.events.push(event);
-                    for (const listener of gen.listeners) {
-                        try { listener(event); } catch (_) {}
-                    }
+                    chatEventLog.append(sessionId, 'done', {});
                 }
             })
             .catch((err) => {
                 const isAbort = err?.name === 'AbortError' || generationAbortCtrl.signal.aborted;
                 if (gen.status === 'streaming') {
                     gen.status = isAbort ? 'aborted' : 'error';
-                    const event = {
-                        type: isAbort ? 'aborted' : 'error',
-                        payload: { message: err?.message || 'Unknown error' },
-                        timestamp: Date.now()
-                    };
-                    gen.events.push(event);
-                    for (const listener of gen.listeners) {
-                        try { listener(event); } catch (_) {}
-                    }
+                    chatEventLog.append(sessionId, isAbort ? 'aborted' : 'error', {
+                        message: err?.message || 'Unknown error'
+                    });
                 }
             });
 
-            // Write SSE response headers
-            res.writeHead(200, {
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'X-Accel-Buffering': 'no'
-            });
-
-            // Stream events to the active requester
-            const clientListener = (event) => {
-                res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`);
-                if (event.type === 'done' || event.type === 'error' || event.type === 'aborted') {
-                    res.end();
-                }
-            };
-
-            // Send any initial events that might have run instantly
-            for (const event of gen.events) {
-                res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`);
-            }
-
-            if (gen.status === 'streaming') {
-                gen.listeners.add(clientListener);
-                req.on('close', () => {
-                    gen.listeners.delete(clientListener);
-                });
-            } else {
-                res.end();
-            }
+            // Return immediately so the POST never holds the request open —
+            // subscribers pull events through GET /ui/workbench/chat/stream.
+            // `sinceSeq` is the cursor the client should pass on reconnect to
+            // skip events it already saw.
+            return sendJson(res, { status: 'started', sessionId, sinceSeq });
         } catch (e) {
             return sendError(res, e, 400);
         }
-        return;
     }
 
     if (req.url.startsWith('/ui/workbench/chat/stream') && req.method === 'GET') {
@@ -1056,6 +1027,8 @@ const requestHandler = async (req, res) => {
         if (!sessionId) {
             return sendJson(res, { error: 'sessionId is required' }, 400);
         }
+        const sinceSeqRaw = url.searchParams.get('sinceSeq');
+        const sinceSeq = sinceSeqRaw == null ? null : Number(sinceSeqRaw);
 
         res.writeHead(200, {
             'Content-Type': 'text/event-stream',
@@ -1064,33 +1037,38 @@ const requestHandler = async (req, res) => {
             'X-Accel-Buffering': 'no'
         });
 
-        const gen = activeGenerations.get(sessionId);
-        if (!gen) {
-            // No active stream, just write done and exit
-            res.write('event: done\ndata: {}\n\n');
-            res.end();
-            return;
-        }
-
-        // Replay all events of the current turn
-        for (const event of gen.events) {
-            res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`);
-        }
-
-        if (gen.status === 'streaming') {
-            const clientListener = (event) => {
-                res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`);
-                if (event.type === 'done' || event.type === 'error' || event.type === 'aborted') {
-                    res.end();
+        const writer = {
+            write: (entry) => {
+                try {
+                    res.write(`event: ${entry.type}\ndata: ${JSON.stringify(entry.payload || {})}\nid: ${entry.seq}\n\n`);
+                } catch (_) {
+                    // The response is already closed (e.g. client navigated
+                    // away). Returning false tells the subscriber loop to
+                    // drop us so we stop being invoked.
+                    return false;
                 }
-            };
-            gen.listeners.add(clientListener);
-            req.on('close', () => {
-                gen.listeners.delete(clientListener);
-            });
-        } else {
-            res.end();
+                if (entry.type === 'done' || entry.type === 'error' || entry.type === 'aborted') {
+                    try { res.end(); } catch (_) {}
+                    return false;
+                }
+                return true;
+            },
+            onError: () => {
+                try { res.end(); } catch (_) {}
+            },
+        };
+
+        const sub = chatEventLog.subscribe(sessionId, writer, { sinceSeq: Number.isFinite(sinceSeq) ? sinceSeq : undefined });
+        const gen = activeGenerations.get(sessionId);
+        const isLive = gen && gen.status === 'streaming';
+        if (!isLive && sub.replayed === 0) {
+            // No replay and no live generation — close immediately so the
+            // client doesn't wait for an event that never comes.
+            try { res.write('event: done\ndata: {}\n\n'); res.end(); } catch (_) {}
         }
+        req.on('close', () => {
+            sub.unsubscribe();
+        });
         return;
     }
 

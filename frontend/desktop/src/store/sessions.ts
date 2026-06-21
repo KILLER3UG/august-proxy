@@ -16,7 +16,7 @@ export interface Session {
   workbenchProvider?: string;
 }
 
-export type SessionStatus = 'idle' | 'working' | 'awaiting' | 'error' | 'done';
+export type SessionStatus = 'idle' | 'working' | 'awaiting' | 'error' | 'done' | 'streaming';
 
 export const $sessionStates = atom<Record<string, SessionStatus>>({});
 

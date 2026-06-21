@@ -23,6 +23,7 @@ import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
 import { applyToolProgress, visibleProgress, type ToolProgressEvent } from '@/lib/tool-progress';
 import { getToolLabel } from '@/lib/tool-labels';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
+import { SubagentBlock } from '@/components/chat/SubagentBlock';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
 import { Statusbar } from '@/components/shell/Statusbar';
@@ -34,7 +35,9 @@ import {
   startChatStream,
   stopChatStream,
   syncActiveStreams,
+  ensureSessionSubscriber,
   appendBlockEvent,
+  applySubagentEvent,
 } from './chat-stream-manager';
 import { Markdown } from './ChatMarkdown';
 import { makeStreamHandlers } from './makeStreamHandlers';
@@ -357,6 +360,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       return { subagentPrompts: next };
     });
   };
+  // Live sub-agent containers (jobId → SubagentBlockState). Independent of
+  // the per-turn reducer — driven by the per-session SSE subscriber so
+  // background sub-agents surface in the chat thread even when no per-turn
+  // handler is active.
+  const subagentBlocks = streamState.subagentBlocks || new Map();
   // Live tool-progress state: per-tool-id list of { path, status: 'reading' | 'read' }
   // entries, used to render the "Reading X" / "Read X" sub-list under
   // in-flight tool calls. Reset on each new turn.
@@ -1672,6 +1680,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             onRegenerate={() => handleRegenerate(i)}
                             toolProgress={toolProgress}
                             subagentPrompts={subagentPrompts}
+                            subagentBlocks={subagentBlocks}
                           />
                         </div>
                       );
@@ -1876,6 +1885,7 @@ function MessageBubble({
   onClarifyAnswer,
   toolProgress,
   subagentPrompts,
+  subagentBlocks,
 }: {
   message: ChatMessage;
   isLast?: boolean;
@@ -1897,6 +1907,12 @@ function MessageBubble({
     subagentId?: string;
     jobId?: string;
   }>;
+  /** Live sub-agent containers keyed by jobId. Each container has the
+   *  sub-agent's own blocks (thinking/text/tool_call/tool_result) and is
+   *  rendered as a nested block under the matching parent tool_call.
+   *  Independent of `subagentPrompts` so it survives tab switches and
+   *  backend reconnects. */
+  subagentBlocks?: Map<string, import('./chat-stream-manager').SubagentBlockState>;
 }) {
   const [showActions, setShowActions] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -2121,6 +2137,15 @@ function MessageBubble({
                             .filter(([k]) => k === block.tool!.id)
                             .map(([, v]) => v)
                         : [];
+                      // Live sub-agent containers attached to this parent
+                      // tool call. Keyed by `parentToolId` (= the tool id).
+                      // For run_team, multiple sub-agents can share the
+                      // same parent tool id — render all of them in order.
+                      const subagentContainers = isSubagentCall && block.tool.id && subagentBlocks
+                        ? Array.from(subagentBlocks.values())
+                            .filter((s) => s.parentToolId === block.tool!.id)
+                            .sort((a, b) => a.startedAt - b.startedAt)
+                        : [];
                       return (
                         <div className="my-1">
                           <ToolCallItemComp
@@ -2139,6 +2164,13 @@ function MessageBubble({
                                     ? `SUB-AGENT PROMPT · ${p.subagentId}`
                                     : 'SUB-AGENT PROMPT'}
                                 />
+                              ))}
+                            </div>
+                          )}
+                          {subagentContainers.length > 0 && (
+                            <div className="ml-3 mt-1 flex flex-col gap-1">
+                              {subagentContainers.map((s) => (
+                                <SubagentBlock key={s.jobId} state={s} />
                               ))}
                             </div>
                           )}

@@ -1692,6 +1692,24 @@ async function executeSubAgent(session, args, toolContext = {}) {
     });
     appendAgentJobMessage(job.id, 'user', task, { depth, parentAgentId, childAgentId });
 
+    // Emit a dedicated `subagent_start` event so the chat thread has a
+    // stable lifecycle boundary to render a nested sub-agent block under
+    // the parent `august__spawn_subagent` / `august__run_team` tool call.
+    // The matching `subagent_done` is emitted on every exit path below.
+    try {
+        safeEmit(toolContext.emit, 'subagent_start', {
+            jobId: job.id,
+            agentId: childAgentId,
+            parentJobId: job.parentJobId,
+            parentToolUseId: toolContext.toolUseId || `subagent-${job.id}`,
+            scope,
+            depth,
+            task,
+        });
+    } catch (emitErr) {
+        console.warn('[Workbench] subagent_start emit failed:', emitErr.message);
+    }
+
     // Mirror into the durable SQLite agent_tree so the UI can render a
     // hierarchical tree view without parsing the agent_jobs JSON.
     try {
@@ -1824,6 +1842,16 @@ async function executeSubAgent(session, args, toolContext = {}) {
                 const message = `Sub-agent upstream error: ${raw.slice(0, 300)}`;
                 failAgentJob(job.id, message, { loops: subLoops });
                 try { agentTree.recordResult(job.id, { status: 'failed', resultSummary: message }); } catch (_) {}
+                try {
+                    safeEmit(toolContext.emit, 'subagent_done', {
+                        jobId: job.id,
+                        agentId: childAgentId,
+                        status: 'failed',
+                        message,
+                    });
+                } catch (emitErr) {
+                    console.warn('[Workbench] subagent_done emit failed:', emitErr.message);
+                }
                 return { status: 'error', jobId: job.id, message };
             }
             const data = JSON.parse(raw);
@@ -1846,6 +1874,18 @@ async function executeSubAgent(session, args, toolContext = {}) {
             if (text) {
                 subResult = text;
                 appendAgentJobMessage(job.id, 'assistant', text, { loop: subLoops });
+                // Mirror the sub-agent's final text into the parent
+                // session's chat event log so the nested block shows
+                // the assistant's output live, then a final summary.
+                try {
+                    safeEmit(toolContext.emit, 'subagent_text', {
+                        jobId: job.id,
+                        agentId: childAgentId,
+                        content: text,
+                    });
+                } catch (emitErr) {
+                    console.warn('[Workbench] subagent_text emit failed:', emitErr.message);
+                }
             }
 
             const toolUses = content.filter(b => b.type === 'tool_use');
@@ -1856,6 +1896,23 @@ async function executeSubAgent(session, args, toolContext = {}) {
                 input: tu.input
             })), { loop: subLoops });
 
+            // Mirror each tool_use into the chat event log so the
+            // nested sub-agent block shows the tool calls in real time.
+            for (const tu of toolUses) {
+                try {
+                    safeEmit(toolContext.emit, 'subagent_tool_call', {
+                        jobId: job.id,
+                        agentId: childAgentId,
+                        id: tu.id,
+                        name: tu.name,
+                        input: tu.input,
+                        status: 'running',
+                    });
+                } catch (emitErr) {
+                    console.warn('[Workbench] subagent_tool_call emit failed:', emitErr.message);
+                }
+            }
+
             const results = await executeWorkbenchToolBatch(session, toolUses, {
                 agentId: childAgentId,
                 parentAgentId,
@@ -1865,6 +1922,22 @@ async function executeSubAgent(session, args, toolContext = {}) {
                 signal: toolContext.signal
             });
             appendAgentJobToolResult(job.id, 'tool_results', results, { loop: subLoops });
+            // Mirror tool results back so the nested block collapses
+            // each tool to a done state.
+            for (const r of results) {
+                try {
+                    safeEmit(toolContext.emit, 'subagent_tool_result', {
+                        jobId: job.id,
+                        agentId: childAgentId,
+                        id: r.tool_use_id,
+                        content: r.content,
+                        is_error: r.is_error,
+                        status: r.is_error ? 'error' : 'done',
+                    });
+                } catch (emitErr) {
+                    console.warn('[Workbench] subagent_tool_result emit failed:', emitErr.message);
+                }
+            }
             if (useOpenAi) {
                 toOpenAiMessage({ role: 'user', content: results }).forEach(m => subMessages.push(m));
             } else {
@@ -1873,11 +1946,31 @@ async function executeSubAgent(session, args, toolContext = {}) {
         } catch (e) {
             failAgentJob(job.id, e, { loops: subLoops });
             try { agentTree.recordResult(job.id, { status: 'failed', resultSummary: e?.message || String(e) }); } catch (_) {}
+            try {
+                safeEmit(toolContext.emit, 'subagent_done', {
+                    jobId: job.id,
+                    agentId: childAgentId,
+                    status: 'failed',
+                    message: e?.message || String(e),
+                });
+            } catch (emitErr) {
+                console.warn('[Workbench] subagent_done emit failed:', emitErr.message);
+            }
             return { status: 'error', jobId: job.id, message: `Sub-agent error: ${e.message}` };
         }
     }
     completeAgentJob(job.id, subResult || '(no text output)', { loops: subLoops });
     try { agentTree.recordResult(job.id, { status: 'completed', resultSummary: subResult || '(no text output)' }); } catch (_) {}
+    try {
+        safeEmit(toolContext.emit, 'subagent_done', {
+            jobId: job.id,
+            agentId: childAgentId,
+            status: 'completed',
+            result: subResult || '(no text output)',
+        });
+    } catch (emitErr) {
+        console.warn('[Workbench] subagent_done emit failed:', emitErr.message);
+    }
     return {
         status: 'ok',
         jobId: job.id,

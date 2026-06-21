@@ -44,6 +44,7 @@ import {
   type Folder,
   type SessionStatus,
 } from "@/store/sessions";
+import { $activeChatSessions, startChatActiveStreamsPoller } from "@/store/chat-active-streams";
 import { toast } from "sonner";
 import { modelDisplayParts } from "@/sections/chat/ChatThread";
 
@@ -84,6 +85,23 @@ export function SessionList({
   const sessions = useStore($sessions);
   const folders = useStore($folders);
   const sessionStates = useStore($sessionStates);
+  const activeChatSessions = useStore($activeChatSessions);
+
+  useEffect(() => {
+    startChatActiveStreamsPoller();
+  }, []);
+
+  // Merge the local per-session status with the live poller output so a
+  // session that has a backend generation in progress shows the pulse
+  // dot even when the user is on a different session. The local status
+  // takes precedence when both are present.
+  const mergedSessionStates: Record<string, SessionStatus> = (() => {
+    const next: Record<string, SessionStatus> = { ...sessionStates };
+    for (const [id, status] of Object.entries(activeChatSessions)) {
+      if (!next[id]) next[id] = status;
+    }
+    return next;
+  })();
 
   const handleFolderUploadClick = async (
     e: React.MouseEvent<HTMLButtonElement>,
@@ -243,7 +261,7 @@ export function SessionList({
                     session={s}
                     active={activeId === s.id}
                     pinned
-                    status={sessionStates[s.id]}
+                    status={mergedSessionStates[s.id]}
                     folders={folders}
                     onClick={() => onSelect(s)}
                     onTogglePin={() => togglePin(s.id)}
@@ -299,7 +317,7 @@ export function SessionList({
                       folder={folder}
                       count={folderSessions.length}
                       hasActiveSession={folderSessions.some(
-                        (s) => sessionStates[s.id] === "working",
+                        (s) => mergedSessionStates[s.id] === "working" || mergedSessionStates[s.id] === "streaming",
                       )}
                       onToggleCollapse={() => toggleFolderCollapse(folder.id)}
                       onNewSession={() => onNewInFolder?.(folder.id)}
@@ -317,7 +335,7 @@ export function SessionList({
                             session={s}
                             active={activeId === s.id}
                             pinned={false}
-                            status={sessionStates[s.id]}
+                            status={mergedSessionStates[s.id]}
                             folders={folders}
                             onClick={() => onSelect(s)}
                             onTogglePin={() => togglePin(s.id)}
@@ -384,7 +402,7 @@ export function SessionList({
                             session={s}
                             active={activeId === s.id}
                             pinned={false}
-                            status={sessionStates[s.id]}
+                            status={mergedSessionStates[s.id]}
                             folders={folders}
                             onClick={() => onSelect(s)}
                             onTogglePin={() => togglePin(s.id)}
@@ -746,6 +764,7 @@ function SessionRow({
             className={cn(
               "inline-block size-1.5 rounded-full shrink-0 transition-colors",
               status === "working" && "bg-amber-400",
+              status === "streaming" && "bg-amber-400 animate-pulse",
               status === "done" && "bg-emerald-400",
               status === "awaiting" && "bg-blue-400",
               status === "error" && "bg-red-400",
@@ -765,6 +784,25 @@ function SessionRow({
           </p>
         </div>
         <AnimatePresence>
+          {status === "streaming" && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="flex items-center gap-1 ml-3 overflow-hidden"
+            >
+              <span className="text-xs text-amber-400/80 font-medium">
+                {modelDisplayParts(session.model).name}
+              </span>
+              <motion.span
+                className="text-xs text-amber-400/60 font-medium"
+                animate={{ opacity: [0.4, 1, 0.4] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+              >
+                running in background
+              </motion.span>
+            </motion.div>
+          )}
           {status === "working" && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
