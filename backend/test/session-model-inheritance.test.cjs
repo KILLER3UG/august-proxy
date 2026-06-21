@@ -411,3 +411,20 @@ test('hasSubAgentFallback: returns false when fallback config is absent', () => 
     assert.equal(inherit.hasSubAgentFallback(), false);
 });
 
+test('sub-agent spawned concurrently with parent still sees the parent alias', async () => {
+    const inherit = injectMocks();
+    const parentP = inherit.resolveInheritedModel({
+        sessionId: 'sess-race-1',
+        model: 'Opus 4.7-Alias',
+        logger: silentLogger(),
+    });
+    const subP = inherit.resolveInheritedModel({
+        sessionId: 'sess-race-1',
+        model: 'deepseek-chat',
+        logger: silentLogger(),
+    });
+    const [parent, sub] = await Promise.all([parentP, subP]);
+    assert.equal(parent.action, 'use_alias');
+    assert.equal(sub.action, 'use_inherited');
+    assert.equal(sub.parentAlias, 'Opus 4.7-Alias');
+});

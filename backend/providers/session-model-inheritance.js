@@ -172,35 +172,42 @@ function hasSubAgentFallback() {
  */
 async function recordAliasResolution({ sessionId, alias, resolution, logger } = {}) {
     if (!sessionId || !alias || !resolution) return null;
+    return enqueue(sessionId, () => recordAliasResolutionInQueue({ sessionId, alias, resolution, logger }));
+}
+
+/**
+ * Synchronous variant of recordAliasResolution for use INSIDE an enqueue
+ * callback. Calling recordAliasResolution from there would deadlock because
+ * it would queue a new tick behind the current one. Callers already inside
+ * enqueue (resolveInheritedModel → runFirstAliasPath etc.) must use this
+ * helper instead.
+ */
+function recordAliasResolutionInQueue({ sessionId, alias, resolution, logger } = {}) {
+    if (!sessionId || !alias || !resolution) return null;
     const log = logger || console;
+    const state = touchSession(sessionId);
+    const existing = state.aliases.get(alias);
+    const brandNew = !existing;
 
-    return enqueue(sessionId, () => {
-        const state = touchSession(sessionId);
-        const existing = state.aliases.get(alias);
-        const brandNew = !existing;
-
-        // Detect concurrent update to the same alias (queued picks up latest).
-        if (!brandNew) {
-            // Log only when the provider or model actually changed.
-            if (existing.provider !== resolution.provider || existing.model !== resolution.model) {
-                log.log(`[Session ${sessionId}] Alias update for "${alias}" queued – applying in order.`);
-            }
-        } else {
-            log.log(`[Session ${sessionId}] New alias "${alias}" → ${resolution.model} via ${resolution.provider}. Stored.`);
+    if (!brandNew) {
+        if (existing.provider !== resolution.provider || existing.model !== resolution.model) {
+            log.log(`[Session ${sessionId}] Alias update for "${alias}" queued – applying in order.`);
         }
+    } else {
+        log.log(`[Session ${sessionId}] New alias "${alias}" → ${resolution.model} via ${resolution.provider}. Stored.`);
+    }
 
-        const entry = {
-            alias,
-            provider: resolution.provider,
-            model: resolution.model,
-            updatedAt: nowIso(),
-            updatedAtMs: nowMs(),
-            source: brandNew ? 'alias_request' : 'alias_update',
-        };
-        state.aliases.set(alias, entry);
-        state.lastAlias = alias;
-        return { ...entry, brandNew };
-    });
+    const entry = {
+        alias,
+        provider: resolution.provider,
+        model: resolution.model,
+        updatedAt: nowIso(),
+        updatedAtMs: nowMs(),
+        source: brandNew ? 'alias_request' : 'alias_update',
+    };
+    state.aliases.set(alias, entry);
+    state.lastAlias = alias;
+    return { ...entry, brandNew };
 }
 
 /**
@@ -227,140 +234,164 @@ async function recordAliasResolution({ sessionId, alias, resolution, logger } = 
 async function resolveInheritedModel({ sessionId, model, parentAlias, metadata, headers, logger, customResolver } = {}) {
     if (!sessionId || !model) return null;
     const log = logger || console;
-    const state = touchSession(sessionId);
+    // Serialise the whole resolve-read-record cycle through the per-session
+    // queue. Without this, a sub-agent request that races the parent's
+    // recordAliasResolution reads state.aliases / state.lastAlias before the
+    // parent has written them, so the sub-agent falls through to "no alias yet"
+    // and the request is rejected. Wrapping the entire body in enqueue()
+    // guarantees the parent's writes are visible to the sub-agent's reads.
+    return enqueue(sessionId, () => resolveInheritedModelInner({ sessionId, model, parentAlias, metadata, headers, logger: log, customResolver }));
+}
 
+async function resolveInheritedModelInner({ sessionId, model, parentAlias, metadata, headers, logger, customResolver }) {
+    const state = touchSession(sessionId);
     const isAlias = isAliasCandidate(model);
     const hasAliasEntries = state.aliases.size > 0;
 
-    // ── No alias entries yet ──
     if (!hasAliasEntries) {
         if (!isAlias) {
-            // Check fallback settings
-            let fallbackAllowed = false;
-            let fallbackConfig = null;
-            try {
-                const { getConfig } = require('../lib/config');
-                const cfg = getConfig();
-                if (cfg && cfg.subAgentFallback && cfg.subAgentFallback.enabled) {
-                    fallbackConfig = cfg.subAgentFallback;
-                    const mode = fallbackConfig.mode || 'session_only';
-                    if (mode === 'always') {
-                        fallbackAllowed = true;
-                    } else if (mode === 'session_only') {
-                        if (sessionId) fallbackAllowed = true;
-                    } else if (mode === 'marked_subagent_only') {
-                        const isMarked = (metadata && (metadata.subAgent === true || metadata.isSubAgent === true || metadata.agentRole === 'subagent' || metadata.parentAlias || metadata.parentSessionId))
-                            || (headers && (headers['x-august-subagent'] === '1' || headers['x-parent-alias']));
-                        if (isMarked) fallbackAllowed = true;
-                    }
-                }
-            } catch (err) {
-                log.warn(`[Session ${sessionId}] Error reading sub-agent fallback config: ${err.message}`);
+            return runFallbackPath({ sessionId, model, metadata, headers, logger, customResolver });
+        }
+        return runFirstAliasPath({ sessionId, model, logger, customResolver });
+    }
+
+    if (isAlias) {
+        return runExistingAliasPath({ sessionId, model, logger, customResolver });
+    }
+
+    return runSubAgentPath({ sessionId, model, parentAlias, metadata, headers, logger });
+}
+
+async function runFallbackPath({ sessionId, model, metadata, headers, logger, customResolver }) {
+    // Check fallback settings
+    let fallbackAllowed = false;
+    let fallbackConfig = null;
+    try {
+        const { getConfig } = require('../lib/config');
+        const cfg = getConfig();
+        if (cfg && cfg.subAgentFallback && cfg.subAgentFallback.enabled) {
+            fallbackConfig = cfg.subAgentFallback;
+            const mode = fallbackConfig.mode || 'session_only';
+            if (mode === 'always') {
+                fallbackAllowed = true;
+            } else if (mode === 'session_only') {
+                if (sessionId) fallbackAllowed = true;
+            } else if (mode === 'marked_subagent_only') {
+                const isMarked = (metadata && (metadata.subAgent === true || metadata.isSubAgent === true || metadata.agentRole === 'subagent' || metadata.parentAlias || metadata.parentSessionId))
+                    || (headers && (headers['x-august-subagent'] === '1' || headers['x-parent-alias']));
+                if (isMarked) fallbackAllowed = true;
             }
+        }
+    } catch (err) {
+        logger.warn(`[Session ${sessionId}] Error reading sub-agent fallback config: ${err.message}`);
+    }
 
-            if (fallbackAllowed && fallbackConfig && fallbackConfig.model && fallbackConfig.provider) {
-                // Translate display alias → raw upstream id before sending to upstream.
-                // Without this, cfg.subAgentFallback.model = "MiniMax-M3" would reach
-                // the upstream provider and produce 401 ModelError. If the catalog
-                // cannot translate, reject the request — forwarding a display alias
-                // to upstream is what caused the intermittent 401 ModelError.
-                let resolvedModel = fallbackConfig.model;
-                let resolvedProvider = fallbackConfig.provider;
-                try {
-                    const details = await resolveModelAliasDetails(fallbackConfig.model);
-                    if (details && details.modelId && details.modelId !== fallbackConfig.model) {
-                        resolvedModel = details.modelId;
-                        if (details.provider) resolvedProvider = details.provider;
-                        log.log(`[Session ${sessionId}] Sub-agent fallback: translated display alias "${fallbackConfig.model}" → "${resolvedModel}" via "${resolvedProvider}".`);
-                    } else if (looksLikeDisplayAlias(fallbackConfig.model)) {
-                        log.warn(`[Session ${sessionId}] Sub-agent fallback: cannot translate display alias "${fallbackConfig.model}" — catalog is cold and no mapping exists. Rejecting request.`);
-                        return {
-                            resolution: null,
-                            parentAlias: null,
-                            action: 'alias_resolution_failed',
-                        };
-                    }
-                } catch (err) {
-                    log.warn(`[Session ${sessionId}] Sub-agent fallback alias resolution failed for "${fallbackConfig.model}": ${err.message}`);
-                    return {
-                        resolution: null,
-                        parentAlias: null,
-                        action: 'alias_resolution_failed',
-                    };
-                }
-
-                // Coerce provider display name → canonical id (e.g. "MiniMax (Global)" → "minimax").
-                try {
-                    const profile = getProviderProfile(fallbackConfig.provider);
-                    if (profile && profile.name && profile.name !== fallbackConfig.provider) {
-                        resolvedProvider = profile.name;
-                    }
-                } catch (_) { /* trust user config */ }
-
-                log.log(`[Session ${sessionId}] Sub-agent fallback: routing "${model}" → ${resolvedModel} via ${resolvedProvider}.`);
-                try {
-                    const alias = model; // use requested model as the alias/sentinel key
-                    const resolution = { provider: resolvedProvider, model: resolvedModel };
-                    await recordAliasResolution({ sessionId, alias, resolution, logger });
-                    return {
-                        resolution,
-                        parentAlias: alias,
-                        action: 'use_alias',
-                    };
-                } catch (err) {
-                    log.warn(`[Session ${sessionId}] Fallback resolution failed for "${model}": ${err.message}`);
-                }
+    if (fallbackAllowed && fallbackConfig && fallbackConfig.model && fallbackConfig.provider) {
+        // Translate display alias → raw upstream id before sending to upstream.
+        // Without this, cfg.subAgentFallback.model = "MiniMax-M3" would reach
+        // the upstream provider and produce 401 ModelError. If the catalog
+        // cannot translate, reject the request — forwarding a display alias
+        // to upstream is what caused the intermittent 401 ModelError.
+        let resolvedModel = fallbackConfig.model;
+        let resolvedProvider = fallbackConfig.provider;
+        try {
+            const details = await resolveModelAliasDetails(fallbackConfig.model);
+            if (details && details.modelId && details.modelId !== fallbackConfig.model) {
+                resolvedModel = details.modelId;
+                if (details.provider) resolvedProvider = details.provider;
+                logger.log(`[Session ${sessionId}] Sub-agent fallback: translated display alias "${fallbackConfig.model}" → "${resolvedModel}" via "${resolvedProvider}".`);
+            } else if (looksLikeDisplayAlias(fallbackConfig.model)) {
+                logger.warn(`[Session ${sessionId}] Sub-agent fallback: cannot translate display alias "${fallbackConfig.model}" — catalog is cold and no mapping exists. Rejecting request.`);
+                return {
+                    resolution: null,
+                    parentAlias: null,
+                    action: 'alias_resolution_failed',
+                };
             }
-
-            log.log(`[Session ${sessionId}] Sub-agent request but no alias resolved yet – rejecting.`);
+        } catch (err) {
+            logger.warn(`[Session ${sessionId}] Sub-agent fallback alias resolution failed for "${fallbackConfig.model}": ${err.message}`);
             return {
                 resolution: null,
                 parentAlias: null,
-                action: 'reject_first_non_alias',
+                action: 'alias_resolution_failed',
             };
         }
-        // First request: resolve and record.
+
+        // Coerce provider display name → canonical id (e.g. "MiniMax (Global)" → "minimax").
         try {
-            const resolved = customResolver
-                ? customResolver(model, { providerHint: null, defaultAlias: modelResolver.DEFAULT_ALIAS })
-                : modelResolver.resolve(model);
-            const alias = resolved.alias;
-            const resolution = { provider: resolved.provider, model: resolved.model };
-            const result = await recordAliasResolution({ sessionId, alias, resolution, logger });
-            log.log(`[Session ${sessionId}] First alias "${alias}" → ${resolution.model} via ${resolution.provider}. Stored.`);
+            const profile = getProviderProfile(fallbackConfig.provider);
+            if (profile && profile.name && profile.name !== fallbackConfig.provider) {
+                resolvedProvider = profile.name;
+            }
+        } catch (_) { /* trust user config */ }
+
+        logger.log(`[Session ${sessionId}] Sub-agent fallback: routing "${model}" → ${resolvedModel} via ${resolvedProvider}.`);
+        try {
+            const alias = model; // use requested model as the alias/sentinel key
+            const resolution = { provider: resolvedProvider, model: resolvedModel };
+            recordAliasResolutionInQueue({ sessionId, alias, resolution, logger });
             return {
                 resolution,
                 parentAlias: alias,
                 action: 'use_alias',
             };
         } catch (err) {
-            log.warn(`[Session ${sessionId}] Alias resolution failed for "${model}": ${err.message}`);
-            return { resolution: null, parentAlias: null, action: 'alias_resolution_failed' };
+            logger.warn(`[Session ${sessionId}] Fallback resolution failed for "${model}": ${err.message}`);
         }
     }
 
-    // ── Existing session ──
-    if (isAlias) {
-        // Alias request: resolve (may have been updated) and record.
-        try {
-            const resolved = customResolver
-                ? customResolver(model, { providerHint: null, defaultAlias: modelResolver.DEFAULT_ALIAS })
-                : modelResolver.resolve(model);
-            const alias = resolved.alias;
-            const resolution = { provider: resolved.provider, model: resolved.model };
-            const result = await recordAliasResolution({ sessionId, alias, resolution, logger });
-            // If alias already existed, recordAliasResolution already logged update.
-            return {
-                resolution,
-                parentAlias: alias,
-                action: 'use_alias',
-            };
-        } catch (err) {
-            log.warn(`[Session ${sessionId}] Alias resolution failed for "${model}": ${err.message}`);
-            return { resolution: null, parentAlias: null, action: 'alias_resolution_failed' };
-        }
-    }
+    logger.log(`[Session ${sessionId}] Sub-agent request but no alias resolved yet – rejecting.`);
+    return {
+        resolution: null,
+        parentAlias: null,
+        action: 'reject_first_non_alias',
+    };
+}
 
+function runFirstAliasPath({ sessionId, model, logger, customResolver }) {
+    // First request: resolve and record.
+    try {
+        const resolved = customResolver
+            ? customResolver(model, { providerHint: null, defaultAlias: modelResolver.DEFAULT_ALIAS })
+            : modelResolver.resolve(model);
+        const alias = resolved.alias;
+        const resolution = { provider: resolved.provider, model: resolved.model };
+        recordAliasResolutionInQueue({ sessionId, alias, resolution, logger });
+        logger.log(`[Session ${sessionId}] First alias "${alias}" → ${resolution.model} via ${resolution.provider}. Stored.`);
+        return {
+            resolution,
+            parentAlias: alias,
+            action: 'use_alias',
+        };
+    } catch (err) {
+        logger.warn(`[Session ${sessionId}] Alias resolution failed for "${model}": ${err.message}`);
+        return { resolution: null, parentAlias: null, action: 'alias_resolution_failed' };
+    }
+}
+
+function runExistingAliasPath({ sessionId, model, logger, customResolver }) {
+    // Alias request: resolve (may have been updated) and record.
+    try {
+        const resolved = customResolver
+            ? customResolver(model, { providerHint: null, defaultAlias: modelResolver.DEFAULT_ALIAS })
+            : modelResolver.resolve(model);
+        const alias = resolved.alias;
+        const resolution = { provider: resolved.provider, model: resolved.model };
+        recordAliasResolutionInQueue({ sessionId, alias, resolution, logger });
+        // If alias already existed, recordAliasResolutionInQueue already logged update.
+        return {
+            resolution,
+            parentAlias: alias,
+            action: 'use_alias',
+        };
+    } catch (err) {
+        logger.warn(`[Session ${sessionId}] Alias resolution failed for "${model}": ${err.message}`);
+        return { resolution: null, parentAlias: null, action: 'alias_resolution_failed' };
+    }
+}
+
+async function runSubAgentPath({ sessionId, model, parentAlias, metadata, headers, logger }) {
+    const state = touchSession(sessionId);
     // ── Non‑alias request (sub‑agent) ──
     // Determine parent alias.
     const resolvedParentAlias = parentAlias
@@ -369,7 +400,7 @@ async function resolveInheritedModel({ sessionId, model, parentAlias, metadata, 
         || state.lastAlias;
 
     if (!resolvedParentAlias) {
-        log.log(`[Session ${sessionId}] Sub‑agent request but no alias resolved yet – rejecting.`);
+        logger.log(`[Session ${sessionId}] Sub‑agent request but no alias resolved yet – rejecting.`);
         return {
             resolution: null,
             parentAlias: null,
@@ -380,7 +411,7 @@ async function resolveInheritedModel({ sessionId, model, parentAlias, metadata, 
     const entry = state.aliases.get(resolvedParentAlias);
     if (!entry) {
         // Parent alias known but not in map — should not happen; fallback.
-        log.warn(`[Session ${sessionId}] Parent alias "${resolvedParentAlias}" not found in alias entries – falling back to latest.`);
+        logger.warn(`[Session ${sessionId}] Parent alias "${resolvedParentAlias}" not found in alias entries – falling back to latest.`);
         const fallback = state.lastAlias ? state.aliases.get(state.lastAlias) : null;
         if (!fallback) {
             return {
@@ -390,7 +421,7 @@ async function resolveInheritedModel({ sessionId, model, parentAlias, metadata, 
             };
         }
         const resolution = { provider: fallback.provider, model: fallback.model };
-        log.log(`[Session ${sessionId}] Sub‑agent "${model}" → using inherited model ${resolution.model} via ${resolution.provider} (parent alias: ${fallback.alias}, fallback from missing entry).`);
+        logger.log(`[Session ${sessionId}] Sub‑agent "${model}" → using inherited model ${resolution.model} via ${resolution.provider} (parent alias: ${fallback.alias}, fallback from missing entry).`);
         return {
             resolution,
             parentAlias: fallback.alias,
@@ -402,9 +433,9 @@ async function resolveInheritedModel({ sessionId, model, parentAlias, metadata, 
     // recent — if not explicit, it came from lastAlias, so warn.
     const explicitParent = parentAlias || getParentAliasFromRequestBody(metadata) || getParentAliasFromHeaders(headers);
     if (!explicitParent) {
-        log.log(`[Session ${sessionId}] Sub‑agent "${model}" → using inherited model ${entry.model} via ${entry.provider} (parent alias: ${entry.alias}, from last alias – no explicit parentAlias in request).`);
+        logger.log(`[Session ${sessionId}] Sub‑agent "${model}" → using inherited model ${entry.model} via ${entry.provider} (parent alias: ${entry.alias}, from last alias – no explicit parentAlias in request).`);
     } else {
-        log.log(`[Session ${sessionId}] Sub‑agent "${model}" → using inherited model ${entry.model} via ${entry.provider} (parent alias: ${entry.alias}).`);
+        logger.log(`[Session ${sessionId}] Sub‑agent "${model}" → using inherited model ${entry.model} via ${entry.provider} (parent alias: ${entry.alias}).`);
     }
 
     return {
