@@ -7,11 +7,39 @@ const path = require('node:path');
 const CONFIG_PATH = path.join(__dirname, '..', 'lib', 'config.js');
 const RESOLVER_PATH = path.join(__dirname, '..', 'providers', 'model-resolver.js');
 const INHERIT_PATH = path.join(__dirname, '..', 'providers', 'session-model-inheritance.js');
+const MODEL_LIST_PATH = path.join(__dirname, '..', 'providers', 'model-list.js');
+const PROVIDER_REGISTRY_PATH = path.join(__dirname, '..', 'providers', 'provider-registry.js');
 
 const USER_ALIASES = [
     { alias: 'Opus 4.7-Alias', targetModel: 'claude-opus-4-7', targetProvider: 'anthropic' },
     { alias: 'Sonnet 4.6-Alias', targetModel: 'claude-sonnet-4-6', targetProvider: 'opencode-zen' },
 ];
+
+const ALIAS_TRANSLATIONS = {
+    'MiniMax-M3': { modelId: 'minimax-m3', provider: 'minimax' },
+    'MiniMax M3': { modelId: 'minimax-m3', provider: 'minimax' },
+};
+
+const PROVIDER_CANONICAL = {
+    'minimax': 'minimax',
+    'MiniMax (Global)': 'minimax',
+    'anthropic': 'anthropic',
+};
+
+const MODEL_LIST_FIXTURE = {
+    resolveModelAliasDetails: (input) => {
+        if (ALIAS_TRANSLATIONS[input]) return ALIAS_TRANSLATIONS[input];
+        return { modelId: input, provider: '' };
+    },
+};
+
+const PROVIDER_REGISTRY_FIXTURE = {
+    getProvider: (name) => {
+        if (!name) return null;
+        const canonical = PROVIDER_CANONICAL[name] || name;
+        return { name: canonical };
+    },
+};
 
 const RESOLVER_FIXTURE = {
     listAliases: () => [
@@ -39,7 +67,7 @@ const RESOLVER_FIXTURE = {
     },
 };
 
-function injectMocks(fallbackConfig) {
+function injectMocks(fallbackConfig, overrides = {}) {
     require.cache[CONFIG_PATH] = {
         id: CONFIG_PATH,
         filename: CONFIG_PATH,
@@ -51,6 +79,18 @@ function injectMocks(fallbackConfig) {
         filename: RESOLVER_PATH,
         loaded: true,
         exports: RESOLVER_FIXTURE,
+    };
+    require.cache[MODEL_LIST_PATH] = {
+        id: MODEL_LIST_PATH,
+        filename: MODEL_LIST_PATH,
+        loaded: true,
+        exports: overrides.modelList || MODEL_LIST_FIXTURE,
+    };
+    require.cache[PROVIDER_REGISTRY_PATH] = {
+        id: PROVIDER_REGISTRY_PATH,
+        filename: PROVIDER_REGISTRY_PATH,
+        loaded: true,
+        exports: overrides.providerRegistry || PROVIDER_REGISTRY_FIXTURE,
     };
     delete require.cache[INHERIT_PATH];
     return require(INHERIT_PATH);
@@ -234,7 +274,7 @@ test('sub-agent fallback: session_only mode resolves when session exists', async
     });
     assert.equal(out.action, 'use_alias');
     assert.equal(out.resolution.provider, 'minimax');
-    assert.equal(out.resolution.model, 'MiniMax-M3');
+    assert.equal(out.resolution.model, 'minimax-m3');
 });
 
 test('sub-agent fallback: session_only mode rejects when session is missing', async () => {
@@ -258,7 +298,7 @@ test('sub-agent fallback: marked_subagent_only mode resolves when marked', async
         logger: silentLogger(),
     });
     assert.equal(out.action, 'use_alias');
-    assert.equal(out.resolution.model, 'MiniMax-M3');
+    assert.equal(out.resolution.model, 'minimax-m3');
 });
 
 test('sub-agent fallback: marked_subagent_only mode rejects when not marked', async () => {
@@ -281,7 +321,7 @@ test('sub-agent fallback: always mode always resolves', async () => {
         logger: silentLogger(),
     });
     assert.equal(out.action, 'use_alias');
-    assert.equal(out.resolution.model, 'MiniMax-M3');
+    assert.equal(out.resolution.model, 'minimax-m3');
 });
 
 test('sub-agent fallback: disabled fallback rejects', async () => {
@@ -293,5 +333,81 @@ test('sub-agent fallback: disabled fallback rejects', async () => {
         logger: silentLogger(),
     });
     assert.equal(out.action, 'reject_first_non_alias');
+});
+
+test('sub-agent fallback: display alias translates to raw upstream id', async () => {
+    const fallback = { enabled: true, mode: 'always', provider: 'minimax', model: 'MiniMax-M3' };
+    const inherit = injectMocks(fallback);
+    const out = await inherit.resolveInheritedModel({
+        sessionId: 'sess-translate-1',
+        model: 'probe-non-alias',
+        logger: silentLogger(),
+    });
+    assert.equal(out.action, 'use_alias');
+    assert.equal(out.resolution.provider, 'minimax');
+    assert.equal(out.resolution.model, 'minimax-m3');
+});
+
+test('sub-agent fallback: raw upstream id passes through unchanged', async () => {
+    const fallback = { enabled: true, mode: 'always', provider: 'minimax', model: 'minimax-m3' };
+    const inherit = injectMocks(fallback);
+    const out = await inherit.resolveInheritedModel({
+        sessionId: 'sess-translate-2',
+        model: 'probe-non-alias',
+        logger: silentLogger(),
+    });
+    assert.equal(out.action, 'use_alias');
+    assert.equal(out.resolution.provider, 'minimax');
+    assert.equal(out.resolution.model, 'minimax-m3');
+});
+
+test('sub-agent fallback: cold catalog rejects untranslatable display aliases', async () => {
+    let warned = false;
+    const captureLogger = {
+        log() {},
+        warn(msg) { if (typeof msg === 'string' && msg.includes('cannot translate')) warned = true; },
+        error() {},
+    };
+    const coldModelList = {
+        resolveModelAliasDetails: (input) => ({ modelId: input, provider: '' }),
+    };
+    const fallback = { enabled: true, mode: 'always', provider: 'minimax', model: 'MiniMax-M3' };
+    const inherit = injectMocks(fallback, { modelList: coldModelList });
+    const out = await inherit.resolveInheritedModel({
+        sessionId: 'sess-cold-1',
+        model: 'probe-non-alias',
+        logger: captureLogger,
+    });
+    assert.equal(out.action, 'alias_resolution_failed');
+    assert.equal(out.resolution, null);
+    assert.equal(warned, true);
+});
+
+test('sub-agent fallback: provider display name coerces to canonical id', async () => {
+    const fallback = { enabled: true, mode: 'always', provider: 'MiniMax (Global)', model: 'minimax-m3' };
+    const inherit = injectMocks(fallback);
+    const out = await inherit.resolveInheritedModel({
+        sessionId: 'sess-provider-1',
+        model: 'probe-non-alias',
+        logger: silentLogger(),
+    });
+    assert.equal(out.action, 'use_alias');
+    assert.equal(out.resolution.provider, 'minimax');
+    assert.equal(out.resolution.model, 'minimax-m3');
+});
+
+test('hasSubAgentFallback: returns true when fallback is enabled', () => {
+    const inherit = injectMocks({ enabled: true, mode: 'session_only', provider: 'anthropic', model: 'claude-sonnet-4-6' });
+    assert.equal(inherit.hasSubAgentFallback(), true);
+});
+
+test('hasSubAgentFallback: returns false when fallback is disabled', () => {
+    const inherit = injectMocks({ enabled: false, mode: 'off', provider: '', model: '' });
+    assert.equal(inherit.hasSubAgentFallback(), false);
+});
+
+test('hasSubAgentFallback: returns false when fallback config is absent', () => {
+    const inherit = injectMocks(null);
+    assert.equal(inherit.hasSubAgentFallback(), false);
 });
 

@@ -21,6 +21,16 @@
  */
 
 const modelResolver = require('./model-resolver');
+const { resolveModelAliasDetails } = require('./model-list');
+const { getProvider: getProviderProfile } = require('./provider-registry');
+
+// Heuristic: detect display aliases that should have been translated.
+// Real upstream ids are typically lowercase, no spaces, contain hyphens.
+// Display aliases often contain spaces or capital letters.
+function looksLikeDisplayAlias(s) {
+    if (!s || typeof s !== 'string') return false;
+    return /[A-Z]/.test(s) || /\s/.test(s);
+}
 
 // Built‑in Claude public model ids that count as aliases.
 const BUILTIN_CLAUDE_ALIASES = Object.freeze([
@@ -136,6 +146,19 @@ function isAliasCandidate(input) {
 }
 
 /**
+ * Quick check whether sub-agent fallback is enabled in config.
+ * Used by the adapter gate so non-alias sub-agent requests can reach
+ * resolveInheritedModel (which has the fallback logic).
+ */
+function hasSubAgentFallback() {
+    try {
+        const { getConfig } = require('../lib/config');
+        const cfg = getConfig();
+        return Boolean(cfg && cfg.subAgentFallback && cfg.subAgentFallback.enabled);
+    } catch (_) { return false; }
+}
+
+/**
  * Record the resolution of an alias for a session.  This is the only way
  * to create or update an alias entry.  Mutations are serialised per session.
  *
@@ -236,10 +259,48 @@ async function resolveInheritedModel({ sessionId, model, parentAlias, metadata, 
             }
 
             if (fallbackAllowed && fallbackConfig && fallbackConfig.model && fallbackConfig.provider) {
-                log.log(`[Session ${sessionId}] First request "${model}" is not an alias. Using sub-agent fallback resolution: ${fallbackConfig.model} via ${fallbackConfig.provider}.`);
+                // Translate display alias → raw upstream id before sending to upstream.
+                // Without this, cfg.subAgentFallback.model = "MiniMax-M3" would reach
+                // the upstream provider and produce 401 ModelError. If the catalog
+                // cannot translate, reject the request — forwarding a display alias
+                // to upstream is what caused the intermittent 401 ModelError.
+                let resolvedModel = fallbackConfig.model;
+                let resolvedProvider = fallbackConfig.provider;
+                try {
+                    const details = await resolveModelAliasDetails(fallbackConfig.model);
+                    if (details && details.modelId && details.modelId !== fallbackConfig.model) {
+                        resolvedModel = details.modelId;
+                        if (details.provider) resolvedProvider = details.provider;
+                        log.log(`[Session ${sessionId}] Sub-agent fallback: translated display alias "${fallbackConfig.model}" → "${resolvedModel}" via "${resolvedProvider}".`);
+                    } else if (looksLikeDisplayAlias(fallbackConfig.model)) {
+                        log.warn(`[Session ${sessionId}] Sub-agent fallback: cannot translate display alias "${fallbackConfig.model}" — catalog is cold and no mapping exists. Rejecting request.`);
+                        return {
+                            resolution: null,
+                            parentAlias: null,
+                            action: 'alias_resolution_failed',
+                        };
+                    }
+                } catch (err) {
+                    log.warn(`[Session ${sessionId}] Sub-agent fallback alias resolution failed for "${fallbackConfig.model}": ${err.message}`);
+                    return {
+                        resolution: null,
+                        parentAlias: null,
+                        action: 'alias_resolution_failed',
+                    };
+                }
+
+                // Coerce provider display name → canonical id (e.g. "MiniMax (Global)" → "minimax").
+                try {
+                    const profile = getProviderProfile(fallbackConfig.provider);
+                    if (profile && profile.name && profile.name !== fallbackConfig.provider) {
+                        resolvedProvider = profile.name;
+                    }
+                } catch (_) { /* trust user config */ }
+
+                log.log(`[Session ${sessionId}] Sub-agent fallback: routing "${model}" → ${resolvedModel} via ${resolvedProvider}.`);
                 try {
                     const alias = model; // use requested model as the alias/sentinel key
-                    const resolution = { provider: fallbackConfig.provider, model: fallbackConfig.model };
+                    const resolution = { provider: resolvedProvider, model: resolvedModel };
                     await recordAliasResolution({ sessionId, alias, resolution, logger });
                     return {
                         resolution,
@@ -410,6 +471,7 @@ function clearSession(sessionId) {
 
 module.exports = {
     isAliasCandidate,
+    hasSubAgentFallback,
     getSessionState,
     recordAliasResolution,
     resolveInheritedModel,
