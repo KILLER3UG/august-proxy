@@ -14,6 +14,7 @@ import {
 } from '@/api/backend-ui';
 import { formatTimeAgo } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'overview' | 'audit' | 'rollback' | 'observations') => void }) {
     // Poll every 5s so the "Tokens per day" bar for today grows in real time
@@ -98,47 +99,49 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
                         <CardTitle>Model usage</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        {donutSlices.length > 0 ? (
-                            <>
-                                <WorkspaceDonut
-                                    slices={donutSlices}
-                                    centerLabel={donutCenter}
-                                    centerSub="tokens"
-                                    formatValue={formatCompact}
-                                />
-                                {(() => {
-                                    const top = byModel.data?.results?.[0];
-                                    if (!top) return null;
-                                    return (
-                                        <div className="mt-4 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
-                                            <div className="flex items-center justify-between gap-3">
-                                                <div className="min-w-0">
-                                                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">
-                                                        Top model
+                        <ErrorBoundary fallback={<p className="text-sm text-muted-foreground">Model usage unavailable.</p>}>
+                            {donutSlices.length > 0 ? (
+                                <>
+                                    <WorkspaceDonut
+                                        slices={donutSlices}
+                                        centerLabel={donutCenter}
+                                        centerSub="tokens"
+                                        formatValue={formatCompact}
+                                    />
+                                    {(() => {
+                                        const top = byModel.data?.results?.[0];
+                                        if (!top) return null;
+                                        return (
+                                            <div className="mt-4 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <div className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">
+                                                            Top model
+                                                        </div>
+                                                        <div className="mt-0.5 text-sm font-semibold text-foreground truncate">
+                                                            {top.model || 'unknown'}
+                                                        </div>
                                                     </div>
-                                                    <div className="mt-0.5 text-sm font-semibold text-foreground truncate">
-                                                        {top.model || 'unknown'}
-                                                    </div>
-                                                </div>
-                                                <div className="shrink-0 text-right">
-                                                    <div className="text-lg font-semibold tabular-nums text-white">
-                                                        {top.percent.toFixed(1)}%
-                                                    </div>
-                                                    <div className="text-[10px] text-muted-foreground/70">
-                                                        share
+                                                    <div className="shrink-0 text-right">
+                                                        <div className="text-lg font-semibold tabular-nums text-white">
+                                                            {top.percent.toFixed(1)}%
+                                                        </div>
+                                                        <div className="text-[10px] text-muted-foreground/70">
+                                                            share
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    );
-                                })()}
-                            </>
-                        ) : (
-                            <SettingsEmptyState
-                                title="No model usage yet"
-                                description="Once you have chat sessions in the last 30 days, the model breakdown will appear here."
-                            />
-                        )}
+                                        );
+                                    })()}
+                                </>
+                            ) : (
+                                <SettingsEmptyState
+                                    title="No model usage yet"
+                                    description="Once you have chat sessions in the last 30 days, the model breakdown will appear here."
+                                />
+                            )}
+                        </ErrorBoundary>
                     </CardContent>
                 </Card>
 
@@ -147,11 +150,13 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
                         <CardTitle>Tokens per day</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        {byDay.data && byDay.data.results && byDay.data.results.length > 0 ? (
-                            <TokensByDayBars rows={byDay.data.results} />
-                        ) : (
-                            <SettingsEmptyState title="No token usage yet" description="Activity will appear here as you work." />
-                        )}
+                        <ErrorBoundary fallback={<p className="text-sm text-muted-foreground">Tokens per day unavailable.</p>}>
+                            {byDay.data && byDay.data.results && byDay.data.results.length > 0 ? (
+                                <TokensByDayBars rows={byDay.data.results} />
+                            ) : (
+                                <SettingsEmptyState title="No token usage yet" description="Activity will appear here as you work." />
+                            )}
+                        </ErrorBoundary>
                     </CardContent>
                 </Card>
             </div>
@@ -284,9 +289,9 @@ function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number;
                             <span>{hoverRow.date}{hoverRow.date === todayKey ? ' (today)' : ''}</span>
                             <span className="tabular-nums">{formatCompact(hoverRow.tokens)}</span>
                         </div>
-                        {hoverRow.models.length > 0 && (
+                        {(hoverRow.models ?? []).length > 0 && (
                             <div className="mt-1.5 space-y-1">
-                                {hoverRow.models.map(m => (
+                                {(hoverRow.models ?? []).map(m => (
                                     <div key={m.model} className="flex items-center gap-2 text-muted-foreground">
                                         <span
                                             className="size-2 rounded-full shrink-0"
