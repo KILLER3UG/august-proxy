@@ -76,7 +76,7 @@ function deriveModelInheritanceSessionIdFromOpenAi(body, req) {
 
 function shouldApplySessionModelInheritance(model, metadata, headers) {
     const parentAlias = sessionModelInheritance.getParentAliasFromRequest({ metadata }, { headers });
-    return Boolean(parentAlias || sessionModelInheritance.isAliasCandidate(model));
+    return Boolean(parentAlias || sessionModelInheritance.isAliasCandidate(model) || sessionModelInheritance.hasSubAgentFallback());
 }
 
 // ── Safely copy relevant request headers into a plain object ──
@@ -767,6 +767,7 @@ async function handleChatCompletions(req, res, cleanPath, reqId) {
                     if (inherited.parentAlias) {
                         oReq.metadata = { ...(oReq.metadata || {}), parentAlias: inherited.parentAlias };
                     }
+                    console.log(`[Proxy Sub-Agent Route] session=${modelSessionId} incoming="${requestedModel}" → upstream="${inherited.resolution.model}" via "${inherited.resolution.provider}" action="${inherited.action}"`);
                 } else if (inherited && inherited.action && inherited.action.startsWith('reject_')) {
                     requestStatus = 'error';
                     requestError = inherited.action === 'reject_first_non_alias'

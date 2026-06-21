@@ -428,3 +428,16 @@ test('sub-agent spawned concurrently with parent still sees the parent alias', a
     assert.equal(sub.action, 'use_inherited');
     assert.equal(sub.parentAlias, 'Opus 4.7-Alias');
 });
+
+test('resolveInheritedModel emits a single routing-decision log on every sub-agent fallback call', async () => {
+    const lines = [];
+    const captureLogger = {
+        log(msg) { if (typeof msg === 'string' && /Sub-agent fallback: routing/.test(msg)) lines.push(msg); },
+        warn() {}, error() {},
+    };
+    const fallback = { enabled: true, mode: 'always', provider: 'minimax', model: 'minimax-m3' };
+    const inherit = injectMocks(fallback);
+    await inherit.resolveInheritedModel({ sessionId: 'sess-log-1', model: 'probe', logger: captureLogger });
+    assert.equal(lines.length, 1, 'expected exactly one routing-decision log line');
+    assert.match(lines[0], /Sub-agent fallback: routing "probe" → minimax-m3 via minimax/);
+});
