@@ -244,8 +244,13 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
 // the donut and the Tokens-per-day chart.
 
 function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number; models?: { model: string; tokens: number }[] }> }) {
-    const max = Math.max(1, ...rows.map(r => r.tokens));
-    const recent = rows.slice(-14);
+    const safeRows = (rows ?? []).map(r => ({
+        date: String(r.date ?? ''),
+        tokens: Number(r.tokens) || 0,
+        models: Array.isArray(r.models) ? r.models.filter(m => m && typeof m.model === 'string') : [],
+    }));
+    const max = Math.max(1, ...safeRows.map(r => r.tokens));
+    const recent = safeRows.slice(-14);
     // "Today" in the same UTC-day key the backend uses, so the highlighted
     // bar matches the row the aggregator is actively growing.
     const todayKey = new Date().toISOString().slice(0, 10);
@@ -260,13 +265,13 @@ function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number;
             >
                 {recent.map((r, i) => {
                     const isToday = r.date === todayKey;
-                    const heightPct = Math.max(2, (r.tokens / max) * 100);
-                    const segments = r.models ?? [];
+                    const rowTotal = r.tokens || r.models.reduce((s, m) => s + (m.tokens || 0), 0);
+                    const heightPct = Math.max(2, (rowTotal / max) * 100);
                     return (
                         <div
-                            key={r.date}
+                            key={r.date || i}
                             className={cn(
-                                'flex-1 rounded-t overflow-hidden flex flex-col-reverse transition relative cursor-pointer',
+                                'flex-1 rounded-t overflow-hidden flex flex-col justify-end transition relative cursor-pointer',
                                 isToday && 'ring-1 ring-emerald-300/50'
                             )}
                             style={{ height: `${heightPct}%` }}
@@ -274,22 +279,28 @@ function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number;
                             onFocus={() => setHover(i)}
                             tabIndex={0}
                         >
-                            {segments.length === 0 ? (
-                                <div className={cn(
-                                    'flex-1',
-                                    isToday ? 'bg-emerald-400/60' : 'bg-primary/70'
-                                )} />
-                            ) : segments.map(m => (
+                            {r.models.length === 0 ? (
                                 <div
-                                    key={m.model}
-                                    className="w-full transition-opacity hover:opacity-80"
-                                    style={{
-                                        backgroundColor: modelColor(m.model),
-                                        flexGrow: Math.max(0.001, m.tokens),
-                                    }}
-                                    title={`${m.model}: ${formatCompact(m.tokens)} tokens`}
+                                    className={cn(
+                                        'w-full rounded-t',
+                                        isToday ? 'bg-emerald-400/60' : 'bg-primary/70'
+                                    )}
+                                    style={{ height: '100%' }}
                                 />
-                            ))}
+                            ) : r.models.map(m => {
+                                const pct = rowTotal > 0 ? (m.tokens / rowTotal) * 100 : 0;
+                                return (
+                                    <div
+                                        key={m.model}
+                                        className="w-full transition-opacity hover:opacity-80"
+                                        style={{
+                                            backgroundColor: modelColor(m.model),
+                                            height: `${pct}%`,
+                                        }}
+                                        title={`${m.model}: ${formatCompact(m.tokens)} tokens`}
+                                    />
+                                );
+                            })}
                         </div>
                     );
                 })}
@@ -305,9 +316,9 @@ function TokensByDayBars({ rows }: { rows: Array<{ date: string; tokens: number;
                             <span>{hoverRow.date}{hoverRow.date === todayKey ? ' (today)' : ''}</span>
                             <span className="tabular-nums">{formatCompact(hoverRow.tokens)}</span>
                         </div>
-                        {(hoverRow.models ?? []).length > 0 && (
+                        {hoverRow.models.length > 0 && (
                             <div className="mt-1.5 space-y-1">
-                                {(hoverRow.models ?? []).map(m => (
+                                {hoverRow.models.map(m => (
                                     <div key={m.model} className="flex items-center gap-2 text-muted-foreground">
                                         <span
                                             className="size-2 rounded-full shrink-0"
