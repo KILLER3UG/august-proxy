@@ -10,6 +10,8 @@
  * toggle.
  */
 
+import { formatBytes, formatDuration } from './utils';
+
 export interface FormattedContext {
   /** Human-readable summary, e.g. `Searched: "plan verification"`. */
   summary: string;
@@ -85,6 +87,25 @@ const SUBAGENT_OPS = new Set([
 ]);
 
 const LIST_OPS = new Set(['list_dir', 'list_directory', 'ls']);
+
+const SYSTEM_OPS = new Set([
+  'system_info',
+  'describe_environment',
+]);
+
+const DIAGNOSTIC_OPS = new Set([
+  'diagnose_proxy',
+  'list_proxy_capabilities',
+]);
+
+const AGENT_LIST_OPS = new Set([
+  'list_agent_registry',
+  'list_agent_jobs',
+]);
+
+const AGENT_GET_OPS = new Set(['get_agent_job']);
+
+const ACTIVITY_OPS = new Set(['get_activity']);
 
 function pickString(obj: Record<string, unknown>, keys: string[]): string | undefined {
   for (const k of keys) {
@@ -316,6 +337,175 @@ export function formatToolResult(toolName: string, summaryText?: string): Format
       }
       return {
         summary: `${matches.length} match${matches.length === 1 ? '' : 'es'} found`,
+        raw,
+        kind: 'success',
+      };
+    }
+  }
+
+  // system_info / describe_environment → success with platform + memory + uptime
+  if (SYSTEM_OPS.has(canonical)) {
+    // Backend wraps the real payload in `{ ok, result }` for system_info,
+    // and returns `{ generatedAt, environment: {...} }` for describe_environment.
+    // Unwrap whichever shape is present.
+    const sys = (parsed.result && typeof parsed.result === 'object' ? parsed.result : parsed) as Record<string, unknown>;
+    if (canonical === 'system_info' && sys && typeof sys === 'object') {
+      const platform = pickString(sys, ['platform']) ?? '?';
+      const arch = pickString(sys, ['arch']);
+      const cpus = Array.isArray(sys.cpus) ? sys.cpus.length : (typeof sys.cpus === 'number' ? sys.cpus : undefined);
+      const totalMem = typeof sys.totalmem === 'number' ? sys.totalmem : undefined;
+      const uptime = typeof sys.uptime === 'number' ? sys.uptime : undefined;
+      const parts = [platform];
+      if (arch) parts.push(arch);
+      if (typeof cpus === 'number') parts.push(`${cpus} CPU${cpus === 1 ? '' : 's'}`);
+      if (typeof totalMem === 'number') parts.push(formatBytes(totalMem));
+      if (typeof uptime === 'number') parts.push(`up ${formatDuration(uptime * 1000)}`);
+      return { summary: `System info: ${parts.join(' · ')}`, raw, kind: 'success' };
+    }
+    if (canonical === 'describe_environment' && sys && typeof sys === 'object') {
+      const env = (sys.environment && typeof sys.environment === 'object' ? sys.environment : sys) as Record<string, unknown>;
+      const envName = pickString(env, ['name', 'env', 'environment']) ?? 'environment';
+      const version = pickString(env, ['version']);
+      const head = version ? `${envName} ${version}` : envName;
+      return { summary: `Environment: ${head}`, raw, kind: 'success' };
+    }
+  }
+
+  // diagnose_proxy / list_proxy_capabilities
+  if (DIAGNOSTIC_OPS.has(canonical)) {
+    if (canonical === 'diagnose_proxy') {
+      const status = pickString(parsed, ['status']) ?? 'unknown';
+      const capsCount = Array.isArray(parsed.capabilities) ? parsed.capabilities.length : 0;
+      const actCount = Array.isArray(parsed.activity) ? parsed.activity.length : 0;
+      const actionsCount = Array.isArray(parsed.recommendedActions) ? parsed.recommendedActions.length : 0;
+      if (status === 'ok') {
+        return {
+          summary: `Diagnostics: ok · ${capsCount} capabilities · ${actCount} recent events`,
+          raw,
+          kind: 'success',
+        };
+      }
+      return {
+        summary: `Diagnostics: ${status} · ${actionsCount} action${actionsCount === 1 ? '' : 's'} recommended`,
+        raw,
+        kind: 'neutral',
+      };
+    }
+    if (canonical === 'list_proxy_capabilities') {
+      const caps = Array.isArray(parsed.capabilities) ? parsed.capabilities
+        : Array.isArray(parsed) ? parsed
+        : null;
+      if (caps) {
+        const names = caps
+          .map((c: unknown): string => {
+            if (typeof c === 'string') return c;
+            if (c && typeof c === 'object') {
+              const o = c as Record<string, unknown>;
+              return pickString(o, ['name', 'id', 'tool']) ?? '';
+            }
+            return '';
+          })
+          .filter(Boolean)
+          .slice(0, 3);
+        const more = caps.length - names.length;
+        const head = names.length > 0 ? `: ${names.join(', ')}` : '';
+        const tail = more > 0 ? ` (+${more} more)` : '';
+        return {
+          summary: `${caps.length} capabilit${caps.length === 1 ? 'y' : 'ies'}${head}${tail}`,
+          raw,
+          kind: 'success',
+        };
+      }
+    }
+  }
+
+  // list_agent_registry / list_agent_jobs
+  if (AGENT_LIST_OPS.has(canonical)) {
+    if (canonical === 'list_agent_registry') {
+      const agents = Array.isArray(parsed.agents) ? parsed.agents : null;
+      if (agents) {
+        const roles = agents
+          .map((a: unknown): string => {
+            if (a && typeof a === 'object') {
+              const o = a as Record<string, unknown>;
+              return pickString(o, ['role', 'type', 'name']) ?? '';
+            }
+            return '';
+          })
+          .filter(Boolean);
+        const uniqueRoles = Array.from(new Set(roles)).slice(0, 3);
+        const roleSummary = uniqueRoles.length > 0 ? ` (${uniqueRoles.join(', ')})` : '';
+        const more = agents.length - uniqueRoles.length;
+        const tail = more > 0 ? ` +${more} more` : '';
+        return {
+          summary: `${agents.length} agent${agents.length === 1 ? '' : 's'} registered${roleSummary}${tail}`,
+          raw,
+          kind: 'success',
+        };
+      }
+    }
+    if (canonical === 'list_agent_jobs') {
+      const jobs = Array.isArray(parsed.jobs) ? parsed.jobs : null;
+      if (jobs) {
+        const counts: Record<string, number> = {};
+        for (const j of jobs) {
+          if (j && typeof j === 'object') {
+            const status = pickString(j as Record<string, unknown>, ['status']) ?? 'unknown';
+            counts[status] = (counts[status] ?? 0) + 1;
+          }
+        }
+        const parts = Object.entries(counts).map(([s, n]) => `${n} ${s}`);
+        const head = parts.length > 0 ? ` · ${parts.join(' · ')}` : '';
+        return {
+          summary: `${jobs.length} job${jobs.length === 1 ? '' : 's'}${head}`,
+          raw,
+          kind: 'success',
+        };
+      }
+    }
+  }
+
+  // get_agent_job
+  if (AGENT_GET_OPS.has(canonical)) {
+    const id = pickString(parsed, ['id', 'job_id', 'jobId']);
+    const status = pickString(parsed, ['status']) ?? 'unknown';
+    const startedAt = typeof parsed.startedAt === 'number' ? parsed.startedAt : undefined;
+    const completedAt = typeof parsed.completedAt === 'number' ? parsed.completedAt : undefined;
+    const duration =
+      typeof startedAt === 'number' && typeof completedAt === 'number'
+        ? formatDuration(completedAt - startedAt)
+        : undefined;
+    const idStr = id ? id.slice(0, 8) : '?';
+    const durStr = duration ? ` · ${duration}` : '';
+    return {
+      summary: `Job ${idStr} · ${status}${durStr}`,
+      raw,
+      kind: status === 'completed' || status === 'done' || status === 'ok' ? 'success' : 'neutral',
+    };
+  }
+
+  // get_activity
+  if (ACTIVITY_OPS.has(canonical)) {
+    const events = Array.isArray(parsed.events) ? parsed.events
+      : Array.isArray(parsed.activity) ? parsed.activity
+      : null;
+    if (events) {
+      if (events.length === 0) {
+        return { summary: 'No recent activity', raw, kind: 'success' };
+      }
+      const first = events[0];
+      let firstSummary = '';
+      if (typeof first === 'string') firstSummary = first;
+      else if (first && typeof first === 'object') {
+        const o = first as Record<string, unknown>;
+        firstSummary =
+          pickString(o, ['message', 'summary', 'event', 'description']) ??
+          pickString(o, ['type', 'kind', 'action']) ??
+          '';
+      }
+      const tail = firstSummary ? `: "${truncate(firstSummary, 80)}"` : '';
+      return {
+        summary: `${events.length} recent event${events.length === 1 ? '' : 's'}${tail}`,
         raw,
         kind: 'success',
       };

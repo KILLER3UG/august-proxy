@@ -46,4 +46,31 @@ describe('getToolLabel mapping and cleaning', () => {
     expect(getToolLabel('august__another_tool', { status: 'running' })).toBe('Another Tool');
     expect(getToolLabel('workbench_my_custom_action', { status: 'running' })).toBe('My Custom Action');
   });
+
+  it('humanizes the system / diagnostic / agent / activity tool set', () => {
+    // Running forms
+    expect(getToolLabel('august__system_info')).toBe('Reading system info');
+    expect(getToolLabel('workbench_system_info')).toBe('Reading system info');
+    expect(getToolLabel('august__describe_environment')).toBe('Describing environment');
+    expect(getToolLabel('workbench_describe_environment')).toBe('Describing environment');
+    expect(getToolLabel('august__diagnose_proxy')).toBe('Diagnosing proxy');
+    expect(getToolLabel('workbench_diagnose_proxy')).toBe('Diagnosing proxy');
+    expect(getToolLabel('august__list_proxy_capabilities')).toBe('Listing capabilities');
+    expect(getToolLabel('august__list_agent_registry')).toBe('Listing agents');
+    expect(getToolLabel('workbench_list_agent_registry')).toBe('Listing agents');
+    expect(getToolLabel('august__list_agent_jobs')).toBe('Listing jobs');
+    expect(getToolLabel('august__get_agent_job')).toBe('Fetching job');
+    expect(getToolLabel('august__get_activity')).toBe('Reading activity');
+
+    // Done forms (mirror past-simple)
+    expect(getToolLabel('august__system_info', { status: 'done' })).toBe('Read system info');
+    expect(getToolLabel('workbench_system_info', { status: 'done' })).toBe('Read system info');
+    expect(getToolLabel('august__describe_environment', { status: 'done' })).toBe('Described environment');
+    expect(getToolLabel('august__diagnose_proxy', { status: 'done' })).toBe('Diagnosed proxy');
+    expect(getToolLabel('august__list_proxy_capabilities', { status: 'done' })).toBe('Listed capabilities');
+    expect(getToolLabel('august__list_agent_registry', { status: 'done' })).toBe('Listed agents');
+    expect(getToolLabel('august__list_agent_jobs', { status: 'done' })).toBe('Listed jobs');
+    expect(getToolLabel('august__get_agent_job', { status: 'done' })).toBe('Fetched job');
+    expect(getToolLabel('august__get_activity', { status: 'done' })).toBe('Read activity');
+  });
 });

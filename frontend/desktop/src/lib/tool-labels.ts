@@ -87,6 +87,26 @@ const TOOL_LABEL_MAP: Record<string, string> = {
   'read_url_content': 'Fetching',
   'execute_url': 'Fetching',
 
+  // System / environment / diagnostics
+  'august__system_info': 'Reading system info',
+  'workbench_system_info': 'Reading system info',
+  'august__describe_environment': 'Describing environment',
+  'workbench_describe_environment': 'Describing environment',
+  'august__diagnose_proxy': 'Diagnosing proxy',
+  'workbench_diagnose_proxy': 'Diagnosing proxy',
+  'august__list_proxy_capabilities': 'Listing capabilities',
+  'workbench_list_proxy_capabilities': 'Listing capabilities',
+
+  // Agent registry / jobs
+  'august__list_agent_registry': 'Listing agents',
+  'workbench_list_agent_registry': 'Listing agents',
+  'august__list_agent_jobs': 'Listing jobs',
+  'workbench_list_agent_jobs': 'Listing jobs',
+  'august__get_agent_job': 'Fetching job',
+  'workbench_get_agent_job': 'Fetching job',
+  'august__get_activity': 'Reading activity',
+  'workbench_get_activity': 'Reading activity',
+
   // Planning
   'august__submit_plan': 'Submitting plan',
   'august__update_todos': 'Updating todos',
@@ -176,6 +196,26 @@ const TOOL_VERB_DONE: Record<string, string> = {
   'august__api': 'Called API',
   'read_url_content': 'Fetched',
   'execute_url': 'Fetched',
+
+  // System / environment / diagnostics
+  'august__system_info': 'Read system info',
+  'workbench_system_info': 'Read system info',
+  'august__describe_environment': 'Described environment',
+  'workbench_describe_environment': 'Described environment',
+  'august__diagnose_proxy': 'Diagnosed proxy',
+  'workbench_diagnose_proxy': 'Diagnosed proxy',
+  'august__list_proxy_capabilities': 'Listed capabilities',
+  'workbench_list_proxy_capabilities': 'Listed capabilities',
+
+  // Agent registry / jobs
+  'august__list_agent_registry': 'Listed agents',
+  'workbench_list_agent_registry': 'Listed agents',
+  'august__list_agent_jobs': 'Listed jobs',
+  'workbench_list_agent_jobs': 'Listed jobs',
+  'august__get_agent_job': 'Fetched job',
+  'workbench_get_agent_job': 'Fetched job',
+  'august__get_activity': 'Read activity',
+  'workbench_get_activity': 'Read activity',
 
   // Planning
   'august__submit_plan': 'Submitted plan',
