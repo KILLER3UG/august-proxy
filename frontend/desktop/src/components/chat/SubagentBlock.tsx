@@ -7,19 +7,68 @@
  * The block's contents are the sub-agent's own `blocks` array, rendered
  * through the same reducer used for the parent assistant message (thinking,
  * final_output, tool_call, tool_result, command).
+ *
+ * Structural layout:
+ *   ┌─────────────────────────────────────────┐
+ *   │ Sub-agent [header]    [Completed] 1.2s │
+ *   │   Task: …                                │
+ *   │   Tool call 1                            │
+ *   │   Tool call 2                            │
+ *   │   ┌─────────────────────────────────┐    │
+ *   │   │ Final summary text in a box…   │    │
+ *   │   └─────────────────────────────────┘    │
+ *   └─────────────────────────────────────────┘
+ *
+ * The outer left rail (`border-l-2`) is owned by ChatThread's wrapper
+ * (which already provides the `ml-3` indent that aligns this block with
+ * the sibling `PromptDisclosure` chip).
  */
 
 import { useState, useEffect, useMemo, type ReactNode, type ReactElement } from 'react';
-import { ChevronDown, ChevronRight, Loader2, CheckCircle2, AlertCircle, Bot, StopCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, CheckCircle2, AlertCircle, StopCircle, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { MessageBlock } from '@/sections/chat/ChatThread';
 import type { SubagentBlockState } from '@/sections/chat/chat-stream-manager';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { ToolCallItem } from '@/components/chat/ToolCallItem';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
+import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
+import { getAgentRoleLabel } from '@/lib/tool-labels';
+
+/** Sub-agent prompt payload stored on ChatThread's `subagentPrompts` map. */
+export interface SubagentPromptEntry {
+  content: string;
+  systemPrompt: string;
+  userMessage: string;
+  tokens: number;
+  subagentId?: string;
+  jobId?: string;
+}
+
+const SUBAGENT_TOOL_NAMES = new Set([
+  'august__spawn_subagent',
+  'august_spawn_subagent',
+  'workbench_spawn_subagent',
+  'invoke_subagent',
+  'august__run_team',
+  'workbench_run_team',
+]);
+
+function isSubagentToolName(name?: string): boolean {
+  if (!name) return false;
+  const clean = name.replace(/^@/, '');
+  return SUBAGENT_TOOL_NAMES.has(clean);
+}
 
 interface SubagentBlockProps {
   state: SubagentBlockState;
+  /**
+   * Maps for nested sub-agent dispatch. When a `tool_call` inside this block
+   * is itself a sub-agent spawn, we look up its child container + prompt and
+   * render them indented under the tool row (outside the final output box).
+   */
+  subBlocks?: Map<string, SubagentBlockState>;
+  subPrompts?: Map<string, SubagentPromptEntry>;
 }
 
 const STATUS_LABEL: Record<SubagentBlockState['status'], string> = {
@@ -43,7 +92,7 @@ function StatusIcon({ status }: { status: SubagentBlockState['status'] }) {
   return <StopCircle className="size-3" />;
 }
 
-export function SubagentBlock({ state }: SubagentBlockProps): ReactElement {
+export function SubagentBlock({ state, subBlocks, subPrompts }: SubagentBlockProps): ReactElement {
   // Persist expand/collapse per job id across re-renders.
   const expandKey = `chat_subagent_expanded_${state.jobId}`;
   const [expanded, setExpanded] = useState<boolean>(() => {
@@ -72,18 +121,33 @@ export function SubagentBlock({ state }: SubagentBlockProps): ReactElement {
     return () => window.clearInterval(id);
   }, [state.status, state.startedAt, state.finishedAt]);
 
-  const headerLabel = useMemo(() => {
-    const parts: string[] = [];
-    if (state.agentId) parts.push(state.agentId);
-    if (state.scope) parts.push(`scope=${state.scope}`);
-    if (state.depth != null) parts.push(`depth=${state.depth}`);
-    return parts.join(' · ') || 'subagent';
-  }, [state.agentId, state.scope, state.depth]);
+  const friendlyRole = useMemo(
+    () => getAgentRoleLabel(state.agentId),
+    [state.agentId],
+  );
+
+  // Split `state.blocks` into body (tools, thinking, intermediate text) and
+  // the LAST `final_output` chunk, which becomes the boxed summary at the
+  // bottom. Body blocks render in their original chronological order above
+  // the box.
+  const { bodyBlocks, finalOutput } = useMemo(() => {
+    let lastIdx = -1;
+    for (let i = state.blocks.length - 1; i >= 0; i--) {
+      if (state.blocks[i].type === 'final_output') { lastIdx = i; break; }
+    }
+    return {
+      bodyBlocks: state.blocks.filter((_, i) => i !== lastIdx),
+      finalOutput: lastIdx >= 0 ? state.blocks[lastIdx] : null,
+    };
+  }, [state.blocks]);
 
   return (
     <div
       className={cn(
-        'mt-2 ml-3 pl-3 border-l-2 border-border/60',
+        // No `ml-3` here — the parent ChatThread wrapper already indents us
+        // by `ml-3`, which keeps us aligned with the sibling PromptDisclosure
+        // chip. We only own the rail itself.
+        'mt-2 pl-3 border-l-2 border-border/60',
         'transition-colors',
       )}
       data-subagent-id={state.jobId}
@@ -93,7 +157,7 @@ export function SubagentBlock({ state }: SubagentBlockProps): ReactElement {
         type="button"
         onClick={() => setExpanded((v) => !v)}
         className={cn(
-          'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left',
+          'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left',
           'hover:bg-muted/40 transition-colors',
         )}
         aria-expanded={expanded}
@@ -103,24 +167,27 @@ export function SubagentBlock({ state }: SubagentBlockProps): ReactElement {
         ) : (
           <ChevronRight className="size-3 text-muted-foreground shrink-0" />
         )}
-        <Bot className="size-3 text-primary shrink-0" />
-        <span className="font-medium text-[11px] text-foreground">Sub-agent</span>
-        <span className="font-mono text-[10px] text-muted-foreground truncate flex-1 min-w-0">
-          {headerLabel}
+        <Sparkles className="size-3 text-primary shrink-0" />
+        <span className="text-[11px] text-foreground">
+          <span className="font-semibold">{friendlyRole}</span>
+          <span className="text-muted-foreground/70"> agent</span>
         </span>
+        <span className="flex-1" />
         <span
           className={cn(
-            'inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5',
-            'text-[9px] uppercase tracking-wider font-semibold',
+            'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5',
+            'text-[9px] font-medium tracking-wide',
             STATUS_CLASS[state.status],
           )}
         >
           <StatusIcon status={state.status} />
           {STATUS_LABEL[state.status]}
         </span>
-        <span className="font-mono text-[10px] text-muted-foreground tabular-nums w-12 text-right">
-          {elapsed > 0 ? `${elapsed.toFixed(1)}s` : ''}
-        </span>
+        {elapsed > 0 && (
+          <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+            {elapsed.toFixed(1)}s
+          </span>
+        )}
       </button>
 
       {state.task && (
@@ -133,12 +200,27 @@ export function SubagentBlock({ state }: SubagentBlockProps): ReactElement {
         <div className="mt-1 ml-6 space-y-2">
           {state.blocks.length === 0 ? (
             <div className="text-[11px] text-muted-foreground/60 italic py-1">
-              {state.status === 'running' ? 'Sub-agent is starting…' : 'No sub-agent output recorded.'}
+              {state.status === 'running' ? `${friendlyRole} is starting…` : 'No output recorded.'}
             </div>
           ) : (
-            state.blocks.map((block) => (
-              <SubagentInnerBlock key={block.id} block={block} />
-            ))
+            <>
+              {bodyBlocks.map((block) => (
+                <SubagentInnerBlock
+                  key={block.id}
+                  block={block}
+                  subBlocks={subBlocks}
+                  subPrompts={subPrompts}
+                />
+              ))}
+              {finalOutput && (
+                <div
+                  className="rounded-md border border-border/40 bg-card/50 px-3 py-2 text-[12px] text-foreground/90 chat-message-text"
+                  data-slot="subagent-final-output"
+                >
+                  <Markdown content={finalOutput.content || ''} />
+                </div>
+              )}
+            </>
           )}
           {state.status === 'failed' && state.error && (
             <div className="rounded-md border border-red-500/30 bg-red-500/5 px-2 py-1.5 text-[11px] text-red-600 dark:text-red-400">
@@ -154,7 +236,15 @@ export function SubagentBlock({ state }: SubagentBlockProps): ReactElement {
 /** Render a sub-agent inner block — same kinds as the parent message's
  *  blocks array. Kept here so the sub-agent container is self-contained
  *  and doesn't depend on the parent assistant-message reducer. */
-function SubagentInnerBlock({ block }: { block: MessageBlock }): ReactNode {
+function SubagentInnerBlock({
+  block,
+  subBlocks,
+  subPrompts,
+}: {
+  block: MessageBlock;
+  subBlocks?: Map<string, SubagentBlockState>;
+  subPrompts?: Map<string, SubagentPromptEntry>;
+}): ReactNode {
   if (block.type === 'thinking') {
     return (
       <ThinkingDisclosure pending={false}>
@@ -165,6 +255,9 @@ function SubagentInnerBlock({ block }: { block: MessageBlock }): ReactNode {
     );
   }
   if (block.type === 'final_output') {
+    // Earlier final_output chunks (when multiple streamed chunks exist)
+    // render as bare Markdown in the body. The LAST chunk is rendered as a
+    // box by the caller.
     return (
       <div className="text-[12px] text-foreground/90 chat-message-text">
         <Markdown content={block.content || ''} />
@@ -173,19 +266,63 @@ function SubagentInnerBlock({ block }: { block: MessageBlock }): ReactNode {
   }
   if (block.type === 'tool_call' || block.type === 'command') {
     if (!block.tool) return null;
+
+    const isSubagentCall = isSubagentToolName(block.tool.name);
+    // If this tool call itself spawns a sub-agent, look up the matching
+    // prompt + child container so we can render them indented under the
+    // tool row (outside the final output box).
+    const promptEntries = isSubagentCall && block.tool.id && subPrompts
+      ? Array.from(subPrompts.entries())
+          .filter(([k]) => k === block.tool!.id)
+          .map(([, v]) => v)
+      : [];
+    const subagentContainers = isSubagentCall && block.tool.id && subBlocks
+      ? Array.from(subBlocks.values())
+          .filter((s) => s.parentToolId === block.tool!.id)
+          .sort((a, b) => a.startedAt - b.startedAt)
+      : [];
+
     return (
-      <ToolCallItem
-        tool={{
-          id: block.tool.id,
-          name: block.tool.name,
-          status: block.tool.status,
-          context: block.tool.context,
-          summary: block.tool.summary,
-          error: block.tool.error,
-          duration: block.tool.duration,
-          startedAt: block.tool.startedAt,
-        }}
-      />
+      <div className="space-y-1.5">
+        <ToolCallItem
+          tool={{
+            id: block.tool.id,
+            name: block.tool.name,
+            status: block.tool.status,
+            context: block.tool.context,
+            summary: block.tool.summary,
+            error: block.tool.error,
+            duration: block.tool.duration,
+            startedAt: block.tool.startedAt,
+          }}
+        />
+        {promptEntries.length > 0 && (
+          <div className="ml-3 flex flex-col gap-1">
+            {promptEntries.map((p, pi) => (
+              <PromptDisclosure
+                key={`${block.tool!.id}-prompt-${pi}`}
+                content={p.content}
+                tokens={p.tokens}
+                label={p.subagentId
+                  ? `SUB-AGENT PROMPT · ${p.subagentId}`
+                  : 'SUB-AGENT PROMPT'}
+              />
+            ))}
+          </div>
+        )}
+        {subagentContainers.length > 0 && (
+          <div className="ml-3 pl-3 border-l border-foreground/15 flex flex-col gap-1">
+            {subagentContainers.map((s) => (
+              <SubagentBlock
+                key={s.jobId}
+                state={s}
+                subBlocks={subBlocks}
+                subPrompts={subPrompts}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     );
   }
   return null;

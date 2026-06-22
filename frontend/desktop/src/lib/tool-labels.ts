@@ -103,6 +103,24 @@ const AGENT_ROLE_LABELS: Record<string, string> = {
   deployment: 'Deploy',
 };
 
+/**
+ * Resolve a sub-agent id (e.g. `qa_tester`, `frontend_dev`) to a friendly
+ * role label (`QA`, `Frontend`). Falls back to a humanized version of the
+ * raw id when no mapping exists.
+ */
+export function getAgentRoleLabel(agentId?: string): string {
+  if (!agentId) return 'Agent';
+  const direct = AGENT_ROLE_LABELS[agentId];
+  if (direct) return direct;
+  // Strip common suffixes and humanize (e.g. `qa_tester_v2` → `Qa Tester V2`).
+  return agentId
+    .replace(/[_-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
 function truncateLabel(s: string, n: number): string {
   return s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`;
 }

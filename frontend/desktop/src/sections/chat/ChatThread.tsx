@@ -2228,7 +2228,12 @@ function MessageBubble({
                           {subagentContainers.length > 0 && (
                             <div className="ml-3 mt-1 flex flex-col gap-1">
                               {subagentContainers.map((s) => (
-                                <SubagentBlock key={s.jobId} state={s} />
+                                <SubagentBlock
+                                  key={s.jobId}
+                                  state={s}
+                                  subBlocks={subagentBlocks}
+                                  subPrompts={subagentPrompts}
+                                />
                               ))}
                             </div>
                           )}
@@ -2236,11 +2241,16 @@ function MessageBubble({
                       );
                     } else if (block.type === 'final_output') {
                       if (!block.content) return null;
+                      // AI bubbles are always rendered in full — only the
+                      // user bubble has collapse/expand behaviour.
+                      const isFinalStreaming = !!(isLast && streaming);
                       return (
-                        <CollapsibleMessage
-                          content={block.content}
-                          isStreaming={!!(isLast && streaming)}
-                        />
+                        <div className={cn(
+                          "chat-message-text text-foreground/90 space-y-3 max-w-none",
+                          isFinalStreaming && "streaming-markdown-content"
+                        )}>
+                          <Markdown content={block.content} />
+                        </div>
                       );
                     }
                     return null;
@@ -3220,51 +3230,6 @@ export function parseThinkingAndContent(rawContent: string, existingThinking?: s
   return { thinking: thinking.trim(), content: content.trim() };
 }
 
-/* ── CollapsibleMessage ──────────────────────────────────────────────────── */
-/* Collapses long assistant messages with a "Show more" / "Show less" toggle. */
-
+/* Long-message threshold used by the user bubble's collapse/expand toggle.
+ * AI bubbles intentionally don't collapse — they always render in full. */
 const LONG_MSG_THRESHOLD = 1000;
-
-function CollapsibleMessage({
-  content,
-  isStreaming,
-}: {
-  content: string;
-  isStreaming: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const shouldCollapse = !isStreaming && content.length > LONG_MSG_THRESHOLD;
-
-  if (!shouldCollapse) {
-    return (
-      <div className={cn(
-        "chat-message-text text-foreground/90 space-y-3 max-w-none",
-        isStreaming && "streaming-markdown-content"
-      )}>
-        <Markdown content={content} />
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className={cn(
-        "chat-message-text text-foreground/90 space-y-3 max-w-none relative",
-        isStreaming && "streaming-markdown-content",
-        !expanded && "max-h-[200px] overflow-hidden"
-      )}>
-        {!expanded && (
-          <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-background to-transparent pointer-events-none z-10" />
-        )}
-        <Markdown content={content} />
-      </div>
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className="text-sm font-semibold text-primary hover:underline mt-1"
-      >
-        {expanded ? 'Show less' : 'Show more'}
-      </button>
-    </div>
-  );
-}
