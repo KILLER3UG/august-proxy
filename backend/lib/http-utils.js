@@ -22,6 +22,7 @@ async function readJsonBody(req, options) {
 function sendJson(res, payload, statusCode = 200) {
     res.writeHead(statusCode, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(payload));
+    return true;
 }
 
 function sendText(res, text = 'OK', statusCode = 200) {

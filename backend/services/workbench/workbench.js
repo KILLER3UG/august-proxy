@@ -997,13 +997,14 @@ function getAllTools() {
             input_schema: {
                 type: 'object',
                 properties: {
-                    summary: { type: 'string' },
-                    steps: { type: 'array', items: { type: 'string' } },
-                    files: { type: 'array', items: { type: 'string' } },
-                    risks: { type: 'array', items: { type: 'string' } },
-                    verification: { type: 'array', items: { type: 'string' } }
+                    markdown: { type: 'string', description: 'The complete implementation plan formatted in markdown (with tables, lists, code blocks, etc.) to match what was presented in the chat thread.' },
+                    summary: { type: 'string', description: 'Optional brief summary of the plan.' },
+                    steps: { type: 'array', items: { type: 'string' }, description: 'Optional high-level steps of the plan.' },
+                    files: { type: 'array', items: { type: 'string' }, description: 'Optional list of files that will be created or modified.' },
+                    risks: { type: 'array', items: { type: 'string' }, description: 'Optional risks or side effects associated with the plan.' },
+                    verification: { type: 'array', items: { type: 'string' }, description: 'Optional how the plan will be verified.' }
                 },
-                required: ['summary', 'steps']
+                required: ['markdown']
             }
         },
         {
@@ -1385,17 +1386,17 @@ function submitPlan(session, args) {
         files: Array.isArray(args.files) ? args.files.map(String).filter(Boolean) : [],
         risks: Array.isArray(args.risks) ? args.risks.map(String).filter(Boolean) : [],
         verification: Array.isArray(args.verification) ? args.verification.map(String).filter(Boolean) : [],
+        markdown: args.markdown ? String(args.markdown).trim() : undefined,
         createdAt: new Date().toISOString()
     };
     session.approved = false;
     session.approvedAt = null;
+    saveSessions();
     return {
         status: 'plan_submitted_waiting_for_user_approval',
         plan: session.plan,
         hardRule: 'Do not write files or run commands until the user approves this plan in the Workbench UI or August terminal /approve.'
     };
-    saveSessions();
-    return result;
 }
 
 function writeFile(args) {

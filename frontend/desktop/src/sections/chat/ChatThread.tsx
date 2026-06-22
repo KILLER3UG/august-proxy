@@ -537,11 +537,34 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [showComposerActionsDropdown, showToolsDropdown, showCommandsDropdown]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const [scrolledFromBottom, setScrolledFromBottom] = useState(false);
+
+  const scrollToBottomSmooth = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const scrollable = el.closest(".overflow-y-auto") as HTMLElement | null;
+    const target = scrollable ?? el;
+    target.scrollTo({ top: target.scrollHeight, behavior: "smooth" });
+  }, []);
+
+  // Track whether the user has scrolled up from the bottom.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const scrollable = el.closest(".overflow-y-auto") as HTMLElement | null ?? el;
+    const check = () => {
+      const atBottom = scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight < 1;
+      setScrolledFromBottom(!atBottom);
+    };
+    check();
+    scrollable.addEventListener("scroll", check, { passive: true });
+    return () => scrollable.removeEventListener("scroll", check);
+  }, [messages]);
+
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(false);
-
-  const [scrolledFromBottom, setScrolledFromBottom] = useState(false);
 
   const scrollToBottomImmediate = useCallback(() => {
     const el = scrollRef.current;
@@ -549,30 +572,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const scrollable = el.closest('.overflow-y-auto') as HTMLElement | null;
     const target = scrollable ?? el;
     target.scrollTop = target.scrollHeight;
-  }, []);
-
-  const scrollToBottomSmooth = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const scrollable = el.closest('.overflow-y-auto') as HTMLElement | null;
-    const target = scrollable ?? el;
-    target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' });
-  }, []);
-
-  // Track whether the user has scrolled up from the bottom.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const scrollable = el.closest('.overflow-y-auto') as HTMLElement | null ?? el;
-
-    const check = () => {
-      const atBottom = scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight < 1;
-      setScrolledFromBottom(!atBottom);
-    };
-
-    check();
-    scrollable.addEventListener('scroll', check, { passive: true });
-    return () => scrollable.removeEventListener('scroll', check);
   }, []);
 
   const isTurnVisible = (turnSessionId: string | null) => mountedRef.current && visibleSessionId === turnSessionId;
@@ -1949,6 +1948,7 @@ function MessageBubble({
   const [speaking, setSpeaking] = useState(false);
 
   const [showRaw, setShowRaw] = useState(false);
+  const [userMsgExpanded, setUserMsgExpanded] = useState(false);
 
   const startEdit = () => {
     setEditText(message.content);
@@ -2036,27 +2036,44 @@ function MessageBubble({
         />
       )}
       {/* todos are rendered in the layout-level Workbench sidebar */}
-      {isUser ? (
-        <>
-          <div className="rounded-2xl border border-border/40 bg-muted/40 dark:bg-[#161618] px-4 py-2.5 chat-message-text text-foreground shadow-sm max-w-[85%] ml-auto">
-            {editing ? (
-              <div className="flex flex-col gap-2">
-                <textarea
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  className="w-full resize-none bg-transparent text-sm outline-none text-foreground"
-                  rows={3}
-                  autoFocus
-                />
-                <div className="flex items-center gap-1.5 justify-end">
-                  <button onClick={cancelEdit} className="px-2 py-0.5 text-[10px] rounded-md hover:bg-muted text-muted-foreground transition">Cancel</button>
-                  <button onClick={saveEdit} className="px-2 py-0.5 text-[10px] rounded-md bg-primary text-primary-foreground hover:opacity-90 transition">Save</button>
-                </div>
-              </div>
-            ) : (
-              <Markdown content={message.content} />
-            )}
-          </div>
+	      {isUser ? (
+	        <>
+	          <div className="rounded-2xl border border-border/40 bg-muted/40 dark:bg-[#161618] px-4 py-2.5 chat-message-text text-foreground shadow-sm max-w-[85%] ml-auto">
+	            {editing ? (
+	              <div className="flex flex-col gap-2">
+	                <textarea
+	                  value={editText}
+	                  onChange={(e) => setEditText(e.target.value)}
+	                  className="w-full resize-none bg-transparent text-sm outline-none text-foreground"
+	                  rows={3}
+	                  autoFocus
+	                />
+	                <div className="flex items-center gap-1.5 justify-end">
+	                  <button onClick={cancelEdit} className="px-2 py-0.5 text-[10px] rounded-md hover:bg-muted text-muted-foreground transition">Cancel</button>
+	                  <button onClick={saveEdit} className="px-2 py-0.5 text-[10px] rounded-md bg-primary text-primary-foreground hover:opacity-90 transition">Save</button>
+	                </div>
+	              </div>
+	            ) : (
+	              <div className={cn(
+	                "relative",
+	                !userMsgExpanded && message.content.length > LONG_MSG_THRESHOLD && "max-h-[200px] overflow-hidden"
+	              )}>
+	                <Markdown content={message.content} />
+		                {!userMsgExpanded && message.content.length > LONG_MSG_THRESHOLD && (
+		                  <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-background to-transparent pointer-events-none" />
+		                )}
+	              </div>
+	            )}
+	            {!editing && message.content.length > LONG_MSG_THRESHOLD && (
+	              <button
+	                type="button"
+	                onClick={() => setUserMsgExpanded(!userMsgExpanded)}
+	                className="text-sm font-semibold text-primary hover:underline mt-1"
+	              >
+	                {userMsgExpanded ? 'Show less' : 'Show more'}
+	              </button>
+	            )}
+	          </div>
           {/* Action buttons below user message */}
           <div className={cn(
             "flex items-center gap-0.5 mt-1 mr-1 transition-opacity duration-150",
@@ -2206,12 +2223,10 @@ function MessageBubble({
                     } else if (block.type === 'final_output') {
                       if (!block.content) return null;
                       return (
-                        <div className={cn(
-                          "chat-message-text text-foreground/90 space-y-3 max-w-none",
-                          isLast && streaming && "streaming-markdown-content"
-                        )}>
-                          <Markdown content={block.content} />
-                        </div>
+                        <CollapsibleMessage
+                          content={block.content}
+                          isStreaming={!!(isLast && streaming)}
+                        />
                       );
                     }
                     return null;
@@ -3191,3 +3206,51 @@ export function parseThinkingAndContent(rawContent: string, existingThinking?: s
   return { thinking: thinking.trim(), content: content.trim() };
 }
 
+/* ── CollapsibleMessage ──────────────────────────────────────────────────── */
+/* Collapses long assistant messages with a "Show more" / "Show less" toggle. */
+
+const LONG_MSG_THRESHOLD = 1000;
+
+function CollapsibleMessage({
+  content,
+  isStreaming,
+}: {
+  content: string;
+  isStreaming: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const shouldCollapse = !isStreaming && content.length > LONG_MSG_THRESHOLD;
+
+  if (!shouldCollapse) {
+    return (
+      <div className={cn(
+        "chat-message-text text-foreground/90 space-y-3 max-w-none",
+        isStreaming && "streaming-markdown-content"
+      )}>
+        <Markdown content={content} />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className={cn(
+        "chat-message-text text-foreground/90 space-y-3 max-w-none relative",
+        isStreaming && "streaming-markdown-content",
+        !expanded && "max-h-[200px] overflow-hidden"
+      )}>
+        {!expanded && (
+          <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-background to-transparent pointer-events-none z-10" />
+        )}
+        <Markdown content={content} />
+      </div>
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="text-sm font-semibold text-primary hover:underline mt-1"
+      >
+        {expanded ? 'Show less' : 'Show more'}
+      </button>
+    </div>
+  );
+}

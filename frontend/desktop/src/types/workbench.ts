@@ -13,6 +13,7 @@ export interface WorkbenchPlan {
   files: string[];
   risks: string[];
   verification: string[];
+  markdown?: string;
   createdAt: string;
 }
 

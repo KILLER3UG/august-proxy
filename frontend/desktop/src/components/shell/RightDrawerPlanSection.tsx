@@ -4,11 +4,10 @@
 /* the PlanProposalBanner at the bottom of the chat thread. The drawer card  */
 /* here is read-only: it just renders the plan.                             */
 
-import type { ReactNode } from 'react';
-import { FileText, FolderOpen, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import type { WorkbenchSession } from '@/types/workbench';
+import { FileText, FolderOpen, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export function RightDrawerPlanSection({
   session,
@@ -23,7 +22,7 @@ export function RightDrawerPlanSection({
 
   if (!plan) {
     return (
-      <div className="chat-message-text text-foreground/90 space-y-3 max-w-none">
+      <div className="chat-message-text text-foreground/90 p-3 space-y-3 max-w-none">
         <div className="text-xs text-muted-foreground">No plan yet</div>
         <div className="rounded-lg border border-border/50 bg-card/60 p-4 text-center text-muted-foreground">
           The Workbench plan will appear here after the model creates one.
@@ -32,38 +31,31 @@ export function RightDrawerPlanSection({
     );
   }
 
+  if (plan.markdown) {
+    return (
+      <div className="h-full p-3 chat-message-text text-foreground/90 space-y-3 max-w-none">
+        <Markdown content={plan.markdown} />
+      </div>
+    );
+  }
+
   return (
-    <div className="h-full chat-message-text text-foreground/90 space-y-3 max-w-none">
+    <div className="h-full p-3 space-y-4 chat-message-text text-foreground/90 max-w-none">
       {plan.summary && (
-        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 chat-message-text text-foreground/90 space-y-3 max-w-none">
+        <div className="text-foreground/90">
           <Markdown content={plan.summary} />
         </div>
       )}
 
-      <PlanList title="Steps" icon={<FileText className="size-3" />} items={plan.steps} />
-      <PlanList title="Files" icon={<FolderOpen className="size-3" />} items={plan.files} />
-      <PlanList
-        title="Risks"
-        icon={<AlertTriangle className="size-3" />}
-        items={plan.risks}
-        tone="warning"
-      />
-      <PlanList title="Verification" icon={<CheckCircle2 className="size-3" />} items={plan.verification} />
+      <PlanList title="Steps" icon={<FileText className="size-3.5" />} items={plan.steps} />
+      <PlanList title="Files" icon={<FolderOpen className="size-3.5" />} items={plan.files} />
+      <PlanList title="Risks" icon={<ShieldAlert className="size-3.5" />} items={plan.risks} />
+      <PlanList title="Verification" icon={<CheckCircle2 className="size-3.5" />} items={plan.verification} />
     </div>
   );
 }
 
-function PlanList({
-  title,
-  icon,
-  items,
-  tone,
-}: {
-  title: string;
-  icon: ReactNode;
-  items?: string[];
-  tone?: 'default' | 'warning';
-}) {
+function PlanList({ title, icon, items }: { title: string; icon: React.ReactNode; items?: string[] }) {
   if (!items?.length) return null;
 
   return (
@@ -72,21 +64,16 @@ function PlanList({
         {icon}
         {title}
       </div>
-      <div className="space-y-1.5">
+      <ul className="space-y-1">
         {items.map((item, index) => (
-          <div
-            key={`${title}-${index}`}
-            className={cn(
-              'rounded-lg border px-2.5 py-2 chat-message-text text-foreground/90 space-y-3 max-w-none',
-              tone === 'warning'
-                ? 'border-amber-500/25 bg-amber-500/5'
-                : 'border-border/60 bg-card/40'
-            )}
-          >
+          <li key={`${title}-${index}`} className={cn(
+            'rounded-md border border-border/60 bg-card/70 px-2.5 py-2 chat-message-text text-foreground/90 space-y-3 max-w-none',
+            title === 'Risks' && 'border-amber-500/30 bg-amber-500/5'
+          )}>
             <Markdown content={item} />
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   );
 }

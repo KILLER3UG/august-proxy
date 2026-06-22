@@ -35,16 +35,24 @@ export function WorkbenchPlanPanel({
         </div>
       </CardHeader>
       <CardContent className="chat-message-text text-foreground/90 space-y-3 max-w-none">
-        {plan.summary && (
+        {plan.markdown ? (
           <div className="text-foreground/90">
-            <Markdown content={plan.summary} />
+            <Markdown content={plan.markdown} />
           </div>
-        )}
+        ) : (
+          <>
+            {plan.summary && (
+              <div className="text-foreground/90">
+                <Markdown content={plan.summary} />
+              </div>
+            )}
 
-        <PlanList title="Steps" icon={<FileText className="size-3" />} items={plan.steps} />
-        <PlanList title="Files" icon={<FolderOpen className="size-3" />} items={plan.files} />
-        <PlanList title="Risks" icon={<ShieldAlert className="size-3" />} items={plan.risks} />
-        <PlanList title="Verification" icon={<CheckCircle2 className="size-3" />} items={plan.verification} />
+            <PlanList title="Steps" icon={<FileText className="size-3" />} items={plan.steps} />
+            <PlanList title="Files" icon={<FolderOpen className="size-3" />} items={plan.files} />
+            <PlanList title="Risks" icon={<ShieldAlert className="size-3" />} items={plan.risks} />
+            <PlanList title="Verification" icon={<CheckCircle2 className="size-3" />} items={plan.verification} />
+          </>
+        )}
 
         <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-muted-foreground">
           <span><Wrench className="inline size-3 mr-1" />{session.mutationCount} mutations</span>
