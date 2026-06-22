@@ -1672,8 +1672,6 @@ async function executeSubAgent(session, args, toolContext = {}) {
     }
 
     const scope = String(args.scope || childAgent.scopes?.[0] || 'project').trim();
-    const scopeNote = childAgent.scopes && childAgent.scopes.length ? ` This agent's registered scopes are: ${childAgent.scopes.join(', ')}.` : '';
-    const teamSkillGuide = renderTeamSkillsForSystem(childAgentId);
 
     const job = createAgentJob({
         sessionId: session?.id || null,
@@ -1754,49 +1752,13 @@ async function executeSubAgent(session, args, toolContext = {}) {
         }
     }
 
-    let basePrompt = '';
-    let isDynamic = false;
-
-    if (typeof args.system_prompt === 'string' && args.system_prompt.trim()) {
-        basePrompt = args.system_prompt.trim();
-        isDynamic = true;
-    } else {
-        // Fallback: check subagent-config
-        try {
-            const { loadSubagentConfig, getDefaultSubagentConfig } = require('../tools/subagent-config');
-            const subCfg = loadSubagentConfig();
-            const defCfg = getDefaultSubagentConfig();
-            if (subCfg?.current?.system_prompt && subCfg.current.system_prompt !== defCfg?.current?.system_prompt) {
-                basePrompt = subCfg.current.system_prompt.trim();
-                isDynamic = true;
-            }
-        } catch (e) {
-            console.warn('[Workbench] Failed to check customized subagent config:', e.message);
-        }
-    }
-
     let subPrompt;
-    if (isDynamic) {
-        console.info(`[Workbench] Using dynamic sub-agent prompt for job ${job.id}`);
-        subPrompt = basePrompt;
+    if (typeof args.system_prompt === 'string' && args.system_prompt.trim()) {
+        // Parent passed an explicit override — use it verbatim.
+        subPrompt = args.system_prompt.trim();
     } else {
-        subPrompt = [
-            'You are a focused sub-agent spawned by the main AI Workbench agent.',
-            `Sub-agent profile: ${childAgent.id} (${childAgent.role}). Goal: ${childAgent.goal}`,
-            `Work scope: ${scope}.${scopeNote}`,
-            `Parent agent profile: ${parentAgentId}. Your effective inherited permissions are: ${Object.entries(inheritedPermissions).map(([key, value]) => `${key}:${value}`).join(', ')}.`,
-            `Durable job id: ${job.id}. Current delegation depth: ${depth}. Max delegation depth: ${maxDepth}.`,
-            'Your task is: ' + task,
-            'You have access to the same registered tools, but the server enforces your inherited permissions before the approval gate.',
-            'Read/search/explore freely when your profile permits it, but do not perform any mutation unless the parent session already has an approved plan and your inherited permissions allow that tool category.',
-            'A mutation means writing/editing/deleting/moving files, running shell commands, changing memory, launching background tasks, or controlling the host desktop.',
-            'If a mutation is required and approval is not active, stop and report the exact plan the parent should submit for user approval.',
-            'If you are a coordinator and delegation is allowed, spawn child sub-agents only for clearly separate subtasks and include parent_job_id plus depth+1.',
-            teamSkillGuide ? `=== TEAM SKILLS OWNED BY THIS AGENT ===\n${teamSkillGuide}\nTo load one of these skills, call august__load_skill with the skill name and agent_id=${childAgentId}.` : '',
-            'For exploration tasks, report concrete evidence: exact files read, commands/tools used, key findings, and any limits or uncertainty.',
-            'Do not claim comprehensive understanding unless the evidence supports it. Todo or task-list updates are internal state, not project file updates.',
-            'Keep your response concise and actionable.'
-        ].join('\n');
+        // Parent's full instruction IS the sub-agent prompt. No hardcoded wrapper.
+        subPrompt = String(task || '').trim();
     }
 
     // Emit the assembled sub-agent prompt as a `prompt` SSE event so the UI
@@ -1809,7 +1771,7 @@ async function executeSubAgent(session, args, toolContext = {}) {
         const subPromptPayload = {
             content: subPrompt,
             systemPrompt: subPrompt,
-            userMessage: task,
+            userMessage: 'Begin the task above.',
             tokens: (subPrompt.length + task.length) / 4,
             toolUseId: toolContext.toolUseId || `subagent-${job.id}`,
             subagentId: childAgentId,
@@ -1823,7 +1785,7 @@ async function executeSubAgent(session, args, toolContext = {}) {
         console.warn('[Workbench] sub-agent prompt emit failed:', err.message);
     }
 
-    const subMessages = [{ role: 'user', content: task }];
+    const subMessages = [{ role: 'user', content: 'Begin the task above.' }];
     let subResult = '';
     let subLoops = 0;
     while (subLoops < 4) {

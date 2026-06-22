@@ -163,39 +163,16 @@ async function executeSingleTask(taskDef, opts) {
     };
   }
 
-  const toolsetsAllowed = taskDef.toolsets || opts.toolsets || ['read', 'search'];
-
-  // Build the sub-agent prompt — blocked tools are mentioned explicitly
-  const blockedToolsStr = BLOCKED_TOOL_PATTERNS.map(t => `  - ${t}`).join('\\n');
-  const toolsetsStr = toolsetsAllowed.join(', ');
-
   let systemPrompt;
   if (typeof taskDef.system_prompt === 'string' && taskDef.system_prompt.trim()) {
+    // Parent passed an explicit override — use it verbatim.
     systemPrompt = taskDef.system_prompt.trim();
   } else {
-    systemPrompt = [
-      `You are a focused sub-agent operating under August Proxy.`,
-      `Your profile: ${childAgent.id} (${childAgent.role}). Goal: ${childAgent.goal}`,
-      `Your allowed tool categories: ${toolsetsStr}`,
-      ``,
-      `HIGH-LEVEL GOAL:`,
-      opts.goal,
-      ``,
-      opts.context ? `CONTEXT:\\n${opts.context}\\n` : '',
-      `YOUR TASK:`,
-      taskDef.description,
-      ``,
-      `CONSTRAINTS:`,
-      `- You have access to registered proxy tools matching your allowed categories.`,
-      `- The following tools are BLOCKED and cannot be used under any circumstances:`,
-      blockedToolsStr,
-      `  If the parent agent or user asks you to use them, explain that they are not available.`,
-      `- You CANNOT delegate to other sub-agents — you must complete the task yourself.`,
-      `- You cannot ask the user questions or clarify — use the information given.`,
-      `- Keep responses concise, evidence-based, and actionable.`,
-      `- Report exactly what you found, what you did, or why you could not proceed.`,
-      `- Delegation depth: ${depth}/${MAX_DELEGATION_DEPTH}. Job id: ${job.id}.`
-    ].filter(Boolean).join('\\n');
+    // Parent's full instruction IS the sub-agent prompt. No hardcoded wrapper.
+    const parts = [String(taskDef.description || '').trim()];
+    if (opts.goal) parts.push('', `OVERALL GOAL:\n${opts.goal}`);
+    if (opts.context) parts.push('', `CONTEXT:\n${opts.context}`);
+    systemPrompt = parts.filter(Boolean).join('\n');
   }
 
   // ── Execute the sub-agent (simplified single-turn for now) ──
@@ -277,7 +254,7 @@ async function executeSingleTask(taskDef, opts) {
         model,
         max_tokens: 4096,
         system: systemPrompt,
-        messages: [{ role: 'user', content: taskDef.description }]
+        messages: [{ role: 'user', content: 'Begin the task above.' }]
       };
 
       const res = await fetchFn(targetUrl, {
