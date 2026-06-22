@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import * as React from 'react';
 import { type ReactNode } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
@@ -10,6 +11,7 @@ import {
 import { ChatThread } from '@/sections/chat/ChatThread';
 import { SettingsPage } from '@/sections/settings/SettingsPage';
 import { SETTINGS_SECTIONS } from '@/settings/settings-registry';
+import { DesignRoute } from '@/pages/DesignRoute';
 
 export interface SectionRoute {
   path: string;
@@ -65,6 +67,25 @@ export const SETTINGS_ROUTES: readonly SectionRoute[] = [
   { path: '/settings', label: 'Settings', Icon: Settings, element: React.createElement(SettingsPage) },
   { path: '/settings/:section', label: 'Settings', Icon: Settings, element: React.createElement(SettingsPage) },
 ] as const;
+
+/* Dev-only design token inspector — tree-shaken out of production. */
+const DEV_ROUTES: readonly SectionRoute[] = import.meta.env.DEV
+  ? [
+      {
+        path: '/_design',
+        label: 'Design',
+        Icon: LayoutDashboard,
+        element: React.createElement(DesignRoute),
+        nav: false,
+      },
+    ]
+  : [];
+
+export const ALL_ROUTES: readonly SectionRoute[] = [
+  ...SECTION_ROUTES,
+  ...SETTINGS_ROUTES,
+  ...DEV_ROUTES,
+];
 
 export const SECTION_NAV_ITEMS: readonly NavItem[] = SECTION_ROUTES.filter((route) => route.nav).map((route) => ({
   to: route.path,

@@ -1,10 +1,15 @@
 /* ── WorkspaceGeneralSection — theme + presets + shortcuts + tour ────── */
 /* Migrated from ProfilePreferencesSection. Uses the dark workspace panel
- * aesthetic — slightly different card colors than the modal version. */
+ * aesthetic — slightly different card colors than the modal version.
+ *
+ * Phase 2.X update: uses the new 3-mode theme picker (light/dark/system)
+ * and text-size picker driven by @/lib/theme. */
 
-import { Sun, Moon, Keyboard, Sparkles, GraduationCap, Check } from 'lucide-react';
+import * as React from 'react';
+import { Sun, Moon, Monitor, Keyboard, Sparkles, GraduationCap, Check } from 'lucide-react';
 import { useStore } from '@nanostores/react';
-import { $theme, toggleTheme } from '@/store/theme';
+import { $themeMode, $textSize, setThemeMode, setTextSize } from '@/lib/theme';
+import type { ThemeMode, TextSize } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
 const SHORTCUTS: { keys: string[]; label: string }[] = [
@@ -25,9 +30,20 @@ const PRESETS: Preset[] = [
   { id: 'privacy', name: 'Privacy Focused', description: 'Hide usage analytics and history previews.' },
 ];
 
+const TEXT_SIZE_OPTIONS: { id: TextSize; label: string; scale: string }[] = [
+  { id: 'compact',     label: 'Small',      scale: '0.92' },
+  { id: 'default',     label: 'Default',    scale: '1.00' },
+  { id: 'comfortable', label: 'Large',      scale: '1.08' },
+  { id: 'spacious',    label: 'Extra Large', scale: '1.18' },
+];
+
 export function WorkspaceGeneralSection() {
-  const theme = useStore($theme);
+  const themeMode = useStore($themeMode);
+  const textSize = useStore($textSize);
   const activePreset = 'default'; // local-only until a settings store exists
+
+  const themeModeIcon =
+    themeMode === 'light' ? Sun : themeMode === 'dark' ? Moon : Monitor;
 
   return (
     <div className="px-8 py-6 max-w-4xl space-y-6">
@@ -38,42 +54,73 @@ export function WorkspaceGeneralSection() {
         </p>
       </div>
 
-      {/* Appearance */}
+      {/* Appearance (theme) */}
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-3">
         <div className="flex items-center gap-2">
-          {theme === 'dark' ? <Moon className="size-4" /> : <Sun className="size-4" />}
+          {React.createElement(themeModeIcon, { className: 'size-4' })}
           <span className="text-sm font-semibold">Appearance</span>
         </div>
         <p className="text-xs text-muted-foreground">
-          Choose light or dark mode. Dark mode uses a dark background with light text.
+          Choose light, dark, or follow your system. Pick a separate text size below.
         </p>
-        <div className="grid grid-cols-2 gap-2 max-w-sm">
-          <button
-            onClick={() => theme !== 'light' && toggleTheme()}
-            className={cn(
-              'flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition',
-              theme === 'light'
-                ? 'border-primary bg-primary/5 text-foreground'
-                : 'border-white/[0.08] text-muted-foreground hover:bg-white/[0.04]',
-            )}
-          >
-            <Sun className="size-4" />
-            Light
-            {theme === 'light' && <Check className="ml-auto size-3.5 text-primary" />}
-          </button>
-          <button
-            onClick={() => theme !== 'dark' && toggleTheme()}
-            className={cn(
-              'flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition',
-              theme === 'dark'
-                ? 'border-primary bg-primary/5 text-foreground'
-                : 'border-white/[0.08] text-muted-foreground hover:bg-white/[0.04]',
-            )}
-          >
-            <Moon className="size-4" />
-            Dark
-            {theme === 'dark' && <Check className="ml-auto size-3.5 text-primary" />}
-          </button>
+        <div className="grid grid-cols-3 gap-2 max-w-md">
+          {(['light', 'dark', 'system'] as ThemeMode[]).map((mode) => {
+            const Icon = mode === 'light' ? Sun : mode === 'dark' ? Moon : Monitor;
+            const active = themeMode === mode;
+            const label = mode === 'light' ? 'Light' : mode === 'dark' ? 'Dark' : 'System';
+            return (
+              <button
+                key={mode}
+                onClick={() => setThemeMode(mode)}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition',
+                  active
+                    ? 'border-primary bg-primary/5 text-foreground'
+                    : 'border-white/[0.08] text-muted-foreground hover:bg-white/[0.04]',
+                )}
+              >
+                <Icon className="size-4" />
+                {label}
+                {active && <Check className="ml-auto size-3.5 text-primary" />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Text size */}
+      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className="size-4" />
+          <span className="text-sm font-semibold">Text size</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Scales all chat, sidebar, and drawer text proportionally.
+        </p>
+        <div className="grid grid-cols-4 gap-2">
+          {TEXT_SIZE_OPTIONS.map((opt) => {
+            const active = textSize === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => setTextSize(opt.id)}
+                className={cn(
+                  'flex flex-col items-center justify-center gap-0.5 rounded-lg border px-2 py-3 transition',
+                  active
+                    ? 'border-primary bg-primary/5 text-foreground'
+                    : 'border-white/[0.08] text-muted-foreground hover:bg-white/[0.04]',
+                )}
+              >
+                <span
+                  className="font-semibold leading-none"
+                  style={{ fontSize: `${parseFloat(opt.scale) * 1.1}rem` }}
+                >
+                  Aa
+                </span>
+                <span className="text-[10px] uppercase tracking-caps">{opt.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
