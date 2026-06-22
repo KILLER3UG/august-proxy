@@ -48,7 +48,7 @@ export interface SubagentBlockState {
 export const $sessionStreamStates = atom<Record<string, SessionStreamState>>({});
 
 // Keep track of active fetch AbortControllers on the client
-const activeStreamControllers = new Map<string, AbortController>();
+export const activeStreamControllers = new Map<string, AbortController>();
 
 /**
  * Per-session SSE subscriber that holds the live GET /ui/workbench/chat/stream
@@ -329,7 +329,9 @@ export async function stopChatStream(sessionId: string) {
 
   // Tell the backend to stop
   try {
-    await stopWorkbenchChat(sessionId);
+    const state = getOrInitSessionStreamState(sessionId);
+    const wbSessionId = state.workbenchSession?.id || sessionId;
+    await stopWorkbenchChat(wbSessionId);
   } catch (err) {
     console.warn('Failed to notify backend of stop:', err);
   }

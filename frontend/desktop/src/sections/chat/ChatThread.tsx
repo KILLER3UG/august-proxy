@@ -37,6 +37,7 @@ import {
   ensureSessionSubscriber,
   appendBlockEvent,
   applySubagentEvent,
+  activeStreamControllers,
 } from './chat-stream-manager';
 import { Markdown } from './ChatMarkdown';
 import { makeStreamHandlers } from './makeStreamHandlers';
@@ -49,6 +50,7 @@ import {
   setWorkbenchGuardMode,
   streamPlanDecision,
   streamWorkbenchRevision,
+  streamWorkbenchReconnect,
   answerWorkbenchBtw,
   getWorkbenchSession,
   listWorkbenchCapabilities,
@@ -57,7 +59,6 @@ import type { WorkbenchBtwResult, WorkbenchSession } from '@/types/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import { WorkbenchModeSelector, WORKBENCH_GUARD_MODES, applyWorkbenchGuardMode, type WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
 import { ContextRing, estimateContextBreakdown, type ContextBreakdown } from './ChatComposer';
-import { WorkbenchPlanPanel } from '@/components/chat/WorkbenchPlanPanel';
 import { PlanProposalBanner } from '@/components/shell/PlanProposalBanner';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { ChangedFilesCard } from '@/components/chat/ChangedFilesCard';
@@ -866,7 +867,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
    * the appropriate `stream*` call (e.g. `streamPlanDecision`).
    */
   const streamPlanTurn = async (
-    run: (handlers: { onError?: (data: { message: string }) => void } & Record<string, any>, signal: AbortSignal) => Promise<void>,
+    run: (handlers: { onError?: (data: { message: string }) => void } & Record<string, any>, signal: AbortSignal) => Promise<any>,
+    overrideMessages?: ChatMessage[],
+    targetWorkbenchSessionId?: string
   ) => {
     if (!sessionId) return;
     setSessionStatus(sessionId, 'working');
@@ -877,10 +880,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       transport: 'none',
     });
     const abortController = turn.controller;
+    activeStreamControllers.set(sessionId, abortController);
+    const initialMsgs = overrideMessages || (sessionId === loadedSessionId ? messages : loadMessagesForSession(sessionId));
     const { handlers, finalize } = makeStreamHandlers({
       sessionId,
       assistantMsgId,
-      initialMessages: sessionId === loadedSessionId ? messages : loadMessagesForSession(sessionId),
+      initialMessages: initialMsgs,
       setMessages,
       persistMessages,
       setSessionStatus,
@@ -908,7 +913,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       },
     };
     try {
-      await run(wrappedHandlers as any, abortController.signal);
+      chatRuntime.setTransport(turn.turnId, 'http');
+      const startResult = await run(wrappedHandlers as any, abortController.signal);
+      const wbSessionId = targetWorkbenchSessionId || workbenchSession?.id || sessionId;
+      if (startResult && Number.isFinite((startResult as any).sinceSeq)) {
+        await streamWorkbenchReconnect(
+          wbSessionId,
+          wrappedHandlers as any,
+          abortController.signal,
+          (startResult as any).sinceSeq
+        );
+      }
       finalize(abortController.signal.aborted ? 'aborted' : 'done');
     } catch (e: any) {
       if (e?.name === 'AbortError') {
@@ -918,6 +933,43 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       }
       console.error('[streamPlanTurn] error:', e);
       finalize('error');
+    } finally {
+      activeStreamControllers.delete(sessionId);
+    }
+  };
+
+  const handlePlanRevision = async (feedback: string) => {
+    if (!workbenchSession || !sessionId) return;
+    const wbSessionId = workbenchSession.id;
+    try {
+      const userMsg: ChatMessage = {
+        id: `m${Date.now()}`,
+        role: 'user',
+        content: feedback,
+        timestamp: new Date().toISOString()
+      };
+      const currentMessages = sessionId === loadedSessionId ? messages : loadMessagesForSession(sessionId);
+      const nextMessages = [...currentMessages, userMsg];
+      setMessages(nextMessages);
+      persistMessages(sessionId, nextMessages);
+
+      // Clear/reject the current plan first so the banner goes away and shows the composer input / thinking status
+      try {
+        const updated = await rejectWorkbenchPlan(wbSessionId);
+        setWorkbenchSession(updated);
+      } catch (err) {
+        console.warn('Failed to reject plan before revision:', err);
+        // Fallback: clear the plan locally so the UI updates regardless
+        setWorkbenchSession((prev: WorkbenchSession | null) => prev ? { ...prev, plan: null } : null);
+      }
+
+      await streamPlanTurn(
+        (handlers, signal) => streamWorkbenchRevision(wbSessionId, feedback, handlers, signal),
+        nextMessages,
+        wbSessionId
+      );
+    } catch (e: any) {
+      toast.error('Could not send revision', { description: e.message });
     }
   };
 
@@ -1618,14 +1670,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             toast.error('Could not reject Workbench plan', { description: e.message });
                           }
                         }}
-                        onRevise={async (feedback) => {
-                          if (!workbenchSession) return;
-                          try {
-                            await streamPlanTurn((handlers, signal) => streamWorkbenchRevision(workbenchSession.id, feedback, handlers, signal));
-                          } catch (e: any) {
-                            toast.error('Could not send revision', { description: e.message });
-                          }
-                        }}
+                        onRevise={handlePlanRevision}
                       />
                     ) : (
                       renderComposerContent()
@@ -1651,30 +1696,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   style={{ overflowAnchor: 'none' }}
                 >
                   <div className="mx-auto w-full max-w-3xl px-4 py-8 space-y-5 relative">
-                    <WorkbenchPlanPanel
-                      session={workbenchSession}
-                      onApprove={async () => {
-                        if (!workbenchSession) return;
-                        try {
-                          const updated = await approveWorkbenchPlan(workbenchSession.id);
-                          setWorkbenchSession(updated);
-                          if (sessionId) {
-                            updateSessionWorkbenchMetadata(sessionId, {
-                              workbenchSessionId: updated.id,
-                              workbenchAgentId: updated.agentId,
-                              workbenchProvider: updated.provider,
-                            });
-                          }
-                          // Acknowledge acceptance to the model without triggering implementation.
-                          // Use the full streaming bundle so the chat thread renders the
-                          // model's reply (thinking, text, tool calls) the same way a
-                          // normal composer message does.
-                          await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
-                        } catch (e: any) {
-                          toast.error("Could not approve Workbench plan", { description: e.message });
-                        }
-                      }}
-                    />
                     {messages.map((m, i) => {
                       const isReverting = revertingIndex !== null && i > revertingIndex;
                       return (
@@ -1791,14 +1812,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             toast.error('Could not reject Workbench plan', { description: e.message });
                           }
                         }}
-                        onRevise={async (feedback) => {
-                          if (!workbenchSession) return;
-                          try {
-                            await streamPlanTurn((handlers, signal) => streamWorkbenchRevision(workbenchSession.id, feedback, handlers, signal));
-                          } catch (e: any) {
-                            toast.error('Could not send revision', { description: e.message });
-                          }
-                        }}
+                        onRevise={handlePlanRevision}
                     />
                   </motion.div>
                 ) : (

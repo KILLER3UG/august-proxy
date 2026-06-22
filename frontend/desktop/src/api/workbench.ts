@@ -435,14 +435,14 @@ export async function streamWorkbenchRevision(
   feedback: string,
   handlers: WorkbenchEventHandlers = {},
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<{ sinceSeq?: number }> {
   // Reuse the chat SSE endpoint with a feedback marker. The marker
   // tells the model this is a revision request: it should produce a
   // thinking block + a new plan (either by calling august__submit_plan,
   // which makes the banner re-appear, or by emitting the revised plan
   // as normal assistant text inline). No version prefix is added — the
   // plan appears as a regular assistant message.
-  await streamWorkbenchChat({
+  return streamWorkbenchChat({
     sessionId,
     message: [
       '[Revision request]',
@@ -493,8 +493,8 @@ export async function streamPlanDecision(
   decision: PlanDecision,
   handlers: WorkbenchEventHandlers = {},
   signal?: AbortSignal,
-): Promise<void> {
-  await streamWorkbenchChat({
+): Promise<{ sinceSeq?: number }> {
+  return streamWorkbenchChat({
     sessionId,
     message: PLAN_DECISION_MESSAGES[decision],
   }, handlers, signal);

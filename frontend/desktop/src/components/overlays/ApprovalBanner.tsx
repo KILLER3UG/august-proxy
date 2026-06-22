@@ -92,7 +92,7 @@ export function ApprovalBanner({ sessionId, pollIntervalMs = 2000, onStatusChang
 
     const isAwaiting = status?.status === 'awaiting_approval' && !!status.pendingToken;
     const summary = useMemo(
-        () => summarizeTool(status?.pendingTool, status?.pendingArgs),
+        () => summarizeTool(status?.pendingTool ?? null, status?.pendingArgs ?? null),
         [status?.pendingTool, status?.pendingArgs]
     );
 

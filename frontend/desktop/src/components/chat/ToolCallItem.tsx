@@ -264,7 +264,7 @@ export function ToolCallItem({
     status: tool.status
   });
   const labelTitle = isCommand && commandText && commandText.length > 120 ? commandText : undefined;
-  const displayLabel = elapsed !== undefined ? `${label} · ${formatTimer(elapsed)}` : label;
+  const displayLabel = (elapsed !== undefined && elapsed >= 100) ? `${label} · ${formatTimer(elapsed)}` : label;
 
   return (
     <div className="text-xs text-muted-foreground w-full py-0.5" data-slot="tool-block">
