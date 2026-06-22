@@ -1,6 +1,6 @@
-/* ── August Proxy UI v2 — design tokens ─────────────────────────── */
-/* Inherits Tailwind v3 utilities + base from tailwind.generated.css. */
-/* This file is imported by main.tsx so Vite picks it up. */
+/* ── August Proxy UI v2 — design tokens (Phase 1.3) ───────────────── */
+/* Inherits Tailwind v3 utilities + base from tailwind.generated.css.  */
+/* This file is imported by main.tsx so Vite picks it up.              */
 
 @tailwind base;
 @tailwind components;
@@ -8,6 +8,7 @@
 
 @layer base {
   :root {
+    /* Surface palette */
     --dt-background: #f8faff;
     --dt-foreground: #17171a;
     --dt-card: #ffffff;
@@ -16,6 +17,10 @@
     --dt-muted-foreground: #64748b;
     --dt-popover: #ffffff;
     --dt-popover-foreground: #17171a;
+    --dt-elevated: #ffffff;
+    --dt-overlay: rgba(15, 23, 42, 0.55);
+
+    /* Brand */
     --dt-primary: #0053fd;
     --dt-primary-foreground: #ffffff;
     --dt-secondary: #eff6ff;
@@ -25,8 +30,27 @@
     --dt-border: #e2e8f0;
     --dt-input: #cbd5e1;
     --dt-ring: #0053fd;
+    --dt-brand-grad-from: #3b82f6;
+    --dt-brand-grad-to: #8b5cf6;
+
+    /* Status */
     --dt-destructive: #cf2d56;
     --dt-destructive-foreground: #ffffff;
+    --dt-success: #10b981;
+    --dt-success-fg: #047857;
+    --dt-warning: #f59e0b;
+    --dt-warning-fg: #b45309;
+    --dt-info: #3b82f6;
+    --dt-info-fg: #1d4ed8;
+    --dt-danger: #ef4444;
+    --dt-danger-fg: #b91c1c;
+
+    /* Code surfaces */
+    --dt-code-inline: #4338ca;
+    --dt-code-block-bg: #0f172a;
+    --dt-code-block-fg: #e2e8f0;
+
+    /* Sidebar */
     --dt-sidebar: #f3f7ff;
     --dt-sidebar-foreground: #17171a;
     --dt-sidebar-primary: #0053fd;
@@ -35,50 +59,102 @@
     --dt-sidebar-accent-foreground: #1e3a8a;
     --dt-sidebar-border: #e2e8f0;
     --dt-sidebar-ring: #0053fd;
+
+    /* Text-scale multiplier (driven by data-text-size on <html>) */
+    --dt-text-scale: 1;
   }
 
   .dark {
-    --dt-background: #0a0a0b;
+    /* Surface palette (tuned: warmer, more separation between tiers) */
+    --dt-background: #0c0d10;
     --dt-foreground: #f1f5f9;
-    --dt-card: #161618;
+    --dt-card: #15171b;
     --dt-card-foreground: #f1f5f9;
-    --dt-muted: #1e1e21;
+    --dt-muted: #1f2128;
     --dt-muted-foreground: #94a3b8;
-    --dt-popover: #1e1e21;
+    --dt-popover: #1f2128;
     --dt-popover-foreground: #f1f5f9;
-    --dt-primary: #4a8aff;
-    --dt-primary-foreground: #0a0a0b;
+    --dt-elevated: #1a1c22;
+    --dt-overlay: rgba(0, 0, 0, 0.65);
+
+    /* Brand (slightly brighter primary for AAA contrast on near-black) */
+    --dt-primary: #6b9aff;
+    --dt-primary-foreground: #0c0d10;
     --dt-secondary: #1e3a8a;
     --dt-secondary-foreground: #dbeafe;
     --dt-accent: #1e3a8a;
     --dt-accent-foreground: #dbeafe;
-    --dt-border: #1e1e21;
+    --dt-border: #23262d;
     --dt-input: #2a2a2e;
-    --dt-ring: #4a8aff;
-    --dt-destructive: #e75e78;
+    --dt-ring: #6b9aff;
+    --dt-brand-grad-from: #3b82f6;
+    --dt-brand-grad-to: #a78bfa;
+
+    /* Status */
+    --dt-destructive: #f87171;
     --dt-destructive-foreground: #ffffff;
-    --dt-sidebar: #0a0a0b;
+    --dt-success: #34d399;
+    --dt-success-fg: #6ee7b7;
+    --dt-warning: #fbbf24;
+    --dt-warning-fg: #fcd34d;
+    --dt-info: #60a5fa;
+    --dt-info-fg: #93c5fd;
+    --dt-danger: #f87171;
+    --dt-danger-fg: #fca5a5;
+
+    /* Code surfaces */
+    --dt-code-inline: #a8c4ff;
+    --dt-code-block-bg: #0a0b0e;
+    --dt-code-block-fg: #e2e8f0;
+
+    /* Sidebar */
+    --dt-sidebar: #0c0d10;
     --dt-sidebar-foreground: #f1f5f9;
-    --dt-sidebar-primary: #4a8aff;
-    --dt-sidebar-primary-foreground: #0a0a0b;
+    --dt-sidebar-primary: #6b9aff;
+    --dt-sidebar-primary-foreground: #0c0d10;
     --dt-sidebar-accent: #1e3a8a;
     --dt-sidebar-accent-foreground: #dbeafe;
-    --dt-sidebar-border: #1e1e21;
-    --dt-sidebar-ring: #4a8aff;
+    --dt-sidebar-border: #23262d;
+    --dt-sidebar-ring: #6b9aff;
   }
+
+  /* Text-size selector overrides the multiplier */
+  :root[data-text-size="compact"]     { --dt-text-scale: 0.92; }
+  :root[data-text-size="default"]     { --dt-text-scale: 1.00; }
+  :root[data-text-size="comfortable"] { --dt-text-scale: 1.08; }
+  :root[data-text-size="spacious"]    { --dt-text-scale: 1.18; }
 
   html, body, #root { height: 100%; margin: 0; }
   body {
     background: var(--dt-background);
     color: var(--dt-foreground);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    font-size: 1.125rem;
-    line-height: 1.5;
+    font-family: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: calc(0.9375rem * var(--dt-text-scale));
+    line-height: 1.55;
+    letter-spacing: -0.011em;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1 { font-size: 2.25rem;  line-height: 1.15; letter-spacing: -0.022em; font-weight: 600; }
+  h2 { font-size: 1.5rem;   line-height: 1.25; letter-spacing: -0.018em; font-weight: 600; }
+  h3 { font-size: 1.25rem;  line-height: 1.3;  letter-spacing: -0.014em; font-weight: 600; }
+  h4 { font-size: 1.0625rem; line-height: 1.35; letter-spacing: -0.012em; font-weight: 600; }
+
+  kbd {
+    font-family: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+    font-size: 0.6875rem;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 6px;
+    background: var(--dt-muted);
+    color: var(--dt-muted-foreground);
+    border: 1px solid var(--dt-border);
   }
 }
 
 @layer components {
+  /* Surface backgrounds */
   .bg-background     { background-color: var(--dt-background); }
   .bg-foreground     { background-color: var(--dt-foreground); }
   .bg-card           { background-color: var(--dt-card); }
@@ -88,9 +164,17 @@
   .bg-secondary      { background-color: var(--dt-secondary); }
   .bg-accent         { background-color: var(--dt-accent); }
   .bg-destructive    { background-color: var(--dt-destructive); }
+  .bg-elevated       { background-color: var(--dt-elevated); }
   .bg-sidebar        { background-color: var(--dt-sidebar); }
   .bg-sidebar-accent { background-color: var(--dt-sidebar-accent); }
 
+  /* Status backgrounds */
+  .bg-success        { background-color: var(--dt-success); }
+  .bg-warning        { background-color: var(--dt-warning); }
+  .bg-info           { background-color: var(--dt-info); }
+  .bg-danger         { background-color: var(--dt-danger); }
+
+  /* Foregrounds */
   .text-foreground               { color: var(--dt-foreground); }
   .text-card-foreground          { color: var(--dt-card-foreground); }
   .text-muted-foreground         { color: var(--dt-muted-foreground); }
@@ -105,10 +189,31 @@
   .text-sidebar-primary-foreground { color: var(--dt-sidebar-primary-foreground); }
   .text-sidebar-accent-foreground  { color: var(--dt-sidebar-accent-foreground); }
 
+  /* Status foregrounds */
+  .text-success        { color: var(--dt-success); }
+  .text-success-fg     { color: var(--dt-success-fg); }
+  .text-warning        { color: var(--dt-warning); }
+  .text-warning-fg     { color: var(--dt-warning-fg); }
+  .text-info           { color: var(--dt-info); }
+  .text-info-fg        { color: var(--dt-info-fg); }
+  .text-danger         { color: var(--dt-danger); }
+  .text-danger-fg      { color: var(--dt-danger-fg); }
+
+  /* Code */
+  .text-code-inline    { color: var(--dt-code-inline); }
+  .bg-code-block       { background-color: var(--dt-code-block-bg); }
+  .text-code-block     { color: var(--dt-code-block-fg); }
+
+  /* Borders */
   .border-border          { border-color: var(--dt-border); }
   .border-input           { border-color: var(--dt-input); }
   .border-sidebar-border  { border-color: var(--dt-sidebar-border); }
+  .border-success         { border-color: var(--dt-success); }
+  .border-warning         { border-color: var(--dt-warning); }
+  .border-info            { border-color: var(--dt-info); }
+  .border-danger          { border-color: var(--dt-danger); }
 
+  /* Focus rings */
   .ring-ring { --tw-ring-color: var(--dt-ring); }
 }
 
@@ -167,7 +272,8 @@ input::placeholder {
   color: var(--dt-muted-foreground) !important;
 }
 
-/* 3. Eliminate white lines, outlines, and border highlights */
+/* 3. Eliminate white lines, outlines, and border highlights — Tailwind handles via border-border.
+   Keep this guard only for raw `.border` utilities not covered by Tailwind's component shim. */
 .border, .border-t, .border-b, .border-l, .border-r {
   border-color: var(--dt-border) !important;
 }
@@ -287,40 +393,94 @@ input::placeholder {
   transition: opacity 0.25s ease;
 }
 
-/* ── Shared typography classes ────────────────────────────────────── */
+/* ── Shared typography classes (read --dt-text-scale) ────────────── */
 .chat-message-text {
-  font-size: 0.9375rem;
+  font-size: calc(0.9375rem * var(--dt-text-scale));
   line-height: 1.65;
+  letter-spacing: -0.011em;
 }
 
 .chat-thought-text {
-  font-size: 0.9375rem;
+  font-size: calc(0.9375rem * var(--dt-text-scale));
   line-height: 1.6;
+  letter-spacing: -0.011em;
 }
 
 .drawer-section-text {
-  font-size: 0.875rem;
+  font-size: calc(0.875rem * var(--dt-text-scale));
   line-height: 1.55;
+  letter-spacing: -0.011em;
 }
 
 .drawer-muted-text {
-  font-size: 0.8125rem;
+  font-size: calc(0.8125rem * var(--dt-text-scale));
   line-height: 1.5;
+  letter-spacing: -0.011em;
 }
 
 .plan-section-text {
-  font-size: 0.9375rem;
+  font-size: calc(0.9375rem * var(--dt-text-scale));
   line-height: 1.6;
+  letter-spacing: -0.011em;
 }
 
 .session-list-title {
-  font-size: 0.875rem;
+  font-size: calc(0.8125rem * var(--dt-text-scale));
   line-height: 1.4;
+  letter-spacing: -0.005em;
 }
 
 .session-list-meta {
-  font-size: 0.75rem;
+  font-size: calc(0.6875rem * var(--dt-text-scale));
   line-height: 1.4;
+  letter-spacing: 0.04em;
+}
+
+/* Hero (display sizes; intentionally NOT scaled by --dt-text-scale to avoid the wordmark
+   shrinking at "compact" size) */
+.hero-display {
+  font-size: clamp(2.75rem, 4vw + 1rem, 4.5rem);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  font-weight: 600;
+}
+
+.hero-subtitle {
+  font-size: calc(1rem * var(--dt-text-scale));
+  line-height: 1.55;
+  letter-spacing: -0.011em;
+  font-weight: 400;
+}
+
+/* Bubble chrome */
+.bubble-body {
+  font-size: calc(0.875rem * var(--dt-text-scale));
+  line-height: 1.55;
+  letter-spacing: -0.005em;
+}
+
+.bubble-footer-text {
+  font-size: calc(0.65625rem * var(--dt-text-scale));
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+/* Tool rows (humanize layer) */
+.tool-row-text {
+  font-size: calc(0.8125rem * var(--dt-text-scale));
+  line-height: 1.5;
+  letter-spacing: -0.005em;
+  font-weight: 500;
+}
+
+.tool-row-meta {
+  font-size: calc(0.6875rem * var(--dt-text-scale));
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 500;
 }
 
 /* ── Markdown Content Styling ────────────────────────────────────── */
@@ -394,13 +554,13 @@ input::placeholder {
 
 /* Code blocks & inline code */
 .markdown-content code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
   font-size: 0.875em;
   background-color: rgba(100, 150, 255, 0.06);
   padding: 0.125rem 0.25rem;
   border-radius: 0.25rem;
   border: 1px solid rgba(100, 150, 255, 0.12);
-  color: #a8c4ff;
+  color: var(--dt-code-inline);
   font-weight: 500;
 }
 
@@ -409,8 +569,8 @@ input::placeholder {
   margin-bottom: 0.75rem;
   padding: 0.75rem 1rem;
   overflow-x: auto;
-  background-color: #161618;
-  border: 1px solid rgba(226, 232, 240, 0.1);
+  background-color: var(--dt-code-block-bg);
+  border: 1px solid var(--dt-border);
   border-radius: 0.5rem;
 }
 

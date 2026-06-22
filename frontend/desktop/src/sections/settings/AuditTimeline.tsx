@@ -114,8 +114,8 @@ function TimelineRow({ entry, expanded, onToggle }: { entry: AuditEntry; expande
             >
                 <span className={cn(
                     'absolute left-0 top-3 size-[15px] rounded-full border-2',
-                    entry.critical === true ? 'border-rose-400 bg-rose-400/20' :
-                    entry.critical === false ? 'border-emerald-400 bg-emerald-400/20' :
+                    entry.critical === true ? 'border-danger bg-danger/20' :
+                    entry.critical === false ? 'border-success bg-success/20' :
                     'border-white/30 bg-card'
                 )} aria-hidden="true" />
                 <div className="flex items-center gap-2 text-sm">

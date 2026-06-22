@@ -10,14 +10,20 @@ const examples = [
 export function EmptyState({ onPrompt }: { onPrompt: (p: string) => void }) {
   return (
     <div className="max-w-3xl mx-auto px-6 py-16">
-      <div className="text-center mb-10">
-        <div className="inline-flex size-14 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white items-center justify-center mb-4 shadow-lg">
-          <Sparkles className="size-7" />
+      <div className="text-center mb-12">
+        <div
+          className="inline-flex size-16 rounded-2xl items-center justify-center mb-6 shadow-lg ring-1 ring-white/10"
+          style={{
+            backgroundImage:
+              'linear-gradient(135deg, var(--dt-brand-grad-from) 0%, var(--dt-brand-grad-to) 100%)',
+          }}
+        >
+          <Sparkles className="size-8 text-white" />
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight">How can I help?</h1>
-        <p className="mt-2 text-sm text-muted-foreground max-w-md mx-auto">
+        <h1 className="hero-display font-light text-foreground">August</h1>
+        <p className="hero-subtitle mt-4 text-muted-foreground max-w-md mx-auto">
           Ask August anything. Same tools, memory, and skills as the CLI.
-          Press <kbd className="rounded border border-border bg-muted px-1 font-mono">⌘K</kbd> for commands.
+          Press <kbd className="font-mono">⌘K</kbd> for commands.
         </p>
       </div>
       <div className="grid sm:grid-cols-2 gap-2">
@@ -25,9 +31,9 @@ export function EmptyState({ onPrompt }: { onPrompt: (p: string) => void }) {
           <button
             key={ex.title}
             onClick={() => onPrompt(ex.title)}
-            className="text-left rounded-xl border border-border bg-card hover:bg-accent/30 transition px-4 py-3 group"
+            className="text-left rounded-lg border border-border/60 bg-card hover:bg-accent/30 hover:border-border transition px-4 py-3 group"
           >
-            <p className="text-sm font-medium flex items-center gap-1">
+            <p className="text-sm font-medium flex items-center gap-1 text-foreground">
               {ex.title}
               <ChevronRight className="size-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition" />
             </p>

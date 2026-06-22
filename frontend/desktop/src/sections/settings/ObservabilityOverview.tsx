@@ -98,9 +98,9 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
             {/* Stat cards row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <StatCard icon={Activity} label="Tokens (30d)" value={formatCompact(totalTokens30d)} accent="text-foreground" />
-                <StatCard icon={AlertTriangle} label="Critical actions" value={String(criticalCount)} accent={criticalCount > 0 ? 'text-rose-300' : 'text-foreground'} />
-                <StatCard icon={History} label="Available rollbacks" value={String(o.rollback.available)} accent="text-amber-300" />
-                <StatCard icon={Wifi} label="Host agent" value={o.hostAgent.status} accent={variantForHostStatus(o.hostAgent.status) === 'ok' ? 'text-emerald-300' : 'text-muted-foreground'} />
+                <StatCard icon={AlertTriangle} label="Critical actions" value={String(criticalCount)} accent={criticalCount > 0 ? 'text-danger' : 'text-foreground'} />
+                <StatCard icon={History} label="Available rollbacks" value={String(o.rollback.available)} accent="text-warning" />
+                <StatCard icon={Wifi} label="Host agent" value={o.hostAgent.status} accent={variantForHostStatus(o.hostAgent.status) === 'ok' ? 'text-success' : 'text-muted-foreground'} />
                 <StatCard icon={ShieldCheck} label="App policies" value={`${allowedApps} allow / ${deniedApps} deny`} accent="text-foreground" />
                 <StatCard icon={Camera} label="Observations" value={String(observations)} accent="text-foreground" />
             </div>
@@ -323,7 +323,7 @@ function TokensByDayBars({ rows, formatModelLabel }: { rows: Array<{ date: strin
                                     <div
                                         className={cn(
                                             'w-full rounded-t',
-                                            isToday ? 'bg-emerald-400/60' : 'bg-primary/70'
+                                            isToday ? 'bg-success/60' : 'bg-primary/70'
                                         )}
                                         style={{ height: '100%' }}
                                     />

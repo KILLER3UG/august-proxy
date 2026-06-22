@@ -33,9 +33,9 @@ interface StatCardProps {
 function StatCard({ icon: Icon, label, value, sub, accent = 'default' }: StatCardProps) {
   const accentColor = {
     default: 'text-muted-foreground',
-    emerald: 'text-emerald-500',
-    amber: 'text-amber-500',
-    blue: 'text-blue-500',
+    emerald: 'text-success',
+    amber: 'text-warning',
+    blue: 'text-info',
   }[accent];
   return (
     <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 flex flex-col gap-1.5">
@@ -65,17 +65,17 @@ function Heatmap({ cells }: { cells: { date: string; count: number }[] }) {
   const intensity = (count: number): string => {
     if (count === 0) return 'bg-white/[0.025]';
     const ratio = count / max;
-    if (ratio < 0.25) return 'bg-emerald-900/70';
-    if (ratio < 0.5)  return 'bg-emerald-700/80';
-    if (ratio < 0.75) return 'bg-emerald-500/85';
-    return 'bg-emerald-400';
+    if (ratio < 0.25) return 'bg-success/40';
+    if (ratio < 0.5)  return 'bg-success/60';
+    if (ratio < 0.75) return 'bg-success/80';
+    return 'bg-success';
   };
 
   return (
     <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">
-          <Activity size={11} className="text-emerald-500" />
+          <Activity size={11} className="text-success" />
           Activity heatmap
         </div>
         <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60">

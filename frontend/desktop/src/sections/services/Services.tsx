@@ -753,8 +753,8 @@ function ServiceConnectionCard({
             className={cn(
               "inline-block size-2.5 rounded-full shrink-0",
               meta.tone === "good" &&
-                "bg-emerald-500 shadow-[0_0_16px_rgba(16,185,129,.45)]",
-              meta.tone === "warn" && "bg-amber-500",
+                "bg-success shadow-[0_0_16px_rgba(16,185,129,.45)]",
+              meta.tone === "warn" && "bg-warning",
               meta.tone === "muted" && "bg-muted-foreground/30",
             )}
           />
@@ -781,9 +781,9 @@ function ServiceConnectionCard({
             className={cn(
               "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium",
               authBadge.tone === "good" &&
-                "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
+                "border-success/20 bg-success/10 text-success",
               authBadge.tone === "warn" &&
-                "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-300",
+                "border-warning/20 bg-warning/10 text-warning",
               authBadge.tone === "muted" &&
                 "border-border bg-muted/40 text-muted-foreground",
             )}
@@ -856,7 +856,7 @@ function ServiceConnectionCard({
             )}
 
             {service.missingConfig && (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-300">
+              <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                 Google login is not available yet. Add the Google OAuth secret
                 in Google login setup, save, restart August, then connect here.
               </div>
@@ -1016,7 +1016,7 @@ function ServiceConnectionCard({
                 </div>
 
                 {service.missingConfig && (
-                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-300">
+                  <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                     Google login is not available yet. Add the Google OAuth
                     secret above, save, restart August, then connect here.
                   </div>
@@ -1153,12 +1153,12 @@ function LinkImportPanel() {
         </label>
 
         {error && (
-          <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-500/90">
+          <p className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-xs text-danger/90">
             {error}
           </p>
         )}
         {result && (
-          <div className="rounded-xl border bg-emerald-500/10 p-3 text-xs text-emerald-700 dark:text-emerald-300 space-y-2">
+          <div className="rounded-xl border bg-success/10 p-3 text-xs text-success space-y-2">
             <p className="font-medium">Imported successfully</p>
             {result.resolvedUrl && (
               <p className="truncate">Source: {result.resolvedUrl}</p>
@@ -1287,9 +1287,9 @@ function ServerCard({
             <span
               className={cn(
                 "inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full",
-                meta.tone === "good" && "bg-emerald-500/10 text-emerald-500",
-                meta.tone === "bad" && "bg-red-500/10 text-red-500",
-                meta.tone === "warn" && "bg-amber-500/10 text-amber-500",
+                meta.tone === "good" && "bg-success/10 text-success",
+                meta.tone === "bad" && "bg-danger/10 text-danger",
+                meta.tone === "warn" && "bg-warning/10 text-warning",
                 meta.tone === "muted" && "bg-muted text-muted-foreground",
               )}
             >
@@ -1311,7 +1311,7 @@ function ServerCard({
 
           {server.error && (
             <p
-              className="text-[10px] text-red-500/80 mt-1 truncate"
+              className="text-[10px] text-danger/80 mt-1 truncate"
               title={server.error}
             >
               {server.error}
@@ -1351,10 +1351,10 @@ function ServerCard({
                 className={cn(
                   "mt-0.5 size-2 rounded-full shrink-0",
                   server.status === "running"
-                    ? "bg-emerald-500"
+                    ? "bg-success"
                     : server.status === "error"
-                      ? "bg-red-500"
-                      : "bg-amber-500",
+                      ? "bg-danger"
+                      : "bg-warning",
                 )}
               />
               <p className="text-xs leading-relaxed text-muted-foreground">
@@ -1485,9 +1485,9 @@ function ServerCard({
               </p>
             )}
 
-            {error && <p className="text-[10px] text-red-500/80">{error}</p>}
+            {error && <p className="text-[10px] text-danger/80">{error}</p>}
             {saved && (
-              <p className="text-[10px] text-emerald-600 dark:text-emerald-400">
+              <p className="text-[10px] text-success">
                 Saved. Backend restarted MCP servers.
               </p>
             )}

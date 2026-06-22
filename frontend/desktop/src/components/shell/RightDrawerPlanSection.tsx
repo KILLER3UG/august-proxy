@@ -68,7 +68,7 @@ function PlanList({ title, icon, items }: { title: string; icon: React.ReactNode
         {items.map((item, index) => (
           <li key={`${title}-${index}`} className={cn(
             'rounded-md border border-border/60 bg-card/70 px-2.5 py-2 chat-message-text text-foreground/90 space-y-3 max-w-none',
-            title === 'Risks' && 'border-amber-500/30 bg-amber-500/5'
+            title === 'Risks' && 'border-warning/30 bg-warning/5'
           )}>
             <Markdown content={item} />
           </li>

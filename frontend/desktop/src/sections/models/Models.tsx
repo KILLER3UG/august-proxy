@@ -185,7 +185,7 @@ function CatalogRow({ m }: { m: AggregatedModel }) {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium font-mono">{m.id}</span>
           {m.isFree && (
-            <Badge variant="outline" className="text-[9px] border-emerald-500/50 text-emerald-600">free</Badge>
+            <Badge variant="outline" className="text-[9px] border-success/50 text-success">free</Badge>
           )}
           {m.supportsReasoning && (
             <Badge variant="outline" className="text-[9px]">reasoning</Badge>

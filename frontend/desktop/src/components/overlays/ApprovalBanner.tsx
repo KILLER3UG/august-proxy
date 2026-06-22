@@ -133,18 +133,18 @@ export function ApprovalBanner({ sessionId, pollIntervalMs = 2000, onStatusChang
                     transition={{ duration: 0.18 }}
                     className={cn(
                         'mx-auto my-2 flex w-full max-w-3xl items-start gap-3 rounded-lg border px-4 py-3',
-                        'border-amber-500/30 bg-amber-500/10 text-amber-50'
+                        'border-warning/30 bg-warning/10 text-foreground'
                     )}
                     data-testid="approval-banner"
                     role="status"
                     aria-live="polite"
                 >
-                    <ShieldAlert className="mt-0.5 h-5 w-5 flex-none text-amber-300" />
+                    <ShieldAlert className="mt-0.5 h-5 w-5 flex-none text-warning" />
                     <div className="flex-1 text-sm">
                         <div className="font-medium">Awaiting your approval</div>
-                        <div className="text-amber-200/90">{summary}</div>
+                        <div className="text-warning/90">{summary}</div>
                         {status?.pendingArgs && (
-                            <details className="mt-1 text-xs text-amber-200/80">
+                            <details className="mt-1 text-xs text-warning/80">
                                 <summary className="cursor-pointer">View arguments</summary>
                                 <pre className="mt-1 max-h-32 overflow-auto rounded bg-black/30 p-2 text-[11px]">
                                     {JSON.stringify(status.pendingArgs, null, 2)}
@@ -158,7 +158,7 @@ export function ApprovalBanner({ sessionId, pollIntervalMs = 2000, onStatusChang
                             variant="outline"
                             onClick={onReject}
                             disabled={!!deciding}
-                            className="border-amber-500/40 text-amber-100 hover:bg-amber-500/20"
+                            className="border-warning/40 text-warning hover:bg-warning/20"
                         >
                             <X className="mr-1 h-3.5 w-3.5" />
                             Deny
@@ -167,7 +167,7 @@ export function ApprovalBanner({ sessionId, pollIntervalMs = 2000, onStatusChang
                             size="sm"
                             onClick={onApprove}
                             disabled={!!deciding}
-                            className="bg-amber-500 text-black hover:bg-amber-400"
+                            className="bg-warning text-black hover:bg-warning/90"
                         >
                             <ShieldCheck className="mr-1 h-3.5 w-3.5" />
                             {deciding === 'approve' ? 'Approving…' : 'Approve'}

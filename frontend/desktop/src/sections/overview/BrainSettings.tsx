@@ -134,8 +134,8 @@ export function BrainSettings() {
       />
 
       {sourceInfo?.source === 'session' && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
-          <CardContent className="text-xs text-amber-200/90 p-3 flex items-center gap-2">
+        <Card className="border-warning/30 bg-warning/5">
+          <CardContent className="text-xs text-warning/90 p-3 flex items-center gap-2">
             <Brain className="h-4 w-4" />
             Defaults pulled from your last chat session
             {sourceInfo.sessionId ? ` (id: ${sourceInfo.sessionId.slice(0, 12)}…)` : ''}.
@@ -211,7 +211,7 @@ function SourceBadge({ source, sessionId }: { source?: BrainConfigSource; sessio
     return <Badge variant="secondary" className="text-[10px]">Persisted</Badge>;
   }
   if (source === 'session') {
-    return <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-300">From session {sessionId?.slice(0, 8) ?? ''}</Badge>;
+    return <Badge variant="outline" className="text-[10px] border-warning/40 text-warning">From session {sessionId?.slice(0, 8) ?? ''}</Badge>;
   }
   return <Badge variant="outline" className="text-[10px]">Factory default</Badge>;
 }

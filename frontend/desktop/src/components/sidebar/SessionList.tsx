@@ -486,7 +486,7 @@ function Section({
     <div>
       <div className="flex items-center justify-between mb-1.5 px-2">
         <div className="flex items-center gap-1.5">
-            <h3 className="text-xs uppercase tracking-wider text-muted-foreground/75 font-bold">
+            <h3 className="text-[11px] uppercase tracking-caps text-muted-foreground/75 font-semibold">
               {title}
             </h3>
             <span className="text-xs text-muted-foreground/50 font-mono">
@@ -763,11 +763,11 @@ function SessionRow({
           <span
             className={cn(
               "inline-block size-1.5 rounded-full shrink-0 transition-colors",
-              status === "working" && "bg-amber-400",
-              status === "streaming" && "bg-amber-400 animate-pulse",
-              status === "done" && "bg-emerald-400",
-              status === "awaiting" && "bg-blue-400",
-              status === "error" && "bg-red-400",
+              status === "working" && "bg-warning",
+              status === "streaming" && "bg-warning animate-pulse",
+              status === "done" && "bg-success",
+              status === "awaiting" && "bg-info",
+              status === "error" && "bg-danger",
               (!status || status === "idle") && "bg-muted-foreground/60",
             )}
           />
@@ -791,11 +791,11 @@ function SessionRow({
               exit={{ opacity: 0, height: 0 }}
               className="flex items-center gap-1 ml-3 overflow-hidden"
             >
-              <span className="text-xs text-amber-400/80 font-medium">
+              <span className="text-xs text-warning/80 font-medium">
                 {modelDisplayParts(session.model).name}
               </span>
               <motion.span
-                className="text-xs text-amber-400/60 font-medium"
+                className="text-xs text-warning/60 font-medium"
                 animate={{ opacity: [0.4, 1, 0.4] }}
                 transition={{ duration: 1.5, repeat: Infinity }}
               >
@@ -810,15 +810,15 @@ function SessionRow({
               exit={{ opacity: 0, height: 0 }}
               className="flex items-center gap-1 ml-3 overflow-hidden"
             >
-                <span className="text-xs text-amber-400/80 font-medium">
-                  {modelDisplayParts(session.model).name}
-                </span>
-                <span className="text-xs text-amber-400/50">is</span>
+              <span className="text-xs text-warning/80 font-medium">
+                {modelDisplayParts(session.model).name}
+              </span>
+              <span className="text-xs text-warning/50">is</span>
               <span className="flex items-center gap-px">
                 {["w", "o", "r", "k", "i", "n", "g"].map((ch, i) => (
                   <motion.span
                     key={i}
-                    className="text-xs text-amber-400/70 font-medium inline-block"
+                    className="text-xs text-warning/70 font-medium inline-block"
                     animate={{ opacity: [0.3, 1, 0.3], y: [1, -1, 1] }}
                     transition={{
                       duration: 0.8,
@@ -839,11 +839,11 @@ function SessionRow({
               exit={{ opacity: 0, height: 0 }}
               className="flex items-center gap-1 ml-3 overflow-hidden"
             >
-              <span className="text-xs text-emerald-400/80 font-medium">
+              <span className="text-xs text-success/80 font-medium">
                 {modelDisplayParts(session.model).name}
               </span>
               <motion.span
-                className="text-xs text-emerald-400/60 font-medium"
+                className="text-xs text-success/60 font-medium"
                 animate={{ opacity: [0.4, 1, 0.4] }}
                 transition={{ duration: 1.5, repeat: Infinity }}
               >
@@ -858,10 +858,10 @@ function SessionRow({
               exit={{ opacity: 0, height: 0 }}
               className="flex items-center gap-1 ml-3 overflow-hidden"
             >
-              <span className="text-xs text-red-400/80 font-medium">
+              <span className="text-xs text-danger/80 font-medium">
                 {modelDisplayParts(session.model).name}
               </span>
-              <span className="text-xs text-red-400/60 font-medium">
+              <span className="text-xs text-danger/60 font-medium">
                 error
               </span>
             </motion.div>
@@ -977,9 +977,9 @@ function SessionRow({
               onArchive();
               setShowMenu(false);
             }}
-            className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-amber-500 hover:text-amber-400 transition"
+            className="w-full text-left px-2.5 py-1 hover:bg-white/5 flex items-center gap-1.5 text-warning hover:text-warning/80 transition"
           >
-            <Archive className="size-3 text-amber-500/80" />
+            <Archive className="size-3 text-warning/80" />
             Archive Chat
           </button>
 

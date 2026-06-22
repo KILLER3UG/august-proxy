@@ -69,7 +69,7 @@ export function Connections() {
         <CardContent className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             {hostConnected ? (
-              <Wifi className="size-5 text-emerald-500" />
+              <Wifi className="size-5 text-success" />
             ) : (
               <WifiOff className="size-5 text-muted-foreground" />
             )}

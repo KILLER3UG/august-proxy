@@ -109,7 +109,7 @@ function EndpointRow({
           className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-background px-2 py-1 text-[10px] font-mono hover:bg-accent transition shrink-0"
           title="Copy URL"
         >
-          {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+          {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
           {copied ? 'copied' : 'copy'}
         </button>
       </div>
@@ -173,7 +173,7 @@ export function SystemHealthSection() {
           status={<Badge variant={hostConnected ? 'success' : 'secondary'}>{hostStatus}</Badge>}
         >
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            {hostConnected ? <Wifi className="size-3.5 text-emerald-500" /> : <WifiOff className="size-3.5" />}
+            {hostConnected ? <Wifi className="size-3.5 text-success" /> : <WifiOff className="size-3.5" />}
             {hostConnected ? 'Reachable and accepting commands.' : 'Not running.'}
           </div>
         </StatCard>
@@ -187,7 +187,7 @@ export function SystemHealthSection() {
               {memPct !== null && (
                 <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
                   <div
-                    className={`h-full rounded-full ${memPct > 85 ? 'bg-amber-500' : 'bg-primary'}`}
+                    className={`h-full rounded-full ${memPct > 85 ? 'bg-warning' : 'bg-primary'}`}
                     style={{ width: `${memPct}%` }}
                   />
                 </div>

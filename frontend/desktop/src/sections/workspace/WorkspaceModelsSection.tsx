@@ -228,7 +228,7 @@ function ProvidersTab() {
                 >
                   <Server className="size-3.5 shrink-0" />
                   <span className="flex-1 truncate">{p.name}</span>
-                  {p.enabled && <span className="size-2 rounded-full bg-emerald-500" title="enabled" />}
+                  {p.enabled && <span className="size-2 rounded-full bg-success" title="enabled" />}
                 </button>
               ))
             )}
@@ -431,7 +431,7 @@ function AllModelsTab() {
           </div>
           <div>
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Reasoning</p>
-            <p className="text-xl font-semibold tabular-nums text-amber-400">{reasoningCount.toLocaleString()}</p>
+            <p className="text-xl font-semibold tabular-nums text-warning">{reasoningCount.toLocaleString()}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -553,7 +553,7 @@ function AllModelRow({ row }: { row: AllModelRow }) {
       </span>
       <span className="text-center">
         {row.reasoning ? (
-          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-mono text-amber-400">
+          <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-mono text-warning">
             reasoning
           </span>
         ) : (
@@ -1282,8 +1282,8 @@ function ProviderEditor({
               </button>
             </div>
             {confirmClearKey && provider.apiKeySet && (
-              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
-                <p className="text-xs text-amber-100">
+              <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 space-y-2">
+                <p className="text-xs text-warning">
                   Clear the stored API key? The provider will fall back to the
                   <code className="mx-1 px-1 rounded bg-black/30 text-[10px] font-mono">
                     {provider.id.toUpperCase().replace(/-/g, '_')}_API_KEY
@@ -1484,7 +1484,7 @@ function ModelRow({
         </span>
       )}
       {model.reasoning && (
-        <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-mono text-amber-400">
+        <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-mono text-warning">
           reasoning
         </span>
       )}

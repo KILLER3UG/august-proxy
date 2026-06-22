@@ -92,7 +92,7 @@ export function Thinking() {
         actions={
           <div className="flex items-center gap-3">
             {active && (
-              <span className="inline-flex items-center gap-1.5 text-[10px] text-amber-600 font-mono">
+              <span className="inline-flex items-center gap-1.5 text-[10px] text-warning font-mono">
                 <Loader2 className="size-3 animate-spin" /> processing
               </span>
             )}
@@ -130,7 +130,7 @@ function ThinkingCard({ index, trace }: { index: number; trace: ThinkingTrace })
   const isActive = !trace.finishReason;
   const preview = trace.thinking.length > 400 ? trace.thinking.slice(0, 400) + '…' : trace.thinking;
   return (
-    <Card className={isActive ? 'border-amber-500/50 bg-amber-500/5' : ''}>
+    <Card className={isActive ? 'border-warning/50 bg-warning/5' : ''}>
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
           <StepIcon status={isActive ? 'active' : 'done'} />
@@ -155,7 +155,7 @@ function ThinkingCard({ index, trace }: { index: number; trace: ThinkingTrace })
 function StepIcon({ status }: { status: 'done' | 'active' }) {
   if (status === 'active') {
     return (
-      <div className="size-6 rounded-full bg-amber-500/20 text-amber-600 grid place-items-center shrink-0">
+      <div className="size-6 rounded-full bg-warning/20 text-warning grid place-items-center shrink-0">
         <Loader2 className="size-3.5 animate-spin" />
       </div>
     );

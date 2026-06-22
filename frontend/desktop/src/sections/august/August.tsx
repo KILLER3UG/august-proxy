@@ -58,11 +58,11 @@ export function August() {
           </div>
         ))}
         {plan && (
-          <Card className="border-amber-500/50 bg-amber-500/5">
+          <Card className="border-warning/50 bg-warning/5">
             <CardContent className="p-3">
               <div className="flex items-center gap-2 mb-2">
-                <Hash className="size-3 text-amber-600" />
-                <span className="text-[10px] uppercase tracking-wider font-semibold text-amber-700 dark:text-amber-400">Plan submitted — awaiting approval</span>
+                <Hash className="size-3 text-warning" />
+                <span className="text-[10px] uppercase tracking-wider font-semibold text-warning">Plan submitted — awaiting approval</span>
               </div>
               <pre className="text-xs font-mono whitespace-pre-wrap">{plan}</pre>
               <div className="flex gap-2 mt-3">

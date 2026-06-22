@@ -32,7 +32,7 @@ export function WorkspaceToggle({
         className={cn(
           'inline-flex items-center rounded-full px-3 py-1 text-xs font-medium',
           enabled
-            ? 'bg-emerald-500/15 text-emerald-400'
+            ? 'bg-success/15 text-success'
             : 'bg-white/[0.06] text-muted-foreground',
         )}
       >

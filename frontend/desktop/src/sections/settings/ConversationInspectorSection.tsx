@@ -201,7 +201,7 @@ function RequestListButton({
           label={row.status.slice(0, 8)}
         />
         <span className="text-sm font-medium truncate flex-1">{row.clientType}</span>
-        {row.hasThinking && <Brain className="size-3 text-amber-500 shrink-0" />}
+        {row.hasThinking && <Brain className="size-3 text-warning shrink-0" />}
       </div>
       <p className="text-[10px] text-muted-foreground font-mono truncate mt-1">{row.reqId}</p>
       <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-muted-foreground">

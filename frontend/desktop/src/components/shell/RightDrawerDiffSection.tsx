@@ -35,8 +35,8 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
             {diff ? `${files.length} changed file${files.length === 1 ? '' : 's'}` : 'No diff loaded yet'}
           </div>
           <div className="mt-0.5 flex items-center gap-2 font-mono text-xs tabular-nums">
-            {added > 0 && <span className="text-emerald-500">+{added}</span>}
-            {removed > 0 && <span className="text-rose-400">-{removed}</span>}
+            {added > 0 && <span className="text-success">+{added}</span>}
+            {removed > 0 && <span className="text-danger">-{removed}</span>}
             {!added && !removed && <span className="text-muted-foreground/60">0</span>}
           </div>
         </div>
@@ -94,8 +94,8 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {file.status && <Badge variant="secondary" className="text-[10px]">{file.status}</Badge>}
-                  <span className="font-mono text-xs text-emerald-500">+{file.added}</span>
-                  <span className="font-mono text-xs text-rose-400">-{file.removed}</span>
+                  <span className="font-mono text-xs text-success">+{file.added}</span>
+                  <span className="font-mono text-xs text-danger">-{file.removed}</span>
                   <ArrowRight className="size-3 text-muted-foreground/50" />
                   <FileText className="size-3 text-muted-foreground/50" />
                 </div>

@@ -82,13 +82,13 @@ export function Terminal() {
 
       {/* Pending approvals */}
       {approvals.length > 0 && (
-        <Card className="border-amber-500/50 bg-amber-500/5">
+        <Card className="border-warning/50 bg-warning/5">
           <CardContent className="p-3 space-y-2">
-            <p className="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400 font-semibold flex items-center gap-1">
+            <p className="text-[10px] uppercase tracking-wider text-warning font-semibold flex items-center gap-1">
               <ShieldAlert className="size-3" /> {approvals.length} approval{approvals.length > 1 ? 's' : ''} required
             </p>
             {approvals.map((a) => (
-              <div key={a.requestId} className="flex items-start justify-between gap-3 rounded-md bg-card/70 border border-amber-500/30 px-3 py-2">
+              <div key={a.requestId} className="flex items-start justify-between gap-3 rounded-md bg-card/70 border border-warning/30 px-3 py-2">
                 <div className="min-w-0">
                   <pre className="text-xs font-mono whitespace-pre-wrap break-all">{a.command || a.inputPreview || '(no command)'}</pre>
                   <p className="text-[10px] text-muted-foreground mt-1">{a.reason || a.cwd}</p>

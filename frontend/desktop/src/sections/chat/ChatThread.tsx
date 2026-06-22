@@ -4,7 +4,7 @@
 
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type KeyboardEvent } from 'react';
 import { Send, Paperclip, Mic, AtSign, Plus, Sparkles, ChevronRight, ChevronDown, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw } from 'lucide-react';
-import { cn, formatTimeAgo } from '@/lib/utils';
+import { cn, formatClockTime } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -1338,7 +1338,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 }}
                 className="w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between gap-2"
               >
-                <span className="font-mono font-medium text-amber-500 shrink-0">{c.name}</span>
+                <span className="font-mono font-medium text-warning shrink-0">{c.name}</span>
                 <span className="text-[10px] text-muted-foreground truncate">{c.desc}</span>
               </button>
             ))}
@@ -1356,8 +1356,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         {/* Queued message pill — shown above the composer when a follow-up
             message is waiting for the current turn to finish. */}
         {queuedMessage && (
-          <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-xl border border-amber-500/30 bg-amber-500/5 text-[11px] animate-in fade-in slide-in-from-bottom-1 duration-150">
-            <span className="text-amber-600 font-semibold uppercase tracking-wider">Queued</span>
+          <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-xl border border-warning/30 bg-warning/5 text-[11px] animate-in fade-in slide-in-from-bottom-1 duration-150">
+            <span className="text-warning font-semibold uppercase tracking-wider">Queued</span>
             <span className="truncate text-muted-foreground flex-1 min-w-0">
               {queuedMessage.text.length > 120 ? queuedMessage.text.slice(0, 120).trim() + '…' : queuedMessage.text}
             </span>
@@ -2052,7 +2052,7 @@ function MessageBubble({
       {/* todos are rendered in the layout-level Workbench sidebar */}
 	      {isUser ? (
 	        <>
-	          <div className="rounded-2xl border border-border/40 bg-muted/40 dark:bg-[#161618] px-4 py-2.5 chat-message-text text-foreground shadow-sm max-w-[85%] ml-auto">
+	          <div className="group rounded-xl border border-border/60 bg-card px-3.5 py-2 max-w-[80%] ml-auto shadow-xs hover:border-border/90 hover:shadow-soft transition-[border-color,box-shadow] duration-150">
 	            {editing ? (
 	              <div className="flex flex-col gap-2">
 	                <textarea
@@ -2063,90 +2063,94 @@ function MessageBubble({
 	                  autoFocus
 	                />
 	                <div className="flex items-center gap-1.5 justify-end">
-	                  <button onClick={cancelEdit} className="px-2 py-0.5 text-[10px] rounded-md hover:bg-muted text-muted-foreground transition">Cancel</button>
-	                  <button onClick={saveEdit} className="px-2 py-0.5 text-[10px] rounded-md bg-primary text-primary-foreground hover:opacity-90 transition">Save</button>
+	                  <button onClick={cancelEdit} className="px-2.5 py-0.5 text-[11px] rounded-md hover:bg-muted text-muted-foreground transition">Cancel</button>
+	                  <button onClick={saveEdit} className="px-2.5 py-0.5 text-[11px] rounded-md bg-primary text-primary-foreground hover:opacity-90 transition">Save</button>
 	                </div>
 	              </div>
 	            ) : (
 	              <div className={cn(
 	                "relative",
-	                !userMsgExpanded && message.content.length > LONG_MSG_THRESHOLD && "max-h-[200px] overflow-hidden"
+	                !userMsgExpanded && message.content.length > LONG_MSG_THRESHOLD && "max-h-[160px] overflow-hidden"
 	              )}>
 	                <Markdown content={message.content} />
 		                {!userMsgExpanded && message.content.length > LONG_MSG_THRESHOLD && (
-		                  <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-background to-transparent pointer-events-none" />
+		                  <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-card to-transparent pointer-events-none" />
 		                )}
 	              </div>
 	            )}
-	            {!editing && message.content.length > LONG_MSG_THRESHOLD && (
+	            {!editing && (
+	              /* In-bubble footer: timestamp + copy button. */
+	              <div className="flex items-center justify-between gap-2 mt-2 pt-1.5 border-t border-border/30">
+	                <span className="bubble-footer-text text-muted-foreground/70 font-medium">
+	                  {message.timestamp ? formatClockTime(message.timestamp) : ''}
+	                </span>
+	                <button
+	                  onClick={handleCopy}
+	                  className="p-0.5 rounded text-muted-foreground/70 hover:text-foreground transition-colors duration-150"
+	                  title="Copy message"
+	                  aria-label="Copy message"
+	                >
+	                  {copied ? (
+	                    <Check className="size-3 text-success" />
+	                  ) : (
+	                    <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+	                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+	                    </svg>
+	                  )}
+	                </button>
+	              </div>
+	            )}
+	          </div>
+	          <div
+	            className="flex items-center gap-1 mt-1 mr-1 transition-opacity duration-150 self-end opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+	          >
+	            {message.content.length > LONG_MSG_THRESHOLD && !editing && (
 	              <button
 	                type="button"
 	                onClick={() => setUserMsgExpanded(!userMsgExpanded)}
-	                className="text-sm font-semibold text-primary hover:underline mt-1"
+	                className="text-[11px] font-semibold uppercase tracking-caps text-primary hover:underline mr-1"
 	              >
 	                {userMsgExpanded ? 'Show less' : 'Show more'}
 	              </button>
 	            )}
+	            <button
+	              onClick={startEdit}
+	              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition"
+	              title="Edit message"
+	            >
+	              <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+	                <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>
+	              </svg>
+	            </button>
+	            <button
+	              onClick={onRevert}
+	              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition font-mono text-[11px] leading-none"
+	              title="Revert changes after this message"
+	            >
+	              &larr;
+	            </button>
+	            {isLast && (
+	              <button
+	                onClick={handleRegenClick}
+	                disabled={streaming || isRegenerating}
+	                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
+	                title="Regenerate response"
+	              >
+	                <svg
+	                  className={cn("size-3", isRegenerating && "animate-spin")}
+	                  viewBox="0 0 24 24"
+	                  fill="none"
+	                  stroke="currentColor"
+	                  strokeWidth="2"
+	                  strokeLinecap="round"
+	                  strokeLinejoin="round"
+	                >
+	                  <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+	                </svg>
+	              </button>
+	            )}
 	          </div>
-          {/* Action buttons below user message */}
-          <div className={cn(
-            "flex items-center gap-0.5 mt-1 mr-1 transition-opacity duration-150",
-            showActions ? "opacity-100" : "opacity-0"
-          )}
-            style={{ alignSelf: 'flex-end' }}>
-            <button
-              onClick={handleCopy}
-              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition relative"
-              title="Copy"
-            >
-              <div className={cn("transition-transform duration-200", copied ? "scale-110 text-green-500" : "scale-100")}>
-                {copied ? (
-                  <Check className="size-3" />
-                ) : (
-                  <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                  </svg>
-                )}
-              </div>
-            </button>
-            <button
-              onClick={startEdit}
-              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition"
-              title="Edit message"
-            >
-              <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>
-              </svg>
-            </button>
-            <button
-              onClick={onRevert}
-              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition font-mono text-[11px] leading-none"
-              title="Revert changes after this message"
-            >
-              &larr;
-            </button>
-            {isLast && (
-              <button
-                onClick={handleRegenClick}
-                disabled={streaming || isRegenerating}
-                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
-                title="Regenerate response"
-              >
-                <svg
-                  className={cn("size-3", isRegenerating && "animate-spin")}
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-                </svg>
-              </button>
-            )}
-          </div>
-        </>
+	        </>
       ) : (
         <>
           <div className="flex flex-col w-full gap-2">
@@ -2168,107 +2172,146 @@ function MessageBubble({
                     <ReasoningBlock text="" isGenerating />
                   </motion.div>
                 )}
-                {displayBlocks.map((block, index) => {
-                  const key = block.id || `${block.type}_${index}`;
-                  const renderBlock = () => {
-                    if (block.type === 'thinking') {
+                {(() => {
+                  // Pre-process blocks: group consecutive tool_call/command
+                  // entries into a single "tool_group" so they share one
+                  // parent timeline rail instead of each rendering their own.
+                  type ToolEntry = typeof displayBlocks[number] & { tool: NonNullable<typeof displayBlocks[number]['tool']> };
+                  type RenderUnit =
+                    | { kind: 'single'; block: typeof displayBlocks[number]; index: number }
+                    | { kind: 'tool_group'; entries: Array<{ block: ToolEntry; index: number }> };
+
+                  const units: RenderUnit[] = [];
+                  let i = 0;
+                  while (i < displayBlocks.length) {
+                    const block = displayBlocks[i];
+                    if ((block.type === 'tool_call' || block.type === 'command') && block.tool) {
+                      const entries: Array<{ block: ToolEntry; index: number }> = [];
+                      while (
+                        i < displayBlocks.length &&
+                        (displayBlocks[i].type === 'tool_call' || displayBlocks[i].type === 'command') &&
+                        displayBlocks[i].tool
+                      ) {
+                        entries.push({ block: displayBlocks[i] as ToolEntry, index: i });
+                        i++;
+                      }
+                      units.push({ kind: 'tool_group', entries });
+                    } else {
+                      units.push({ kind: 'single', block, index: i });
+                      i++;
+                    }
+                  }
+
+                  return units.map((unit) => {
+                    if (unit.kind === 'tool_group') {
+                      const renderToolEntry = ({ block, index }: { block: ToolEntry; index: number }) => {
+                        const isSubagentCall =
+                          block.tool.name === 'august__spawn_subagent' ||
+                          block.tool.name === 'workbench_spawn_subagent' ||
+                          block.tool.name === 'august__run_team' ||
+                          block.tool.name === 'workbench_run_team';
+                        const promptEntries = isSubagentCall && block.tool.id && subagentPrompts
+                          ? Array.from(subagentPrompts.entries())
+                              .filter(([k]) => k === block.tool!.id)
+                              .map(([, v]) => v)
+                          : [];
+                        const subagentContainers = isSubagentCall && block.tool.id && subagentBlocks
+                          ? Array.from(subagentBlocks.values())
+                              .filter((s) => s.parentToolId === block.tool!.id)
+                              .sort((a, b) => a.startedAt - b.startedAt)
+                          : [];
+                        return (
+                          <div key={block.tool.id || `tool_${index}`}>
+                            <ToolCallItemComp
+                              tool={block.tool}
+                              progress={block.tool.id ? toolProgress?.get(block.tool.id) : undefined}
+                              agentIdOverride={promptEntries[0]?.subagentId}
+                            />
+                            {promptEntries.length > 0 && (
+                              <div className="ml-3 mt-1 flex flex-col gap-1">
+                                {promptEntries.map((p, pi) => (
+                                  <PromptDisclosure
+                                    key={`${block.tool.id}-prompt-${pi}`}
+                                    content={p.content}
+                                    tokens={p.tokens}
+                                    label={p.subagentId
+                                      ? `SUB-AGENT PROMPT · ${p.subagentId}`
+                                      : 'SUB-AGENT PROMPT'}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                            {subagentContainers.length > 0 && (
+                              <div className="ml-3 mt-1 flex flex-col gap-1">
+                                {subagentContainers.map((s) => (
+                                  <SubagentBlock
+                                    key={s.jobId}
+                                    state={s}
+                                    subBlocks={subagentBlocks}
+                                    subPrompts={subagentPrompts}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      };
+
                       return (
-                        <ReasoningBlock
-                          text={block.content || ''}
-                          isGenerating={isLast && streaming && index === displayBlocks.length - 1}
-                          duration={message.thinkingDuration}
-                        />
-                      );
-                    } else if (block.type === 'tool_call' || block.type === 'command') {
-                      if (!block.tool) return null;
-                      const isSubagentCall =
-                        block.tool.name === 'august__spawn_subagent' ||
-                        block.tool.name === 'workbench_spawn_subagent' ||
-                        block.tool.name === 'august__run_team' ||
-                        block.tool.name === 'workbench_run_team';
-                      // For a subagent tool call, look up any prompt
-                      // disclosures the backend emitted for this tool_use id.
-                      // For run_team, multiple sub-agents can share the same
-                      // toolUseId, so render them all in spawn order.
-                      const promptEntries = isSubagentCall && block.tool.id && subagentPrompts
-                        ? Array.from(subagentPrompts.entries())
-                            .filter(([k]) => k === block.tool!.id)
-                            .map(([, v]) => v)
-                        : [];
-                      // Live sub-agent containers attached to this parent
-                      // tool call. Keyed by `parentToolId` (= the tool id).
-                      // For run_team, multiple sub-agents can share the
-                      // same parent tool id — render all of them in order.
-                      const subagentContainers = isSubagentCall && block.tool.id && subagentBlocks
-                        ? Array.from(subagentBlocks.values())
-                            .filter((s) => s.parentToolId === block.tool!.id)
-                            .sort((a, b) => a.startedAt - b.startedAt)
-                        : [];
-                      return (
-                        <div className="my-1">
-                          <ToolCallItemComp
-                            tool={block.tool}
-                            progress={block.tool.id ? toolProgress?.get(block.tool.id) : undefined}
-                            agentIdOverride={promptEntries[0]?.subagentId}
-                          />
-                          {promptEntries.length > 0 && (
-                            <div className="ml-3 mt-1 flex flex-col gap-1">
-                              {promptEntries.map((p, pi) => (
-                                <PromptDisclosure
-                                  key={`${block.tool!.id}-prompt-${pi}`}
-                                  content={p.content}
-                                  tokens={p.tokens}
-                                  label={p.subagentId
-                                    ? `SUB-AGENT PROMPT · ${p.subagentId}`
-                                    : 'SUB-AGENT PROMPT'}
-                                />
-                              ))}
-                            </div>
-                          )}
-                          {subagentContainers.length > 0 && (
-                            <div className="ml-3 mt-1 flex flex-col gap-1">
-                              {subagentContainers.map((s) => (
-                                <SubagentBlock
-                                  key={s.jobId}
-                                  state={s}
-                                  subBlocks={subagentBlocks}
-                                  subPrompts={subagentPrompts}
-                                />
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    } else if (block.type === 'final_output') {
-                      if (!block.content) return null;
-                      // AI bubbles are always rendered in full — only the
-                      // user bubble has collapse/expand behaviour.
-                      const isFinalStreaming = !!(isLast && streaming);
-                      return (
-                        <div className={cn(
-                          "chat-message-text text-foreground/90 space-y-3 max-w-none",
-                          isFinalStreaming && "streaming-markdown-content"
-                        )}>
-                          <Markdown content={block.content} />
-                        </div>
+                        <motion.div
+                          key={`tool_group_${unit.entries[0]?.index ?? 0}`}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.12, ease: 'easeOut' }}
+                          className="chat-streaming-block ml-3 pl-3 border-l-2 border-foreground/15 space-y-1.5"
+                        >
+                          {unit.entries.map(renderToolEntry)}
+                        </motion.div>
                       );
                     }
-                    return null;
-                  };
 
-                  return (
-                    <motion.div
-                      key={key}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.12, ease: 'easeOut' }}
-                      className="chat-streaming-block"
-                    >
-                      {renderBlock()}
-                    </motion.div>
-                  );
-                })}
+                    // Single block (thinking, final_output)
+                    const block = unit.block;
+                    const index = unit.index;
+                    const key = block.id || `${block.type}_${index}`;
+                    const renderBlock = () => {
+                      if (block.type === 'thinking') {
+                        return (
+                          <ReasoningBlock
+                            text={block.content || ''}
+                            isGenerating={isLast && streaming && index === displayBlocks.length - 1}
+                            duration={message.thinkingDuration}
+                          />
+                        );
+                      } else if (block.type === 'final_output') {
+                        if (!block.content) return null;
+                        const isFinalStreaming = !!(isLast && streaming);
+                        return (
+                          <div className={cn(
+                            "chat-message-text text-foreground/90 space-y-3 max-w-none",
+                            isFinalStreaming && "streaming-markdown-content"
+                          )}>
+                            <Markdown content={block.content} />
+                          </div>
+                        );
+                      }
+                      return null;
+                    };
+                    return (
+                      <motion.div
+                        key={key}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.12, ease: 'easeOut' }}
+                        className="chat-streaming-block"
+                      >
+                        {renderBlock()}
+                      </motion.div>
+                    );
+                  });
+                })()}
               </AnimatePresence>
             )}
             {!isUser && message.changedFiles && message.changedFiles.files.length > 0 && (
@@ -2302,7 +2345,7 @@ function MessageBubble({
               className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition relative"
               title="Copy"
             >
-              <div className={cn("transition-transform duration-200", copied ? "scale-110 text-green-500" : "scale-100")}>
+              <div className={cn("transition-transform duration-200", copied ? "scale-110 text-success" : "scale-100")}>
                 {copied ? (
                   <Check className="size-3" />
                 ) : (
@@ -2416,7 +2459,7 @@ function ToolCallCard({
               <div key={entry.path} className="flex items-center gap-1.5 text-[11.5px] truncate" title={entry.path}>
                 <span className="w-2.5 shrink-0 inline-flex justify-center">
                   {entry.status === 'reading' ? (
-                    <Loader2 size={10} className="animate-spin text-blue-500" />
+                    <Loader2 size={10} className="animate-spin text-info" />
                   ) : (
                     <Check size={10} className="text-muted-foreground/50" />
                   )}
@@ -2424,7 +2467,7 @@ function ToolCallCard({
                 <span
                   className={cn(
                     'truncate font-mono',
-                    entry.status === 'reading' ? 'text-blue-400 italic' : 'text-muted-foreground/60 line-through'
+                    entry.status === 'reading' ? 'text-info italic' : 'text-muted-foreground/60 line-through'
                   )}
                 >
                   {entry.status === 'reading' ? 'Reading ' : 'Read '}

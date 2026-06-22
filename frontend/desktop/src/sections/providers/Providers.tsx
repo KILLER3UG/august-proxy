@@ -168,7 +168,7 @@ export function Providers() {
                   <div className="flex items-center gap-3 min-w-0">
                     <span className={cn(
                       'inline-block size-2.5 rounded-full shrink-0',
-                      hasKey ? 'bg-emerald-500 shadow-[0_0_16px_rgba(16,185,129,.45)]' : 'bg-muted-foreground/30'
+                      hasKey ? 'bg-success shadow-[0_0_16px_rgba(16,185,129,.45)]' : 'bg-muted-foreground/30'
                     )} />
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
@@ -183,7 +183,7 @@ export function Providers() {
                             className={cn(
                               'inline-block size-1.5 rounded-full shrink-0',
                               healthByProvider.get(p.id)?.online
-                                ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,.5)]'
+                                ? 'bg-success shadow-[0_0_8px_rgba(16,185,129,.5)]'
                                 : 'bg-muted-foreground/40'
                             )}
                             title={healthByProvider.get(p.id)?.online ? 'Live · reachable' : 'Offline or unreachable'}
@@ -205,7 +205,7 @@ export function Providers() {
                         configured
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-300">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-warning/20 bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning">
                         <ShieldCheck className="size-2.5" />
                         needs auth
                       </span>
@@ -317,7 +317,7 @@ export function Providers() {
                           <div className="flex flex-wrap gap-1.5">
                             {providerDetails.envVars.map(envVar => (
                               <span key={envVar} className="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-mono text-muted-foreground">
-                                <span className={cn('size-1.5 rounded-full', providerDetails.envStatus?.[envVar] ? 'bg-emerald-500' : 'bg-muted-foreground/30')} />
+                                <span className={cn('size-1.5 rounded-full', providerDetails.envStatus?.[envVar] ? 'bg-success' : 'bg-muted-foreground/30')} />
                                 {envVar}
                               </span>
                             ))}
@@ -346,7 +346,7 @@ export function Providers() {
                           </Button>
                         </div>
                         {saveMsg && saveMsg.id === p.id && (
-                          <span className={cn('text-[10px]', saveMsg.type === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive')}>
+                          <span className={cn('text-[10px]', saveMsg.type === 'ok' ? 'text-success' : 'text-destructive')}>
                             {saveMsg.text}
                           </span>
                         )}

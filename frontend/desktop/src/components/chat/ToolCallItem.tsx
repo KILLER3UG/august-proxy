@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, Check, CheckCircle2, ChevronDown, ChevronRight, Code2, Loader2, FileSearch } from 'lucide-react';
+import { AlertCircle, Check, CheckCircle2, ChevronDown, ChevronRight, CircleDot, Code2, Loader2, FileSearch } from 'lucide-react';
 import { cn, fmtElapsed } from '@/lib/utils';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ToolIcon } from '@/components/ui/ToolIcon';
@@ -267,6 +267,16 @@ export function ToolCallItem({
   const labelTitle = isCommand && commandText && commandText.length > 120 ? commandText : undefined;
   const displayLabel = (elapsed !== undefined && elapsed >= 100) ? `${label} · ${formatTimer(elapsed)}` : label;
 
+  // Always-visible friendly context line: prefer the humanized summary from
+  // formatToolContext; fall back to a single-line truncation of the raw
+  // JSON args when no formatter matches.
+  const friendlyCtx = tool.context ? formatToolContext(tool.name, tool.context) : null;
+  const inlineContextText =
+    friendlyCtx?.summary ??
+    (tool.context && tool.context.length > 80
+      ? `${tool.context.slice(0, 77).trimEnd()}…`
+      : tool.context ?? null);
+
   return (
     <div className="text-xs text-muted-foreground w-full py-0.5" data-slot="tool-block">
       <DisclosureRow
@@ -317,17 +327,40 @@ export function ToolCallItem({
               </span>
             )}
           </span>
-          {tool.status === 'done' && (
-            <span className="text-primary/80 text-[10px]">done</span>
-          )}
-          {tool.status === 'error' && (
-            <span className="text-destructive text-[10px]">error</span>
-          )}
+          <span className="flex items-center gap-1.5 shrink-0 ml-auto pl-2">
+            {tool.status === 'done' && (
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block size-1.5 rounded-full bg-success" />
+                <span className="tool-row-meta text-success">done</span>
+              </span>
+            )}
+            {tool.status === 'error' && (
+              <span className="inline-flex items-center gap-1">
+                <AlertCircle className="size-3 text-danger" />
+                <span className="tool-row-meta text-danger">failed</span>
+              </span>
+            )}
+            {tool.status === 'running' && tool.pendingApproval && (
+              <span className="inline-flex items-center gap-1">
+                <CircleDot className="size-3 text-warning animate-pulse" />
+                <span className="tool-row-meta text-warning">awaiting</span>
+              </span>
+            )}
+          </span>
         </span>
       </DisclosureRow>
 
+      {inlineContextText && (
+        <div
+          className="tool-row-meta mt-0.5 text-muted-foreground/85 truncate"
+          title={tool.context ?? inlineContextText}
+        >
+          {inlineContextText}
+        </div>
+      )}
+
       {open && hasBody && (
-        <div className="pl-3 border-l border-foreground/15 ml-2.5 mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1">
+        <div className="mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1">
           {tool.context && <FormattedSection toolName={tool.name} label="context" raw={tool.context} format={formatToolContext} />}
 
           {(() => {
@@ -351,7 +384,7 @@ export function ToolCallItem({
                   >
                     <span className="w-2.5 shrink-0 inline-flex justify-center">
                       {entry.status === 'reading' ? (
-                        <Loader2 size={10} className="animate-spin text-blue-500" />
+                        <Loader2 size={10} className="animate-spin text-info" />
                       ) : (
                         <Check size={10} className="text-muted-foreground/50" />
                       )}
@@ -359,7 +392,7 @@ export function ToolCallItem({
                     <span
                       className={cn(
                         'truncate font-mono',
-                        entry.status === 'reading' ? 'text-blue-400 italic' : 'text-muted-foreground/60 line-through'
+                        entry.status === 'reading' ? 'text-info italic' : 'text-muted-foreground/60 line-through'
                       )}
                     >
                       {entry.status === 'reading' ? 'Reading ' : 'Read '}
@@ -530,7 +563,7 @@ function FormattedSection({
 
   const isSuccess = formatted?.kind === 'success';
   const summaryClass = isSuccess
-    ? 'text-green-700 dark:text-green-400'
+    ? 'text-success'
     : 'text-foreground/90';
 
   return (
@@ -544,7 +577,7 @@ function FormattedSection({
       </span>
       <div className="flex-1 min-w-0 text-muted-foreground">
         <span className={cn('inline-flex items-baseline gap-1.5 whitespace-pre-wrap break-words', summaryClass)}>
-          {isSuccess && <CheckCircle2 className="inline-block size-3 shrink-0 self-center text-green-600 dark:text-green-400" />}
+          {isSuccess && <CheckCircle2 className="inline-block size-3 shrink-0 self-center text-success" />}
           <span>{summary}</span>
         </span>
         {showRawToggle && (

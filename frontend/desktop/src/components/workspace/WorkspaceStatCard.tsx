@@ -11,9 +11,9 @@ export type WorkspaceAccent = 'default' | 'emerald' | 'amber' | 'blue';
 
 const ACCENT_CLASSES: Record<WorkspaceAccent, string> = {
   default: 'text-foreground',
-  emerald: 'text-emerald-500',
-  amber: 'text-amber-500',
-  blue: 'text-blue-500',
+  emerald: 'text-success',
+  amber: 'text-warning',
+  blue: 'text-info',
 };
 
 interface Props {

@@ -181,7 +181,7 @@ function EndpointRow({
           className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[10px] font-mono hover:bg-accent transition shrink-0"
           title="Copy URL"
         >
-          {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+          {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
           {copied ? 'copied' : 'copy'}
         </button>
       </div>
@@ -207,7 +207,7 @@ function CopyableUrl({ url, label }: { url: string; label: string }) {
         className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition shrink-0"
         title="Copy URL"
       >
-        {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+        {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
       </button>
     </div>
   );

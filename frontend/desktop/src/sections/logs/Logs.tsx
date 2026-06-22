@@ -205,6 +205,6 @@ export function Logs() {
 
 function LevelBadge({ level }: { level: LogLevel }) {
   if (level === 'error') return <StatusPill tone="bad" label="error" />;
-  if (level === 'warn') return <Badge variant="outline" className="border-amber-500/50 text-amber-600">{level}</Badge>;
+  if (level === 'warn') return <Badge variant="outline" className="border-warning/50 text-warning">{level}</Badge>;
   return <Badge variant="outline">{level}</Badge>;
 }

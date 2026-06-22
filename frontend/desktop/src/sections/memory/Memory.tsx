@@ -219,7 +219,7 @@ export function Memory() {
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <Database className="size-4 text-blue-500" />
+                  <Database className="size-4 text-info" />
                   <span className="text-xs font-medium text-muted-foreground">Vector Entries</span>
                 </div>
                 <p className="text-2xl font-bold">{vectors.length}</p>
@@ -229,7 +229,7 @@ export function Memory() {
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <Tag className="size-4 text-green-500" />
+                  <Tag className="size-4 text-success" />
                   <span className="text-xs font-medium text-muted-foreground">Memory Items</span>
                 </div>
                 <p className="text-2xl font-bold">{items.length}</p>
@@ -239,7 +239,7 @@ export function Memory() {
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <Network className="size-4 text-purple-500" />
+                  <Network className="size-4 text-primary" />
                   <span className="text-xs font-medium text-muted-foreground">Knowledge Graph</span>
                 </div>
                 <p className="text-2xl font-bold">{graphCounts?.entities ?? '—'}</p>
@@ -283,7 +283,7 @@ export function Memory() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <Database className="size-4 text-blue-500" />
+                <Database className="size-4 text-info" />
                 <span className="text-sm font-semibold">Vector Database</span>
               </div>
               <Badge variant="secondary">{vectors.length} entries</Badge>
@@ -318,7 +318,7 @@ export function Memory() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <Tag className="size-4 text-green-500" />
+                <Tag className="size-4 text-success" />
                 <span className="text-sm font-semibold">Memory Items</span>
               </div>
               <Badge variant="secondary">{items.length} items</Badge>

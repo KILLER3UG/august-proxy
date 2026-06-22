@@ -19,10 +19,10 @@ interface Props {
 
 const LEVELS = [
   'bg-white/[0.025]',
-  'bg-emerald-900/70',
-  'bg-emerald-700/80',
-  'bg-emerald-500/85',
-  'bg-emerald-400',
+  'bg-success/40',
+  'bg-success/60',
+  'bg-success/80',
+  'bg-success',
 ];
 
 function intensity(count: number, max: number): number {

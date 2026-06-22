@@ -79,9 +79,9 @@ const STATUS_LABEL: Record<SubagentBlockState['status'], string> = {
 };
 
 const STATUS_CLASS: Record<SubagentBlockState['status'], string> = {
-  running: 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30',
-  completed: 'text-green-600 dark:text-green-400 bg-green-500/10 border-green-500/30',
-  failed: 'text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/30',
+  running: 'text-warning bg-warning/10 border-warning/30',
+  completed: 'text-success bg-success/10 border-success/30',
+  failed: 'text-danger bg-danger/10 border-danger/30',
   cancelled: 'text-muted-foreground bg-muted/40 border-border',
 };
 
@@ -184,7 +184,7 @@ export function SubagentBlock({ state, subBlocks, subPrompts }: SubagentBlockPro
           {STATUS_LABEL[state.status]}
         </span>
         {elapsed > 0 && (
-          <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+          <span className="tool-row-meta tabular-nums text-muted-foreground/60">
             {elapsed.toFixed(1)}s
           </span>
         )}
@@ -223,7 +223,7 @@ export function SubagentBlock({ state, subBlocks, subPrompts }: SubagentBlockPro
             </>
           )}
           {state.status === 'failed' && state.error && (
-            <div className="rounded-md border border-red-500/30 bg-red-500/5 px-2 py-1.5 text-[11px] text-red-600 dark:text-red-400">
+            <div className="rounded-md border border-danger/30 bg-danger/5 px-2 py-1.5 text-[11px] text-danger">
               {state.error}
             </div>
           )}

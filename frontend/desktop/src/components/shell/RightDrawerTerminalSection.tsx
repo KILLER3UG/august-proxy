@@ -262,13 +262,13 @@ function ApprovalList({
   reject: { mutate: (requestId: string) => void; isPending: boolean };
 }) {
   return (
-    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 space-y-1.5 shadow">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-semibold">
+    <div className="rounded-md border border-warning/30 bg-warning/5 p-2 space-y-1.5 shadow">
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-warning font-semibold">
         <ShieldAlert className="size-3" />
         {approvals.length} approval{approvals.length > 1 ? 's' : ''} required
       </div>
       {approvals.map((approval) => (
-        <div key={approval.requestId} className="flex items-start justify-between gap-2 rounded-md border border-amber-500/20 bg-card/70 p-1.5">
+        <div key={approval.requestId} className="flex items-start justify-between gap-2 rounded-md border border-warning/20 bg-card/70 p-1.5">
           <div className="min-w-0">
             <pre className="whitespace-pre-wrap break-all text-[10.5px] font-mono text-foreground/85">
               {approval.command || approval.inputPreview || '(no command)'}

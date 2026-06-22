@@ -127,7 +127,7 @@ export function WorkspaceInspectorSection() {
                   <div className="flex items-center gap-2">
                     <StatusPill tone={r.isError ? 'bad' : r.status === 'completed' ? 'good' : 'muted'} label={r.status.slice(0, 8)} />
                     <span className="text-sm font-medium truncate flex-1">{r.clientType}</span>
-                    {r.hasThinking && <Brain className="size-3 text-amber-500 shrink-0" />}
+                    {r.hasThinking && <Brain className="size-3 text-warning shrink-0" />}
                   </div>
                   <p className="text-[10px] text-muted-foreground font-mono truncate mt-1">{r.reqId}</p>
                   <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-muted-foreground">

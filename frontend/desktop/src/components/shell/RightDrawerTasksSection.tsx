@@ -26,7 +26,7 @@ export function RightDrawerTasksSection({ todos }: { todos: WorkbenchTodo[] }) {
           active
             ? 'border-primary/30 bg-primary/5 text-primary'
             : total > 0
-              ? 'border-emerald-500/25 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400'
+              ? 'border-success/25 bg-success/5 text-success'
               : 'border-border bg-muted/30 text-muted-foreground'
         )}
       >
@@ -65,14 +65,14 @@ export function RightDrawerTasksSection({ todos }: { todos: WorkbenchTodo[] }) {
             key={todo.id}
             className={cn(
               'flex items-start gap-2 rounded-lg border px-2.5 py-2',
-              todo.status === 'completed' && 'border-emerald-500/15 bg-emerald-500/5',
+              todo.status === 'completed' && 'border-success/15 bg-success/5',
               todo.status === 'in_progress' && 'border-primary/25 bg-primary/5',
               todo.status === 'pending' && 'border-border/60 bg-card/40'
             )}
           >
             <span className="pt-0.5 shrink-0">
               {todo.status === 'completed' ? (
-                <Check className="size-3 text-emerald-500" />
+                <Check className="size-3 text-success" />
               ) : todo.status === 'in_progress' ? (
                 <ArrowRight className="size-3 text-primary" />
               ) : (

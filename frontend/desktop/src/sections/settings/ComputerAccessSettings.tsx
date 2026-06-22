@@ -209,7 +209,7 @@ export function ComputerAccessSettings() {
               onChange={() => saveMutation.mutate({ filesystemScope: 'root' })}
             />
             <div>
-              <div className="font-medium text-amber-400">Full machine (root)</div>
+              <div className="font-medium text-warning">Full machine (root)</div>
               <div className="text-xs text-muted-foreground">
                 August may read/write any path on the host. Critical actions still
                 require explicit confirmation. Use with care.

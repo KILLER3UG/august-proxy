@@ -1,6 +1,5 @@
 import { Outlet } from 'react-router-dom';
 import { useEffect } from 'react';
-import { Sidebar } from './Sidebar';
 import { Titlebar } from './Titlebar';
 import { Statusbar } from './Statusbar';
 import { CommandPalette } from '@/components/overlays/CommandPalette';
@@ -25,7 +24,6 @@ export function AppShell() {
     <div className="h-screen flex flex-col bg-background text-foreground">
       <Titlebar />
       <div className="flex flex-1 min-h-0">
-        <Sidebar />
         <main className="flex-1 overflow-auto">
           <ErrorBoundary>
             <Outlet />

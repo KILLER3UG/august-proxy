@@ -20,7 +20,7 @@ export function WorkbenchPlanPanel({
   const approved = session.approved || !!session.approvedAt;
 
   return (
-    <Card className="mx-auto max-w-3xl border-amber-500/40 bg-amber-500/5">
+    <Card className="mx-auto max-w-3xl border-warning/40 bg-warning/5">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -87,7 +87,7 @@ function PlanList({ title, icon, items }: { title: string; icon: ReactNode; item
         {items.map((item, index) => (
           <li key={`${title}-${index}`} className={cn(
             'rounded-md border border-border/60 bg-card/70 px-2.5 py-2 chat-message-text text-foreground/90 space-y-3 max-w-none',
-            title === 'Risks' && 'border-amber-500/30 bg-amber-500/5'
+            title === 'Risks' && 'border-warning/30 bg-warning/5'
           )}>
             <Markdown content={item} />
           </li>
@@ -128,9 +128,9 @@ export function TodoSummary({ todos }: { todos?: WorkbenchTodo[] }) {
           <div key={todo.id} className="flex items-center gap-2 text-sm">
             <span className="w-3 inline-flex justify-center shrink-0 text-muted-foreground/80">
               {todo.status === 'completed' ? (
-                <Check className="size-3 text-emerald-500" />
+                <Check className="size-3 text-success" />
               ) : todo.status === 'in_progress' ? (
-                <ArrowRight className="size-3 text-amber-500" />
+                <ArrowRight className="size-3 text-warning" />
               ) : (
                 <Circle className="size-3 text-muted-foreground/40" />
               )}

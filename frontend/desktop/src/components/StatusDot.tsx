@@ -6,7 +6,7 @@ export type StatusTone = 'good' | 'muted' | 'warn' | 'bad';
 const TONE_BG: Record<StatusTone, string> = {
   good:  'bg-primary',
   muted: 'bg-muted-foreground/40',
-  warn:  'bg-amber-500',
+  warn:  'bg-warning',
   bad:   'bg-destructive',
 };
 

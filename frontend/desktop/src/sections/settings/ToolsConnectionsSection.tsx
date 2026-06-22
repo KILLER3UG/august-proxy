@@ -100,7 +100,7 @@ function OverviewTab({
             The helper process that runs file &amp; terminal actions on this machine.
           </p>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            {data.hostConnected ? <Wifi className="size-3.5 text-emerald-500" /> : <WifiOff className="size-3.5" />}
+            {data.hostConnected ? <Wifi className="size-3.5 text-success" /> : <WifiOff className="size-3.5" />}
             {data.hostConnected ? 'Reachable and accepting commands.' : 'Not running.'}
           </div>
         </div>

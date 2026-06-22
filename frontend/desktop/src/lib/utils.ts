@@ -43,3 +43,16 @@ export function fmtElapsed(ms: number): string {
   const s = Math.round(sec % 60);
   return s ? `${m}m ${s}s` : `${m}m`;
 }
+
+/** Format an ISO timestamp as a 12-hour clock time, e.g. "06:43 PM". */
+export function formatClockTime(iso: string | number | Date): string {
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  let hours = d.getHours();
+  const minutes = d.getMinutes();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  if (hours === 0) hours = 12;
+  const mm = minutes < 10 ? `0${minutes}` : `${minutes}`;
+  return `${hours}:${mm} ${ampm}`;
+}

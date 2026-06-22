@@ -9,12 +9,14 @@ import { useStore } from '@nanostores/react';
 import {
   Sun,
   Moon,
+  Monitor,
   Keyboard,
   Sparkles,
   GraduationCap,
   Check,
 } from 'lucide-react';
-import { $theme, toggleTheme } from '@/store/theme';
+import { $themeMode, $textSize, setThemeMode, setTextSize } from '@/lib/theme';
+import type { ThemeMode, TextSize } from '@/lib/theme';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
 import { SettingsTooltip } from '@/components/settings/SettingsTooltip';
@@ -39,10 +41,21 @@ const PRESETS: Preset[] = [
   { id: 'privacy',  name: 'Privacy Focused', description: 'Hide usage analytics and history previews.' },
 ];
 
+const TEXT_SIZE_OPTIONS: { id: TextSize; label: string; scale: string }[] = [
+  { id: 'compact',     label: 'Small',      scale: '0.92' },
+  { id: 'default',     label: 'Default',    scale: '1.00' },
+  { id: 'comfortable', label: 'Large',      scale: '1.08' },
+  { id: 'spacious',    label: 'Extra Large', scale: '1.18' },
+];
+
 export function ProfilePreferencesSection() {
-  const theme = useStore($theme);
+  const themeMode = useStore($themeMode);
+  const textSize = useStore($textSize);
   const [activePreset, setActivePreset] = useState<string>('default');
   const [tour, setTour] = useState(true);
+
+  const themeModeIcon =
+    themeMode === 'light' ? Sun : themeMode === 'dark' ? Moon : Monitor;
 
   return (
     <div className="flex h-full flex-col">
@@ -56,44 +69,76 @@ export function ProfilePreferencesSection() {
       <div className="flex-1 overflow-auto px-6 pb-6 space-y-4">
         {/* Appearance */}
         <SettingsCard
-          icon={theme === 'dark' ? Moon : Sun}
+          icon={themeModeIcon}
           title="Appearance"
           description={
             <span>
-              Choose light or dark mode.{' '}
-              <SettingsTooltip content="Dark mode uses a dark background with light text, which many people find easier on the eyes at night." />
+              Choose light, dark, or follow your system. Pick a separate text size below.{' '}
+              <SettingsTooltip content="System mode follows your operating system's light/dark setting in real time." />
             </span>
           }
-          actions={<Badge variant="outline" className="font-mono">{theme}</Badge>}
+          actions={<Badge variant="outline" className="font-mono">{themeMode}</Badge>}
           inert
         >
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => theme !== 'light' && toggleTheme()}
-              className={cn(
-                'flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition',
-                theme === 'light'
-                  ? 'border-primary bg-primary/5 text-foreground'
-                  : 'border-border text-muted-foreground hover:bg-muted/40',
-              )}
-            >
-              <Sun className="size-4" />
-              Light
-              {theme === 'light' && <Check className="ml-auto size-3.5 text-primary" />}
-            </button>
-            <button
-              onClick={() => theme !== 'dark' && toggleTheme()}
-              className={cn(
-                'flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition',
-                theme === 'dark'
-                  ? 'border-primary bg-primary/5 text-foreground'
-                  : 'border-border text-muted-foreground hover:bg-muted/40',
-              )}
-            >
-              <Moon className="size-4" />
-              Dark
-              {theme === 'dark' && <Check className="ml-auto size-3.5 text-primary" />}
-            </button>
+          <div className="grid grid-cols-3 gap-2">
+            <ThemeModeButton mode="light" currentMode={themeMode} onSelect={setThemeMode} Icon={Sun} />
+            <ThemeModeButton mode="dark" currentMode={themeMode} onSelect={setThemeMode} Icon={Moon} />
+            <ThemeModeButton mode="system" currentMode={themeMode} onSelect={setThemeMode} Icon={Monitor} />
+          </div>
+        </SettingsCard>
+
+        {/* Text size */}
+        <SettingsCard
+          icon={Sparkles}
+          title="Text size"
+          description={
+            <span>
+              Scales all chat, sidebar, and drawer text proportionally.{' '}
+              <SettingsTooltip content="The display heading on the empty chat stays a fixed size so the wordmark is always readable." />
+            </span>
+          }
+          actions={<Badge variant="outline" className="font-mono">{textSize}</Badge>}
+          inert
+        >
+          <div className="space-y-3">
+            <div className="grid grid-cols-4 gap-2">
+              {TEXT_SIZE_OPTIONS.map((opt) => {
+                const active = textSize === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => setTextSize(opt.id)}
+                    className={cn(
+                      'flex flex-col items-center justify-center gap-0.5 rounded-lg border px-2 py-3 transition',
+                      active
+                        ? 'border-primary bg-primary/5 text-foreground'
+                        : 'border-border text-muted-foreground hover:bg-muted/40',
+                    )}
+                  >
+                    <span
+                      className="font-semibold leading-none"
+                      style={{ fontSize: `${parseFloat(opt.scale) * 1.1}rem` }}
+                    >
+                      Aa
+                    </span>
+                    <span className="text-[10px] uppercase tracking-caps">{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Live preview block */}
+            <div className="rounded-md border border-border bg-background px-3 py-2.5 space-y-1.5">
+              <p className="text-foreground font-medium leading-snug">
+                August Proxy
+              </p>
+              <p className="text-muted-foreground leading-relaxed">
+                Reads project files, runs commands, and surfaces a clean timeline of what it did.
+              </p>
+              <p className="text-muted-foreground/80 leading-relaxed">
+                Use code, ask questions, or delegate to a sub-agent — every step stays legible.
+              </p>
+            </div>
           </div>
         </SettingsCard>
 
@@ -185,5 +230,32 @@ export function ProfilePreferencesSection() {
         </SettingsCard>
       </div>
     </div>
+  );
+}
+
+interface ThemeModeButtonProps {
+  mode: ThemeMode;
+  currentMode: ThemeMode;
+  onSelect: (mode: ThemeMode) => void;
+  Icon: typeof Sun;
+}
+
+function ThemeModeButton({ mode, currentMode, onSelect, Icon }: ThemeModeButtonProps) {
+  const active = currentMode === mode;
+  const label = mode === 'light' ? 'Light' : mode === 'dark' ? 'Dark' : 'System';
+  return (
+    <button
+      onClick={() => onSelect(mode)}
+      className={cn(
+        'flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition',
+        active
+          ? 'border-primary bg-primary/5 text-foreground'
+          : 'border-border text-muted-foreground hover:bg-muted/40',
+      )}
+    >
+      <Icon className="size-4" />
+      {label}
+      {active && <Check className="ml-auto size-3.5 text-primary" />}
+    </button>
   );
 }

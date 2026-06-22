@@ -192,7 +192,7 @@ function OverviewTab({
                 <span
                   className={`inline-block size-2 rounded-full shrink-0 ${
                     p.isAvailable
-                      ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,.45)]'
+                      ? 'bg-success shadow-[0_0_10px_rgba(16,185,129,.45)]'
                       : 'bg-muted-foreground/30'
                   }`}
                 />

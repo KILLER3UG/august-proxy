@@ -173,7 +173,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
       {/* Header */}
       <div className="p-3 border-b border-border/40 flex items-center justify-between shrink-0 bg-background">
         <div className="flex items-center gap-2">
-          <FolderGit2 className="size-4 text-amber-500/80" />
+          <FolderGit2 className="size-4 text-warning/80" />
           <div className="flex flex-col">
             <span className="font-semibold text-foreground/80 text-[13px]">Workspace Explorer</span>
             {workspacePath && (
@@ -279,9 +279,9 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
                         <ChevronRight className="size-3 text-muted-foreground/60 shrink-0" />
                       )}
                       {node.isExpanded ? (
-                        <FolderOpen className="size-3.5 text-amber-500/80 shrink-0" />
+                        <FolderOpen className="size-3.5 text-warning/80 shrink-0" />
                       ) : (
-                        <Folder className="size-3.5 text-amber-500/80 shrink-0" />
+                        <Folder className="size-3.5 text-warning/80 shrink-0" />
                       )}
                     </>
                   ) : (

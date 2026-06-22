@@ -51,7 +51,7 @@ export function ChangedFilesCard({
           </div>
         </div>
         <div className="shrink-0 flex items-center gap-1.5 font-mono text-[10.5px] tabular-nums">
-          {added > 0 && <span className="text-emerald-500">+{added}</span>}
+          {added > 0 && <span className="text-success">+{added}</span>}
           {removed > 0 && <span className="text-rose-400">-{removed}</span>}
           {added === 0 && removed === 0 && <span className="text-muted-foreground/60">0</span>}
         </div>
@@ -91,7 +91,7 @@ function ChangedFileRow({
           onToggle={hasDiff ? () => setOpen(value => !value) : undefined}
           trailing={
             <span className="font-mono text-[10px] tabular-nums">
-              {file.added > 0 && <span className="text-emerald-500">+{file.added}</span>}
+              {file.added > 0 && <span className="text-success">+{file.added}</span>}
               {' '}
               {file.removed > 0 && <span className="text-rose-400">-{file.removed}</span>}
               {file.added === 0 && file.removed === 0 && <span className="text-muted-foreground/50">0</span>}

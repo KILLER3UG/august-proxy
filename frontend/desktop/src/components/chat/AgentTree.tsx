@@ -45,10 +45,10 @@ async function fetchTree(rootId: string, maxDepth: number): Promise<TreeResponse
 }
 
 const STATUS_BADGE: Record<AgentNode['status'], { label: string; Icon: typeof Loader2; cls: string }> = {
-  running:   { label: 'running',   Icon: Loader2,     cls: 'border-sky-500/40 text-sky-300' },
-  completed: { label: 'completed', Icon: Check,       cls: 'border-emerald-500/40 text-emerald-300' },
-  failed:    { label: 'failed',    Icon: AlertTriangle, cls: 'border-rose-500/40 text-rose-300' },
-  blocked:   { label: 'blocked',   Icon: StopCircle,  cls: 'border-amber-500/40 text-amber-300' },
+  running:   { label: 'running',   Icon: Loader2,     cls: 'border-info/40 text-info' },
+  completed: { label: 'completed', Icon: Check,       cls: 'border-success/40 text-success' },
+  failed:    { label: 'failed',    Icon: AlertTriangle, cls: 'border-danger/40 text-danger' },
+  blocked:   { label: 'blocked',   Icon: StopCircle,  cls: 'border-warning/40 text-warning' },
 };
 
 export function AgentTree({ rootId, maxDepth = 4, onSelect }: Props) {

@@ -166,7 +166,7 @@ export function ChatComposer({
               }}
               className="w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between"
             >
-              <span className="font-mono font-medium text-amber-500">{c.name}</span>
+              <span className="font-mono font-medium text-warning">{c.name}</span>
               <span className="text-[10px] text-muted-foreground">{c.desc}</span>
             </button>
           ))}
@@ -216,9 +216,9 @@ export function ChatComposer({
                 e.target.style.height = Math.min(e.target.scrollHeight, 360) + 'px';
               }}
               onKeyDown={onKey}
-              placeholder={streaming ? 'Type to queue your next message…' : (currentModel ? `Message ${currentModel.name}…` : 'Type a message…')}
+              placeholder={streaming ? 'Type to queue your next message…' : (currentModel ? `Message ${currentModel.name}…` : 'Message August…')}
               rows={1}
-              className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-xs outline-none placeholder:text-muted-foreground"
+              className="w-full resize-none bg-transparent px-4 pt-3 pb-1.5 bubble-body outline-none placeholder:text-muted-foreground"
               style={{ minHeight: '64px', maxHeight: '360px' }}
             />
           </>
@@ -256,7 +256,7 @@ export function ChatComposer({
               <Button onClick={onSend} disabled={!input.trim() && attachments.length === 0} size="sm">
                 <Send className="size-3" />
                 Send
-                <kbd className="ml-1 rounded bg-muted/20 border border-border/20 px-1 text-[10px] font-mono">↵</kbd>
+                <kbd className="ml-1 rounded bg-muted/30 border border-border/30 px-1 text-[11px] font-mono">↵</kbd>
               </Button>
             )}
           </div>
@@ -314,7 +314,7 @@ function ModelDropdown({
     <div className="relative">
       <button
         onClick={() => setOpen((v: boolean) => !v)}
-        className="px-2 py-1 rounded-md text-[11px] bg-muted hover:bg-muted/70 text-foreground border border-border/50 max-w-[140px] truncate"
+        className="px-2.5 py-1 rounded-md text-xs bg-muted hover:bg-muted/70 text-foreground border border-border/60 max-w-[140px] truncate"
         title={label}
       >
         {loading ? 'Loading…' : label}
@@ -359,8 +359,8 @@ function ModelDropdown({
               <div className="text-[10px] text-muted-foreground flex items-center justify-between">
                 <span>{m.provider} · {m.contextWindow.toLocaleString()} ctx</span>
                 <span className="flex gap-1">
-                  {m.isFree && <span className="text-green-600">free</span>}
-                  {m.supportsThinking && <span className="text-amber-600">thinking</span>}
+                  {m.isFree && <span className="text-success">free</span>}
+                  {m.supportsThinking && <span className="text-warning">thinking</span>}
                 </span>
               </div>
             </button>
@@ -390,7 +390,7 @@ function EffortDropdown({ value, onChange }: { value: 'low' | 'medium' | 'high' 
     <div className="relative">
       <button
         onClick={() => setOpen((v: boolean) => !v)}
-        className="px-2 py-1 rounded-md text-[11px] bg-muted hover:bg-muted/70 text-foreground border border-border/50 capitalize"
+        className="px-2.5 py-1 rounded-md text-xs bg-muted hover:bg-muted/70 text-foreground border border-border/60 capitalize"
       >
         {value}
       </button>

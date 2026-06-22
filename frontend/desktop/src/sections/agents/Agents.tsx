@@ -35,10 +35,10 @@ export function Agents() {
 
       {/* Approval gate summary */}
       {registry && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
+        <Card className="border-warning/30 bg-warning/5">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <ShieldCheck className="size-5 text-amber-600 shrink-0 mt-0.5" />
+              <ShieldCheck className="size-5 text-warning shrink-0 mt-0.5" />
               <div>
                 <h3 className="text-sm font-semibold">Approval gate</h3>
                 <p className="text-xs text-muted-foreground mt-1">

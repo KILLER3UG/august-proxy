@@ -148,7 +148,7 @@ export function Traffic() {
       {pending.length > 0 && (
         <Card className="px-3 py-2">
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 font-mono">
-            <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
+            <span className="size-1.5 rounded-full bg-warning animate-pulse" />
             {pending.length} pending
           </div>
           <div className="space-y-1">
@@ -157,7 +157,7 @@ export function Traffic() {
                 <span className="text-muted-foreground">{p.clientType}</span>
                 <span className="truncate flex-1">{p.endpoint}</span>
                 <span className="text-muted-foreground">{p.model}</span>
-                <span className="tabular-nums text-amber-600">{formatDuration(p.elapsedMs)}</span>
+                <span className="tabular-nums text-warning">{formatDuration(p.elapsedMs)}</span>
               </div>
             ))}
           </div>

@@ -17,16 +17,16 @@ import { cn } from '@/lib/utils';
 export type StatusPillVariant = 'ok' | 'warn' | 'danger' | 'muted';
 
 const VARIANT_CLS: Record<StatusPillVariant, string> = {
-    ok: 'bg-emerald-400/15 text-emerald-300 ring-emerald-400/30',
-    warn: 'bg-amber-400/15 text-amber-300 ring-amber-400/30',
-    danger: 'bg-rose-400/15 text-rose-300 ring-rose-400/30',
+    ok: 'bg-success/15 text-success ring-success/30',
+    warn: 'bg-warning/15 text-warning ring-warning/30',
+    danger: 'bg-danger/15 text-danger ring-danger/30',
     muted: 'bg-white/[0.06] text-muted-foreground ring-white/10'
 };
 
 const DOT_CLS: Record<StatusPillVariant, string> = {
-    ok: 'bg-emerald-400',
-    warn: 'bg-amber-400',
-    danger: 'bg-rose-400',
+    ok: 'bg-success',
+    warn: 'bg-warning',
+    danger: 'bg-danger',
     muted: 'bg-muted-foreground/60'
 };
 

@@ -195,9 +195,9 @@ function DiffLineRow({ line }: { line: DiffLine }) {
         className={cn(
           'px-1.5 border-l-2 flex-1 whitespace-pre',
           line.kind === 'added' &&
-            'border-[#4ade80] text-emerald-200/85',
+            'border-success text-success',
           line.kind === 'removed' &&
-            'border-[#f87171] text-rose-200/85',
+            'border-danger text-danger',
           line.kind === 'context' && 'border-transparent text-zinc-300'
         )}
         style={

@@ -88,7 +88,7 @@ export function TrafficSubtab() {
                                 <span className="text-muted-foreground">{p.clientType}</span>
                                 <span className="truncate flex-1">{p.endpoint}</span>
                                 <span className="text-muted-foreground">{p.model}</span>
-                                <span className="tabular-nums text-amber-600">{formatDuration(p.elapsedMs)}</span>
+                                <span className="tabular-nums text-warning">{formatDuration(p.elapsedMs)}</span>
                             </div>
                         ))}
                     </div>

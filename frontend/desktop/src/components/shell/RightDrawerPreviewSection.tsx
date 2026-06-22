@@ -213,7 +213,7 @@ export function RightDrawerPreviewSection({
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Logs</div>
               {activePreview?.logLength ? <span className="font-mono text-[10px] text-muted-foreground">{activePreview.logLength}</span> : null}
             </div>
-            <div className="max-h-[120px] overflow-auto rounded-lg bg-black/80 p-3 font-mono text-[10px] leading-relaxed text-green-400/90">
+            <div className="max-h-[120px] overflow-auto rounded-lg bg-black/80 p-3 font-mono text-[10px] leading-relaxed text-success/90">
               <pre className="whitespace-pre-wrap break-all">
                 {activePreview?.log || active?.status === 'running' ? 'Waiting for preview logs…' : 'No preview logs yet.'}
               </pre>
@@ -237,13 +237,13 @@ function PreviewApprovalList({
   reject: { mutate: (requestId: string) => void; isPending: boolean };
 }) {
   return (
-    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-semibold">
+    <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 space-y-2">
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-warning font-semibold">
         <ShieldAlert className="size-3" />
         {approvals.length} approval{approvals.length > 1 ? 's' : ''} required
       </div>
       {approvals.map((approval) => (
-        <div key={approval.requestId} className="flex items-start justify-between gap-2 rounded-md border border-amber-500/20 bg-card/70 p-2">
+        <div key={approval.requestId} className="flex items-start justify-between gap-2 rounded-md border border-warning/20 bg-card/70 p-2">
           <div className="min-w-0">
             <pre className="whitespace-pre-wrap break-all text-[10.5px] font-mono text-foreground/85">
               {approval.command || '(no command)'}
@@ -283,7 +283,7 @@ function NetworkList({ requests }: { requests: RequestEntry[] }) {
               <span className="truncate font-mono text-[10.5px]">{request.endpoint}</span>
               <span className={cn(
                 'font-mono text-[10px]',
-                request.status === 'success' || request.status === 'completed' ? 'text-emerald-500' : 'text-rose-400'
+                request.status === 'success' || request.status === 'completed' ? 'text-success' : 'text-danger'
               )}>
                 {Math.round(request.durationMs)}ms
               </span>

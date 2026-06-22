@@ -98,7 +98,7 @@ export function GitPanel({ sessionId, className }: GitPanelProps) {
         ) : (
           <>
             <div className="flex items-center gap-3 mb-2 font-mono tabular-nums">
-              <span className="inline-flex items-center gap-1 text-emerald-500">
+              <span className="inline-flex items-center gap-1 text-success">
                 <Plus size={11} /> {s.added}
               </span>
               <span className="inline-flex items-center gap-1 text-rose-400">

@@ -106,7 +106,7 @@ function AutomationCard({
               <span className="text-sm font-semibold">{job.name || job.id}</span>
               <Badge variant="secondary" className="text-[9px]">{job.type || 'automation'}</Badge>
               {job.approvalRequired !== false && (
-                <Badge variant="outline" className="text-[9px] border-amber-500/50 text-amber-600">
+                <Badge variant="outline" className="text-[9px] border-warning/50 text-warning">
                   <ShieldAlert className="size-2.5 mr-0.5" /> approval
                 </Badge>
               )}
@@ -121,7 +121,7 @@ function AutomationCard({
               )}
               {job.agent && <span>agent: {job.agent}</span>}
               {job.lastRunAt && <span>last run: {shortDate(job.lastRunAt)}</span>}
-              {job.nextRunAt && <span className="text-amber-600">next: {shortDate(job.nextRunAt)}</span>}
+              {job.nextRunAt && <span className="text-warning">next: {shortDate(job.nextRunAt)}</span>}
             </div>
 
             {(job.task || job.command) && (
