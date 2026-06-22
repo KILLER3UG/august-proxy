@@ -25,7 +25,7 @@
  */
 
 import { useState, useEffect, useMemo, type ReactNode, type ReactElement } from 'react';
-import { ChevronDown, ChevronRight, Loader2, CheckCircle2, AlertCircle, StopCircle, Sparkles } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, CheckCircle2, AlertCircle, StopCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { MessageBlock } from '@/sections/chat/ChatThread';
 import type { SubagentBlockState } from '@/sections/chat/chat-stream-manager';
@@ -167,7 +167,6 @@ export function SubagentBlock({ state, subBlocks, subPrompts }: SubagentBlockPro
         ) : (
           <ChevronRight className="size-3 text-muted-foreground shrink-0" />
         )}
-        <Sparkles className="size-3 text-primary shrink-0" />
         <span className="text-[11px] text-foreground">
           <span className="font-semibold">{friendlyRole}</span>
           <span className="text-muted-foreground/70"> agent</span>

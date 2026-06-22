@@ -3,8 +3,8 @@
 /* Tool calls render as inline cards. Right rail optional.                  */
 
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type KeyboardEvent } from 'react';
-import { Send, Paperclip, Mic, AtSign, Plus, Sparkles, ChevronRight, ChevronDown, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw } from 'lucide-react';
-import { cn, formatClockTime } from '@/lib/utils';
+import { Send, Paperclip, Mic, AtSign, Plus, ChevronDown, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw } from 'lucide-react';
+import { cn, formatClockTime, workspaceBaseName } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -991,13 +991,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     });
   };
 
-  // Click handler for the example-prompt cards in the empty state.
-  // Inserts the prompt into the composer and focuses it.
-  const handleExamplePrompt = (text: string) => {
-    dispatchInsertComposerText(text);
-    dispatchFocusComposer();
-  };
-
   const send = async () => {
     if (!sessionId || loadedSessionId !== sessionId) return;
 
@@ -1612,45 +1605,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 className="flex-1 flex flex-col items-center justify-center px-6"
               >
                 <div className="w-full max-w-3xl px-4 flex flex-col items-center gap-8">
-                  {/* Hero wordmark + subtitle (Phase 3.1 design tokens) */}
-                  <div
-                    className="inline-flex size-16 rounded-2xl items-center justify-center mb-2 shadow-lg ring-1 ring-white/10"
-                    style={{
-                      backgroundImage:
-                        'linear-gradient(135deg, var(--dt-brand-grad-from) 0%, var(--dt-brand-grad-to) 100%)',
-                    }}
-                  >
-                    <Sparkles className="size-8 text-white" />
-                  </div>
-                  <h1 className="hero-display font-light text-foreground text-center">
-                    August
+                  {/* Project-aware heading */}
+                  <h1 className="text-2xl font-semibold tracking-tight text-center text-foreground/90 mb-2">
+                    What should we build in{' '}
+                    <span className="text-muted-foreground font-mono">
+                      {activeSession?.workspacePath
+                        ? workspaceBaseName(activeSession.workspacePath)
+                        : 'august-proxy'}
+                    </span>
+                    ?
                   </h1>
-                  <p className="hero-subtitle text-muted-foreground max-w-md text-center">
-                    Ask August anything. Same tools, memory, and skills as the CLI.
-                    Press <kbd className="font-mono">⌘K</kbd> for commands.
-                  </p>
-
-                  {/* Example prompt cards */}
-                  <div className="grid sm:grid-cols-2 gap-2 w-full">
-                    {[
-                      { title: 'Refactor the localhost UI', desc: 'Plan + implement a Tauri-based rewrite' },
-                      { title: 'Diagnose why Providers tab is empty', desc: 'Investigate the loadProviderList hoisting bug' },
-                      { title: 'Set up Tailwind v4 with @theme inline', desc: 'Migrate design tokens to the v4 way' },
-                      { title: 'Add a settings overlay (Cmd+,)', desc: 'Replace 12 top-level routes with one panel' },
-                    ].map((ex) => (
-                      <button
-                        key={ex.title}
-                        onClick={() => handleExamplePrompt(ex.title)}
-                        className="text-left rounded-lg border border-border/60 bg-card hover:bg-accent/30 hover:border-border transition px-4 py-3 group"
-                      >
-                        <p className="text-sm font-medium flex items-center gap-1 text-foreground">
-                          {ex.title}
-                          <ChevronRight className="size-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition" />
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{ex.desc}</p>
-                      </button>
-                    ))}
-                  </div>
 
                   {/* Composer or plan banner */}
                   <div className="w-full">

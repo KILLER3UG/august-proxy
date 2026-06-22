@@ -66,9 +66,6 @@ const COLORS: ColorToken[] = [
   { name: 'sidebar-foreground', cssVar: '--dt-sidebar-foreground' },
   { name: 'sidebar-primary',    cssVar: '--dt-sidebar-primary' },
   { name: 'sidebar-accent',     cssVar: '--dt-sidebar-accent' },
-  // Brand gradient
-  { name: 'brand-grad-from', cssVar: '--dt-brand-grad-from' },
-  { name: 'brand-grad-to',   cssVar: '--dt-brand-grad-to' },
 ];
 
 const RADII: SpacingToken[] = [
@@ -130,7 +127,6 @@ function SwatchGrid() {
   const status = COLORS.filter(c => ['success','warning','info','danger','destructive'].some(p => c.name.startsWith(p)));
   const code = COLORS.filter(c => c.name.startsWith('code-'));
   const sidebar = COLORS.filter(c => c.name.startsWith('sidebar'));
-  const gradient = COLORS.filter(c => c.name.startsWith('brand-grad'));
 
   const Section = ({ title, items }: { title: string; items: ColorToken[] }) => (
     <section className="space-y-3">
@@ -148,7 +144,6 @@ function SwatchGrid() {
       <Section title="Status" items={status} />
       <Section title="Code surfaces" items={code} />
       <Section title="Sidebar" items={sidebar} />
-      <Section title="Brand gradient" items={gradient} />
     </div>
   );
 }
@@ -276,7 +271,7 @@ export function DesignRoute() {
 
         <section className="space-y-3">
           <h2 className="text-2xl font-semibold tracking-display">Color tokens</h2>
-          <p className="text-sm text-muted-foreground">Surface, brand, status, code, sidebar, and brand-gradient swatches. Values shown are the resolved CSS variables.</p>
+          <p className="text-sm text-muted-foreground">Surface, brand, status, code, and sidebar swatches. Values shown are the resolved CSS variables.</p>
           <SwatchGrid />
         </section>
 

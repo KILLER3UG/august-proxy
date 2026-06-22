@@ -38,6 +38,9 @@ import {
   Sparkles,
   Bot,
   ShieldCheck,
+  Plug,
+  CheckCircle2,
+  AlertCircle,
   type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -1417,6 +1420,7 @@ function ModelRow({
   const [name, setName] = useState(model.name ?? model.id);
   const [contextWindow, setContextWindow] = useState(model.contextWindow?.toString() ?? '');
   const [reasoning, setReasoning] = useState(!!model.reasoning);
+  const [testResult, setTestResult] = useState<null | { ok: boolean; error?: string; latencyMs: number }>(null);
 
   const update = useMutation({
     mutationFn: () => providersApi.updateModel(providerId, model.id, {
@@ -1425,6 +1429,7 @@ function ModelRow({
       reasoning,
     }),
     onSuccess: () => {
+      setEditing(false);
       onChanged();
       toast.success('Saved');
     },
@@ -1436,74 +1441,148 @@ function ModelRow({
       toast.success(`Removed ${model.id}`);
     },
   });
+  const connect = useMutation({
+    mutationFn: () => providersApi.connectModel(providerId, model.id),
+    onSuccess: (res) => {
+      setTestResult({ ok: res.success, error: res.error, latencyMs: res.latencyMs });
+      if (res.success) toast.success(`${model.id} responded in ${res.latencyMs}ms`);
+    },
+    onError: (e: unknown) => {
+      setTestResult({ ok: false, error: e instanceof Error ? e.message : 'Connection failed', latencyMs: 0 });
+    },
+  });
 
   const ctx = fmtContextWindow(model.contextWindow);
 
   if (editing) {
     return (
-      <div className="px-3 py-3 space-y-2">
-        <div className="grid grid-cols-[1fr_120px] gap-2">
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Display name" />
-          <Input value={contextWindow} onChange={(e) => setContextWindow(e.target.value)} placeholder="context window" type="number" />
+      <div
+        className="px-3 py-3 space-y-2 bg-primary/5 border-l-2 border-primary"
+        data-editing="true"
+      >
+        <div className="flex items-center gap-2">
+          <Pencil className="size-3 text-primary" />
+          <span className="text-[11px] uppercase tracking-caps font-semibold text-primary">
+            Editing
+          </span>
+          <span className="text-xs font-mono text-muted-foreground truncate">{model.id}</span>
         </div>
-        <label className="flex items-center gap-2 text-xs">
-          <input type="checkbox" checked={reasoning} onChange={(e) => setReasoning(e.target.checked)} />
-          Supports reasoning
-        </label>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={() => update.mutate()} disabled={update.isPending}>
-            Save
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
-            Cancel
-          </Button>
+        <div className="border-t border-border/30 pt-2 space-y-2">
+          <div className="grid grid-cols-[1fr_120px] gap-2">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Display name"
+              aria-label="Display name"
+            />
+            <Input
+              value={contextWindow}
+              onChange={(e) => setContextWindow(e.target.value)}
+              placeholder="context window"
+              type="number"
+              aria-label="Context window"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-xs">
+            <input type="checkbox" checked={reasoning} onChange={(e) => setReasoning(e.target.checked)} />
+            Supports reasoning
+          </label>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => update.mutate()} disabled={update.isPending}>
+              {update.isPending ? 'Saving…' : 'Save changes'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5 text-sm">
-      <div className="flex-1 min-w-0">
-        <span className="font-medium truncate">{model.name || model.id}</span>
-      </div>
-      <span
-        className={cn(
-          'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-mono',
-          model.source === 'fetched'
-            ? 'bg-blue-500/15 text-blue-400'
-            : 'bg-white/[0.06] text-muted-foreground',
+    <div className="px-3 py-2.5 text-sm">
+      <div className="flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <span className="font-medium truncate">{model.name || model.id}</span>
+        </div>
+        <span
+          className={cn(
+            'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-mono',
+            model.source === 'fetched'
+              ? 'bg-blue-500/15 text-blue-400'
+              : 'bg-white/[0.06] text-muted-foreground',
+          )}
+          title={`source: ${model.source}`}
+        >
+          {model.source}
+        </span>
+        {ctx && (
+          <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+            {ctx}
+          </span>
         )}
-        title={`source: ${model.source}`}
-      >
-        {model.source}
-      </span>
-      {ctx && (
-        <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-          {ctx}
-        </span>
+        {model.reasoning && (
+          <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-mono text-warning">
+            reasoning
+          </span>
+        )}
+        <button
+          onClick={() => connect.mutate()}
+          disabled={connect.isPending}
+          aria-label="Test model connection"
+          title="Test connection to this model"
+          className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition disabled:opacity-50"
+        >
+          {connect.isPending ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Plug className="size-3.5" />
+          )}
+        </button>
+        <button
+          onClick={() => setEditing(true)}
+          aria-label="Edit model"
+          title="Edit display name and metadata"
+          className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition"
+        >
+          <Pencil className="size-3.5" />
+        </button>
+        <button
+          onClick={() => {
+            if (confirm(`Remove model "${model.id}"?`)) remove.mutate();
+          }}
+          aria-label="Delete model"
+          title="Remove this model"
+          className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition"
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      </div>
+      {testResult && (
+        <div
+          className={cn(
+            'flex items-center gap-1.5 text-[11px] mt-1.5 pl-0.5',
+            testResult.ok ? 'text-success' : 'text-danger',
+          )}
+          role={testResult.ok ? 'status' : 'alert'}
+          aria-live="polite"
+        >
+          {testResult.ok ? (
+            <>
+              <CheckCircle2 className="size-3" />
+              <span>Working · {testResult.latencyMs}ms</span>
+            </>
+          ) : (
+            <>
+              <AlertCircle className="size-3" />
+              <span className="truncate" title={testResult.error}>
+                {testResult.error || 'Connection failed'}
+              </span>
+            </>
+          )}
+        </div>
       )}
-      {model.reasoning && (
-        <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-mono text-warning">
-          reasoning
-        </span>
-      )}
-      <button
-        onClick={() => setEditing(true)}
-        aria-label="Edit model"
-        className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition"
-      >
-        <Pencil className="size-3.5" />
-      </button>
-      <button
-        onClick={() => {
-          if (confirm(`Remove model "${model.id}"?`)) remove.mutate();
-        }}
-        aria-label="Delete model"
-        className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition"
-      >
-        <Trash2 className="size-3.5" />
-      </button>
     </div>
   );
 }

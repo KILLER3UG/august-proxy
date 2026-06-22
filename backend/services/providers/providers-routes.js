@@ -615,6 +615,91 @@ async function handleProvidersRoutes(req, res) {
             }
             return true;
         }
+
+        /* Test a single model's connectivity by sending a minimal chat request */
+        const testMatch = subPath.match(/^\/models\/([^/]+)\/test$/);
+        if (testMatch && method === 'POST') {
+            const modelId = decodeURIComponent(testMatch[1]);
+            const model = (p.models || []).find((m) => m.id === modelId);
+            if (!model) {
+                sendErr(res, 404, 'not_found', `Model ${modelId} not found on ${id}`);
+                return true;
+            }
+            if (!p.apiKey) {
+                sendJson(res, { success: false, error: 'No API key configured for this provider', latencyMs: 0, httpStatus: 401 });
+                return true;
+            }
+
+            const baseUrl = (p.baseUrl || '').replace(/\/+$/, '');
+            let targetUrl = '';
+            if (p.apiFormat === 'anthropic') {
+                targetUrl = `${baseUrl}/v1/messages`;
+            } else if (p.apiFormat === 'openai-responses') {
+                targetUrl = `${baseUrl}/responses`;
+            } else {
+                // openai-chat and fallbacks
+                targetUrl = `${baseUrl}/chat/completions`;
+            }
+
+            const body = p.apiFormat === 'anthropic'
+                ? { model: model.id, max_tokens: 16, messages: [{ role: 'user', content: 'respond with only the word "WORKING"' }] }
+                : { model: model.id, messages: [{ role: 'user', content: 'respond with only the word "WORKING"' }], max_tokens: 16 };
+
+            const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${p.apiKey}` };
+            if (p.apiFormat === 'anthropic') headers['anthropic-version'] = '2023-06-01';
+
+            const start = Date.now();
+            try {
+                const controller = new AbortController();
+                const t = setTimeout(() => controller.abort(), 30_000);
+                const resp = await fetch(targetUrl, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(body),
+                    signal: controller.signal,
+                });
+                clearTimeout(t);
+                const latencyMs = Date.now() - start;
+
+                if (!resp.ok) {
+                    const text = await resp.text().catch(() => '');
+                    const status = resp.status;
+                    const message = status === 401 ? 'Unauthorized — check API key'
+                        : status === 403 ? 'Forbidden — insufficient permissions'
+                        : status === 404 ? `Model not found at provider (${model.id})`
+                        : status === 429 ? 'Rate limited by provider'
+                        : status >= 500 ? 'Provider server error'
+                        : `HTTP ${status}${text ? `: ${text.slice(0, 200)}` : ''}`;
+                    sendJson(res, { success: false, error: message, latencyMs, httpStatus: status });
+                    return true;
+                }
+
+                const json = await resp.json().catch(() => null);
+                const choice = json?.choices?.[0];
+                const contentBlock = Array.isArray(json?.content)
+                    ? json.content.find((p) => p.type === 'text')
+                    : null;
+                const content = contentBlock?.text
+                    || choice?.message?.content
+                    || choice?.message?.reasoning
+                    || json?.output_text
+                    || '';
+                const ok = typeof content === 'string' && /working/i.test(content);
+                sendJson(res, {
+                    success: ok,
+                    content: String(content).slice(0, 200),
+                    latencyMs,
+                });
+                return true;
+            } catch (e) {
+                sendJson(res, {
+                    success: false,
+                    error: e?.message || String(e),
+                    latencyMs: Date.now() - start,
+                });
+                return true;
+            }
+        }
     }
 
     return false;

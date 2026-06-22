@@ -54,6 +54,14 @@ export interface RefreshResult {
   removed: string[];
 }
 
+export interface ConnectModelResult {
+  success: boolean;
+  content?: string;
+  error?: string;
+  latencyMs: number;
+  httpStatus?: number;
+}
+
 function p(path: string) {
   return `/api/providers${path}`;
 }
@@ -71,4 +79,9 @@ export const providersApi = {
     api.delete<void>(p(`/${encodeURIComponent(id)}/models/${encodeURIComponent(modelId)}`)),
   refreshModels: (id: string) =>
     api.post<RefreshResult>(p(`/${encodeURIComponent(id)}/models/refresh`)),
+  /** Test whether a model is reachable + returns "WORKING" to a minimal prompt. */
+  connectModel: (id: string, modelId: string) =>
+    api.post<ConnectModelResult>(
+      p(`/${encodeURIComponent(id)}/models/${encodeURIComponent(modelId)}/test`),
+    ),
 };

@@ -56,3 +56,15 @@ export function formatClockTime(iso: string | number | Date): string {
   const mm = minutes < 10 ? `0${minutes}` : `${minutes}`;
   return `${hours}:${mm} ${ampm}`;
 }
+
+/**
+ * Return the last segment of a file path (handles both `/` and `\` separators
+ * so it works for Windows + Unix workspaces). Used to display project names
+ * in headings without showing the full path.
+ */
+export function workspaceBaseName(p: string): string {
+  if (!p) return '';
+  const trimmed = p.replace(/[\/\\]+$/, '');
+  const parts = trimmed.split(/[\/\\]/);
+  return parts[parts.length - 1] || trimmed;
+}
