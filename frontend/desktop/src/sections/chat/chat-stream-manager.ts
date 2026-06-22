@@ -268,7 +268,7 @@ export async function startChatStream(
 
     chatRuntime.setTransport(turn.turnId, 'http');
 
-    await streamWorkbenchChat({
+    const startResult = await streamWorkbenchChat({
       sessionId: session.id,
       message: params.message,
       provider: params.getWorkbenchProvider(),
@@ -276,6 +276,21 @@ export async function startChatStream(
       model: params.model,
       modelProvider: params.modelProvider,
     }, handlers, abortController.signal);
+
+    // The POST handler returns { sinceSeq } JSON immediately and runs the
+    // generation in the background. Live events are delivered via the
+    // separate /ui/workbench/chat/stream SSE channel — attach it now using
+    // the same per-turn handlers so streamed text / thinking / tool_use /
+    // tool_result events reach the chat UI. Without this, events accumulate
+    // in the chat-event-log unread and the assistant bubble stays empty.
+    if (Number.isFinite(startResult?.sinceSeq)) {
+      await streamWorkbenchReconnect(
+        session.id,
+        handlers,
+        abortController.signal,
+        startResult!.sinceSeq
+      );
+    }
 
     finalize(abortController.signal.aborted ? 'aborted' : 'done');
   } catch (e: any) {

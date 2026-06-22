@@ -210,8 +210,9 @@ function subscribe(sessionId, writer, { sinceSeq } = {}) {
         for (const ev of entry.events) {
             if (ev.seq > sinceSeq) {
                 try {
-                    writer.write(ev);
+                    const keepOpen = writer.write(ev);
                     replayed += 1;
+                    if (keepOpen === false) break;
                 } catch (err) {
                     try { writer.onError?.(err); } catch (_) {}
                     return { unsubscribe: () => entry.listeners.delete(writer), replayed, currentSeq: entry.seq };

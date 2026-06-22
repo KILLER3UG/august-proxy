@@ -1082,11 +1082,19 @@ const requestHandler = async (req, res) => {
             'X-Accel-Buffering': 'no'
         });
 
+        // Prevent ERR_STREAM_WRITE_AFTER_END from crashing the process.
+        // res.write() emits this as an event (not a throw), so try/catch
+        // in the writer doesn't catch it — we need a listener instead.
+        let responseEnded = false;
+        res.on('error', () => { responseEnded = true; });
+
         const writer = {
             write: (entry) => {
+                if (responseEnded) return false;
                 try {
                     res.write(`event: ${entry.type}\ndata: ${JSON.stringify(entry.payload || {})}\nid: ${entry.seq}\n\n`);
                 } catch (_) {
+                    responseEnded = true;
                     // The response is already closed (e.g. client navigated
                     // away). Returning false tells the subscriber loop to
                     // drop us so we stop being invoked.
@@ -1094,11 +1102,14 @@ const requestHandler = async (req, res) => {
                 }
                 if (entry.type === 'done' || entry.type === 'error' || entry.type === 'aborted') {
                     try { res.end(); } catch (_) {}
+                    responseEnded = true;
                     return false;
                 }
                 return true;
             },
             onError: () => {
+                if (responseEnded) return;
+                responseEnded = true;
                 try { res.end(); } catch (_) {}
             },
         };

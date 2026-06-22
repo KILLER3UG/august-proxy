@@ -3,7 +3,7 @@
 /* Tool calls render as inline cards. Right rail optional.                  */
 
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type KeyboardEvent } from 'react';
-import { Send, Paperclip, Mic, AtSign, Plus, Sparkles, ChevronRight, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw } from 'lucide-react';
+import { Send, Paperclip, Mic, AtSign, Plus, Sparkles, ChevronRight, ChevronDown, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw } from 'lucide-react';
 import { cn, formatTimeAgo } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,6 @@ import { ToolIcon as NewToolIcon } from '@/components/ui/ToolIcon';
 import { FileIcon as NewFileIcon } from '@/components/ui/FileIcon';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
-import { SuggestedActionBubble } from '@/components/chat/SuggestedActionBubble';
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
 import { applyToolProgress, visibleProgress, type ToolProgressEvent } from '@/lib/tool-progress';
 import { getToolLabel } from '@/lib/tool-labels';
@@ -344,9 +343,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(sessionId);
   const [runtimeVersion, setRuntimeVersion] = useState(0);
   const streaming = chatRuntime.isSessionStreaming(sessionId);
-  // Suggested follow-up bubble — visible after a turn completes and before
-  // the user types anything new. Resets when the user starts a new turn.
-  const [suggestionDismissed, setSuggestionDismissed] = useState(false);
   // Sub-agent prompt disclosures, keyed by the parent tool_use id. The
   // backend emits a `prompt` SSE event only for august__spawn_subagent /
   // august__run_team calls (and only for the sub-agents they spawn); we
@@ -376,8 +372,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       return { toolProgress: next };
     });
   };
-  const hasAssistantTurn = messages.some(m => m.role === 'assistant' && m.content.length > 0);
-  const showSuggestion = !streaming && !input.trim() && hasAssistantTurn && !suggestionDismissed;
   const [models, setModels] = useState<ModelItem[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(loadHiddenModels);
@@ -547,12 +541,38 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(false);
 
+  const [scrolledFromBottom, setScrolledFromBottom] = useState(false);
+
   const scrollToBottomImmediate = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const scrollable = el.closest('.overflow-y-auto') as HTMLElement | null;
     const target = scrollable ?? el;
     target.scrollTop = target.scrollHeight;
+  }, []);
+
+  const scrollToBottomSmooth = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const scrollable = el.closest('.overflow-y-auto') as HTMLElement | null;
+    const target = scrollable ?? el;
+    target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' });
+  }, []);
+
+  // Track whether the user has scrolled up from the bottom.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const scrollable = el.closest('.overflow-y-auto') as HTMLElement | null ?? el;
+
+    const check = () => {
+      const atBottom = scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight < 1;
+      setScrolledFromBottom(!atBottom);
+    };
+
+    check();
+    scrollable.addEventListener('scroll', check, { passive: true });
+    return () => scrollable.removeEventListener('scroll', check);
   }, []);
 
   const isTurnVisible = (turnSessionId: string | null) => mountedRef.current && visibleSessionId === turnSessionId;
@@ -610,11 +630,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     // "scroll to bottom" needs to walk up to the nearest scrollable ancestor.
     scrollToBottomImmediate();
   }, [sessionId, loadedSessionId, messages, streaming, scrollToBottomImmediate]);
-
-  // Re-arm the suggested-action bubble each time a new turn starts.
-  useEffect(() => {
-    if (streaming) setSuggestionDismissed(false);
-  }, [streaming]);
 
   useEffect(() => {
     setInput(loadComposerDraft(sessionId));
@@ -1629,7 +1644,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
-                className="flex-1 flex flex-col min-h-0"
+                className="flex-1 flex flex-col min-h-0 relative"
               >
                 <div
                   ref={scrollRef}
@@ -1685,6 +1700,25 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         </div>
                       );
                     })}
+                  </div>
+
+                  {/* Scroll-to-bottom chevron at the right edge */}
+                  <div className="sticky bottom-4 z-30 flex justify-end pointer-events-none">
+                    <AnimatePresence>
+                      {scrolledFromBottom && (
+                        <motion.button
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          transition={{ duration: 0.2 }}
+                          onClick={scrollToBottomSmooth}
+                          className="pointer-events-auto mr-3 w-9 h-9 flex items-center justify-center rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-sm text-muted-foreground hover:text-foreground hover:bg-background/95 transition-colors cursor-pointer"
+                          aria-label="Scroll to bottom"
+                        >
+                          <ChevronDown className="size-4" />
+                        </motion.button>
+                      )}
+                    </AnimatePresence>
                   </div>
                 </div>
 
@@ -1776,18 +1810,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     className="shrink-0 z-10 w-full bg-background py-3"
                   >
                     <div className="mx-auto w-full max-w-3xl px-4">
-                      <SuggestedActionBubble
-                        visible={showSuggestion}
-                        onSelect={(s) => {
-                          setInput(s);
-                          setSuggestionDismissed(true);
-                        }}
-                        onDismiss={() => setSuggestionDismissed(true)}
-                      />
                       {renderComposerContent()}
                     </div>
                   </motion.div>
                 )}
+
               </motion.div>
             )}
           </AnimatePresence>
