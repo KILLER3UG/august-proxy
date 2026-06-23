@@ -77,7 +77,7 @@ export function UpdateSection() {
               <div>
                 <p className="text-sm font-medium text-foreground">Current Version</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  August Proxy v2.0.1
+                  August Proxy v0.12.0
                 </p>
               </div>
 
