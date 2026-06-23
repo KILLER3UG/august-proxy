@@ -9,7 +9,7 @@
 // --all downloads for Windows, macOS, and Linux; otherwise only the current
 // host platform is downloaded.
 
-import { mkdir, writeFile, stat, rename, rm } from 'node:fs/promises';
+import { mkdir, writeFile, stat, copyFile, rename, rm, unlink } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { dirname, join, resolve } from 'node:path';
@@ -139,7 +139,17 @@ async function fetchAndStage(target, version) {
         : join(extractedFolder, 'bin', binaryInArchive(target));
     const outPath = outputFileFor(target);
     await mkdir(dirname(outPath), { recursive: true });
-    await rename(innerBin, outPath);
+    try {
+        await rename(innerBin, outPath);
+    } catch (err) {
+        if (err.code === 'EXDEV') {
+            // rename fails across drive letters on Windows; fall back to copy+delete
+            await copyFile(innerBin, outPath);
+            await unlink(innerBin);
+        } else {
+            throw err;
+        }
+    }
     console.log(`[node-bins]   wrote ${outPath}`);
 
     await rm(archive, { force: true });
