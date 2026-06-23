@@ -88,8 +88,8 @@ const WEB_INDEX = path.join(WEB_DIST, 'index.html');
 const LISTEN_PORT = Number(process.env.AUGUST_PROXY_PORT || process.env.PORT || 8080);
 const MAX_CONTEXT_MAX_CHARS = 64000;
 
-// Serve the new Vite/React SPA from web-dist/. Strips /v2 or /ui-v2
-// from the path, or rewrites /v2-assets/* → /assets/*.
+// Serve the Vite/React SPA from web-dist/. Strips /v2 or /ui-v2
+// from the path for backward compat; otherwise uses the path directly.
 function serveSpa(req, res, url, isAsset) {
     let relPath = '';
     if (url.pathname.startsWith('/v2-assets/'))        relPath = url.pathname.slice('/v2-assets/'.length);
@@ -97,6 +97,7 @@ function serveSpa(req, res, url, isAsset) {
     else if (url.pathname.startsWith('/v2/'))           relPath = url.pathname.slice('/v2/'.length);
     else if (url.pathname.startsWith('/ui-v2/'))         relPath = url.pathname.slice('/ui-v2/'.length);
     else if (url.pathname === '/v2' || url.pathname === '/ui-v2') relPath = '';
+    else if (url.pathname !== '/')                       relPath = url.pathname.slice(1); // strip leading /
 
     // Don't serve anything outside web-dist (path traversal guard)
     if (relPath.includes('..')) {

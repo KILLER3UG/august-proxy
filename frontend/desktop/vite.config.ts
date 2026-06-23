@@ -9,7 +9,7 @@ export default defineConfig({
   // Match the URL where the SPA is served (/v2/). All asset URLs in
   // index.html will be prefixed with /v2/ so they resolve correctly
   // when the SPA is mounted under /v2/.
-  base: '/v2/',
+  base: '/',
   build: {
     outDir: '../../web-dist',
     emptyOutDir: true,
