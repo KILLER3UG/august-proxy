@@ -20,7 +20,7 @@
 // backend/services/desktop/asset-updater.js.
 
 import { mkdir, writeFile, readFile, copyFile, rm } from 'node:fs/promises';
-import { existsSync, createReadStream } from 'node:fs';
+import { existsSync, createReadStream, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -66,15 +66,15 @@ async function readVersion() {
 }
 
 function run(command, args, options = {}) {
-    if (process.platform === 'win32' && !command.includes('.')) {
-        command = `${command}.cmd`;
-    }
+    // On Windows, let cmd.exe resolve the executable extension (.cmd/.exe/.bat)
+    // via the shell rather than appending an extension ourselves.
+    const useShell = process.platform === 'win32';
 
     const result = spawnSync(command, args, {
         stdio: 'inherit',
         cwd: options.cwd || root,
         env: { ...process.env, ...(options.env || {}) },
-        shell: process.platform === 'win32' && command.endsWith('.cmd')
+        shell: useShell
     });
     if (result.status !== 0) {
         const exit = result.signal || result.status || 'unknown';
@@ -251,6 +251,18 @@ async function main() {
         if (existsSync(manifestPath)) ghArgs.push(manifestPath);
         const tauriLatest = join(releaseDir, 'latest.json');
         if (existsSync(tauriLatest)) ghArgs.push(tauriLatest);
+
+        // Also upload the Tauri native installers so users can download them directly
+        const tauriBundleDir = resolve(root, 'frontend/desktop/src-tauri/target/release/bundle');
+        const msiDir = join(tauriBundleDir, 'msi');
+        const nsisDir = join(tauriBundleDir, 'nsis');
+        if (existsSync(msiDir)) {
+            for (const f of readdirSync(msiDir)) ghArgs.push(join(msiDir, f));
+        }
+        if (existsSync(nsisDir)) {
+            for (const f of readdirSync(nsisDir)) ghArgs.push(join(nsisDir, f));
+        }
+
         run('gh', ghArgs);
     }
 }
