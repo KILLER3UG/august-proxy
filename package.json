@@ -20,6 +20,7 @@
     "release:patch": "node scripts/release-desktop.mjs patch",
     "release:minor": "node scripts/release-desktop.mjs minor",
     "release:desktop": "npm run build:web && npm run download:node-binaries && npm run tauri -w frontend/desktop build",
+    "version": "node scripts/sync-tauri-version.mjs && git add frontend/desktop/src-tauri/tauri.conf.json frontend/desktop/src/sections/settings/UpdateSection.tsx",
     "test:backend": "node --test backend/test/verification.test.js backend/test/sse-streaming.test.cjs backend/test/route-resolver.test.cjs backend/test/model-resolver.test.cjs backend/test/session-model-inheritance.test.cjs backend/test/sub-agent-alias.test.cjs backend/test/scheduler.test.js",
     "test:memory": "node --test backend/test/memory-evals.test.cjs backend/test/memory-quality.test.cjs backend/test/memory-service-tools.test.cjs",
     "test:frontend": "npm run test -w frontend/desktop",
