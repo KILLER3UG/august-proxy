@@ -15,7 +15,7 @@ const DEFAULT_MINIMAX_MAX_TOKENS = 64000;
 const DEFAULT_MINIMAX_TOTAL_WINDOW = 204800;
 const DEFAULT_MINIMAX_THINKING_RESERVE = 4096;
 const DEFAULT_MINIMAX_SAFETY_BUFFER = 2000;
-const MAX_MANAGED_TOOL_ROUNDS = 3;
+const MAX_MANAGED_TOOL_ROUNDS = 10;
 
 class LlmAdapterBase {
     constructor({ profileName = 'unknown', logPrefix = 'Adapter' } = {}) {

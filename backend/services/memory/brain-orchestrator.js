@@ -12,7 +12,7 @@ const DEFAULT_FEATURES = {
     parallelReadTools: true,
     reviewLearnedGuidelines: true,
     maxAgentDepth: 4,
-    maxWorkbenchToolLoops: 12
+    maxWorkbenchToolLoops: 100
 };
 
 function getBrainConfig() {
@@ -139,7 +139,7 @@ function planBrainTurn({ messages = [], provider = 'claude', model = '', session
 function getWorkbenchMaxToolLoops() {
     const brainConfig = getBrainConfig();
     const value = Number(brainConfig.maxWorkbenchToolLoops || DEFAULT_FEATURES.maxWorkbenchToolLoops);
-    return Number.isFinite(value) && value > 0 ? Math.min(value, 100) : DEFAULT_FEATURES.maxWorkbenchToolLoops;
+    return Number.isFinite(value) && value > 0 ? Math.min(value, 500) : DEFAULT_FEATURES.maxWorkbenchToolLoops;
 }
 
 /**
@@ -217,7 +217,7 @@ function saveBrainConfig(updates = {}) {
             if (key === 'maxAgentDepth') {
                 merged[key] = Math.max(1, Math.min(5, Math.round(value)));
             } else if (key === 'maxWorkbenchToolLoops') {
-                merged[key] = Math.max(1, Math.min(100, Math.round(value)));
+                merged[key] = Math.max(1, Math.min(500, Math.round(value)));
             } else {
                 merged[key] = value;
             }

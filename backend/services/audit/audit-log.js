@@ -72,7 +72,7 @@ function redactValue(value) {
 }
 
 function ensureDirExists(filePath) {
-    retryOnEperm(() => fs.mkdirSync(path.dirname(filePath), { recursive: true }));
+    retryOnTransient(() => fs.mkdirSync(path.dirname(filePath), { recursive: true }));
 }
 
 /**

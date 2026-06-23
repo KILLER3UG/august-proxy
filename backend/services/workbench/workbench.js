@@ -48,6 +48,54 @@ const { renderTeamSkillsForSystem } = require('../tools/skills');
 const { getTeamSkills } = require('../tools/skills');
 const modelCatalog = require('../catalog/model-catalog');
 const modelResolver = require('../../providers/model-resolver');
+const crypto = require('crypto');
+
+// ── Workbench loop safety nets ──────────────────────────────────────────────
+const WORKBENCH_TOKEN_BUDGET = 2_000_000; // ~2M tokens per turn
+const STUCK_LOOP_THRESHOLD = 3;           // same tool+args repeated N times
+
+/**
+ * Build a short fingerprint for a tool call (name + hashed args).
+ * Used to detect stuck loops where the model repeats the same call.
+ */
+function toolCallFingerprint(name, input) {
+    const args = typeof input === 'string' ? input : JSON.stringify(input || {});
+    const hash = crypto.createHash('md5').update(args).digest('hex').slice(0, 12);
+    return `${name}:${hash}`;
+}
+
+/**
+ * Check whether the last N tool calls are all identical.
+ */
+function isStuckLoop(recentFingerprints, threshold = STUCK_LOOP_THRESHOLD) {
+    if (recentFingerprints.length < threshold) return false;
+    const tail = recentFingerprints.slice(-threshold);
+    return tail.every(fp => fp === tail[0]);
+}
+
+/**
+ * Accumulate usage tokens and check the budget.
+ * Returns { exceeded: boolean, total: number }.
+ */
+function accumulateTokens(acc, usage) {
+    if (!usage) return acc;
+    acc.total += (usage.input_tokens || 0) + (usage.output_tokens || 0);
+    acc.exceeded = acc.total >= WORKBENCH_TOKEN_BUDGET;
+    return acc;
+}
+
+/**
+ * Derive a human-readable halt reason from safety-net state.
+ */
+function loopHaltReason(tokenAcc, stuckFp) {
+    if (tokenAcc.exceeded) {
+        return `Workbench stopped: token budget exhausted (~${(tokenAcc.total / 1000).toFixed(0)}k tokens). Consider breaking the task into smaller steps.`;
+    }
+    if (stuckFp) {
+        return `Workbench appears stuck — repeating the same tool call (${stuckFp}). Stopping to avoid an infinite loop.`;
+    }
+    return 'Workbench halted. Review the current plan or send a narrower request.';
+}
 
 /**
  * Resolve the provider profile for a Workbench turn.
@@ -2578,7 +2626,10 @@ async function callAnthropicWorkbenchModel(session) {
     const model = profile._upstreamModel || profile.currentModel || 'claude-opus-4-6';
 
     const events = [];
+    const tokenAcc = { total: 0, exceeded: false };
+    const recentFps = [];
     let loops = 0;
+    let haltFp = null;
     while (loops < getWorkbenchMaxToolLoops()) {
         loops++;
         const brainPolicy = getSessionBrainPolicy(session);
@@ -2611,6 +2662,8 @@ async function callAnthropicWorkbenchModel(session) {
         if (!response.ok) throw new Error(`Workbench upstream error ${response.status}: ${raw.slice(0, 500)}`);
         const data = JSON.parse(raw);
         recordWorkbenchUsage(session, profile, data.usage, { source: 'workbench:anthropic' });
+        accumulateTokens(tokenAcc, data.usage);
+        if (tokenAcc.exceeded) break;
         const content = Array.isArray(data.content) ? data.content : [];
         session.messages.push({ role: 'assistant', content });
         extractAndSyncTodos(session);
@@ -2627,6 +2680,13 @@ async function callAnthropicWorkbenchModel(session) {
             return { session: summarizeSession(session), assistant: extractAssistantText(content), content, events };
         }
 
+        for (const tu of toolUses) {
+            const fp = toolCallFingerprint(tu.name, tu.input);
+            recentFps.push(fp);
+            if (isStuckLoop(recentFps)) { haltFp = fp; break; }
+        }
+        if (haltFp) break;
+
         const results = await executeWorkbenchToolBatch(session, toolUses, { emit });
         results.forEach(r => events.push({ type: 'tool_result', id: r.tool_use_id, content: r.content, is_error: r.is_error }));
         session.messages.push({ role: 'user', content: results });
@@ -2635,7 +2695,7 @@ async function callAnthropicWorkbenchModel(session) {
     session.updatedAt = new Date().toISOString();
     return {
         session: summarizeSession(session),
-        assistant: 'Workbench halted. Review the current plan or send a narrower request.',
+        assistant: loopHaltReason(tokenAcc, haltFp),
         content: [],
         events
     };
@@ -2712,7 +2772,10 @@ async function callOpenAiWorkbenchModel(session) {
     const model = profile._upstreamModel || profile.currentModel || 'gpt-4o';
 
     const events = [];
+    const tokenAcc = { total: 0, exceeded: false };
+    const recentFps = [];
     let loops = 0;
+    let haltFp = null;
     while (loops < getWorkbenchMaxToolLoops()) {
         loops++;
         const brainPolicy = getSessionBrainPolicy(session);
@@ -2746,6 +2809,8 @@ async function callOpenAiWorkbenchModel(session) {
         if (!response.ok) throw new Error(`Workbench upstream error ${response.status}: ${raw.slice(0, 500)}`);
         const data = JSON.parse(raw);
         recordWorkbenchUsage(session, profile, data.usage, { source: 'workbench:openai' });
+        accumulateTokens(tokenAcc, data.usage);
+        if (tokenAcc.exceeded) break;
         const message = data.choices?.[0]?.message || {};
         const content = openAiMessageToAnthropicContent(message);
         // Skip persisting an empty assistant turn — strict OpenAI-compatible
@@ -2769,6 +2834,13 @@ async function callOpenAiWorkbenchModel(session) {
             return { session: summarizeSession(session), assistant: extractAssistantText(content), content, events };
         }
 
+        for (const tu of toolUses) {
+            const fp = toolCallFingerprint(tu.name, tu.input);
+            recentFps.push(fp);
+            if (isStuckLoop(recentFps)) { haltFp = fp; break; }
+        }
+        if (haltFp) break;
+
         const results = await executeWorkbenchToolBatch(session, toolUses, { emit });
         results.forEach(r => events.push({ type: 'tool_result', id: r.tool_use_id, content: r.content, is_error: r.is_error }));
         session.messages.push({ role: 'user', content: results });
@@ -2777,7 +2849,7 @@ async function callOpenAiWorkbenchModel(session) {
     session.updatedAt = new Date().toISOString();
     return {
         session: summarizeSession(session),
-        assistant: 'Workbench halted. Review the current plan or send a narrower request.',
+        assistant: loopHaltReason(tokenAcc, haltFp),
         content: [],
         events
     };
@@ -2991,7 +3063,10 @@ async function callAnthropicWorkbenchModelStream(session, emit, prompt, signal) 
     if (!profile.targetUrl) throw new Error('Workbench provider target URL is missing.');
     const model = profile._upstreamModel || profile.currentModel || 'claude-opus-4-6';
 
+    const tokenAcc = { total: 0, exceeded: false };
+    const recentFps = [];
     let loops = 0;
+    let haltFp = null;
     while (loops < getWorkbenchMaxToolLoops()) {
         const usage = { input_tokens: 0, output_tokens: 0 };
         loops++;
@@ -3079,6 +3154,8 @@ async function callAnthropicWorkbenchModelStream(session, emit, prompt, signal) 
         }, signal);
 
         recordWorkbenchUsage(session, profile, usage, { source: 'workbench:anthropic-stream' });
+        accumulateTokens(tokenAcc, usage);
+        if (tokenAcc.exceeded) break;
 
         const content = Object.values(blocks).sort((a, b) => (a.index || 0) - (b.index || 0));
         for (const b of content) { delete b.index; delete b._inputPart; }
@@ -3091,6 +3168,13 @@ async function callAnthropicWorkbenchModelStream(session, emit, prompt, signal) 
             return;
         }
 
+        for (const tu of toolUses) {
+            const fp = toolCallFingerprint(tu.name, tu.input);
+            recentFps.push(fp);
+            if (isStuckLoop(recentFps)) { haltFp = fp; break; }
+        }
+        if (haltFp) break;
+
         const toolResults = await executeWorkbenchToolBatch(session, toolUses, { emit, signal });
         toolResults.forEach(result => safeEmit(emit, 'tool_result', {
             id: result.tool_use_id,
@@ -3101,7 +3185,7 @@ async function callAnthropicWorkbenchModelStream(session, emit, prompt, signal) 
     }
 
     session.updatedAt = new Date().toISOString();
-    safeEmit(emit, 'text', { content: 'Workbench stopped after the maximum tool loop count.' });
+    safeEmit(emit, 'text', { content: loopHaltReason(tokenAcc, haltFp) });
 }
 
 async function callOpenAiWorkbenchModelStream(session, emit, prompt, signal) {
@@ -3109,7 +3193,10 @@ async function callOpenAiWorkbenchModelStream(session, emit, prompt, signal) {
     if (!profile.targetUrl) throw new Error('Workbench provider target URL is missing.');
     const model = profile._upstreamModel || profile.currentModel || 'gpt-4o';
 
+    const tokenAcc = { total: 0, exceeded: false };
+    const recentFps = [];
     let loops = 0;
+    let haltFp = null;
     while (loops < getWorkbenchMaxToolLoops()) {
         let usage = null;
         loops++;
@@ -3198,6 +3285,8 @@ async function callOpenAiWorkbenchModelStream(session, emit, prompt, signal) {
         }, signal);
 
         recordWorkbenchUsage(session, profile, usage, { source: 'workbench:openai-stream' });
+        accumulateTokens(tokenAcc, usage);
+        if (tokenAcc.exceeded) break;
 
         const content = [];
         if (thinkingBuffer) content.push({ type: 'thinking', thinking: thinkingBuffer });
@@ -3230,6 +3319,13 @@ async function callOpenAiWorkbenchModelStream(session, emit, prompt, signal) {
             return;
         }
 
+        for (const tu of toolUses) {
+            const fp = toolCallFingerprint(tu.name, tu.input);
+            recentFps.push(fp);
+            if (isStuckLoop(recentFps)) { haltFp = fp; break; }
+        }
+        if (haltFp) break;
+
         const toolResults = await executeWorkbenchToolBatch(session, toolUses, { emit, signal });
         toolResults.forEach(result => safeEmit(emit, 'tool_result', {
             id: result.tool_use_id,
@@ -3240,7 +3336,7 @@ async function callOpenAiWorkbenchModelStream(session, emit, prompt, signal) {
     }
 
     session.updatedAt = new Date().toISOString();
-    safeEmit(emit, 'text', { content: 'Workbench stopped after the maximum tool loop count.' });
+    safeEmit(emit, 'text', { content: loopHaltReason(tokenAcc, haltFp) });
 }
 
 async function sendWorkbenchMessageStream({ sessionId, message, provider, agentId, effort, model, modelProvider, guardMode } = {}, emit, options = {}) {

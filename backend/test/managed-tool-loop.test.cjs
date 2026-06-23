@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { MAX_MANAGED_TOOL_ROUNDS } = require('../adapters/base');
 
-test('MAX_MANAGED_TOOL_ROUNDS exported from base is 3', () => {
-    assert.equal(MAX_MANAGED_TOOL_ROUNDS, 3);
+test('MAX_MANAGED_TOOL_ROUNDS exported from base is 10', () => {
+    assert.equal(MAX_MANAGED_TOOL_ROUNDS, 10);
 });
 
 function readAdapterFile(relPath) {

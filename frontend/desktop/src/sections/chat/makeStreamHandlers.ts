@@ -63,8 +63,8 @@ export interface MakeStreamHandlersOptions {
   finishTurn: (turn: any, status: 'done' | 'error' | 'aborted') => void;
   turn: any;
 
-  queuedMessage: { text: string; attachments: { name: string; size: string }[] } | null;
-  setQueuedMessage: React.Dispatch<React.SetStateAction<{ text: string; attachments: { name: string; size: string }[] } | null>>;
+  queuedMessage: { text: string; attachments: { name: string; size: string; content?: string; dataUrl?: string; type: 'text' | 'image' | 'unsupported'; truncated?: boolean }[] } | null;
+  setQueuedMessage: React.Dispatch<React.SetStateAction<{ text: string; attachments: { name: string; size: string; content?: string; dataUrl?: string; type: 'text' | 'image' | 'unsupported'; truncated?: boolean }[] } | null>>;
 
   gitApi: { diff: (sessionId: string) => Promise<GitDiffResult> };
   streamUpdateIntervalMs: number;

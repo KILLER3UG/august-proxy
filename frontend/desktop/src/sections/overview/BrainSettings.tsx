@@ -190,13 +190,13 @@ export function BrainSettings() {
             <Input
               type="number"
               min={1}
-              max={100}
+              max={500}
               value={draft.maxWorkbenchToolLoops}
-              onChange={(e) => update('maxWorkbenchToolLoops', Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
+              onChange={(e) => update('maxWorkbenchToolLoops', Math.max(1, Math.min(500, Number(e.target.value) || 1)))}
               className="w-24"
             />
             <span className="text-xs text-muted-foreground">
-              How many tool calls one turn may emit before the workbench stops. Default 12.
+              How many tool calls one turn may emit before the workbench stops. Default 100. Safety nets stop sooner if the token budget is exhausted or the same tool call repeats.
             </span>
           </div>
         </CardContent>

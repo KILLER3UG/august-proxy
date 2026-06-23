@@ -375,6 +375,7 @@ function upsertAlias(alias, targetModel, targetProvider) {
         action: 'aliases.upsert',
         target: alias,
         category: 'august_api',
+        inputSummary: { alias, targetModel, targetProvider },
         beforeSummary: before,
         afterSummary: entry,
         rollbackId: rb.id
@@ -408,6 +409,7 @@ function deleteAlias(alias) {
         action: 'aliases.delete',
         target: alias,
         category: 'august_api',
+        inputSummary: { alias },
         beforeSummary: before,
         rollbackId: rb.id
     });
@@ -496,6 +498,7 @@ function deleteTool(kind, name) {
             action: 'tools.delete_mcp',
             target: name,
             category: 'august_api',
+            inputSummary: { kind, name },
             rollbackId: rb.id
         });
         return ok({ name, deleted: true, rollbackId: rb.id });
@@ -520,6 +523,7 @@ function deleteTool(kind, name) {
             action: 'tools.delete_plugin',
             target: name,
             category: 'august_api',
+            inputSummary: { kind, name },
             rollbackId: rb.id
         });
         return ok({ name, deleted: true, rollbackId: rb.id });

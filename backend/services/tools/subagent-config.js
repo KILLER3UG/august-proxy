@@ -10,7 +10,7 @@ function getDefaultSubagentConfig() {
             name: 'default',
             // Fallback system prompt if not overridden dynamically by the caller
             system_prompt: 'You are a focused sub-agent spawned by August. You have access to MCP servers, web search/fetch, and file operations. Complete the assigned task efficiently using these tools. Report your findings clearly.',
-            max_loops: 5,
+            max_loops: 20,
             score: { completion_rate: 0, avg_loops: 0, total_runs: 0, error_rate: 0 },
             source: 'built-in',
             created: new Date().toISOString()

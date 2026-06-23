@@ -41,6 +41,8 @@ import {
   activeStreamControllers,
 } from './chat-stream-manager';
 import { Markdown } from './ChatMarkdown';
+import { readFileContent, type FileReadResult } from '@/lib/file-reader';
+import { getFileIcon } from '@/lib/file-icon';
 import { makeStreamHandlers } from './makeStreamHandlers';
 import {
   createWorkbenchSession,
@@ -94,11 +96,25 @@ export interface MessageBlock {
   isRevisedPlan?: boolean;
 }
 
+export interface FileAttachment {
+  name: string;
+  size: string;
+  /** Extracted text content for text-type files (PDF, DOCX, code, etc.) */
+  content?: string;
+  /** Base64 data URL for images. */
+  dataUrl?: string;
+  /** Whether the file content was successfully extracted. */
+  type: 'text' | 'image' | 'unsupported';
+  /** True if content was truncated due to size limits. */
+  truncated?: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'tool';
   content: string;
   timestamp: string;
+  attachments?: FileAttachment[];
   tool?: {
     name: string;
     args?: string;
@@ -427,12 +443,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [revertingIndex, setRevertingIndex] = useState<number | null>(null);
 
   // Composer tools states
-  const [attachments, setAttachments] = useState<{ name: string; size: string }[]>([]);
+  const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [voiceActive, setVoiceActive] = useState(false);
   const [showComposerActionsDropdown, setShowComposerActionsDropdown] = useState(false);
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
   const [showCommandsDropdown, setShowCommandsDropdown] = useState(false);
-  const [queuedMessage, setQueuedMessage] = useState<{ text: string; attachments: { name: string; size: string }[] } | null>(null);
+  const [queuedMessage, setQueuedMessage] = useState<{ text: string; attachments: FileAttachment[] } | null>(null);
 
   // Refs for each popover trigger — used to compute the portaled panel's
   // viewport position. We portal the panels to document.body (see
@@ -998,8 +1014,19 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (!text && attachments.length === 0) return;
 
     if (attachments.length > 0) {
-      const attachInfo = attachments.map(a => `[File Attachment: ${a.name} (${a.size})]`).join('\n');
-      text = `${text}\n\n${attachInfo}`;
+      // Build rich attachment sections with extracted content
+      const sections = attachments.map(a => {
+        const icon = getFileIcon(a.name);
+        const header = `📄 **${a.name}** (${a.size})`;
+        if (a.type === 'text' && a.content) {
+          return `${header}\n\`\`\`\n${a.content}\n\`\`\``;
+        }
+        if (a.type === 'image' && a.dataUrl) {
+          return `${header}\n[Image attached — available for vision analysis]`;
+        }
+        return `${header}\n[File attached — content could not be extracted]`;
+      });
+      text = `${text}\n\n---\n\n${sections.join('\n\n')}`;
     }
 
     // Local slash command dispatch — handle purely client-side commands
@@ -1072,6 +1099,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     setInput('');
     clearComposerDraft(sessionId);
+    const savedAttachments = attachments.length > 0 ? [...attachments] : undefined;
     setAttachments([]);
     setShowToolsDropdown(false);
     setShowCommandsDropdown(false);
@@ -1080,7 +1108,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       id: `m${Date.now()}`,
       role: 'user',
       content: text,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      attachments: savedAttachments,
     };
 
     const nextMessages = [...currentMessages, userMsg];
@@ -1196,16 +1225,28 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   };
 
   // Composer features handlers
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
     const newAttachments = [...attachments];
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
-      const sizeStr = f.size > 1024 * 1024 
+      const sizeStr = f.size > 1024 * 1024
         ? `${(f.size / (1024 * 1024)).toFixed(1)} MB`
         : `${Math.round(f.size / 1024)} KB`;
-      newAttachments.push({ name: f.name, size: sizeStr });
+      try {
+        const result: FileReadResult = await readFileContent(f);
+        newAttachments.push({
+          name: f.name,
+          size: sizeStr,
+          content: result.content,
+          dataUrl: result.dataUrl,
+          type: result.type,
+          truncated: result.truncated,
+        });
+      } catch {
+        newAttachments.push({ name: f.name, size: sizeStr, type: 'unsupported' });
+      }
     }
     setAttachments(newAttachments);
     if (e.target) e.target.value = '';
@@ -1393,18 +1434,25 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             <>
               {attachments.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 p-2 bg-muted/20 border-b border-border">
-                  {attachments.map((file, i) => (
-                    <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted border border-border text-[10.5px] font-mono">
-                      <span className="truncate max-w-[150px]">{file.name}</span>
-                      <span className="text-[9px] text-muted-foreground">({file.size})</span>
-                      <button
-                        onClick={() => removeAttachment(i)}
-                        className="p-0.5 hover:bg-background rounded text-muted-foreground hover:text-foreground transition"
-                      >
-                        <X className="size-2.5" />
-                      </button>
-                    </div>
-                  ))}
+                  {attachments.map((file, i) => {
+                    const fileIcon = getFileIcon(file.name);
+                    const IconComponent = fileIcon.Icon;
+                    const statusDot = file.type === 'text' ? 'text-green-500' : file.type === 'image' ? 'text-blue-500' : 'text-yellow-500';
+                    return (
+                      <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted border border-border text-[10.5px]">
+                        <IconComponent size={12} color={fileIcon.color} />
+                        <span className="font-mono truncate max-w-[150px]">{file.name}</span>
+                        <span className="text-[9px] text-muted-foreground">({file.size})</span>
+                        <span className={`size-1.5 rounded-full ${statusDot}`} title={file.type === 'text' ? 'Content extracted' : file.type === 'image' ? 'Image attached' : 'Unsupported'} />
+                        <button
+                          onClick={() => removeAttachment(i)}
+                          className="p-0.5 hover:bg-background rounded text-muted-foreground hover:text-foreground transition"
+                        >
+                          <X className="size-2.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -2074,12 +2122,29 @@ function MessageBubble({
 	                  <button onClick={saveEdit} className="px-2.5 py-0.5 text-[11px] rounded-md bg-primary text-primary-foreground hover:opacity-90 transition">Save</button>
 	                </div>
 	              </div>
-	            ) : (
-	              <div className={cn(
-	                "relative",
-	                !userMsgExpanded && message.content.length > LONG_MSG_THRESHOLD && "max-h-[160px] overflow-hidden"
-	              )}>
-	                <Markdown content={message.content} />
+            ) : (
+              <div className={cn(
+                "relative",
+                !userMsgExpanded && message.content.length > LONG_MSG_THRESHOLD && "max-h-[160px] overflow-hidden"
+              )}>
+                {message.attachments && message.attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {message.attachments.map((a, i) => {
+                      const fi = getFileIcon(a.name);
+                      const IconComp = fi.Icon;
+                      const dot = a.type === 'text' ? 'bg-green-500' : a.type === 'image' ? 'bg-blue-500' : 'bg-yellow-500';
+                      return (
+                        <div key={i} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/60 border border-border/40 text-[10px] font-mono">
+                          <IconComp size={11} color={fi.color} />
+                          <span className="truncate max-w-[130px]">{a.name}</span>
+                          <span className="text-muted-foreground">({a.size})</span>
+                          <span className={`size-1 rounded-full ${dot}`} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <Markdown content={message.content} />
 		                {!userMsgExpanded && message.content.length > LONG_MSG_THRESHOLD && (
 		                  <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-card to-transparent pointer-events-none" />
 		                )}

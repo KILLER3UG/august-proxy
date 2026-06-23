@@ -70,6 +70,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { QuotasPanel } from '@/sections/settings/QuotasPanel';
 import { cn } from '@/lib/utils';
+import { ModelPickerDropdown } from '@/components/overlays/ModelPickerDropdown';
 
 /* ── API format dropdown options — match the screenshot EXACTLY ──────── */
 const API_FORMATS: { value: ApiFormat; label: string }[] = [
@@ -732,26 +733,12 @@ function AliasesTab() {
                       className="h-7 text-xs font-mono"
                       disabled={!editing}
                     />
-                    <select
+                    <ModelPickerDropdown
+                      models={availableModels}
                       value={a.targetModel}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        const m = availableModels.find((x) => x.id === v);
-                        commitAliasChange(i, {
-                          targetModel: v,
-                          targetProvider: m?.provider ?? a.targetProvider,
-                        });
-                      }}
-                      className="h-7 w-full rounded-md border border-white/[0.06] bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+                      onChange={(modelId, provider) => commitAliasChange(i, { targetModel: modelId, targetProvider: provider })}
                       disabled={!editing}
-                    >
-                      <option value="" disabled>Select a model…</option>
-                      {availableModels.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.id}{m.isFree ? ' (free)' : ''}
-                        </option>
-                      ))}
-                    </select>
+                    />
                     <span className="text-muted-foreground truncate text-[10px]">
                       {a.targetProvider || '—'}
                     </span>
