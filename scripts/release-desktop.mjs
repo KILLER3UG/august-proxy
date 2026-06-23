@@ -66,9 +66,10 @@ async function readVersion() {
 }
 
 function run(command, args, options = {}) {
-    // On Windows, let cmd.exe resolve the executable extension (.cmd/.exe/.bat)
-    // via the shell rather than appending an extension ourselves.
-    const useShell = process.platform === 'win32';
+    // Use shell only when the command has no file extension (e.g. npm, gh).
+    // Commands with an extension like powershell.exe must NOT go through cmd.exe
+    // as that mangles complex argument strings (long PowerShell scripts).
+    const useShell = process.platform === 'win32' && !command.includes('.');
 
     const result = spawnSync(command, args, {
         stdio: 'inherit',
