@@ -246,7 +246,11 @@ async function main() {
     console.log(`[release] manifest ${manifestPath}`);
 
     if (publish) {
-        const ghArgs = ['release', 'create', `v${version}`, '--title', `August ${version}`, '--notes', `August desktop release ${version}`];
+        const title = `August ${version}`;
+        const notes = `August desktop release ${version}`;
+        // When shell: true is active (Windows, extensionless commands), cmd.exe
+        // splits unquoted spaces into separate arguments, so we quote them.
+        const ghArgs = ['release', 'create', `v${version}`, '--title', `"${title}"`, '--notes', `"${notes}"`];
         if (existsSync(webZip)) ghArgs.push(webZip);
         if (existsSync(backendZip)) ghArgs.push(backendZip);
         if (existsSync(manifestPath)) ghArgs.push(manifestPath);
