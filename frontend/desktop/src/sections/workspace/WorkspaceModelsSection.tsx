@@ -1057,7 +1057,7 @@ function ProviderEditor({
   const [name, setName] = useState(provider.name);
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl);
   const [apiFormat, setApiFormat] = useState<ApiFormat>(provider.apiFormat);
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState(provider.apiKey ?? '');
   const [showKey, setShowKey] = useState(false);
   const [confirmClearKey, setConfirmClearKey] = useState(false);
   const [autoFetch, setAutoFetch] = useState(!!provider.autoFetch);
@@ -1067,11 +1067,11 @@ function ProviderEditor({
     setName(provider.name);
     setBaseUrl(provider.baseUrl);
     setApiFormat(provider.apiFormat);
-    setApiKey('');
+    setApiKey(provider.apiKey ?? '');
     setAutoFetch(!!provider.autoFetch);
     setShowAddModel(false);
     setConfirmClearKey(false);
-  }, [provider.id, provider.name, provider.baseUrl, provider.apiFormat, provider.autoFetch, setShowAddModel]);
+  }, [provider.id, provider.name, provider.baseUrl, provider.apiFormat, provider.apiKey, provider.autoFetch, setShowAddModel]);
 
   const update = useMutation({
     mutationFn: (patch: Partial<{ name: string; baseUrl: string; apiFormat: ApiFormat; apiKey: string; enabled: boolean; autoFetch: boolean }>) =>
@@ -1206,7 +1206,18 @@ function ProviderEditor({
               )}
               <button
                 type="button"
-                onClick={() => setShowKey((v) => !v)}
+                onClick={async () => {
+                  // If the key isn't loaded yet (e.g. stale cache), fetch it
+                  if (!apiKey && provider.apiKeySet) {
+                    try {
+                      const full = await providersApi.get(provider.id);
+                      if (full.apiKey) setApiKey(full.apiKey);
+                    } catch {
+                      // Best-effort; key stays empty
+                    }
+                  }
+                  setShowKey((v) => !v);
+                }}
                 aria-label={showKey ? 'Hide API key' : 'Show API key'}
                 className="absolute right-2 top-1/2 -translate-y-1/2 grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground transition"
               >

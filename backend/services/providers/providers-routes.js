@@ -337,6 +337,7 @@ function publicProvider(p) {
         apiFormat: p.apiFormat,
         enabled: !!p.enabled,
         apiKeySet: !!p.apiKey,
+        apiKey: p.apiKey || '',
         autoFetch: !!p.autoFetch,
         models: Array.isArray(p.models) ? p.models : [],
         createdAt: p.createdAt,
@@ -520,6 +521,12 @@ async function handleProvidersRoutes(req, res) {
             return true;
         }
 
+        /* Get single provider (full details including API key) */
+        if (subPath === '' && method === 'GET') {
+            sendJson(res, publicProvider(p));
+            return true;
+        }
+
         /* Update provider */
         if (subPath === '' && method === 'PATCH') {
             const body = await jsonBody(req, res);
@@ -643,6 +650,8 @@ async function handleProvidersRoutes(req, res) {
 
             const body = p.apiFormat === 'anthropic'
                 ? { model: model.id, max_tokens: 16, messages: [{ role: 'user', content: 'respond with only the word "WORKING"' }] }
+                : p.apiFormat === 'openai-responses'
+                ? { model: model.id, input: 'respond with only the word "WORKING"', max_tokens: 16 }
                 : { model: model.id, messages: [{ role: 'user', content: 'respond with only the word "WORKING"' }], max_tokens: 16 };
 
             const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${p.apiKey}` };
@@ -679,10 +688,14 @@ async function handleProvidersRoutes(req, res) {
                 const contentBlock = Array.isArray(json?.content)
                     ? json.content.find((p) => p.type === 'text')
                     : null;
-                const content = contentBlock?.text
+                // Responses API shape: output[].content[].text
+                const responseOutput = json?.output?.[0]?.content?.[0]?.text
+                    || json?.output?.[0]?.content?.[0]?.value
+                    || json?.output_text;
+                const content = responseOutput
+                    || contentBlock?.text
                     || choice?.message?.content
                     || choice?.message?.reasoning
-                    || json?.output_text
                     || '';
                 const ok = typeof content === 'string' && /working/i.test(content);
                 sendJson(res, {

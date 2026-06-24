@@ -22,6 +22,7 @@ export interface Provider {
   apiFormat: ApiFormat;
   enabled: boolean;
   apiKeySet: boolean;
+  apiKey?: string;
   autoFetch?: boolean;
   models: ProviderModel[];
   createdAt?: string;
@@ -68,6 +69,7 @@ function p(path: string) {
 
 export const providersApi = {
   list: () => api.get<Provider[]>(p('')),
+  get: (id: string) => api.get<Provider>(p(`/${encodeURIComponent(id)}`)),
   create: (body: ProviderCreate) => api.post<Provider>(p(''), body),
   update: (id: string, body: ProviderUpdate) => api.patch<Provider>(p(`/${encodeURIComponent(id)}`), body),
   remove: (id: string) => api.delete<void>(p(`/${encodeURIComponent(id)}`)),
