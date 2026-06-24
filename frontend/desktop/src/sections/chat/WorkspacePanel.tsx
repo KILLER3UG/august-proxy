@@ -167,7 +167,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
   const handleDirPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const fullPath = (file as any).path
+    const fullPath = file.path
       || file.webkitRelativePath.slice(0, file.webkitRelativePath.indexOf('/'));
     if (!fullPath) return;
     const normalizedPath = fullPath.replace(/\\/g, '/');

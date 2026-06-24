@@ -84,7 +84,7 @@ export function WorkspaceSelector({ sessionId, onWorkspaceChange }: WorkspaceSel
     const file = e.target.files?.[0];
     if (!file) return;
     // Chrome exposes the full path on File.path; fall back to extracting from webkitRelativePath
-    const fullPath = (file as any).path
+    const fullPath = file.path
       || file.webkitRelativePath.slice(0, file.webkitRelativePath.indexOf('/'));
     if (fullPath) {
       const ws = addWorkspace(fullPath);
