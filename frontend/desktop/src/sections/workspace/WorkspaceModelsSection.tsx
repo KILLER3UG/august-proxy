@@ -182,28 +182,8 @@ function ProvidersTab() {
     setShowAddModel(false);
   }
 
-  const showRestartHint =
-    !listQ.isLoading && providers.length === 0;
-
   return (
     <div className="space-y-3 h-full flex flex-col">
-      {showRestartHint && (
-        <WorkspaceEmptyState
-          icon={Server}
-          title="No providers configured yet"
-          description="Restart the backend once — the built-in registry (Anthropic, OpenAI, Gemini, DeepSeek, …) will be seeded into providers.json automatically."
-          action={
-            <button
-              onClick={() => listQ.refetch()}
-              className="text-xs font-medium text-primary hover:underline"
-            >
-              Refresh now
-            </button>
-          }
-          className="py-6"
-        />
-      )}
-
       <div className="grid grid-cols-[260px_1fr] gap-4 flex-1 min-h-0">
         {/* LEFT: provider list */}
         <div className="rounded-xl border border-white/[0.06] bg-card/60 flex flex-col overflow-hidden">

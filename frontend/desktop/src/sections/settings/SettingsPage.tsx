@@ -27,7 +27,6 @@ import { DeveloperConsoleSection } from './DeveloperConsoleSection';
 import { ComputerAccessSettings } from './ComputerAccessSettings';
 import { ObservabilitySection } from './ObservabilitySection';
 import { BackendMonitorSection } from './BackendMonitorSection';
-import { UpdateSection } from './UpdateSection';
 
 /** The default section when no :section param is present. The user
  *  said clicking Settings should land on Model settings. */
@@ -64,7 +63,6 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'brain-orchestrator': BrainWrapper,
   'profile-preferences': GeneralWrapper,
   'system-health': SystemHealthWrapper,
-  'updates': UpdateWrapper,
   'tools-connections': ToolsConnectionsWrapper,
   'conversations-history': ConversationsHistoryWrapper,
   'agents-automation': AgentsAutomationWrapper,
@@ -87,7 +85,6 @@ function ModelsWrapper() { return <WorkspaceModelsSection />; }
 function BrainWrapper() { return <BrainSettings />; }
 function GeneralWrapper() { return <WorkspaceGeneralSection />; }
 function SystemHealthWrapper() { return <SystemHealthSection />; }
-function UpdateWrapper() { return <UpdateSection />; }
 function ToolsConnectionsWrapper() { return <ToolsConnectionsSection />; }
 function ConversationsHistoryWrapper() { return <ConversationsHistorySection />; }
 function AgentsAutomationWrapper() { return <AgentsAutomationSection />; }

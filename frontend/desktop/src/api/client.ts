@@ -1,6 +1,37 @@
 /* ── API client (Phase 1.5) ─────────────────────────────────────────── */
 /* Same-origin fetch wrapper. The proxy serves both UI and API. */
 
+import { isTauri } from '@/lib/tauri-detect';
+
+let baseUrl: string | null = null;
+
+async function initBaseUrl(): Promise<void> {
+  try {
+    if (isTauri) {
+      // Retry with backoff in case the Node backend hasn't finished starting yet.
+      // The backend starts the HTTP listener in the same tick, but the Tauri
+      // WebView can load the SPA before the health check succeeds.
+      for (let i = 0; i < 6; i++) {
+        const status: string = await (window as any).__TAURI__.core.invoke('proxy_status');
+        if (status.startsWith('ok:')) {
+          baseUrl = `http://127.0.0.1:${status.split(':')[1]}`;
+          return;
+        }
+        // Linear backoff: 200ms, 400ms, 600ms, … — ~4.2 s total before giving up
+        await new Promise(r => setTimeout(r, 200 * (i + 1)));
+      }
+    }
+  } catch { /* not in Tauri production mode — dev proxy handles routing */ }
+}
+
+const ready = initBaseUrl();
+
+/** Await by modules that make raw fetch calls (e.g. gateway health poll). */
+export async function whenReady(): Promise<string | null> {
+  await ready;
+  return baseUrl;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
     super(message);
@@ -9,7 +40,9 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  await ready;
+  const url = baseUrl ? `${baseUrl}${path}` : path;
+  const res = await fetch(url, {
     ...init,
     headers: {
       'Content-Type': 'application/json',

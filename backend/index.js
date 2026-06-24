@@ -2599,6 +2599,12 @@ function startServer() {
     });
 }
 
+// ── Start the HTTP server FIRST, then run background tasks ──
+// The server must be listening immediately so the Tauri frontend's
+// proxy_status health check succeeds. The auto-update check (a network
+// fetch to GitHub) runs *after* so it doesn't delay startup.
+startServer();
+
 const autoUpdateEnabled = process.env.AUGUST_AUTO_UPDATE === '1'
     || (process.env.AUGUST_AUTO_UPDATE !== '0' && process.env.AUGUST_PROXY_DESKTOP === '1');
 
@@ -2607,16 +2613,12 @@ if (autoUpdateEnabled) {
         .then(result => {
             if (result.applied) {
                 console.log(`[bridge] asset update applied (${result.version}); exiting so the desktop supervisor can restart with new code.`);
-                process.exit(0);
+                setImmediate(() => process.exit(0));
             }
-            startServer();
         })
         .catch(error => {
-            console.warn('[bridge] asset update check failed; starting server anyway:', error.message);
-            startServer();
+            console.warn('[bridge] asset update check failed:', error.message);
         });
-} else {
-    startServer();
 }
 
 // ── Initialize Session Store (SQLite) ──

@@ -24,6 +24,7 @@ import {
   Archive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isTauri } from "@/lib/tauri-detect";
 import { fadeUp, hoverScale } from "@/lib/motion";
 import { useStore } from "@nanostores/react";
 import {
@@ -109,8 +110,6 @@ export function SessionList({
     e.stopPropagation();
 
     let selectedPath: string | null = null;
-    const isTauri =
-      typeof window !== "undefined" && (window as any).__TAURI__ !== undefined;
 
     if (isTauri) {
       try {

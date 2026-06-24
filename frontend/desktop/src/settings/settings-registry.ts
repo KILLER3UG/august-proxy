@@ -10,7 +10,6 @@ import {
   Boxes,
   Brain,
   Plug,
-  RotateCw,
 
   Search,
   Bot,
@@ -70,14 +69,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     category: 'general',
     keywords: ['health', 'gateway', 'provider', 'status', 'uptime', 'endpoints', 'memory', 'connect'],
     legacyAliases: ['health', 'connections'],
-  },
-  {
-    id: 'updates',
-    label: 'Updates & Version',
-    description: 'Check for app updates and view version information.',
-    icon: RotateCw,
-    category: 'general',
-    keywords: ['update', 'version', 'upgrade', 'release', 'changelog', 'desktop'],
   },
   {
     id: 'profile-preferences',

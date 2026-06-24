@@ -58,8 +58,8 @@
     --dt-sidebar-border: #e2e8f0;
     --dt-sidebar-ring: #0053fd;
 
-    /* Text-scale multiplier (driven by data-text-size on <html>) */
-    --dt-text-scale: 1;
+	    /* Base font-size — overridden by data-text-size for scaling */
+	    font-size: 16px;
   }
 
   .dark {
@@ -114,18 +114,18 @@
     --dt-sidebar-ring: #6b9aff;
   }
 
-  /* Text-size selector overrides the multiplier */
-  :root[data-text-size="compact"]     { --dt-text-scale: 0.92; }
-  :root[data-text-size="default"]     { --dt-text-scale: 1.00; }
-  :root[data-text-size="comfortable"] { --dt-text-scale: 1.08; }
-  :root[data-text-size="spacious"]    { --dt-text-scale: 1.18; }
+	  /* Text-size selector overrides the root font-size (scales all rems) */
+	  :root[data-text-size="compact"]     { font-size: calc(16px * 0.92); }
+	  :root[data-text-size="default"]     { font-size: calc(16px * 1.00); }
+	  :root[data-text-size="comfortable"] { font-size: calc(16px * 1.08); }
+	  :root[data-text-size="spacious"]    { font-size: calc(16px * 1.18); }
 
   html, body, #root { height: 100%; margin: 0; }
   body {
     background: var(--dt-background);
     color: var(--dt-foreground);
     font-family: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    font-size: calc(0.9375rem * var(--dt-text-scale));
+    font-size: 0.9375rem;
     line-height: 1.55;
     letter-spacing: -0.011em;
     font-feature-settings: 'cv11', 'ss01', 'ss03';
@@ -389,45 +389,45 @@ input::placeholder {
   transition: opacity 0.25s ease;
 }
 
-/* ── Shared typography classes (read --dt-text-scale) ────────────── */
+/* ── Shared typography classes (scale with root font-size rem) ───────── */
 .chat-message-text {
-  font-size: calc(0.9375rem * var(--dt-text-scale));
+  font-size: 0.9375rem;
   line-height: 1.65;
   letter-spacing: -0.011em;
 }
 
 .chat-thought-text {
-  font-size: calc(0.9375rem * var(--dt-text-scale));
+  font-size: 0.9375rem;
   line-height: 1.6;
   letter-spacing: -0.011em;
 }
 
 .drawer-section-text {
-  font-size: calc(0.875rem * var(--dt-text-scale));
+  font-size: 0.875rem;
   line-height: 1.55;
   letter-spacing: -0.011em;
 }
 
 .drawer-muted-text {
-  font-size: calc(0.8125rem * var(--dt-text-scale));
+  font-size: 0.8125rem;
   line-height: 1.5;
   letter-spacing: -0.011em;
 }
 
 .plan-section-text {
-  font-size: calc(0.9375rem * var(--dt-text-scale));
+  font-size: 0.9375rem;
   line-height: 1.6;
   letter-spacing: -0.011em;
 }
 
 .session-list-title {
-  font-size: calc(0.8125rem * var(--dt-text-scale));
+  font-size: 0.8125rem;
   line-height: 1.4;
   letter-spacing: -0.005em;
 }
 
 .session-list-meta {
-  font-size: calc(0.6875rem * var(--dt-text-scale));
+  font-size: 0.6875rem;
   line-height: 1.4;
   letter-spacing: 0.04em;
 }
@@ -442,7 +442,7 @@ input::placeholder {
 }
 
 .hero-subtitle {
-  font-size: calc(1rem * var(--dt-text-scale));
+  font-size: 1rem;
   line-height: 1.55;
   letter-spacing: -0.011em;
   font-weight: 400;
@@ -450,13 +450,13 @@ input::placeholder {
 
 /* Bubble chrome */
 .bubble-body {
-  font-size: calc(0.875rem * var(--dt-text-scale));
+  font-size: 0.875rem;
   line-height: 1.55;
   letter-spacing: -0.005em;
 }
 
 .bubble-footer-text {
-  font-size: calc(0.65625rem * var(--dt-text-scale));
+  font-size: 0.65625rem;
   line-height: 1.2;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -465,14 +465,14 @@ input::placeholder {
 
 /* Tool rows (humanize layer) */
 .tool-row-text {
-  font-size: calc(0.8125rem * var(--dt-text-scale));
+  font-size: 0.8125rem;
   line-height: 1.5;
   letter-spacing: -0.005em;
   font-weight: 500;
 }
 
 .tool-row-meta {
-  font-size: calc(0.6875rem * var(--dt-text-scale));
+  font-size: 0.6875rem;
   line-height: 1.4;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -481,7 +481,7 @@ input::placeholder {
 
 /* ── Markdown Content Styling ────────────────────────────────────── */
 .markdown-content {
-  font-size: 0.9375rem !important;
+  font-size: 0.9375rem;
   line-height: 1.65;
   overflow-wrap: break-word;
 }

@@ -3,6 +3,7 @@ import { useStore } from '@nanostores/react';
 import { $sessions, updateSessionWorkspace } from '@/store/sessions';
 import { FolderGit2, ChevronRight, ChevronDown, Folder, FolderOpen, FileText, AlertCircle, Trash2, FolderSearch, Link2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isTauri } from '@/lib/tauri-detect';
 import { toast } from 'sonner';
 
 interface FlatFileNode {
@@ -121,7 +122,6 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
 
   const handleSelectFolder = async () => {
     let selectedPath: string | null = null;
-    const isTauri = typeof window !== 'undefined' && (window as any).__TAURI__ !== undefined;
 
     if (isTauri) {
       try {

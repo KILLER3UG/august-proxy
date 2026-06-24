@@ -308,7 +308,11 @@ function ModelDropdown({
   sessionId: string | null | undefined;
 }) {
   const [open, setOpen] = useState(false);
-  const label = selected ? `${selected.name}${selected.provider ? ` · ${selected.provider}` : ''}` : 'Choose model';
+  const label = selected
+    ? `${selected.name}${selected.provider ? ` · ${selected.provider}` : ''}`
+    : models.length === 0
+      ? 'No model loaded'
+      : 'Choose model';
 
   return (
     <div className="relative">

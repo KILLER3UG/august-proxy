@@ -701,10 +701,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         const configRes = await fetch('/ui/config/safe');
         if (configRes.ok) {
           const config = await configRes.json();
-          const activeProvider = config?.activeProvider || 'opencode-go';
+          const activeProvider = config?.activeProvider || '';
           const pConfig = config?.[activeProvider] || {};
           const activeModelId: string | null = pConfig.model || pConfig._upstreamModel || pConfig.currentModel || null;
-          if (activeModelId && !userSelectedRef.current) {
+          if (activeModelId && activeProvider && !userSelectedRef.current) {
             const placeholder: ModelItem = {
               id: activeModelId,
               name: activeModelId,

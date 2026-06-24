@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Volume2,
   Minus,
@@ -8,10 +8,13 @@ import {
   PanelLeftClose,
   Settings,
   GitBranch,
+  Download,
+  Minimize2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { gitApi } from "@/api/git";
 import { cn } from "@/lib/utils";
+import { isTauri } from "@/lib/tauri-detect";
 import { toast } from "sonner";
 import { RightDrawerDropdown } from "./RightDrawerLauncher";
 import type { Session } from "@/store/sessions";
@@ -35,6 +38,12 @@ export function ChatTitlebar({
   onSettings,
 }: ChatTitlebarProps) {
   const [speaking, setSpeaking] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState<{
+    version: string;
+  } | null>(null);
+  const [updating, setUpdating] = useState(false);
+
   const branch = useQuery({
     queryKey: ['git', 'branch', session?.id],
     queryFn: () => gitApi.branch(session?.id),
@@ -42,6 +51,72 @@ export function ChatTitlebar({
     retry: false,
   });
   const currentBranch = branch.data?.current;
+
+  // ── Window controls (Tauri only) ──
+  useEffect(() => {
+    if (!isTauri) return;
+    (async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const win = getCurrentWindow();
+        setIsMaximized(await win.isMaximized());
+      } catch {}
+    })();
+  }, [isTauri]);
+
+  const handleMinimize = async () => {
+    if (!isTauri) return;
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      await getCurrentWindow().minimize();
+    } catch {}
+  };
+
+  const handleToggleMaximize = async () => {
+    if (!isTauri) return;
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const win = getCurrentWindow();
+      await win.toggleMaximize();
+      setIsMaximized(await win.isMaximized());
+    } catch {}
+  };
+
+  const handleClose = async () => {
+    if (!isTauri) return;
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      await getCurrentWindow().close();
+    } catch {}
+  };
+
+  // ── Auto-update check (Tauri only) ──
+  useEffect(() => {
+    if (!isTauri) return;
+    (async () => {
+      try {
+        const updater = (window as any).__TAURI__.pluginUpdater;
+        const update = await updater.checkUpdate();
+        if (update.shouldUpdate && update.manifest) {
+          setUpdateAvailable({ version: update.manifest.version });
+        }
+      } catch {
+        // Silently ignore — update check is best-effort
+      }
+    })();
+  }, [isTauri]);
+
+  const handleInstallUpdate = async () => {
+    if (!isTauri || !updateAvailable) return;
+    setUpdating(true);
+    try {
+      const updater = (window as any).__TAURI__.pluginUpdater;
+      await updater.installUpdate();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to install update");
+      setUpdating(false);
+    }
+  };
 
   const speakLatest = () => {
     if (speaking) {
@@ -77,6 +152,22 @@ export function ChatTitlebar({
             <PanelLeft className="size-4" />
           )}
         </button>
+
+        {/* Update notification button */}
+        {updateAvailable && (
+          <button
+            onClick={handleInstallUpdate}
+            disabled={updating}
+            className="flex items-center gap-1.5 px-2.5 py-1 mx-1 text-xs font-medium 
+              bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 
+              rounded-md transition disabled:opacity-50"
+            title={`Update to v${updateAvailable.version}`}
+          >
+            <Download className="size-3" />
+            {updating ? "Updating…" : `v${updateAvailable.version} available`}
+          </button>
+        )}
+
         <div className="flex items-center gap-2 px-2 min-w-0">
           <h1 className="text-[13px] font-medium text-foreground truncate">
             {session?.title ?? "General Assistance Conversation Started"}
@@ -119,18 +210,21 @@ export function ChatTitlebar({
 
         <div className="flex items-center gap-1.5 ml-1">
           <button
+            onClick={handleMinimize}
             className="size-6 flex items-center justify-center hover:bg-accent rounded text-muted-foreground hover:text-foreground transition"
             aria-label="Minimize"
           >
             <Minus className="size-3.5" />
           </button>
           <button
+            onClick={handleToggleMaximize}
             className="size-6 flex items-center justify-center hover:bg-accent rounded text-muted-foreground hover:text-foreground transition"
-            aria-label="Maximize"
+            aria-label={isMaximized ? "Restore" : "Maximize"}
           >
-            <Square className="size-2.5" />
+            {isMaximized ? <Minimize2 className="size-3" /> : <Square className="size-2.5" />}
           </button>
           <button
+            onClick={handleClose}
             className="size-6 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground rounded text-muted-foreground transition"
             aria-label="Close"
           >

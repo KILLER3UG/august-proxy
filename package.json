@@ -11,6 +11,7 @@
     "start": "node backend/index.js",
     "launch": "node backend/launch.js",
     "dev": "node scripts/dev-app.mjs",
+    "dev:desktop": "node scripts/dev-tauri.mjs",
     "dev:web": "npm run dev:vite -w frontend/desktop",
     "memory:eval": "node backend/scripts/run-memory-eval.js",
     "build:web": "npm run build -w frontend/desktop",

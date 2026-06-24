@@ -7,6 +7,7 @@
 //   4) Kill the Node process on app drop
 
 use std::env;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -113,6 +114,15 @@ fn kill_child(child: &mut Child) {
     let _ = child.wait();
 }
 
+/// Returns the platform-appropriate null device path (NUL on Windows, /dev/null on Unix).
+fn dev_null_path() -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from("NUL")
+    } else {
+        PathBuf::from("/dev/null")
+    }
+}
+
 fn is_proxy_up() -> bool {
     reqwest::blocking::Client::new()
         .get(proxy_url())
@@ -152,6 +162,17 @@ pub fn ensure_running(app: &AppHandle) -> bool {
         data_dir.display()
     );
 
+    // Pipe backend stdout/stderr to a log file for debuggability.
+    let log_dir = data_dir.join("logs");
+    let _ = std::fs::create_dir_all(&log_dir);
+    let log_path = log_dir.join("backend.log");
+    let log_file = File::create(&log_path)
+        .unwrap_or_else(|e| {
+            log::warn!("[backend] could not create {}: {e}", log_path.display());
+            // Fallback: discard output if log file can't be created
+            File::create(dev_null_path()).expect("failed to open null")
+        });
+
     let child = Command::new(node)
         .arg(&entry)
         .current_dir(&project_root)
@@ -159,8 +180,10 @@ pub fn ensure_running(app: &AppHandle) -> bool {
         .env("AUGUST_PROXY_ROOT", project_root)
         .env("AUGUST_DATA_DIR", data_dir)
         .env("AUGUST_PROXY_DESKTOP", "1")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::from(log_file.try_clone().unwrap_or_else(|_| {
+            File::create(dev_null_path()).expect("failed to open null")
+        })))
+        .stderr(Stdio::from(log_file))
         .spawn();
 
     match child {
@@ -196,9 +219,21 @@ impl Drop for BackendProcess {
 // ── Tauri commands callable from the webview ─────────────────────────────
 
 #[tauri::command]
-pub fn proxy_status() -> String {
-    if is_proxy_up() {
-        format!("ok:{}", proxy_port())
+pub async fn proxy_status() -> String {
+    let port = proxy_port();
+    let url = format!("http://127.0.0.1:{}/health", port);
+    let result = tokio::task::spawn_blocking(move || {
+        reqwest::blocking::Client::new()
+            .get(&url)
+            .timeout(Duration::from_millis(400))
+            .send()
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+    })
+    .await
+    .unwrap_or(false);
+    if result {
+        format!("ok:{}", port)
     } else {
         "down".into()
     }

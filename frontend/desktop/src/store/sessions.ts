@@ -37,29 +37,6 @@ export interface Folder {
   isCollapsed?: boolean;
 }
 
-const DEFAULT_FOLDERS: Folder[] = [
-  { id: 'f_work', name: 'Work', isCollapsed: false },
-  { id: 'f_research', name: 'Research', isCollapsed: false },
-];
-
-const DEFAULT_SESSIONS: Session[] = [
-  // Work folder
-  { id: 'sess_1', title: 'Refactor the dashboard nav', startedAt: new Date(Date.now() - 3600000).toISOString(), messageCount: 12, lastMessage: 'Done — committed on refactor/ui-v2.', provider: 'opencode-go', model: 'claude-opus-4-7', folderId: 'f_work', isArchived: false },
-  { id: 'sess_2', title: 'Add providers page', startedAt: new Date(Date.now() - 7200000).toISOString(), messageCount: 5, lastMessage: 'Looking at the inspector now.', provider: 'minimax', model: 'gpt-5', folderId: 'f_work', isArchived: false },
-  { id: 'sess_3', title: 'Fix URL routing bug', startedAt: new Date(Date.now() - 10800000).toISOString(), messageCount: 8, lastMessage: 'Pushed. Need review.', provider: 'kilo', model: 'kilo/kimi-k2', folderId: 'f_work', isArchived: false },
-  { id: 'sess_4', title: 'Wire up statusbar', startedAt: new Date(Date.now() - 14400000).toISOString(), messageCount: 20, lastMessage: 'Will continue tomorrow.', provider: 'openrouter', model: 'anthropic/claude-sonnet-4', folderId: 'f_work', isArchived: false },
-
-  // Research folder
-  { id: 'sess_5', title: 'Memory graph query', startedAt: new Date(Date.now() - 18000000).toISOString(), messageCount: 15, lastMessage: 'Pushed. Need review.', provider: 'opencode-go', model: 'claude-opus-4-7', folderId: 'f_research', isArchived: false },
-  { id: 'sess_6', title: 'Embed terminal in chat', startedAt: new Date(Date.now() - 21600000).toISOString(), messageCount: 3, lastMessage: 'Done — committed on refactor/ui-v2.', provider: 'minimax', model: 'gpt-5', folderId: 'f_research', isArchived: false },
-  { id: 'sess_7', title: 'Refactor to React 19', startedAt: new Date(Date.now() - 25200000).toISOString(), messageCount: 22, lastMessage: 'Will continue tomorrow.', provider: 'kilo', model: 'kilo/kimi-k2', folderId: 'f_research', isArchived: false },
-
-  // Root level (No folder)
-  { id: 'sess_10', title: 'Onboarding flow', startedAt: new Date(Date.now() - 36000000).toISOString(), messageCount: 4, lastMessage: 'Done — committed on refactor/ui-v2.', provider: 'minimax', model: 'gpt-5', folderId: null, isArchived: false },
-  { id: 'sess_11', title: 'Add cmdk palette', startedAt: new Date(Date.now() - 39600000).toISOString(), messageCount: 2, lastMessage: 'Looking at the inspector now.', provider: 'kilo', model: 'kilo/kimi-k2', folderId: null, isArchived: false },
-  { id: 'sess_12', title: 'Fix rerenderCostSummary', startedAt: new Date(Date.now() - 43200000).toISOString(), messageCount: 7, lastMessage: 'Will continue tomorrow.', provider: 'openrouter', model: 'anthropic/claude-sonnet-4', folderId: null, isArchived: false },
-];
-
 const LOCAL_SESSIONS_KEY = 'august-sessions-list-v1';
 const LOCAL_FOLDERS_KEY = 'august-folders-list-v1';
 
@@ -70,7 +47,7 @@ const loadSessions = (): Session[] => {
       return JSON.parse(saved);
     } catch {}
   }
-  return DEFAULT_SESSIONS;
+  return [];
 };
 
 const loadFolders = (): Folder[] => {
@@ -80,7 +57,7 @@ const loadFolders = (): Folder[] => {
       return JSON.parse(saved);
     } catch {}
   }
-  return DEFAULT_FOLDERS;
+  return [];
 };
 
 export const $sessions = atom<Session[]>(loadSessions());
@@ -101,8 +78,8 @@ export function createSession(folderId: string | null = null, title: string = 'N
     startedAt: new Date().toISOString(),
     messageCount: 0,
     lastMessage: 'Conversation started.',
-    provider: 'opencode-zen',
-    model: 'deepseek-v4-flash-free',
+    provider: '',
+    model: '',
     folderId,
     isArchived: false,
   };
@@ -153,12 +130,7 @@ export function restoreSession(id: string) {
     // If the folder it originally belonged to was deleted, recreate it
     const folderExists = $folders.get().some(f => f.id === sess.folderId);
     if (!folderExists) {
-      // Find original folder name from static details if it was f_work/f_research
-      let folderName = 'Restored';
-      if (sess.folderId === 'f_work') folderName = 'Work';
-      else if (sess.folderId === 'f_research') folderName = 'Research';
-      
-      const newFolders = [...$folders.get(), { id: sess.folderId, name: folderName, isCollapsed: false }];
+      const newFolders = [...$folders.get(), { id: sess.folderId, name: 'Restored', isCollapsed: false }];
       $folders.set(newFolders);
       saveFoldersToStorage(newFolders);
     }
@@ -197,8 +169,8 @@ export function clearAllSessions(includeArchived: boolean = true) {
     startedAt: new Date().toISOString(),
     messageCount: 0,
     lastMessage: 'Conversation started.',
-    provider: 'opencode-zen',
-    model: 'deepseek-v4-flash-free',
+    provider: '',
+    model: '',
     folderId: null,
     isArchived: false,
   };
