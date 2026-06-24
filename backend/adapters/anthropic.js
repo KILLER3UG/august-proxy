@@ -2896,7 +2896,11 @@ async function handleMessages(req, res, cleanPath, reqId) {
                     await new Promise(resolve => setTimeout(resolve, delayMs));
                 }
 
-                const rawBody = await response.text();
+                // ── Streaming path ──
+                // Check content-type BEFORE consuming the response body so we can
+                // pass the readable stream to the SSE parser. Calling response.text()
+                // first (as was done before) drains the body, causing the streaming
+                // functions to receive a null/closed body and deliver zero content.
                 if (clientWantsStream && !isClaudeDesktop3pClient(req) && (response.headers.get('content-type') || '').includes('text/event-stream')) {
                     const parsed = ctx.managedLocalToolNames.size > 0
                         ? await streamUpstreamAndResolveToolsAnthropic({
@@ -2921,14 +2925,16 @@ async function handleMessages(req, res, cleanPath, reqId) {
                     return; // finishRequest() runs in finally
                 }
 
+                // ── Non-streaming path — safe to consume the body now ──
                 if (!response.ok) {
-                    console.error('[Proxy Error] Minimax rejected request:', {
+                    const rawBody = await response.text();
+                    console.error('[Proxy Error] Upstream rejected request:', {
                         status: response.status,
                         body: rawBody.substring(0, 500),
                         toolCount: upstreamReq.tools?.length || 0,
                         toolNames: upstreamReq.tools?.map(t => t.name).slice(0, 10) || []
                     });
-                    emitProxy('error', 'error', `Minimax rejected request: HTTP ${response.status}`, { status: response.status, upstreamModel });
+                    emitProxy('error', 'error', `Upstream rejected request: HTTP ${response.status}`, { status: response.status, upstreamModel });
                     throw new Error(
                         response.status === 429
                             ? buildFriendlyRateLimitMessage(response.status, rawBody, attempts)
@@ -2937,6 +2943,7 @@ async function handleMessages(req, res, cleanPath, reqId) {
                 }
 
                 const contentType = response.headers.get('content-type') || 'application/json';
+                const rawBody = await response.text();
                 let clientBody = rewriteAnthropicResponseModel(rawBody, contentType, clientFacingModel);
                 console.log('[Proxy Debug Claude Upstream Headers]:', JSON.stringify(summarizeHeaders(response.headers)));
                 emitProxy('proxy_debug', 'info', 'Claude upstream headers received');
@@ -3137,25 +3144,13 @@ async function handleMessages(req, res, cleanPath, reqId) {
                 break;
             }
 
-            const rawBody = await response.text();
-            if (!response.ok) {
-                throw new Error(
-                    response.status === 429
-                        ? buildFriendlyRateLimitMessage(response.status, rawBody, attempts)
-                        : `Upstream Error (${response.status}): ${rawBody}`
-                );
-            }
-
+            // ── Streaming path ──
+            // Check content-type BEFORE consuming the response body so we can
+            // pass the readable stream to the SSE parser. Calling response.text()
+            // first drains the body, causing streamOpenAiUpstreamToAnthropicClient
+            // to receive a null/closed body and deliver zero content.
             const upstreamIsStream = response.headers.get('content-type')?.includes('text/event-stream');
             if (aReq.stream === true && upstreamIsStream && !isClaudeDesktop3pClient(req)) {
-                if (!response.ok) {
-                    const errorBody = await response.text();
-                    throw new Error(
-                        response.status === 429
-                            ? buildFriendlyRateLimitMessage(response.status, errorBody, attempts)
-                            : `Upstream Error (${response.status}): ${errorBody}`
-                    );
-                }
                 const parsed = await streamOpenAiUpstreamToAnthropicClient({
                     response,
                     res,
@@ -3176,6 +3171,17 @@ async function handleMessages(req, res, cleanPath, reqId) {
                 return;
             }
 
+            // ── Non-streaming path — safe to consume the body now ──
+            if (!response.ok) {
+                const rawBody = await response.text();
+                throw new Error(
+                    response.status === 429
+                        ? buildFriendlyRateLimitMessage(response.status, rawBody, attempts)
+                        : `Upstream Error (${response.status}): ${rawBody}`
+                );
+            }
+
+            const rawBody = await response.text();
             let data;
             if (upstreamIsStream) {
                 data = parseSSEToJSON(rawBody);

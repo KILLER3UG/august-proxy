@@ -3163,7 +3163,10 @@ async function callAnthropicWorkbenchModelStream(session, emit, prompt, signal) 
                     if (!block) break;
                     if (data.delta.type === 'thinking_delta') {
                         block.thinking = (block.thinking || '') + (data.delta.thinking || '');
-                        safeEmit(emit, 'thinking', { content: data.delta.thinking || '' });
+                        // Only emit non-empty thinking content — empty deltas create a
+                        // visible thinking block with no text in the UI. Follow the same
+                        // pattern as text_delta (skip emit when content is empty).
+                        if (data.delta.thinking) safeEmit(emit, 'thinking', { content: data.delta.thinking });
                     } else if (data.delta.type === 'text_delta') {
                         block.text = (block.text || '') + (data.delta.text || '');
                         if (data.delta.text) safeEmit(emit, 'text', { content: data.delta.text });
@@ -3392,6 +3395,9 @@ async function sendWorkbenchMessageStream({ sessionId, message, provider, agentI
     const scrubbedEmit = (type, data) => {
         if (data && typeof data?.content === 'string') {
             const cleaned = scrubber.feed(data.content);
+            // Silently drop content that was fully inside a <memory_context> block
+            // (scrubber returns an empty string). Non-empty content passes through
+            // unchanged or with the memory-context region removed.
             if (!cleaned) return;
             if (cleaned !== data.content) data = { ...data, content: cleaned };
         }

@@ -1050,19 +1050,25 @@ const requestHandler = async (req, res) => {
             // subscribers attached via `chatEventLog.subscribe` get the same
             // events through fan-out, so tabs/connections never block each
             // other and a reconnect replays missed events automatically.
+            //
+            // IMPORTANT: capture `gen` (activeGenerations entry) at the moment
+            // of the call so that .then()/.catch() from THIS promise always
+            // refer to THIS generation's state, never to a re-assigned `gen`
+            // from a subsequent POST for the same sessionId.
+            const capturedGen = gen;
             sendWorkbenchMessageStream(data, (type, payload) => {
                 chatEventLog.append(sessionId, type, payload || {});
             }, { signal: generationAbortCtrl.signal })
             .then(() => {
-                if (gen.status === 'streaming') {
-                    gen.status = 'done';
+                if (capturedGen.status === 'streaming') {
+                    capturedGen.status = 'done';
                     chatEventLog.append(sessionId, 'done', {});
                 }
             })
             .catch((err) => {
                 const isAbort = err?.name === 'AbortError' || generationAbortCtrl.signal.aborted;
-                if (gen.status === 'streaming') {
-                    gen.status = isAbort ? 'aborted' : 'error';
+                if (capturedGen.status === 'streaming') {
+                    capturedGen.status = isAbort ? 'aborted' : 'error';
                     chatEventLog.append(sessionId, isAbort ? 'aborted' : 'error', {
                         message: err?.message || 'Unknown error'
                     });

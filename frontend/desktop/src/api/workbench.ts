@@ -172,6 +172,7 @@ async function readSseStream(
   const decoder = new TextDecoder();
   let buffer = '';
   let currentEvent = '';
+  let receivedTerminalEvent = false;
 
   try {
     while (true) {
@@ -204,6 +205,11 @@ async function readSseStream(
           try {
             throwIfAborted(signal);
             const payload = JSON.parse(dataStr);
+            // Track terminal events — if the stream closes without one,
+            // the response is likely incomplete (SSE connection dropped).
+            if (currentEvent === 'done' || currentEvent === 'error' || currentEvent === 'aborted') {
+              receivedTerminalEvent = true;
+            }
             dispatchWorkbenchEvent(currentEvent, payload, handlers);
           } catch (e: any) {
             if (e?.name === 'AbortError') throw e;
@@ -212,6 +218,13 @@ async function readSseStream(
         }
       }
       buffer = buffer.slice(lineStart);
+    }
+
+    // Stream ended but we never saw a terminal event — the connection likely
+    // dropped before the backend could signal completion. Report an error so
+    // the assistant bubble doesn't stay silently empty or incomplete.
+    if (!receivedTerminalEvent) {
+      handlers.onError?.({ message: 'Stream ended without completion event — response may be incomplete' });
     }
   } catch (e: any) {
     if (e?.name === 'AbortError') throw e;

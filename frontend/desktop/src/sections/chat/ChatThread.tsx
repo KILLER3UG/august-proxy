@@ -653,6 +653,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     setInput(loadComposerDraft(sessionId));
     setLoadedSessionId(sessionId);
+    setQueuedMessage(null); // Clear any queued message when switching sessions
   }, [sessionId]);
 
   // Persist messages to localStorage on every change
@@ -915,8 +916,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       isTurnVisible,
       finishTurn,
       turn,
-      queuedMessage: null, // banner actions never queue
-      setQueuedMessage,
       gitApi,
       streamUpdateIntervalMs: STREAM_UPDATE_INTERVAL_MS,
       initialMutationCount: workbenchSession?.mutationCount,
@@ -1008,6 +1007,30 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       ensureWorkbenchSession,
     });
   };
+
+  // Drain the message queue: if the user queued a follow-up while this
+  // turn was streaming, send it as soon as streaming finishes.
+  useEffect(() => {
+    if (!streaming && queuedMessage && sessionId) {
+      const next = queuedMessage;
+      setQueuedMessage(null);
+
+      const userMsg: ChatMessage = {
+        id: `m${Date.now()}`,
+        role: 'user',
+        content: next.text,
+        timestamp: new Date().toISOString(),
+        attachments: next.attachments,
+      };
+
+      setMessages(prev => {
+        const nextMessages = [...prev, userMsg];
+        persistMessages(sessionId, nextMessages);
+        generateAIResponse(nextMessages);
+        return nextMessages;
+      });
+    }
+  }, [streaming, queuedMessage, sessionId]);
 
   const send = async () => {
     if (!sessionId || loadedSessionId !== sessionId) return;

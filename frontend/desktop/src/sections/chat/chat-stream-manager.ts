@@ -246,8 +246,6 @@ export async function startChatStream(
       activeStreamControllers.delete(sessionId);
     },
     turn,
-    queuedMessage: null,
-    setQueuedMessage: () => {},
     gitApi,
     streamUpdateIntervalMs: 24,
     appendBlockEvent,
@@ -359,14 +357,15 @@ export async function reconnectChatStream(
     assistantMsgId = `a${Date.now()}`;
   }
 
-  const abortController = new AbortController();
-  activeStreamControllers.set(sessionId, abortController);
-
   const turn = chatRuntime.startTurn({
     sessionId,
     assistantMsgId,
     transport: 'none',
   });
+
+  // Use the turn's controller so aborting the turn also cancels fetches.
+  const abortController = turn.controller;
+  activeStreamControllers.set(sessionId, abortController);
 
   const { handlers, finalize } = makeStreamHandlers({
     sessionId,
@@ -405,8 +404,6 @@ export async function reconnectChatStream(
       activeStreamControllers.delete(sessionId);
     },
     turn,
-    queuedMessage: null,
-    setQueuedMessage: () => {},
     gitApi,
     streamUpdateIntervalMs: 24,
     appendBlockEvent,
@@ -415,7 +412,8 @@ export async function reconnectChatStream(
   try {
     chatRuntime.setTransport(turn.turnId, 'http');
 
-    await streamWorkbenchReconnect(sessionId, handlers, abortController.signal);
+    const lastSeq = getSessionSubscriberLastSeq(sessionId);
+    await streamWorkbenchReconnect(sessionId, handlers, abortController.signal, lastSeq || undefined);
     finalize(abortController.signal.aborted ? 'aborted' : 'done');
   } catch (e: any) {
     if (e?.name === 'AbortError') {
@@ -468,13 +466,15 @@ export function ensureSessionSubscriber(sessionId: string): void {
   // SSE connection dropped (tab switch, throttling), leaving isSessionStreaming
   // false even though the backend is still actively streaming and reconnecting
   // via this subscriber.
+  let dummyTurnId: string | null = null;
   if (!chatRuntime.isSessionStreaming(sessionId)) {
     const assistantMsgId = `subscriber-${sessionId}-${Date.now()}`;
-    chatRuntime.startTurn({
+    const turn = chatRuntime.startTurn({
       sessionId,
       assistantMsgId,
       transport: 'none',
     });
+    dummyTurnId = turn.turnId;
   }
 
   const controller = new AbortController();
@@ -558,9 +558,8 @@ export function ensureSessionSubscriber(sessionId: string): void {
       // Finalize the turn we created above so isSessionStreaming reflects
       // the true state. The original stream's turn was already finalized
       // when it disconnected; this cleans up the subscriber-created turn.
-      const lastId = chatRuntime.getLatestActiveTurnId(sessionId);
-      if (lastId) {
-        chatRuntime.finishTurn(lastId, 'done');
+      if (dummyTurnId) {
+        chatRuntime.finishTurn(dummyTurnId, 'done');
       }
     });
 }

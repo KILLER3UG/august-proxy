@@ -63,8 +63,7 @@ export interface MakeStreamHandlersOptions {
   finishTurn: (turn: any, status: 'done' | 'error' | 'aborted') => void;
   turn: any;
 
-  queuedMessage: { text: string; attachments: { name: string; size: string; content?: string; dataUrl?: string; type: 'text' | 'image' | 'unsupported'; truncated?: boolean }[] } | null;
-  setQueuedMessage: React.Dispatch<React.SetStateAction<{ text: string; attachments: { name: string; size: string; content?: string; dataUrl?: string; type: 'text' | 'image' | 'unsupported'; truncated?: boolean }[] } | null>>;
+
 
   gitApi: { diff: (sessionId: string) => Promise<GitDiffResult> };
   streamUpdateIntervalMs: number;
@@ -103,8 +102,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     isTurnVisible,
     finishTurn,
     turn,
-    queuedMessage,
-    setQueuedMessage,
+
     gitApi,
     streamUpdateIntervalMs,
     initialMutationCount,
@@ -179,7 +177,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     setMessages(prev => prev.map(msg =>
       msg.id === assistantMsgId ? {
         ...msg,
-        content: assistantContent,
+        content: assistantContent || msg.content,
         thinking: thinkingContent || undefined,
         thinkingDuration: thinkingEnd
           ? Math.round((thinkingEnd - thinkingStart) / 100) / 10
@@ -197,25 +195,6 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     }
     finishTurn(turn, status);
 
-    // Drain the message queue: if the user queued a follow-up while this
-    // turn was streaming, append it as a user message. Banner callers pass
-    // queuedMessage=null because banner actions never queue; composer
-    // callers pass the live state.
-    if (queuedMessage && isTurnVisible(sessionId)) {
-      const next = queuedMessage;
-      setQueuedMessage(null);
-      const userMsg: ChatMessage = {
-        id: `m${Date.now()}`,
-        role: 'user',
-        content: next.text,
-        timestamp: new Date().toISOString(),
-      };
-      setMessages(prev => {
-        const withQueued = [...prev, userMsg];
-        persistMessages(sessionId, withQueued);
-        return withQueued;
-      });
-    }
   };
 
   const handlers: WorkbenchEventHandlers = {
@@ -309,6 +288,9 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       }
     },
     onThinking: ({ content }) => {
+      // Skip empty thinking deltas — they create a visible thinking block
+      // with no text content and no way to dismiss it.
+      if (!content) return;
       if (!thinkingEnd && content.trim()) {
         thinkingEnd = Date.now();
       }
