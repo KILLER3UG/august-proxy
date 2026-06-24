@@ -108,10 +108,40 @@ export function Markdown({ content }: { content: string }) {
       };
 
       const onClick = () => {
-        navigator.clipboard?.writeText(code).then(flashCopied).catch(() => {
-          // Clipboard API failed (insecure context, etc.) — at least give
-          // visual feedback so the user knows we tried.
+        // Try clipboard API first, then fallback to execCommand
+        const copyText = async (text: string) => {
+          try {
+            if (navigator.clipboard && window.isSecureContext) {
+              await navigator.clipboard.writeText(text);
+              return true;
+            }
+          } catch {
+            // Clipboard API failed, try fallback
+          }
+
+          // Fallback: use execCommand (deprecated but works in insecure contexts)
+          try {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.left = '-9999px';
+            textarea.style.top = '-9999px';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            const success = document.execCommand('copy');
+            document.body.removeChild(textarea);
+            return success;
+          } catch {
+            return false;
+          }
+        };
+
+        copyText(code).then((success) => {
           flashCopied();
+          if (!success) {
+            console.warn('[Markdown] Copy failed - clipboard unavailable');
+          }
         });
       };
 

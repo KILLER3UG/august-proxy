@@ -66,6 +66,8 @@ import { PlanProposalBanner } from '@/components/shell/PlanProposalBanner';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { ChangedFilesCard } from '@/components/chat/ChangedFilesCard';
 import { gitApi, type GitDiffResult } from '@/api/git';
+import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
+import { addWorkspace } from '@/store/workspaces';
 
 let visibleSessionId: string | null = null;
 let visibleGeneration = 0;
@@ -1419,6 +1421,23 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           'w-full min-w-0 rounded-2xl border bg-card shadow-sm transition focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary overflow-visible',
           'border-border',
         )}>
+          {/* Workspace selector row - only show in fresh sessions (no messages) */}
+          {messages.length === 0 && (
+            <div className="flex items-center gap-2 px-2 py-1.5 border-b border-border/50">
+              <WorkspaceSelector
+                sessionId={sessionId}
+                onWorkspaceChange={(ws) => {
+                  if (sessionId && ws) {
+                    // Update session workspace when workspace changes
+                    import('@/store/sessions').then(({ updateSessionWorkspace }) => {
+                      updateSessionWorkspace(sessionId, ws.path);
+                    });
+                  }
+                }}
+              />
+            </div>
+          )}
+
           {voiceActive ? (
             <div className="h-[128px] w-full flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm space-y-2 text-foreground">
               <div className="flex items-center gap-1">
@@ -2053,14 +2072,45 @@ function MessageBubble({
   }, [message.blocks, message.thinking, message.tools, message.content, isUser]);
   const showPendingThinking = !isUser && isLast && streaming && !showRaw && displayBlocks.length === 0;
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     const textToCopy = message.content;
-    navigator.clipboard.writeText(textToCopy)
-      .then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      })
-      .catch(() => {});
+
+    // Try clipboard API first, then fallback to execCommand
+    const copyText = async (text: string) => {
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+      } catch {
+        // Clipboard API failed, try fallback
+      }
+
+      // Fallback: use execCommand (deprecated but works in insecure contexts)
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const success = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        return success;
+      } catch {
+        return false;
+      }
+    };
+
+    const success = await copyText(textToCopy);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+
+    if (!success) {
+      console.warn('[ChatThread] Copy failed - clipboard unavailable');
+    }
   };
 
   const handleRegenClick = async () => {

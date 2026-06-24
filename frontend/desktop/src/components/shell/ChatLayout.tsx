@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "@nanostores/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { $sessions, createSession, type Session } from "@/store/sessions";
+import { $currentWorkspaceId, $workspaces } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
@@ -35,8 +36,15 @@ export function ChatLayout() {
   const sessions = useStore($sessions);
   const rightDrawer = useRightDrawer();
   const queryClient = useQueryClient();
+  const currentWorkspaceId = useStore($currentWorkspaceId);
+  const workspaces = useStore($workspaces);
   const active =
     sessions.find((s) => s.id === sessionId && !s.isArchived) ?? null;
+
+  // Get current workspace path for auto-assigning to new sessions
+  const currentWorkspacePath = currentWorkspaceId
+    ? workspaces.find(w => w.id === currentWorkspaceId)?.path ?? null
+    : null;
 
   useEffect(() => {
     localStorage.setItem(
@@ -151,20 +159,20 @@ export function ChatLayout() {
     if (location.pathname === "/" || location.pathname === "") {
       let activeSess = activeSessions[0];
       if (!activeSess) {
-        activeSess = createSession();
+        activeSess = createSession(null, 'New Chat', currentWorkspacePath);
       }
       navigate(`/c/${activeSess.id}`, { replace: true });
     } else if (location.pathname.startsWith("/c/")) {
       const match = sessions.find((s) => s.id === sessionId);
       if (!match || match.isArchived) {
-        const fallback = activeSessions[0] || createSession();
+        const fallback = activeSessions[0] || createSession(null, 'New Chat', currentWorkspacePath);
         navigate(`/c/${fallback.id}`, { replace: true });
       }
     }
-  }, [location.pathname, sessionId, sessions, navigate]);
+  }, [location.pathname, sessionId, sessions, navigate, currentWorkspacePath]);
 
   const handleNewSession = (folderId?: string | null) => {
-    const newSess = createSession(folderId ?? null);
+    const newSess = createSession(folderId ?? null, 'New Chat', currentWorkspacePath);
     navigate(`/c/${newSess.id}`);
   };
 

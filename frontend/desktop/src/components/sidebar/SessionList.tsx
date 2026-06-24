@@ -45,6 +45,7 @@ import {
   type Folder,
   type SessionStatus,
 } from "@/store/sessions";
+import { $currentWorkspaceId, $workspaces } from "@/store/workspaces";
 import { $activeChatSessions, startChatActiveStreamsPoller } from "@/store/chat-active-streams";
 import { toast } from "sonner";
 import { modelDisplayParts } from "@/sections/chat/ChatThread";
@@ -87,6 +88,8 @@ export function SessionList({
   const folders = useStore($folders);
   const sessionStates = useStore($sessionStates);
   const activeChatSessions = useStore($activeChatSessions);
+  const currentWorkspaceId = useStore($currentWorkspaceId);
+  const workspaces = useStore($workspaces);
 
   useEffect(() => {
     startChatActiveStreamsPoller();
@@ -162,8 +165,18 @@ export function SessionList({
       !s.isArchived &&
       (!filter || s.title.toLowerCase().includes(filter.toLowerCase())),
   );
-  const pinned = visible.filter((s) => pinnedIds.has(s.id));
-  const others = visible.filter((s) => !pinnedIds.has(s.id));
+
+  // Get current workspace path for filtering
+  const currentWorkspacePath = currentWorkspaceId
+    ? workspaces.find(w => w.id === currentWorkspaceId)?.path ?? null
+    : null;
+
+  // Filter sessions by workspace if one is selected
+  const workspaceFiltered = currentWorkspacePath
+    ? visible.filter((s) => !s.workspacePath || s.workspacePath === currentWorkspacePath)
+    : visible;
+  const pinned = workspaceFiltered.filter((s) => pinnedIds.has(s.id));
+  const others = workspaceFiltered.filter((s) => !pinnedIds.has(s.id));
 
   const togglePin = (id: string) => {
     const next = new Set(pinnedIds);

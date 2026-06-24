@@ -71,7 +71,7 @@ export const saveFoldersToStorage = (folders: Folder[]) => {
   localStorage.setItem(LOCAL_FOLDERS_KEY, JSON.stringify(folders));
 };
 
-export function createSession(folderId: string | null = null, title: string = 'New Chat'): Session {
+export function createSession(folderId: string | null = null, title: string = 'New Chat', workspacePath?: string | null): Session {
   const newSess: Session = {
     id: 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5),
     title,
@@ -82,6 +82,7 @@ export function createSession(folderId: string | null = null, title: string = 'N
     model: '',
     folderId,
     isArchived: false,
+    workspacePath: workspacePath ?? null,
   };
   const updated = [newSess, ...$sessions.get()];
   $sessions.set(updated);

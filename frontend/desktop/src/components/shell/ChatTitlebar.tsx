@@ -208,27 +208,28 @@ export function ChatTitlebar({
 
         <div className="h-4 w-[1px] bg-border/40" />
 
-        <div className="flex items-center gap-1.5 ml-1">
+        {/* Windows-style title bar buttons */}
+        <div className="flex items-stretch ml-1">
           <button
             onClick={handleMinimize}
-            className="size-6 flex items-center justify-center hover:bg-accent rounded text-muted-foreground hover:text-foreground transition"
+            className="w-[46px] h-[32px] flex items-center justify-center text-muted-foreground hover:bg-white/10 transition-colors"
             aria-label="Minimize"
           >
-            <Minus className="size-3.5" />
+            <Minus className="size-4" />
           </button>
           <button
             onClick={handleToggleMaximize}
-            className="size-6 flex items-center justify-center hover:bg-accent rounded text-muted-foreground hover:text-foreground transition"
+            className="w-[46px] h-[32px] flex items-center justify-center text-muted-foreground hover:bg-white/10 transition-colors"
             aria-label={isMaximized ? "Restore" : "Maximize"}
           >
-            {isMaximized ? <Minimize2 className="size-3" /> : <Square className="size-2.5" />}
+            {isMaximized ? <Minimize2 className="size-3.5" /> : <Square className="size-3" />}
           </button>
           <button
             onClick={handleClose}
-            className="size-6 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground rounded text-muted-foreground transition"
+            className="w-[46px] h-[32px] flex items-center justify-center text-muted-foreground hover:bg-red-500 hover:text-white transition-colors"
             aria-label="Close"
           >
-            <X className="size-3.5" />
+            <X className="size-4" />
           </button>
         </div>
       </div>

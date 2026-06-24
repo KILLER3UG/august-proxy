@@ -13,6 +13,7 @@
     "core:window:allow-close",
     "core:window:allow-is-maximized",
     "core:webview:default",
+    "clipboard-manager:default",
     "process:default",
     "shell:default",
     "updater:default"
