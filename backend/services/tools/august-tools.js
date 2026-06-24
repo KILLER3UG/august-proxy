@@ -1152,6 +1152,19 @@ const AUGUST_TOOLS = [
             }
         }
     },
+    {
+        type: 'function',
+        function: {
+            name: 'august__whats_new',
+            description: 'List features and changes in the proxy codebase from the last 24 hours. Also displays recently registered features from the feature manifest. Call this when the user asks what changed, what is new, or what capabilities were recently added.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    detailed: { type: 'boolean', description: 'If true, include full commit list and changed file paths.' }
+                }
+            }
+        }
+    },
     ...MEMORY_TOOLS
 ];
 
@@ -2280,6 +2293,13 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                     `**Updated:** ${viewSkill.updatedAt || 'unknown'}`,
                     `\n### Instructions\n\n${viewSkill.instructions}`
                 ].filter(Boolean).join('\n');
+            }
+
+            case 'august__whats_new': {
+                const wn = require('../memory/whats-new');
+                const report = wn.buildWhatsNewReport();
+                if (!report) return 'No recent changes found in the last 24 hours.';
+                return report;
             }
 
             case 'august__scan_brain':

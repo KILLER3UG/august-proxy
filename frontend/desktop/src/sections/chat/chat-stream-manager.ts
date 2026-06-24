@@ -461,6 +461,22 @@ export async function syncActiveStreams(ensureWorkbenchSession: () => Promise<an
 export function ensureSessionSubscriber(sessionId: string): void {
   if (!sessionId) return;
   if (sessionSubscribers.has(sessionId)) return;
+
+  // Ensure there is an active turn in chatRuntime so the AUG streaming
+  // indicator (WorkingIndicator) shows while the backend is generating.
+  // Without this, a previous turn may have been finalized when the original
+  // SSE connection dropped (tab switch, throttling), leaving isSessionStreaming
+  // false even though the backend is still actively streaming and reconnecting
+  // via this subscriber.
+  if (!chatRuntime.isSessionStreaming(sessionId)) {
+    const assistantMsgId = `subscriber-${sessionId}-${Date.now()}`;
+    chatRuntime.startTurn({
+      sessionId,
+      assistantMsgId,
+      transport: 'none',
+    });
+  }
+
   const controller = new AbortController();
   const sinceSeq = readLastSeq(sessionId);
   const entry = { controller, lastSeq: sinceSeq };
@@ -538,6 +554,13 @@ export function ensureSessionSubscriber(sessionId: string): void {
       // a later sync can re-attach. Aborted means we intentionally stopped.
       if (!controller.signal.aborted) {
         sessionSubscribers.delete(sessionId);
+      }
+      // Finalize the turn we created above so isSessionStreaming reflects
+      // the true state. The original stream's turn was already finalized
+      // when it disconnected; this cleans up the subscriber-created turn.
+      const lastId = chatRuntime.getLatestActiveTurnId(sessionId);
+      if (lastId) {
+        chatRuntime.finishTurn(lastId, 'done');
       }
     });
 }

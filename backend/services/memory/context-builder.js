@@ -170,6 +170,15 @@ function buildTieredPrompt(system, options = {}) {
             tier3.push(wrapTag('august_graph_memory', `Graph: ${graph.counts.entities} entities, ${graph.counts.relations} relations, ${graph.counts.observations} observations. Use graph_search() or graph_explore().`, 'source="august_graph_memory.json" tools="august__graph_recall august__graph_explore"'));
         }
 
+        // Tier 3 — Volatile: recent changes / whats-new
+        try {
+            const { buildWhatsNewSummary } = require('./whats-new');
+            const whatsNew = buildWhatsNewSummary();
+            if (whatsNew) {
+                tier3.push(whatsNew);
+            }
+        } catch {}
+
         // Tier 1 — Stable: agent registry, capabilities catalog
         tier1.push(wrapTag('august_agent_registry', renderAgentContext(), 'source="august_agents.json" permission_model="inherit_parent_denies"'));
 

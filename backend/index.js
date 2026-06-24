@@ -2691,6 +2691,25 @@ if (autoUpdateEnabled) {
     }
 })();
 
+// ── Register known features in the feature manifest ──
+(async () => {
+    try {
+        const { registerFeature } = require('./services/memory/whats-new');
+        registerFeature({ name: 'Agent-facing skill CRUD', description: 'august__skill_create/edit/patch/delete/view tools for managing skills from the agent chat.', category: 'tools', commit: 'phase-0' });
+        registerFeature({ name: 'Streaming context scrubber', description: 'State machine stripping <memory_context> tags from SSE text deltas so raw memory never leaks to the UI.', category: 'security', commit: 'phase-1a' });
+        registerFeature({ name: 'Injection threat scanner', description: 'Regex-based detection of system override, role-play, exfiltration, and memory manipulation patterns in 5 hook points.', category: 'security', commit: 'phase-1b' });
+        registerFeature({ name: 'Three-tier system prompt', description: 'Stable/context/volatile tiered prompt builder with per-session prefix cache for upstream prompt cache hits.', category: 'performance', commit: 'phase-1c' });
+        registerFeature({ name: 'Background memory review', description: 'Post-turn asynchronous extraction of facts, guidelines, skills and checkpoints via LLM.', category: 'memory', commit: 'phase-2' });
+        registerFeature({ name: 'External memory providers', description: 'Pluggable provider system with auto-discovery, demo provider (JSON-backed), and Honcho cloud provider.', category: 'memory', commit: 'phase-3' });
+        registerFeature({ name: 'FTS5 search + cross-session bridge', description: 'SQLite FTS5 search backend, searchWithSummary LLM synthesis, cross-session recall via bridgeSessionStart/End.', category: 'memory', commit: 'phase-4' });
+        registerFeature({ name: 'Memory curator', description: 'Guideline consolidation via Jaccard similarity merge, confidence rollup, and JSONL archival of old entries.', category: 'maintenance', commit: 'phase-5' });
+        registerFeature({ name: 'Whats-new awareness system', description: 'Auto-inject recent git commits and feature manifest entries into the system prompt; august__whats_new tool for full report.', category: 'system', commit: 'phase-post' });
+        console.log('[FeatureManifest] 9 features registered');
+    } catch (e) {
+        console.warn('[FeatureManifest] Registration failed (non-fatal):', e.message);
+    }
+})();
+
 // ── Register missing tools in the tool registry ──
 try {
     registerMissingTools(toolRegistry);

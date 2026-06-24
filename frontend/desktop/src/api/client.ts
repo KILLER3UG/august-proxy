@@ -1,6 +1,7 @@
 /* ── API client (Phase 1.5) ─────────────────────────────────────────── */
 /* Same-origin fetch wrapper. The proxy serves both UI and API. */
 
+import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from '@/lib/tauri-detect';
 
 let baseUrl: string | null = null;
@@ -12,7 +13,7 @@ async function initBaseUrl(): Promise<void> {
       // The backend starts the HTTP listener in the same tick, but the Tauri
       // WebView can load the SPA before the health check succeeds.
       for (let i = 0; i < 6; i++) {
-        const status: string = await (window as any).__TAURI__.core.invoke('proxy_status');
+        const status: string = await invoke<string>('proxy_status');
         if (status.startsWith('ok:')) {
           baseUrl = `http://127.0.0.1:${status.split(':')[1]}`;
           return;

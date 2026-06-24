@@ -25,18 +25,16 @@ function renderCode(token: Tokens.Code): string {
   const lang = (token.lang || '').trim();
   const langClass = lang ? ` class="language-${escapeAttr(lang)}"` : '';
   const code = escapeAttr(token.text);
-  // Placeholder button carries the raw code as an attribute; a React
-  // useEffect replaces it with a real button that owns the "Copied!"
-  // feedback state.
   return (
     `<div class="markdown-code-block relative group">` +
+      `<pre${langClass}><code${langClass}>${token.text}</code></pre>` +
       `<button type="button" ${COPY_PLACEHOLDER_ATTR} ${COPY_CODE_ATTR}="${code}" ` +
         `class="markdown-copy-btn absolute right-2 top-2 inline-flex items-center gap-1 rounded-md ` +
         `border border-border/60 bg-background/80 px-2 py-1 text-xs font-medium text-muted-foreground ` +
-        `opacity-0 transition-opacity hover:text-foreground focus:opacity-100 group-hover:opacity-100">` +
+        `opacity-0 transition-opacity hover:text-foreground focus:opacity-100 group-hover:opacity-100" ` +
+        `style="z-index:10">` +
         `Copy` +
       `</button>` +
-      `<pre${langClass}><code${langClass}>${token.text}</code></pre>` +
     `</div>`
   );
 }
@@ -82,6 +80,10 @@ export function Markdown({ content }: { content: string }) {
     const cleanups: Array<() => void> = [];
 
     for (const placeholder of placeholders) {
+      // Skip already-hydrated placeholders (edge case during streaming re-renders)
+      if (placeholder.dataset.hydrated === 'true') continue;
+      placeholder.dataset.hydrated = 'true';
+
       const encoded = placeholder.getAttribute(COPY_CODE_ATTR) ?? '';
       const code = decodeAttr(encoded);
 
@@ -89,60 +91,38 @@ export function Markdown({ content }: { content: string }) {
       button.type = 'button';
       button.className = placeholder.className;
       button.setAttribute('aria-label', 'Copy code');
+      //
+      // z-index stacking: the <pre> that follows the button in the DOM has
+      // default static positioning and paints on top of the absolute button
+      // in some layering contexts, intercepting pointer events. z-10 ensures
+      // the button always receives clicks.
+      button.style.zIndex = '10';
       button.innerHTML =
         `<span class="markdown-copy-icon-copy"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span>` +
         `<span class="markdown-copy-label">Copy</span>`;
 
       let resetTimer: number | undefined;
+      let flashActive = false;
       const flashCopied = () => {
+        if (flashActive) return; // already showing "Copied!"
+        flashActive = true;
         button.querySelector('.markdown-copy-icon-copy')!.innerHTML =
           `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
         const label = button.querySelector('.markdown-copy-label');
         if (label) label.textContent = 'Copied!';
         if (resetTimer) window.clearTimeout(resetTimer);
         resetTimer = window.setTimeout(() => {
+          flashActive = false;
           button.querySelector('.markdown-copy-icon-copy')!.innerHTML =
             `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
           if (label) label.textContent = 'Copy';
         }, COPY_RESET_MS);
       };
-
       const onClick = () => {
-        // Try clipboard API first, then fallback to execCommand
-        const copyText = async (text: string) => {
-          try {
-            if (navigator.clipboard && window.isSecureContext) {
-              await navigator.clipboard.writeText(text);
-              return true;
-            }
-          } catch {
-            // Clipboard API failed, try fallback
-          }
-
-          // Fallback: use execCommand (deprecated but works in insecure contexts)
-          try {
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            textarea.style.position = 'fixed';
-            textarea.style.left = '-9999px';
-            textarea.style.top = '-9999px';
-            document.body.appendChild(textarea);
-            textarea.focus();
-            textarea.select();
-            const success = document.execCommand('copy');
-            document.body.removeChild(textarea);
-            return success;
-          } catch {
-            return false;
-          }
-        };
-
-        copyText(code).then((success) => {
-          flashCopied();
-          if (!success) {
-            console.warn('[Markdown] Copy failed - clipboard unavailable');
-          }
-        });
+        // Use clipboard API directly. Electron always has navigator.clipboard
+        // available. Always show "Copied!" feedback regardless of success
+        // so the user gets immediate visual confirmation.
+        navigator.clipboard.writeText(code).then(flashCopied, flashCopied);
       };
 
       button.addEventListener('click', onClick);

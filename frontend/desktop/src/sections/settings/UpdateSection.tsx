@@ -1,6 +1,7 @@
 /* ── Updates & Version — check for new releases and install them ── */
 
 import { useState, useCallback } from 'react';
+import { check as checkUpdate } from '@tauri-apps/plugin-updater';
 import { RotateCw, Download, CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -14,46 +15,45 @@ type UpdateState =
 
 export function UpdateSection() {
   const [state, setState] = useState<UpdateState>({ status: 'idle' });
+  const [update, setUpdate] = useState<any>(null);
   const isTauri =
-    typeof window !== 'undefined' && (window as any).__TAURI__ !== undefined;
+    typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
   const checkForUpdates = useCallback(async () => {
     if (!isTauri) return;
     setState({ status: 'checking' });
 
     try {
-      const updater = (window as any).__TAURI__.pluginUpdater;
-      const update = await updater.checkUpdate();
-      if (update.shouldUpdate && update.manifest) {
+      const result = await checkUpdate();
+      if (result) {
+        setUpdate(result);
         setState({
           status: 'available',
-          version: update.manifest.version,
-          body: update.manifest.body,
-          date: update.manifest.date,
+          version: result.version,
+          body: result.body,
+          date: result.date,
         });
       } else {
-        setState({ status: 'up-to-date', version: update.manifest?.version || '' });
+        setUpdate(null);
+        setState({ status: 'up-to-date', version: '' });
       }
     } catch (err: any) {
       setState({ status: 'error', message: err?.message || 'Failed to check for updates' });
     }
   }, [isTauri]);
 
-  const installUpdate = useCallback(async () => {
-    if (!isTauri) return;
+  const doInstallUpdate = useCallback(async () => {
+    if (!isTauri || !update) return;
     setState({ status: 'downloading', progress: 0 });
 
     try {
-      const updater = (window as any).__TAURI__.pluginUpdater;
-      // InstallUpdate returns a promise that resolves when the update is
-      // downloaded and staged. The app will restart after installation.
-      await updater.installUpdate();
+      await update.downloadAndInstall();
       // The app will restart automatically after install completes,
       // so we never reach here in practice.
     } catch (err: any) {
       setState({ status: 'error', message: err?.message || 'Failed to install update' });
     }
-  }, [isTauri]);
+  }, [isTauri, update]);
 
   return (
     <div className="px-8 py-6 max-w-2xl">
@@ -135,7 +135,7 @@ export function UpdateSection() {
                     </div>
                   )}
                 </div>
-                <Button size="sm" onClick={installUpdate}>
+                <Button size="sm" onClick={doInstallUpdate}>
                   <Download className="size-3.5 mr-1.5" />
                   Install
                 </Button>
