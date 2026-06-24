@@ -96,6 +96,28 @@ function renderCapabilitiesBlock(skills) {
 }
 
 function buildSystemPromptDetails(system, options = {}) {
+    const prompt = buildTieredPrompt(system, options).join('\n\n---\n\n');
+    return { prompt, length: prompt.length };
+}
+
+/**
+ * Build the system prompt as three independently-cacheable tiers.
+ *
+ * Tier 1 (Stable — cached across sessions, 5-min TTL):
+ *   <august_platform>, <august_capabilities>, <august_agent_registry>,
+ *   <client_identity>, <client_system_prompt>
+ *
+ * Tier 2 (Context — per-session, stable mid-session):
+ *   <active_workspace>
+ *
+ * Tier 3 (Volatile — rebuilt every turn):
+ *   <memory_context>, <august_core_context>, <august_learned_guidelines>,
+ *   <august_memory_tools>, <august_graph_memory>
+ *
+ * Returns [tier1, tier2, tier3] so callers can assemble cache strategy.
+ * Backward-compatible: buildSystemPromptDetails joins all three with separators.
+ */
+function buildTieredPrompt(system, options = {}) {
     const {
         includeOriginalSystem = true,
         includeMemory = true,
@@ -104,71 +126,74 @@ function buildSystemPromptDetails(system, options = {}) {
         clientId = 'unknown',
         workspacePath = null
     } = options;
-    // Legacy name: this controls all proxy-added context, not only memory.
     const includeProxyContext = options.includeProxyContext ?? includeMemory;
 
-    const chunks = [];
+    const tier1 = [];
+    const tier2 = [];
+    const tier3 = [];
 
-    // Inject previously-prefetched memory provider context (synchronous cache read)
     if (includeProxyContext) {
+        // Tier 3 — Volatile: memory context (prefetched per-turn)
         try {
             const { getMemoryManager } = require('./memory-manager');
             const mgr = getMemoryManager();
             const cached = mgr.getLastPrefetch();
             if (cached && cached.trim()) {
-                chunks.push(wrapTag('memory_context', cached, 'source="memory-providers"'));
+                tier3.push(wrapTag('memory_context', cached, 'source="memory-providers"'));
             }
-        } catch {} // MemoryManager not initialized — fine
-    }
+        } catch {}
 
-    if (includeProxyContext) {
+        // Tier 2 — Context: workspace path (per-session stable)
         if (workspacePath) {
-            chunks.push(wrapTag('active_workspace', `Active Workspace Directory: ${workspacePath}\nYour shell commands (PowerShell) and file tool operations (august__read_file, august__write_file, august__patch) are routed and executed relative to this folder. You have full permission to view and modify files in this directory.`, 'source="session_config"'));
+            tier2.push(wrapTag('active_workspace', `Active Workspace Directory: ${workspacePath}\nYour shell commands (PowerShell) and file tool operations (august__read_file, august__write_file, august__patch) are routed and executed relative to this folder. You have full permission to view and modify files in this directory.`, 'source="session_config"'));
         }
 
-        chunks.push(wrapTag('august_platform', AUGUST_PLATFORM, 'source="context-builder"'));
+        // Tier 1 — Stable: platform identity
+        tier1.push(wrapTag('august_platform', AUGUST_PLATFORM, 'source="context-builder"'));
 
+        // Tier 3 — Volatile: core memory, guidelines, memory tools, graph
         const slimContext = buildSlimCoreContext(memory);
-        chunks.push(wrapTag('august_core_context', slimContext, 'source="august_core_memory.json" tools="context_read memory_search fact_search graph_search"'));
+        tier3.push(wrapTag('august_core_context', slimContext, 'source="august_core_memory.json" tools="context_read memory_search fact_search graph_search"'));
 
         const learnedGuidelines = getActiveGuidelineTexts(memory.learned_guidelines);
         if (learnedGuidelines.length > 0) {
             const activeGuidelines = learnedGuidelines.slice(-15);
             const guidelinesText = activeGuidelines.map(g => `- ${g}`).join('\n');
-            chunks.push(wrapTag('august_learned_guidelines', `Dynamically learned instructions from previous turns - adhere to them:\n${guidelinesText}`, 'source="august_core_memory.json" field="learned_guidelines"'));
+            tier3.push(wrapTag('august_learned_guidelines', `Dynamically learned instructions from previous turns - adhere to them:\n${guidelinesText}`, 'source="august_core_memory.json" field="learned_guidelines"'));
         }
 
         const memoryCount = countAllMemoryEntries();
-        chunks.push(wrapTag('august_memory_tools', `Memory: ${memoryCount.checkpoints} checkpoints, ${memoryCount.facts} semantic facts, ${memoryCount.entities} graph entities, ${memoryCount.observations} observations.\nUse memory_topics() to browse, memory_search() to find sessions, fact_search() for facts, graph_search() for relations, or context_read() for full profile.`, 'source="memory-layers"'));
+        tier3.push(wrapTag('august_memory_tools', `Memory: ${memoryCount.checkpoints} checkpoints, ${memoryCount.facts} semantic facts, ${memoryCount.entities} graph entities, ${memoryCount.observations} observations.\nUse memory_topics() to browse, memory_search() to find sessions, fact_search() for facts, graph_search() for relations, or context_read() for full profile.`, 'source="memory-layers"'));
 
         const graph = graphStats();
         if ((graph.counts.entities || 0) > 0 || (graph.counts.observations || 0) > 0) {
-            chunks.push(wrapTag('august_graph_memory', `Graph: ${graph.counts.entities} entities, ${graph.counts.relations} relations, ${graph.counts.observations} observations. Use graph_search() or graph_explore().`, 'source="august_graph_memory.json" tools="august__graph_recall august__graph_explore"'));
+            tier3.push(wrapTag('august_graph_memory', `Graph: ${graph.counts.entities} entities, ${graph.counts.relations} relations, ${graph.counts.observations} observations. Use graph_search() or graph_explore().`, 'source="august_graph_memory.json" tools="august__graph_recall august__graph_explore"'));
         }
 
-        chunks.push(wrapTag('august_agent_registry', renderAgentContext(), 'source="august_agents.json" permission_model="inherit_parent_denies"'));
+        // Tier 1 — Stable: agent registry, capabilities catalog
+        tier1.push(wrapTag('august_agent_registry', renderAgentContext(), 'source="august_agents.json" permission_model="inherit_parent_denies"'));
 
         const capabilitiesText = renderCapabilitiesBlock(skills);
         if (capabilitiesText.trim()) {
-            chunks.push(wrapTag('august_capabilities', capabilitiesText, 'source="config"'));
+            tier1.push(wrapTag('august_capabilities', capabilitiesText, 'source="config"'));
         }
 
         const displayName = getDisplayName(clientId);
         if (clientId !== 'unknown') {
-            chunks.push(wrapTag('client_identity', `Client: ${displayName} (${clientId}). Facts learned from other clients available via semantic memory.`));
+            tier1.push(wrapTag('client_identity', `Client: ${displayName} (${clientId}). Facts learned from other clients available via semantic memory.`));
         }
     }
 
+    // Tier 1 — Stable: original system prompt from client (rarely changes)
     if (includeOriginalSystem) {
         const originalText = systemBlocksToText(system);
         if (originalText) {
             const prefaced = '[CLIENT NATIVE INSTRUCTIONS - for reference]\nThe following is from your native client environment. When proxy instructions (above) and client instructions conflict, follow the proxy instructions above.\n\n---\n\n' + originalText;
-            chunks.push(wrapTag('client_system_prompt', prefaced));
+            tier1.push(wrapTag('client_system_prompt', prefaced));
         }
     }
 
-    const prompt = chunks.join('\n\n---\n\n');
-    return { prompt, length: prompt.length };
+    return [tier1.join('\n\n---\n\n'), tier2.join('\n\n---\n\n'), tier3.join('\n\n---\n\n')];
 }
 
 function buildSystemPromptText(system, options = {}) {
@@ -184,6 +209,7 @@ module.exports = {
     buildSystemBlocks,
     buildSystemPromptDetails,
     buildSystemPromptText,
+    buildTieredPrompt,
     isMiniMaxModel,
     isMiniMaxTarget,
 };

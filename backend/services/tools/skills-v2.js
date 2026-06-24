@@ -8,6 +8,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { scanForThreats } = require('../memory/threat-patterns');
 
 // Usage tracking (lifecycle curation)
 let _skillUsage = null;
@@ -300,6 +301,12 @@ function loadSkillInstructions(name) {
   // Track usage for lifecycle curation
   if (_skillUsage) {
     try { _skillUsage.bumpUse(name); } catch {}
+  }
+  // Scan for injection threats before returning to system prompt builder
+  const result = scanForThreats(skill.instructions);
+  if (!result.safe) {
+    console.warn(`[Skills-v2] Threat patterns detected in skill "${name}": ${result.threats.join(', ')}`);
+    return null;
   }
   return skill.instructions;
 }

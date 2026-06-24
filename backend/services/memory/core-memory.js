@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { dataPath } = require('../../lib/data-paths');
+const { containsThreats } = require('./threat-patterns');
 
 function parseLimit(key, fallback) {
     const value = Number(process.env[key]);
@@ -121,6 +122,28 @@ function validateCoreMemoryBudgets(memory) {
 function writeAugustCoreMemory(data) {
     const normalized = normalizeAugustCoreMemory(data);
     validateCoreMemoryBudgets(normalized);
+
+    // Scan string fields for injection threats before persisting
+    for (const [key, val] of Object.entries(normalized)) {
+        if (typeof val === 'string' && containsThreats(val)) {
+            throw new Error(`Core memory write blocked: injection pattern detected in "${key}"`);
+        }
+        if (Array.isArray(val)) {
+            for (const item of val) {
+                if (typeof item === 'string' && containsThreats(item)) {
+                    throw new Error(`Core memory write blocked: injection pattern detected in "${key}" entry`);
+                }
+                if (item && typeof item === 'object') {
+                    for (const v of Object.values(item)) {
+                        if (typeof v === 'string' && containsThreats(v)) {
+                            throw new Error(`Core memory write blocked: injection pattern detected in "${key}" field`);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fs.writeFileSync(getCoreMemoryFile(), JSON.stringify(normalized, null, 2));
     // Notify memory providers of the write (mirrors to external backends)
     try {

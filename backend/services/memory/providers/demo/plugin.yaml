@@ -1,0 +1,6 @@
+name: demo
+description: Zero-dependency demo memory provider — local JSON-backed store
+type: memory_provider
+version: 1.0.0
+entry: index.js
+author: August Proxy

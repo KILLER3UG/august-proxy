@@ -2659,6 +2659,19 @@ if (autoUpdateEnabled) {
     }
 })();
 
+// ── Initialize Memory Guideline Curator ──
+(async () => {
+    try {
+        const memCurator = require('./services/memory/curator');
+        const result = memCurator.runCuratorReview();
+        if (result.consolidated.length > 0 || result.archived.length > 0) {
+            console.log(`[MemoryCurator] ${result.consolidated.length} consolidated, ${result.archived.length} archived`);
+        }
+    } catch (e) {
+        console.error('[MemoryCurator] Init failed (non-fatal):', e.message);
+    }
+})();
+
 // ── Initialize Memory Manager (pluggable providers) ──
 (async () => {
     try {

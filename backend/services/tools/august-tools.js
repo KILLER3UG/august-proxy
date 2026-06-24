@@ -1076,6 +1076,82 @@ const AUGUST_TOOLS = [
             }
         }
     },
+    {
+        type: 'function',
+        function: {
+            name: 'august__skill_create',
+            description: 'Create a new skill in the global skill catalog. Skills are reusable instruction sets that persist across sessions. The skill is created as ~/.august/skills/{name}/SKILL.md with YAML frontmatter.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    name: { type: 'string', description: 'Skill name — letters, numbers, underscores, dashes only, 1-64 characters.', pattern: '^[a-zA-Z0-9_-]{1,64}$' },
+                    description: { type: 'string', description: 'Short description of what this skill does.' },
+                    trigger: { type: 'string', description: 'When this skill should be triggered (e.g. "Use when debugging API errors").' },
+                    instructions: { type: 'string', description: 'Full skill instructions — the prompt that gets loaded when the skill is invoked.' }
+                },
+                required: ['name', 'instructions']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'august__skill_edit',
+            description: 'Replace the instructions of an existing skill. This overwrites the full instructions body. Use skill_patch for targeted edits.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    name: { type: 'string', description: 'Name of the existing skill to edit.' },
+                    instructions: { type: 'string', description: 'New instructions body (full replacement).' }
+                },
+                required: ['name', 'instructions']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'august__skill_patch',
+            description: 'Apply a targeted find-and-replace to an existing skill\'s instructions. Uses case-sensitive string replacement — specify the exact old and new text.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    name: { type: 'string', description: 'Name of the existing skill to patch.' },
+                    old_string: { type: 'string', description: 'The exact text to find in the skill instructions.' },
+                    new_string: { type: 'string', description: 'The replacement text.' }
+                },
+                required: ['name', 'old_string', 'new_string']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'august__skill_delete',
+            description: 'Permanently delete a skill from the global skill catalog. Removes the skill directory and all its contents. This cannot be undone.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    name: { type: 'string', description: 'Name of the skill to delete.' }
+                },
+                required: ['name']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'august__skill_view',
+            description: 'View the full content of a skill — description, trigger, and complete instructions. Returns the raw SKILL.md content plus metadata.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    name: { type: 'string', description: 'Name of the skill to view.' }
+                },
+                required: ['name']
+            }
+        }
+    },
     ...MEMORY_TOOLS
 ];
 
@@ -2136,6 +2212,74 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                     skill.trigger ? `\n**Trigger:** ${skill.trigger}` : '',
                     `\n### Instructions\n\n${skill.instructions}`
                 ].join('\n');
+            }
+
+            case 'august__skill_create':
+            case 'august__skill_edit': {
+                const skills = require('./skills');
+                const { containsThreats } = require('../memory/threat-patterns');
+                const name = String(args.name || '').trim();
+                const existing = skills.getSkills().find(s => s.name === name);
+                const instructions = String(args.instructions || '').trim();
+                if (instructions && instructions.length > 10000) {
+                    return `[Error] Skill instructions exceed 10,000 character limit (${instructions.length}).`;
+                }
+                if (instructions && containsThreats(instructions)) {
+                    return `[Error] Injection pattern detected in skill instructions. Skill not saved.`;
+                }
+                const result = skills.saveSkill({
+                    name,
+                    description: String(args.description || existing?.description || '').trim(),
+                    trigger: String(args.trigger || existing?.trigger || '').trim(),
+                    instructions
+                });
+                return `Skill "${result.name}" saved successfully.`;
+            }
+
+            case 'august__skill_patch': {
+                const skillPatch = require('./skills');
+                const { containsThreats } = require('../memory/threat-patterns');
+                const patchName = String(args.name || '').trim();
+                const patchSkill = skillPatch.getSkills().find(s => s.name === patchName);
+                if (!patchSkill) return `Skill "${patchName}" not found.`;
+                const oldStr = String(args.old_string || '');
+                const newStr = String(args.new_string || '');
+                if (!patchSkill.instructions.includes(oldStr)) {
+                    return `[Error] old_string not found in skill "${patchName}" instructions.`;
+                }
+                const patched = patchSkill.instructions.replace(oldStr, newStr);
+                if (containsThreats(patched)) {
+                    return `[Error] Injection pattern detected in patched instructions. Patch not applied.`;
+                }
+                skillPatch.saveSkill({ name: patchName, instructions: patched });
+                return `Skill "${patchName}" patched successfully.`;
+            }
+
+            case 'august__skill_delete': {
+                const delSkills = require('./skills');
+                const delName = String(args.name || '').trim();
+                const delSkill = delSkills.getSkills().find(s => s.name === delName);
+                if (!delSkill) return `Skill "${delName}" not found.`;
+                delSkills.deleteSkill(delName);
+                return `Skill "${delName}" deleted successfully.`;
+            }
+
+            case 'august__skill_view': {
+                const viewSkills = require('./skills');
+                const viewName = String(args.name || '').trim();
+                const viewSkill = viewSkills.getSkills().find(s => s.name === viewName);
+                if (!viewSkill) {
+                    const available = viewSkills.getSkills().map(s => `"${s.name}"`).join(', ');
+                    return `Skill "${viewName}" not found. Available skills: ${available}`;
+                }
+                return [
+                    `## Skill: ${viewSkill.name}`,
+                    viewSkill.description ? `**Description:** ${viewSkill.description}` : '',
+                    viewSkill.trigger ? `**Trigger:** ${viewSkill.trigger}` : '',
+                    `**Status:** ${viewSkill.enabled !== false ? 'enabled' : 'disabled'}`,
+                    `**Updated:** ${viewSkill.updatedAt || 'unknown'}`,
+                    `\n### Instructions\n\n${viewSkill.instructions}`
+                ].filter(Boolean).join('\n');
             }
 
             case 'august__scan_brain':

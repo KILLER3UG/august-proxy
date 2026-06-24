@@ -5,9 +5,10 @@ const { getProfile, getProviderConfig } = require('../../lib/config');
 const { resolveActiveProvider, resolveProvider } = require('../../providers/provider-resolver');
 const { resolveProviderForModel } = require('../../providers/route-resolver');
 const { resolveModelAliasDetails } = require('../../providers/model-list');
-const { buildSystemPromptText } = require('../memory/context-builder');
+const { buildSystemPromptText, buildTieredPrompt } = require('../memory/context-builder');
 const semanticMemory = require('../memory/semantic-memory');
 const topicIndex = require('../memory/topic-index');
+const { ContextScrubber } = require('../memory/context-scrubber');
 const agentTree = require('../tools/agent-tree');
 const hostAgent = require('../../lib/host-agent');
 const { getMcpToolDefinitions, executeMcpToolCall, isMcpToolName } = require('../tools/mcp-client');
@@ -49,6 +50,30 @@ const { getTeamSkills } = require('../tools/skills');
 const modelCatalog = require('../catalog/model-catalog');
 const modelResolver = require('../../providers/model-resolver');
 const crypto = require('crypto');
+
+// ── Prompt tier cache ──────────────────────────────────────────────────────
+// Stores stable+tier2 prefix per session so upstream prefix cache hits more often.
+const _promptCache = new Map();
+const PROMPT_CACHE_TTL_MS = 300_000; // 5 min — matches Anthropic's prompt caching TTL
+
+function _getCachedPromptPrefix(session) {
+    const entry = _promptCache.get(session.id);
+    if (!entry) return null;
+    if (Date.now() - entry.ts > PROMPT_CACHE_TTL_MS) {
+        _promptCache.delete(session.id);
+        return null;
+    }
+    return entry.prefix;
+}
+
+function _setCachedPromptPrefix(session, prefix) {
+    _promptCache.set(session.id, { prefix, ts: Date.now() });
+    // Evict oldest if cache exceeds 100 entries
+    if (_promptCache.size > 100) {
+        const oldest = _promptCache.entries().next().value;
+        if (oldest) _promptCache.delete(oldest[0]);
+    }
+}
 
 // ── Workbench loop safety nets ──────────────────────────────────────────────
 const WORKBENCH_TOKEN_BUDGET = 2_000_000; // ~2M tokens per turn
@@ -2300,29 +2325,40 @@ function buildSystemPrompt(session) {
         planLine
     ].join('\n');
 
-    // Build shared context blocks via context-builder (same as regular API path)
+    // Build system prompt using three-tier structure.
+    // Tier 1 (stable) + Tier 2 (context) are cached per session for upstream
+    // prefix cache stability. Tier 3 (volatile) is rebuilt every turn.
     const profile = getWorkbenchProfile(session);
-    const model = profile._upstreamModel || profile.currentModel;
-    const targetUrl = profile.targetUrl;
     const brainPlan = getSessionBrainPolicy(session);
-    const basePrompt = buildSystemPromptText(null, {
+    const tiers = buildTieredPrompt(null, {
         includeMiniMaxContract: true,
         includeWindowsContext: true,
         includeOriginalSystem: false,
-        model,
-        targetUrl,
+        model: profile._upstreamModel || profile.currentModel,
+        targetUrl: profile.targetUrl,
         clientId: 'workbench-ui',
         memoryQuery: brainPlan.memoryQuery
     });
+    const [tier1, tier2, volatileTier] = tiers;
 
-    return [
-        basePrompt,
+    let stablePrefix = _getCachedPromptPrefix(session);
+    if (!stablePrefix) {
+        stablePrefix = [tier1, tier2].filter(Boolean).join('\n\n---\n\n');
+        _setCachedPromptPrefix(session, stablePrefix);
+    }
+
+    // Join stable prefix with volatile tier3 using --- separator (matching original
+    // buildSystemPromptDetails behavior), then join with remaining sections via \n\n.
+    const prompt = [
+        [stablePrefix, volatileTier || ''].filter(Boolean).join('\n\n---\n\n'),
         brainPlan.systemAdditions,
         hardRule,
         toolGuide,
         agentGuide,
         teamSkillGuide
     ].filter(Boolean).join('\n\n');
+
+    return prompt;
 }
 
 function extractAssistantText(content = []) {
@@ -3349,6 +3385,18 @@ async function sendWorkbenchMessageStream({ sessionId, message, provider, agentI
     const signal = options.signal;
     throwIfAborted(signal);
     const session = getWorkbenchSession(sessionId);
+
+    // Create streaming context scrubber for this turn — strips <memory_context> tags
+    // from SSE text deltas so raw memory content never leaks to the UI.
+    const scrubber = new ContextScrubber();
+    const scrubbedEmit = (type, data) => {
+        if (data && typeof data?.content === 'string') {
+            const cleaned = scrubber.feed(data.content);
+            if (!cleaned) return;
+            if (cleaned !== data.content) data = { ...data, content: cleaned };
+        }
+        try { emit(type, data); } catch (_) { throw new Error('SSE connection closed'); }
+    };
     if (provider === 'claude' || provider === 'codex') session.provider = provider;
     if (agentId) session.agentId = resolveAgentId(agentId, session.agentId || 'build');
     if (guardMode) session.guardMode = normalizeGuardMode(guardMode);
@@ -3399,8 +3447,8 @@ async function sendWorkbenchMessageStream({ sessionId, message, provider, agentI
     // executeSubAgent / executeTeamRun so the UI can attach it to the
     // specific tool-call block that triggered the sub-agent.
 
-    await callWorkbenchModelStream(session, emit, signal);
-    await continueGoalUntilReached(session, emit, signal);
+    await callWorkbenchModelStream(session, scrubbedEmit, signal);
+    await continueGoalUntilReached(session, scrubbedEmit, signal);
 
     saveSessions();
 
@@ -3410,6 +3458,18 @@ async function sendWorkbenchMessageStream({ sessionId, message, provider, agentI
         const lastAssistant = session.messages.filter(m => m.role === 'assistant').pop();
         if (lastAssistant) {
             getMemoryManager().syncAll(text, lastAssistant.content || '', sessionId, session.messages).catch(() => {});
+        }
+    } catch {}
+
+    // Background memory review (asynchronous, failure-isolated)
+    try {
+        const { spawnBackgroundReview } = require('../memory/background-review');
+        if (text && text.trim().length >= 50 && session) {
+            const lastAssistantForReview = session.messages.filter(m => m.role === 'assistant').pop();
+            if (lastAssistantForReview) {
+                spawnBackgroundReview(text, lastAssistantForReview.content || '', sessionId, session.messages, session)
+                    .catch(e => console.warn('[BackgroundReview] Review error:', e.message));
+            }
         }
     } catch {}
 
@@ -3447,7 +3507,12 @@ function resetWorkbenchSession(sessionId, provider, agentId = 'build') {
     if (sessionId) {
         const session = sessions.get(sessionId);
         if (session?.messages?.length) {
-            // Notify memory providers of session end before deletion
+            // Bridge session end to cross-session memory
+            try {
+                const { bridgeSessionEnd } = require('../memory/cross-session-bridge');
+                bridgeSessionEnd(sessionId, session.messages, session).catch(() => {});
+            } catch {}
+            // Notify memory providers of session end
             try {
                 const { getMemoryManager } = require('../memory/memory-manager');
                 getMemoryManager().onSessionEnd(session.messages).catch(() => {});
@@ -3461,6 +3526,18 @@ function resetWorkbenchSession(sessionId, provider, agentId = 'build') {
 
 function deleteWorkbenchSession(sessionId) {
     if (sessionId && sessions.has(sessionId)) {
+        const session = sessions.get(sessionId);
+        // Bridge session end to cross-session memory (async, fire-and-forget)
+        if (session?.messages?.length) {
+            try {
+                const { bridgeSessionEnd } = require('../memory/cross-session-bridge');
+                bridgeSessionEnd(sessionId, session.messages, session).catch(() => {});
+            } catch {}
+            try {
+                const { getMemoryManager } = require('../memory/memory-manager');
+                getMemoryManager().onSessionEnd(session.messages).catch(() => {});
+            } catch {}
+        }
         sessions.delete(sessionId);
         saveSessions();
         return true;
@@ -3531,6 +3608,7 @@ module.exports = {
     approveWorkbenchPlan,
     rejectWorkbenchPlan,
     buildSystemPrompt,
+    callWorkbenchTextOnlyModel,
     clearWorkbenchGoal,
     consumePendingMutation,
     createWorkbenchSession,

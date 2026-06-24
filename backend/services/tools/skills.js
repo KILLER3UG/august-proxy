@@ -3,6 +3,8 @@ const path = require('path');
 const os = require('os');
 const { getConfig, saveConfig } = require('../../lib/config');
 
+const { scanForThreats } = require('../memory/threat-patterns');
+
 const SKILL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 const SKILLS_DIR = path.join(os.homedir(), '.august', 'skills');
 const PROJECT_SKILLS_DIR = path.join(__dirname, '..', '..', '..', 'skills');
@@ -230,13 +232,23 @@ function deleteSkill(name) {
 
 function loadSkillInstructions(name, agentId = '') {
     const owner = String(agentId || '').trim();
+    let instructions;
     if (owner) {
         const teamSkill = getTeamSkills(owner).find(s => s.name === name);
-        if (teamSkill) return teamSkill.instructions;
+        if (teamSkill) instructions = teamSkill.instructions;
+    } else {
+        const skill = getEnabledSkills().find(s => s.name === name);
+        if (skill) instructions = skill.instructions;
     }
-    const skill = getEnabledSkills().find(s => s.name === name);
-    if (!skill) return null;
-    return skill.instructions;
+    if (!instructions) return null;
+
+    // Scan for injection threats before returning to system prompt builder
+    const result = scanForThreats(instructions);
+    if (!result.safe) {
+        console.warn(`[Skills] Threat patterns detected in skill "${name}": ${result.threats.join(', ')}`);
+        return null;
+    }
+    return instructions;
 }
 
 function renderSkillCatalog(skills) {

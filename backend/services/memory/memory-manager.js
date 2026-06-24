@@ -40,6 +40,9 @@ class MemoryManager extends EventEmitter {
       await this._registerExternalProvider(config.provider, config.external || {});
     }
 
+    // Auto-discover local providers from the providers/ directory
+    await this._discoverLocalProviders();
+
     // Start background sync
     this._startBackgroundSync();
 
@@ -53,19 +56,17 @@ class MemoryManager extends EventEmitter {
    * @param {Object} config - Provider configuration
    */
   async _registerExternalProvider(providerName, config = {}) {
-    if (this._externalProvider) {
-      console.warn(`[MemoryManager] External provider already registered: ${this._externalProvider.name}`);
+    if (this._providers.has(providerName)) {
+      console.warn(`[MemoryManager] Provider already registered: ${providerName}`);
       return false;
     }
 
     try {
       // Dynamic import of provider module
-      // Try local providers/ directory first, then peer-level plugins
       let ProviderClass;
       try {
         ProviderClass = require(`./providers/${providerName}`);
       } catch {
-        // External providers not yet installed — graceful degradation
         console.warn(`[MemoryManager] Provider module not found: ${providerName}. Install the provider plugin to enable it.`);
         return false;
       }
@@ -84,6 +85,29 @@ class MemoryManager extends EventEmitter {
     } catch (error) {
       console.error(`[MemoryManager] Failed to register provider ${providerName}:`, error.message);
       return false;
+    }
+  }
+
+  /**
+   * Auto-discover and register local providers from the providers/ directory.
+   * Scans each subdirectory for an index.js exporting a MemoryProvider subclass.
+   */
+  async _discoverLocalProviders() {
+    const fs = require('fs');
+    const p = require('path');
+    const dir = p.join(__dirname, 'providers');
+    try {
+      if (!fs.existsSync(dir)) return;
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          const main = p.join(dir, entry.name, 'index.js');
+          if (fs.existsSync(main)) {
+            await this._registerExternalProvider(entry.name, {});
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[MemoryManager] Provider auto-discovery error:', err.message);
     }
   }
 
@@ -132,6 +156,17 @@ class MemoryManager extends EventEmitter {
         if (context) contexts.push(context);
       } catch (error) {
         console.error(`[MemoryManager] Prefetch failed for ${provider.name}:`, error.message);
+      }
+    }
+
+    // Cross-session bridge: recall past sessions relevant to this query
+    if (query && sessionId) {
+      try {
+        const { bridgeSessionStart } = require('./cross-session-bridge');
+        const recall = await bridgeSessionStart(query, sessionId);
+        if (recall) contexts.push(recall);
+      } catch (error) {
+        console.warn('[MemoryManager] Cross-session bridge recall failed:', error.message);
       }
     }
 

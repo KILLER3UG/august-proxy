@@ -1,3 +1,4 @@
+const { containsThreats, scanForThreats } = require('./threat-patterns');
 const { readAugustCoreMemory, writeAugustCoreMemory, checkMemoryBudget, CoreMemoryBudgetError } = require('./core-memory');
 
 let emitLogEvent = () => {};
@@ -539,7 +540,24 @@ Respond ONLY with valid JSON in this exact format:
                 }
             }
         }
-        
+
+        // Scan extracted content for injection threats before persisting
+        const threatFields = [
+          ...(Array.isArray(extracted.add_facts) ? extracted.add_facts : []),
+          ...(Array.isArray(extracted.delete_facts) ? extracted.delete_facts : []),
+          ...(Array.isArray(extracted.learned_guidelines) ? extracted.learned_guidelines : []),
+          ...(Array.isArray(extracted.semantic_facts) ? extracted.semantic_facts.map(f => f.value || '') : []),
+        ];
+        for (const field of threatFields) {
+          if (containsThreats(String(field || ''))) {
+            const reason = 'threat pattern detected in extracted content';
+            console.warn(`[Auto-Memory] ${reason}: "${String(field).slice(0, 100)}". Extraction skipped.`);
+            amLog('warn', `${reason}. Extraction skipped.`);
+            finish('skipped', { reason });
+            return;
+          }
+        }
+
         let updatedContext = currentContext;
         let modified = false;
         const addedFacts = [];

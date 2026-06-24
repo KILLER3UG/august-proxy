@@ -64,7 +64,11 @@ const MEMORY_WRITE_TOOLS = new Set([
     'august__set_learned_guideline_status',
     'august__graph_observe',
     'august__graph_link',
-    'august__graph_index_memory'
+    'august__graph_index_memory',
+    'august__skill_create',
+    'august__skill_edit',
+    'august__skill_patch',
+    'august__skill_delete'
 ]);
 
 const COMPUTER_POLICY_TOOLS = new Set([
