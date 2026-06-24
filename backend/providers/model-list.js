@@ -11,6 +11,7 @@ const { getConfig, getProviderConfig } = require('../lib/config');
 const { inferFromModelId, deriveModelsUrl } = require('../lib/models');
 const { resolveModelProfile } = require('../lib/model-profiles');
 const { resolveProviderForModel, resolveProviderByName } = require('./route-resolver');
+const { listPublicProviders } = require('../services/providers/providers-routes');
 
 let modelAliasCache = null;
 let modelAliasCacheAt = 0;
@@ -145,6 +146,32 @@ async function aggregateModels() {
             console.warn('[Proxy Models] Provider aggregation rejected:', r.reason?.message || r.reason);
         }
     }
+
+    // Include models from user-created custom providers (stored in providers.json)
+    // that are not part of the built-in provider registry. These providers are
+    // managed via the Settings UI and their models exist only in providers.json,
+    // not in provider-registry.js — without this step they'd never appear in
+    // /api/models and would be invisible to the chat model dropdown.
+    try {
+        const storedProviders = listPublicProviders();
+        const registryNames = new Set(providers.map((p) => p.name));
+        for (const sp of storedProviders) {
+            if (sp.name && !registryNames.has(sp.name) && sp.enabled && sp.apiKey) {
+                const storedModels = Array.isArray(sp.models) ? sp.models : [];
+                for (const m of storedModels) {
+                    allModels.push({
+                        id: m.id,
+                        name: m.name || m.id,
+                        provider: sp.name,
+                        contextWindow: m.contextWindow || getContextWindowForModel(m.id, null),
+                        supportsReasoning: !!m.reasoning,
+                        supportsThinking: !!m.reasoning,
+                        isFree: !!m.free || isFreeModelId(m.id),
+                    });
+                }
+            }
+        }
+    } catch (_) {}
 
     // De-duplicate by id, free models first.
     const unique = Array.from(new Map(allModels.map((m) => [m.id, m])).values());
