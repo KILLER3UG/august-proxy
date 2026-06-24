@@ -107,6 +107,9 @@ export function SessionList({
     return next;
   })();
 
+  // Hidden file input for native folder picker (browser fallback)
+  const dirInputRef = useRef<HTMLInputElement>(null);
+
   const handleFolderUploadClick = async (
     e: React.MouseEvent<HTMLButtonElement>,
   ) => {
@@ -122,9 +125,8 @@ export function SessionList({
         console.error("Failed to open Tauri directory dialog:", err);
       }
     } else {
-      selectedPath = prompt(
-        "Enter absolute path to workspace folder (e.g. C:/projects/my-app):",
-      );
+      dirInputRef.current?.click();
+      return;
     }
 
     if (!selectedPath) return;
@@ -157,6 +159,31 @@ export function SessionList({
     } catch (err: any) {
       toast.error(`Access failed: ${err.message}`, { id: toastId });
     }
+  };
+
+  const handleDirPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fullPath = (file as any).path
+      || file.webkitRelativePath.slice(0, file.webkitRelativePath.indexOf('/'));
+    if (!fullPath) return;
+    const normalizedPath = fullPath.replace(/\\/g, "/");
+    const folderName = normalizedPath.split("/").pop() || "workspace";
+    const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
+    (async () => {
+      try {
+        const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`);
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Directory not accessible');
+        toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
+        if (activeId) {
+          updateSessionWorkspace(activeId, normalizedPath);
+          window.dispatchEvent(new CustomEvent('august-open-right-sidebar'));
+        }
+      } catch (err: any) {
+        toast.error(`Access failed: ${err.message}`, { id: toastId });
+      }
+    })();
+    e.target.value = '';
   };
 
   const visible = sessions.filter(
@@ -216,6 +243,14 @@ export function SessionList({
 
   return (
     <div className="flex h-full text-sm relative select-none bg-sidebar">
+      <input
+        ref={dirInputRef}
+        type="file"
+        webkitdirectory=""
+        directory=""
+        className="hidden"
+        onChange={handleDirPicked}
+      />
       <div className="flex-1 flex flex-col min-w-0 text-sm">
         {/* Nav items */}
         <div className="py-2.5 px-2 flex flex-col gap-0.5">

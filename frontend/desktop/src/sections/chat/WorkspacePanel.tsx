@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useStore } from '@nanostores/react';
 import { $sessions, updateSessionWorkspace } from '@/store/sessions';
 import { FolderGit2, ChevronRight, ChevronDown, Folder, FolderOpen, FileText, AlertCircle, Trash2, FolderSearch, Link2, Plus } from 'lucide-react';
@@ -120,6 +120,9 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
     toast.info(`Referenced: ${filePath.split('/').pop()}`);
   };
 
+  // Hidden file input for native folder picker (browser fallback)
+  const dirInputRef = useRef<HTMLInputElement>(null);
+
   const handleSelectFolder = async () => {
     let selectedPath: string | null = null;
 
@@ -131,7 +134,8 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
         console.error('Failed to open Tauri directory dialog:', err);
       }
     } else {
-      selectedPath = prompt('Enter absolute path to workspace folder (e.g. C:/projects/my-app):');
+      dirInputRef.current?.click();
+      return;
     }
 
     if (!selectedPath) return;
@@ -160,6 +164,28 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
     }
   };
 
+  const handleDirPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fullPath = (file as any).path
+      || file.webkitRelativePath.slice(0, file.webkitRelativePath.indexOf('/'));
+    if (!fullPath) return;
+    const normalizedPath = fullPath.replace(/\\/g, '/');
+    const folderName = normalizedPath.split('/').pop() || 'workspace';
+    const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
+    (async () => {
+      try {
+        const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`);
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Directory not accessible');
+        toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
+        if (sessionId) updateSessionWorkspace(sessionId, normalizedPath);
+      } catch (err: any) {
+        toast.error(`Access failed: ${err.message}`, { id: toastId });
+      }
+    })();
+    e.target.value = '';
+  };
+
   const formatBytes = (bytes?: number) => {
     if (bytes === undefined || bytes === null) return '';
     if (bytes === 0) return '0 B';
@@ -171,6 +197,14 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
 
   return (
     <div className="flex flex-col h-full bg-sidebar text-sm">
+      <input
+        ref={dirInputRef}
+        type="file"
+        webkitdirectory=""
+        directory=""
+        className="hidden"
+        onChange={handleDirPicked}
+      />
       {/* Header */}
       <div className="p-3 border-b border-border/40 flex items-center justify-between shrink-0 bg-background">
         <div className="flex items-center gap-2">

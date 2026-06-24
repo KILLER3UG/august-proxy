@@ -22,6 +22,7 @@ export function WorkspaceSelector({ sessionId, onWorkspaceChange }: WorkspaceSel
   const workspaces = useStore($workspaces);
   const currentWorkspaceId = useStore($currentWorkspaceId);
   const rootRef = useRef<HTMLDivElement>(null);
+  const dirInputRef = useRef<HTMLInputElement>(null);
 
   const currentWorkspace = workspaces.find(w => w.id === currentWorkspaceId) ?? null;
 
@@ -64,11 +65,12 @@ export function WorkspaceSelector({ sessionId, onWorkspaceChange }: WorkspaceSel
         console.error('[WorkspaceSelector] Tauri directory picker failed:', err);
       }
     } else {
-      // Fallback for browser: prompt user for path
-      const input = window.prompt('Enter workspace folder path:');
-      if (input && input.trim()) {
-        path = input.trim();
-      }
+      // Use the hidden directory input to open the native OS folder picker.
+      // showDirectoryPicker() only returns the folder name, not the absolute
+      // path, so we use <input type="file" webkitdirectory> instead — Chrome's
+      // File.path exposes the full filesystem path the backend needs.
+      dirInputRef.current?.click();
+      return; // path will be set by the input's change handler
     }
 
     if (path) {
@@ -76,6 +78,21 @@ export function WorkspaceSelector({ sessionId, onWorkspaceChange }: WorkspaceSel
       setOpen(false);
       onWorkspaceChange?.(ws);
     }
+  };
+
+  const handleDirPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Chrome exposes the full path on File.path; fall back to extracting from webkitRelativePath
+    const fullPath = (file as any).path
+      || file.webkitRelativePath.slice(0, file.webkitRelativePath.indexOf('/'));
+    if (fullPath) {
+      const ws = addWorkspace(fullPath);
+      setOpen(false);
+      onWorkspaceChange?.(ws);
+    }
+    // Reset so the same directory can be re-selected
+    e.target.value = '';
   };
 
   const handleRemoveWorkspace = (e: React.MouseEvent, ws: Workspace) => {
@@ -86,6 +103,14 @@ export function WorkspaceSelector({ sessionId, onWorkspaceChange }: WorkspaceSel
 
   return (
     <div ref={rootRef} className="relative">
+      <input
+        ref={dirInputRef}
+        type="file"
+        webkitdirectory=""
+        directory=""
+        className="hidden"
+        onChange={handleDirPicked}
+      />
       <button
         onClick={() => setOpen(v => !v)}
         className={cn(

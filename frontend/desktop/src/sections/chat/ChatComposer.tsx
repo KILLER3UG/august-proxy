@@ -451,9 +451,10 @@ export function estimateContextBreakdown(args: {
   const messages = Math.ceil(messagesChars / 4);
   // Avg ~180 tokens per tool definition (name + description + JSON schema) — common industry estimate.
   const systemTools = Math.ceil(args.toolCount * 180);
-  // Base system prompt + project context (rough estimate; matches the BrainPolicy
-  // baseline that the backend ships). Skill prompts add to this on top.
-  const systemPrompt = 800;
+  // Base system prompt + agent registry + core context (rough estimate; matches
+  // the typical prompt overhead the backend ships — platform description, agent
+  // registry entries, capabilities, learned guidelines, etc.).
+  const systemPrompt = 3000;
   const skills = Math.ceil((args.coreMemoryBytes ?? 0) / 4);
   const meta = 100; // session metadata, attachments index, etc.
   return { messages, systemTools, systemPrompt, skills, meta };
@@ -596,6 +597,7 @@ export function ContextRing({
 }
 
 function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
   return n.toLocaleString();
 }
