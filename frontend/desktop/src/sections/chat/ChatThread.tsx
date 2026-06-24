@@ -994,7 +994,19 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const generateAIResponse = async (chatHistory: ChatMessage[]) => {
     const turnSessionId = sessionId;
     if (!turnSessionId) return;
-    if (!chatRuntime.canStartTurn(turnSessionId)) return;
+    if (!chatRuntime.canStartTurn(turnSessionId)) {
+      if (!activeStreamControllers.has(turnSessionId)) {
+        chatRuntime.abortSession(turnSessionId);
+      } else {
+        setMessages(prev => prev.map((msg, index) =>
+          index === prev.length - 1 && msg.role === 'user'
+            ? { ...msg, content: `${msg.content}\n\n[Could not start a new response because a previous response is still running.]` }
+            : msg
+        ));
+        setSessionStatus(turnSessionId, 'error');
+        return;
+      }
+    }
 
     await startChatStream(turnSessionId, {
       message: applyWorkbenchGuardMode(workbenchMode, chatHistory.map(m => `${m.role}: ${m.content}`).join('\n\n') || ' '),

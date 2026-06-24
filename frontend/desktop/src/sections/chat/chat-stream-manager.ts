@@ -193,8 +193,10 @@ export async function startChatStream(
   }
 ) {
   if (activeStreamControllers.has(sessionId)) {
-    // Already streaming
-    return;
+    if (chatRuntime.isSessionStreaming(sessionId)) {
+      return;
+    }
+    activeStreamControllers.delete(sessionId);
   }
 
   setSessionStatus(sessionId, 'working');

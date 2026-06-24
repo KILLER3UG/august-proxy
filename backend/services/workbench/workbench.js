@@ -2855,13 +2855,15 @@ async function callOpenAiWorkbenchModel(session) {
         if (tokenAcc.exceeded) break;
         const message = data.choices?.[0]?.message || {};
         const content = openAiMessageToAnthropicContent(message);
-        // Skip persisting an empty assistant turn — strict OpenAI-compatible
-        // providers (e.g. DeepSeek) reject assistant messages with
-        // `content: null` and no `tool_calls`. Empty `content` here means the
-        // upstream returned no `message.content` and no `message.tool_calls`.
-        if (content.length) {
-            session.messages.push({ role: 'assistant', content });
+        // Strict OpenAI-compatible providers (e.g. DeepSeek) reject assistant
+        // messages with `content: null` and no `tool_calls`. If the upstream
+        // returns neither content nor tool calls, fail the turn visibly instead
+        // of reporting a successful empty assistant response.
+        if (!content.length) {
+            session.updatedAt = new Date().toISOString();
+            throw createEmptyWorkbenchResponseError(session);
         }
+        session.messages.push({ role: 'assistant', content });
         extractAndSyncTodos(session);
 
         content.forEach(block => {
@@ -3017,6 +3019,12 @@ function updateWorkbenchGoal({ sessionId, action, condition } = {}) {
 
 function safeEmit(emit, type, data) {
     try { emit(type, data); } catch (_) { throw new Error('SSE connection closed'); }
+}
+
+function createEmptyWorkbenchResponseError(session) {
+    const profile = getWorkbenchProfile(session);
+    const model = profile?._upstreamModel || profile?.currentModel || session?.model || 'unknown model';
+    return new Error(`Workbench upstream returned an empty response for ${model}. Try another model or send the message again.`);
 }
 
 function createAbortError(message = 'Request aborted by client') {
@@ -3204,6 +3212,10 @@ async function callAnthropicWorkbenchModelStream(session, emit, prompt, signal) 
 
         const content = Object.values(blocks).sort((a, b) => (a.index || 0) - (b.index || 0));
         for (const b of content) { delete b.index; delete b._inputPart; }
+        if (!content.length) {
+            session.updatedAt = new Date().toISOString();
+            throw createEmptyWorkbenchResponseError(session);
+        }
         session.messages.push({ role: 'assistant', content });
         extractAndSyncTodos(session);
 
@@ -3348,13 +3360,13 @@ async function callOpenAiWorkbenchModelStream(session, emit, prompt, signal) {
             toolUses.push(tu);
         }
 
-        // Skip persisting an empty assistant turn — strict OpenAI-compatible
-        // providers (e.g. DeepSeek) reject assistant messages with
-        // `content: null` and no `tool_calls`. If nothing was streamed and
-        // there are no tool calls, end this iteration cleanly.
+        // Strict OpenAI-compatible providers (e.g. DeepSeek) reject assistant
+        // messages with `content: null` and no `tool_calls`. If the upstream
+        // finishes without streamed content or tool calls, surface it as a
+        // failed turn instead of a silent successful completion.
         if (!content.length) {
             session.updatedAt = new Date().toISOString();
-            return;
+            throw createEmptyWorkbenchResponseError(session);
         }
         session.messages.push({ role: 'assistant', content });
         extractAndSyncTodos(session);
