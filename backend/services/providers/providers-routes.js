@@ -295,6 +295,14 @@ function persist() {
     } catch (err) {
         console.warn('[providers] failed to persist store:', err.message);
     }
+    // Bump the /api/models cache so newly added/removed models appear
+    // immediately without waiting for the 5-minute TTL.
+    try {
+        const modelList = require('../../providers/model-list');
+        if (typeof modelList.invalidateModelListCache === 'function') {
+            modelList.invalidateModelListCache();
+        }
+    } catch (_) { /* best-effort */ }
 }
 
 function findProvider(id) {
