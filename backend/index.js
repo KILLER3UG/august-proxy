@@ -1069,9 +1069,15 @@ const requestHandler = async (req, res) => {
                 const isAbort = err?.name === 'AbortError' || generationAbortCtrl.signal.aborted;
                 if (capturedGen.status === 'streaming') {
                     capturedGen.status = isAbort ? 'aborted' : 'error';
+                    console.warn('[workbench] Generation error for', sessionId.slice(0, 20) + '...', isAbort ? '(aborted)' : err?.message);
                     chatEventLog.append(sessionId, isAbort ? 'aborted' : 'error', {
                         message: err?.message || 'Unknown error'
                     });
+                } else {
+                    // Generation was superseded by a newer POST — the new turn
+                    // will pick up from the active generation state. Log for
+                    // diagnostics in case the old generation's error is relevant.
+                    console.warn('[workbench] Generation error dropped for', sessionId.slice(0, 20) + '...', '(status:', capturedGen.status, ')', err?.message);
                 }
             });
 
@@ -1138,7 +1144,9 @@ const requestHandler = async (req, res) => {
         const isLive = gen && gen.status === 'streaming';
         if (!isLive && sub.replayed === 0) {
             // No replay and no live generation — close immediately so the
-            // client doesn't wait for an event that never comes.
+            // client doesn't wait for an event that never comes. Log at
+            // debug level; this is normal when reconnecting a stale session.
+            console.debug('[workbench] SSE reconnect: no active generation and 0 replayed events — closing for', sessionId.slice(0, 20) + '...');
             try { res.write('event: done\ndata: {}\n\n'); res.end(); } catch (_) {}
         }
         req.on('close', () => {
@@ -2702,7 +2710,7 @@ if (autoUpdateEnabled) {
     try {
         const { registerFeature } = require('./services/memory/whats-new');
         registerFeature({ name: 'Agent-facing skill CRUD', description: 'august__skill_create/edit/patch/delete/view tools for managing skills from the agent chat.', category: 'tools', commit: 'phase-0' });
-        registerFeature({ name: 'Streaming context scrubber', description: 'State machine stripping <memory_context> tags from SSE text deltas so raw memory never leaks to the UI.', category: 'security', commit: 'phase-1a' });
+        registerFeature({ name: 'Streaming context scrubber', description: 'State machine stripping [memory_context] tags from SSE text deltas so raw memory never leaks to the UI.', category: 'security', commit: 'phase-1a' });
         registerFeature({ name: 'Injection threat scanner', description: 'Regex-based detection of system override, role-play, exfiltration, and memory manipulation patterns in 5 hook points.', category: 'security', commit: 'phase-1b' });
         registerFeature({ name: 'Three-tier system prompt', description: 'Stable/context/volatile tiered prompt builder with per-session prefix cache for upstream prompt cache hits.', category: 'performance', commit: 'phase-1c' });
         registerFeature({ name: 'Background memory review', description: 'Post-turn asynchronous extraction of facts, guidelines, skills and checkpoints via LLM.', category: 'memory', commit: 'phase-2' });

@@ -283,12 +283,26 @@ export async function startChatStream(
     // the same per-turn handlers so streamed text / thinking / tool_use /
     // tool_result events reach the chat UI. Without this, events accumulate
     // in the chat-event-log unread and the assistant bubble stays empty.
-    if (Number.isFinite(startResult?.sinceSeq)) {
+    //
+    // Always attach the SSE subscriber when the POST didn't already consume
+    // the event stream (legacy SSE POST body path sets consumedViaPost=true).
+    // The backend handles missing/undefined sinceSeq by starting from the
+    // current event log position.
+    if (startResult?.consumedViaPost) {
+      // Events were already delivered through the POST response body
+      // (older backend / proxy without the JSON sinceSeq contract).
+    } else {
+      const reconnectSinceSeq = Number.isFinite(startResult?.sinceSeq)
+        ? startResult!.sinceSeq
+        : undefined;
+      if (reconnectSinceSeq === undefined) {
+        console.warn('[startChatStream] POST succeeded without a valid sinceSeq — reconnecting from current position as fallback');
+      }
       await streamWorkbenchReconnect(
         session.id,
         handlers,
         abortController.signal,
-        startResult!.sinceSeq
+        reconnectSinceSeq
       );
     }
 

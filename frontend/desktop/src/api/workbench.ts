@@ -113,7 +113,7 @@ export async function streamWorkbenchChat(
   params: StreamWorkbenchChatParams,
   handlers: WorkbenchEventHandlers,
   signal?: AbortSignal
-): Promise<{ sinceSeq?: number }> {
+): Promise<{ sinceSeq?: number; consumedViaPost?: boolean }> {
   const res = await fetch('/ui/workbench/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -150,8 +150,12 @@ export async function streamWorkbenchChat(
     } catch (_) {
       // Fall through to legacy SSE parsing.
     }
-    handlers.onDone?.();
-    return {};
+    // JSON response but no valid sinceSeq — return 0 so the caller
+    // reconnects and replays from the current event log position.
+    // Do NOT call onDone here — that would finalize an empty assistant
+    // message when the SSE subscriber hasn't been attached yet.
+    console.warn('[streamWorkbenchChat] POST returned JSON without a valid sinceSeq — reconnecting from seq 0');
+    return { sinceSeq: 0 };
   }
 
   const reader = res.body?.getReader();
@@ -161,7 +165,9 @@ export async function streamWorkbenchChat(
   }
 
   await readSseStream(reader, handlers, signal);
-  return {};
+  // Events were consumed from the POST response body (legacy SSE path).
+  // Tell the caller not to reconnect — events are already delivered.
+  return { consumedViaPost: true };
 }
 
 async function readSseStream(
