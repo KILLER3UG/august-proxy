@@ -13,21 +13,13 @@ function escapeAttr(value: string): string {
     .replace(/>/g, '&gt;');
 }
 
-function decodeAttr(value: string): string {
-  return value
-    .replace(/&gt;/g, '>')
-    .replace(/&lt;/g, '<')
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&');
-}
-
 function renderCode(token: Tokens.Code): string {
   const lang = (token.lang || '').trim();
   const langClass = lang ? ` class="language-${escapeAttr(lang)}"` : '';
   const code = escapeAttr(token.text);
   return (
     `<div class="markdown-code-block relative group">` +
-      `<pre${langClass}><code${langClass}>${token.text}</code></pre>` +
+      `<pre${langClass}><code${langClass}>${token.text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>` +
       `<button type="button" ${COPY_PLACEHOLDER_ATTR} ${COPY_CODE_ATTR}="${code}" ` +
         `class="markdown-copy-btn absolute right-2 top-2 inline-flex items-center gap-1 rounded-md ` +
         `border border-border/60 bg-background/80 px-2 py-1 text-xs font-medium text-muted-foreground ` +
@@ -84,8 +76,7 @@ export function Markdown({ content }: { content: string }) {
       if (placeholder.dataset.hydrated === 'true') continue;
       placeholder.dataset.hydrated = 'true';
 
-      const encoded = placeholder.getAttribute(COPY_CODE_ATTR) ?? '';
-      const code = decodeAttr(encoded);
+	    const code = placeholder.getAttribute(COPY_CODE_ATTR) ?? '';
 
       const button = document.createElement('button');
       button.type = 'button';
@@ -118,8 +109,9 @@ export function Markdown({ content }: { content: string }) {
           if (label) label.textContent = 'Copy';
         }, COPY_RESET_MS);
       };
-      const onClick = () => {
-        // Use clipboard API directly. Electron always has navigator.clipboard
+	      const onClick = (e: Event) => {
+	        e.stopPropagation();
+	        // Use clipboard API directly. Electron always has navigator.clipboard
         // available. Always show "Copied!" feedback regardless of success
         // so the user gets immediate visual confirmation.
         navigator.clipboard.writeText(code).then(flashCopied, flashCopied);
