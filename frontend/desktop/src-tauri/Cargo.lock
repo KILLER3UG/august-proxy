@@ -261,7 +261,6 @@ name = "august-desktop"
 version = "0.1.0"
 dependencies = [
  "log",
- "once_cell",
  "reqwest 0.12.28",
  "rfd",
  "serde",
@@ -271,6 +270,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-shell",
  "tauri-plugin-updater",
+ "tokio",
  "which",
 ]
 

@@ -2149,43 +2149,45 @@ function MessageBubble({
 		                  <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-card to-transparent pointer-events-none" />
 		                )}
 	              </div>
-	            )}
-	            {!editing && (
-	              /* In-bubble footer: timestamp + copy button. */
-	              <div className="flex items-center justify-between gap-2 mt-2 pt-1.5 border-t border-border/30">
-	                <span className="bubble-footer-text text-muted-foreground/70 font-medium">
-	                  {message.timestamp ? formatClockTime(message.timestamp) : ''}
-	                </span>
-	                <button
-	                  onClick={handleCopy}
-	                  className="p-0.5 rounded text-muted-foreground/70 hover:text-foreground transition-colors duration-150"
-	                  title="Copy message"
-	                  aria-label="Copy message"
-	                >
-	                  {copied ? (
-	                    <Check className="size-3 text-success" />
-	                  ) : (
-	                    <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-	                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-	                    </svg>
-	                  )}
-	                </button>
-	              </div>
-	            )}
-	          </div>
+              )}
+		          </div>
 	          <div
-	            className="flex items-center gap-1 mt-1 mr-1 transition-opacity duration-150 self-end opacity-0 group-hover:opacity-100 focus-within:opacity-100"
-	          >
-	            {message.content.length > LONG_MSG_THRESHOLD && !editing && (
-	              <button
-	                type="button"
-	                onClick={() => setUserMsgExpanded(!userMsgExpanded)}
-	                className="text-[11px] font-semibold uppercase tracking-caps text-primary hover:underline mr-1"
-	              >
-	                {userMsgExpanded ? 'Show less' : 'Show more'}
-	              </button>
+	            className={cn(
+	              "flex items-center gap-1 mt-1 mr-1 transition-opacity duration-150 self-end",
+	              showActions ? "opacity-100" : "opacity-0"
 	            )}
-	            <button
+	          >
+		            {message.content.length > LONG_MSG_THRESHOLD && !editing && (
+		              <button
+		                type="button"
+		                onClick={() => setUserMsgExpanded(!userMsgExpanded)}
+		                className="text-[11px] font-semibold uppercase tracking-caps text-primary hover:underline mr-1"
+		              >
+		                {userMsgExpanded ? 'Show less' : 'Show more'}
+		              </button>
+		            )}
+		            {!editing && message.timestamp && (
+		              <span className="bubble-footer-text text-muted-foreground/50 font-medium mr-0.5">
+		                {formatClockTime(message.timestamp)}
+		              </span>
+		            )}
+		            {!editing && (
+		              <button
+		                onClick={handleCopy}
+		                className="p-1 rounded text-muted-foreground/70 hover:text-foreground transition-colors duration-150"
+		                title="Copy message"
+		                aria-label="Copy message"
+		              >
+		                {copied ? (
+		                  <Check className="size-3 text-success" />
+		                ) : (
+		                  <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+		                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+		                  </svg>
+		                )}
+		              </button>
+		            )}
+		            <button
 	              onClick={startEdit}
 	              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition"
 	              title="Edit message"

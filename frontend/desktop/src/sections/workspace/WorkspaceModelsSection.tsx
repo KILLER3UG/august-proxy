@@ -795,19 +795,6 @@ function FallbackTab() {
     return true;
   });
 
-  // Derive unique providers from the model list.
-  const providers = useMemo(() => {
-    const set = new Set<string>();
-    availableModels.forEach((m) => { if (m.provider) set.add(m.provider); });
-    return Array.from(set).sort();
-  }, [availableModels]);
-
-  // Filter models by the selected fallback provider.
-  const filteredModels = useMemo(() => {
-    if (!activeFallback.provider) return availableModels;
-    return availableModels.filter((m) => m.provider === activeFallback.provider);
-  }, [availableModels, activeFallback.provider]);
-
   async function testFallback() {
     if (!activeFallback.enabled) {
       toast.warning('Enable fallback before testing');
@@ -861,7 +848,7 @@ function FallbackTab() {
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <WorkspaceField label="Fallback mode">
             <WorkspaceSelect
               value={activeFallback.mode}
@@ -879,41 +866,16 @@ function FallbackTab() {
             />
           </WorkspaceField>
 
-          <WorkspaceField label="Fallback provider">
-            <WorkspaceSelect
-              value={activeFallback.provider}
-              onChange={(e) => {
-                const next = { ...activeFallback, provider: e.target.value, model: '' };
+          <WorkspaceField label="Fallback model">
+            <ModelPickerDropdown
+              models={availableModels}
+              value={activeFallback.model}
+              onChange={(modelId, provider) => {
+                const next = { ...activeFallback, model: modelId, provider };
                 setFallbackEdits(next);
               }}
-              options={[
-                { value: '', label: 'Select a provider…' },
-                ...providers.map((p) => ({ value: p, label: p })),
-              ]}
               disabled={!activeFallback.enabled}
             />
-          </WorkspaceField>
-
-          <WorkspaceField label="Fallback model">
-            <select
-              value={activeFallback.model}
-              onChange={(e) => {
-                const v = e.target.value;
-                const next = { ...activeFallback, model: v };
-                setFallbackEdits(next);
-              }}
-              className="h-9 w-full rounded-md border border-white/[0.06] bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
-              disabled={!activeFallback.enabled}
-            >
-              <option value="" disabled>
-                {activeFallback.provider ? 'Select a model…' : 'Select a provider first…'}
-              </option>
-              {filteredModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id}{m.isFree ? ' (free)' : ''}
-                </option>
-              ))}
-            </select>
           </WorkspaceField>
         </div>
 
