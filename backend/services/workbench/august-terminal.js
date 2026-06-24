@@ -179,6 +179,13 @@ const BASE_COMMANDS = [
         insert: 'Find a skill from the internet or GitHub for: '
     },
     {
+        name: 'learn',
+        category: 'Tools',
+        description: 'Create a reusable skill from external sources or the current conversation.',
+        args: '[source URL or description]',
+        insert: 'Learn and create a reusable skill from: '
+    },
+    {
         name: 'diagnose',
         aliases: ['ask-doctor'],
         category: 'Tools',
@@ -1187,6 +1194,9 @@ class AugustTerminalClient {
                 return false;
             case 'fetch-skill':
                 await this.sendMessage('Find a skill from the internet or GitHub for: ' + (arg || 'Ask me what skill topic or URL to use.'));
+                return false;
+            case 'learn':
+                await this.sendMessage('Create a reusable skill from: ' + (arg || 'the workflow we just went through in this conversation. Review the steps taken and distill them into a reusable skill.'));
                 return false;
             case 'diagnose':
                 await this.sendMessage('Diagnose the proxy health, August Brain, MCP, tools, and recent errors. Start with workbench_diagnose_proxy.');

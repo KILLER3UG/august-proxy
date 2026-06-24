@@ -9,6 +9,10 @@
 const fs = require('fs');
 const path = require('path');
 
+// Usage tracking (lifecycle curation)
+let _skillUsage = null;
+try { _skillUsage = require('../skills/skill-usage'); } catch {}
+
 const SKILLS_DIR = path.join(require('os').homedir(), '.august', 'skills');
 const PROJECT_SKILLS_DIR = path.join(__dirname, '..', '..', '..', 'skills');
 
@@ -250,6 +254,10 @@ function saveSkill(skill) {
     updatedAt: now()
   });
   fs.writeFileSync(mdPath, content, 'utf8');
+  // Track patch for lifecycle curation
+  if (_skillUsage) {
+    try { _skillUsage.bumpPatch(skill.name); } catch {}
+  }
   return { name: skill.name, path: mdPath };
 }
 
@@ -289,6 +297,10 @@ function searchSkills(query) {
 function loadSkillInstructions(name) {
   const skill = getSkill(name);
   if (!skill) return null;
+  // Track usage for lifecycle curation
+  if (_skillUsage) {
+    try { _skillUsage.bumpUse(name); } catch {}
+  }
   return skill.instructions;
 }
 

@@ -109,6 +109,18 @@ function buildSystemPromptDetails(system, options = {}) {
 
     const chunks = [];
 
+    // Inject previously-prefetched memory provider context (synchronous cache read)
+    if (includeProxyContext) {
+        try {
+            const { getMemoryManager } = require('./memory-manager');
+            const mgr = getMemoryManager();
+            const cached = mgr.getLastPrefetch();
+            if (cached && cached.trim()) {
+                chunks.push(wrapTag('memory_context', cached, 'source="memory-providers"'));
+            }
+        } catch {} // MemoryManager not initialized — fine
+    }
+
     if (includeProxyContext) {
         if (workspacePath) {
             chunks.push(wrapTag('active_workspace', `Active Workspace Directory: ${workspacePath}\nYour shell commands (PowerShell) and file tool operations (august__read_file, august__write_file, august__patch) are routed and executed relative to this folder. You have full permission to view and modify files in this directory.`, 'source="session_config"'));

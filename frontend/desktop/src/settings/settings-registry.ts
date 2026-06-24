@@ -17,6 +17,8 @@ import {
   ShieldCheck,
   LineChart,
   Radio,
+  Monitor,
+  BookOpen,
 } from 'lucide-react';
 
 /**
@@ -191,6 +193,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Radio,
     category: 'debug',
     keywords: ['logs', 'live', 'console', 'stream', 'events', 'debug', 'monitor', 'websocket', 'proxy', 'memory', 'scheduler', 'tokens'],
+  },
+
+  /* ── Skill Curator ───────────────────────────────────────────────── */
+  {
+    id: 'skill-curator',
+    label: 'Skill Curator',
+    description: 'Automatic skill lifecycle management — usage tracking, auto-stale/archived transitions, and consolidation.',
+    icon: BookOpen,
+    category: 'tools',
+    keywords: ['skill', 'curator', 'lifecycle', 'stale', 'archive', 'consolidate', 'usage'],
+  },
+
+  /* ── Computer Use ────────────────────────────────────────────────── */
+  {
+    id: 'computer-use',
+    label: 'Computer Use',
+    description: 'Desktop automation with SOM overlay, cross-platform support, and safe approval workflows.',
+    icon: Monitor,
+    category: 'advanced',
+    keywords: ['computer', 'use', 'desktop', 'automation', 'som', 'overlay', 'screenshot', 'click', 'type'],
   },
 ] as const;
 

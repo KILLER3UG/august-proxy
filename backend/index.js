@@ -79,6 +79,9 @@ const { registerVisionTools } = require('./services/tools/vision-tools');
 const { registerDelegateTools } = require('./services/tools/delegate-tools');
 const { registerExecuteTools } = require('./services/tools/execute-tools');
 const { handleServiceConnectionRoutes } = require('./services/tools/service-connections');
+const { handleCuratorRoutes } = require('./routes/curator-routes');
+const { handleLearnRoutes } = require('./routes/learn-routes');
+const { handleComputerUseRoutes } = require('./routes/computer-use-routes');
 const chatEventLog = require('./services/workbench/chat-event-log');
 
 // ── New SPA (Vite/React/Tailwind v4) ──
@@ -363,6 +366,15 @@ const requestHandler = async (req, res) => {
     }
 
     if (await handleMemoryRoutes(req, res, req.url)) return;
+
+    // ── Curator routes ─────────────────────────────────────────────
+    if (await handleCuratorRoutes(req, res, req.url)) return;
+
+    // ── Learn routes ──────────────────────────────────────────────
+    if (await handleLearnRoutes(req, res, req.url)) return;
+
+    // ── Computer Use routes ──────────────────────────────────────
+    if (await handleComputerUseRoutes(req, res, req.url)) return;
 
     // ── Agents tree API ───────────────────────────────────────────────
     if (req.url.startsWith('/ui/agents/')) {
@@ -2632,6 +2644,40 @@ if (autoUpdateEnabled) {
     }
 })();
 
+// ── Initialize Skill Lifecycle Curator ──
+(async () => {
+    try {
+        const curator = require('./services/skills/curator');
+        const result = curator.maybeRunCurator();
+        if (result) {
+            console.log(`[Curator] Completed: ${result.transitions.length} transitions, ${result.candidates_count} candidates reviewed`);
+        } else {
+            console.log('[Curator] Skipped (not due yet or disabled)');
+        }
+    } catch (e) {
+        console.error('[Curator] Init failed (non-fatal):', e.message);
+    }
+})();
+
+// ── Initialize Memory Manager (pluggable providers) ──
+(async () => {
+    try {
+        const { getMemoryManager } = require('./services/memory/memory-manager');
+        const { getFtsSearch } = require('./services/memory/fts-search');
+        const { getConfig } = require('./lib/config');
+        const config = getConfig();
+        const memoryManager = getMemoryManager();
+        await memoryManager.initialize(config.memory || {});
+        console.log('[MemoryManager] Initialized with', (await memoryManager.getStatus()).providers.length, 'provider(s)');
+        // Initialize FTS search
+        const fts = getFtsSearch();
+        await fts.initialize();
+        console.log('[FtsSearch] Initialized with', fts.getStats().terms, 'terms');
+    } catch (e) {
+        console.error('[MemoryManager] Init failed (non-fatal):', e.message);
+    }
+})();
+
 // ── Register missing tools in the tool registry ──
 try {
     registerMissingTools(toolRegistry);
@@ -2663,6 +2709,45 @@ try {
     console.log('[DelegateTools] Registered delegate tools (august__delegate_task)');
 } catch (e) {
     console.error('[DelegateTools] Failed to register delegate tools:', e.message);
+}
+
+// ── Register computer use tools ──
+try {
+    const { registerComputerUseTool } = require('./services/computer-use/tool');
+    registerComputerUseTool(toolRegistry);
+    console.log('[ComputerUse] Registered computer use tool');
+} catch (e) {
+    console.error('[ComputerUse] Failed to register computer use tool:', e.message);
+}
+
+// ── Register web extract tool ──
+try {
+    const { extractContent, searchWeb } = require('./services/tools/web-extract');
+    const { z } = require('zod');
+    toolRegistry.register({
+        name: 'august__web_extract',
+        toolset: 'web',
+        description: 'Extract content from a URL or search the web. Use this to gather information from documentation, articles, or any web page.',
+        schema: z.object({
+            action: z.enum(['extract', 'search']),
+            url: z.string().optional().describe('URL to extract content from (required for extract)'),
+            query: z.string().optional().describe('Search query (required for search)'),
+            max_results: z.number().optional().describe('Max search results (default 5)'),
+        }),
+        handler: async (args) => {
+            if (args.action === 'extract' && args.url) {
+                const result = await extractContent(args.url);
+                return { content: result.content, title: result.title, provider: result.provider };
+            } else if (args.action === 'search' && args.query) {
+                const result = await searchWeb(args.query, { maxResults: args.max_results || 5 });
+                return { results: result.results, provider: result.provider };
+            }
+            return { error: 'Invalid arguments: provide url for extract or query for search' };
+        },
+    });
+    console.log('[WebExtract] Registered web_extract tool');
+} catch (e) {
+    console.error('[WebExtract] Failed to register web_extract tool:', e.message);
 }
 
 // ── Register execute tools ──

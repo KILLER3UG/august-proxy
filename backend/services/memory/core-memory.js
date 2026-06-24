@@ -122,6 +122,11 @@ function writeAugustCoreMemory(data) {
     const normalized = normalizeAugustCoreMemory(data);
     validateCoreMemoryBudgets(normalized);
     fs.writeFileSync(getCoreMemoryFile(), JSON.stringify(normalized, null, 2));
+    // Notify memory providers of the write (mirrors to external backends)
+    try {
+        const { getMemoryManager } = require('./memory-manager');
+        getMemoryManager().notifyMemoryWrite('replace', 'memory', JSON.stringify(normalized)).catch(() => {});
+    } catch {}
 }
 
 function renderAugustCoreMemory(memoryInput) {

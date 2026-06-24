@@ -27,6 +27,8 @@ import { DeveloperConsoleSection } from './DeveloperConsoleSection';
 import { ComputerAccessSettings } from './ComputerAccessSettings';
 import { ObservabilitySection } from './ObservabilitySection';
 import { BackendMonitorSection } from './BackendMonitorSection';
+import { CuratorSection } from './CuratorSection';
+import { ComputerUseSection } from './ComputerUseSection';
 
 /** The default section when no :section param is present. The user
  *  said clicking Settings should land on Model settings. */
@@ -72,6 +74,8 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   // resolveLegacyTab + legacyAliases in the registry), so no entry here.
   observability: ObservabilitySectionWrapper,
   'backend-monitor': BackendMonitorWrapper,
+  'skill-curator': CuratorWrapper,
+  'computer-use': ComputerUseWrapper,
 };
 
 function ComputerAccessSettingsWrapper() { return <ComputerAccessSettings />; }
@@ -89,6 +93,8 @@ function ToolsConnectionsWrapper() { return <ToolsConnectionsSection />; }
 function ConversationsHistoryWrapper() { return <ConversationsHistorySection />; }
 function AgentsAutomationWrapper() { return <AgentsAutomationSection />; }
 function DeveloperConsoleWrapper() { return <DeveloperConsoleSection />; }
+function CuratorWrapper() { return <CuratorSection />; }
+function ComputerUseWrapper() { return <ComputerUseSection />; }
 
 /** Placeholder for sections not yet wired. With all 10 entries now
  *  mapped, this only renders for genuinely-unknown :section params. */

@@ -2554,6 +2554,12 @@ async function maybeCompactSession(session, profile, tools, emit) {
     } catch (_) { /* lib/models optional */ }
     const threshold = contextWindow > 0 ? Math.floor(contextWindow * 0.88) : 28000;
 
+    // Let memory providers extract insights before compression
+    try {
+        const { getMemoryManager } = require('../memory/memory-manager');
+        getMemoryManager().onPreCompress(session.messages).catch(() => {});
+    } catch {}
+
     const result = await summarizingCompactor.compactWithLock(
         session.id,
         session.messages,
@@ -3377,6 +3383,12 @@ async function sendWorkbenchMessageStream({ sessionId, message, provider, agentI
     session.messages.push({ role: 'user', content: text });
     session.updatedAt = new Date().toISOString();
 
+    // Queue memory provider prefetch for next turn (non-blocking)
+    try {
+        const { getMemoryManager } = require('../memory/memory-manager');
+        getMemoryManager().queuePrefetchAll(text, sessionId).catch(() => {});
+    } catch {}
+
     if (session.messages.filter(m => m.role === 'user').length === 1 && !session.title) {
         generateSessionTitle(session, text, emit).catch(e => console.warn('[Workbench] title gen err:', e.message));
     }
@@ -3401,6 +3413,22 @@ async function sendWorkbenchMessageStream({ sessionId, message, provider, agentI
     } catch (_) {}
 
     saveSessions();
+
+    // Sync completed turn to memory providers (non-blocking)
+    try {
+        const { getMemoryManager } = require('../memory/memory-manager');
+        const lastAssistant = session.messages.filter(m => m.role === 'assistant').pop();
+        if (lastAssistant) {
+            getMemoryManager().syncAll(text, lastAssistant.content || '', sessionId, session.messages).catch(() => {});
+        }
+    } catch {}
+
+    // Index session for cross-session search
+    try {
+        const { getFtsSearch } = require('../memory/fts-search');
+        getFtsSearch().addSession(session.id, session.messages);
+    } catch {}
+
     safeEmit(emit, 'session', summarizeSession(session));
 }
 
@@ -3427,6 +3455,14 @@ function rejectWorkbenchPlan(sessionId) {
 
 function resetWorkbenchSession(sessionId, provider, agentId = 'build') {
     if (sessionId) {
+        const session = sessions.get(sessionId);
+        if (session?.messages?.length) {
+            // Notify memory providers of session end before deletion
+            try {
+                const { getMemoryManager } = require('../memory/memory-manager');
+                getMemoryManager().onSessionEnd(session.messages).catch(() => {});
+            } catch {}
+        }
         sessions.delete(sessionId);
         saveSessions();
     }
