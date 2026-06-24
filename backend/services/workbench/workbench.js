@@ -3402,19 +3402,9 @@ async function sendWorkbenchMessageStream({ sessionId, message, provider, agentI
     await callWorkbenchModelStream(session, emit, signal);
     await continueGoalUntilReached(session, emit, signal);
 
-    // Background auto-memory extraction
-    try {
-        const lastAssistant = session.messages.filter(m => m.role === 'assistant').pop();
-        if (lastAssistant) {
-            const cfg = getWorkbenchProfile(session);
-            extractAndSaveMemories(session.messages, lastAssistant, cfg, cfg._upstreamModel || cfg.currentModel, 'workbench')
-                .catch(e => console.warn('[Auto-Memory] Workbench extraction failed:', e.message));
-        }
-    } catch (_) {}
-
     saveSessions();
 
-    // Sync completed turn to memory providers (non-blocking)
+    // Sync completed turn to memory providers (single path: syncAll → syncTurn → extractAndSaveMemories)
     try {
         const { getMemoryManager } = require('../memory/memory-manager');
         const lastAssistant = session.messages.filter(m => m.role === 'assistant').pop();

@@ -97,12 +97,21 @@ class BuiltinProvider extends MemoryProvider {
   }
 
   /**
-   * Sync a completed turn (update memory files).
+   * Sync a completed turn — delegates to August's existing auto-memory extraction.
+   * This is the single path: MemoryManager.syncAll() → syncTurn() → extractAndSaveMemories().
    */
   async syncTurn(userContent, assistantContent, sessionId = '', messages = []) {
-    // For builtin provider, we don't automatically extract facts
-    // The memory-tools.js handles explicit memory writes
-    // This is a no-op for now
+    if (!assistantContent || !messages?.length) return;
+    try {
+      const { extractAndSaveMemories } = require('./auto-memory');
+      const { getConfig } = require('../../lib/config');
+      const cfg = getConfig();
+      const profile = cfg.claude || cfg.codex || {};
+      const model = profile.model || cfg.model || 'unknown';
+      await extractAndSaveMemories(messages, assistantContent, profile, model, 'memory-manager');
+    } catch (err) {
+      console.error('[BuiltinProvider] syncTurn failed:', err.message);
+    }
   }
 
   /**
