@@ -164,8 +164,8 @@ async function aggregateModels() {
                         name: m.name || m.id,
                         provider: sp.name,
                         contextWindow: m.contextWindow || getContextWindowForModel(m.id, null),
-                        supportsReasoning: !!m.reasoning,
-                        supportsThinking: !!m.reasoning,
+                        supportsReasoning: !!(m.reasoning || resolveModelProfile(m.id)?.supportsReasoning || resolveModelProfile(m.id)?.supportsThinking),
+                        supportsThinking: !!(m.reasoning || resolveModelProfile(m.id)?.supportsThinking || resolveModelProfile(m.id)?.supportsReasoning),
                         isFree: !!m.free || isFreeModelId(m.id),
                     });
                 }

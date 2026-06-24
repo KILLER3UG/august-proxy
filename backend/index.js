@@ -472,21 +472,42 @@ const requestHandler = async (req, res) => {
 
     if (req.url === '/api/config/activeProvider' && req.method === 'GET') {
         const { getProviderConfig } = require('./lib/config');
+        const registryProviders = listProviders().map(p => {
+            const cfg = getProviderConfig(p.name) || {};
+            const key = cfg.apiKey || '';
+            const hasKey = !!(p.isAvailable() || key);
+            const redacted = key ? key.slice(0, 3) + '••••••••' + key.slice(-4) : null;
+            return { 
+                id: p.name, 
+                name: p.displayName, 
+                apiMode: p.apiMode, 
+                isAvailable: hasKey,
+                redactedKey: redacted
+            };
+        });
+        // Also include user-created custom providers from providers.json so the
+        // frontend's model dropdown filter (which only shows models whose provider
+        // is in the available set) doesn't silently hide them.
+        try {
+            const { listPublicProviders } = require('./services/providers/providers-routes');
+            const stored = listPublicProviders();
+            const registryIds = new Set(registryProviders.map(p => p.id));
+            for (const sp of stored) {
+                if (!registryIds.has(sp.name) && sp.enabled && sp.apiKey) {
+                    const redacted = sp.apiKey ? sp.apiKey.slice(0, 3) + '••••••••' + sp.apiKey.slice(-4) : null;
+                    registryProviders.push({
+                        id: sp.name,
+                        name: sp.name,
+                        apiMode: sp.apiFormat === 'anthropic' ? 'anthropic_messages' : 'openai_chat',
+                        isAvailable: true,
+                        redactedKey: redacted,
+                    });
+                }
+            }
+        } catch (_) {}
         return sendJson(res, { 
             activeProvider: getActiveProvider(), 
-            providers: listProviders().map(p => {
-                const cfg = getProviderConfig(p.name) || {};
-                const key = cfg.apiKey || '';
-                const hasKey = !!(p.isAvailable() || key);
-                const redacted = key ? key.slice(0, 3) + '••••••••' + key.slice(-4) : null;
-                return { 
-                    id: p.name, 
-                    name: p.displayName, 
-                    apiMode: p.apiMode, 
-                    isAvailable: hasKey,
-                    redactedKey: redacted
-                };
-            })
+            providers: registryProviders
         });
     }
 
