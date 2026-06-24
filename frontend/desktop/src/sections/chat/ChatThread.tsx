@@ -1038,7 +1038,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       setMessages(prev => {
         const nextMessages = [...prev, userMsg];
         persistMessages(sessionId, nextMessages);
-        generateAIResponse(nextMessages);
+        // Defer AI response to avoid nested updateSessionStreamState calls.
+        // The outer setMessages → updateSessionStreamState call would overwrite
+        // the placeholder that makeStreamHandlers adds synchronously inside
+        // generateAIResponse, leaving the assistant message ID orphaned.
+        setTimeout(() => generateAIResponse(nextMessages), 0);
         return nextMessages;
       });
     }
