@@ -116,9 +116,8 @@ export function SessionList({
 
     if (isTauri) {
       try {
-        selectedPath = await (window as any).__TAURI__.core.invoke(
-          "select_directory",
-        );
+        const { invoke } = await import("@tauri-apps/api/core");
+        selectedPath = await invoke<string | null>("select_directory");
       } catch (err) {
         console.error("Failed to open Tauri directory dialog:", err);
       }

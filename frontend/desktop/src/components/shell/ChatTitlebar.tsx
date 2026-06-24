@@ -95,10 +95,10 @@ export function ChatTitlebar({
     if (!isTauri) return;
     (async () => {
       try {
-        const updater = (window as any).__TAURI__.pluginUpdater;
-        const update = await updater.checkUpdate();
-        if (update.shouldUpdate && update.manifest) {
-          setUpdateAvailable({ version: update.manifest.version });
+        const { check } = await import("@tauri-apps/plugin-updater");
+        const update = await check();
+        if (update) {
+          setUpdateAvailable({ version: update.version });
         }
       } catch {
         // Silently ignore — update check is best-effort
@@ -110,8 +110,11 @@ export function ChatTitlebar({
     if (!isTauri || !updateAvailable) return;
     setUpdating(true);
     try {
-      const updater = (window as any).__TAURI__.pluginUpdater;
-      await updater.installUpdate();
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const update = await check();
+      if (update) {
+        await update.downloadAndInstall();
+      }
     } catch (err: any) {
       toast.error(err?.message || "Failed to install update");
       setUpdating(false);
@@ -139,7 +142,7 @@ export function ChatTitlebar({
   };
 
   return (
-    <header className="h-12 bg-background flex items-center justify-between shrink-0 select-none">
+    <header data-tauri-drag-region className="h-12 bg-background flex items-center justify-between shrink-0 select-none">
       <div className="flex items-center min-w-0">
         <button
           onClick={onToggleSidebar}
