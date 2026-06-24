@@ -13,7 +13,11 @@ declare module 'react' {
 
 /** Chrome exposes the full filesystem path on File objects from
  *  <input type="file" webkitdirectory> selections. */
-interface File {
-  /** Full absolute path of the selected file (Chrome-only). */
-  path?: string;
+declare global {
+  interface File {
+    /** Full absolute path of the selected file (Chrome-only). */
+    path?: string;
+  }
 }
+
+export {};
