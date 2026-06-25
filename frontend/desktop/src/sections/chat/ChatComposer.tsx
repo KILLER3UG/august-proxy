@@ -427,6 +427,7 @@ function EffortDropdown({ value, onChange }: { value: 'low' | 'medium' | 'high' 
  * composer calm for beginners while keeping every detail one hover away. */
 export interface ContextBreakdown {
   messages: number;
+  thinking: number;
   systemTools: number;
   systemPrompt: number;
   skills: number;
@@ -453,6 +454,9 @@ export function estimateContextBreakdown(args: {
 }): ContextBreakdown {
   const messagesChars = args.messages.reduce((sum, m) => sum + m.content.length, 0) + args.input.length;
   const messages = Math.ceil(messagesChars / 4);
+  // Estimate thinking/reasoning tokens as ~15% of message tokens (heuristic;
+  // real values depend on model and extended-thinking settings).
+  const thinking = Math.ceil(messages * 0.15);
   // Use the backend's actual serialized tool token estimate when available;
   // fall back to ~180 tokens per tool definition (name + description + JSON schema).
   const systemTools = args.toolTokenEstimate ?? Math.ceil(args.toolCount * 180);
@@ -462,7 +466,7 @@ export function estimateContextBreakdown(args: {
   const systemPrompt = 3000;
   const skills = Math.ceil((args.coreMemoryBytes ?? 0) / 4);
   const meta = 100; // session metadata, attachments index, etc.
-  return { messages, systemTools, systemPrompt, skills, meta };
+  return { messages, thinking, systemTools, systemPrompt, skills, meta };
 }
 
 export function ContextRing({
@@ -471,6 +475,7 @@ export function ContextRing({
   maxContext,
   modelName,
   breakdown,
+  serverTokens,
   size = 22,
   stroke = 3,
 }: {
@@ -480,6 +485,8 @@ export function ContextRing({
   modelName?: string;
   /** When provided, the hover popup shows a per-category breakdown. */
   breakdown?: ContextBreakdown;
+  /** Optional actual token consumption reported by the backend for this session. */
+  serverTokens?: { total: number; input: number; output: number } | null;
   size?: number;
   stroke?: number;
 }) {
@@ -487,7 +494,7 @@ export function ContextRing({
   const c = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(100, pct));
   const dash = (clamped / 100) * c;
-  const tone = clamped > 80 ? 'var(--dt-destructive)' : clamped > 60 ? '#f59e0b' : 'var(--dt-primary)';
+  const tone = clamped > 90 ? '#ef4444' : clamped > 70 ? '#eab308' : '#22c55e';
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -511,14 +518,15 @@ export function ContextRing({
     ? (() => {
         const total = Math.max(
           1,
-          breakdown.messages + breakdown.systemTools + breakdown.systemPrompt + breakdown.skills + breakdown.meta
+          breakdown.messages + breakdown.thinking + breakdown.systemTools + breakdown.systemPrompt + breakdown.skills + breakdown.meta
         );
         const items: Array<{ label: string; tokens: number; pct: number; opacity: number }> = [
-          { label: 'Messages',       tokens: breakdown.messages,    pct: (breakdown.messages / total) * 100,    opacity: 1    },
-          { label: 'System tools',   tokens: breakdown.systemTools, pct: (breakdown.systemTools / total) * 100, opacity: 0.65 },
-          { label: 'System prompt',  tokens: breakdown.systemPrompt,pct: (breakdown.systemPrompt / total) * 100,opacity: 0.45 },
-          { label: 'Skills',         tokens: breakdown.skills,      pct: (breakdown.skills / total) * 100,      opacity: 0.30 },
-          { label: 'Meta context',   tokens: breakdown.meta,        pct: (breakdown.meta / total) * 100,        opacity: 0    },
+          { label: 'Messages',       tokens: breakdown.messages,     pct: (breakdown.messages / total) * 100,     opacity: 1    },
+          { label: 'Thinking',       tokens: breakdown.thinking,     pct: (breakdown.thinking / total) * 100,     opacity: 0.80 },
+          { label: 'System tools',   tokens: breakdown.systemTools,  pct: (breakdown.systemTools / total) * 100,  opacity: 0.65 },
+          { label: 'System prompt',  tokens: breakdown.systemPrompt, pct: (breakdown.systemPrompt / total) * 100, opacity: 0.45 },
+          { label: 'Skills',         tokens: breakdown.skills,       pct: (breakdown.skills / total) * 100,       opacity: 0.30 },
+          { label: 'Meta context',   tokens: breakdown.meta,         pct: (breakdown.meta / total) * 100,         opacity: 0    },
         ];
         return items;
       })()
@@ -559,9 +567,9 @@ export function ContextRing({
           style={{ backgroundColor: '#1c1c1c', border: '0.5px solid rgba(255,255,255,0.12)' }}
         >
           <div className="flex items-center justify-between text-[12.5px] mb-1.5">
-            <span className="font-medium text-[#e0e0e0]">Context windows</span>
+            <span className="font-medium text-[#e0e0e0]">Session Context</span>
             <span className="font-mono tabular-nums text-muted-foreground text-[11.5px]">
-              {formatTokens(estTokens)}/{formatTokens(maxContext)} ({clamped}%)
+              {formatTokens(estTokens)} / {formatTokens(maxContext)} tokens used ({clamped}%)
             </span>
           </div>
           <div className="h-1 rounded-full overflow-hidden mb-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
@@ -593,6 +601,23 @@ export function ContextRing({
             <div className="mt-2 pt-2 border-t border-white/10 text-[11px] text-muted-foreground truncate">
               <span className="opacity-60">Model · </span>
               <span className="text-[#ddd]">{modelName}</span>
+            </div>
+          )}
+          {serverTokens && (
+            <div className="mt-2 pt-2 border-t border-white/10 text-[11px] text-muted-foreground">
+              <div className="font-medium text-[#c0c0c0] mb-1">Server‑reported usage</div>
+              <div className="flex justify-between">
+                <span className="opacity-60">Total</span>
+                <span className="font-mono tabular-nums text-[#ddd]">{formatTokens(serverTokens.total)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="opacity-60">Input</span>
+                <span className="font-mono tabular-nums text-[#ddd]">{formatTokens(serverTokens.input)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="opacity-60">Output</span>
+                <span className="font-mono tabular-nums text-[#ddd]">{formatTokens(serverTokens.output)}</span>
+              </div>
             </div>
           )}
         </div>

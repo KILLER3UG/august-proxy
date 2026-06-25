@@ -222,3 +222,45 @@ export function updateSessionWorkspace(id: string, path: string | null) {
   $sessions.set(updated);
   saveSessionsToStorage(updated);
 }
+
+/**
+ * Normalise a filesystem path for consistent comparison.
+ * Replaces backslashes with forward slashes and strips trailing slashes.
+ */
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+/**
+ * Derive a human‑readable folder name from a filesystem path.
+ */
+function folderNameFromPath(path: string): string {
+  const normalized = normalizePath(path);
+  const segments = normalized.split('/').filter(Boolean);
+  return segments.length > 0 ? segments[segments.length - 1] : 'workspace';
+}
+
+/**
+ * Find an existing session by workspace path, or create a new one.
+ * Normalises paths for consistent matching.
+ *
+ * Returns the matched/created session and a flag indicating whether
+ * it was newly created.
+ */
+export function findOrCreateSessionForPath(
+  path: string,
+  folderName?: string,
+): { session: Session; created: boolean } {
+  const normalized = normalizePath(path);
+  const name = folderName ?? folderNameFromPath(path);
+
+  // Check if a session already exists for this folder path
+  const existing = $sessions.get().find(s => s.workspacePath === normalized);
+  if (existing) {
+    return { session: existing, created: false };
+  }
+
+  // Create a new session tied to this folder path
+  const session = createSession(null, `Project: ${name}`, normalized);
+  return { session, created: true };
+}

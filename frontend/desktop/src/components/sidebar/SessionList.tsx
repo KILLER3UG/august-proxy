@@ -40,6 +40,7 @@ import {
   renameFolder,
   deleteFolder,
   toggleFolderCollapse,
+  findOrCreateSessionForPath,
   updateSessionWorkspace,
   type Session,
   type Folder,
@@ -150,12 +151,15 @@ export function SessionList({
         );
       }
 
-      toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
-
-      if (activeId) {
-        updateSessionWorkspace(activeId, normalizedPath);
-        window.dispatchEvent(new CustomEvent("august-open-right-sidebar"));
+      // Find or auto‑create a session for this folder
+      const { session, created } = findOrCreateSessionForPath(normalizedPath, folderName);
+      if (created) {
+        toast.success(`New session created for folder: ${folderName}`, { id: toastId });
+      } else {
+        toast.success(`Switched to session for folder: ${folderName}`, { id: toastId });
       }
+      onNavigate(`/c/${session.id}`);
+      window.dispatchEvent(new CustomEvent("august-open-right-sidebar"));
     } catch (err: any) {
       toast.error(`Access failed: ${err.message}`, { id: toastId });
     }
@@ -174,11 +178,15 @@ export function SessionList({
       try {
         const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`);
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Directory not accessible');
-        toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
-        if (activeId) {
-          updateSessionWorkspace(activeId, normalizedPath);
-          window.dispatchEvent(new CustomEvent('august-open-right-sidebar'));
+        // Find or auto‑create a session for this folder
+        const { session, created } = findOrCreateSessionForPath(normalizedPath, folderName);
+        if (created) {
+          toast.success(`New session created for folder: ${folderName}`, { id: toastId });
+        } else {
+          toast.success(`Switched to session for folder: ${folderName}`, { id: toastId });
         }
+        onNavigate(`/c/${session.id}`);
+        window.dispatchEvent(new CustomEvent('august-open-right-sidebar'));
       } catch (err: any) {
         toast.error(`Access failed: ${err.message}`, { id: toastId });
       }
@@ -819,6 +827,9 @@ function SessionRow({
           />
           {pinned && (
             <Pin className="size-2.5 text-muted-foreground/60 shrink-0" />
+          )}
+          {session.workspacePath && (
+            <FolderIcon className="size-3 text-muted-foreground/50 shrink-0" />
           )}
           <p
             className={cn(

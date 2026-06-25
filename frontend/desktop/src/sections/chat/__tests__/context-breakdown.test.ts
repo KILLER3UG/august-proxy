@@ -31,6 +31,22 @@ describe('estimateContextBreakdown — messages', () => {
   });
 });
 
+describe('estimateContextBreakdown — thinking', () => {
+  it('returns 0 thinking for no messages', () => {
+    const r = estimateContextBreakdown({ messages: [], input: '', toolCount: 0 });
+    expect(r.thinking).toBe(0);
+  });
+
+  it('estimates thinking at ~15% of message tokens', () => {
+    const r = estimateContextBreakdown({
+      messages: [{ role: 'user', content: 'a'.repeat(400) }],
+      input: '',
+      toolCount: 0,
+    });
+    expect(r.thinking).toBe(15); // ceil(100 * 0.15)
+  });
+});
+
 describe('estimateContextBreakdown — system tools', () => {
   it('returns 0 for 0 tools', () => {
     const r = estimateContextBreakdown({ messages: [], input: '', toolCount: 0 });
@@ -49,9 +65,9 @@ describe('estimateContextBreakdown — system tools', () => {
 });
 
 describe('estimateContextBreakdown — fixed estimates', () => {
-  it('uses 800 tokens for the base system prompt', () => {
+  it('uses 3000 tokens for the base system prompt', () => {
     const r = estimateContextBreakdown({ messages: [], input: '', toolCount: 0 });
-    expect(r.systemPrompt).toBe(800);
+    expect(r.systemPrompt).toBe(3000);
   });
 
   it('uses 100 tokens for meta context', () => {
@@ -91,8 +107,15 @@ describe('estimateContextBreakdown — combined', () => {
       expect(v).toBeGreaterThanOrEqual(0);
       expect(Number.isFinite(v)).toBe(true);
     }
+    // All expected keys present
+    expect(r).toHaveProperty('messages');
+    expect(r).toHaveProperty('thinking');
+    expect(r).toHaveProperty('systemTools');
+    expect(r).toHaveProperty('systemPrompt');
+    expect(r).toHaveProperty('skills');
+    expect(r).toHaveProperty('meta');
     // Sanity: tools + base ≥ messages for this size
     expect(r.systemTools).toBeGreaterThan(0);
-    expect(r.systemPrompt).toBe(800);
+    expect(r.systemPrompt).toBe(3000);
   });
 });

@@ -66,6 +66,7 @@ import { PlanProposalBanner } from '@/components/shell/PlanProposalBanner';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { ChangedFilesCard } from '@/components/chat/ChangedFilesCard';
 import { gitApi, type GitDiffResult } from '@/api/git';
+import { usageApi } from '@/api/usage';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import { addWorkspace } from '@/store/workspaces';
 
@@ -410,6 +411,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const planPending = !!workbenchSession?.plan && !workbenchSession?.approved && !workbenchSession?.approvedAt;
   const [workbenchToolCount, setWorkbenchToolCount] = useState<number | null>(null);
   const [workbenchToolTokens, setWorkbenchToolTokens] = useState<number | null>(null);
+  const [sessionUsage, setSessionUsage] = useState<{ total: number; input: number; output: number } | null>(null);
   const [workbenchMode, setWorkbenchMode] = useState<WorkbenchGuardMode>(() => {
     const saved = localStorage.getItem('august_last_workbench_guard_mode') as WorkbenchGuardMode | null;
     return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'plan';
@@ -640,6 +642,30 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     };
   }, [sessionId]);
 
+  // Fetch per‑session usage data from the backend usage_events table
+  useEffect(() => {
+    if (!sessionId) {
+      setSessionUsage(null);
+      return;
+    }
+
+    let cancelled = false;
+    usageApi.session(sessionId)
+      .then((data) => {
+        if (cancelled) return;
+        setSessionUsage({
+          total: data.totalTokens,
+          input: data.totalInputTokens,
+          output: data.totalOutputTokens,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setSessionUsage(null);
+      });
+
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
   useEffect(() => chatRuntime.subscribe(() => setRuntimeVersion((value) => value + 1)), []);
 
 
@@ -837,6 +863,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // was calculated separately (messages × 4 + flat 120) while the breakdown
   // included systemTools + systemPrompt + meta, making them disagree.
   const estTokens = contextBreakdown.messages
+    + contextBreakdown.thinking
     + contextBreakdown.systemTools
     + contextBreakdown.systemPrompt
     + contextBreakdown.skills
@@ -1680,6 +1707,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 modelName={modelForRequest?.name}
                 size={18}
                 breakdown={contextBreakdown}
+                serverTokens={sessionUsage}
               />
               <ModelDropdown
                 models={models}

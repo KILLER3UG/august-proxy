@@ -37,9 +37,32 @@ function withRange(path: string, range: UsageRange) {
   return `${path}?range=${range}`;
 }
 
+export interface SessionUsage {
+  sessionId: string;
+  totalEvents: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalTokens: number;
+  totalCost: number;
+  model: string | null;
+  provider: string | null;
+  events: {
+    id: number;
+    requestType: string;
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    totalCost: number;
+    createdAt: string;
+  }[];
+}
+
 export const usageApi = {
   stats:    (range: UsageRange = '30d')       => api.get<UsageStats>(withRange('/api/usage/stats', range)),
   heatmap:  (range: UsageRange = '30d')       => api.get<{ results: HeatmapCell[] }>(withRange('/api/usage/heatmap', range)),
   byModel:  (range: UsageRange = '30d')       => api.get<{ results: ModelShare[] }>(withRange('/api/usage/by-model', range)),
   byDay:    (range: UsageRange = '30d')       => api.get<{ results: DailyTokens[] }>(withRange('/api/usage/by-day', range)),
+  /** Per‑session usage breakdown from the backend usage_events table. */
+  session:  (sessionId: string)               => api.get<SessionUsage>(`/api/usage/session?id=${encodeURIComponent(sessionId)}`),
 };
