@@ -1,6 +1,7 @@
 ---
 name: using-superpowers
 description: "Entry-point meta-skill: find, invoke, and follow the right skill for any task."
+category: meta
 trigger: "starting any conversation"
 version: 1.0.0
 author: August Proxy (adapted from obra/superpowers)

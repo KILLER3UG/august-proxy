@@ -1,6 +1,7 @@
 ---
 name: android-dev
 description: "Android development via emulator: build, run, inspect UI."
+category: platform
 trigger: "working with Android apps or emulator"
 version: 1.0.0
 author: August Proxy

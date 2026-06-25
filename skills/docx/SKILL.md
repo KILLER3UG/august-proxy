@@ -1,6 +1,7 @@
 ---
 name: docx
 description: "Create, edit, and analyze DOCX documents with formatting and revisions."
+category: document
 trigger: "working with Word documents or DOCX files"
 version: 1.0.0
 author: August Proxy

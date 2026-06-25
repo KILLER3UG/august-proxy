@@ -1,6 +1,7 @@
 ---
 name: ios-dev
 description: "iOS development via simulator: build, run, inspect UI."
+category: platform
 trigger: "working with iOS apps or simulator"
 version: 1.0.0
 author: August Proxy

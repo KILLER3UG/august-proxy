@@ -1,6 +1,7 @@
 ---
 name: dispatching-parallel-agents
 description: "Dispatch multiple independent subagents concurrently via august__run_team or august__spawn_subagent."
+category: workflow
 trigger: "3+ independent failures or tasks"
 version: 1.0.0
 author: August Proxy (adapted from obra/superpowers)

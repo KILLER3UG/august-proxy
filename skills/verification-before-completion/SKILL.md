@@ -1,6 +1,7 @@
 ---
 name: verification-before-completion
 description: "No completion claims without fresh verification evidence."
+category: workflow
 trigger: "before committing, creating PRs, or claiming work is complete"
 version: 1.0.0
 author: August Proxy (adapted from obra/superpowers)

@@ -1,6 +1,7 @@
 ---
 name: pdf
 description: "Professional PDF production: reports, visuals, academic, and processing."
+category: document
 trigger: "creating or processing PDF documents"
 version: 1.0.0
 author: August Proxy

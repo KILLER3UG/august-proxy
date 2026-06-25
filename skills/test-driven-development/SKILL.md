@@ -1,6 +1,7 @@
 ---
 name: test-driven-development
 description: "TDD: enforce RED-GREEN-REFACTOR, tests before code."
+category: testing
 version: 1.1.0
 author: Hermes Agent (adapted from obra/superpowers)
 license: MIT

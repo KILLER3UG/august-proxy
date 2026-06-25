@@ -1,6 +1,7 @@
 ---
 name: receiving-code-review
 description: "Structured framework for processing code review feedback with technical rigor."
+category: development
 trigger: "receiving code review feedback"
 version: 1.0.0
 author: August Proxy (adapted from obra/superpowers)

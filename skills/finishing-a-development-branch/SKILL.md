@@ -1,6 +1,7 @@
 ---
 name: finishing-a-development-branch
 description: "Guide completion: verify tests, present merge/PR/keep/discard options, execute with cleanup."
+category: workflow
 trigger: "implementation complete, all tests pass"
 version: 1.0.0
 author: August Proxy (adapted from obra/superpowers)

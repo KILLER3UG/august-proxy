@@ -11,6 +11,8 @@ const PROJECT_SKILLS_DIR = path.join(__dirname, '..', '..', '..', 'skills');
 const TEAM_SKILLS_DIR = path.join(PROJECT_SKILLS_DIR, 'team');
 
 let _skillsCache = null;
+let _skillsCacheAt = 0;
+const SKILLS_CACHE_TTL_MS = 30000;
 
 function escapeXml(value) {
     return String(value || '')
@@ -75,6 +77,7 @@ function parseSkillMd(filePath, ownerAgentId = '') {
             enabled: frontmatter.disabled !== 'true',
             description: frontmatter.description || '',
             trigger: frontmatter.trigger || '',
+            category: frontmatter.category || 'uncategorized',
             instructions: body,
             updatedAt: stat.mtime.toISOString()
         };
@@ -96,8 +99,21 @@ function toSkillMd(skill) {
 }
 
 function discoverSkills() {
-    if (_skillsCache) return _skillsCache;
+    if (_skillsCache && (Date.now() - _skillsCacheAt) < SKILLS_CACHE_TTL_MS) {
+        return _skillsCache;
+    }
 
+    if (_skillsCache && (Date.now() - _skillsCacheAt) >= SKILLS_CACHE_TTL_MS) {
+        // Stale cache — return stale and trigger background refresh
+        refreshInBackground();
+        return _skillsCache;
+    }
+
+    // Cold cache — build synchronously
+    return doDiscover();
+}
+
+function doDiscover() {
     const dirs = [SKILLS_DIR];
     if (fs.existsSync(PROJECT_SKILLS_DIR)) {
         dirs.push(PROJECT_SKILLS_DIR);
@@ -122,7 +138,21 @@ function discoverSkills() {
     const map = new Map();
     skills.forEach(s => map.set(s.name, s));
     _skillsCache = Array.from(map.values());
+    _skillsCacheAt = Date.now();
     return _skillsCache;
+}
+
+function refreshInBackground() {
+    setTimeout(() => {
+        const oldCache = _skillsCache;
+        const oldTime = _skillsCacheAt;
+        try { doDiscover(); } catch (e) { if (!_skillsCache) { _skillsCache = oldCache; _skillsCacheAt = oldTime; } }
+    }, 100);
+}
+
+function invalidateCache() {
+    _skillsCache = null;
+    _skillsCacheAt = 0;
 }
 
 function discoverTeamSkills() {
@@ -153,10 +183,6 @@ function discoverTeamSkills() {
     } catch {}
 
     return skills;
-}
-
-function invalidateCache() {
-    _skillsCache = null;
 }
 
 function migrateFromConfig() {
@@ -251,14 +277,30 @@ function loadSkillInstructions(name, agentId = '') {
     return instructions;
 }
 
-function renderSkillCatalog(skills) {
+function renderSkillCatalog(skills, compact = false) {
     const list = skills || getEnabledSkills();
     if (!list || list.length === 0) return '';
+
+    if (compact) {
+        const byCat = {};
+        for (const s of list) {
+            const cat = s.category || 'uncategorized';
+            if (!byCat[cat]) byCat[cat] = [];
+            byCat[cat].push(s);
+        }
+        const cats = Object.keys(byCat).sort();
+        return '<skill_categories>\n' + cats.map(cat => {
+            const items = byCat[cat].map(s =>
+                `  <skill name="${escapeXml(s.name)}" trigger="${escapeXml(s.trigger || '')}" owner="${escapeXml(s.ownerAgentId || s.owner || '')}">${escapeXml(s.description || '')}</skill>`
+            ).join('\n');
+            return `  <category name="${escapeXml(cat)}">\n${items}\n  </category>`;
+        }).join('\n') + '\n</skill_categories>';
+    }
+
     return list.map(skill =>
         `<skill name="${escapeXml(skill.name)}" trigger="${escapeXml(skill.trigger || '')}" owner="${escapeXml(skill.ownerAgentId || skill.owner || '')}">${escapeXml(skill.description || '')}</skill>`
     ).join('\n');
 }
-
 function renderTeamSkillCatalog(agentId) {
     const skills = getTeamSkills(agentId);
     if (!skills.length) return '';

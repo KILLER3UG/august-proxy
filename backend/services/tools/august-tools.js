@@ -1155,6 +1155,21 @@ const AUGUST_TOOLS = [
     {
         type: 'function',
         function: {
+            name: 'august__list_skills',
+            description: 'Search and list available skills from the skill catalog. Returns matching skills with name, description, category, trigger, and enabled status. Does NOT return the full instructions — use august__load_skill to load a skill\'s full content.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'Optional search term — filters by name, description, and trigger (case-insensitive).' },
+                    category: { type: 'string', description: 'Optional category to filter by (e.g. "development", "debugging", "testing", "document", "platform", "meta", "workflow", "design").' },
+                    enabled: { type: 'string', description: 'Optional filter: "true" for enabled only, "false" for disabled only, "all" for both (default: "true").' }
+                }
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'august__whats_new',
             description: 'List features and changes in the proxy codebase from the last 24 hours. Also displays recently registered features from the feature manifest. Call this when the user asks what changed, what is new, or what capabilities were recently added.',
             parameters: {
@@ -2293,6 +2308,45 @@ async function executeAugustToolCall(toolName, args, bypassConfirmation = false,
                     `**Updated:** ${viewSkill.updatedAt || 'unknown'}`,
                     `\n### Instructions\n\n${viewSkill.instructions}`
                 ].filter(Boolean).join('\n');
+            }
+
+            case 'august__list_skills': {
+                const listSkills = require('./skills');
+                const all = listSkills.getSkills();
+                const q = String(args.query || '').trim().toLowerCase();
+                const cat = String(args.category || '').trim().toLowerCase();
+                const enabledFilter = String(args.enabled || 'true').trim().toLowerCase();
+
+                let filtered = all.filter(s => {
+                    if (enabledFilter === 'true') return s.enabled !== false;
+                    if (enabledFilter === 'false') return s.enabled === false;
+                    return true; // 'all'
+                });
+
+                if (q) {
+                    filtered = filtered.filter(s =>
+                        s.name.toLowerCase().includes(q) ||
+                        (s.description || '').toLowerCase().includes(q) ||
+                        (s.trigger || '').toLowerCase().includes(q)
+                    );
+                }
+
+                if (cat) {
+                    filtered = filtered.filter(s =>
+                        (s.category || '').toLowerCase() === cat
+                    );
+                }
+
+                if (filtered.length === 0) {
+                    return 'No skills found matching your filters.';
+                }
+
+                const lines = filtered.map(s => {
+                    const cats = s.category ? `[${s.category}]` : '[uncategorized]';
+                    const status = s.enabled !== false ? '' : ' ⚠️ (inactive)';
+                    return `• **${s.name}** ${cats}${status}\n  ${s.description || 'No description.'}\n  Trigger: ${s.trigger || '—'}`;
+                });
+                return `## Skills (${filtered.length} found)\n\n${lines.join('\n\n')}\n\nTo load a skill, use \`august__load_skill { name: "<skill-name>" }\`.`;
             }
 
             case 'august__whats_new': {

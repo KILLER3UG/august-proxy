@@ -1,6 +1,7 @@
 ---
 name: executing-plans
 description: "Execute written plans step-by-step with review checkpoints."
+category: workflow
 trigger: "when you have a written implementation plan"
 version: 1.0.0
 author: August Proxy (adapted from obra/superpowers)

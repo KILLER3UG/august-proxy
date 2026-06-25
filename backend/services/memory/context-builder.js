@@ -84,7 +84,7 @@ function countAllMemoryEntries() {
 }
 
 function renderCapabilitiesBlock(skills) {
-    const skillCatalog = renderSkillCatalog(skills);
+    const skillCatalog = renderSkillCatalog(skills, true);
     const pluginCatalog = renderPluginCatalog();
     const lines = [];
     if (skillCatalog) lines.push(skillCatalog);

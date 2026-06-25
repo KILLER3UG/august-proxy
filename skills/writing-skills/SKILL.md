@@ -1,6 +1,7 @@
 ---
 name: writing-skills
 description: "Create, edit, and test SKILL.md files with iterative validation."
+category: meta
 trigger: "creating or editing skills"
 version: 1.0.0
 author: August Proxy (adapted from obra/superpowers)

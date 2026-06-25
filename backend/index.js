@@ -2570,6 +2570,42 @@ const requestHandler = async (req, res) => {
         }
     }
 
+    // ── Skills catalog (for frontend slash commands) ──
+    if (reqPath === '/ui/skills' && req.method === 'GET') {
+        try {
+            const { getSkills } = require('./services/tools/skills');
+            const all = getSkills();
+            const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+            const query = parsedUrl.searchParams.get('q') || '';
+            const cat = parsedUrl.searchParams.get('category') || '';
+            const queryLower = query.toLowerCase();
+            let filtered = all;
+            if (query) {
+                filtered = filtered.filter(s =>
+                    s.name.toLowerCase().includes(queryLower) ||
+                    (s.description || '').toLowerCase().includes(queryLower) ||
+                    (s.trigger || '').toLowerCase().includes(queryLower)
+                );
+            }
+            if (cat) {
+                filtered = filtered.filter(s => (s.category || 'uncategorized') === cat);
+            }
+            return sendJson(res, {
+                skills: filtered.map(s => ({
+                    name: s.name,
+                    description: s.description || '',
+                    trigger: s.trigger || '',
+                    category: s.category || 'uncategorized',
+                    enabled: s.enabled !== false,
+                    updatedAt: s.updatedAt
+                })),
+                total: filtered.length
+            });
+        } catch (e) {
+            return sendJson(res, { skills: [], total: 0, error: e.message });
+        }
+    }
+
     // ── Provider options (for dashboard dropdowns) ──
     if (reqPath === '/ui/providers/options' && req.method === 'GET') {
         try {

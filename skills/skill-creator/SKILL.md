@@ -1,6 +1,7 @@
 ---
 name: skill-creator
 description: "Iterative skill authoring: draft, test, evaluate, and improve SKILL.md files."
+category: meta
 trigger: "creating a new skill or editing an existing one"
 version: 1.0.0
 author: August Proxy (adapted from obra/superpowers)

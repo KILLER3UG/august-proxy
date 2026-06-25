@@ -1,6 +1,7 @@
 ---
 name: brainstorming
 description: "Structured design exploration before implementation, with approval gates."
+category: design
 trigger: "before any creative or implementation work"
 version: 1.0.0
 author: August Proxy (adapted from obra/superpowers)

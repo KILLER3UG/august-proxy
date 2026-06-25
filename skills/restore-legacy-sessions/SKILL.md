@@ -1,6 +1,7 @@
 ---
 name: restore-legacy-sessions
 description: "Restore legacy ACP-era sessions from snapshot files into the current session store."
+category: meta
 trigger: "restoring old sessions from legacy storage"
 version: 1.0.0
 author: August Proxy

@@ -271,6 +271,8 @@ const COMMANDS = [
   { name: '/debug', desc: 'Toggle diagnostics mode' },
   { name: '/model', desc: 'Switch model: /model <name>' },
   { name: '/provider', desc: 'Switch provider: /provider <name>' },
+  { name: '/load', desc: 'Load a skill: /load <skill-name>' },
+  { name: '/skills', desc: 'Search skills: /skills [query]' },
 ];
 
 const MESSAGES_STORAGE_PREFIX = 'chat_messages_';
@@ -1113,6 +1115,51 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         // Defer to the parent (App) to create a fresh chat session.
         // No listener wires this up yet, so just tell the user how.
         toast.info('Use the sidebar to start a new session.');
+        return;
+      }
+      if (cmd === 'load') {
+        if (!arg) {
+          toast.error('/load needs a skill name. Try: /load brainstorming');
+          return;
+        }
+        fetch(`/ui/skills?q=${encodeURIComponent(arg)}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.total === 0) {
+              toast.error('No skill found matching "' + arg + '". Try /skills to list available skills.');
+              return;
+            }
+            const skill = data.skills[0];
+            const lines = [
+              '[Loaded skill: **' + skill.name + '**]',
+              '',
+              '> **' + skill.description + '**',
+              '> *Trigger: ' + (skill.trigger || '—') + '*',
+              '> *Category: ' + skill.category + '*',
+              '',
+              'Use august__load_skill { name: "' + skill.name + '" } to load the full instructions.'
+            ];
+            setInput(lines.join('\n'));
+            toast.success('Loaded skill: ' + skill.name);
+          })
+          .catch(function () { toast.error('Failed to fetch skills.'); });
+        return;
+      }
+      if (cmd === 'skills') {
+        fetch('/ui/skills' + (arg ? '?q=' + encodeURIComponent(arg) : ''))
+          .then(r => r.json())
+          .then(data => {
+            if (data.total === 0) {
+              toast.info('No skills found' + (arg ? ' matching "' + arg + '"' : '') + '.');
+              return;
+            }
+            const items = data.skills.slice(0, 20).map(function (s) {
+              return '• **' + s.name + '** [' + s.category + ']' + (s.enabled ? '' : ' ⚠️ inactive') + '\n  ' + s.description;
+            });
+            setInput('**Skills (' + data.total + ' found)**\n\n' + items.join('\n\n') + '\n\nUse /load <skill-name> to inject a skill into your message.');
+            toast.success('Found ' + data.total + ' skill' + (data.total > 1 ? 's' : ''));
+          })
+          .catch(function () { toast.error('Failed to fetch skills.'); });
         return;
       }
       if (cmd === 'btw' && !arg) {

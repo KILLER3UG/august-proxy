@@ -1,6 +1,7 @@
 ---
 name: requesting-code-review
 description: "Dispatch a reviewer subagent with precise diff context via august__spawn_subagent."
+category: development
 trigger: "after completing each task, before merge"
 version: 1.0.0
 author: August Proxy (adapted from obra/superpowers)

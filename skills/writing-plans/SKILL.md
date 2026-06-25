@@ -1,6 +1,7 @@
 ---
 name: writing-plans
 description: "Write comprehensive bite-sized implementation plans from approved specs."
+category: workflow
 trigger: "when you have a spec or requirements for a multi-step task"
 version: 1.0.0
 author: August Proxy (adapted from obra/superpowers)

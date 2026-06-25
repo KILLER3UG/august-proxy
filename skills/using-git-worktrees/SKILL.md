@@ -1,6 +1,7 @@
 ---
 name: using-git-worktrees
 description: "Isolate work in a separate git worktree to keep the main workspace clean."
+category: development
 trigger: "starting feature work needing isolation"
 version: 1.0.0
 author: August Proxy (adapted from obra/superpowers)
