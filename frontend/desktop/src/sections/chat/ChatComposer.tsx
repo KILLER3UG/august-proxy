@@ -444,13 +444,18 @@ export function estimateContextBreakdown(args: {
   input: string;
   /** Number of available tool definitions the model can call. */
   toolCount: number;
+  /** Optional: actual estimated token count of all serialized tool definitions
+   *  (name + description + input_schema). When provided, this replaces the
+   *  `toolCount * 180` heuristic with a real backend-calculated estimate. */
+  toolTokenEstimate?: number;
   /** Optional: bytes of core memory / skills injected into the prompt. */
   coreMemoryBytes?: number;
 }): ContextBreakdown {
   const messagesChars = args.messages.reduce((sum, m) => sum + m.content.length, 0) + args.input.length;
   const messages = Math.ceil(messagesChars / 4);
-  // Avg ~180 tokens per tool definition (name + description + JSON schema) — common industry estimate.
-  const systemTools = Math.ceil(args.toolCount * 180);
+  // Use the backend's actual serialized tool token estimate when available;
+  // fall back to ~180 tokens per tool definition (name + description + JSON schema).
+  const systemTools = args.toolTokenEstimate ?? Math.ceil(args.toolCount * 180);
   // Base system prompt + agent registry + core context (rough estimate; matches
   // the typical prompt overhead the backend ships — platform description, agent
   // registry entries, capabilities, learned guidelines, etc.).

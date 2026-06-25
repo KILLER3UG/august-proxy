@@ -11,7 +11,8 @@ const { getConfig, getProviderConfig } = require('../lib/config');
 const { inferFromModelId, deriveModelsUrl } = require('../lib/models');
 const { resolveModelProfile } = require('../lib/model-profiles');
 const { resolveProviderForModel, resolveProviderByName } = require('./route-resolver');
-const { listPublicProviders } = require('../services/providers/providers-routes');
+const path = require('path');
+const fs = require('fs');
 
 let modelAliasCache = null;
 let modelAliasCacheAt = 0;
@@ -153,7 +154,10 @@ async function aggregateModels() {
     // not in provider-registry.js — without this step they'd never appear in
     // /api/models and would be invisible to the chat model dropdown.
     try {
-        const storedProviders = listPublicProviders();
+        const providersPath = path.join(__dirname, '..', 'data', 'providers.json');
+        const raw = fs.readFileSync(providersPath, 'utf8');
+        const parsed = JSON.parse(raw);
+        const storedProviders = Array.isArray(parsed?.providers) ? parsed.providers : [];
         const registryNames = new Set(providers.map((p) => p.name));
         for (const sp of storedProviders) {
             if (sp.name && !registryNames.has(sp.name) && sp.enabled && sp.apiKey) {

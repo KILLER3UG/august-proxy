@@ -94,6 +94,8 @@ export interface WorkbenchCapability {
 export interface WorkbenchCapabilities {
   generatedAt: string;
   totalTools: number;
+  /** Estimated token count of all serialized tool definitions (name + description + input_schema). */
+  toolTokenEstimate?: number;
   groups: Record<string, WorkbenchCapability[]>;
   agents: any;
   approvalGate: {

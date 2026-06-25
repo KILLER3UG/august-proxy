@@ -1571,9 +1571,22 @@ function listProxyCapabilities() {
             }
         }
     }
+
+    // Estimate the token cost of all tool definitions by serializing them.
+    // This is more accurate than a fixed 180 × toolCount estimate because it
+    // accounts for actual description length and input_schema complexity.
+    let toolChars = 0;
+    for (const tool of tools) {
+        try {
+            toolChars += JSON.stringify(tool, null, 0).length;
+        } catch (_) { /* skip malformed tools */ }
+    }
+    const toolTokenEstimate = Math.ceil(toolChars / 3.5);
+
     return {
         generatedAt: new Date().toISOString(),
         totalTools: tools.length,
+        toolTokenEstimate,
         groups,
         agents: listAgentRegistry('build'),
         approvalGate: {

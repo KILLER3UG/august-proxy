@@ -407,6 +407,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // plan (reject / revise / accept) — no new chat message can be sent.
   const planPending = !!workbenchSession?.plan && !workbenchSession?.approved && !workbenchSession?.approvedAt;
   const [workbenchToolCount, setWorkbenchToolCount] = useState<number | null>(null);
+  const [workbenchToolTokens, setWorkbenchToolTokens] = useState<number | null>(null);
   const [workbenchMode, setWorkbenchMode] = useState<WorkbenchGuardMode>(() => {
     const saved = localStorage.getItem('august_last_workbench_guard_mode') as WorkbenchGuardMode | null;
     return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'plan';
@@ -614,18 +615,22 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     if (!sessionId) {
       setWorkbenchToolCount(null);
+      setWorkbenchToolTokens(null);
       return;
     }
 
     let cancelled = false;
     listWorkbenchCapabilities()
-      .then(({ totalTools }) => {
-        if (!cancelled && Number.isFinite(totalTools)) {
-          setWorkbenchToolCount(totalTools);
-        }
+      .then(({ totalTools, toolTokenEstimate }) => {
+        if (cancelled) return;
+        if (Number.isFinite(totalTools)) setWorkbenchToolCount(totalTools);
+        if (Number.isFinite(toolTokenEstimate)) setWorkbenchToolTokens(toolTokenEstimate!);
       })
       .catch(() => {
-        if (!cancelled) setWorkbenchToolCount(null);
+        if (!cancelled) {
+          setWorkbenchToolCount(null);
+          setWorkbenchToolTokens(null);
+        }
       });
 
     return () => {
@@ -810,21 +815,31 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   // Dynamic context usage tracker
   const maxContext = modelForRequest?.contextWindow || 128000;
-  const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0) + input.length;
-  const estTokens = Math.ceil(totalChars / 4) + 120;
-  const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
 
   // Per-category breakdown for the ContextRing popup. The tool surface comes
   // from the backend capability endpoint; 30 is only a startup fallback.
   const toolCountForBreakdown = workbenchToolCount ?? 30;
+  const toolTokenEstimate = workbenchToolTokens;
   const contextBreakdown: ContextBreakdown = useMemo(
     () => estimateContextBreakdown({
       messages,
       input,
       toolCount: toolCountForBreakdown,
+      toolTokenEstimate: toolTokenEstimate ?? undefined,
     }),
-    [messages, input, toolCountForBreakdown]
+    [messages, input, toolCountForBreakdown, toolTokenEstimate]
   );
+
+  // The gauge total and percentage use the breakdown sum so the donut arc
+  // and the per‑category percentages are consistent — previously estTokens
+  // was calculated separately (messages × 4 + flat 120) while the breakdown
+  // included systemTools + systemPrompt + meta, making them disagree.
+  const estTokens = contextBreakdown.messages
+    + contextBreakdown.systemTools
+    + contextBreakdown.systemPrompt
+    + contextBreakdown.skills
+    + contextBreakdown.meta;
+  const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
 
   // ── Workbench chat client ─────────────────────────────────────────
   // Workbench only accepts claude/codex engine ids. The normal provider/model
@@ -1466,12 +1481,19 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               <WorkspaceSelector
                 sessionId={sessionId}
                 onWorkspaceChange={(ws) => {
-                  if (sessionId && ws) {
-                    // Update session workspace when workspace changes
-                    import('@/store/sessions').then(({ updateSessionWorkspace }) => {
-                      updateSessionWorkspace(sessionId, ws.path);
-                    });
-                  }
+                  if (!sessionId || !ws) return;
+                  import('@/store/sessions').then(({ createSession, updateSessionWorkspace, $sessions }) => {
+                    // Check if any existing session already uses this workspace path
+                    const existing = $sessions.get().find(s => s.workspacePath === ws.path);
+                    if (existing) {
+                      // Workspace already linked — just switch to that session
+                      window.location.href = `/c/${existing.id}`;
+                    } else {
+                      // New workspace — create a fresh session for it and navigate
+                      const newSess = createSession(null, ws.name || 'New Chat', ws.path);
+                      window.location.href = `/c/${newSess.id}`;
+                    }
+                  });
                 }}
               />
             </div>
