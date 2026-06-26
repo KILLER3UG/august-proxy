@@ -158,10 +158,11 @@ async def start_chat(request: Request):
 
 @router.get("/chat/stream")
 async def stream_chat(
-    session_id: str = Query(""),
+    sessionId: str = Query(default="", alias="sessionId"),
     since_seq_raw: str = Query(default="0", alias="sinceSeq"),
 ):
     """SSE stream for chat events."""
+    session_id = sessionId
     since_seq = int(since_seq_raw) if since_seq_raw and since_seq_raw.isdigit() else 0
 
     async def generate():
