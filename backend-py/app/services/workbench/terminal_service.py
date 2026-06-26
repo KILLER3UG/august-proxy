@@ -1,10 +1,8 @@
 """
-Terminal service — interactive terminal sessions with PTY support.
+Terminal service — interactive terminal sessions with PTY/stdin support.
 
-Port of backend/services/workbench/terminal-service.js + august-terminal.js.
-
-Uses asyncio subprocess with PTY for interactive terminal sessions.
-Falls back to pipe-based subprocess when PTY is unavailable.
+Port of backend/services/workbench/terminal-service.js.
+Supports the /ui/terminal/* REST API + WebSocket live I/O.
 """
 
 from __future__ import annotations
@@ -12,16 +10,32 @@ from __future__ import annotations
 import asyncio
 import os
 import platform
-import signal
 import uuid
+from collections import deque
 from datetime import datetime
 from typing import Any
 
-# ── Session management ───────────────────────────────────────────────
+# ── Constants ────────────────────────────────────────────────────────
 
-_sessions: dict[str, dict[str, Any]] = {}
-_session_processes: dict[str, asyncio.subprocess.Process] = {}
-_session_buffers: dict[str, asyncio.Queue] = {}
+BUFFER_LIMIT = 256 * 1024  # 256 KB
+COMMAND_OUTPUT_LIMIT = 1024 * 1024  # 1 MB
+MAX_SESSIONS = 50
+
+# ── Danger patterns ─────────────────────────────────────────────────
+
+DANGEROUS_PATTERNS = [
+    "rm -rf /", "rm -rf ~", ":(){ :|:& };:", "dd if=",
+    "> /dev/sda", "mkfs.", "fdisk", "format ",
+    "sudo", "su ", "chown", "chmod 777",
+    "kill -9", "pkill", "shutdown", "reboot",
+]
+
+
+def _dangerous_reason(command: str) -> str | None:
+    for pattern in DANGEROUS_PATTERNS:
+        if pattern in command.lower():
+            return f"Command contains dangerous pattern: {pattern}"
+    return None
 
 
 def _now() -> str:
@@ -29,144 +43,311 @@ def _now() -> str:
 
 
 def _get_shell() -> str:
-    """Get the default system shell."""
     if platform.system() == "Windows":
         return os.environ.get("COMSPEC", "cmd.exe")
     return os.environ.get("SHELL", "/bin/bash")
 
 
-async def create_session(name: str = "default", cwd: str | None = None, shell: str | None = None) -> dict[str, Any]:
-    """Create a new terminal session with a running shell process."""
-    session_id = f"term_{uuid.uuid4().hex[:8]}"
-    shell_cmd = shell or _get_shell()
-    work_dir = cwd or os.getcwd()
+# ── Session data ─────────────────────────────────────────────────────
 
+_sessions: dict[str, dict[str, Any]] = {}
+_pending_approvals: dict[str, dict[str, Any]] = {}
+_ws_sockets: dict[str, set[Any]] = {}  # session_id → set of WS connections
+
+
+def _summarize(session: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": session["id"],
+        "title": session.get("title", "Terminal"),
+        "cwd": session.get("cwd", ""),
+        "command": session.get("command", ""),
+        "status": session.get("status", "created"),
+        "createdAt": session.get("createdAt", ""),
+        "updatedAt": session.get("updatedAt", ""),
+        "bufferLength": len(session.get("buffer", "")),
+        "approvedInteractive": session.get("approvedInteractive", False),
+        "cols": session.get("cols", 80),
+        "rows": session.get("rows", 24),
+        "pty": session.get("pty", False),
+    }
+
+
+# ── Session CRUD ─────────────────────────────────────────────────────
+
+
+def list_terminal_sessions() -> list[dict[str, Any]]:
+    return [_summarize(s) for s in _sessions.values()][:MAX_SESSIONS]
+
+
+def list_terminal_approvals() -> list[dict[str, Any]]:
+    return list(_pending_approvals.values())
+
+
+async def create_terminal_session(params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Create a terminal session with a running shell process."""
+    params = params or {}
+    session_id = f"term_{uuid.uuid4().hex[:8]}"
+    shell = _get_shell()
+
+    session = {
+        "id": session_id,
+        "title": params.get("title", "Terminal"),
+        "cwd": params.get("cwd") or os.getcwd(),
+        "command": params.get("command", shell),
+        "status": "starting",
+        "createdAt": _now(),
+        "updatedAt": _now(),
+        "buffer": "",
+        "approvedInteractive": params.get("approvedInteractive", False),
+        "cols": params.get("cols", 80),
+        "rows": params.get("rows", 24),
+        "pty": False,
+        "process": None,
+        "stdin": None,
+        "stdout": None,
+    }
+
+    # Spawn the shell process
     try:
+        args = params.get("args") or (["-i"] if platform.system() != "Windows" else [])
         proc = await asyncio.create_subprocess_exec(
-            shell_cmd,
+            shell, *args,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            cwd=work_dir,
+            cwd=session["cwd"],
             env={**os.environ, "TERM": "xterm-256color"},
         )
-
-        _session_processes[session_id] = proc
-        _session_buffers[session_id] = asyncio.Queue(maxsize=1000)
-
-        # Start reading stdout in background
-        asyncio.create_task(_read_stdout(session_id, proc))
-
-        session = {
-            "id": session_id,
-            "name": name,
-            "shell": shell_cmd,
-            "cwd": work_dir,
-            "status": "running",
-            "pid": proc.pid,
-            "createdAt": _now(),
-        }
+        session["process"] = proc
+        session["stdin"] = proc.stdin
+        session["stdout"] = proc.stdout
+        session["status"] = "running"
         _sessions[session_id] = session
-        return session
+        _ws_sockets[session_id] = set()
+
+        # Background stdout reader
+        asyncio.create_task(_pipe_stdout(session_id))
 
     except (FileNotFoundError, PermissionError) as exc:
-        return {"id": session_id, "name": name, "status": "error", "error": str(exc)}
+        session["status"] = "error"
+        session["error"] = str(exc)
+        _sessions[session_id] = session
+
+    return _summarize(session)
 
 
-async def _read_stdout(session_id: str, proc: asyncio.subprocess.Process) -> None:
-    """Read stdout from a terminal process in the background."""
-    queue = _session_buffers.get(session_id)
-    if not queue or not proc.stdout:
+async def _pipe_stdout(session_id: str) -> None:
+    """Read process stdout into the session buffer and broadcast to WS."""
+    session = _sessions.get(session_id)
+    if not session or not session.get("stdout"):
         return
-
     try:
         while True:
-            line = await proc.stdout.readline()
-            if not line:
+            chunk = await session["stdout"].read(4096)
+            if not chunk:
                 break
-            await queue.put(line.decode("utf-8", errors="replace"))
-    except (asyncio.CancelledError, ValueError, OSError):
+            text = chunk.decode("utf-8", errors="replace")
+            # Append to buffer (capped)
+            session["buffer"] = (session.get("buffer", "") + text)[-BUFFER_LIMIT:]
+            session["updatedAt"] = _now()
+            # Broadcast to all WebSocket connections
+            for ws in list(_ws_sockets.get(session_id, set())):
+                try:
+                    ws(text)
+                except Exception:
+                    _ws_sockets.get(session_id, set()).discard(ws)
+    except (OSError, ValueError):
         pass
     finally:
         if session_id in _sessions:
-            _sessions[session_id]["status"] = "exited"
+            s = _sessions[session_id]
+            if s.get("status") == "running":
+                s["status"] = "exited"
 
 
-async def write_stdin(session_id: str, data: str) -> dict[str, Any]:
-    """Write data to a terminal session's stdin."""
+def read_terminal_buffer(session_id: str) -> dict[str, Any]:
+    """Get the terminal buffer for a session."""
+    session = _sessions.get(session_id)
+    if not session:
+        raise KeyError(f"Terminal session not found: {session_id}")
+    return {**_summarize(session), "buffer": session.get("buffer", "")}
+
+
+async def write_terminal_input(session_id: str, input_text: str, approved: bool = False) -> dict[str, Any]:
+    """Write input to a terminal session."""
     session = _sessions.get(session_id)
     if not session:
         return {"error": "Session not found"}
-    proc = _session_processes.get(session_id)
-    if not proc or not proc.stdin:
-        return {"error": "Process not running"}
+
+    # Check approval for interactive mode
+    if not session.get("approvedInteractive") and not approved:
+        req_id = f"apr_{uuid.uuid4().hex[:8]}"
+        _pending_approvals[req_id] = {
+            "requestId": req_id,
+            "type": "terminal_interactive_input",
+            "terminalId": session_id,
+            "createdAt": _now(),
+        }
+        return {"status": "approval_required", "requestId": req_id}
+
+    stdin = session.get("stdin")
+    if not stdin:
+        return {"error": "Process stdin not available"}
 
     try:
-        proc.stdin.write(data.encode())
-        await proc.stdin.drain()
-        return {"written": len(data)}
-    except (BrokenPipeError, ConnectionError) as exc:
-        session["status"] = "error"
+        stdin.write(input_text.encode())
+        await stdin.drain()
+        return {"status": "written"}
+    except (BrokenPipeError, OSError) as exc:
         return {"error": str(exc)}
 
 
-async def read_stdout(session_id: str, timeout: float = 0.1) -> str:
-    """Read available output from a terminal session."""
-    queue = _session_buffers.get(session_id)
-    if not queue:
-        return ""
+async def resize_terminal_session(session_id: str, cols: int = 80, rows: int = 24) -> dict[str, Any]:
+    """Resize a terminal session."""
+    cols = max(20, min(cols, 240))
+    rows = max(5, min(rows, 120))
+    session = _sessions.get(session_id)
+    if session:
+        session["cols"] = cols
+        session["rows"] = rows
+    return _summarize(session) if session else {"error": "Session not found"}
 
-    output = []
+
+async def submit_terminal_command(params: dict[str, Any]) -> dict[str, Any]:
+    """Run a one-shot command and return output."""
+    command = params.get("command", "")
+    cwd = params.get("cwd") or os.getcwd()
+    approved = params.get("approved", False)
+    reason = params.get("reason", "")
+    timeout_ms = params.get("timeoutMs", 30000)
+
+    # Check for dangerous commands
+    if not approved:
+        danger = _dangerous_reason(command)
+        if danger:
+            req_id = f"apr_{uuid.uuid4().hex[:8]}"
+            _pending_approvals[req_id] = {
+                "requestId": req_id,
+                "type": "terminal_command",
+                "command": command,
+                "cwd": cwd,
+                "reason": danger,
+                "createdAt": _now(),
+            }
+            return {"status": "approval_required", "requestId": req_id, "reason": danger}
+
+    # Execute
     try:
-        while True:
-            line = await asyncio.wait_for(queue.get(), timeout=timeout)
-            output.append(line)
-            if queue.empty():
-                break
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_ms / 1000)
+        output = stdout.decode("utf-8", errors="replace")[-COMMAND_OUTPUT_LIMIT:]
+        if stderr:
+            error = stderr.decode("utf-8", errors="replace")[-COMMAND_OUTPUT_LIMIT:]
+            if error:
+                output += f"\nSTDERR:\n{error}"
+        return {
+            "status": "completed",
+            "command": command,
+            "cwd": cwd,
+            "exitCode": proc.returncode,
+            "output": output,
+            "timedOut": False,
+        }
     except asyncio.TimeoutError:
-        pass
-
-    return "".join(output)
-
-
-async def resize(session_id: str, cols: int = 80, rows: int = 24) -> bool:
-    """Resize the terminal PTY."""
-    # PTY resize requires OS-specific calls
-    # On Unix: struct termios / fcntl
-    # On Windows: pywinpty resize
-    return True
+        return {"status": "error", "command": command, "error": "Timed out", "timedOut": True}
+    except Exception as exc:
+        return {"status": "error", "command": command, "error": str(exc)}
 
 
-async def close_session(session_id: str) -> bool:
-    """Close a terminal session."""
-    if session_id not in _sessions:
+async def approve_terminal_request(request_id: str, approve: bool = True) -> dict[str, Any]:
+    """Approve or reject a pending terminal request."""
+    request = _pending_approvals.pop(request_id, None)
+    if not request:
+        return {"error": "Request not found"}
+
+    if not approve:
+        return {"status": "rejected", "requestId": request_id}
+
+    if request.get("type") == "terminal_command":
+        return await submit_terminal_command({
+            "command": request.get("command", ""),
+            "cwd": request.get("cwd", ""),
+            "approved": True,
+        })
+
+    if request.get("type") == "terminal_interactive_input":
+        session_id = request.get("terminalId", "")
+        session = _sessions.get(session_id)
+        if session:
+            session["approvedInteractive"] = True
+        return {"status": "approved_interactive", "terminalId": session_id}
+
+    return {"status": "approved", "requestId": request_id}
+
+
+def close_terminal_session(session_id: str) -> bool:
+    """Close and remove a terminal session."""
+    session = _sessions.pop(session_id, None)
+    if not session:
         return False
-
-    proc = _session_processes.pop(session_id, None)
+    # Close WebSocket connections
+    sockets = _ws_sockets.pop(session_id, set())
+    for ws in sockets:
+        try:
+            ws(None)  # Signal close
+        except Exception:
+            pass
+    # Kill process
+    proc = session.get("process")
     if proc:
         try:
-            if platform.system() == "Windows":
-                proc.kill()
-            else:
-                proc.terminate()
-            await asyncio.wait_for(proc.wait(), timeout=5)
-        except (asyncio.TimeoutError, ProcessLookupError):
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
-
-    _session_buffers.pop(session_id, None)
-    session = _sessions.pop(session_id, {})
-    session["status"] = "closed"
+            proc.kill()
+        except Exception:
+            pass
     return True
 
 
-def list_sessions() -> list[dict[str, Any]]:
-    """List all terminal sessions."""
-    return list(_sessions.values())
+# ── WebSocket handler ────────────────────────────────────────────────
 
 
-def get_session(session_id: str) -> dict[str, Any] | None:
-    """Get a terminal session by ID."""
-    return _sessions.get(session_id)
+async def handle_terminal_connection(websocket: Any, terminal_id: str) -> None:
+    """Handle a WebSocket connection for live terminal I/O.
+
+    ``websocket`` must have ``send_text``, ``receive_text``, ``close`` methods
+    (compatible with Starlette / FastAPI WebSocket).
+    """
+    session = _sessions.get(terminal_id)
+    if not session:
+        await websocket.close(code=4004)
+        return
+
+    # Register socket
+    if terminal_id not in _ws_sockets:
+        _ws_sockets[terminal_id] = set()
+    _ws_sockets[terminal_id].add(websocket)
+
+    try:
+        # Send existing buffer
+        buffer = session.get("buffer", "")
+        if buffer:
+            await websocket.send_text(buffer)
+
+        # Handle incoming messages
+        while True:
+            data = await websocket.receive_text()
+            result = await write_terminal_input(terminal_id, data, approved=session.get("approvedInteractive", False))
+            if result.get("status") == "approval_required":
+                await websocket.send_text(f"\r\n[Approval required for interactive input]\r\n")
+    except Exception:
+        pass
+    finally:
+        _ws_sockets.get(terminal_id, set()).discard(websocket)
+        try:
+            await websocket.close()
+        except Exception:
+            pass

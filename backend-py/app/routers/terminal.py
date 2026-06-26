@@ -1,6 +1,6 @@
-"""Terminal session API routes.
+"""Terminal session API routes (legacy /api/terminal/* endpoints).
 
-Port of backend/services/workbench/terminal-service.js + august-terminal.js.
+Delegates to the same terminal_service as /ui/terminal/* routes.
 """
 
 from __future__ import annotations
@@ -26,33 +26,32 @@ class TerminalWrite(BaseModel):
 @router.post("")
 async def create_terminal(body: TerminalCreate):
     """Create a new terminal session."""
-    session = await terminal_service.create_session(
-        name=body.name,
-        cwd=body.cwd or None,
-        shell=body.shell or None,
-    )
+    session = await terminal_service.create_terminal_session({
+        "title": body.name,
+        "cwd": body.cwd or None,
+    })
     return session
 
 
 @router.get("")
 async def list_terminals():
     """List all terminal sessions."""
-    return {"sessions": terminal_service.list_sessions()}
+    return {"sessions": terminal_service.list_terminal_sessions()}
 
 
 @router.get("/{session_id}")
 async def get_terminal(session_id: str):
     """Get a terminal session by ID."""
-    session = terminal_service.get_session(session_id)
-    if not session:
+    try:
+        return terminal_service.read_terminal_buffer(session_id)
+    except KeyError:
         raise HTTPException(status_code=404, detail="Terminal session not found")
-    return session
 
 
 @router.delete("/{session_id}")
 async def delete_terminal(session_id: str):
     """Delete a terminal session."""
-    if not await terminal_service.close_session(session_id):
+    if not terminal_service.close_terminal_session(session_id):
         raise HTTPException(status_code=404, detail="Terminal session not found")
     return {"status": "ok"}
 
@@ -60,7 +59,7 @@ async def delete_terminal(session_id: str):
 @router.post("/{session_id}/write")
 async def write_terminal(session_id: str, body: TerminalWrite):
     """Write data to a terminal session."""
-    result = await terminal_service.write_stdin(session_id, body.data)
+    result = await terminal_service.write_terminal_input(session_id, body.data)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
@@ -69,12 +68,7 @@ async def write_terminal(session_id: str, body: TerminalWrite):
 @router.get("/{session_id}/read")
 async def read_terminal(session_id: str):
     """Read output from a terminal session."""
-    output = await terminal_service.read_stdout(session_id)
-    return {"output": output}
-
-
-@router.post("/{session_id}/resize")
-async def resize_terminal(session_id: str, cols: int = 80, rows: int = 24):
-    """Resize the terminal."""
-    await terminal_service.resize(session_id, cols, rows)
-    return {"status": "ok"}
+    try:
+        return terminal_service.read_terminal_buffer(session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
