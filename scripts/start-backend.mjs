@@ -17,11 +17,12 @@ const port = process.env.AUGUST_PROXY_PORT || '8085';
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 function findPython() {
-    // Windows fallback: check common installation paths first so we prefer
-    // a full Python install over venv/shims that may lack the app module.
+    // Check your exact Python 3.13 installation first
+    const exactPath = 'C:\\Users\\rober\\AppData\\Local\\Programs\\Python\\Python313\\python.exe';
+    if (existsSync(exactPath)) return exactPath;
+
     if (process.platform === 'win32') {
         const commonPaths = [
-            'C:\\Users\\rober\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
             'C:\\Users\\rober\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
             'C:\\Python313\\python.exe',
             'C:\\Python312\\python.exe',
