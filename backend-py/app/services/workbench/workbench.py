@@ -647,9 +647,10 @@ async def send_workbench_message_stream(
         if thinking_content and emit:
             emit({"type": "thinking", "content": thinking_content})
 
-        # Emit text content
+        # Emit text content as final_output (frontend only renders
+        # 'thinking' and 'final_output' block types in ChatThread.tsx)
         if text_content and emit:
-            emit({"type": "text", "content": text_content})
+            emit({"type": "final_output", "content": text_content})
 
         # Emit tool uses
         for tu in tool_uses:

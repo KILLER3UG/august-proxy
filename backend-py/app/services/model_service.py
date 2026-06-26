@@ -209,13 +209,18 @@ async def _aggregate_models() -> list[dict[str, Any]]:
             if not entry.get("enabled") or not entry.get("apiKey"):
                 continue
             for m in entry.get("models", []):
+                import re
+                mid = m["id"]
+                reasoning = m.get("reasoning", False) or bool(re.search(
+                    r"\b(o1|o3|reasoner|thinking|reasoning)\b", mid, re.IGNORECASE
+                ))
                 all_models.append({
-                    "id": m["id"],
-                    "name": m.get("name", m["id"]),
+                    "id": mid,
+                    "name": m.get("name", mid),
                     "provider": entry["name"],
                     "contextWindow": m.get("contextWindow", 128000),
-                    "supportsReasoning": m.get("reasoning", False),
-                    "supportsThinking": m.get("reasoning", False),
+                    "supportsReasoning": reasoning,
+                    "supportsThinking": reasoning,
                     "isFree": m.get("free", False) or _is_free_model_id(m["id"]),
                 })
     except Exception:
