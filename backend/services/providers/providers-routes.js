@@ -655,7 +655,10 @@ async function handleProvidersRoutes(req, res) {
                 : { model: model.id, messages: [{ role: 'user', content: 'respond with only the word "WORKING"' }], max_tokens: 16 };
 
             const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${p.apiKey}` };
-            if (p.apiFormat === 'anthropic') headers['anthropic-version'] = '2023-06-01';
+            if (p.apiFormat === 'anthropic') {
+                headers['anthropic-version'] = '2023-06-01';
+                headers['x-api-key'] = p.apiKey;
+            }
 
             const start = Date.now();
             try {
