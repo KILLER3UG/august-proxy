@@ -1135,6 +1135,18 @@ function toOpenAiCompatibleTargetUrl(targetUrl) {
     return `${target}/v1/chat/completions`;
 }
 
+/** Ensure a provider's base URL points at the Anthropic Messages endpoint.
+ *  The native Anthropic API already includes `/v1/messages` in its base URL,
+ *  but custom Anthropic-compatible providers (e.g. Openmodel) often have a
+ *  bare host URL.  Without normalisation, shouldUseAnthropicUpstream() returns
+ *  false and the adapter falls through to the OpenAI-format code path. */
+function normalizeAnthropicTargetUrl(baseUrl) {
+    const target = String(baseUrl || '').trim();
+    if (!target) return '';
+    if (/\/v1\/messages$/i.test(target)) return target;
+    return target.replace(/\/+$/, '') + '/v1/messages';
+}
+
 function buildAnthropicHeaders(apiKey) {
     const headers = {
         'Content-Type': 'application/json',
@@ -1189,9 +1201,33 @@ async function fallbackClientFailedToolsAnthropic(upstreamReq) {
 }
 
 function buildAnthropicUpstreamRequest(aReq, cfg, upstreamModelOverride, clientId) {
+    // The Anthropic Messages API requires system prompts in the top-level
+    // `system` field — NOT as messages with role: "system".  Clients like
+    // Claude Desktop sometimes send system prompts as messages in the array;
+    // filtering them out here prevents "Unexpected role 'system'" errors
+    // from the upstream while preserving the content in the system blocks.
+    const rawMessages = Array.isArray(aReq.messages) ? aReq.messages : [];
+    const systemMessages = rawMessages.filter(m => m && m.role === 'system');
+    const otherMessages = rawMessages.filter(m => !m || m.role !== 'system');
+
+    const extractedSystem = systemMessages
+        .map(msg => {
+            if (typeof msg.content === 'string') return msg.content;
+            if (Array.isArray(msg.content)) {
+                return msg.content
+                    .filter(b => b && b.type === 'text')
+                    .map(b => b.text)
+                    .filter(Boolean)
+                    .join('\n');
+            }
+            return '';
+        })
+        .filter(Boolean)
+        .join('\n\n');
+
     const upstreamReq = {
         model: upstreamModelOverride || getClaudeBackendModel(cfg, aReq.model),
-        messages: Array.isArray(aReq.messages) ? aReq.messages : []
+        messages: otherMessages
     };
 
     // AUGUST context first, then MiniMax contract for MiniMax targets
@@ -1201,7 +1237,9 @@ function buildAnthropicUpstreamRequest(aReq, cfg, upstreamModelOverride, clientI
         includeMiniMaxContract: false,
         clientId
     });
-    upstreamReq.system = augustSystem;
+    upstreamReq.system = extractedSystem
+        ? appendTextToSystemBlocks(augustSystem, extractedSystem)
+        : augustSystem;
 
     // Mid-session drift prevention: inject rule reminders every 8 tool-result turns
     if (isMiniMaxModel(upstreamReq.model) || isMiniMaxTarget({ targetUrl: cfg.targetUrl })) {
@@ -2727,15 +2765,19 @@ async function handleMessages(req, res, cleanPath, reqId) {
                                 ? selectedBackendModel
                                 : requestedRaw;
                         if (routed.name === 'anthropic' || routed.apiMode === 'anthropic_messages') {
-                            cfg.targetUrl = routed.baseUrl;
+                            cfg.targetUrl = normalizeAnthropicTargetUrl(routed.baseUrl);
                             cfg.apiKey = routed.apiKey;
-                            if (routeClaudeThroughSelectedProvider && usesRememberedProviderRoute) {
-                                cfg._upstreamModel = backendModel;
-                                cfg.currentModel = backendModel;
-                            } else if (routeClaudeThroughSelectedProvider && usesActiveProviderRoute && selectedBackendModel) {
-                                cfg._upstreamModel = backendModel;
-                                cfg.currentModel = backendModel;
-                            }
+                            // Always store the resolved backend model so the
+                            // upstreamModel selection at line 2801 picks it up
+                            // instead of falling back to requestModel.  The
+                            // OpenAI-compatible branch (below) already does this
+                            // unconditionally — this conditional was an oversight
+                            // that caused `routeClaudeThroughSelectedProvider =
+                            // false` flows (e.g. a non-Claude alias resolved to an
+                            // Anthropic-format provider) to silently lose the
+                            // resolved model and use the public alias instead.
+                            cfg._upstreamModel = backendModel;
+                            cfg.currentModel = backendModel;
                             console.log(`[Proxy Model Route]: ${backendModel} -> provider ${routed.name} (${routed.baseUrl})`);
                             emitProxy('proxy_model_route', 'info', `${backendModel} → provider ${routed.name}`, { backendModel, provider: routed.name });
                         } else {
@@ -2760,9 +2802,16 @@ async function handleMessages(req, res, cleanPath, reqId) {
             const modelForInheritance = typeof aReq.model === 'string' ? aReq.model : requestModel;
             let upstreamModel = selectedClaudeBackendModel
                 ? selectedClaudeBackendModel
-                : shouldUseAnthropicUpstream(cfg.targetUrl) && shouldPreserveClaudeAliasForAnthropicUpstream(requestModel)
-                    ? requestModel
-                    : (cfg._upstreamModel || getClaudeBackendModel(cfg, aReq.model));
+                // Routing code (above) may have resolved a non-Claude backend
+                // model (e.g. "deepseek-v4-flash") and stored it in
+                // cfg._upstreamModel.  When that happened, use it — even when
+                // the requestModel is a Claude alias that would otherwise be
+                // preserved — so the resolved target isn't silently overwritten.
+                : cfg._upstreamModel
+                    ? cfg._upstreamModel
+                    : shouldUseAnthropicUpstream(cfg.targetUrl) && shouldPreserveClaudeAliasForAnthropicUpstream(requestModel)
+                        ? requestModel
+                        : getClaudeBackendModel(cfg, aReq.model);
             if (modelSessionId && shouldApplySessionModelInheritance(modelForInheritance, aReq.metadata, req.headers)) {
                 const inherited = await sessionModelInheritance.resolveInheritedModel({
                     sessionId: modelSessionId,
@@ -2790,7 +2839,7 @@ async function handleMessages(req, res, cleanPath, reqId) {
                         const routed = resolveProviderForModel(upstreamModel, { providerHint: inherited.resolution.provider });
                         if (routed && routed.baseUrl && routed.apiKey) {
                             cfg.targetUrl = routed.apiMode === 'anthropic_messages' || routed.name === 'anthropic'
-                                ? routed.baseUrl
+                                ? normalizeAnthropicTargetUrl(routed.baseUrl)
                                 : toOpenAiCompatibleTargetUrl(routed.baseUrl);
                             cfg.apiKey = routed.apiKey;
                             if (routed.apiMode) cfg.apiMode = routed.apiMode;

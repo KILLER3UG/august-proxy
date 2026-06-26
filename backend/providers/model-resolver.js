@@ -111,23 +111,35 @@ function resolve(input, options = {}) {
     try {
         const aliasDetails = resolveModelAliasDetails(normalized);
         if (aliasDetails && aliasDetails.modelId && aliasDetails.modelId !== normalized) {
-            const routed = resolveProviderForModel(aliasDetails.modelId, {
-                providerHint: aliasDetails.provider || providerHint || undefined,
-            });
-            if (routed && routed.baseUrl && routed.apiKey) {
-                return {
-                    alias: normalized,
-                    provider: routed.name || (routed.provider && routed.provider.name) || aliasDetails.provider || 'unknown',
-                    model: routed.model || aliasDetails.modelId,
-                    isFallback: false,
-                };
+            // When the catalog maps a display alias (e.g. "Sonnet 4 6-Alias")
+            // to a model id with provider "Alias", the provider hint is
+            // meaningless for actual routing — it just means "this came from a
+            // user-defined alias entry in the model list".  Skip the direct
+            // routing attempt in that case and recurse so the user-defined
+            // alias (step 1) gets a chance to apply with its real targetProvider
+            // (e.g. "Openmodel" instead of "Alias").
+            const isAliasProvider = aliasDetails.provider === 'Alias';
+            if (!isAliasProvider) {
+                const routed = resolveProviderForModel(aliasDetails.modelId, {
+                    providerHint: aliasDetails.provider || providerHint || undefined,
+                });
+                if (routed && routed.baseUrl && routed.apiKey) {
+                    return {
+                        alias: normalized,
+                        provider: routed.name || (routed.provider && routed.provider.name) || aliasDetails.provider || 'unknown',
+                        model: routed.model || aliasDetails.modelId,
+                        isFallback: false,
+                    };
+                }
             }
-            // Catalog says it maps somewhere, but no provider has credentials
-            // for the resolved id. Recurse once with the resolved id so a
-            // downstream resolver (e.g. active provider fallback) can pick it up.
+            // Recurse once with the resolved model id so user-defined aliases
+            // (step 1) or the model's real provider (step 3) can pick it up.
+            // The providerHint from the catalog ("Alias") is stripped when the
+            // catalog provider is "Alias" so it doesn't poison step 1's
+            // resolveProviderForModel call with a meaningless hint.
             try {
                 const inner = resolve(aliasDetails.modelId, {
-                    providerHint: aliasDetails.provider || providerHint,
+                    providerHint: isAliasProvider ? undefined : (aliasDetails.provider || providerHint),
                 });
                 if (inner) return { ...inner, alias: normalized };
             } catch (_) { /* fall through */ }
