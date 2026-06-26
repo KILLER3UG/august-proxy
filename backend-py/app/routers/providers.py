@@ -135,7 +135,45 @@ async def deleteProvider(providerId: str):
 
 @router.post("/{providerId}/models/refresh")
 async def refreshModels(providerId: str):
-    return {"refreshed": True, "models": []}
+    """Fetch live models from a provider's /models endpoint.
+
+    Returns added/updated/removed model ID arrays for the frontend.
+    """
+    store = config_service.get_providers_store()
+    for p in store.get("providers", []):
+        if p.get("id") != providerId:
+            continue
+        currentModels = p.get("models", [])
+        currentIds = {m["id"] for m in currentModels if isinstance(m, dict) and m.get("id")}
+        liveModels: list[str] = []
+        baseUrl = p.get("baseUrl", "")
+        apiKey = p.get("apiKey", "")
+        if baseUrl and apiKey:
+            try:
+                import httpx
+                url = baseUrl.rstrip("/")
+                if not url.endswith("/models"):
+                    url = url.replace("/chat/completions", "").replace("/messages", "").replace("/v1", "") + "/models"
+                async with httpx.AsyncClient(timeout=5) as client:
+                    resp = await client.get(url, headers={"Authorization": f"Bearer {apiKey}"})
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        raw = data.get("data", data.get("models", data if isinstance(data, list) else []))
+                        if isinstance(raw, list):
+                            liveModels = [m["id"] for m in raw if isinstance(m, dict) and m.get("id")]
+            except Exception:
+                pass
+        liveIds = set(liveModels)
+        added = sorted(liveIds - currentIds)
+        removed = sorted(currentIds - liveIds)
+        updated = sorted(currentIds & liveIds)
+        for mid in liveModels:
+            if mid not in currentIds:
+                currentModels.append({"id": mid, "name": mid, "contextWindow": 128000, "reasoning": False, "free": ":free" in mid or "-free" in mid, "source": "fetched"})
+        p["models"] = currentModels
+        config_service.save_providers_store(store)
+        return {"added": added, "updated": updated, "removed": removed}
+    raise HTTPException(status_code=404, detail="Provider not found")
 
 
 @router.get("/health")
