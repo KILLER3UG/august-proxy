@@ -283,6 +283,7 @@ function dispatchWorkbenchEvent(
       break;
     case 'text':
     case 'content':
+    case 'final_output':
       handlers.onText?.({ content: payload?.content || '' });
       break;
     case 'tool_use':

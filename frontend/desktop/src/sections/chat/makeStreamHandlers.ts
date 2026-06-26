@@ -303,7 +303,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         thinkingEnd = Date.now();
       }
       assistantContent += content;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content });
       scheduleUpdate();
     },
     onToolUse: ({ id, name, input }) => {
@@ -398,7 +398,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // disappears if the turn is rolled back.
       const notice = `\n\n📦 Context compacted — kept the first ${info.headCount} and last ${info.tailCount} messages; summarized ${info.compressedCount} middle messages (~${info.originalTokens} → ~${info.compressedTokens} tokens).`;
       assistantContent += notice;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: notice });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content: notice });
       scheduleUpdate();
     },
     onDone: async () => {
@@ -414,7 +414,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     },
     onError: ({ message }) => {
       assistantContent += `\n\n⚠️ Workbench error: ${message}`;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: `\n\n⚠️ Workbench error: ${message}` });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content: `\n\n⚠️ Workbench error: ${message}` });
       scheduleUpdate();
       finalize('error');
     },
