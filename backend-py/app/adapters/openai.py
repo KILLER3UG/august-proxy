@@ -149,11 +149,21 @@ def merge_openai_compatible_profile(
 
 
 def to_openai_compatible_target_url(base_url: str) -> str:
-    """Ensure the base URL ends with /chat/completions."""
+    """Ensure the base URL ends with /chat/completions.
+
+    Handles:
+    - Already has /chat/completions → return as-is
+    - Ends with /v1 → append /chat/completions
+    - Already has version prefix (e.g., /v1beta/openai) → append /chat/completions
+    - Otherwise → append /v1/chat/completions
+    """
     base = base_url.rstrip("/")
     if base.endswith("/chat/completions"):
         return base
     if base.endswith("/v1"):
+        return f"{base}/chat/completions"
+    # Check if the URL already has a version prefix (e.g., /v1beta/)
+    if "/v1" in base or "/v2" in base:
         return f"{base}/chat/completions"
     return f"{base}/v1/chat/completions"
 
@@ -430,6 +440,7 @@ async def resolve_managed_openai_tool_calls(
     workspace_path: str | None = None,
     on_tool_event: Callable[[dict[str, Any]], None] | None = None,
     parent_signal: Any = None,
+    client: Any = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """Run the multi-round tool resolution loop.
 
@@ -442,11 +453,10 @@ async def resolve_managed_openai_tool_calls(
     """
     current_messages = list(messages)
     final_usage: dict[str, Any] | None = None
-    client = None  # Will be set on first iteration
 
     for _round in range(MAX_MANAGED_TOOL_ROUNDS):
         # Make upstream call
-        resp = await _client.request_json(
+        resp = await client.request_json(
             "POST", upstream_url, upstream_headers, {
                 "model": model,
                 "messages": current_messages,
@@ -729,6 +739,7 @@ async def handle_chat_completions(
             updated_messages, usage = await resolve_managed_openai_tool_calls(
                 messages, model, upstream_url, headers,
                 known_tools, managed_local_tool_names, client_tool_names,
+                client=client,
             )
             # Build final response
             last_msg = updated_messages[-1] if updated_messages else {}
@@ -747,7 +758,8 @@ async def handle_chat_completions(
             return resp.body if isinstance(resp.body, (dict, list)) else {"response": str(resp.body)}, None
 
 
-# ── Lazy client reference ─────────────────────────────────────────────
+# ── Shared client instance ───────────────────────────────────────────
+
 
 _client = None
 
@@ -758,3 +770,7 @@ def _get_client() -> Any:
         from app.providers.clients.openai import OpenAIClient
         _client = OpenAIClient({})
     return _client
+
+
+# Pre-initialize client on import
+_get_client()

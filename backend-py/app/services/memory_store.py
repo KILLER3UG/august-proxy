@@ -134,6 +134,36 @@ def init() -> None:
             classified_at TEXT DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            title TEXT,
+            started_at TEXT,
+            message_count INTEGER DEFAULT 0,
+            provider TEXT DEFAULT '',
+            model TEXT DEFAULT '',
+            folder_id TEXT,
+            is_archived INTEGER DEFAULT 0,
+            workspace_path TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (session_id) REFERENCES sessions(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS usage_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            model TEXT,
+            input_tokens INTEGER DEFAULT 0,
+            output_tokens INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
         CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category);
         CREATE INDEX IF NOT EXISTS idx_facts_updated ON facts(updated_at);
         CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals(session_id);

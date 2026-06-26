@@ -365,33 +365,56 @@ class BaseProviderClient:
         """Resolve the API key from config.json or environment variables.
 
         Resolution order:
-        1. ``config.json`` → ``{provider_name}.apiKey``
-        2. Environment variable derived from provider name (e.g., ``ANTHROPIC_API_KEY``)
+        1. ``config.json`` → ``{provider_name}.apiKey`` (tries display name, aliases, env var names)
+        2. Environment variable derived from provider name
+        3. Env vars from provider's ``env_vars`` config
         """
         import os
 
         from app.config import settings
 
         provider_name = self.config.get("name", "")
-        cfg = settings.config.get(provider_name, {})
-        api_key = cfg.get("apiKey")
-        if api_key:
-            return api_key
 
-        # Try common env var patterns
+        # Try config.json with various key names
+        cfg = settings.config
+        candidates = [provider_name]
+        # Add aliases
+        aliases_list = self.config.get("aliases", [])
+        if isinstance(aliases_list, list):
+            candidates.extend(aliases_list)
+        # Add env var base names
+        env_vars = self.config.get("env_vars", [])
+        for var in env_vars:
+            if var.endswith("_API_KEY"):
+                base = var.replace("_API_KEY", "").lower()
+                candidates.append(base)
+                candidates.append(base.replace("_", "-"))  # also try with dashes
+            elif var.endswith("_KEY"):
+                base = var.replace("_KEY", "").lower()
+                candidates.append(base)
+                candidates.append(base.replace("_", "-"))
+
+        for candidate in candidates:
+            if not candidate:
+                continue
+            provider_cfg = cfg.get(candidate, {})
+            if isinstance(provider_cfg, dict):
+                api_key = provider_cfg.get("apiKey")
+                if api_key:
+                    return api_key
+
+        # Try env vars
+        for var in env_vars:
+            val = os.environ.get(var)
+            if val:
+                return val
+
+        # Try standard env var patterns
         env_name = provider_name.upper().replace(" ", "_").replace("-", "_")
         for suffix in ("_API_KEY", "_KEY", "_APIKEY"):
             candidate = os.environ.get(f"{env_name}{suffix}")
             if candidate:
                 return candidate
-
-        # Try provider-specific env vars from the config
-        env_vars = self.config.get("env_vars", [])
-        for var in env_vars:
-            if var.endswith("_API_KEY") or var.endswith("_KEY"):
-                val = os.environ.get(var)
-                if val:
-                    return val
 
         return None
 
