@@ -14,12 +14,26 @@ from app.services import config_service
 router = APIRouter(prefix="/api/providers")
 
 
+# ── CamelCase alias helper ──────────────────────────────────────────
+
+
+def _to_camel(snake: str) -> str:
+    """Convert snake_case to camelCase for API compatibility."""
+    parts = snake.split("_")
+    return parts[0] + "".join(p.capitalize() for p in parts[1:])
+
+
+# ── Models ───────────────────────────────────────────────────────────
+
+
 class ProviderCreate(BaseModel):
     name: str
-    base_url: str
+    base_url: str = ""
     api_format: str = "openai-chat"
     api_key: str = ""
     enabled: bool = True
+
+    model_config = {"populate_by_name": True, "alias_generator": _to_camel}
 
 
 class ProviderUpdate(BaseModel):
@@ -28,6 +42,8 @@ class ProviderUpdate(BaseModel):
     api_format: str | None = None
     api_key: str | None = None
     enabled: bool | None = None
+
+    model_config = {"populate_by_name": True, "alias_generator": _to_camel}
 
 
 @router.get("")
@@ -149,12 +165,16 @@ class ModelCreateBody(BaseModel):
     reasoning: bool | None = None
     free: bool | None = None
 
+    model_config = {"populate_by_name": True}
+
 
 class ModelUpdateBody(BaseModel):
     name: str | None = None
     contextWindow: int | None = None
     reasoning: bool | None = None
     free: bool | None = None
+
+    model_config = {"populate_by_name": True}
 
 
 @router.post("/{provider_id}/models")
