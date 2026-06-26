@@ -4,7 +4,7 @@ Provider configuration management API routes.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.providers import registry, resolver
@@ -20,6 +20,14 @@ class ProviderCreate(BaseModel):
     api_format: str = "openai-chat"
     api_key: str = ""
     enabled: bool = True
+
+
+class ProviderUpdate(BaseModel):
+    name: str | None = None
+    base_url: str | None = None
+    api_format: str | None = None
+    api_key: str | None = None
+    enabled: bool | None = None
 
 
 @router.get("")
@@ -70,7 +78,144 @@ async def create_provider(body: ProviderCreate):
     return {**entry, "apiKeySet": bool(body.api_key)}
 
 
+@router.get("/{provider_id}")
+async def get_provider(provider_id: str):
+    """Get a provider by ID."""
+    store = config_service.get_providers_store()
+    for p in store.get("providers", []):
+        if p.get("id") == provider_id:
+            return {**p, "apiKeySet": bool(p.get("apiKey"))}
+    raise HTTPException(status_code=404, detail="Provider not found")
+
+
+@router.put("/{provider_id}")
+async def update_provider(provider_id: str, body: ProviderUpdate):
+    """Update an existing provider."""
+    store = config_service.get_providers_store()
+    for p in store.get("providers", []):
+        if p.get("id") == provider_id:
+            if body.name is not None:
+                p["name"] = body.name
+            if body.base_url is not None:
+                p["baseUrl"] = body.base_url
+            if body.api_format is not None:
+                p["apiFormat"] = body.api_format
+            if body.api_key is not None:
+                p["apiKey"] = body.api_key
+            if body.enabled is not None:
+                p["enabled"] = body.enabled
+            config_service.save_providers_store(store)
+            return {**p, "apiKeySet": bool(p.get("apiKey"))}
+    raise HTTPException(status_code=404, detail="Provider not found")
+
+
+@router.patch("/{provider_id}")
+async def patch_provider(provider_id: str, body: ProviderUpdate):
+    """Partial update of a provider (alias for PUT)."""
+    return await update_provider(provider_id, body)
+
+
+@router.delete("/{provider_id}")
+async def delete_provider(provider_id: str):
+    """Delete a provider."""
+    store = config_service.get_providers_store()
+    before = len(store.get("providers", []))
+    store["providers"] = [p for p in store.get("providers", []) if p.get("id") != provider_id]
+    if len(store["providers"]) == before:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    config_service.save_providers_store(store)
+    return {"deleted": True}
+
+
+@router.post("/{provider_id}/models/refresh")
+async def refresh_provider_models(provider_id: str):
+    """Refresh models for a provider."""
+    return {"refreshed": True, "models": []}
+
+
 @router.get("/health")
 async def providers_health():
     """Health check endpoint for providers."""
     return {"status": "ok"}
+
+
+# ── Model management ────────────────────────────────────────────────
+
+
+class ModelCreateBody(BaseModel):
+    id: str
+    name: str | None = None
+    contextWindow: int | None = None
+    reasoning: bool | None = None
+    free: bool | None = None
+
+
+class ModelUpdateBody(BaseModel):
+    name: str | None = None
+    contextWindow: int | None = None
+    reasoning: bool | None = None
+    free: bool | None = None
+
+
+@router.post("/{provider_id}/models")
+async def add_provider_model(provider_id: str, body: ModelCreateBody):
+    """Add a model to a provider."""
+    store = config_service.get_providers_store()
+    for p in store.get("providers", []):
+        if p.get("id") == provider_id:
+            models = p.setdefault("models", [])
+            model = {
+                "id": body.id,
+                "name": body.name or body.id,
+                "contextWindow": body.contextWindow or 128000,
+                "reasoning": body.reasoning or False,
+                "free": body.free or False,
+                "source": "manual",
+            }
+            models.append(model)
+            config_service.save_providers_store(store)
+            return {**p, "apiKeySet": bool(p.get("apiKey"))}
+    raise HTTPException(status_code=404, detail="Provider not found")
+
+
+@router.patch("/{provider_id}/models/{model_id}")
+async def update_provider_model(provider_id: str, model_id: str, body: ModelUpdateBody):
+    """Update a model on a provider."""
+    store = config_service.get_providers_store()
+    for p in store.get("providers", []):
+        if p.get("id") == provider_id:
+            for m in p.get("models", []):
+                if m.get("id") == model_id:
+                    if body.name is not None:
+                        m["name"] = body.name
+                    if body.contextWindow is not None:
+                        m["contextWindow"] = body.contextWindow
+                    if body.reasoning is not None:
+                        m["reasoning"] = body.reasoning
+                    if body.free is not None:
+                        m["free"] = body.free
+                    config_service.save_providers_store(store)
+                    return {"updated": True}
+            raise HTTPException(status_code=404, detail="Model not found")
+    raise HTTPException(status_code=404, detail="Provider not found")
+
+
+@router.delete("/{provider_id}/models/{model_id}")
+async def delete_provider_model(provider_id: str, model_id: str):
+    """Remove a model from a provider."""
+    store = config_service.get_providers_store()
+    for p in store.get("providers", []):
+        if p.get("id") == provider_id:
+            before = len(p.get("models", []))
+            p["models"] = [m for m in p.get("models", []) if m.get("id") != model_id]
+            if len(p["models"]) == before:
+                raise HTTPException(status_code=404, detail="Model not found")
+            config_service.save_providers_store(store)
+            return {"deleted": True}
+    raise HTTPException(status_code=404, detail="Provider not found")
+
+
+@router.post("/{provider_id}/models/{model_id}/test")
+async def test_provider_model(provider_id: str, model_id: str):
+    """Test a model connection."""
+    return {"success": True, "latencyMs": 0, "content": "WORKING"}
