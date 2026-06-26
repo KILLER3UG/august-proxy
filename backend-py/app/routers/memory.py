@@ -8,21 +8,21 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from app.lib.camel_model import CamelModel
+from pydantic import BaseModel
 
 from app.services import memory_store
 
 router = APIRouter(prefix="/api/memory")
 
 
-class MemorySave(CamelModel):
+class MemorySave(BaseModel):
     key: str
     value: Any
     category: str = "general"
     source: str = ""
 
 
-class FactSave(CamelModel):
+class FactSave(BaseModel):
     fact_key: str
     fact_value: Any
     category: str = "general"
@@ -30,18 +30,18 @@ class FactSave(CamelModel):
     confidence: float = 1.0
 
 
-class FactSearch(CamelModel):
+class FactSearch(BaseModel):
     query: str = ""
     category: str = ""
 
 
-class ProposalCreate(CamelModel):
+class ProposalCreate(BaseModel):
     session_id: str
     proposal_type: str
     content: Any
 
 
-class ProposalDecide(CamelModel):
+class ProposalDecide(BaseModel):
     status: str
     decided_by: str = ""
 

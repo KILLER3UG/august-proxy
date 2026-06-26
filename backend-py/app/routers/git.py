@@ -11,12 +11,12 @@ import os
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from app.lib.camel_model import CamelModel
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/git")
 
 
-class GitCommand(CamelModel):
+class GitCommand(BaseModel):
     repo_path: str = ""
     args: list[str] = []
 

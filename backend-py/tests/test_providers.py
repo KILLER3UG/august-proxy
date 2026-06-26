@@ -18,8 +18,8 @@ async def test_create_provider():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
             "/api/providers",
-            json={"name": "Test Provider", "base_url": "https://test.api.com/v1",
-                  "api_format": "openai-chat", "api_key": "sk-test123", "enabled": True},
+            json={"name": "Test Provider", "baseUrl": "https://test.api.com/v1",
+                  "apiFormat": "openai-chat", "apiKey": "sk-test123", "enabled": True},
         )
         assert resp.status_code == 200
         data = resp.json()

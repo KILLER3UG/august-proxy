@@ -7,14 +7,14 @@ Uses memory_store for usage event persistence.
 from __future__ import annotations
 
 from fastapi import APIRouter
-from app.lib.camel_model import CamelModel
+from pydantic import BaseModel
 
 from app.services import memory_store
 
 router = APIRouter(prefix="/api/usage")
 
 
-class UsageRecord(CamelModel):
+class UsageRecord(BaseModel):
     session_id: str
     model: str
     input_tokens: int = 0

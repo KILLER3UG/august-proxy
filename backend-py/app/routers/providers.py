@@ -1,35 +1,36 @@
 """
 Provider configuration management API routes.
+Uses camelCase throughout matching the frontend convention.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from app.providers import registry, resolver
-from app.lib.camel_model import CamelModel
 from app.services import config_service
 
 router = APIRouter(prefix="/api/providers")
 
 
-class ProviderCreate(CamelModel):
+class ProviderCreate(BaseModel):
     name: str
-    base_url: str = ""
-    api_format: str = "openai-chat"
-    api_key: str = ""
+    baseUrl: str = ""
+    apiFormat: str = "openai-chat"
+    apiKey: str = ""
     enabled: bool = True
 
 
-class ProviderUpdate(CamelModel):
+class ProviderUpdate(BaseModel):
     name: str | None = None
-    base_url: str | None = None
-    api_format: str | None = None
-    api_key: str | None = None
+    baseUrl: str | None = None
+    apiFormat: str | None = None
+    apiKey: str | None = None
     enabled: bool | None = None
 
 
-class ModelCreateBody(CamelModel):
+class ModelCreate(BaseModel):
     id: str
     name: str | None = None
     contextWindow: int | None = None
@@ -37,7 +38,7 @@ class ModelCreateBody(CamelModel):
     free: bool | None = None
 
 
-class ModelUpdateBody(CamelModel):
+class ModelUpdate(BaseModel):
     name: str | None = None
     contextWindow: int | None = None
     reasoning: bool | None = None
@@ -45,8 +46,7 @@ class ModelUpdateBody(CamelModel):
 
 
 @router.get("")
-async def list_providers():
-    """List all configured providers."""
+async def listProviders():
     store = config_service.get_providers_store()
     raw = store.get("providers", [])
     result = []
@@ -65,57 +65,51 @@ async def list_providers():
 
 
 @router.post("")
-async def create_provider(body: ProviderCreate):
-    """Add a new provider."""
+async def createProvider(body: ProviderCreate):
     import hashlib, time
-
     store = config_service.get_providers_store()
     if "providers" not in store:
         store["providers"] = []
-
     slug = body.name.lower().replace(" ", "-")[:40]
     rand = hashlib.md5(str(time.time()).encode()).hexdigest()[:6]
-    provider_id = f"{slug}-{rand}"
-
+    providerId = f"{slug}-{rand}"
     entry = {
-        "id": provider_id,
+        "id": providerId,
         "name": body.name,
-        "baseUrl": body.base_url,
-        "apiFormat": body.api_format,
-        "apiKey": body.api_key,
+        "baseUrl": body.baseUrl,
+        "apiFormat": body.apiFormat,
+        "apiKey": body.apiKey,
         "enabled": body.enabled,
         "autoFetch": False,
         "models": [],
     }
     store["providers"].append(entry)
     config_service.save_providers_store(store)
-    return {**entry, "apiKeySet": bool(body.api_key)}
+    return {**entry, "apiKeySet": bool(body.apiKey)}
 
 
-@router.get("/{provider_id}")
-async def get_provider(provider_id: str):
-    """Get a provider by ID."""
+@router.get("/{providerId}")
+async def getProvider(providerId: str):
     store = config_service.get_providers_store()
     for p in store.get("providers", []):
-        if p.get("id") == provider_id:
+        if p.get("id") == providerId:
             return {**p, "apiKeySet": bool(p.get("apiKey"))}
     raise HTTPException(status_code=404, detail="Provider not found")
 
 
-@router.put("/{provider_id}")
-async def update_provider(provider_id: str, body: ProviderUpdate):
-    """Update an existing provider."""
+@router.put("/{providerId}")
+async def updateProvider(providerId: str, body: ProviderUpdate):
     store = config_service.get_providers_store()
     for p in store.get("providers", []):
-        if p.get("id") == provider_id:
+        if p.get("id") == providerId:
             if body.name is not None:
                 p["name"] = body.name
-            if body.base_url is not None:
-                p["baseUrl"] = body.base_url
-            if body.api_format is not None:
-                p["apiFormat"] = body.api_format
-            if body.api_key is not None:
-                p["apiKey"] = body.api_key
+            if body.baseUrl is not None:
+                p["baseUrl"] = body.baseUrl
+            if body.apiFormat is not None:
+                p["apiFormat"] = body.apiFormat
+            if body.apiKey is not None:
+                p["apiKey"] = body.apiKey
             if body.enabled is not None:
                 p["enabled"] = body.enabled
             config_service.save_providers_store(store)
@@ -123,42 +117,37 @@ async def update_provider(provider_id: str, body: ProviderUpdate):
     raise HTTPException(status_code=404, detail="Provider not found")
 
 
-@router.patch("/{provider_id}")
-async def patch_provider(provider_id: str, body: ProviderUpdate):
-    """Partial update of a provider."""
-    return await update_provider(provider_id, body)
+@router.patch("/{providerId}")
+async def patchProvider(providerId: str, body: ProviderUpdate):
+    return await updateProvider(providerId, body)
 
 
-@router.delete("/{provider_id}")
-async def delete_provider(provider_id: str):
-    """Delete a provider."""
+@router.delete("/{providerId}")
+async def deleteProvider(providerId: str):
     store = config_service.get_providers_store()
     before = len(store.get("providers", []))
-    store["providers"] = [p for p in store.get("providers", []) if p.get("id") != provider_id]
+    store["providers"] = [p for p in store.get("providers", []) if p.get("id") != providerId]
     if len(store["providers"]) == before:
         raise HTTPException(status_code=404, detail="Provider not found")
     config_service.save_providers_store(store)
     return {"deleted": True}
 
 
-@router.post("/{provider_id}/models/refresh")
-async def refresh_provider_models(provider_id: str):
-    """Refresh models for a provider."""
+@router.post("/{providerId}/models/refresh")
+async def refreshModels(providerId: str):
     return {"refreshed": True, "models": []}
 
 
 @router.get("/health")
-async def providers_health():
-    """Health check endpoint for providers."""
+async def providersHealth():
     return {"status": "ok"}
 
 
-@router.post("/{provider_id}/models")
-async def add_provider_model(provider_id: str, body: ModelCreateBody):
-    """Add a model to a provider."""
+@router.post("/{providerId}/models")
+async def addModel(providerId: str, body: ModelCreate):
     store = config_service.get_providers_store()
     for p in store.get("providers", []):
-        if p.get("id") == provider_id:
+        if p.get("id") == providerId:
             models = p.setdefault("models", [])
             models.append({
                 "id": body.id,
@@ -173,14 +162,13 @@ async def add_provider_model(provider_id: str, body: ModelCreateBody):
     raise HTTPException(status_code=404, detail="Provider not found")
 
 
-@router.patch("/{provider_id}/models/{model_id}")
-async def update_provider_model(provider_id: str, model_id: str, body: ModelUpdateBody):
-    """Update a model on a provider."""
+@router.patch("/{providerId}/models/{modelId}")
+async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
     store = config_service.get_providers_store()
     for p in store.get("providers", []):
-        if p.get("id") == provider_id:
+        if p.get("id") == providerId:
             for m in p.get("models", []):
-                if m.get("id") == model_id:
+                if m.get("id") == modelId:
                     if body.name is not None:
                         m["name"] = body.name
                     if body.contextWindow is not None:
@@ -195,14 +183,13 @@ async def update_provider_model(provider_id: str, model_id: str, body: ModelUpda
     raise HTTPException(status_code=404, detail="Provider not found")
 
 
-@router.delete("/{provider_id}/models/{model_id}")
-async def delete_provider_model(provider_id: str, model_id: str):
-    """Remove a model from a provider."""
+@router.delete("/{providerId}/models/{modelId}")
+async def deleteModel(providerId: str, modelId: str):
     store = config_service.get_providers_store()
     for p in store.get("providers", []):
-        if p.get("id") == provider_id:
+        if p.get("id") == providerId:
             before = len(p.get("models", []))
-            p["models"] = [m for m in p.get("models", []) if m.get("id") != model_id]
+            p["models"] = [m for m in p.get("models", []) if m.get("id") != modelId]
             if len(p["models"]) == before:
                 raise HTTPException(status_code=404, detail="Model not found")
             config_service.save_providers_store(store)
@@ -210,7 +197,6 @@ async def delete_provider_model(provider_id: str, model_id: str):
     raise HTTPException(status_code=404, detail="Provider not found")
 
 
-@router.post("/{provider_id}/models/{model_id}/test")
-async def test_provider_model(provider_id: str, model_id: str):
-    """Test a model connection."""
+@router.post("/{providerId}/models/{modelId}/test")
+async def testModel(providerId: str, modelId: str):
     return {"success": True, "latencyMs": 0, "content": "WORKING"}

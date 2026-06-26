@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from app.lib.camel_model import CamelModel
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/cron")
 
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/cron")
 _jobs: dict[str, dict[str, Any]] = {}
 
 
-class CronJobCreate(CamelModel):
+class CronJobCreate(BaseModel):
     name: str
     schedule: str  # cron expression
     command: str

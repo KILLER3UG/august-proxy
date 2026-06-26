@@ -10,14 +10,14 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from app.lib.camel_model import CamelModel
+from pydantic import BaseModel
 
 from app.services import memory_store
 
 router = APIRouter(prefix="/api/sessions")
 
 
-class MessageCreate(CamelModel):
+class MessageCreate(BaseModel):
     role: str
     content: str
 
