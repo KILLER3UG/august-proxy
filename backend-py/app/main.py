@@ -26,6 +26,10 @@ from app.database import init_db, close_db
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.reload()
+    # Register tool handlers
+    from app.services import tool_definitions
+
+    tool_definitions.register_all()
     await init_db()
     yield
     await close_db()

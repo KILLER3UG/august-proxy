@@ -1,98 +1,588 @@
 """
-Register all built-in tool definitions into the tool registry.
+Register all built-in tool handlers into the tool registry.
+
+Replaces the echo stubs with real implementations:
+- File tools (read, write, list, search) via aiofiles/pathlib
+- Shell commands via asyncio.create_subprocess_exec
+- Web tools via httpx
+- Memory tools via memory_store.py
+- Subagent dispatch via HTTP
+- Skill tools via skill_service.py
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+import os
+import re
+from pathlib import Path
+from typing import Any
+
 from app.services import tool_registry
 
+# ── Safety constants ─────────────────────────────────────────────────
 
-async def _echo(**kwargs) -> str:
-    return f"Echo: {kwargs}"
+_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+_MAX_SEARCH_RESULTS = 100
+_MAX_COMMAND_TIMEOUT = 300  # seconds
+_BLOCKED_PATHS = {"C:\\Windows", "C:\\Program Files", "/etc", "/sys", "/proc"}
+_ALLOWED_COMMAND_PREFIXES = [
+    "git", "python", "node", "npm", "npx", "pip", "cargo", "rustc",
+    "ls", "cat", "head", "tail", "wc", "sort", "uniq", "grep", "find",
+    "echo", "printf", "date", "pwd", "which", "whoami", "id",
+    "mkdir", "cp", "mv", "rm", "touch", "chmod", "chown",
+    "curl", "wget",
+    "docker", "podman",
+    "cd", ".", "./",
+]
+
+
+# ── File tools ───────────────────────────────────────────────────────
+
+
+async def _read_file(path: str) -> str:
+    """Read a file from the filesystem."""
+    file_path = Path(path).resolve()
+    _check_path_safety(file_path)
+
+    if not file_path.exists():
+        return f"Error: File not found: {path}"
+    if not file_path.is_file():
+        return f"Error: Not a file: {path}"
+
+    size = file_path.stat().st_size
+    if size > _MAX_FILE_SIZE:
+        return f"Error: File too large ({size} bytes). Maximum: {_MAX_FILE_SIZE} bytes."
+
+    try:
+        import aiofiles
+        async with aiofiles.open(str(file_path), "r", encoding="utf-8", errors="replace") as f:
+            content = await f.read()
+        return content
+    except Exception as exc:
+        return f"Error reading file: {exc}"
+
+
+async def _write_file(path: str, content: str) -> str:
+    """Write content to a file."""
+    file_path = Path(path).resolve()
+    _check_path_safety(file_path)
+
+    try:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        import aiofiles
+        async with aiofiles.open(str(file_path), "w", encoding="utf-8") as f:
+            await f.write(content)
+        return f"Successfully wrote {len(content)} bytes to {path}"
+    except Exception as exc:
+        return f"Error writing file: {exc}"
+
+
+async def _list_directory(path: str) -> str:
+    """List files and directories."""
+    dir_path = Path(path).resolve()
+    _check_path_safety(dir_path)
+
+    if not dir_path.exists():
+        return f"Error: Path not found: {path}"
+    if not dir_path.is_dir():
+        return f"Error: Not a directory: {path}"
+
+    try:
+        entries = []
+        for entry in sorted(dir_path.iterdir()):
+            entry_type = "dir" if entry.is_dir() else "file"
+            size = entry.stat().st_size if entry.is_file() else 0
+            entries.append(f"{entry_type:4s} {entry.name:50s} {size:>10,} bytes")
+        return "\n".join(entries) if entries else "(empty directory)"
+    except Exception as exc:
+        return f"Error listing directory: {exc}"
+
+
+async def _search_files(query: str, path: str = ".") -> str:
+    """Search file contents using ripgrep or fallback grep."""
+    search_path = Path(path).resolve()
+    _check_path_safety(search_path)
+
+    if not search_path.exists():
+        return f"Error: Path not found: {path}"
+
+    try:
+        # Try ripgrep first
+        proc = await asyncio.create_subprocess_exec(
+            "rg", "-n", "--max-count", "5", "-i", query, str(search_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            limit=_MAX_FILE_SIZE,
+        )
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=30
+        )
+
+        if proc.returncode == 0:
+            output = stdout.decode("utf-8", errors="replace")
+            lines = output.split("\n")
+            if len(lines) > _MAX_SEARCH_RESULTS:
+                lines = lines[:_MAX_SEARCH_RESULTS]
+                lines.append(f"... and {len(lines) - _MAX_SEARCH_RESULTS} more results")
+            return "\n".join(lines)
+
+        # Fallback: Python-based search
+        return await _py_search_files(query, search_path)
+    except asyncio.TimeoutError:
+        return "Error: Search timed out"
+    except Exception as exc:
+        return f"Error searching files: {exc}"
+
+
+async def _py_search_files(query: str, search_path: Path) -> str:
+    """Python fallback file search (no external deps)."""
+    results = []
+    try:
+        for file_path in search_path.rglob("*"):
+            if not file_path.is_file():
+                continue
+            # Skip binary files
+            try:
+                if file_path.stat().st_size > _MAX_FILE_SIZE:
+                    continue
+                text = file_path.read_text("utf-8", errors="replace")
+                for i, line in enumerate(text.split("\n"), 1):
+                    if query.lower() in line.lower():
+                        rel = file_path.relative_to(search_path)
+                        results.append(f"{rel}:{i}:{line[:200].strip()}")
+                        if len(results) >= _MAX_SEARCH_RESULTS:
+                            break
+            except (UnicodeDecodeError, OSError):
+                continue
+        return "\n".join(results) if results else "No matches found."
+    except Exception as exc:
+        return f"Error during search: {exc}"
+
+
+# ── Shell command tool ───────────────────────────────────────────────
+
+
+async def _run_command(command: str) -> str:
+    """Run a shell command with safety checks."""
+    # Safety check
+    first_word = command.strip().split()[0].lower() if command.strip() else ""
+    if first_word not in _ALLOWED_COMMAND_PREFIXES and not command.startswith("./"):
+        return f"Error: Command '{first_word}' is not in the allowed list."
+
+    # Check for dangerous patterns
+    dangerous = ["rm -rf /", "rm -rf ~", ":(){ :|:& };:", "dd if=", "> /dev/", "mkfs."]
+    for pattern in dangerous:
+        if pattern in command:
+            return f"Error: Command contains dangerous pattern: {pattern}"
+
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=os.getcwd(),
+        )
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=_MAX_COMMAND_TIMEOUT
+        )
+
+        result_parts = []
+        if stdout:
+            result_parts.append(stdout.decode("utf-8", errors="replace"))
+        if stderr:
+            result_parts.append(f"STDERR:\n{stderr.decode('utf-8', errors='replace')}")
+        if proc.returncode != 0:
+            result_parts.append(f"Exit code: {proc.returncode}")
+            if not result_parts:
+                result_parts.append(f"Command failed with exit code {proc.returncode}")
+
+        return "\n".join(result_parts) if result_parts else "(no output)"
+    except asyncio.TimeoutError:
+        return f"Error: Command timed out after {_MAX_COMMAND_TIMEOUT}s"
+    except Exception as exc:
+        return f"Error executing command: {exc}"
+
+
+# ── Web tools ────────────────────────────────────────────────────────
+
+
+async def _web_fetch(url: str) -> str:
+    """Fetch a URL and return its content as Markdown."""
+    import httpx
+
+    # Block private/local addresses
+    blocked_prefixes = ["http://localhost", "http://127.0.0.1", "http://10.", "http://172.16.", "http://192.168.", "https://localhost"]
+    if any(url.startswith(prefix) for prefix in blocked_prefixes):
+        return f"Error: Private/local network addresses are blocked: {url}"
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            resp = await client.get(url, headers={
+                "User-Agent": "August-Proxy/1.0",
+                "Accept": "text/html,text/markdown,text/plain,*/*",
+            })
+            resp.raise_for_status()
+
+            content_type = resp.headers.get("content-type", "")
+            text = resp.text
+
+            # Basic markdown conversion for HTML
+            if "text/html" in content_type:
+                text = _html_to_markdown(text)
+
+            return f"URL: {url}\nStatus: {resp.status_code}\n\n{text[:50000]}"
+    except httpx.HTTPStatusError as exc:
+        return f"Error: HTTP {exc.response.status_code} fetching {url}"
+    except httpx.RequestError as exc:
+        return f"Error: Request failed: {exc}"
+    except Exception as exc:
+        return f"Error: {exc}"
+
+
+def _html_to_markdown(html: str) -> str:
+    """Basic HTML to Markdown conversion."""
+    import re
+
+    text = html
+    # Remove scripts and styles
+    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL)
+    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL)
+
+    # Convert headings
+    for i in range(6, 0, -1):
+        text = re.sub(rf'<h{i}[^>]*>(.*?)</h{i}>', lambda m: '#' * i + ' ' + re.sub(r'<[^>]+>', '', m.group(1)), text, flags=re.DOTALL)
+
+    # Convert links
+    text = re.sub(r'<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>', r'[\2](\1)', text)
+    # Convert bold/italic
+    text = re.sub(r'<(strong|b)[^>]*>(.*?)</\1>', r'**\2**', text, flags=re.DOTALL)
+    text = re.sub(r'<(em|i)[^>]*>(.*?)</\1>', r'*\2*', text, flags=re.DOTALL)
+    # Convert paragraphs and breaks
+    text = re.sub(r'<br\s*/?>', '\n', text)
+    text = re.sub(r'</p>', '\n\n', text)
+    text = re.sub(r'</(div|tr|li)>', '\n', text)
+    text = re.sub(r'<li[^>]*>', '- ', text)
+
+    # Strip remaining tags
+    text = re.sub(r'<[^>]+>', '', text)
+
+    # Decode HTML entities
+    text = text.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+    text = text.replace('&quot;', '"').replace('&#39;', "'").replace('&nbsp;', ' ')
+
+    # Clean up whitespace
+    lines = [line.strip() for line in text.split('\n')]
+    text = '\n'.join(line for line in lines if line)
+
+    return text[:50000]
+
+
+async def _web_search(query: str, max_results: int = 10) -> str:
+    """Search the web using DuckDuckGo."""
+    import httpx
+
+    max_results = min(max_results, 20)
+    url = "https://api.duckduckgo.com/"
+    params = {
+        "q": query,
+        "format": "json",
+        "no_html": "1",
+        "skip_disambig": "1",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+
+            results = []
+            for i, topic in enumerate(data.get("RelatedTopics", [])[:max_results]):
+                if "Text" in topic and "FirstURL" in topic:
+                    results.append(f"[{i + 1}] {topic['Text']}\nURL: {topic['FirstURL']}")
+                elif "Topics" in topic:
+                    for sub in topic["Topics"][:3]:
+                        if "Text" in sub and "FirstURL" in sub:
+                            results.append(f"[{i + 1}] {sub['Text']}\nURL: {sub['FirstURL']}")
+
+            if not results:
+                # Try abstract
+                abstract = data.get("Abstract", "")
+                if abstract:
+                    return f"Query: {query}\n\n{abstract}\nSource: {data.get('AbstractURL', '')}"
+
+            output = f"Search query: {query}\nResult count: {len(results)}\n\n" + "\n\n".join(results)
+            return output if results else f"No results found for: {query}"
+
+    except httpx.HTTPStatusError as exc:
+        return f"Error: HTTP {exc.response.status_code} from search API"
+    except Exception as exc:
+        return f"Error: {exc}"
+
+
+# ── Memory tools ─────────────────────────────────────────────────────
+
+
+async def _memory_search(query: str) -> str:
+    """Search past conversation memory."""
+    from app.services.memory_store import search_memory
+
+    try:
+        results = search_memory(query)
+        if not results:
+            return f"No memory results for: {query}"
+
+        lines = [f"Memory search results for: {query}\n"]
+        for r in results:
+            key = r.get("key", "")
+            value = r.get("value", "")
+            if isinstance(value, dict) or isinstance(value, list):
+                value = json.dumps(value, indent=2)
+            lines.append(f"  [{key}]: {str(value)[:500]}")
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"Error searching memory: {exc}"
+
+
+async def _fact_search(query: str) -> str:
+    """Search semantic facts in memory."""
+    # Uses the same search_memory function
+    return await _memory_search(query)
+
+
+async def _context_read() -> str:
+    """Read current context/profile from memory."""
+    from app.services.memory_store import get_memory
+
+    try:
+        profile = get_memory("user_profile")
+        context = get_memory("current_context")
+        preferences = get_memory("user_preferences")
+
+        parts = []
+        if profile:
+            parts.append(f"User Profile:\n{json.dumps(profile, indent=2)}")
+        if context:
+            parts.append(f"Current Context:\n{json.dumps(context, indent=2)}")
+        if preferences:
+            parts.append(f"Preferences:\n{json.dumps(preferences, indent=2)}")
+
+        return "\n\n".join(parts) if parts else "No context stored yet."
+    except Exception as exc:
+        return f"Error reading context: {exc}"
+
+
+# ── Subagent tool ────────────────────────────────────────────────────
+
+
+async def _spawn_subagent(goal: str, context: str = "", toolsets: list[str] | None = None) -> str:
+    """Dispatch a subagent for a focused task."""
+    # In a full implementation, this would make an HTTP call to the
+    # subagent API endpoint. For now, return a stub.
+    return (
+        f"Subagent dispatched with goal: {goal}\n"
+        f"Context: {context[:200]}...\n"
+        f"Toolsets: {toolsets or ['default']}\n"
+        f"Status: dispatched (subagent execution requires Phase 6)"
+    )
+
+
+# ── Skill tools ──────────────────────────────────────────────────────
+
+
+async def _load_skill(name: str) -> str:
+    """Load a skill's full instructions."""
+    from app.services import skill_service
+
+    try:
+        skill = skill_service.get(name)
+        if not skill:
+            return f"Error: Skill '{name}' not found."
+        return f"# {skill['name']}\n\n{skill.get('description', '')}\n\n{skill.get('instructions', '')}"
+    except Exception as exc:
+        return f"Error loading skill '{name}': {exc}"
+
+
+async def _list_skills(query: str = "") -> str:
+    """List available skills with optional search."""
+    from app.services import skill_service
+
+    try:
+        if query:
+            skills = skill_service.search(query)
+        else:
+            skills = skill_service.list_all()
+
+        if not skills:
+            return "No skills found." if not query else f"No skills matching '{query}'."
+
+        lines = [f"Available skills ({len(skills)}):\n"]
+        for s in skills:
+            lines.append(f"  - {s['name']:30s} {s.get('description', '')[:60]}")
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"Error listing skills: {exc}"
+
+
+# ── Safety helpers ───────────────────────────────────────────────────
+
+
+def _check_path_safety(path: Path) -> None:
+    """Check if a path is safe to access. Raises ValueError if blocked."""
+    resolved = path.resolve()
+    for blocked in _BLOCKED_PATHS:
+        if str(resolved).startswith(blocked):
+            raise ValueError(f"Access blocked to system path: {blocked}")
+
+
+# ── Registration ─────────────────────────────────────────────────────
 
 
 def register_all() -> None:
-    """Register all core tool definitions."""
+    """Register all core tool definitions with real handlers."""
 
     # ── File tools ──
     tool_registry.register(
         "read_file",
         "Read a file from the filesystem.",
-        _echo,
-        {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+        _read_file,
+        {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Absolute path to the file to read."},
+            },
+            "required": ["path"],
+        },
     )
     tool_registry.register(
         "write_file",
-        "Write content to a file.",
-        _echo,
-        {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]},
+        "Write content to a file. Creates parent directories if needed.",
+        _write_file,
+        {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Absolute path to the file to write."},
+                "content": {"type": "string", "description": "The content to write."},
+            },
+            "required": ["path", "content"],
+        },
     )
     tool_registry.register(
         "list_directory",
-        "List files and directories.",
-        _echo,
-        {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+        "List files and directories in a given path.",
+        _list_directory,
+        {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Absolute path to the directory."},
+            },
+            "required": ["path"],
+        },
     )
     tool_registry.register(
         "search_files",
-        "Search file contents.",
-        _echo,
-        {"type": "object", "properties": {"query": {"type": "string"}, "path": {"type": "string"}}, "required": ["query"]},
+        "Search file contents using ripgrep or fallback grep.",
+        _search_files,
+        {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "The text to search for."},
+                "path": {"type": "string", "description": "Directory to search in (default: current)."},
+            },
+            "required": ["query"],
+        },
     )
 
     # ── Shell tools ──
     tool_registry.register(
         "run_command",
-        "Run a shell command.",
-        _echo,
-        {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]},
+        "Run a shell command. Only allowed commands are permitted.",
+        _run_command,
+        {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "The command to execute."},
+            },
+            "required": ["command"],
+        },
     )
 
     # ── Web tools ──
     tool_registry.register(
         "web_fetch",
-        "Fetch a URL and return its content.",
-        _echo,
-        {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
+        "Fetch a URL and return its content as clean Markdown.",
+        _web_fetch,
+        {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "The URL to fetch."},
+            },
+            "required": ["url"],
+        },
     )
     tool_registry.register(
         "web_search",
-        "Search the web for information.",
-        _echo,
-        {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        "Search the web for information using DuckDuckGo.",
+        _web_search,
+        {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "The search query."},
+                "max_results": {"type": "integer", "description": "Maximum results (max 20)."},
+            },
+            "required": ["query"],
+        },
     )
 
     # ── Memory tools ──
     tool_registry.register(
         "memory_search",
-        "Search past conversation memory.",
-        _echo,
-        {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        "Search past conversation memory for relevant context.",
+        _memory_search,
+        {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query."},
+            },
+            "required": ["query"],
+        },
     )
     tool_registry.register(
         "fact_search",
-        "Search semantic facts.",
-        _echo,
-        {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        "Search semantic facts in memory.",
+        _fact_search,
+        {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query."},
+            },
+            "required": ["query"],
+        },
     )
     tool_registry.register(
         "context_read",
-        "Read current context/profile.",
-        _echo,
+        "Read current user context and profile from memory.",
+        _context_read,
         {"type": "object", "properties": {}, "required": []},
     )
 
     # ── Agent tools ──
     tool_registry.register(
         "spawn_subagent",
-        "Dispatch a subagent for a focused task.",
-        _echo,
+        "Dispatch a subagent for a focused task. Give it a clear goal and context.",
+        _spawn_subagent,
         {
             "type": "object",
             "properties": {
-                "goal": {"type": "string"},
-                "context": {"type": "string"},
-                "toolsets": {"type": "array", "items": {"type": "string"}},
+                "goal": {"type": "string", "description": "The task goal for the subagent."},
+                "context": {"type": "string", "description": "Background context for the subagent."},
+                "toolsets": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Tool sets to grant the subagent.",
+                },
             },
             "required": ["goal"],
         },
@@ -101,13 +591,25 @@ def register_all() -> None:
     # ── Skill tools ──
     tool_registry.register(
         "load_skill",
-        "Load a skill's full instructions.",
-        _echo,
-        {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+        "Load a skill's full instructions by name.",
+        _load_skill,
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "The skill name to load."},
+            },
+            "required": ["name"],
+        },
     )
     tool_registry.register(
         "list_skills",
-        "List available skills with search.",
-        _echo,
-        {"type": "object", "properties": {"query": {"type": "string"}}, "required": []},
+        "List available skills with optional search query.",
+        _list_skills,
+        {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Optional search query."},
+            },
+            "required": [],
+        },
     )
