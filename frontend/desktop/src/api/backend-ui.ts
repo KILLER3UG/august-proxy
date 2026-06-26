@@ -484,8 +484,88 @@ export interface AugustSnapshot {
 }
 
 export function getAugustSnapshot(): Promise<AugustSnapshot> {
-  return api.get<AugustSnapshot>('/ui/august/snapshot');
+  return api.get<AugustSnapshot>('/api/manage/snapshot').then(r => r.data ?? r);
 }
+
+/* ── Management API (RESTful) ──────────────────────────────────────────── */
+// Modern REST endpoints replacing the /ui/august/* action-dispatch pattern.
+// Response envelope: { data: T, error: null | { code, message }, meta: { total } }
+
+// Sessions
+export function listManageSessions(): Promise<{ data: unknown[] }> {
+  return api.get('/api/manage/sessions');
+}
+export function createManageSession(params?: { provider?: string; agentId?: string; guardMode?: string }): Promise<{ data: unknown }> {
+  return api.post('/api/manage/sessions', params || {});
+}
+export function getManageSession(id: string): Promise<{ data: unknown }> {
+  return api.get(`/api/manage/sessions/${encodeURIComponent(id)}`);
+}
+export function updateManageSession(id: string, updates: { title?: string; provider?: string; isArchived?: boolean }): Promise<{ data: unknown }> {
+  return api.patch(`/api/manage/sessions/${encodeURIComponent(id)}`, updates);
+}
+export function deleteManageSession(id: string): Promise<{ data: { deleted: boolean } }> {
+  return api.delete(`/api/manage/sessions/${encodeURIComponent(id)}`);
+}
+
+// Providers
+export function listManageProviders(): Promise<{ data: unknown[] }> {
+  return api.get('/api/manage/providers');
+}
+export function createManageProvider(body: { name: string; baseUrl: string; apiFormat?: string; apiKey?: string; enabled?: boolean }): Promise<{ data: unknown }> {
+  return api.post('/api/manage/providers', body);
+}
+export function updateManageProvider(id: string, body: { name?: string; baseUrl?: string; apiFormat?: string; apiKey?: string; enabled?: boolean }): Promise<{ data: unknown }> {
+  return api.put(`/api/manage/providers/${encodeURIComponent(id)}`, body);
+}
+export function deleteManageProvider(id: string): Promise<{ data: { deleted: boolean } }> {
+  return api.delete(`/api/manage/providers/${encodeURIComponent(id)}`);
+}
+
+// Agents
+export function listManageAgents(): Promise<{ data: unknown[] }> {
+  return api.get('/api/manage/agents');
+}
+export function createManageAgent(body: { name: string; parentId?: string; permissions?: string[]; toolsets?: string[]; model?: string; provider?: string }): Promise<{ data: unknown }> {
+  return api.post('/api/manage/agents', body);
+}
+export function deleteManageAgent(id: string): Promise<{ data: { deleted: boolean } }> {
+  return api.delete(`/api/manage/agents/${encodeURIComponent(id)}`);
+}
+
+// Aliases
+export function listManageAliases(): Promise<{ data: Array<{ alias: string; targetModel: string }> }> {
+  return api.get('/api/manage/aliases');
+}
+export function createManageAlias(body: { alias: string; targetModel: string; targetProvider?: string }): Promise<{ data: unknown }> {
+  return api.post('/api/manage/aliases', body);
+}
+export function deleteManageAlias(alias: string): Promise<{ data: { deleted: boolean } }> {
+  return api.delete(`/api/manage/aliases/${encodeURIComponent(alias)}`);
+}
+
+// Memory
+export function listManageMemory(category?: string): Promise<{ data: unknown[] }> {
+  return api.get(`/api/manage/memory${category ? `?category=${encodeURIComponent(category)}` : ''}`);
+}
+export function createManageMemoryFact(body: { key: string; value: unknown; category?: string }): Promise<{ data: unknown }> {
+  return api.post('/api/manage/memory', body);
+}
+export function deleteManageMemoryFact(key: string): Promise<{ data: { deleted: boolean } }> {
+  return api.delete(`/api/manage/memory/${encodeURIComponent(key)}`);
+}
+
+// Settings
+export function updateManageSettings(updates: Record<string, unknown>): Promise<{ data: { updated: string[] } }> {
+  return api.put('/api/manage/settings', { updates });
+}
+
+// Snapshot
+export function getManageSnapshot(): Promise<{ data: unknown }> {
+  return api.get('/api/manage/snapshot');
+}
+
+/* ── Legacy /ui/august/* wrappers (deprecated, kept for backward compat) ── */
 
 export function manageAugustSessions(payload: {
   action: 'list' | 'create' | 'update' | 'rename' | 'archive' | 'restore' | 'delete';

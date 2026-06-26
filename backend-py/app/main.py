@@ -71,7 +71,7 @@ from app.routers import cron as cron_routes
 from app.routers import git as git_routes
 from app.routers import terminal as terminal_routes
 from app.routers import ui_terminal as ui_terminal_routes
-from app.routers import ui_august as ui_august_routes
+from app.routers import manage as manage_routes
 
 app.include_router(config_routes.router)
 app.include_router(providers_routes.router)
@@ -89,7 +89,7 @@ app.include_router(cron_routes.router)
 app.include_router(git_routes.router)
 app.include_router(terminal_routes.router)
 app.include_router(ui_terminal_routes.router)
-app.include_router(ui_august_routes.router)
+app.include_router(manage_routes.router)
 
 
 # ── Static files (SPA) ────────────────────────────────────────────────
