@@ -13,7 +13,7 @@ async def client():
 
 @pytest.mark.asyncio
 async def test_health(client):
-    resp = await client.get("/ui/health")
+    resp = await client.get("/api/health")
     assert resp.status_code == 200
     assert resp.json()["status"] == "ok"
 
@@ -44,7 +44,7 @@ async def test_v1_models(client):
 
 @pytest.mark.asyncio
 async def test_skills(client):
-    resp = await client.get("/ui/skills")
+    resp = await client.get("/api/skills")
     assert resp.status_code == 200
     data = resp.json()
     assert "skills" in data
@@ -52,7 +52,7 @@ async def test_skills(client):
 
 @pytest.mark.asyncio
 async def test_workbench_sessions(client):
-    resp = await client.get("/ui/workbench/sessions")
+    resp = await client.get("/api/workbench/sessions")
     assert resp.status_code == 200
     data = resp.json()
     assert isinstance(data, list)
@@ -60,7 +60,7 @@ async def test_workbench_sessions(client):
 
 @pytest.mark.asyncio
 async def test_workbench_activity(client):
-    resp = await client.get("/ui/workbench/activity")
+    resp = await client.get("/api/workbench/activity")
     assert resp.status_code == 200
     data = resp.json()
     assert "sessions" in data
@@ -68,7 +68,7 @@ async def test_workbench_activity(client):
 
 @pytest.mark.asyncio
 async def test_workbench_capabilities(client):
-    resp = await client.get("/ui/workbench/capabilities")
+    resp = await client.get("/api/workbench/capabilities")
     assert resp.status_code == 200
     data = resp.json()
     assert "workbench_tools" in data

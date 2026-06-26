@@ -18,7 +18,7 @@ from fastapi.responses import StreamingResponse
 from app.services import event_log
 from app.services.workbench import workbench as wb
 
-router = APIRouter(prefix="/ui/workbench")
+router = APIRouter(prefix="/api/workbench")
 
 
 # ── Session management ───────────────────────────────────────────────

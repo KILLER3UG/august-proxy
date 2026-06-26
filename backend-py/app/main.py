@@ -70,7 +70,7 @@ from app.routers import mcp as mcp_routes
 from app.routers import cron as cron_routes
 from app.routers import git as git_routes
 from app.routers import terminal as terminal_routes
-from app.routers import ui_terminal as ui_terminal_routes
+from app.routers import terminal_routes as terminal_ws_routes
 from app.routers import manage as manage_routes
 
 app.include_router(config_routes.router)
@@ -88,7 +88,7 @@ app.include_router(mcp_routes.router)
 app.include_router(cron_routes.router)
 app.include_router(git_routes.router)
 app.include_router(terminal_routes.router)
-app.include_router(ui_terminal_routes.router)
+app.include_router(terminal_ws_routes.router)
 app.include_router(manage_routes.router)
 
 
@@ -112,7 +112,7 @@ if _WEB_DIST.is_dir():
 # ── Health ────────────────────────────────────────────────────────────
 
 
-@app.get("/ui/health")
+@app.get("/api/health")
 async def health():
     return {"status": "ok", "version": "0.1.0", "python": True}
 

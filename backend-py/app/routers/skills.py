@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query
 
 from app.services import skill_service
 
-router = APIRouter(prefix="/ui/skills")
+router = APIRouter(prefix="/api/skills")
 
 
 @router.get("")

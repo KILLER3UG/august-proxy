@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from app.services.workbench import terminal_service
 
-router = APIRouter(prefix="/ui/terminal")
+router = APIRouter(prefix="/api/terminal")
 
 
 class CreateSessionBody(BaseModel):

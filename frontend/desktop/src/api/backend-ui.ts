@@ -254,27 +254,27 @@ export interface HostAgentStatus {
 export type Period = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'year';
 
 export function getRequests(period: Period = 'all'): Promise<RequestsResponse> {
-  return api.get<RequestsResponse>(`/ui/requests?period=${period}`);
+  return api.get<RequestsResponse>(`/api/requests?period=${period}`);
 }
 
 export function getStats(period: Period = 'all'): Promise<StatsResponse> {
-  return api.get<StatsResponse>(`/ui/stats?period=${period}`);
+  return api.get<StatsResponse>(`/api/stats?period=${period}`);
 }
 
 export function getActivity(): Promise<ActivityEntry[]> {
-  return api.get<ActivityEntry[]>('/ui/activity');
+  return api.get<ActivityEntry[]>('/api/activity');
 }
 
 export function getRequestDetails(period: Period = 'all'): Promise<RequestDetailEntry[]> {
-  return api.get<RequestDetailEntry[]>(`/ui/details?period=${period}`);
+  return api.get<RequestDetailEntry[]>(`/api/details?period=${period}`);
 }
 
 export function getRequestDetail(reqId: string): Promise<RequestDetailEntry | null> {
-  return api.get<RequestDetailEntry | null>(`/ui/detail/${encodeURIComponent(reqId)}`);
+  return api.get<RequestDetailEntry | null>(`/api/detail/${encodeURIComponent(reqId)}`);
 }
 
 export function getConversations(period: Period = 'all'): Promise<ConversationsResponse> {
-  return api.get<ConversationsResponse>(`/ui/conversations?period=${period}`);
+  return api.get<ConversationsResponse>(`/api/conversations?period=${period}`);
 }
 
 export function getSessions(params?: { status?: string; agent_type?: string; limit?: number; order?: 'newest' | 'oldest' }): Promise<SessionsResponse> {
@@ -283,78 +283,78 @@ export function getSessions(params?: { status?: string; agent_type?: string; lim
   if (params?.agent_type) qs.set('agent_type', params.agent_type);
   qs.set('limit', String(params?.limit ?? 50));
   qs.set('order', params?.order ?? 'newest');
-  return api.get<SessionsResponse>(`/ui/sessions?${qs.toString()}`);
+  return api.get<SessionsResponse>(`/api/sessions?${qs.toString()}`);
 }
 
 export function getAgents(): Promise<{ agents: AgentEntry[] }> {
-  return api.get<{ agents: AgentEntry[] }>('/ui/agents');
+  return api.get<{ agents: AgentEntry[] }>('/api/agents');
 }
 
 export function getHostAgentStatus(): Promise<HostAgentStatus> {
-  return api.get<HostAgentStatus>('/ui/host-agent/status');
+  return api.get<HostAgentStatus>('/api/host-agent/status');
 }
 
 /* ── Automations ── */
 export function getAutomations(): Promise<AutomationListResponse> {
-  return api.get<AutomationListResponse>('/ui/automations');
+  return api.get<AutomationListResponse>('/api/automations');
 }
 
 export function runAutomation(id: string, approved = false): Promise<unknown> {
-  return api.post('/ui/automations/run', { id, approved });
+  return api.post('/api/automations/run', { id, approved });
 }
 
 export function deleteAutomation(id: string): Promise<{ deleted: boolean }> {
-  return api.delete<{ deleted: boolean }>(`/ui/automations/${encodeURIComponent(id)}`);
+  return api.delete<{ deleted: boolean }>(`/api/automations/${encodeURIComponent(id)}`);
 }
 
 /* ── Preview ── */
 export function getPreviewSessions(): Promise<PreviewSessionsResponse> {
-  return api.get<PreviewSessionsResponse>('/ui/preview/sessions');
+  return api.get<PreviewSessionsResponse>('/api/preview/sessions');
 }
 
 export function startPreviewSession(params: { command: string; cwd?: string; title?: string; approved?: boolean }): Promise<PreviewSession | { status: 'approval_required'; requestId: string; reason: string }> {
-  return api.post('/ui/preview/sessions', params);
+  return api.post('/api/preview/sessions', params);
 }
 
 export function getPreviewSession(id: string): Promise<{ log: string } & PreviewSession> {
-  return api.get<{ log: string } & PreviewSession>(`/ui/preview/session/${encodeURIComponent(id)}`);
+  return api.get<{ log: string } & PreviewSession>(`/api/preview/session/${encodeURIComponent(id)}`);
 }
 
 export function stopPreviewSession(id: string): Promise<{ deleted: boolean }> {
-  return api.delete(`/ui/preview/session/${encodeURIComponent(id)}`);
+  return api.delete(`/api/preview/session/${encodeURIComponent(id)}`);
 }
 
 export function approvePreviewRequest(requestId: string, approve = true): Promise<unknown> {
-  return api.post('/ui/preview/approve', { requestId, approve });
+  return api.post('/api/preview/approve', { requestId, approve });
 }
 
 /* ── Terminal ── */
 export function getTerminalSessions(): Promise<TerminalSessionsResponse> {
-  return api.get<TerminalSessionsResponse>('/ui/terminal/sessions');
+  return api.get<TerminalSessionsResponse>('/api/terminal/sessions');
 }
 
 export function getTerminalBuffer(sessionId: string): Promise<{ buffer: string } & TerminalSession> {
-  return api.get<{ buffer: string } & TerminalSession>(`/ui/terminal/buffer?id=${encodeURIComponent(sessionId)}`);
+  return api.get<{ buffer: string } & TerminalSession>(`/api/terminal/buffer?id=${encodeURIComponent(sessionId)}`);
 }
 
 export function createTerminalSession(params?: { cwd?: string; title?: string }): Promise<TerminalSession> {
-  return api.post<TerminalSession>('/ui/terminal/sessions', params || {});
+  return api.post<TerminalSession>('/api/terminal/sessions', params || {});
 }
 
 export function submitTerminalCommand(sessionId: string, command: string): Promise<unknown> {
-  return api.post('/ui/terminal/command', { sessionId, command });
+  return api.post('/api/terminal/command', { sessionId, command });
 }
 
 export function resizeTerminalSession(sessionId: string, cols: number, rows: number): Promise<unknown> {
-  return api.post('/ui/terminal/resize', { sessionId, cols, rows });
+  return api.post('/api/terminal/resize', { sessionId, cols, rows });
 }
 
 export function approveTerminalRequest(requestId: string, approve = true): Promise<unknown> {
-  return api.post('/ui/terminal/approve', { requestId, approve });
+  return api.post('/api/terminal/approve', { requestId, approve });
 }
 
 export function deleteTerminalSession(id: string): Promise<unknown> {
-  return api.delete(`/ui/terminal/sessions/${encodeURIComponent(id)}`);
+  return api.delete(`/api/terminal/sessions/${encodeURIComponent(id)}`);
 }
 
 /* ── Models ── */
@@ -364,19 +364,19 @@ export function getModelCatalog(filter?: { provider?: string; capability?: strin
   if (filter?.capability) qs.set('capability', filter.capability);
   if (filter?.q) qs.set('q', filter.q);
   const s = qs.toString();
-  return api.get(`/ui/models/catalog${s ? `?${s}` : ''}`);
+  return api.get(`/api/models/catalog${s ? `?${s}` : ''}`);
 }
 
 export function getModelCapabilities(): Promise<{ capabilities: string[] }> {
-  return api.get<{ capabilities: string[] }>('/ui/models/capabilities');
+  return api.get<{ capabilities: string[] }>('/api/models/capabilities');
 }
 
 export function getModelAliases(): Promise<{ aliases: ModelAlias[] }> {
-  return api.get<{ aliases: ModelAlias[] }>('/ui/models/aliases');
+  return api.get<{ aliases: ModelAlias[] }>('/api/models/aliases');
 }
 
 export function estimateModelCost(modelId: string, inputTokens: number, outputTokens: number): Promise<ModelCostEstimate> {
-  return api.post<ModelCostEstimate>('/ui/models/estimate-cost', { modelId, inputTokens, outputTokens });
+  return api.post<ModelCostEstimate>('/api/models/estimate-cost', { modelId, inputTokens, outputTokens });
 }
 
 /* ── Aggregated models (/api/models — all configured providers) ── */
@@ -553,7 +553,7 @@ export function getManageSnapshot(): Promise<unknown> {
   return api.get('/api/manage/snapshot');
 }
 
-/* ── Legacy /ui/august/* wrappers (deprecated, kept for backward compat) ── */
+/* ── Legacy /api/august/* wrappers (deprecated, kept for backward compat) ── */
 
 export function manageAugustSessions(payload: {
   action: 'list' | 'create' | 'update' | 'rename' | 'archive' | 'restore' | 'delete';
@@ -561,21 +561,21 @@ export function manageAugustSessions(payload: {
   title?: string;
   updates?: Record<string, unknown>;
 }): Promise<{ ok: boolean; session?: unknown; sessions?: unknown[] }> {
-  return api.post('/ui/august/sessions/manage', payload);
+  return api.post('/api/august/sessions/manage', payload);
 }
 
 export function updateAugustSetting(payload: {
   key_path: string;
   value: unknown;
 }): Promise<{ ok: boolean; keyPath?: string; value?: unknown; rollbackId?: string }> {
-  return api.post('/ui/august/settings/update', payload);
+  return api.post('/api/august/settings/update', payload);
 }
 
 export function selectAugustModel(payload: {
   model: string;
   provider?: string;
 }): Promise<{ ok: boolean; profile?: string; model?: string; provider?: string }> {
-  return api.post('/ui/august/models/select', payload);
+  return api.post('/api/august/models/select', payload);
 }
 
 export function manageAugustProviders(payload: {
@@ -583,7 +583,7 @@ export function manageAugustProviders(payload: {
   provider?: Record<string, unknown>;
   id?: string;
 }): Promise<{ ok: boolean; provider?: unknown; id?: string; deleted?: boolean }> {
-  return api.post('/ui/august/providers/manage', payload);
+  return api.post('/api/august/providers/manage', payload);
 }
 
 export function manageAugustAgents(payload: {
@@ -591,7 +591,7 @@ export function manageAugustAgents(payload: {
   agent?: Record<string, unknown>;
   id?: string;
 }): Promise<{ ok: boolean; agent?: unknown; id?: string; deleted?: boolean }> {
-  return api.post('/ui/august/agents/manage', payload);
+  return api.post('/api/august/agents/manage', payload);
 }
 
 export function manageAugustMemory(payload: {
@@ -601,11 +601,11 @@ export function manageAugustMemory(payload: {
   category?: string;
   ttl_days?: number;
 }): Promise<{ ok: boolean; key?: string; value?: unknown }> {
-  return api.post('/ui/august/memory/manage', payload);
+  return api.post('/api/august/memory/manage', payload);
 }
 
 export function undoAugustRollback(id: string): Promise<{ ok: boolean; entry?: unknown }> {
-  return api.post(`/ui/august/rollback/${encodeURIComponent(id)}/undo`, {});
+  return api.post(`/api/august/rollback/${encodeURIComponent(id)}/undo`, {});
 }
 
 /* ── Model aliases management ──────────────────────────────────────────── */
@@ -616,7 +616,7 @@ export function manageAugustAliases(payload: {
   targetModel?: string;
   targetProvider?: string;
 }): Promise<{ ok: boolean; aliases?: Array<{ alias: string; targetModel: string }>; alias?: string; deleted?: boolean }> {
-  return api.post('/ui/august/aliases/manage', payload);
+  return api.post('/api/august/aliases/manage', payload);
 }
 
 /* ── Tool management (MCP + plugins) ──────────────────────────────────── */
@@ -627,7 +627,7 @@ export function manageAugustTools(payload: {
   name?: string;
   config?: Record<string, unknown>;
 }): Promise<{ ok: boolean; tools?: unknown; tool?: unknown; name?: string; deleted?: boolean }> {
-  return api.post('/ui/august/tools/manage', payload);
+  return api.post('/api/august/tools/manage', payload);
 }
 
 /* ── Computer-use app policy (Task 6) ─────────────────────────────────── */
@@ -638,15 +638,15 @@ export interface AppPolicy {
 }
 
 export function setAugustAppPolicy(policy: AppPolicy): Promise<{ ok: boolean; app: string; policy: string }> {
-  return api.post('/ui/august/computer/app-policy', { action: 'set', ...policy });
+  return api.post('/api/august/computer/app-policy', { action: 'set', ...policy });
 }
 
 export function deleteAugustAppPolicy(app: string): Promise<{ ok: boolean; app: string }> {
-  return api.post('/ui/august/computer/app-policy', { action: 'delete', app });
+  return api.post('/api/august/computer/app-policy', { action: 'delete', app });
 }
 
 export function listAugustAppPolicies(): Promise<{ ok: boolean; policies: Record<string, 'allow' | 'ask' | 'deny'> }> {
-  return api.post('/ui/august/computer/app-policy', { action: 'list' });
+  return api.post('/api/august/computer/app-policy', { action: 'list' });
 }
 
 /* ── UI events (Task 5) ──────────────────────────────────────────────── */
@@ -665,12 +665,12 @@ export function controlAugustUi(payload: {
   target: string;
   payload?: Record<string, unknown>;
 }): Promise<{ ok: boolean; event: UiEvent }> {
-  return api.post('/ui/august/ui-action', payload);
+  return api.post('/api/august/ui-action', payload);
 }
 
 export function subscribeUiEvents(since?: string): Promise<{ ok: boolean; events: UiEvent[] }> {
   const q = since ? `?since=${encodeURIComponent(since)}` : '';
-  return api.get(`/ui/august/ui-events${q}`);
+  return api.get(`/api/august/ui-events${q}`);
 }
 
 /* ── Audit log (Task 2) ───────────────────────────────────────────────── */
@@ -699,7 +699,7 @@ export interface AuditEntry {
 
 export function getAuditLog(opts: number | { limit?: number; category?: string; actor?: string; action?: string; since?: string; until?: string; summary?: boolean } = 200): Promise<{ entries: AuditEntry[]; total?: number; at?: string }> {
     if (typeof opts === 'number') {
-        return api.get<{ entries: AuditEntry[]; total?: number; at?: string }>(`/ui/audit?limit=${opts}`);
+        return api.get<{ entries: AuditEntry[]; total?: number; at?: string }>(`/api/audit?limit=${opts}`);
     }
     const p = new URLSearchParams();
     if (opts.limit) p.set('limit', String(opts.limit));
@@ -710,7 +710,7 @@ export function getAuditLog(opts: number | { limit?: number; category?: string; 
     if (opts.until) p.set('until', opts.until);
     if (opts.summary) p.set('summary', '1');
     const qs = p.toString();
-    return api.get<{ entries: AuditEntry[]; total?: number; at?: string }>(`/ui/audit${qs ? `?${qs}` : ''}`);
+    return api.get<{ entries: AuditEntry[]; total?: number; at?: string }>(`/api/audit${qs ? `?${qs}` : ''}`);
 }
 
 export interface AuditSummary {
@@ -723,7 +723,7 @@ export interface AuditSummary {
 }
 
 export function getAuditSummary(): Promise<AuditSummary> {
-    return api.get<AuditSummary>('/ui/audit?summary=1');
+    return api.get<AuditSummary>('/api/audit?summary=1');
 }
 
 export interface RollbackEntry {
@@ -738,7 +738,7 @@ export interface RollbackEntry {
 
 export function getRollbackList(opts: number | { limit?: number; status?: 'available' | 'undone' | 'failed'; type?: string; summary?: boolean } = 100): Promise<{ items: RollbackEntry[]; total?: number; at?: string }> {
     if (typeof opts === 'number') {
-        return api.get<{ items: RollbackEntry[]; total?: number; at?: string }>(`/ui/rollback?limit=${opts}`);
+        return api.get<{ items: RollbackEntry[]; total?: number; at?: string }>(`/api/rollback?limit=${opts}`);
     }
     const p = new URLSearchParams();
     if (opts.limit) p.set('limit', String(opts.limit));
@@ -746,7 +746,7 @@ export function getRollbackList(opts: number | { limit?: number; status?: 'avail
     if (opts.type) p.set('type', opts.type);
     if (opts.summary) p.set('summary', '1');
     const qs = p.toString();
-    return api.get<{ items: RollbackEntry[]; total?: number; at?: string }>(`/ui/rollback${qs ? `?${qs}` : ''}`);
+    return api.get<{ items: RollbackEntry[]; total?: number; at?: string }>(`/api/rollback${qs ? `?${qs}` : ''}`);
 }
 
 export interface RollbackSummary {
@@ -759,7 +759,7 @@ export interface RollbackSummary {
 }
 
 export function getRollbackSummary(): Promise<RollbackSummary> {
-    return api.get<RollbackSummary>('/ui/rollback?summary=1');
+    return api.get<RollbackSummary>('/api/rollback?summary=1');
 }
 
 /* ── Post-observation screenshot gallery (Task 2) ──────────────────────── */
@@ -783,11 +783,11 @@ export function getObservations(opts: { limit?: number; since?: string } = {}): 
     if (opts.limit) p.set('limit', String(opts.limit));
     if (opts.since) p.set('since', opts.since);
     const qs = p.toString();
-    return api.get<{ items: PostObservation[]; total: number; at: string }>(`/ui/observations${qs ? `?${qs}` : ''}`);
+    return api.get<{ items: PostObservation[]; total: number; at: string }>(`/api/observations${qs ? `?${qs}` : ''}`);
 }
 
 export function getObservationUrl(id: string): string {
-    return `/ui/observations/${encodeURIComponent(id)}.png`;
+    return `/api/observations/${encodeURIComponent(id)}.png`;
 }
 
 /* ── Host-agent health (Task 3) ───────────────────────────────────────── */
@@ -804,7 +804,7 @@ export interface HostAgentHealth {
 }
 
 export function getHostAgentHealth(): Promise<HostAgentHealth> {
-    return api.get<HostAgentHealth>('/ui/host-agent/health');
+    return api.get<HostAgentHealth>('/api/host-agent/health');
 }
 
 /* ── Security write-back (Task 3) ─────────────────────────────────────── */
@@ -816,7 +816,7 @@ export interface SecurityConfig {
 }
 
 export function putSecurity(body: Partial<SecurityConfig>): Promise<{ ok: boolean; security: SecurityConfig }> {
-    return api.put<{ ok: boolean; security: SecurityConfig }>('/ui/security', body);
+    return api.put<{ ok: boolean; security: SecurityConfig }>('/api/security', body);
 }
 
 /* ── Observability overview (Task 3) ───────────────────────────────────── */
@@ -831,7 +831,7 @@ export interface ObservabilityOverview {
 }
 
 export function getObservabilityOverview(range: '7d' | '30d' = '30d'): Promise<ObservabilityOverview> {
-    return api.get<ObservabilityOverview>(`/ui/observability/overview?range=${range}`);
+    return api.get<ObservabilityOverview>(`/api/observability/overview?range=${range}`);
 }
 
 /* ── Live log event stream (Settings → Backend Monitor) ─────────────── */

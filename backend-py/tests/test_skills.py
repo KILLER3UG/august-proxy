@@ -6,7 +6,7 @@ from app.main import app
 async def test_skills_list():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/ui/skills")
+        resp = await client.get("/api/skills")
         assert resp.status_code == 200
         data = resp.json()
         assert "skills" in data
@@ -16,7 +16,7 @@ async def test_skills_list():
 async def test_skills_search():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/ui/skills?q=debug")
+        resp = await client.get("/api/skills?q=debug")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] >= 0

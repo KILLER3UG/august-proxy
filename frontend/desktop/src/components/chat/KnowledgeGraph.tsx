@@ -75,7 +75,7 @@ export function KnowledgeGraph({ className }: { className?: string }) {
 
   const { data, isLoading } = useQuery<GraphSearchResult>({
     queryKey: ['brain-graph-search', query],
-    queryFn: () => api.get<GraphSearchResult>(`/ui/brain/graph?q=${encodeURIComponent(query)}&limit=50`),
+    queryFn: () => api.get<GraphSearchResult>(`/api/brain/graph?q=${encodeURIComponent(query)}&limit=50`),
     enabled: query.trim().length > 0,
   });
 

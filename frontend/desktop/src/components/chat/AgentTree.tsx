@@ -1,6 +1,6 @@
 /* ── AgentTree ─────────────────────────────────────────────────────────── */
 /* Hierarchical view of sub-agent jobs for a session. Driven by the        */
-/* /ui/agents/tree endpoint.                                               */
+/* /api/agents/tree endpoint.                                               */
 
 import { useEffect, useState } from 'react';
 import { ChevronRight, ChevronDown, Bot, Loader2, Check, X, AlertTriangle, StopCircle } from 'lucide-react';
@@ -36,7 +36,7 @@ type Props = {
 
 async function fetchTree(rootId: string, maxDepth: number): Promise<TreeResponse | null> {
   try {
-    const r = await fetch(`/ui/agents/tree?root=${encodeURIComponent(rootId)}&maxDepth=${maxDepth}`);
+    const r = await fetch(`/api/agents/tree?root=${encodeURIComponent(rootId)}&maxDepth=${maxDepth}`);
     if (!r.ok) return null;
     return r.json();
   } catch (_) {

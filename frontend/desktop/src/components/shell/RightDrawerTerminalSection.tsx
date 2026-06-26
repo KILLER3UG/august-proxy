@@ -134,7 +134,7 @@ export function RightDrawerTerminalSection() {
     window.addEventListener('resize', syncSize);
 
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const socket = new WebSocket(`${protocol}://${window.location.host}/ui/terminal/connect?id=${encodeURIComponent(activeId)}`);
+    const socket = new WebSocket(`${protocol}://${window.location.host}/api/terminal/connect?id=${encodeURIComponent(activeId)}`);
     socketRef.current = socket;
 
     const onData = (data: string) => {

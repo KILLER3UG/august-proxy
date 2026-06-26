@@ -1,4 +1,4 @@
-/* Workbench API client — talks to backend /ui/workbench/* endpoints */
+/* Workbench API client — talks to backend /api/workbench/* endpoints */
 /* Uses named SSE events (event: text, event: tool_use, etc.) per backend. */
 
 import type {
@@ -20,7 +20,7 @@ export async function setWorkbenchGuardMode(
   sessionId: string,
   guardMode: WorkbenchGuardMode
 ): Promise<WorkbenchSession> {
-  const res = await fetch('/ui/workbench/guard-mode', {
+  const res = await fetch('/api/workbench/guard-mode', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId, guardMode }),
@@ -33,7 +33,7 @@ export async function confirmWorkbenchMutation(
   token: string,
   handlers: WorkbenchEventHandlers
 ): Promise<void> {
-  const res = await fetch('/ui/workbench/confirm-mutation', {
+  const res = await fetch('/api/workbench/confirm-mutation', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token }),
@@ -57,7 +57,7 @@ export async function confirmWorkbenchMutation(
 export async function createWorkbenchSession(
   params: CreateWorkbenchSessionParams = {}
 ): Promise<WorkbenchSession> {
-  const res = await fetch('/ui/workbench/session', {
+  const res = await fetch('/api/workbench/session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -71,14 +71,14 @@ export async function createWorkbenchSession(
 }
 
 export async function getWorkbenchSessions(): Promise<WorkbenchSession[]> {
-  const res = await fetch('/ui/workbench/sessions');
+  const res = await fetch('/api/workbench/sessions');
   if (!res.ok) throw new Error(`getWorkbenchSessions failed: ${res.status}`);
   const data = await res.json();
   return data.sessions || data || [];
 }
 
 export async function getWorkbenchSession(sessionId: string): Promise<WorkbenchSession> {
-  const res = await fetch(`/ui/workbench/session?sessionId=${encodeURIComponent(sessionId)}`);
+  const res = await fetch(`/api/workbench/session?sessionId=${encodeURIComponent(sessionId)}`);
   if (!res.ok) throw new Error(`getWorkbenchSession failed: ${res.status}`);
   return res.json();
 }
@@ -102,11 +102,11 @@ export interface StreamWorkbenchChatParams {
 
 /**
  * Stream a Workbench chat turn. Kicks off a new generation via POST
- * /ui/workbench/chat and returns the starting `sinceSeq` so the caller
+ * /api/workbench/chat and returns the starting `sinceSeq` so the caller
  * can attach an SSE subscriber that won't replay events already seen.
  * The function awaits the response body for backwards compatibility —
  * older callers consume events from the POST stream itself, newer
- * callers open /ui/workbench/chat/stream with `sinceSeq` and ignore
+ * callers open /api/workbench/chat/stream with `sinceSeq` and ignore
  * whatever this function returns from the body.
  */
 export async function streamWorkbenchChat(
@@ -114,7 +114,7 @@ export async function streamWorkbenchChat(
   handlers: WorkbenchEventHandlers,
   signal?: AbortSignal
 ): Promise<{ sinceSeq?: number; consumedViaPost?: boolean }> {
-  const res = await fetch('/ui/workbench/chat', {
+  const res = await fetch('/api/workbench/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -246,7 +246,7 @@ export async function streamWorkbenchReconnect(
 ): Promise<void> {
   const qs = new URLSearchParams({ sessionId });
   if (Number.isFinite(sinceSeq)) qs.set('sinceSeq', String(sinceSeq));
-  const res = await fetch(`/ui/workbench/chat/stream?${qs.toString()}`, { signal });
+  const res = await fetch(`/api/workbench/chat/stream?${qs.toString()}`, { signal });
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
@@ -264,7 +264,7 @@ export async function streamWorkbenchReconnect(
 }
 
 export async function stopWorkbenchChat(sessionId: string): Promise<void> {
-  const res = await fetch('/ui/workbench/chat/stop', {
+  const res = await fetch('/api/workbench/chat/stop', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
@@ -430,7 +430,7 @@ function dispatchWorkbenchEvent(
 }
 
 export async function approveWorkbenchPlan(sessionId: string): Promise<WorkbenchSession> {
-  const res = await fetch('/ui/workbench/approve', {
+  const res = await fetch('/api/workbench/approve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
@@ -440,7 +440,7 @@ export async function approveWorkbenchPlan(sessionId: string): Promise<Workbench
 }
 
 export async function rejectWorkbenchPlan(sessionId: string): Promise<WorkbenchSession> {
-  const res = await fetch('/ui/workbench/reject', {
+  const res = await fetch('/api/workbench/reject', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
@@ -528,7 +528,7 @@ export interface ResetWorkbenchSessionParams {
 export async function resetWorkbenchSession(
   params: ResetWorkbenchSessionParams = {}
 ): Promise<WorkbenchSession> {
-  const res = await fetch('/ui/workbench/reset', {
+  const res = await fetch('/api/workbench/reset', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -542,13 +542,13 @@ export async function resetWorkbenchSession(
 }
 
 export async function listWorkbenchAgents(activeAgentId = 'build'): Promise<WorkbenchAgentRegistry> {
-  const res = await fetch(`/ui/workbench/agents?active=${encodeURIComponent(activeAgentId)}`);
+  const res = await fetch(`/api/workbench/agents?active=${encodeURIComponent(activeAgentId)}`);
   if (!res.ok) throw new Error(`listWorkbenchAgents failed: ${res.status}`);
   return res.json();
 }
 
 export async function listWorkbenchCapabilities(): Promise<WorkbenchCapabilities> {
-  const res = await fetch('/ui/workbench/capabilities');
+  const res = await fetch('/api/workbench/capabilities');
   if (!res.ok) throw new Error(`listWorkbenchCapabilities failed: ${res.status}`);
   return res.json();
 }
@@ -563,7 +563,7 @@ export interface AnswerWorkbenchBtwParams {
 export async function answerWorkbenchBtw(
   params: AnswerWorkbenchBtwParams
 ): Promise<WorkbenchBtwResult> {
-  const res = await fetch('/ui/workbench/btw', {
+  const res = await fetch('/api/workbench/btw', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -604,13 +604,13 @@ export interface BrainConfigResponse {
 }
 
 export async function getBrainConfig(): Promise<BrainConfigResponse> {
-  const res = await fetch('/ui/brain/config');
+  const res = await fetch('/api/brain/config');
   if (!res.ok) throw new Error(`getBrainConfig failed: ${res.status}`);
   return res.json();
 }
 
 export async function saveBrainConfig(updates: Partial<BrainConfig>): Promise<{ ok: boolean; config: BrainConfig; defaults: BrainConfig }> {
-  const res = await fetch('/ui/brain/config', {
+  const res = await fetch('/api/brain/config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates || {}),
@@ -623,13 +623,13 @@ export async function saveBrainConfig(updates: Partial<BrainConfig>): Promise<{ 
 }
 
 export async function resetBrainConfig(): Promise<{ ok: boolean; config: BrainConfig; defaults: BrainConfig }> {
-  const res = await fetch('/ui/brain/config/reset', { method: 'POST' });
+  const res = await fetch('/api/brain/config/reset', { method: 'POST' });
   if (!res.ok) throw new Error(`resetBrainConfig failed: ${res.status}`);
   return res.json();
 }
 
 export async function getBrainConfigFromSession(sessionId: string): Promise<BrainConfigResponse> {
-  const res = await fetch(`/ui/brain/config/from-session?sessionId=${encodeURIComponent(sessionId)}`);
+  const res = await fetch(`/api/brain/config/from-session?sessionId=${encodeURIComponent(sessionId)}`);
   if (!res.ok) throw new Error(`getBrainConfigFromSession failed: ${res.status}`);
   return res.json();
 }
