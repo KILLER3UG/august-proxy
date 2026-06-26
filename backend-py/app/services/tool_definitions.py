@@ -26,7 +26,6 @@ from app.services import tool_registry
 _MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 _MAX_SEARCH_RESULTS = 100
 _MAX_COMMAND_TIMEOUT = 300  # seconds
-_BLOCKED_PATHS = {"C:\\Windows", "C:\\Program Files", "/etc", "/sys", "/proc"}
 _ALLOWED_COMMAND_PREFIXES = [
     "git", "python", "node", "npm", "npx", "pip", "cargo", "rustc",
     "ls", "cat", "head", "tail", "wc", "sort", "uniq", "grep", "find",
@@ -44,7 +43,6 @@ _ALLOWED_COMMAND_PREFIXES = [
 async def _read_file(path: str) -> str:
     """Read a file from the filesystem."""
     file_path = Path(path).resolve()
-    _check_path_safety(file_path)
 
     if not file_path.exists():
         return f"Error: File not found: {path}"
@@ -67,7 +65,6 @@ async def _read_file(path: str) -> str:
 async def _write_file(path: str, content: str) -> str:
     """Write content to a file."""
     file_path = Path(path).resolve()
-    _check_path_safety(file_path)
 
     try:
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,7 +79,6 @@ async def _write_file(path: str, content: str) -> str:
 async def _list_directory(path: str) -> str:
     """List files and directories."""
     dir_path = Path(path).resolve()
-    _check_path_safety(dir_path)
 
     if not dir_path.exists():
         return f"Error: Path not found: {path}"
@@ -103,7 +99,6 @@ async def _list_directory(path: str) -> str:
 async def _search_files(query: str, path: str = ".") -> str:
     """Search file contents using ripgrep or fallback grep."""
     search_path = Path(path).resolve()
-    _check_path_safety(search_path)
 
     if not search_path.exists():
         return f"Error: Path not found: {path}"
@@ -424,17 +419,6 @@ async def _list_skills(query: str = "") -> str:
         return "\n".join(lines)
     except Exception as exc:
         return f"Error listing skills: {exc}"
-
-
-# ── Safety helpers ───────────────────────────────────────────────────
-
-
-def _check_path_safety(path: Path) -> None:
-    """Check if a path is safe to access. Raises ValueError if blocked."""
-    resolved = path.resolve()
-    for blocked in _BLOCKED_PATHS:
-        if str(resolved).startswith(blocked):
-            raise ValueError(f"Access blocked to system path: {blocked}")
 
 
 # ── Registration ─────────────────────────────────────────────────────
