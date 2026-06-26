@@ -1,25 +1,70 @@
 // scripts/dev-app.mjs
 //
 // Starts the backend API and Vite frontend together for local development.
+// Tries Python backend first, falls back to Node.js.
 //
 // Usage:
 //   npm run dev
 
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const commands = [
-    {
-        name: 'backend',
-        command: npm,
-        args: ['run', 'start'],
-        env: { AUGUST_PROXY_PORT: process.env.AUGUST_PROXY_PORT || '8085' }
-    },
-    { name: 'frontend', command: npm, args: ['run', 'dev:web'] }
-];
+const port = process.env.AUGUST_PROXY_PORT || '8085';
+
+// ── Detect Python (preferred) or fall back to Node.js ──────────────
+
+function findPython() {
+    const names = process.platform === 'win32'
+        ? ['python.exe', 'python3.exe', 'py.exe']
+        : ['python3', 'python'];
+    for (const name of names) {
+        try {
+            execFileSync(name, ['--version'], { stdio: 'ignore' });
+            return name;
+        } catch { /* try next */ }
+    }
+    return null;
+}
+
+const python = findPython();
+
+let commands;
+if (python) {
+    const backendDir = resolve(root, 'backend-py');
+    if (existsSync(backendDir)) {
+        commands = [
+            {
+                name: 'backend',
+                command: python,
+                args: ['-m', 'uvicorn', 'app.main:app', '--port', port, '--host', '127.0.0.1'],
+                cwd: backendDir,
+                env: { AUGUST_PROXY_PORT: port }
+            },
+            { name: 'frontend', command: npm, args: ['run', 'dev:web'] }
+        ];
+        console.log(`[dev] Using Python backend on :${port}`);
+    } else {
+        console.log('[dev] backend-py/ not found, falling back to Node.js');
+        python = null;
+    }
+}
+
+if (!python) {
+    commands = [
+        {
+            name: 'backend',
+            command: npm,
+            args: ['run', 'start'],
+            env: { AUGUST_PROXY_PORT: port }
+        },
+        { name: 'frontend', command: npm, args: ['run', 'dev:web'] }
+    ];
+    console.log(`[dev] Using Node.js backend on :${port}`);
+}
 
 const children = [];
 let exiting = false;
