@@ -10,7 +10,7 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from app.lib.camel_model import CamelModel
 
 router = APIRouter(prefix="/api/mcp")
 
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/mcp")
 _servers: dict[str, dict[str, Any]] = {}
 
 
-class MCPServerCreate(BaseModel):
+class MCPServerCreate(CamelModel):
     name: str
     command: str = ""
     args: list[str] = []

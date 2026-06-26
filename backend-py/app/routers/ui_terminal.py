@@ -11,14 +11,14 @@ Supports:
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
+from app.lib.camel_model import CamelModel
 
 from app.services.workbench import terminal_service
 
 router = APIRouter(prefix="/ui/terminal")
 
 
-class CreateSessionBody(BaseModel):
+class CreateSessionBody(CamelModel):
     title: str = "Terminal"
     cwd: str = ""
     command: str = ""
@@ -27,19 +27,19 @@ class CreateSessionBody(BaseModel):
     rows: int = 24
 
 
-class InputBody(BaseModel):
+class InputBody(CamelModel):
     id: str
     input: str
     approved: bool = False
 
 
-class ResizeBody(BaseModel):
+class ResizeBody(CamelModel):
     sessionId: str
     cols: int = 80
     rows: int = 24
 
 
-class CommandBody(BaseModel):
+class CommandBody(CamelModel):
     command: str
     cwd: str = ""
     approved: bool = False
@@ -47,7 +47,7 @@ class CommandBody(BaseModel):
     timeoutMs: int = 30000
 
 
-class ApproveBody(BaseModel):
+class ApproveBody(CamelModel):
     requestId: str
     approve: bool = True
 

@@ -5,7 +5,7 @@ Configuration API routes.
 from __future__ import annotations
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from app.lib.camel_model import CamelModel
 
 from app.providers import resolver as provider_resolver
 from app.lib import secrets

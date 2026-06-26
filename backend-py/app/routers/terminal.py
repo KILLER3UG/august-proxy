@@ -6,20 +6,20 @@ Delegates to the same terminal_service as /ui/terminal/* routes.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from app.lib.camel_model import CamelModel
 
 from app.services.workbench import terminal_service
 
 router = APIRouter(prefix="/api/terminal")
 
 
-class TerminalCreate(BaseModel):
+class TerminalCreate(CamelModel):
     name: str = "default"
     cwd: str = ""
     shell: str = ""
 
 
-class TerminalWrite(BaseModel):
+class TerminalWrite(CamelModel):
     data: str
 
 

@@ -11,7 +11,7 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from app.lib.camel_model import CamelModel
 
 from app.config import settings
 from app.providers import resolver as provider_resolver
@@ -24,18 +24,18 @@ router = APIRouter(prefix="/api/manage")
 # ── Models ───────────────────────────────────────────────────────────
 
 
-class AliasCreate(BaseModel):
+class AliasCreate(CamelModel):
     alias: str
     target_model: str
     target_provider: str = ""
 
 
-class AliasUpdate(BaseModel):
+class AliasUpdate(CamelModel):
     target_model: str | None = None
     target_provider: str | None = None
 
 
-class SettingsUpdate(BaseModel):
+class SettingsUpdate(CamelModel):
     updates: dict[str, Any]
 
 

@@ -5,45 +5,43 @@ Provider configuration management API routes.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
 from app.providers import registry, resolver
-from app.lib import secrets
+from app.lib.camel_model import CamelModel
 from app.services import config_service
 
 router = APIRouter(prefix="/api/providers")
 
 
-# ── CamelCase alias helper ──────────────────────────────────────────
-
-
-def _to_camel(snake: str) -> str:
-    """Convert snake_case to camelCase for API compatibility."""
-    parts = snake.split("_")
-    return parts[0] + "".join(p.capitalize() for p in parts[1:])
-
-
-# ── Models ───────────────────────────────────────────────────────────
-
-
-class ProviderCreate(BaseModel):
+class ProviderCreate(CamelModel):
     name: str
     base_url: str = ""
     api_format: str = "openai-chat"
     api_key: str = ""
     enabled: bool = True
 
-    model_config = {"populate_by_name": True, "alias_generator": _to_camel}
 
-
-class ProviderUpdate(BaseModel):
+class ProviderUpdate(CamelModel):
     name: str | None = None
     base_url: str | None = None
     api_format: str | None = None
     api_key: str | None = None
     enabled: bool | None = None
 
-    model_config = {"populate_by_name": True, "alias_generator": _to_camel}
+
+class ModelCreateBody(CamelModel):
+    id: str
+    name: str | None = None
+    contextWindow: int | None = None
+    reasoning: bool | None = None
+    free: bool | None = None
+
+
+class ModelUpdateBody(CamelModel):
+    name: str | None = None
+    contextWindow: int | None = None
+    reasoning: bool | None = None
+    free: bool | None = None
 
 
 @router.get("")
@@ -127,7 +125,7 @@ async def update_provider(provider_id: str, body: ProviderUpdate):
 
 @router.patch("/{provider_id}")
 async def patch_provider(provider_id: str, body: ProviderUpdate):
-    """Partial update of a provider (alias for PUT)."""
+    """Partial update of a provider."""
     return await update_provider(provider_id, body)
 
 
@@ -155,28 +153,6 @@ async def providers_health():
     return {"status": "ok"}
 
 
-# ── Model management ────────────────────────────────────────────────
-
-
-class ModelCreateBody(BaseModel):
-    id: str
-    name: str | None = None
-    contextWindow: int | None = None
-    reasoning: bool | None = None
-    free: bool | None = None
-
-    model_config = {"populate_by_name": True}
-
-
-class ModelUpdateBody(BaseModel):
-    name: str | None = None
-    contextWindow: int | None = None
-    reasoning: bool | None = None
-    free: bool | None = None
-
-    model_config = {"populate_by_name": True}
-
-
 @router.post("/{provider_id}/models")
 async def add_provider_model(provider_id: str, body: ModelCreateBody):
     """Add a model to a provider."""
@@ -184,15 +160,14 @@ async def add_provider_model(provider_id: str, body: ModelCreateBody):
     for p in store.get("providers", []):
         if p.get("id") == provider_id:
             models = p.setdefault("models", [])
-            model = {
+            models.append({
                 "id": body.id,
                 "name": body.name or body.id,
                 "contextWindow": body.contextWindow or 128000,
                 "reasoning": body.reasoning or False,
                 "free": body.free or False,
                 "source": "manual",
-            }
-            models.append(model)
+            })
             config_service.save_providers_store(store)
             return {**p, "apiKeySet": bool(p.get("apiKey"))}
     raise HTTPException(status_code=404, detail="Provider not found")

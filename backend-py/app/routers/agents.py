@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from app.lib.camel_model import CamelModel
 
 router = APIRouter(prefix="/api/agents")
 
@@ -18,7 +18,7 @@ _agents: dict[str, dict[str, Any]] = {}
 _jobs: dict[str, dict[str, Any]] = {}
 
 
-class AgentCreate(BaseModel):
+class AgentCreate(CamelModel):
     name: str
     parent_id: str = ""
     permissions: list[str] = []
@@ -27,7 +27,7 @@ class AgentCreate(BaseModel):
     provider: str = ""
 
 
-class AgentJob(BaseModel):
+class AgentJob(CamelModel):
     agent_id: str
     goal: str
     context: str = ""
