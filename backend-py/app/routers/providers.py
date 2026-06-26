@@ -151,18 +151,31 @@ async def refreshModels(providerId: str):
         if baseUrl and apiKey:
             try:
                 import httpx
-                url = baseUrl.rstrip("/")
-                # Derive the /models endpoint from the base URL
-                if not url.endswith("/models") and not url.endswith("/v1/models"):
-                    if url.endswith("/chat/completions"):
-                        url = url.replace("/chat/completions", "/models")
-                    elif url.endswith("/v1"):
-                        url += "/models"
-                    else:
-                        url += "/v1/models"
+                base = baseUrl.rstrip("/")
+                # Try /v1/models first, then /models
+                candidates: list[str] = []
+                if base.endswith("/chat/completions"):
+                    candidates.append(base.replace("/chat/completions", "/v1/models"))
+                    candidates.append(base.replace("/chat/completions", "/models"))
+                elif base.endswith("/v1"):
+                    candidates.append(base + "/models")
+                    candidates.append(base.replace("/v1", "") + "/models")
+                else:
+                    candidates.append(base + "/v1/models")
+                    candidates.append(base + "/models")
+
                 async with httpx.AsyncClient(timeout=5) as client:
-                    resp = await client.get(url, headers={"Authorization": f"Bearer {apiKey}"})
-                    if resp.status_code == 200:
+                    for url in candidates:
+                        try:
+                            resp = await client.get(url, headers={"Authorization": f"Bearer {apiKey}"})
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                raw = data.get("data", data.get("models", data if isinstance(data, list) else []))
+                                if isinstance(raw, list):
+                                    liveModels = [m["id"] for m in raw if isinstance(m, dict) and m.get("id")]
+                                break
+                        except Exception:
+                            continue
                         data = resp.json()
                         raw = data.get("data", data.get("models", data if isinstance(data, list) else []))
                         if isinstance(raw, list):
