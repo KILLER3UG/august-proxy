@@ -26,6 +26,20 @@ function findPython() {
             return name;
         } catch { /* try next */ }
     }
+    // Windows fallback: check common installation paths
+    if (process.platform === 'win32') {
+        const commonPaths = [
+            'C:\\Users\\rober\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
+            'C:\\Users\\rober\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
+            'C:\\Python313\\python.exe',
+            'C:\\Python312\\python.exe',
+            `${process.env.LOCALAPPDATA || ''}\\Programs\\Python\\Python313\\python.exe`,
+            `${process.env.LOCALAPPDATA || ''}\\Programs\\Python\\Python312\\python.exe`,
+        ];
+        for (const p of commonPaths) {
+            if (existsSync(p)) return p;
+        }
+    }
     return null;
 }
 

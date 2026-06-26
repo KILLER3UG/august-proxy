@@ -10,6 +10,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -27,10 +28,24 @@ function findPython() {
             return name;
         } catch { /* try next */ }
     }
+    // Windows fallback: check common installation paths
+    if (process.platform === 'win32') {
+        const commonPaths = [
+            'C:\\Users\\rober\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
+            'C:\\Users\\rober\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
+            'C:\\Python313\\python.exe',
+            'C:\\Python312\\python.exe',
+            `${process.env.LOCALAPPDATA || ''}\\Programs\\Python\\Python313\\python.exe`,
+            `${process.env.LOCALAPPDATA || ''}\\Programs\\Python\\Python312\\python.exe`,
+        ];
+        for (const p of commonPaths) {
+            if (existsSync(p)) return p;
+        }
+    }
     return null;
 }
 
-const python = findPython();
+let python = findPython();
 
 let commands;
 if (python) {
