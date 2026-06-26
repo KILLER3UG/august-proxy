@@ -1,20 +1,16 @@
 """Terminal session API routes.
 
 Port of backend/services/workbench/terminal-service.js + august-terminal.js.
-Manages interactive terminal sessions via PTY.
 """
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/terminal")
+from app.services.workbench import terminal_service
 
-# In-memory terminal sessions
-_sessions: dict[str, dict[str, Any]] = {}
+router = APIRouter(prefix="/api/terminal")
 
 
 class TerminalCreate(BaseModel):
@@ -23,33 +19,31 @@ class TerminalCreate(BaseModel):
     shell: str = ""
 
 
+class TerminalWrite(BaseModel):
+    data: str
+
+
 @router.post("")
 async def create_terminal(body: TerminalCreate):
     """Create a new terminal session."""
-    import uuid
-    session_id = f"term_{uuid.uuid4().hex[:8]}"
-    session = {
-        "id": session_id,
-        "name": body.name or "default",
-        "cwd": body.cwd or "",
-        "shell": body.shell or "",
-        "status": "created",
-        "createdAt": __import__("datetime").datetime.utcnow().isoformat() + "Z",
-    }
-    _sessions[session_id] = session
+    session = await terminal_service.create_session(
+        name=body.name,
+        cwd=body.cwd or None,
+        shell=body.shell or None,
+    )
     return session
 
 
 @router.get("")
 async def list_terminals():
     """List all terminal sessions."""
-    return {"sessions": list(_sessions.values())}
+    return {"sessions": terminal_service.list_sessions()}
 
 
 @router.get("/{session_id}")
 async def get_terminal(session_id: str):
     """Get a terminal session by ID."""
-    session = _sessions.get(session_id)
+    session = terminal_service.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Terminal session not found")
     return session
@@ -58,16 +52,29 @@ async def get_terminal(session_id: str):
 @router.delete("/{session_id}")
 async def delete_terminal(session_id: str):
     """Delete a terminal session."""
-    if session_id not in _sessions:
+    if not await terminal_service.close_session(session_id):
         raise HTTPException(status_code=404, detail="Terminal session not found")
-    del _sessions[session_id]
     return {"status": "ok"}
 
 
 @router.post("/{session_id}/write")
-async def write_terminal(session_id: str, data: str):
-    """Write data to a terminal session (stub — real PTY requires node-pty or similar)."""
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Terminal session not found")
-    return {"status": "written", "message": "Terminal write requires PTY implementation"}
+async def write_terminal(session_id: str, body: TerminalWrite):
+    """Write data to a terminal session."""
+    result = await terminal_service.write_stdin(session_id, body.data)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.get("/{session_id}/read")
+async def read_terminal(session_id: str):
+    """Read output from a terminal session."""
+    output = await terminal_service.read_stdout(session_id)
+    return {"output": output}
+
+
+@router.post("/{session_id}/resize")
+async def resize_terminal(session_id: str, cols: int = 80, rows: int = 24):
+    """Resize the terminal."""
+    await terminal_service.resize(session_id, cols, rows)
+    return {"status": "ok"}
