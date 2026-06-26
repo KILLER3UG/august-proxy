@@ -1061,6 +1061,7 @@ function ProviderEditor({
   const [showKey, setShowKey] = useState(false);
   const [confirmClearKey, setConfirmClearKey] = useState(false);
   const [autoFetch, setAutoFetch] = useState(!!provider.autoFetch);
+  const [editingName, setEditingName] = useState(false);
 
   // Re-sync local state when the selected provider changes.
   useEffect(() => {
@@ -1136,8 +1137,28 @@ function ProviderEditor({
       {/* Provider header */}
       <div className="px-5 pt-4 pb-3 border-b border-white/[0.06] flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <span className="text-base font-semibold">{name || provider.name}</span>
-          <Pencil className="size-3.5 text-muted-foreground" />
+          {editingName ? (
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => { setEditingName(false); flushField('name', name); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { setEditingName(false); flushField('name', name); } }}
+              className="h-7 text-base font-semibold w-48"
+              autoFocus
+            />
+          ) : (
+            <>
+              <span className="text-base font-semibold">{name || provider.name}</span>
+              <button
+                onClick={() => setEditingName(true)}
+                aria-label="Edit provider name"
+                title="Edit provider name"
+                className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition"
+              >
+                <Pencil className="size-3.5" />
+              </button>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <WorkspaceToggle
