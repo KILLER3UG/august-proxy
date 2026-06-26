@@ -1,17 +1,19 @@
 """
 Proxy routes — /v1/messages (Anthropic) and /v1/chat/completions (OpenAI).
+
+Now delegates to the full adapter implementations for message translation,
+tool call interception, and SSE streaming.
 """
 
 from __future__ import annotations
 
-import json
-from typing import Any
+from typing import Any, AsyncIterator
 
-import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from app.adapters import base as adapter_base
+from app.adapters import anthropic as anthropic_adapter
+from app.adapters import openai as openai_adapter
 from app.providers import resolver as provider_resolver
 
 router = APIRouter()
@@ -19,66 +21,86 @@ router = APIRouter()
 
 @router.post("/v1/messages")
 async def anthropic_messages(request: Request):
-    """Anthropic Messages API proxy."""
+    """Anthropic Messages API proxy.
+
+    Delegates to the Anthropic adapter which handles:
+    - Model alias resolution
+    - System prompt normalization
+    - Message format translation (Anthropic ↔ OpenAI)
+    - SSE streaming (native and converted)
+    - Tool call interception and managed execution
+    """
     body = await request.json()
-    model = body.get("model", "claude-sonnet-4-7")
+    result, headers = await anthropic_adapter.handle_messages(body, request)
 
-    provider = provider_resolver.resolve(model)
-    if not provider:
-        return {"error": "No provider available for model", "model": model}
+    if isinstance(result, dict):
+        if "error" in result:
+            return result
+        return result
 
-    cfg = _get_provider_config(provider)
-    if not cfg.get("api_key"):
-        return {"error": "API key not configured for provider"}
+    if isinstance(result, AsyncIterator):
+        return StreamingResponse(
+            result,
+            media_type="text/event-stream",
+            headers=headers or {
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
-    target_url = cfg.get("base_url", "").rstrip("/") + "/v1/messages"
-    headers = adapter_base.build_headers(cfg["api_key"], {"anthropic-version": "2023-06-01"})
-
-    body["max_tokens"] = body.get("max_tokens", 8192)
-    body["stream"] = body.get("stream", True)
-
-    async def generate():
-        async with httpx.AsyncClient() as client:
-            async for event in adapter_base.stream_sse(client, target_url, headers, body):
-                yield f"event: {event.get('type', 'ping')}\ndata: {json.dumps(event)}\n\n"
-            yield "event: done\ndata: {}\n\n"
-
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return result
 
 
 @router.post("/v1/chat/completions")
 async def openai_chat(request: Request):
-    """OpenAI Chat Completions API proxy."""
+    """OpenAI Chat Completions API proxy.
+
+    Delegates to the OpenAI adapter which handles:
+    - Provider resolution for any model
+    - SSE streaming with tool call interception
+    - Multi-round tool resolution
+    - Session derivation
+    """
     body = await request.json()
-    model = body.get("model", "gpt-4o")
+    result, headers = await openai_adapter.handle_chat_completions(body, request)
 
-    provider = provider_resolver.resolve(model)
-    if not provider:
-        return {"error": "No provider available for model", "model": model}
+    if isinstance(result, dict):
+        if "error" in result:
+            return result
+        return result
 
-    cfg = _get_provider_config(provider)
-    if not cfg.get("api_key"):
-        return {"error": "API key not configured for provider"}
+    if isinstance(result, AsyncIterator):
+        return StreamingResponse(
+            result,
+            media_type="text/event-stream",
+            headers=headers or {
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
-    target_url = cfg.get("base_url", "").rstrip("/") + "/chat/completions"
-    headers = adapter_base.build_headers(cfg["api_key"])
-
-    body["stream"] = body.get("stream", True)
-
-    async def generate():
-        async with httpx.AsyncClient() as client:
-            async for chunk in adapter_base.stream_sse(client, target_url, headers, body):
-                yield f"data: {json.dumps(chunk)}\n\n"
-            yield "data: [DONE]\n\n"
-
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return result
 
 
-def _get_provider_config(provider: dict[str, Any]) -> dict[str, Any]:
-    """Resolve a provider's runtime config."""
-    from app.config import settings
-    cfg = settings.config.get(provider["name"], {})
-    return {
-        "api_key": cfg.get("apiKey", ""),
-        "base_url": cfg.get("baseUrl", provider.get("default_base_url", "")),
-    }
+@router.get("/v1/models")
+async def list_models():
+    """List available models from all configured providers."""
+    providers = provider_resolver.list_available()
+    models = []
+    for p in providers:
+        name = p.get("name", "")
+        model_profiles = p.get("model_profiles", {})
+        for model_id, profile in model_profiles.items():
+            if model_id == "*":
+                continue
+            models.append({
+                "id": model_id,
+                "provider": name,
+                "object": "model",
+                "context_window": profile.get("contextWindow", 0),
+                "max_output_tokens": profile.get("maxOutputTokens", 0),
+            })
+
+    return {"object": "list", "data": models}
