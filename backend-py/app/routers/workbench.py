@@ -107,9 +107,6 @@ async def start_chat(request: Request):
     # Start the chat loop in the background
     seq = event_log.event_log.append(session_id, "started", {"sinceSeq": 0})
 
-    async def emit(event: dict[str, Any]) -> None:
-        event_log.event_log.append(session_id, event.get("type", "message"), event)
-
     # Launch workbench chat loop in background task
     asyncio.create_task(
         wb.send_workbench_message_stream(
@@ -121,7 +118,9 @@ async def start_chat(request: Request):
             model=model,
             model_provider=model_provider,
             guard_mode=guard_mode,
-            emit=emit,
+            emit=lambda event: event_log.event_log.append(
+                session_id, event.get("type", "message"), event
+            ),
         )
     )
 

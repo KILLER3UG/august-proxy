@@ -61,3 +61,18 @@ async def active_provider():
             })
 
     return {"activeProvider": active, "providers": providers}
+
+
+@router.get("/safe")
+async def config_safe():
+    """Get full config (safe endpoint — returns everything the UI needs).
+
+    Used by the frontend to read the active provider and its model settings.
+    Returns the full config dict from config.json.
+    """
+    from app.lib.paths import data_path
+    import json
+
+    cfg_path = data_path("config.json")
+    cfg = json.loads(cfg_path.read_text("utf-8")) if cfg_path.exists() else {}
+    return cfg
