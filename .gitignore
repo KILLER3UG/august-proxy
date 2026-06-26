@@ -32,6 +32,10 @@ oauth_states.json
 apps/proxy/src/services/**/debug.txt
 backend/services/**/debug.txt
 
+# Python cache artifacts
+__pycache__/
+*.pyc
+
 # Temp files
 *.tmp
 *.timestamp-*.mjs
