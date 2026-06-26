@@ -53,7 +53,7 @@ async def get_session(session_id: str):
     return session.to_dict()
 
 
-# Frontend also calls /api/workbench/session?sessionId=X (singular)
+# Frontend also calls /api/workbench/session?sessionId=X (singular, GET)
 @router.get("/session")
 async def get_session_by_query(sessionId: str = ""):
     """Get a session by ID from query parameter."""
@@ -62,6 +62,19 @@ async def get_session_by_query(sessionId: str = ""):
     session = wb.get_workbench_session(sessionId)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    return session.to_dict()
+
+
+# And POST /api/workbench/session to create (singular, body)
+@router.post("/session")
+async def create_session_direct(request: Request):
+    """Create a new workbench session."""
+    body = await request.json() if request.headers.get("content-type") else {}
+    session = wb.create_workbench_session(
+        provider=body.get("provider", ""),
+        agent_id=body.get("agentId", ""),
+        guard_mode=body.get("guardMode", ""),
+    )
     return session.to_dict()
 
 
