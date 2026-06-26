@@ -1180,7 +1180,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               toast.info('No skills found' + (arg ? ' matching "' + arg + '"' : '') + '.');
               return;
             }
-            const items = data.skills.slice(0, 20).map(function (s) {
+            const items = data.skills.slice(0, 20).map(function (s: any) {
               return '• **' + s.name + '** [' + s.category + ']' + (s.enabled ? '' : ' ⚠️ inactive') + '\n  ' + s.description;
             });
             setInput('**Skills (' + data.total + ' found)**\n\n' + items.join('\n\n') + '\n\nUse /load <skill-name> to inject a skill into your message.');

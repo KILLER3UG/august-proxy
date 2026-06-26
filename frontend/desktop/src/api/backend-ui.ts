@@ -493,7 +493,7 @@ export function getAugustSnapshot(): Promise<AugustSnapshot> {
 
 // Sessions (uses /api/sessions router)
 export function listManageSessions(): Promise<unknown[]> {
-  return api.get('/api/sessions').then(r => r.sessions ?? []);
+  return api.get('/api/sessions').then((r: any) => r.sessions ?? []);
 }
 export function createManageSession(params?: { provider?: string; agentId?: string; guardMode?: string }): Promise<unknown> {
   return api.post('/api/sessions', params || {});
@@ -512,7 +512,7 @@ export function createManageProvider(body: { name: string; baseUrl: string; apiF
 
 // Agents (uses /api/agents router)
 export function listManageAgents(): Promise<unknown[]> {
-  return api.get('/api/agents').then(r => r.agents ?? []);
+  return api.get('/api/agents').then((r: any) => r.agents ?? []);
 }
 export function createManageAgent(body: { name: string; parentId?: string; permissions?: string[]; toolsets?: string[]; model?: string; provider?: string }): Promise<unknown> {
   return api.post('/api/agents', body);
@@ -534,7 +534,7 @@ export function deleteManageAlias(alias: string): Promise<unknown> {
 
 // Memory facts (uses /api/memory/facts router)
 export function listManageMemory(category?: string): Promise<unknown[]> {
-  return api.get(`/api/memory/facts${category ? `?category=${encodeURIComponent(category)}` : ''}`).then(r => r.facts ?? []);
+  return api.get(`/api/memory/facts${category ? `?category=${encodeURIComponent(category)}` : ''}`).then((r: any) => r.facts ?? []);
 }
 export function createManageMemoryFact(body: { key: string; value: unknown; category?: string }): Promise<unknown> {
   return api.post('/api/memory/facts', body);
