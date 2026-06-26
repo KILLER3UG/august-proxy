@@ -535,9 +535,19 @@ async def send_workbench_message_stream(
     # Resolve effort
     effective_effort = resolve_effective_effort(effort or session.metadata.get("effort", ""), session)
 
-    # Resolve provider/model
-    resolved_provider = _resolve_workbench_provider(session.provider, model)
-    resolved_model = _resolve_model(resolved_provider, model)
+    # Resolve provider — use modelProvider from the frontend if available,
+    # since the model dropdown already knows which provider a model belongs to.
+    # Fall back to resolving by model ID, then session provider.
+    resolved_provider = None
+    if model_provider:
+        resolved_provider = _resolve_workbench_provider(model_provider, "")
+    if not resolved_provider and model:
+        resolved_provider = _resolve_workbench_provider("", model)
+    if not resolved_provider:
+        resolved_provider = _resolve_workbench_provider(session.provider, model)
+    if not resolved_provider:
+        resolved_provider = _resolve_workbench_provider("", "")
+    resolved_model = _resolve_model(resolved_provider, model or "")
 
     # Emit started event
     if emit:
@@ -546,6 +556,21 @@ async def send_workbench_message_stream(
             "sessionId": session_id,
             "model": resolved_model,
         })
+
+    # Check credentials early
+    if resolved_provider:
+        from app.providers.clients import get_client
+        client = get_client(resolved_provider)
+        if client and not client.resolve_api_key():
+            if emit:
+                emit({"type": "error", "message": f"API key not configured for {resolved_provider.get('name', 'unknown')}"})
+            session.status = "idle"
+            if emit:
+                emit({"type": "done", "sessionId": session_id})
+            return
+
+    # Build system prompt
+    system_text = build_system_prompt(session)
 
     # Build system prompt
     system_text = build_system_prompt(session)
