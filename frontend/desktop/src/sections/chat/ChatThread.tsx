@@ -734,7 +734,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     // ── Phase 1: quick config fetch ──
     if (!isRefresh) {
       try {
-        const configRes = await fetch('/ui/config/safe');
+        const configRes = await fetch('/api/config/safe');
         if (configRes.ok) {
           const config = await configRes.json();
           const activeProvider = config?.activeProvider || '';
@@ -1149,7 +1149,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           toast.error('/load needs a skill name. Try: /load brainstorming');
           return;
         }
-        fetch(`/ui/skills?q=${encodeURIComponent(arg)}`)
+        fetch(`/api/skills?q=${encodeURIComponent(arg)}`)
           .then(r => r.json())
           .then(data => {
             if (data.total === 0) {
@@ -1173,7 +1173,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         return;
       }
       if (cmd === 'skills') {
-        fetch('/ui/skills' + (arg ? '?q=' + encodeURIComponent(arg) : ''))
+        fetch('/api/skills' + (arg ? '?q=' + encodeURIComponent(arg) : ''))
           .then(r => r.json())
           .then(data => {
             if (data.total === 0) {

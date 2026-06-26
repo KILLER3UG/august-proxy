@@ -1,8 +1,8 @@
 /* ── ApprovalBanner ───────────────────────────────────────────────────── */
-/* Session-level "awaiting approval" banner driven by /ui/workbench/session/:id/status. */
+/* Session-level "awaiting approval" banner driven by /api/workbench/session/:id/status. */
 /* Polls the endpoint every 2s; flips to a sticky banner when the server */
 /* reports a pending critical mutation. Approve / Deny buttons POST to */
-/* /ui/workbench/confirm-mutation. */
+/* /api/workbench/confirm-mutation. */
 
 import { useEffect, useMemo, useState } from 'react';
 import { ShieldCheck, ShieldAlert, X } from 'lucide-react';
@@ -31,7 +31,7 @@ type Props = {
 
 async function fetchStatus(sessionId: string): Promise<SessionStatus | null> {
     try {
-        const r = await fetch(`/ui/workbench/session/${encodeURIComponent(sessionId)}/status`, { credentials: 'same-origin' });
+        const r = await fetch(`/api/workbench/session/${encodeURIComponent(sessionId)}/status`, { credentials: 'same-origin' });
         if (!r.ok) return null;
         return r.json() as Promise<SessionStatus>;
     } catch (_) {
@@ -40,7 +40,7 @@ async function fetchStatus(sessionId: string): Promise<SessionStatus | null> {
 }
 
 async function postDecision(sessionId: string, token: string, reject: boolean) {
-    const r = await fetch('/ui/workbench/confirm-mutation', {
+    const r = await fetch('/api/workbench/confirm-mutation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',

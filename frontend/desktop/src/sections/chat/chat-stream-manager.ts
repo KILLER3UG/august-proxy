@@ -51,7 +51,7 @@ export const $sessionStreamStates = atom<Record<string, SessionStreamState>>({})
 export const activeStreamControllers = new Map<string, AbortController>();
 
 /**
- * Per-session SSE subscriber that holds the live GET /ui/workbench/chat/stream
+ * Per-session SSE subscriber that holds the live GET /api/workbench/chat/stream
  * connection. Independent of the per-turn AbortController above — detaching
  * this subscriber (e.g. when the user switches sessions) does NOT stop the
  * backend generation; the connection is just closed client-side. Other
@@ -279,7 +279,7 @@ export async function startChatStream(
 
     // The POST handler returns { sinceSeq } JSON immediately and runs the
     // generation in the background. Live events are delivered via the
-    // separate /ui/workbench/chat/stream SSE channel — attach it now using
+    // separate /api/workbench/chat/stream SSE channel — attach it now using
     // the same per-turn handlers so streamed text / thinking / tool_use /
     // tool_result events reach the chat UI. Without this, events accumulate
     // in the chat-event-log unread and the assistant bubble stays empty.
@@ -447,7 +447,7 @@ export async function reconnectChatStream(
 // Sync all active streams with the backend
 export async function syncActiveStreams(ensureWorkbenchSession: () => Promise<any>) {
   try {
-    const res = await fetch('/ui/workbench/chat/active');
+    const res = await fetch('/api/workbench/chat/active');
     if (!res.ok) return;
     const active: Record<string, string> = await res.json();
     for (const sessionId of Object.keys(active)) {
@@ -466,7 +466,7 @@ export async function syncActiveStreams(ensureWorkbenchSession: () => Promise<an
 
 /**
  * Attach (or re-attach) the per-session SSE subscriber that pulls events
- * from GET /ui/workbench/chat/stream. The subscriber is idempotent: if
+ * from GET /api/workbench/chat/stream. The subscriber is idempotent: if
  * one is already attached for `sessionId` it is left alone. The reducer
  * updates `subagentBlocks` (so background sub-agents appear in the chat
  * thread even when no per-turn handler is active) and bumps the stored

@@ -1,5 +1,5 @@
 /**
- * chat-active-streams — lightweight poller for `/ui/workbench/chat/active`
+ * chat-active-streams — lightweight poller for `/api/workbench/chat/active`
  * so the session sidebar can show a live pulse on any session whose
  * backend generation is currently running, even if the user isn't viewing
  * that session.
@@ -22,7 +22,7 @@ async function poll(): Promise<void> {
   if (typeof window === 'undefined') return;
   inFlight = true;
   try {
-    const res = await fetch('/ui/workbench/chat/active');
+    const res = await fetch('/api/workbench/chat/active');
     if (!res.ok) return;
     const active: Record<string, string> = await res.json();
     const next: Record<string, 'streaming'> = {};
