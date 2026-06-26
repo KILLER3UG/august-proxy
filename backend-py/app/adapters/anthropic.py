@@ -48,6 +48,7 @@ from app.adapters.tool_classification import (
     get_tool_name_from_openai_tool,
 )
 from app.providers import resolver as provider_resolver
+from app.providers.model_resolver import resolve, resolve_or_fallback
 from app.providers.clients import get_client
 
 # ── Constants ─────────────────────────────────────────────────────────
@@ -966,7 +967,15 @@ async def handle_messages(
     model = body.get("model", "claude-sonnet-4-7")
     resolved_model = resolve_claude_public_model_alias(model)
 
-    provider = provider_resolver.resolve(resolved_model)
+    # Use model resolver for proper alias-based resolution
+    try:
+        resolved = resolve(resolved_model, default_alias="claude-sonnet-4-7")
+        provider_name = resolved["provider"]
+        resolved_model = resolved["model"]
+    except Exception:
+        provider_name = resolved_model
+
+    provider = provider_resolver.resolve(provider_name)
     if not provider:
         return {"error": "No provider available for model", "model": resolved_model}, None
 

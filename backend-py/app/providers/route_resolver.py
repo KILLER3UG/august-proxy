@@ -5,10 +5,12 @@ Port of backend/providers/route-resolver.js + model-resolver.js.
 
 Resolution order:
 1. User-defined alias in config.json modelAliases → use targetProvider
-2. Exact model match in any provider's model_profiles keys
-3. Prefix match on provider name vs model_id prefix
-4. Partial match on model_profiles keys (model starts with profile key)
-5. First available provider
+2. Exact model match in provider's model_profiles (credential-aware)
+3. Prefix match on provider name (credential-aware)
+4. Model profile partial match (credential-aware)
+5. Exact model match (any provider)
+6. Prefix match (any provider)
+7. Active provider (first with credentials)
 """
 
 from __future__ import annotations
@@ -19,6 +21,16 @@ from app.config import settings
 from app.providers import registry, resolver
 
 
+def _has_credentials(provider: dict[str, Any]) -> bool:
+    """Check if a provider has API credentials configured."""
+    from app.providers.clients import get_client
+
+    client = get_client(provider)
+    if not client:
+        return False
+    return client.resolve_api_key() is not None
+
+
 def resolve_for_model(
     model_id: str,
     hint: Optional[str] = None,
@@ -26,13 +38,9 @@ def resolve_for_model(
     """
     Find the best provider for a model ID.
 
-    Priority:
-    1. Explicit provider hint
-    2. User-defined alias in config.json modelAliases
-    3. Exact model match in any provider's model_profiles
-    4. Prefix match on provider name
-    5. Model profiles partial match
-    6. First available provider
+    Returns the first provider with credentials that supports the model.
+    Falls through to credential-less providers only if no credentialled
+    provider matches.
     """
     providers = resolver.list_available()
     if not providers:
@@ -45,7 +53,6 @@ def resolve_for_model(
         for p in providers:
             if p["name"].lower() == hint.lower():
                 return p
-            # Check aliases too
             if hint.lower() in [a.lower() for a in p.get("aliases", [])]:
                 return p
 
@@ -59,42 +66,54 @@ def resolve_for_model(
                     for p in providers:
                         if p["name"].lower() == target_provider.lower():
                             return p
-                        # Match by alias
                         if target_provider.lower() in [a.lower() for a in p.get("aliases", [])]:
                             return p
-                # If no targetProvider, use the alias's targetModel
-                target_model = alias_entry.get("targetModel", "")
-                if target_model:
-                    return resolve_for_model(target_model, hint)
 
-    # 3. Exact model match in any provider's model_profiles
+    # 3. Exact model match in model_profiles (credential-aware first)
     for p in providers:
         profiles = p.get("model_profiles", {})
-        if model_id in profiles:
+        if (model_id in profiles or model_lower in {k.lower() for k in profiles}) and _has_credentials(p):
             return p
+
+    # 4. Prefix match on provider name (credential-aware)
+    for p in providers:
+        pname = p["name"].lower().split()[0]
+        if model_lower.startswith(pname) and _has_credentials(p):
+            return p
+
+    # 5. Partial match on model_profiles keys (credential-aware)
+    for p in providers:
+        profiles = p.get("model_profiles", {})
         for profile_key in profiles:
-            if model_lower == profile_key.lower():
+            if profile_key != "*" and model_lower.startswith(profile_key.lower()) and _has_credentials(p):
                 return p
 
-    # 4. Prefix match on provider name vs model_id prefix
+    # 6. Alias name match (credential-aware)
+    for p in providers:
+        for alias in p.get("aliases", []):
+            if model_lower.startswith(alias.lower()) and _has_credentials(p):
+                return p
+
+    # 7-10: Same matches but without credential requirement
+    for p in providers:
+        profiles = p.get("model_profiles", {})
+        if model_id in profiles or model_lower in {k.lower() for k in profiles}:
+            return p
+
     for p in providers:
         pname = p["name"].lower().split()[0]
         if model_lower.startswith(pname):
             return p
 
-    # 5. Partial match on model_profiles keys
     for p in providers:
         profiles = p.get("model_profiles", {})
         for profile_key in profiles:
             if profile_key != "*" and model_lower.startswith(profile_key.lower()):
                 return p
 
-    # 6. Alias name match
     for p in providers:
-        p_aliases = p.get("aliases", [])
-        for alias in p_aliases:
+        for alias in p.get("aliases", []):
             if model_lower.startswith(alias.lower()):
                 return p
 
-    # 7. First available provider
     return providers[0] if providers else None

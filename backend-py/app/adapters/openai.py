@@ -35,6 +35,7 @@ from app.adapters.tool_classification import (
     get_tool_name_from_openai_tool,
 )
 from app.providers import resolver as provider_resolver
+from app.providers.model_resolver import resolve, resolve_or_fallback
 from app.providers.clients import get_client
 
 # ── Constants ─────────────────────────────────────────────────────────
@@ -676,7 +677,17 @@ async def handle_chat_completions(
     Returns a tuple of (response_or_stream, response_headers).
     """
     model = body.get("model", "gpt-4o")
-    provider = provider_resolver.resolve(model)
+
+    # Use model resolver for proper alias-based resolution
+    try:
+        resolved = resolve(model, default_alias="gpt-4o")
+        provider_name = resolved["provider"]
+        resolved_model = resolved["model"]
+    except Exception:
+        provider_name = model
+        resolved_model = model
+
+    provider = provider_resolver.resolve(provider_name or model)
     if not provider:
         return {"error": "No provider available for model", "model": model}, None
 
