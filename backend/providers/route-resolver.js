@@ -46,19 +46,43 @@ function resolveProviderByName(providerName) {
     if (!providerName) return null;
     const rawName = String(providerName).trim();
     const p = getProvider(rawName) || getProvider(rawName.toLowerCase());
-    if (!p || !jsProviderHasCredentials(p)) return null;
-    const resolved = toResolvedFromJsProfile(p);
-    // Prefer the display name from providers.json over the JS profile's
-    // lowercased id (e.g. "OpenCode Zen" vs "opencode-zen") so callers
-    // don't have to do a second lookup for the user-facing label.
+    if (p && jsProviderHasCredentials(p)) {
+        const resolved = toResolvedFromJsProfile(p);
+        // Prefer the display name from providers.json over the JS profile's
+        // lowercased id (e.g. "OpenCode Zen" vs "opencode-zen") so callers
+        // don't have to do a second lookup for the user-facing label.
+        try {
+            const { listPublicProviders, getStoredProviderByName } = require('../services/providers/providers-routes');
+            const storeEntry = getStoredProviderByName
+                ? getStoredProviderByName(p.name)
+                : (listPublicProviders ? listPublicProviders().find((s) => s.id === p.name) : null);
+            if (storeEntry && storeEntry.name) resolved.name = storeEntry.name;
+        } catch (_) { /* providers-routes not loaded — keep profile name */ }
+        return resolved;
+    }
+
+    // Fallback to user-created custom providers from providers.json.
+    // Custom providers don't live in the JS registry (provider-registry.js),
+    // so they are invisible to getProvider(). Without this fallback, model
+    // aliases that reference a custom provider (e.g. "Openmodel") would
+    // never resolve by name, causing the exact-catalog match in
+    // resolveProviderForModel to pick the first provider that has the model
+    // (typically opencode-go) instead of the intended one.
     try {
         const { listPublicProviders, getStoredProviderByName } = require('../services/providers/providers-routes');
-        const storeEntry = getStoredProviderByName
-            ? getStoredProviderByName(p.name)
-            : (listPublicProviders ? listPublicProviders().find((s) => s.id === p.name) : null);
-        if (storeEntry && storeEntry.name) resolved.name = storeEntry.name;
-    } catch (_) { /* providers-routes not loaded — keep profile name */ }
-    return resolved;
+        const stored = listPublicProviders ? listPublicProviders() : [];
+        const lowerName = rawName.toLowerCase();
+        const storeEntry = stored.find((s) =>
+            s.id === rawName ||
+            s.id.toLowerCase() === lowerName ||
+            (s.name || '').toLowerCase() === lowerName
+        );
+        if (storeEntry && storeHasCredentials(storeEntry)) {
+            return toResolvedFromStoreEntry(storeEntry);
+        }
+    } catch (_) { /* providers-routes not loaded */ }
+
+    return null;
 }
 
 function resolveProviderForModel(model, options = {}) {
