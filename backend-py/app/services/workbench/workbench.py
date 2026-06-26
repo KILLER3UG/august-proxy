@@ -572,9 +572,6 @@ async def send_workbench_message_stream(
     # Build system prompt
     system_text = build_system_prompt(session)
 
-    # Build system prompt
-    system_text = build_system_prompt(session)
-
     # Get adapters and tools
     tools = tool_definitions(session)
     openai_tools = openai_tool_definitions(session)
@@ -594,12 +591,12 @@ async def send_workbench_message_stream(
             # Use Anthropic adapter for the call
             response = await _call_anthropic_workbench(
                 current_messages, system_text, resolved_model, tools,
-                effective_effort,
+                effective_effort, provider=resolved_provider,
             )
         elif is_openai:
             response = await _call_openai_workbench(
                 current_messages, system_text, resolved_model, openai_tools,
-                effective_effort,
+                effective_effort, provider=resolved_provider,
             )
         else:
             if emit:
@@ -770,12 +767,14 @@ async def _call_anthropic_workbench(
     model: str,
     tools: list[dict[str, Any]],
     effort: str,
+    provider: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Call an Anthropic-format model for workbench chat."""
     from app.adapters.anthropic import build_anthropic_upstream_request
     from app.providers.clients import get_client
 
-    provider = _resolve_workbench_provider("", model)
+    if not provider:
+        provider = _resolve_workbench_provider("", model)
     if not provider:
         return {"error": "No provider available"}
 
@@ -815,11 +814,13 @@ async def _call_openai_workbench(
     model: str,
     tools: list[dict[str, Any]],
     effort: str,
+    provider: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Call an OpenAI-format model for workbench chat."""
     from app.providers.clients import get_client
 
-    provider = _resolve_workbench_provider("", model)
+    if not provider:
+        provider = _resolve_workbench_provider("", model)
     if not provider:
         return {"error": "No provider available"}
 
