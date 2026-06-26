@@ -616,6 +616,7 @@ async def send_workbench_message_stream(
             }
             content_blocks = response.get("content", [])
             text_content = _extract_text(content_blocks)
+            thinking_content = _extract_thinking(content_blocks)
             tool_uses = [b for b in content_blocks if b.get("type") == "tool_use"]
         else:
             choices = response.get("choices", [])
@@ -627,6 +628,9 @@ async def send_workbench_message_stream(
                 "tool_calls": msg.get("tool_calls", []),
             }
             text_content = msg.get("content", "")
+            # Extract reasoning/thinking content (OpenAI sends this as
+            # "reasoning" or "reasoning_content" in the message)
+            thinking_content = msg.get("reasoning") or msg.get("reasoning_content", "")
             tool_uses = []
             for tc in msg.get("tool_calls", []):
                 try:
@@ -638,6 +642,10 @@ async def send_workbench_message_stream(
                     "name": tc.get("function", {}).get("name", ""),
                     "input": input_args,
                 })
+
+        # Emit thinking/reasoning content if present
+        if thinking_content and emit:
+            emit({"type": "thinking", "content": thinking_content})
 
         # Emit text content
         if text_content and emit:
@@ -754,6 +762,15 @@ def _extract_text(content_blocks: list[dict[str, Any]]) -> str:
     parts = []
     for block in content_blocks:
         if block.get("type") == "text":
+            parts.append(block.get("text", ""))
+    return "\n".join(parts)
+
+
+def _extract_thinking(content_blocks: list[dict[str, Any]]) -> str:
+    """Extract thinking/reasoning from Anthropic content blocks."""
+    parts = []
+    for block in content_blocks:
+        if block.get("type") == "thinking":
             parts.append(block.get("text", ""))
     return "\n".join(parts)
 
