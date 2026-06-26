@@ -55,7 +55,7 @@ class EventLog:
     async def subscribe(self, session_id: str, since_seq: int = 0) -> AsyncIterator[dict[str, Any]]:
         """Yield events for a session, starting from since_seq."""
         entry = self._get_or_create(session_id)
-        q: asyncio.Queue = asyncio.Queue(maxsize=256)
+        q: asyncio.Queue = asyncio.Queue()
 
         # Replay past events (sync iteration, async yield)
         for ev in list(entry.events):

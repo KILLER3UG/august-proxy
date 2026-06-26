@@ -189,7 +189,9 @@ async def start_scheduler(interval_s: int = 60) -> None:
             if not job.get("enabled"):
                 continue
             if _matches_cron(job.get("schedule", "* * * * *"), now):
-                asyncio.create_task(run_job_now(job_id))
+                task = asyncio.create_task(run_job_now(job_id))
+                _tasks[job_id] = task
+                task.add_done_callback(lambda t, j_id=job_id: _tasks.pop(j_id, None))
         await asyncio.sleep(interval_s)
 
 

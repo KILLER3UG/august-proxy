@@ -19,6 +19,8 @@ from typing import Any
 
 from app.lib.paths import data_path
 
+_mcp_cleanup_tasks: set[asyncio.Task] = set()
+
 # ── Configuration ────────────────────────────────────────────────────
 
 MCP_CONFIG_FILE = "mcp-servers.json"
@@ -82,7 +84,9 @@ def unregister_server(server_id: str) -> bool:
     if server_id not in _servers:
         return False
     # Kill if running
-    asyncio.create_task(_stop_server_process(server_id))
+    task = asyncio.create_task(_stop_server_process(server_id))
+    _mcp_cleanup_tasks.add(task)
+    task.add_done_callback(_mcp_cleanup_tasks.discard)
     del _servers[server_id]
     _tools_cache.pop(server_id, None)
     return True

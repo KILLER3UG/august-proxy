@@ -379,7 +379,7 @@ def translate_messages(
                 tool_result = json.dumps(tool_result)
             openai_messages.append({
                 "role": "tool",
-                "tool_call_id": msg.get("tool_use_id", ""),
+                "tool_call_id": msg.get("tool_use_id") or msg.get("tool_call_id", ""),
                 "content": tool_result,
             })
 
@@ -1416,3 +1416,64 @@ def _get_client() -> Any:
         from app.providers.clients.anthropic import AnthropicClient
         _client = AnthropicClient({})
     return _client
+
+
+def translate_messages_to_anthropic(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert session messages (OpenAI or mixed format) to Anthropic Messages format.
+
+    Groups consecutive tool messages into a single user message with tool_result blocks.
+    Maps OpenAI assistant tool_calls to Anthropic content blocks with type='tool_use'.
+    """
+    translated: list[dict[str, Any]] = []
+
+    i = 0
+    while i < len(messages):
+        msg = messages[i]
+        role = msg.get("role")
+
+        if role == "tool":
+            tool_blocks = []
+            while i < len(messages) and messages[i].get("role") == "tool":
+                t_msg = messages[i]
+                tool_use_id = t_msg.get("tool_use_id") or t_msg.get("tool_call_id") or ""
+                content = t_msg.get("content", "")
+                tool_blocks.append({
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": content
+                })
+                i += 1
+            translated.append({
+                "role": "user",
+                "content": tool_blocks
+            })
+        else:
+            if role == "assistant" and msg.get("tool_calls"):
+                content_blocks = []
+                if msg.get("content"):
+                    content_blocks.append({
+                        "type": "text",
+                        "text": msg["content"]
+                    })
+                for tc in msg["tool_calls"]:
+                    fn = tc.get("function", {})
+                    try:
+                        args = json.loads(fn.get("arguments", "{}")) if isinstance(fn.get("arguments"), str) else fn.get("arguments", {})
+                    except Exception:
+                        args = {}
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": tc.get("id", ""),
+                        "name": fn.get("name", ""),
+                        "input": args
+                    })
+                translated.append({
+                    "role": "assistant",
+                    "content": content_blocks
+                })
+            else:
+                translated.append(msg)
+            i += 1
+
+    return translated
+

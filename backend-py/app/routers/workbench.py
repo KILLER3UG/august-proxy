@@ -20,6 +20,11 @@ from app.services.workbench import workbench as wb
 
 router = APIRouter(prefix="/api/workbench")
 
+# Set to store references to background chat tasks to prevent garbage collection
+_chat_tasks: set[asyncio.Task] = set()
+# Cancellation signals keyed by session_id — set to True to stop a running generation.
+_cancelled: dict[str, asyncio.Event] = {}
+
 
 # ── Session management ───────────────────────────────────────────────
 
@@ -139,22 +144,73 @@ async def start_chat(request: Request):
     # Start the chat loop in the background
     seq = event_log.event_log.append(session_id, "started", {"sinceSeq": 0})
 
+    cancel_event = asyncio.Event()
+    _cancelled[session_id] = cancel_event
+
+    async def safe_stream():
+        try:
+            await wb.send_workbench_message_stream(
+                session_id=session_id,
+                message=message,
+                provider=provider,
+                agent_id=agent_id,
+                effort=effort,
+                model=model,
+                model_provider=model_provider,
+                guard_mode=guard_mode,
+                emit=lambda event: event_log.event_log.append(
+                    session_id, event.get("type", "message"), event
+                ),
+                signal=cancel_event,
+            )
+        except asyncio.CancelledError:
+            # Task was explicitly cancelled — clean up silently.
+            try:
+                session = wb.get_workbench_session(session_id)
+                if session:
+                    session.status = "idle"
+                    session.updated_at = wb._now()
+                    wb.save_sessions()
+                    wb._emit_session_status(session_id)
+            except Exception:
+                pass
+            try:
+                event_log.event_log.append(
+                    session_id, "aborted", {}
+                )
+                event_log.event_log.append(
+                    session_id, "done", {"type": "done", "sessionId": session_id}
+                )
+            except Exception:
+                pass
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            try:
+                session = wb.get_workbench_session(session_id)
+                if session:
+                    session.status = "idle"
+                    session.updated_at = wb._now()
+                    wb.save_sessions()
+                    wb._emit_session_status(session_id)
+            except Exception:
+                pass
+            try:
+                event_log.event_log.append(
+                    session_id, "error", {"type": "error", "message": f"Fatal background error: {exc}"}
+                )
+                event_log.event_log.append(
+                    session_id, "done", {"type": "done", "sessionId": session_id}
+                )
+            except Exception:
+                pass
+        finally:
+            _cancelled.pop(session_id, None)
+
     # Launch workbench chat loop in background task
-    asyncio.create_task(
-        wb.send_workbench_message_stream(
-            session_id=session_id,
-            message=message,
-            provider=provider,
-            agent_id=agent_id,
-            effort=effort,
-            model=model,
-            model_provider=model_provider,
-            guard_mode=guard_mode,
-            emit=lambda event: event_log.event_log.append(
-                session_id, event.get("type", "message"), event
-            ),
-        )
-    )
+    task = asyncio.create_task(safe_stream())
+    _chat_tasks.add(task)
+    task.add_done_callback(_chat_tasks.discard)
 
     return {
         "status": "started",
@@ -177,6 +233,9 @@ async def stream_chat(
 
     async def generate():
         async for event in event_log.event_log.subscribe(session_id, since_seq):
+            if event["type"] == "keepalive":
+                yield ": keepalive\n\n"
+                continue
             yield f"event: {event['type']}\ndata: {json.dumps(event['payload'])}\nid: {event['seq']}\n\n"
             if event["type"] in ("done", "error", "aborted"):
                 break
@@ -191,9 +250,15 @@ async def stream_chat(
 @router.post("/chat/stop")
 async def stop_chat(request: Request):
     """Abort a running generation."""
-    # TODO: implement abort via cancellation token
     body = await request.json()
     session_id = body.get("sessionId", "")
+
+    # Signal cancellation to the running background task
+    cancel_event = _cancelled.get(session_id)
+    if cancel_event and not cancel_event.is_set():
+        cancel_event.set()
+
+    # Always emit the aborted event to notify SSE subscribers
     event_log.event_log.append(session_id, "aborted", {})
     return {"status": "ok"}
 

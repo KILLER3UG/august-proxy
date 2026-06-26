@@ -1134,6 +1134,20 @@ const requestHandler = async (req, res) => {
         let responseEnded = false;
         res.on('error', () => { responseEnded = true; });
 
+        // Periodically write a keepalive comment (":\n\n") to prevent connection timeout.
+        const heartbeatInterval = setInterval(() => {
+            if (responseEnded) {
+                clearInterval(heartbeatInterval);
+                return;
+            }
+            try {
+                res.write(':\n\n');
+            } catch (_) {
+                responseEnded = true;
+                clearInterval(heartbeatInterval);
+            }
+        }, 15000);
+
         const writer = {
             write: (entry) => {
                 if (responseEnded) return false;
@@ -1141,12 +1155,14 @@ const requestHandler = async (req, res) => {
                     res.write(`event: ${entry.type}\ndata: ${JSON.stringify(entry.payload || {})}\nid: ${entry.seq}\n\n`);
                 } catch (_) {
                     responseEnded = true;
+                    clearInterval(heartbeatInterval);
                     // The response is already closed (e.g. client navigated
                     // away). Returning false tells the subscriber loop to
                     // drop us so we stop being invoked.
                     return false;
                 }
                 if (entry.type === 'done' || entry.type === 'error' || entry.type === 'aborted') {
+                    clearInterval(heartbeatInterval);
                     try { res.end(); } catch (_) {}
                     responseEnded = true;
                     return false;
@@ -1155,6 +1171,7 @@ const requestHandler = async (req, res) => {
             },
             onError: () => {
                 if (responseEnded) return;
+                clearInterval(heartbeatInterval);
                 responseEnded = true;
                 try { res.end(); } catch (_) {}
             },
@@ -1168,9 +1185,11 @@ const requestHandler = async (req, res) => {
             // client doesn't wait for an event that never comes. Log at
             // debug level; this is normal when reconnecting a stale session.
             console.debug('[workbench] SSE reconnect: no active generation and 0 replayed events — closing for', sessionId.slice(0, 20) + '...');
+            clearInterval(heartbeatInterval);
             try { res.write('event: done\ndata: {}\n\n'); res.end(); } catch (_) {}
         }
         req.on('close', () => {
+            clearInterval(heartbeatInterval);
             sub.unsubscribe();
         });
         return;

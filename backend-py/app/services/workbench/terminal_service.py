@@ -126,7 +126,8 @@ async def create_terminal_session(params: dict[str, Any] | None = None) -> dict[
         _ws_sockets[session_id] = set()
 
         # Background stdout reader
-        asyncio.create_task(_pipe_stdout(session_id))
+        task = asyncio.create_task(_pipe_stdout(session_id))
+        session["reader_task"] = task
 
     except (FileNotFoundError, PermissionError) as exc:
         session["status"] = "error"
@@ -302,6 +303,11 @@ def close_terminal_session(session_id: str) -> bool:
             ws(None)  # Signal close
         except Exception:
             pass
+    # Cancel stdout reader task
+    reader_task = session.get("reader_task")
+    if reader_task:
+        reader_task.cancel()
+
     # Kill process
     proc = session.get("process")
     if proc:

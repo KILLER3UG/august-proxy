@@ -350,7 +350,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         pendingConfirmations.delete(id);
       }
 
-      const resultText = typeof content === 'string' ? content : JSON.stringify(content);
+      const resultText = typeof content === 'string' ? content : content != null ? JSON.stringify(content) : '';
       toolResults = toolResults.map(t => t.id === id ? {
         ...t,
         pendingApproval: parsedResult?.type === 'mutation_pending_confirmation' ? {

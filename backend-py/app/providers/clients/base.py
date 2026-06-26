@@ -508,7 +508,7 @@ class BaseProviderClient:
                     # they arrive from the HTTP stream. A background task
                     # drives the parser. The main coroutine yields events
                     # from the queue immediately — no buffering.
-                    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=256)
+                    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
 
                     def collector(event: str, data: str) -> None:
                         if data == "[DONE]":

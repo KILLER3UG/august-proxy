@@ -164,7 +164,15 @@ export async function streamWorkbenchChat(
     return {};
   }
 
-  await readSseStream(reader, handlers, signal);
+  try {
+    const receivedTerminalEvent = await readSseStream(reader, handlers, signal);
+    if (!receivedTerminalEvent) {
+      handlers.onError?.({ message: 'Stream ended without completion event — response may be incomplete' });
+    }
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw e;
+    handlers.onError?.({ message: e?.message || 'Stream read error' });
+  }
   // Events were consumed from the POST response body (legacy SSE path).
   // Tell the caller not to reconnect — events are already delivered.
   return { consumedViaPost: true };
@@ -174,68 +182,58 @@ async function readSseStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   handlers: WorkbenchEventHandlers,
   signal?: AbortSignal
-): Promise<void> {
+): Promise<boolean> {
   const decoder = new TextDecoder();
   let buffer = '';
   let currentEvent = '';
   let receivedTerminalEvent = false;
 
-  try {
-    while (true) {
-      throwIfAborted(signal);
-      const { done, value } = await reader.read();
-      throwIfAborted(signal);
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+  while (true) {
+    throwIfAborted(signal);
+    const { done, value } = await reader.read();
+    throwIfAborted(signal);
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
 
-      let lineStart = 0;
-      let newlineIdx: number;
-      while ((newlineIdx = buffer.indexOf('\n', lineStart)) >= 0) {
-        const line = buffer.slice(lineStart, newlineIdx).trim();
-        lineStart = newlineIdx + 1;
-        if (!line) {
-          currentEvent = '';
-          continue;
-        }
-        if (line.startsWith(':')) continue; // SSE comment
+    let lineStart = 0;
+    let newlineIdx: number;
+    while ((newlineIdx = buffer.indexOf('\n', lineStart)) >= 0) {
+      const line = buffer.slice(lineStart, newlineIdx).trim();
+      lineStart = newlineIdx + 1;
+      if (!line) {
+        currentEvent = '';
+        continue;
+      }
+      if (line.startsWith(':')) continue; // SSE comment
 
-        if (line.startsWith('event:')) {
-          currentEvent = line.slice(6).trim();
-        } else if (line.startsWith('id:')) {
-          const idStr = line.slice(3).trim();
-          const n = Number(idStr);
-          if (Number.isFinite(n) && handlers.onSeq) handlers.onSeq(n);
-        } else if (line.startsWith('data:')) {
-          const dataStr = line.slice(5).trim();
-          if (!dataStr) continue;
-          try {
-            throwIfAborted(signal);
-            const payload = JSON.parse(dataStr);
-            // Track terminal events — if the stream closes without one,
-            // the response is likely incomplete (SSE connection dropped).
-            if (currentEvent === 'done' || currentEvent === 'error' || currentEvent === 'aborted') {
-              receivedTerminalEvent = true;
-            }
-            dispatchWorkbenchEvent(currentEvent, payload, handlers);
-          } catch (e: any) {
-            if (e?.name === 'AbortError') throw e;
-            // Ignore non-JSON data lines
+      if (line.startsWith('event:')) {
+        currentEvent = line.slice(6).trim();
+      } else if (line.startsWith('id:')) {
+        const idStr = line.slice(3).trim();
+        const n = Number(idStr);
+        if (Number.isFinite(n) && handlers.onSeq) handlers.onSeq(n);
+      } else if (line.startsWith('data:')) {
+        const dataStr = line.slice(5).trim();
+        if (!dataStr) continue;
+        try {
+          throwIfAborted(signal);
+          const payload = JSON.parse(dataStr);
+          // Track terminal events — if the stream closes without one,
+          // the response is likely incomplete (SSE connection dropped).
+          if (currentEvent === 'done' || currentEvent === 'error' || currentEvent === 'aborted') {
+            receivedTerminalEvent = true;
           }
+          dispatchWorkbenchEvent(currentEvent, payload, handlers);
+        } catch (e: any) {
+          if (e?.name === 'AbortError') throw e;
+          // Ignore non-JSON data lines
         }
       }
-      buffer = buffer.slice(lineStart);
     }
-
-    // Stream ended but we never saw a terminal event — the connection likely
-    // dropped before the backend could signal completion. Report an error so
-    // the assistant bubble doesn't stay silently empty or incomplete.
-    if (!receivedTerminalEvent) {
-      handlers.onError?.({ message: 'Stream ended without completion event — response may be incomplete' });
-    }
-  } catch (e: any) {
-    if (e?.name === 'AbortError') throw e;
-    handlers.onError?.({ message: e?.message || 'Stream read error' });
+    buffer = buffer.slice(lineStart);
   }
+
+  return receivedTerminalEvent;
 }
 
 export async function streamWorkbenchReconnect(
@@ -244,33 +242,107 @@ export async function streamWorkbenchReconnect(
   signal?: AbortSignal,
   sinceSeq?: number
 ): Promise<void> {
-  const qs = new URLSearchParams({ sessionId });
-  if (Number.isFinite(sinceSeq)) qs.set('sinceSeq', String(sinceSeq));
-  const res = await fetch(`/api/workbench/chat/stream?${qs.toString()}`, { signal });
+  let currentSeq = sinceSeq;
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    handlers.onError?.({ message: `Reconnect stream failed: ${res.status} ${errText}` });
-    return;
+  // Wrap onSeq to capture the latest sequence number as events flow
+  const originalOnSeq = handlers.onSeq;
+  const wrappedHandlers = {
+    ...handlers,
+    onSeq: (seq: number) => {
+      currentSeq = seq;
+      originalOnSeq?.(seq);
+    }
+  };
+
+  const maxRetries = 10;
+  let retryCount = 0;
+  const baseDelayMs = 1000;
+
+  while (true) {
+    if (signal?.aborted) {
+      throw new DOMException('Request aborted', 'AbortError');
+    }
+
+    try {
+      const qs = new URLSearchParams({ sessionId });
+      if (Number.isFinite(currentSeq)) {
+        qs.set('sinceSeq', String(currentSeq));
+      }
+      
+      const res = await fetch(`/api/workbench/chat/stream?${qs.toString()}`, { signal });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Reconnect stream failed: ${res.status} ${errText}`);
+      }
+
+      // Guard against non-SSE responses (e.g. HTML error page from a 404 SPA
+      // fallback). If we get HTML instead of SSE, bail early with a clear error
+      // rather than trying to parse HTML line-by-line as SSE events.
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) {
+        throw new Error('Stream endpoint returned HTML (expected SSE). The backend may be unavailable — try refreshing.');
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        throw new Error('ReadableStream reader not available');
+      }
+
+      // Reset retry count on successful connection establishment
+      retryCount = 0;
+
+      // Wrap readSseStream. It will return when the stream ends.
+      // We want to know if it ended with a terminal event.
+      // We can intercept terminal events to stop retrying.
+      let terminalSeen = false;
+      const streamHandlers = {
+        ...wrappedHandlers,
+        onDone: () => {
+          terminalSeen = true;
+          wrappedHandlers.onDone?.();
+        },
+        onError: (err: any) => {
+          // If we see a terminal error from the backend, we don't auto-retry.
+          terminalSeen = true;
+          wrappedHandlers.onError?.(err);
+        }
+      };
+
+      const receivedTerminalEvent = await readSseStream(reader, streamHandlers, signal);
+
+      // If we saw a terminal event (either returned true from readSseStream or flag was set),
+      // we stop retrying and return.
+      if (receivedTerminalEvent || terminalSeen || signal?.aborted) {
+        break;
+      }
+
+      // Otherwise, the connection dropped prematurely without a terminal event.
+      throw new Error('Stream ended prematurely without a completion event');
+
+    } catch (e: any) {
+      if (e?.name === 'AbortError' || signal?.aborted) {
+        throw new DOMException('Request aborted', 'AbortError');
+      }
+
+      retryCount++;
+      if (retryCount > maxRetries) {
+        console.error(`[streamWorkbenchReconnect] Max retries reached (${maxRetries}). Connection failed:`, e);
+        handlers.onError?.({ message: e?.message || 'Connection failed' });
+        break;
+      }
+
+      const delay = Math.min(10000, baseDelayMs * Math.pow(2, retryCount - 1) + Math.random() * 1000);
+      console.warn(`[streamWorkbenchReconnect] Connection lost. Retrying in ${Math.round(delay)}ms (attempt ${retryCount}/${maxRetries}). Error:`, e.message || e);
+      
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(resolve, delay);
+        signal?.addEventListener('abort', () => {
+          clearTimeout(timeout);
+          reject(new DOMException('Request aborted', 'AbortError'));
+        });
+      });
+    }
   }
-
-  // Guard against non-SSE responses (e.g. HTML error page from a 404 SPA
-  // fallback). If we get HTML instead of SSE, bail early with a clear error
-  // rather than trying to parse HTML line-by-line as SSE events.
-  const contentType = res.headers.get('content-type') || '';
-  if (contentType.includes('text/html')) {
-    const body = await res.text().catch(() => '');
-    handlers.onError?.({ message: `Stream endpoint returned HTML (expected SSE). The backend may be unavailable — try refreshing.` });
-    return;
-  }
-
-  const reader = res.body?.getReader();
-  if (!reader) {
-    handlers.onDone?.();
-    return;
-  }
-
-  await readSseStream(reader, handlers, signal);
 }
 
 export async function stopWorkbenchChat(sessionId: string): Promise<void> {

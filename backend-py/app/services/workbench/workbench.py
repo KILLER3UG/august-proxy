@@ -580,12 +580,20 @@ async def send_workbench_message_stream(
     is_anthropic = _is_anthropic_provider(resolved_provider)
     is_openai = _is_openai_provider(resolved_provider)
 
+    # Helper to check cancellation signal
+    def _is_cancelled() -> bool:
+        return signal is not None and signal.is_set()
+
     # Main chat loop
     tool_round = 0
     current_messages = list(session.messages)
 
     while tool_round < MAX_MANAGED_TOOL_ROUNDS:
         tool_round += 1
+
+        # Check cancellation before each model call
+        if _is_cancelled():
+            break
 
         if is_anthropic:
             response = await _call_anthropic_workbench(
@@ -640,6 +648,9 @@ async def send_workbench_message_stream(
         # Execute tools
         tool_results: list[dict[str, Any]] = []
         for tu in tool_uses:
+            # Check cancellation before each tool execution
+            if _is_cancelled():
+                break
             tool_name = tu.get("name", "")
             tool_input = tu.get("input", {})
             tool_use_id = tu.get("id", f"toolu_{uuid.uuid4().hex[:16]}")
@@ -674,6 +685,7 @@ async def send_workbench_message_stream(
                     "type": "tool_result",
                     "id": tool_use_id,
                     "name": tool_name,
+                    "content": result,
                     "summary": str(result)[:2000],
                     "status": "done",
                 })
@@ -787,8 +799,10 @@ async def _call_anthropic_workbench(
     if not api_key:
         return {"error": "API key not configured"}
 
+    from app.adapters.anthropic import translate_messages_to_anthropic
+    anthropic_messages = translate_messages_to_anthropic(messages)
     body = build_anthropic_upstream_request(
-        {"messages": messages, "max_tokens": 8192},
+        {"messages": anthropic_messages, "max_tokens": 8192},
         model,
         [{"type": "text", "text": system_text}],
     )
@@ -924,8 +938,9 @@ async def _call_openai_workbench(
     if not api_key:
         return {"error": "API key not configured"}
 
-    openai_messages: list[dict[str, Any]] = [{"role": "system", "content": system_text}]
-    openai_messages.extend(messages)
+    from app.adapters.anthropic import translate_messages
+    openai_messages = translate_messages(messages)
+    openai_messages.insert(0, {"role": "system", "content": system_text})
 
     body: dict[str, Any] = {
         "model": model,
