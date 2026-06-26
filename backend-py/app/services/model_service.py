@@ -200,54 +200,24 @@ async def _fetch_provider_models(provider: dict[str, Any], timeout_s: float = 5.
 
 
 async def _aggregate_models() -> list[dict[str, Any]]:
-    """Aggregate models from all configured providers."""
-    providers = provider_resolver.list_available()
-
-    # Filter to providers with API keys
-    enabled = []
-    for p in providers:
-        client = get_client(p)
-        if client and client.resolve_api_key():
-            enabled.append(p)
-
-    # Fetch models in parallel
-    tasks = [_fetch_provider_models(p) for p in enabled]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
+    """Aggregate models from user-configured providers in providers.json only."""
     all_models: list[dict[str, Any]] = []
-    for i, result in enumerate(results):
-        if isinstance(result, Exception):
-            continue
-        if isinstance(result, list):
-            for m in result:
-                prov_profile = enabled[i].get("model_profiles", {}).get(m["id"], {})
-                if isinstance(prov_profile, dict):
-                    m["supportsReasoning"] = prov_profile.get("supportsReasoning", False) or prov_profile.get("supportsThinking", False)
-                    m["supportsThinking"] = prov_profile.get("supportsThinking", False)
-                else:
-                    m["supportsReasoning"] = False
-                    m["supportsThinking"] = False
-                m["isFree"] = _is_free_model_id(m["id"])
-                all_models.append(m)
 
-    # Add user-created custom providers from providers.json
     try:
         store = settings.providers
-        registry_names = {p.get("name") for p in providers}
         for entry in store.get("providers", []):
-            if entry.get("name") in registry_names:
+            if not entry.get("enabled") or not entry.get("apiKey"):
                 continue
-            if entry.get("enabled") and entry.get("apiKey"):
-                for m in entry.get("models", []):
-                    all_models.append({
-                        "id": m["id"],
-                        "name": m.get("name", m["id"]),
-                        "provider": entry["name"],
-                        "contextWindow": m.get("contextWindow", 128000),
-                        "supportsReasoning": m.get("reasoning", False),
-                        "supportsThinking": m.get("reasoning", False),
-                        "isFree": m.get("free", False) or _is_free_model_id(m["id"]),
-                    })
+            for m in entry.get("models", []):
+                all_models.append({
+                    "id": m["id"],
+                    "name": m.get("name", m["id"]),
+                    "provider": entry["name"],
+                    "contextWindow": m.get("contextWindow", 128000),
+                    "supportsReasoning": m.get("reasoning", False),
+                    "supportsThinking": m.get("reasoning", False),
+                    "isFree": m.get("free", False) or _is_free_model_id(m["id"]),
+                })
     except Exception:
         pass
 
