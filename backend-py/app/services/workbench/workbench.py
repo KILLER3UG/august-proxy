@@ -506,8 +506,7 @@ async def send_workbench_message_stream(
     5. Handles tool calls in a loop
     6. Emits events for the SSE stream
     """
-    try:
-        # Get or create session
+    # Get or create session
     session = get_workbench_session(session_id)
     if not session:
         session = create_workbench_session(
@@ -692,14 +691,6 @@ async def send_workbench_message_stream(
     _emit_session_status(session_id)
 
     if emit:
-        emit({"type": "done", "sessionId": session_id})
-
-except Exception as exc:
-    import traceback
-    traceback.print_exc()
-    session.status = "idle"
-    if emit:
-        emit({"type": "error", "message": f"Workbench error: {exc}"})
         emit({"type": "done", "sessionId": session_id})
 
 
