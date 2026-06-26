@@ -1728,12 +1728,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   if (sessionId) updateSessionModel(sessionId, m.id, m.provider);
                 }}
               />
-              {selectedModel?.supportsReasoning && (
-                <EffortDropdown
-                  value={effort}
-                  onChange={setEffort}
-                />
-              )}
+              <EffortDropdown
+                value={effort}
+                onChange={setEffort}
+              />
 
               {streaming ? (
                 <Button onClick={stop} size="sm" variant="outline">
