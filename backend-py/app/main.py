@@ -61,6 +61,15 @@ from app.routers import skills as skills_routes
 from app.routers import models as models_routes
 from app.routers import proxy as proxy_routes
 from app.routers import workbench as workbench_routes
+from app.routers import sessions as sessions_routes
+from app.routers import memory as memory_routes
+from app.routers import audit as audit_routes
+from app.routers import usage as usage_routes
+from app.routers import agents as agents_routes
+from app.routers import mcp as mcp_routes
+from app.routers import cron as cron_routes
+from app.routers import git as git_routes
+from app.routers import terminal as terminal_routes
 
 app.include_router(config_routes.router)
 app.include_router(providers_routes.router)
@@ -68,6 +77,15 @@ app.include_router(skills_routes.router)
 app.include_router(models_routes.router)
 app.include_router(proxy_routes.router)
 app.include_router(workbench_routes.router)
+app.include_router(sessions_routes.router)
+app.include_router(memory_routes.router)
+app.include_router(audit_routes.router)
+app.include_router(usage_routes.router)
+app.include_router(agents_routes.router)
+app.include_router(mcp_routes.router)
+app.include_router(cron_routes.router)
+app.include_router(git_routes.router)
+app.include_router(terminal_routes.router)
 
 
 # ── Static files (SPA) ────────────────────────────────────────────────
