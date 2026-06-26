@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     """Global settings loaded from config.json, providers.json, and .env."""
 
     # ── Port ──────────────────────────────────────────────────────────
-    port: int = int(os.environ.get("AUGUST_PROXY_PORT", "8080"))
+    port: int = int(os.environ.get("AUGUST_PROXY_PORT", "8085"))
 
     # ── Paths ─────────────────────────────────────────────────────────
     project_root: Path = _find_project_root()
