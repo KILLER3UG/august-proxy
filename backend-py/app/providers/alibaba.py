@@ -4,19 +4,83 @@ Provider config for Alibaba Cloud (Qwen).
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any
 
-INFO = {
+
+INFO: dict[str, Any] = {
     "name": "Alibaba Cloud (Qwen)",
-    "default_model": "qwen-max",
-    "default_max_tokens": 8192,
+    "aliases": [
+    "qwen",
+    "alibaba-cloud"
+],
+    "display_name": "Alibaba Cloud (Qwen)",
+    "description": "Alibaba Cloud DashScope API \u2014 Qwen and QwQ models",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "api_mode": "openai_chat",
+    "env_vars": [
+    "ALIBABA_API_KEY",
+    "ALIBABA_BASE_URL"
+],
+    "auth_type": "api_key",
+    "default_model": "qwen3",
+    "fallback_models": [
+    "qwen-plus",
+    "qwen-max",
+    "qwq-32b"
+],
+    "default_max_tokens": 8192,
+    "signup_url": "https://dashscope.aliyun.com",
+    "supports_health_check": True,
+    "model_profiles": {
+    "qwen3": {
+    "supportsReasoning": True,
+    "supportsThinking": False,
+    "combinedBudget": False,
+    "contextWindow": 131072,
+    "maxOutputTokens": 8192
+},
+    "qwen-turbo": {
+    "supportsReasoning": False,
+    "supportsThinking": False,
+    "combinedBudget": False,
+    "contextWindow": 131072,
+    "maxOutputTokens": 8192
+},
+    "qwen-plus": {
+    "supportsReasoning": False,
+    "supportsThinking": False,
+    "combinedBudget": False,
+    "contextWindow": 131072,
+    "maxOutputTokens": 8192
+},
+    "qwen-max": {
+    "supportsReasoning": False,
+    "supportsThinking": False,
+    "combinedBudget": False,
+    "contextWindow": 131072,
+    "maxOutputTokens": 8192
+},
+    "qwq-32b": {
+    "supportsReasoning": True,
+    "supportsThinking": False,
+    "combinedBudget": False,
+    "contextWindow": 131072,
+    "maxOutputTokens": 8192
+},
+    "*": {
+    "supportsReasoning": False,
+    "supportsThinking": False,
+    "combinedBudget": False,
+    "contextWindow": 131072,
+    "maxOutputTokens": 4096
+}
+},
 }
 
 
-def resolve_base_url() -> Optional[str]:
+def resolve_base_url() -> str:
     return "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 
-def resolve_api_key(env_key: Optional[str] = None) -> Optional[str]:
+def resolve_api_key(env_key: str | None = None) -> str | None:
     return env_key

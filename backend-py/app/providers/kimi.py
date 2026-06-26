@@ -4,19 +4,83 @@ Provider config for Kimi (Moonshot).
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any
 
-INFO = {
+
+INFO: dict[str, Any] = {
     "name": "Kimi (Moonshot)",
-    "default_model": "kimi-k2.5",
-    "default_max_tokens": 128000,
+    "aliases": [
+    "kimi",
+    "moonshot",
+    "kimi-coding"
+],
+    "display_name": "Kimi (Moonshot)",
+    "description": "Kimi/Moonshot API \u2014 kimi-k2 reasoning and moonshot-v1 models",
+    "base_url": "https://api.moonshot.cn/v1",
     "api_mode": "openai_chat",
+    "env_vars": [
+    "MOONSHOT_API_KEY",
+    "MOONSHOT_BASE_URL"
+],
+    "auth_type": "api_key",
+    "default_model": "kimi-k2",
+    "fallback_models": [
+    "kimi-k2-turbo",
+    "moonshot-v1-128k"
+],
+    "default_max_tokens": 8192,
+    "signup_url": "https://platform.moonshot.cn",
+    "supports_health_check": True,
+    "model_profiles": {
+    "kimi-k2": {
+    "supportsReasoning": True,
+    "supportsThinking": False,
+    "combinedBudget": False,
+    "contextWindow": 131072,
+    "maxOutputTokens": 8192
+},
+    "kimi-k2-turbo": {
+    "supportsReasoning": True,
+    "supportsThinking": False,
+    "combinedBudget": False,
+    "contextWindow": 131072,
+    "maxOutputTokens": 8192
+},
+    "moonshot-v1-8k": {
+    "supportsReasoning": False,
+    "supportsThinking": False,
+    "combinedBudget": False,
+    "contextWindow": 8192,
+    "maxOutputTokens": 4096
+},
+    "moonshot-v1-32k": {
+    "supportsReasoning": False,
+    "supportsThinking": False,
+    "combinedBudget": False,
+    "contextWindow": 32768,
+    "maxOutputTokens": 4096
+},
+    "moonshot-v1-128k": {
+    "supportsReasoning": False,
+    "supportsThinking": False,
+    "combinedBudget": False,
+    "contextWindow": 131072,
+    "maxOutputTokens": 4096
+},
+    "*": {
+    "supportsReasoning": False,
+    "supportsThinking": False,
+    "combinedBudget": False,
+    "contextWindow": 131072,
+    "maxOutputTokens": 4096
+}
+},
 }
 
 
-def resolve_base_url() -> Optional[str]:
+def resolve_base_url() -> str:
     return "https://api.moonshot.cn/v1"
 
 
-def resolve_api_key(env_key: Optional[str] = None) -> Optional[str]:
+def resolve_api_key(env_key: str | None = None) -> str | None:
     return env_key
