@@ -21,7 +21,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { StatusPill } from '@/components/StatusPill';
 import { formatTimeAgo, cn } from '@/lib/utils';
-import { type Period } from '@/api/backend-ui';
+import { type Period } from '@/api/api-client';
 
 const PERIODS: { key: Period; label: string }[] = [
   { key: 'today', label: 'Today' },
@@ -189,7 +189,7 @@ function ReadableTab({ conversation }: { conversation: import('@/sections/settin
   );
 }
 
-function RawTab({ detail, safeStringify }: { detail: import('@/api/backend-ui').RequestDetailEntry | null; safeStringify: (v: unknown) => string }) {
+function RawTab({ detail, safeStringify }: { detail: import('@/api/api-client').RequestDetailEntry | null; safeStringify: (v: unknown) => string }) {
   if (!detail) {
     return <SettingsEmptyState icon={Inbox} title="No captured detail" description="The request didn't make it into the detail log." />;
   }

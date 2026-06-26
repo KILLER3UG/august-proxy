@@ -15,7 +15,7 @@ import {
   getTerminalSessions,
   resizeTerminalSession,
   type TerminalApproval,
-} from '@/api/backend-ui';
+} from '@/api/api-client';
 
 export function RightDrawerTerminalSection() {
   const qc = useQueryClient();

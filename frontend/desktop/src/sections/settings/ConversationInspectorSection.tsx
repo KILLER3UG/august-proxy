@@ -27,7 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { StatusPill } from '@/components/StatusPill';
 import { PageLoader } from '@/components/PageLoader';
 import { formatTimeAgo, cn } from '@/lib/utils';
-import { type Period } from '@/api/backend-ui';
+import { type Period } from '@/api/api-client';
 import {
   useConversationInspector,
   type InspectorRow,
@@ -228,7 +228,7 @@ function SelectedMeta({
 }: {
   row: InspectorRow | null;
   conversation: ConversationItem | null;
-  detail: import('@/api/backend-ui').RequestDetailEntry | null;
+  detail: import('@/api/api-client').RequestDetailEntry | null;
 }) {
   const fin = conversation?.finishReason ?? detail?.finishReason;
   return (
@@ -310,7 +310,7 @@ function RawTab({
   detail,
   safeStringify,
 }: {
-  detail: import('@/api/backend-ui').RequestDetailEntry | null;
+  detail: import('@/api/api-client').RequestDetailEntry | null;
   safeStringify: (v: unknown) => string;
 }) {
   if (!detail) {

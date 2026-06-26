@@ -59,7 +59,7 @@ import {
   type UserModelAlias,
   type AggregatedModel,
   type SubAgentFallbackConfig,
-} from '@/api/backend-ui';
+} from '@/api/api-client';
 import { WorkspaceField } from '@/components/workspace/WorkspaceField';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
 import { WorkspaceToggle } from '@/components/workspace/WorkspaceToggle';

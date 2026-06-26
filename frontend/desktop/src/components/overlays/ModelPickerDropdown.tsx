@@ -14,7 +14,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { modelDisplayParts, getModelDisplayName, formatContextWindow } from '@/sections/chat/ChatThread';
-import type { AggregatedModel } from '@/api/backend-ui';
+import type { AggregatedModel } from '@/api/api-client';
 
 interface ModelPickerDropdownProps {
   models: AggregatedModel[];

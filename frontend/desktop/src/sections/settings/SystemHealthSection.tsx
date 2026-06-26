@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/api/client';
 import { $gateway } from '@/store/gateway';
-import { getHostAgentStatus } from '@/api/backend-ui';
+import { getHostAgentStatus } from '@/api/api-client';
 import { Badge } from '@/components/ui/badge';
 import { PageLoader } from '@/components/PageLoader';
 

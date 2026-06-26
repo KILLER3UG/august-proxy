@@ -22,7 +22,7 @@ import {
   putSecurity,
   getHostAgentHealth,
   type AugustSnapshot,
-} from '@/api/backend-ui';
+} from '@/api/api-client';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
 
 interface ComputerRoots {
@@ -56,7 +56,7 @@ async function saveComputerRoots(next: Partial<ComputerRoots>): Promise<Computer
 }
 
 async function setAugustSetting(payload: { key_path: string; value: unknown }): Promise<unknown> {
-  const { updateAugustSetting } = await import('@/api/backend-ui');
+  const { updateAugustSetting } = await import('@/api/api-client');
   return updateAugustSetting(payload);
 }
 

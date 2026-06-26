@@ -15,8 +15,8 @@ import {
   startPreviewSession,
   stopPreviewSession,
   type PreviewApproval,
-} from '@/api/backend-ui';
-import type { RequestEntry } from '@/api/backend-ui';
+} from '@/api/api-client';
+import type { RequestEntry } from '@/api/api-client';
 
 export function RightDrawerPreviewSection({
   sessionId,

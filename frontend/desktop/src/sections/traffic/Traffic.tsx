@@ -12,7 +12,7 @@ import {
   getActivity,
   type RequestEntry,
   type Period,
-} from '@/api/backend-ui';
+} from '@/api/api-client';
 
 /** A normalized row so the table renderer can stay mock-shape-agnostic. */
 interface TrafficRow {

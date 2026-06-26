@@ -24,7 +24,7 @@ import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useLogStream, type StreamStatus } from '@/hooks/useLogStream';
-import type { LogEvent } from '@/api/backend-ui';
+import type { LogEvent } from '@/api/api-client';
 
 /* ── Category → visual mapping ─────────────────────────────────────── */
 

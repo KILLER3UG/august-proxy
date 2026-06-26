@@ -13,7 +13,7 @@ import {
     getModelAliases,
     getUserModelAliases,
     type ObservabilityOverview as OverviewPayload
-} from '@/api/backend-ui';
+} from '@/api/api-client';
 import { cn, formatTimeAgo } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
