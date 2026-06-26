@@ -152,8 +152,14 @@ async def refreshModels(providerId: str):
             try:
                 import httpx
                 url = baseUrl.rstrip("/")
-                if not url.endswith("/models"):
-                    url = url.replace("/chat/completions", "").replace("/messages", "").replace("/v1", "") + "/models"
+                # Derive the /models endpoint from the base URL
+                if not url.endswith("/models") and not url.endswith("/v1/models"):
+                    if url.endswith("/chat/completions"):
+                        url = url.replace("/chat/completions", "/models")
+                    elif url.endswith("/v1"):
+                        url += "/models"
+                    else:
+                        url += "/v1/models"
                 async with httpx.AsyncClient(timeout=5) as client:
                     resp = await client.get(url, headers={"Authorization": f"Bearer {apiKey}"})
                     if resp.status_code == 200:
