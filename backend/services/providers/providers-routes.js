@@ -506,6 +506,7 @@ async function handleProvidersRoutes(req, res) {
         };
         store.providers.push(p);
         persist();
+        if (modelList && typeof modelList.invalidateModelListCache === 'function') modelList.invalidateModelListCache();
         sendJson(res, publicProvider(p), 201);
         return true;
     }
@@ -538,6 +539,7 @@ async function handleProvidersRoutes(req, res) {
             if (body.autoFetch !== undefined) p.autoFetch = !!body.autoFetch;
             p.updatedAt = new Date().toISOString();
             persist();
+            if (modelList && typeof modelList.invalidateModelListCache === 'function') modelList.invalidateModelListCache();
             sendJson(res, publicProvider(p));
             return true;
         }
@@ -546,6 +548,7 @@ async function handleProvidersRoutes(req, res) {
         if (subPath === '' && method === 'DELETE') {
             store.providers = store.providers.filter((x) => x.id !== id);
             persist();
+            if (modelList && typeof modelList.invalidateModelListCache === 'function') modelList.invalidateModelListCache();
             sendJson(res, { ok: true });
             return true;
         }
@@ -574,6 +577,7 @@ async function handleProvidersRoutes(req, res) {
             p.models = [...(p.models || []), m];
             p.updatedAt = new Date().toISOString();
             persist();
+            if (modelList && typeof modelList.invalidateModelListCache === 'function') modelList.invalidateModelListCache();
             sendJson(res, publicProvider(p), 201);
             return true;
         }
@@ -596,6 +600,7 @@ async function handleProvidersRoutes(req, res) {
                 existing.updatedAt = new Date().toISOString();
                 p.updatedAt = new Date().toISOString();
                 persist();
+                if (modelList && typeof modelList.invalidateModelListCache === 'function') modelList.invalidateModelListCache();
                 sendJson(res, publicProvider(p));
                 return true;
             }
@@ -607,6 +612,7 @@ async function handleProvidersRoutes(req, res) {
                 p.models = (p.models || []).filter((m) => m.id !== modelId);
                 p.updatedAt = new Date().toISOString();
                 persist();
+                if (modelList && typeof modelList.invalidateModelListCache === 'function') modelList.invalidateModelListCache();
                 sendJson(res, { ok: true });
                 return true;
             }

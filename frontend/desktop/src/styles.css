@@ -288,6 +288,7 @@ input::placeholder {
 
 .thinking-label {
   display: inline-flex;
+  white-space: pre;
 }
 
 .thinking-char {
@@ -295,29 +296,9 @@ input::placeholder {
   transition: opacity 0.3s ease;
 }
 
-.thinking-text.animating .thinking-char {
-  animation: charGlow 1.6s infinite ease-in-out;
-}
-
 .thinking-cap {
   font-size: 1em;
   font-weight: inherit;
-}
-
-.thinking-char:nth-child(1) { animation-delay: 0.0s; }
-.thinking-char:nth-child(2) { animation-delay: 0.1s; }
-.thinking-char:nth-child(3) { animation-delay: 0.2s; }
-.thinking-char:nth-child(4) { animation-delay: 0.3s; }
-.thinking-char:nth-child(5) { animation-delay: 0.4s; }
-.thinking-char:nth-child(6) { animation-delay: 0.5s; }
-.thinking-char:nth-child(7) { animation-delay: 0.6s; }
-.thinking-char:nth-child(8) { animation-delay: 0.7s; }
-
-@keyframes charGlow {
-  0%, 100% { opacity: 0.35; }
-  10%      { opacity: 1; transform: scale(1.05); }
-  20%      { opacity: 0.7; }
-  30%      { opacity: 0.35; }
 }
 
 .thinking-dots {
@@ -705,27 +686,48 @@ input::placeholder {
   word-break: break-word;
 }
 
-/* Shimmer text for pending/streaming state (ThinkingDisclosure) */
+/* Shimmer text for pending/streaming state (ThinkingDisclosure)
+ *
+ * Note: -webkit-text-fill-color + background-clip:text can make text
+ * invisible in some environments (Electron/Chromium GPU compositing).
+ * We always set a visible base color + animation, then layer the
+ * gradient shimmer on top only when background-clip is supported.
+ */
 .shimmer {
-  background: linear-gradient(
-    90deg,
-    var(--dt-muted-foreground) 0%,
-    var(--dt-foreground) 50%,
-    var(--dt-muted-foreground) 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--dt-foreground);
   animation: shimmerMove 1.5s ease-in-out infinite;
+}
+
+/* When background-clip:text is supported, use a gradient shimmer instead
+ * of the simple color fade-in above.
+ * The @supports query ensures text is NEVER invisible — on environments
+ * where background-clip fails the user sees the color animation instead.
+ */
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--dt-muted-foreground) 0%,
+      var(--dt-foreground) 50%,
+      var(--dt-muted-foreground) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
 }
 
 @keyframes shimmerMove {
   0% {
     background-position: 200% 0;
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
   }
   100% {
     background-position: -200% 0;
+    opacity: 0.6;
   }
 }
 

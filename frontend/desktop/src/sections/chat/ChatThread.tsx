@@ -805,6 +805,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     handleRefreshModels();
   }, [handleRefreshModels]);
 
+  // Re-fetch models when the session changes (e.g. user navigated back from
+  // Settings after adding a provider). This keeps the model dropdown in sync
+  // without requiring a manual refresh.
+  useEffect(() => {
+    handleRefreshModels(true);
+  }, [sessionId]);
+
   // Remove hardcoded fallback — rely on API only
   const currentModel = selectedModel || null;
   const modelForRequest = currentModel || modelFromSession(activeSession || null);
@@ -2417,7 +2424,7 @@ function MessageBubble({
                 {JSON.stringify(message, null, 2)}
               </div>
             ) : (
-              <AnimatePresence initial={false} mode="wait">
+              <AnimatePresence initial={false}>
                 {showPendingThinking && (
                   <motion.div
                     key="pending-thinking"
@@ -3415,9 +3422,12 @@ export function getDisplayBlocks(
 ): MessageBlock[] {
   try {
     const result: MessageBlock[] = [];
+    let hasFinalContent = false;
+
     if (blocks && blocks.length > 0) {
       for (const block of blocks) {
         if (block.type === 'final_output' && block.content) {
+          hasFinalContent = true;
           const parsed = parseSequentialText(block.content);
           for (const [subIndex, sub] of parsed.entries()) {
             result.push({
@@ -3430,6 +3440,20 @@ export function getDisplayBlocks(
           result.push(block);
         }
       }
+
+      // Safety net: if blocks exist but none carried final text content,
+      // inject the raw message content so it's never silently lost.
+      if (!hasFinalContent && content && content.trim()) {
+        const parsed = parseSequentialText(content);
+        for (const [subIndex, sub] of parsed.entries()) {
+          result.push({
+            id: `safety_content_sub_${subIndex}_${sub.type}`,
+            type: sub.type,
+            content: sub.content
+          });
+        }
+      }
+
       if (result.length > 0) return result;
     }
 

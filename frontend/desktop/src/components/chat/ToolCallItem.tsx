@@ -245,6 +245,11 @@ export function ToolCallItem({
   const [approvalStatus, setApprovalStatus] = useState<'idle' | 'confirming' | 'confirmed'>('idle');
 
   const isRunning = tool.status === 'running';
+  // Safety timeout: if a tool has been running for > 120 seconds without a
+  // result event, treat it as stalled — show a warning so the user knows
+  // something went wrong rather than seeing an infinite spinner.
+  const toolStalled = isRunning && startedAtMs !== undefined && (now - startedAtMs) > 120_000;
+  const effectiveStatus = toolStalled ? 'error' : tool.status;
   const isCommand = tool.name.startsWith('@run_command') || tool.name.startsWith('run_command');
   // Strip the @ prefix that the workbench sometimes prepends so the icon
   // mapper matches the canonical tool name (e.g. "read_file" not "@read_file").
@@ -264,7 +269,9 @@ export function ToolCallItem({
     command: commandText ?? undefined,
     status: tool.status
   });
-  const labelTitle = isCommand && commandText && commandText.length > 120 ? commandText : undefined;
+  const labelTitle = isCommand && commandText && commandText.length > 120
+    ? commandText
+    : isLongLabel(label) ? label : undefined;
   const displayLabel = (elapsed !== undefined && elapsed >= 100) ? `${label} · ${formatTimer(elapsed)}` : label;
 
   // Always-visible friendly context line: prefer the humanized summary from
@@ -292,7 +299,7 @@ export function ToolCallItem({
           <span
             className={cn(
               'text-xs font-medium leading-5 min-w-0 flex-1',
-              isRunning && !isLongLabel(label) && 'shimmer text-foreground/55'
+              isRunning && !isLongLabel(label) && 'text-foreground/85'
             )}
             title={labelTitle}
           >
@@ -305,9 +312,9 @@ export function ToolCallItem({
                 {displayLabel}
               </span>
             ) : (
-              <span className={cn('thinking-text', isRunning && 'animating')}>
+              <span className="thinking-text">
                 <span className="thinking-label">
-                  {Array.from(displayLabel).map((ch, i) => (
+                  {Array.from(displayLabel.replace(/ /g, '\u00A0')).map((ch, i) => (
                     <span
                       key={i}
                       className={cn('thinking-char', i === 0 && 'thinking-cap')}
@@ -328,24 +335,27 @@ export function ToolCallItem({
             )}
           </span>
           <span className="flex items-center gap-1.5 shrink-0 ml-auto pl-2">
-            {tool.status === 'done' && (
+            {toolStalled ? (
+              <span className="inline-flex items-center gap-1">
+                <AlertCircle className="size-3 text-warning" />
+                <span className="tool-row-meta text-warning">stalled</span>
+              </span>
+            ) : tool.status === 'done' ? (
               <span className="inline-flex items-center gap-1">
                 <span className="inline-block size-1.5 rounded-full bg-success" />
                 <span className="tool-row-meta text-success">done</span>
               </span>
-            )}
-            {tool.status === 'error' && (
+            ) : tool.status === 'error' ? (
               <span className="inline-flex items-center gap-1">
                 <AlertCircle className="size-3 text-danger" />
                 <span className="tool-row-meta text-danger">failed</span>
               </span>
-            )}
-            {tool.status === 'running' && tool.pendingApproval && (
+            ) : tool.status === 'running' && tool.pendingApproval ? (
               <span className="inline-flex items-center gap-1">
                 <CircleDot className="size-3 text-warning animate-pulse" />
                 <span className="tool-row-meta text-warning">awaiting</span>
               </span>
-            )}
+            ) : null}
           </span>
         </span>
       </DisclosureRow>
@@ -361,7 +371,12 @@ export function ToolCallItem({
 
       {open && hasBody && (
         <div className="mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1">
-          {tool.context && <FormattedSection toolName={tool.name} label="context" raw={tool.context} format={formatToolContext} />}
+          {/* For read-type tools (context_read, memory_search, read_file etc.)
+              the raw JSON input is noise — skip it so the user sees what was
+              actually read (the result/summary) when they expand the card. */}
+          {tool.context && !tool.name.match(/context_read|memory_search|read_file|search/) && (
+            <FormattedSection toolName={tool.name} label="context" raw={tool.context} format={formatToolContext} />
+          )}
 
           {(() => {
             const visible = progress ? visibleProgress(progress) : [];

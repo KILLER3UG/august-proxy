@@ -72,6 +72,7 @@ from app.routers import git as git_routes
 from app.routers import terminal as terminal_routes
 from app.routers import terminal_routes as terminal_ws_routes
 from app.routers import manage as manage_routes
+from app.routers import monitoring as monitoring_routes
 
 app.include_router(config_routes.router)
 app.include_router(providers_routes.router)
@@ -90,6 +91,7 @@ app.include_router(git_routes.router)
 app.include_router(terminal_routes.router)
 app.include_router(terminal_ws_routes.router)
 app.include_router(manage_routes.router)
+app.include_router(monitoring_routes.router)
 
 
 # ── Static files (SPA) ────────────────────────────────────────────────
@@ -102,7 +104,16 @@ if _WEB_DIST.is_dir():
 
     @app.exception_handler(404)
     async def spa_fallback(request, exc):
-        """Return index.html for any unmatched GET route (SPA fallback)."""
+        """Return index.html for unmatched routes.
+
+        API routes (/api/, /v1/) return a JSON 404 so the frontend
+        doesn't try to parse HTML as SSE/JSON.
+        """
+        path = request.url.path
+        if path.startswith("/api/") or path.startswith("/v1/"):
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": "Not found", "path": path}, status_code=404)
+
         index = _WEB_DIST / "index.html"
         if index.exists():
             return FileResponse(str(index))

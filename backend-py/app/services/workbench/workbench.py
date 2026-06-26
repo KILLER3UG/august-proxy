@@ -588,15 +588,14 @@ async def send_workbench_message_stream(
         tool_round += 1
 
         if is_anthropic:
-            # Use Anthropic adapter for the call
             response = await _call_anthropic_workbench(
                 current_messages, system_text, resolved_model, tools,
-                effective_effort, provider=resolved_provider,
+                effective_effort, provider=resolved_provider, emit=emit,
             )
         elif is_openai:
             response = await _call_openai_workbench(
                 current_messages, system_text, resolved_model, openai_tools,
-                effective_effort, provider=resolved_provider,
+                effective_effort, provider=resolved_provider, emit=emit,
             )
         else:
             if emit:
@@ -608,7 +607,9 @@ async def send_workbench_message_stream(
                 emit({"type": "error", "message": response["error"]})
             break
 
-        # Extract the assistant message
+        # Extract the assistant message from the streaming response.
+        # Thinking, final_output, and tool_use events were already emitted
+        # progressively during streaming — only build the session message here.
         if is_anthropic:
             assistant_msg = {
                 "role": "assistant",
@@ -627,39 +628,9 @@ async def send_workbench_message_stream(
                 "content": msg.get("content", ""),
                 "tool_calls": msg.get("tool_calls", []),
             }
-            text_content = msg.get("content", "")
-            # Extract reasoning/thinking content (OpenAI sends this as
-            # "reasoning" or "reasoning_content" in the message)
-            thinking_content = msg.get("reasoning") or msg.get("reasoning_content", "")
-            tool_uses = []
-            for tc in msg.get("tool_calls", []):
-                try:
-                    input_args = json.loads(tc.get("function", {}).get("arguments", "{}"))
-                except (json.JSONDecodeError, TypeError):
-                    input_args = {}
-                tool_uses.append({
-                    "type": "tool_use",
-                    "name": tc.get("function", {}).get("name", ""),
-                    "input": input_args,
-                })
-
-        # Emit thinking/reasoning content if present
-        if thinking_content and emit:
-            emit({"type": "thinking", "content": thinking_content})
-
-        # Emit text content as final_output (frontend only renders
-        # 'thinking' and 'final_output' block types in ChatThread.tsx)
-        if text_content and emit:
-            emit({"type": "final_output", "content": text_content})
-
-        # Emit tool uses
-        for tu in tool_uses:
-            if emit:
-                emit({
-                    "type": "tool_use",
-                    "name": tu.get("name", ""),
-                    "input": tu.get("input", {}),
-                })
+            text_content = response.get("text", "")
+            thinking_content = response.get("thinking", "")
+            tool_uses = response.get("tool_uses", [])
 
         session.messages.append(assistant_msg)
 
@@ -689,13 +660,19 @@ async def send_workbench_message_stream(
 
             # Execute
             if emit:
-                emit({"type": "tool_call", "name": tool_name, "status": "running"})
+                emit({
+                    "type": "tool_call",
+                    "id": tool_use_id,
+                    "name": tool_name,
+                    "status": "running",
+                })
 
             result = await _execute_tool(tool_name, tool_input, session)
 
             if emit:
                 emit({
                     "type": "tool_result",
+                    "id": tool_use_id,
                     "name": tool_name,
                     "summary": str(result)[:2000],
                     "status": "done",
@@ -786,8 +763,14 @@ async def _call_anthropic_workbench(
     tools: list[dict[str, Any]],
     effort: str,
     provider: dict[str, Any] | None = None,
+    emit: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    """Call an Anthropic-format model for workbench chat."""
+    """Call an Anthropic-format model with progressive streaming.
+
+    Emits ``thinking``, ``final_output``, and ``tool_use`` events as
+    tokens arrive. Returns the full aggregated response dict with
+    ``content``, ``text``, ``thinking``, and ``tool_uses`` keys.
+    """
     from app.adapters.anthropic import build_anthropic_upstream_request
     from app.providers.clients import get_client
 
@@ -804,10 +787,6 @@ async def _call_anthropic_workbench(
     if not api_key:
         return {"error": "API key not configured"}
 
-    headers = client.build_auth_headers(api_key)
-    base_url = client.resolve_base_url()
-    upstream_url = f"{base_url}/messages"
-
     body = build_anthropic_upstream_request(
         {"messages": messages, "max_tokens": 8192},
         model,
@@ -821,9 +800,98 @@ async def _call_anthropic_workbench(
     if thinking_budget > 0 and _supports_thinking(provider, model):
         body["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
 
-    body["stream"] = False
-    resp = await client.request_json("POST", upstream_url, headers, body)
-    return resp.body_json or {"error": str(resp.body)}
+    # ── Stream from upstream ───────────────────────────────────────────
+    content_blocks: list[dict[str, Any]] = []
+    accumulated_text = ""
+    accumulated_thinking = ""
+    tool_uses: list[dict[str, Any]] = []
+    current_tool_block: dict[str, Any] | None = None
+    current_tool_input_parts: list[str] = []
+
+    try:
+        async for event in client.messages_stream(body):
+            event_type = event.get("_event_type", "")
+
+            if event_type == "content_block_start":
+                block = event.get("content_block", {})
+                block_type = block.get("type", "")
+                if block_type == "tool_use":
+                    current_tool_block = {
+                        "type": "tool_use",
+                        "id": block.get("id", f"toolu_{uuid.uuid4().hex[:16]}"),
+                        "name": block.get("name", ""),
+                        "input": {},
+                    }
+                    current_tool_input_parts = []
+                elif block_type == "text":
+                    text = block.get("text", "")
+                    if text:
+                        accumulated_text += text
+                        if emit:
+                            emit({"type": "final_output", "content": text})
+                elif block_type == "thinking":
+                    text = block.get("thinking", "")
+                    if text:
+                        accumulated_thinking += text
+                        if emit:
+                            emit({"type": "thinking", "content": text})
+
+            elif event_type == "content_block_delta":
+                delta = event.get("delta", {})
+                delta_type = delta.get("type", "")
+                if delta_type == "text_delta":
+                    text = delta.get("text", "")
+                    if text:
+                        accumulated_text += text
+                        if emit:
+                            emit({"type": "final_output", "content": text})
+                elif delta_type == "thinking_delta":
+                    text = delta.get("thinking", "")
+                    if text:
+                        accumulated_thinking += text
+                        if emit:
+                            emit({"type": "thinking", "content": text})
+                elif delta_type == "input_json_delta":
+                    current_tool_input_parts.append(delta.get("partial_json", ""))
+
+            elif event_type == "content_block_stop":
+                if current_tool_block:
+                    raw = "".join(current_tool_input_parts)
+                    if raw:
+                        try:
+                            current_tool_block["input"] = json.loads(raw)
+                        except json.JSONDecodeError:
+                            current_tool_block["input"] = {"_raw": raw}
+                    tool_uses.append(current_tool_block)
+                    if emit:
+                        emit({
+                            "type": "tool_use",
+                            "id": current_tool_block["id"],
+                            "name": current_tool_block["name"],
+                            "input": current_tool_block["input"],
+                        })
+                    current_tool_block = None
+                    current_tool_input_parts = []
+
+            elif event_type == "error":
+                return {"error": f"Stream error: {event}"}
+
+    except Exception as exc:
+        return {"error": str(exc)}
+
+    # Build content blocks preserving order
+    if accumulated_thinking:
+        content_blocks.append({"type": "thinking", "text": accumulated_thinking})
+    if accumulated_text:
+        content_blocks.append({"type": "text", "text": accumulated_text})
+    content_blocks.extend(tool_uses)
+
+    return {
+        "content": content_blocks,
+        "text": accumulated_text,
+        "thinking": accumulated_thinking,
+        "tool_uses": tool_uses,
+    }
 
 
 async def _call_openai_workbench(
@@ -833,8 +901,14 @@ async def _call_openai_workbench(
     tools: list[dict[str, Any]],
     effort: str,
     provider: dict[str, Any] | None = None,
+    emit: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    """Call an OpenAI-format model for workbench chat."""
+    """Call an OpenAI-format model with progressive streaming.
+
+    Emits ``thinking`` / ``reasoning`` and ``final_output`` events as
+    tokens arrive. Returns the full aggregated response dict with
+    ``choices`` (OpenAI format), ``text``, ``thinking``, and ``tool_uses``.
+    """
     from app.providers.clients import get_client
 
     if not provider:
@@ -850,10 +924,6 @@ async def _call_openai_workbench(
     if not api_key:
         return {"error": "API key not configured"}
 
-    headers = client.build_auth_headers(api_key)
-    base_url = client.resolve_base_url()
-    upstream_url = f"{base_url}/chat/completions"
-
     openai_messages: list[dict[str, Any]] = [{"role": "system", "content": system_text}]
     openai_messages.extend(messages)
 
@@ -861,7 +931,6 @@ async def _call_openai_workbench(
         "model": model,
         "messages": openai_messages,
         "max_tokens": 8192,
-        "stream": False,
     }
     if tools:
         body["tools"] = tools
@@ -871,8 +940,121 @@ async def _call_openai_workbench(
     if reasoning:
         body["reasoning_effort"] = reasoning
 
-    resp = await client.request_json("POST", upstream_url, headers, body)
-    return resp.body_json or {"error": str(resp.body)}
+    # ── Stream from upstream ───────────────────────────────────────────
+    content_text = ""
+    thinking_text = ""
+    tool_calls_accum: dict[int, dict[str, Any]] = {}
+    finish_reason: str | None = None
+
+    try:
+        async for event in client.chat_completions_stream(body):
+            event_type = event.get("_event_type", "")
+
+            # OpenAI streaming sends "chat.completion.chunk" events
+            if event_type not in ("chat.completion.chunk", ""):
+                # Some providers omit the event type — proceed anyway
+                pass
+
+            choices = event.get("choices", [])
+            if not choices:
+                continue
+
+            choice = choices[0]
+            delta = choice.get("delta", {})
+
+            # Reasoner content (thinking)
+            reasoner = delta.get("reasoning_content") or delta.get("reasoning")
+            if reasoner:
+                thinking_text += reasoner
+                if emit:
+                    emit({"type": "thinking", "content": reasoner})
+
+            # Normal text content
+            text_delta = delta.get("content", "")
+            if text_delta:
+                content_text += text_delta
+                if emit:
+                    emit({"type": "final_output", "content": text_delta})
+
+            # Tool calls
+            for tc in delta.get("tool_calls", []):
+                idx = tc.get("index", 0)
+                if idx not in tool_calls_accum:
+                    fn = tc.get("function", {})
+                    tool_calls_accum[idx] = {
+                        "id": tc.get("id", f"call_{uuid.uuid4().hex[:12]}"),
+                        "type": "function",
+                        "function": {
+                            "name": fn.get("name", ""),
+                            "arguments": fn.get("arguments", ""),
+                        },
+                    }
+                else:
+                    fn = tc.get("function", {})
+                    existing = tool_calls_accum[idx]["function"]
+                    if fn.get("arguments"):
+                        existing["arguments"] += fn["arguments"]
+                    if fn.get("name"):
+                        existing["name"] += fn["name"]
+
+            # Finish reason
+            if choice.get("finish_reason"):
+                finish_reason = choice["finish_reason"]
+
+    except Exception as exc:
+        return {"error": str(exc)}
+
+    # Build OpenAI-style response
+    assistant_message: dict[str, Any] = {
+        "role": "assistant",
+        "content": content_text,
+    }
+
+    tool_uses: list[dict[str, Any]] = []
+    if tool_calls_accum:
+        tc_list = []
+        for idx in sorted(tool_calls_accum):
+            tc = tool_calls_accum[idx]
+            fn = tc["function"]
+            try:
+                parsed_args = json.loads(fn["arguments"]) if fn["arguments"] else {}
+            except (json.JSONDecodeError, TypeError):
+                parsed_args = {}
+            tc_list.append({
+                "id": tc["id"],
+                "type": "function",
+                "function": {
+                    "name": fn["name"],
+                    "arguments": parsed_args,
+                },
+            })
+            tool_uses.append({
+                "type": "tool_use",
+                "id": tc["id"],
+                "name": fn["name"],
+                "input": parsed_args,
+            })
+
+            if emit:
+                emit({
+                    "type": "tool_use",
+                    "id": tc["id"],
+                    "name": fn["name"],
+                    "input": parsed_args,
+                })
+
+        assistant_message["tool_calls"] = tc_list
+
+    return {
+        "choices": [{
+            "index": 0,
+            "message": assistant_message,
+            "finish_reason": finish_reason or "stop",
+        }],
+        "text": content_text,
+        "thinking": thinking_text,
+        "tool_uses": tool_uses,
+    }
 
 
 def _supports_thinking(provider: dict[str, Any], model: str) -> bool:

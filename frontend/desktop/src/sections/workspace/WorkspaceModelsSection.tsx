@@ -168,6 +168,8 @@ function ProvidersTab() {
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['ws-providers'] });
+    qc.invalidateQueries({ queryKey: ['aggregated-models'] });
+    qc.invalidateQueries({ queryKey: ['mp-aggregated-models'] });
   };
 
   function selectProvider(id: string) {

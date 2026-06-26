@@ -479,8 +479,9 @@ class BaseProviderClient:
     ) -> AsyncIterator[dict[str, Any]]:
         """Stream SSE events from an upstream API.
 
-        Yields parsed JSON dicts for each ``data:`` line. Emits an ``error``
-        event on HTTP errors or connection failures.
+        Yields parsed JSON dicts for each ``data:`` line as they arrive
+        (progressive / real-time). Emits an ``error`` event on HTTP errors
+        or connection failures.
         """
         last_exc: Exception | None = None
         for attempt in range(self.max_retries + 1):
@@ -502,29 +503,51 @@ class BaseProviderClient:
                         }
                         return
 
-                    # Collect parsed events from the SSE stream
-                    collected: list[dict[str, Any]] = []
+                    # Progressive streaming via asyncio.Queue:
+                    # The SSE parser feeds parsed events into the queue as
+                    # they arrive from the HTTP stream. A background task
+                    # drives the parser. The main coroutine yields events
+                    # from the queue immediately — no buffering.
+                    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=256)
 
                     def collector(event: str, data: str) -> None:
                         if data == "[DONE]":
+                            queue.put_nowait(None)  # sentinel
                             return
                         try:
                             parsed = json.loads(data)
                             if isinstance(parsed, dict):
-                                parsed["_event_type"] = event  # annotate with SSE event name
-                            collected.append(parsed)
+                                parsed["_event_type"] = event
+                            queue.put_nowait(parsed)
                         except json.JSONDecodeError:
                             pass
 
                     parser = SseStreamParser(on_event=collector)
 
-                    async for line in resp.aiter_lines():
-                        parser.feed(line + "\n")
+                    async def _feed() -> None:
+                        """Background task: feed incoming lines into the SSE parser."""
+                        try:
+                            async for line in resp.aiter_lines():
+                                parser.feed(line + "\n")
+                            parser.flush()
+                        finally:
+                            # Ensure the queue is unblocked even on error
+                            queue.put_nowait(None)
 
-                    parser.flush()
+                    feed_task = asyncio.create_task(_feed())
 
-                    for item in collected:
-                        yield item
+                    try:
+                        while True:
+                            item = await queue.get()
+                            if item is None:
+                                break  # sentinel — stream ended
+                            yield item
+                    finally:
+                        feed_task.cancel()
+                        try:
+                            await feed_task
+                        except asyncio.CancelledError:
+                            pass
                     return
 
             except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as exc:

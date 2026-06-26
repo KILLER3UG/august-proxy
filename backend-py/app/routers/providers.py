@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from app.providers import registry, resolver
 from app.services import config_service
+from app.services import model_service
 
 router = APIRouter(prefix="/api/providers")
 
@@ -85,6 +86,7 @@ async def createProvider(body: ProviderCreate):
     }
     store["providers"].append(entry)
     config_service.save_providers_store(store)
+    model_service.invalidate_cache()
     return {**entry, "apiKeySet": bool(body.apiKey)}
 
 
@@ -113,6 +115,7 @@ async def updateProvider(providerId: str, body: ProviderUpdate):
             if body.enabled is not None:
                 p["enabled"] = body.enabled
             config_service.save_providers_store(store)
+            model_service.invalidate_cache()
             return {**p, "apiKeySet": bool(p.get("apiKey"))}
     raise HTTPException(status_code=404, detail="Provider not found")
 
@@ -130,6 +133,7 @@ async def deleteProvider(providerId: str):
     if len(store["providers"]) == before:
         raise HTTPException(status_code=404, detail="Provider not found")
     config_service.save_providers_store(store)
+    model_service.invalidate_cache()
     return {"deleted": True}
 
 
@@ -191,6 +195,7 @@ async def refreshModels(providerId: str):
                 currentModels.append({"id": mid, "name": mid, "contextWindow": 128000, "reasoning": False, "free": ":free" in mid or "-free" in mid, "source": "fetched"})
         p["models"] = currentModels
         config_service.save_providers_store(store)
+        model_service.invalidate_cache()
         return {"added": added, "updated": updated, "removed": removed}
     raise HTTPException(status_code=404, detail="Provider not found")
 
@@ -215,6 +220,7 @@ async def addModel(providerId: str, body: ModelCreate):
                 "source": "manual",
             })
             config_service.save_providers_store(store)
+            model_service.invalidate_cache()
             return {**p, "apiKeySet": bool(p.get("apiKey"))}
     raise HTTPException(status_code=404, detail="Provider not found")
 
@@ -235,6 +241,7 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                     if body.free is not None:
                         m["free"] = body.free
                     config_service.save_providers_store(store)
+                    model_service.invalidate_cache()
                     return {"updated": True}
             raise HTTPException(status_code=404, detail="Model not found")
     raise HTTPException(status_code=404, detail="Provider not found")
@@ -250,6 +257,7 @@ async def deleteModel(providerId: str, modelId: str):
             if len(p["models"]) == before:
                 raise HTTPException(status_code=404, detail="Model not found")
             config_service.save_providers_store(store)
+            model_service.invalidate_cache()
             return {"deleted": True}
     raise HTTPException(status_code=404, detail="Provider not found")
 

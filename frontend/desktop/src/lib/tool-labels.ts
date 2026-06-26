@@ -78,6 +78,10 @@ const TOOL_LABEL_MAP: Record<string, string> = {
   'august__recall': 'Recalling',
   'august_memory_write': 'Saving memory',
   'august__memory_write': 'Saving memory',
+  'august__context_read': 'Reading context',
+  'context_read': 'Reading context',
+  'august__memory_search': 'Searching memory',
+  'memory_search': 'Searching memory',
 
   // Web & API
   'august_web': 'Fetching',
@@ -188,6 +192,10 @@ const TOOL_VERB_DONE: Record<string, string> = {
   'august__recall': 'Recalled',
   'august_memory_write': 'Saved memory',
   'august__memory_write': 'Saved memory',
+  'august__context_read': 'Read context',
+  'context_read': 'Read context',
+  'august__memory_search': 'Searched memory',
+  'memory_search': 'Searched memory',
 
   // Web & API
   'august_web': 'Fetched',

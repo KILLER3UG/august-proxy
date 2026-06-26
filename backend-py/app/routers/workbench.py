@@ -109,6 +109,13 @@ async def session_status(session_id: str):
     return status
 
 
+# Frontend also polls /api/workbench/session/{id}/status (singular).
+@router.get("/session/{session_id}/status")
+async def session_status_singular(session_id: str):
+    """Get session status — singular path (used by ApprovalBanner)."""
+    return await session_status(session_id)
+
+
 # ── Chat ─────────────────────────────────────────────────────────────
 
 
@@ -162,6 +169,9 @@ async def stream_chat(
     since_seq_raw: str = Query(default="0", alias="sinceSeq"),
 ):
     """SSE stream for chat events."""
+    if not sessionId:
+        raise HTTPException(status_code=400, detail="sessionId is required")
+
     session_id = sessionId
     since_seq = int(since_seq_raw) if since_seq_raw and since_seq_raw.isdigit() else 0
 

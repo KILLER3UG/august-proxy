@@ -313,12 +313,18 @@ export async function startChatStream(
       finalize('aborted');
       return;
     }
-    console.error(e);
+    console.error('[startChatStream] error:', e);
+    const errorMsg = e?.message || e?.toString() || 'Unknown error';
     updateSessionStreamState(sessionId, prev => ({
       messages: prev.messages.map(msg =>
-        msg.id === assistantMsgId ? { ...msg, content: (msg.content || '') + `\n\n⚠️ Connection error: ${e.message}` } : msg
+        msg.id === assistantMsgId
+          ? { ...msg, content: (msg.content || '') + `\n\n⚠️ Could not generate a response: ${errorMsg}` }
+          : msg
       )
     }));
+    // Also emit an error event through the handler so the onError path
+    // in makeStreamHandlers can write the ⚠️ block into streamBlocks.
+    try { handlers.onError?.({ message: errorMsg }); } catch {}
     finalize('error');
   } finally {
     activeStreamControllers.delete(sessionId);
@@ -594,7 +600,7 @@ export function getSessionSubscriberLastSeq(sessionId: string): number {
 export function appendBlockEvent(
   prevBlocks: MessageBlock[],
   event: {
-    type: 'thinking' | 'text' | 'content' | 'tool_call' | 'command' | 'tool_progress' | 'tool_result';
+	    type: 'thinking' | 'text' | 'content' | 'final_output' | 'tool_call' | 'command' | 'tool_progress' | 'tool_result';
     content?: string;
     name?: string;
     id?: string;
@@ -621,7 +627,7 @@ export function appendBlockEvent(
         content: text
       });
     }
-  } else if (event.type === 'text' || event.type === 'content') {
+    } else if (event.type === 'text' || event.type === 'content' || event.type === 'final_output') {
     const text = event.content || '';
     if (lastBlock && lastBlock.type === 'final_output') {
       lastBlock.content = (lastBlock.content || '') + text;

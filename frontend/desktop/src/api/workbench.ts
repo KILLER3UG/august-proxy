@@ -254,6 +254,16 @@ export async function streamWorkbenchReconnect(
     return;
   }
 
+  // Guard against non-SSE responses (e.g. HTML error page from a 404 SPA
+  // fallback). If we get HTML instead of SSE, bail early with a clear error
+  // rather than trying to parse HTML line-by-line as SSE events.
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('text/html')) {
+    const body = await res.text().catch(() => '');
+    handlers.onError?.({ message: `Stream endpoint returned HTML (expected SSE). The backend may be unavailable — try refreshing.` });
+    return;
+  }
+
   const reader = res.body?.getReader();
   if (!reader) {
     handlers.onDone?.();
