@@ -53,6 +53,18 @@ async def get_session(session_id: str):
     return session.to_dict()
 
 
+# Frontend also calls /api/workbench/session?sessionId=X (singular)
+@router.get("/session")
+async def get_session_by_query(sessionId: str = ""):
+    """Get a session by ID from query parameter."""
+    if not sessionId:
+        raise HTTPException(status_code=400, detail="sessionId required")
+    session = wb.get_workbench_session(sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session.to_dict()
+
+
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):
     """Delete a session."""
