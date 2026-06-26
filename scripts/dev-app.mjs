@@ -55,8 +55,8 @@ if (python) {
             {
                 name: 'backend',
                 command: python,
-                args: ['-m', 'uvicorn', 'app.main:app', '--port', port, '--host', '127.0.0.1'],
-                cwd: backendDir,
+                args: ['-m', 'uvicorn', 'app.main:app', '--port', port, '--host', '127.0.0.1', '--app-dir', backendDir],
+                cwd: root,
                 env: { AUGUST_PROXY_PORT: port }
             },
             { name: 'frontend', command: npm, args: ['run', 'dev:web'] }

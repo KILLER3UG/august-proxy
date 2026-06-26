@@ -52,9 +52,10 @@ async function start() {
         console.log(`[start] Starting Python backend on :${port}`);
         const child = spawn(python, [
             '-m', 'uvicorn', 'app.main:app',
-            '--port', port, '--host', '127.0.0.1'
+            '--port', port, '--host', '127.0.0.1',
+            '--app-dir', backendDir,
         ], {
-            cwd: backendDir,
+            cwd: root,
             env: { ...process.env, AUGUST_PROXY_PORT: port },
             stdio: 'inherit',
         });
