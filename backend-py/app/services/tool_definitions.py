@@ -440,6 +440,59 @@ async def _list_skills(query: str = "") -> str:
         return f"Error listing skills: {exc}"
 
 
+async def _skill_manage(
+    action: str,
+    name: str,
+    body: str = "",
+    description: str = "",
+    trigger: str = "",
+    category: str = "uncategorized",
+    file_path: str = "",
+    content: str = "",
+) -> str:
+    """Author/maintain skills: create, patch, write_file, remove_file, delete.
+
+    Lessons captured by the background-review reflection loop land here as
+    agent-authored skills the model loads via load_skill.
+    """
+    from app.services import skill_service
+    from app.services.skill_service import SkillValidationError
+
+    try:
+        if action == "create":
+            result = skill_service.create_skill(
+                name, description, body,
+                trigger=trigger, category=category,
+            )
+            return f"Created skill '{name}'.\n" + json.dumps(result, default=str)
+        if action == "patch":
+            result = skill_service.patch_skill(
+                name,
+                body=body or None,
+                description=description or None,
+                trigger=trigger or None,
+                category=category or None,
+            )
+            return f"Patched skill '{name}'.\n" + json.dumps(result, default=str)
+        if action == "write_file":
+            result = skill_service.write_skill_file(name, file_path, content)
+            return f"Wrote '{file_path}' into skill '{name}'.\n" + json.dumps(result, default=str)
+        if action == "remove_file":
+            result = skill_service.remove_skill_file(name, file_path)
+            return f"Removed '{file_path}' from skill '{name}'.\n" + json.dumps(result, default=str)
+        if action == "delete":
+            result = skill_service.delete_skill(name)
+            return f"Deleted skill '{name}'.\n" + json.dumps(result, default=str)
+        return (
+            f"Error: unknown skill_manage action '{action}'. "
+            "Use one of: create, patch, write_file, remove_file, delete."
+        )
+    except SkillValidationError as exc:
+        return f"Error: {exc}"
+    except Exception as exc:
+        return f"Error in skill_manage({action}): {exc}"
+
+
 # ── Registration ─────────────────────────────────────────────────────
 
 
@@ -751,6 +804,31 @@ def register_all() -> None:
                 "query": {"type": "string", "description": "Optional search query."},
             },
             "required": [],
+        },
+    )
+    tool_registry.register(
+        "skill_manage",
+        "Author and maintain skills: create a new skill, patch an existing one, "
+        "write/remove support files (scripts/, references/, templates/), or delete. "
+        "Captured lessons live as skills the model loads via load_skill.",
+        _skill_manage,
+        {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["create", "patch", "write_file", "remove_file", "delete"],
+                    "description": "What to do.",
+                },
+                "name": {"type": "string", "description": "Skill name (lowercase, dotted/hyphenated)."},
+                "body": {"type": "string", "description": "SKILL.md body markdown (create/patch)."},
+                "description": {"type": "string", "description": "One-sentence description ≤ 60 chars (create/patch)."},
+                "trigger": {"type": "string", "description": "Optional trigger phrase (create/patch)."},
+                "category": {"type": "string", "description": "Skill category (create/patch)."},
+                "file_path": {"type": "string", "description": "Relative path within the skill dir (write_file/remove_file)."},
+                "content": {"type": "string", "description": "File contents (write_file)."},
+            },
+            "required": ["action", "name"],
         },
     )
 

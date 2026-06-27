@@ -29,3 +29,17 @@ def isolated_data(tmp_path, monkeypatch):
 
     memory_store.close()
     settings.reload()
+
+
+@pytest.fixture
+def isolated_skills(tmp_path, monkeypatch):
+    """Redirect both skill roots to temp dirs (shared via conftest)."""
+    from app.services import skill_service
+
+    agent_root = tmp_path / "agent-skills"
+    bundled_root = tmp_path / "bundled-skills"
+    agent_root.mkdir()
+    bundled_root.mkdir()
+    monkeypatch.setattr(skill_service, "_agent_skills_dir", lambda: agent_root)
+    monkeypatch.setattr(skill_service, "SKILLS_DIR", bundled_root)
+    return agent_root, bundled_root

@@ -34,7 +34,33 @@ async def lifespan(app: FastAPI):
     # Ensure brain SQLite tables (incl. config_audit) exist.
     from app.services import memory_store
     memory_store.init()
+    # Start gateway adapters (reads gateway config; no-op if disabled).
+    _gateway = None
+    try:
+        from app.services.gateway.runner import start_gateway
+        _gateway = await start_gateway(settings)
+        app.state.gateway_runner = _gateway
+    except Exception:
+        pass
+    # Start skill curator background loop.
+    _curator = None
+    _curator_task = None
+    try:
+        from app.services.skills.curator import make_background_curator
+        _curator, _curator_task = make_background_curator()
+        app.state.curator = _curator
+    except Exception:
+        pass
     yield
+    # Shutdown curator
+    if _curator_task is not None:
+        _curator_task.cancel()
+    # Shutdown gateway
+    if _gateway is not None:
+        try:
+            await _gateway.stop()
+        except Exception:
+            pass
     # Close all headless browser sessions on shutdown.
     try:
         from app.services.browser.session_manager import close_all as close_browsers
@@ -83,10 +109,13 @@ from app.routers import terminal_routes as terminal_ws_routes
 from app.routers import manage as manage_routes
 from app.routers import monitoring as monitoring_routes
 from app.routers import august as august_routes
+from app.routers import gateway as gateway_routes
+from app.routers import curator as curator_routes
 
 app.include_router(config_routes.router)
 app.include_router(providers_routes.router)
 app.include_router(skills_routes.router)
+app.include_router(curator_routes.router)
 app.include_router(models_routes.router)
 app.include_router(proxy_routes.router)
 app.include_router(workbench_routes.router)
@@ -103,6 +132,7 @@ app.include_router(terminal_ws_routes.router)
 app.include_router(manage_routes.router)
 app.include_router(monitoring_routes.router)
 app.include_router(august_routes.router)
+app.include_router(gateway_routes.router)
 
 
 # ── Static files (SPA) ────────────────────────────────────────────────

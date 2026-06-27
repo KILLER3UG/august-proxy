@@ -21,7 +21,6 @@ DEFAULT_FEATURES: dict[str, Any] = {
     "hierarchical_agents": True,
     "adapter_parallel_tools": True,
     "parallel_read_tools": True,
-    "review_learned_guidelines": True,
     "max_agent_depth": 4,
     "max_workbench_tool_loops": 100,
 }

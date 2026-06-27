@@ -828,6 +828,14 @@ async def send_workbench_message_stream(
     if emit:
         emit({"type": "done", "sessionId": session_id})
 
+    # Background review (fire-and-forget, interval-gated).
+    try:
+        from app.services.memory.background_review import try_background_review
+
+        asyncio.create_task(try_background_review(session, list(current_messages)))
+    except Exception:
+        pass
+
 
 def _resolve_workbench_provider(provider_name: str, model_hint: str = "") -> dict[str, Any] | None:
     """Resolve a provider from name or model hint."""
