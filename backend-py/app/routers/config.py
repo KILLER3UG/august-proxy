@@ -4,6 +4,8 @@ Configuration API routes.
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -76,3 +78,73 @@ async def config_safe():
     cfg_path = data_path("config.json")
     cfg = json.loads(cfg_path.read_text("utf-8")) if cfg_path.exists() else {}
     return cfg
+
+
+# ── Model aliases (frontend: getUserModelAliases) ────────────────────
+
+
+@router.get("/model-aliases")
+async def get_model_aliases():
+    """Return all model-alias entries for the UI's Aliases tab."""
+    from app.services import alias_service
+    return {"aliases": alias_service.list_aliases()}
+
+
+class ModelAliasesBulk(BaseModel):
+    aliases: list[dict[str, Any]]
+
+
+@router.put("/model-aliases")
+async def put_model_aliases(body: ModelAliasesBulk):
+    """Replace the entire alias list (validated)."""
+    from app.services import alias_service
+    try:
+        return {"aliases": alias_service.replace_aliases(body.aliases, actor="ui")}
+    except ValueError as exc:
+        from fastapi import HTTPException
+        raise HTTPException(400, detail={"code": "validation", "message": str(exc)})
+
+
+# ── Sub-agent fallback (frontend: getSubAgentFallback) ───────────────
+
+
+@router.get("/subagent-fallback")
+async def get_subagent_fallback():
+    """Return the current sub-agent fallback configuration."""
+    from app.services import fallback_service
+    return fallback_service.get_fallback()
+
+
+class FallbackUpdate(BaseModel):
+    enabled: bool | None = None
+    mode: str | None = None
+    provider: str | None = None
+    model: str | None = None
+
+
+@router.put("/subagent-fallback")
+async def put_subagent_fallback(body: FallbackUpdate):
+    """Update sub-agent fallback fields (partial)."""
+    from app.services import fallback_service
+    try:
+        return fallback_service.configure_fallback(
+            enabled=body.enabled,
+            mode=body.mode,
+            provider=body.provider,
+            model=body.model,
+            actor="ui",
+        )
+    except ValueError as exc:
+        from fastapi import HTTPException
+        raise HTTPException(400, detail={"code": "validation", "message": str(exc)})
+
+
+class FallbackTest(BaseModel):
+    model: str
+
+
+@router.post("/subagent-fallback/test")
+async def test_subagent_fallback(body: FallbackTest):
+    """Probe resolution of a model id without saving."""
+    from app.services import fallback_service
+    return fallback_service.test_fallback(body.model)

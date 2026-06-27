@@ -164,11 +164,23 @@ def init() -> None:
             created_at TEXT DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS config_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT NOT NULL,
+            action TEXT NOT NULL,
+            actor TEXT DEFAULT '',
+            before_json TEXT,
+            after_json TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
         CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category);
         CREATE INDEX IF NOT EXISTS idx_facts_updated ON facts(updated_at);
         CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals(session_id);
         CREATE INDEX IF NOT EXISTS idx_lifecycle_session ON lifecycle(session_id);
         CREATE INDEX IF NOT EXISTS idx_lifecycle_event ON lifecycle(event_type);
+        CREATE INDEX IF NOT EXISTS idx_config_audit_category ON config_audit(category);
+        CREATE INDEX IF NOT EXISTS idx_config_audit_created ON config_audit(created_at);
     """)
     conn.commit()
 
@@ -403,6 +415,66 @@ def list_lifecycle(session_id: str, event_type: str = "", limit: int = 100) -> l
             (session_id, limit),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── Config audit ─────────────────────────────────────────────────────
+
+
+def record_config_audit(
+    category: str,
+    action: str,
+    actor: str = "",
+    before: Any = None,
+    after: Any = None,
+) -> int:
+    """Record a structured config-change audit entry.
+
+    Used by alias, fallback, and agent mutation paths so that every
+    self-configuration change is traceable.
+    """
+    conn = _conn()
+    cursor = conn.execute(
+        "INSERT INTO config_audit (category, action, actor, before_json, after_json) VALUES (?, ?, ?, ?, ?)",
+        (category, action, actor, _json(before) if before is not None else None, _json(after) if after is not None else None),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def list_config_audit(category: str = "", limit: int = 200) -> list[dict[str, Any]]:
+    """List config-change audit entries, newest first."""
+    conn = _conn()
+    if category:
+        rows = conn.execute(
+            "SELECT * FROM config_audit WHERE category = ? ORDER BY created_at DESC LIMIT ?",
+            (category, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM config_audit ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    results = []
+    for r in rows:
+        entry = {
+            "id": r["id"],
+            "category": r["category"],
+            "action": r["action"],
+            "actor": r["actor"] or "",
+            "createdAt": r["created_at"],
+        }
+        for raw_key, out_key in (("before_json", "before"), ("after_json", "after")):
+            # r is a sqlite3.Row; index by column name.
+            raw = r[raw_key]
+            if isinstance(raw, str):
+                try:
+                    entry[out_key] = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    entry[out_key] = raw
+            else:
+                entry[out_key] = raw
+        results.append(entry)
+    return results
 
 
 # ── Session topic indexing ───────────────────────────────────────────

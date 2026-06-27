@@ -218,6 +218,18 @@ def get_workbench_session(session_id: str | None) -> WorkbenchSession | None:
     return _sessions.get(session_id)
 
 
+def set_workbench_session_agent(session_id: str, agent_id: str) -> WorkbenchSession | None:
+    """Bind (or clear) an agent on a session so its context shapes the prompt."""
+    session = get_workbench_session(session_id)
+    if not session:
+        return None
+    session.agent_id = agent_id or ""
+    session.updated_at = _now()
+    save_sessions()
+    _emit_session_status(session_id)
+    return session
+
+
 def list_workbench_sessions() -> list[dict[str, Any]]:
     """Return all sessions summarized."""
     if not _sessions:
@@ -337,6 +349,15 @@ def is_plan_mode_blocked(tool_name: str, args: dict[str, Any] | None = None) -> 
         "terminal",
         # Package management
         "install", "uninstall", "pip_install", "npm_install", "pnpm_add",
+        # Browser mutations (click/type/select/evaluate change page state).
+        # Read-only browser tools (open/get_content/screenshot/wait/scroll)
+        # stay allowed so the model can investigate in plan mode.
+        "browser_click", "browser_type", "browser_select", "browser_evaluate",
+        # Self-configuration mutations (agents/aliases/fallback). Read-only
+        # variants (list_*, get_fallback) stay allowed.
+        "create_agent", "update_agent", "delete_agent",
+        "create_alias", "update_alias", "delete_alias",
+        "configure_fallback",
     }
     if name in destructive:
         return True
@@ -402,6 +423,15 @@ def build_system_prompt(session: WorkbenchSession) -> str:
         )
 
     # Tier 3: Volatile context
+    if session.agent_id:
+        try:
+            from app.services.tools.agent_registry import render_agent_context
+            agent_ctx = render_agent_context(session.agent_id)
+            if agent_ctx:
+                parts.append(f"## Active Agent\n{agent_ctx}")
+        except Exception:
+            pass
+
     if session.goal:
         parts.append(f"## Active Goal\n{session.goal}")
 
@@ -1174,12 +1204,19 @@ async def _execute_tool(
 ) -> str:
     """Execute a workbench tool by dispatching to the correct handler."""
     from app.services.tool_registry import dispatch as dispatch_tool
+    from app.services.workbench.context import current_session_id
 
+    # Expose the session id to handlers (e.g. browser tools, spawn_subagent)
+    # via contextvar so they can resolve per-session state without changing
+    # dispatch's (name, args) signature.
+    token = current_session_id.set(session.id)
     try:
         result = await dispatch_tool(tool_name, args)
         return str(result)
     except Exception as exc:
         return f"Error: {exc}"
+    finally:
+        current_session_id.reset(token)
 
 
 # ── Guard checks ─────────────────────────────────────────────────────

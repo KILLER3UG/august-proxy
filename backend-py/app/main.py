@@ -31,7 +31,16 @@ async def lifespan(app: FastAPI):
 
     tool_definitions.register_all()
     await init_db()
+    # Ensure brain SQLite tables (incl. config_audit) exist.
+    from app.services import memory_store
+    memory_store.init()
     yield
+    # Close all headless browser sessions on shutdown.
+    try:
+        from app.services.browser.session_manager import close_all as close_browsers
+        await close_browsers()
+    except Exception:
+        pass
     await close_db()
 
 
@@ -73,6 +82,7 @@ from app.routers import terminal as terminal_routes
 from app.routers import terminal_routes as terminal_ws_routes
 from app.routers import manage as manage_routes
 from app.routers import monitoring as monitoring_routes
+from app.routers import august as august_routes
 
 app.include_router(config_routes.router)
 app.include_router(providers_routes.router)
@@ -92,6 +102,7 @@ app.include_router(terminal_routes.router)
 app.include_router(terminal_ws_routes.router)
 app.include_router(manage_routes.router)
 app.include_router(monitoring_routes.router)
+app.include_router(august_routes.router)
 
 
 # ── Static files (SPA) ────────────────────────────────────────────────

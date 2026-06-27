@@ -372,16 +372,35 @@ async def _context_read() -> str:
 # ── Subagent tool ────────────────────────────────────────────────────
 
 
-async def _spawn_subagent(goal: str, context: str = "", toolsets: list[str] | None = None) -> str:
-    """Dispatch a subagent for a focused task."""
-    # In a full implementation, this would make an HTTP call to the
-    # subagent API endpoint. For now, return a stub.
-    return (
-        f"Subagent dispatched with goal: {goal}\n"
-        f"Context: {context[:200]}...\n"
-        f"Toolsets: {toolsets or ['default']}\n"
-        f"Status: dispatched (subagent execution requires Phase 6)"
+async def _spawn_subagent(goal: str, agent_id: str = "", context: str = "", toolsets: list[str] | None = None) -> str:
+    """Dispatch a sub-agent for a focused task and return its final answer.
+
+    Resolves the active workbench session via the contextvar, then runs the
+    sub-agent to completion. Sub-agent lifecycle/text/tool events are emitted
+    to the parent session's SSE stream through the event log.
+    """
+    from app.services import event_log
+    from app.services.workbench import workbench as wb
+    from app.services.workbench.context import current_session_id
+    from app.services.workbench.subagent import execute_sub_agent
+
+    session_id = current_session_id.get()
+    session = wb.get_workbench_session(session_id)
+    if not session:
+        return "Error: no active workbench session for sub-agent dispatch."
+
+    def _emit(ev: dict) -> None:
+        try:
+            event_log.event_log.append(session_id, ev.get("type", "subagent_event"), ev)
+        except Exception:
+            pass
+
+    result = await execute_sub_agent(
+        session, agent_id or "general", goal, context or "", emit=_emit
     )
+    status = result.get("status", "completed")
+    text = result.get("result") or result.get("error") or ""
+    return f"Sub-agent '{result.get('agentId', 'general')}' {status}.\n\n{text}"
 
 
 # ── Skill tools ──────────────────────────────────────────────────────
@@ -520,6 +539,140 @@ def register_all() -> None:
         },
     )
 
+    # ── Browser tools ──
+    from app.services.browser import handlers as _browser
+
+    tool_registry.register(
+        "browser_open",
+        "Open a URL in the headless browser and return the page title plus an "
+        "interactive-element snapshot (use the [@eN] refs for clicks/types).",
+        _browser.browser_open,
+        {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "The URL to open."},
+                "wait_until": {
+                    "type": "string",
+                    "enum": ["load", "domcontentloaded", "networkidle", "commit"],
+                    "description": "When navigation is considered complete (default: load).",
+                },
+            },
+            "required": ["url"],
+        },
+    )
+    tool_registry.register(
+        "browser_click",
+        "Click an element. Locate it by ref (e.g. '@e3'), CSS/XPath selector, "
+        "or visible text.",
+        _browser.browser_click,
+        {
+            "type": "object",
+            "properties": {
+                "ref": {"type": "string", "description": "Snapshot ref like '@e3'."},
+                "selector": {"type": "string", "description": "CSS selector or XPath (//...)."},
+                "text": {"type": "string", "description": "Visible text of the element."},
+            },
+        },
+    )
+    tool_registry.register(
+        "browser_type",
+        "Type text into a field located by ref or selector, optionally pressing Enter to submit.",
+        _browser.browser_type,
+        {
+            "type": "object",
+            "properties": {
+                "ref": {"type": "string", "description": "Snapshot ref like '@e3'."},
+                "selector": {"type": "string", "description": "CSS selector or XPath."},
+                "text": {"type": "string", "description": "The text to type into the field."},
+                "submit": {"type": "boolean", "description": "Press Enter after typing (default false)."},
+            },
+            "required": ["text"],
+        },
+    )
+    tool_registry.register(
+        "browser_select",
+        "Select an option value from a <select> dropdown located by ref or selector.",
+        _browser.browser_select,
+        {
+            "type": "object",
+            "properties": {
+                "ref": {"type": "string", "description": "Snapshot ref like '@e3'."},
+                "selector": {"type": "string", "description": "CSS selector or XPath."},
+                "value": {"type": "string", "description": "The option value to select."},
+            },
+            "required": ["value"],
+        },
+    )
+    tool_registry.register(
+        "browser_scroll",
+        "Scroll the page by a number of pixels, or scroll an element into view.",
+        _browser.browser_scroll,
+        {
+            "type": "object",
+            "properties": {
+                "direction": {"type": "string", "enum": ["up", "down"], "description": "Scroll direction (default down)."},
+                "amount": {"type": "integer", "description": "Pixels to scroll (default 400)."},
+                "selector": {"type": "string", "description": "Scroll this element into view instead of the page."},
+            },
+        },
+    )
+    tool_registry.register(
+        "browser_wait",
+        "Wait for an element to appear, a load state, or a fixed timeout.",
+        _browser.browser_wait,
+        {
+            "type": "object",
+            "properties": {
+                "strategy": {
+                    "type": "string",
+                    "enum": ["selector", "load", "networkidle", "timeout"],
+                    "description": "What to wait for (default selector).",
+                },
+                "selector": {"type": "string", "description": "Required when strategy=selector."},
+                "timeout": {"type": "integer", "description": "Seconds before giving up (default 30)."},
+            },
+        },
+    )
+    tool_registry.register(
+        "browser_screenshot",
+        "Take a screenshot, save it to disk, and return the file path + dimensions.",
+        _browser.browser_screenshot,
+        {
+            "type": "object",
+            "properties": {
+                "full_page": {"type": "boolean", "description": "Capture the full scrollable page (default false)."},
+            },
+        },
+    )
+    tool_registry.register(
+        "browser_evaluate",
+        "Execute JavaScript in the page and return the JSON-serialised result.",
+        _browser.browser_evaluate,
+        {
+            "type": "object",
+            "properties": {
+                "script": {"type": "string", "description": "JavaScript expression or function body to evaluate."},
+            },
+            "required": ["script"],
+        },
+    )
+    tool_registry.register(
+        "browser_get_content",
+        "Extract page content. format: html | text | markdown | elements "
+        "(elements returns the interactive-element snapshot).",
+        _browser.browser_get_content,
+        {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "enum": ["html", "text", "markdown", "elements"],
+                    "description": "What to extract (default text).",
+                },
+            },
+        },
+    )
+
     # ── Memory tools ──
     tool_registry.register(
         "memory_search",
@@ -555,17 +708,20 @@ def register_all() -> None:
     # ── Agent tools ──
     tool_registry.register(
         "spawn_subagent",
-        "Dispatch a subagent for a focused task. Give it a clear goal and context.",
+        "Dispatch a sub-agent for a focused task. Give it a clear goal and "
+        "context; optionally specify an agent_id (from create_agent) to use a "
+        "specialized agent, otherwise a general-purpose agent runs.",
         _spawn_subagent,
         {
             "type": "object",
             "properties": {
-                "goal": {"type": "string", "description": "The task goal for the subagent."},
-                "context": {"type": "string", "description": "Background context for the subagent."},
+                "goal": {"type": "string", "description": "The task goal for the sub-agent."},
+                "agent_id": {"type": "string", "description": "Agent id to run (from create_agent). Defaults to a general agent."},
+                "context": {"type": "string", "description": "Background context for the sub-agent."},
                 "toolsets": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Tool sets to grant the subagent.",
+                    "description": "Tool sets to grant the sub-agent (optional).",
                 },
             },
             "required": ["goal"],
@@ -597,3 +753,7 @@ def register_all() -> None:
             "required": [],
         },
     )
+
+    # ── Self-configuration tools (alias, fallback) ──
+    from app.services import self_config_tools
+    self_config_tools.register()

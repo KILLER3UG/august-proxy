@@ -345,3 +345,30 @@ async def workbench_activity():
 async def proxy_capabilities():
     """List all tools grouped by source."""
     return wb.list_proxy_capabilities()
+
+
+# ── Agents ───────────────────────────────────────────────────────────
+
+
+@router.get("/agents")
+async def workbench_agents(active: str = ""):
+    """List agents for the UI's Agents tab (frontend listWorkbenchAgents)."""
+    from app.services.tools import agent_registry
+    agents = agent_registry.list_agents()
+    if active:
+        # The frontend requests agents active under a given parent context;
+        # we simply return all agents and let the UI filter — the param is
+        # accepted for compatibility.
+        pass
+    return {"agents": agents, "active": active}
+
+
+@router.post("/sessions/{session_id}/agent")
+async def set_session_agent(session_id: str, request: Request):
+    """Bind an agent to a session (or clear it with an empty agentId)."""
+    body = await request.json() if request.headers.get("content-type") else {}
+    agent_id = body.get("agentId", "")
+    session = wb.set_workbench_session_agent(session_id, agent_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session.to_dict()
