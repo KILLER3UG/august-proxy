@@ -414,7 +414,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [sessionUsage, setSessionUsage] = useState<{ total: number; input: number; output: number } | null>(null);
   const [workbenchMode, setWorkbenchMode] = useState<WorkbenchGuardMode>(() => {
     const saved = localStorage.getItem('august_last_workbench_guard_mode') as WorkbenchGuardMode | null;
-    return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'plan';
+    return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'full';
   });
   const workbenchBtw = streamState.workbenchBtw;
   const setWorkbenchBtw = (btw: any) => {

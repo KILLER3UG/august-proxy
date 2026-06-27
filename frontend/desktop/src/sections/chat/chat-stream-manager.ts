@@ -133,7 +133,7 @@ export function getOrInitSessionStreamState(sessionId: string | null): SessionSt
       lastMutationAt: null,
       updatedAt: new Date().toISOString(),
       todos: [],
-      guardMode: 'plan',
+      guardMode: 'full',
     };
   }
 

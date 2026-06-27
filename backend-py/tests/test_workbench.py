@@ -143,7 +143,79 @@ class TestSystemPrompt:
         session = create_workbench_session(guard_mode="plan")
         prompt = build_system_prompt(session)
         assert "Plan Mode" in prompt
-        assert "Create a plan first" in prompt
+        # The prompt must reference the real submit_plan tool (the old
+        # wording pointed at a non-existent "submitPlan", causing the model
+        # to hallucinate a tool call that errored and aborted the chat).
+        assert "submit_plan" in prompt
+        assert "submitPlan" not in prompt
+
+
+class TestPlanModeGuard:
+    """Regression: plan mode must not abort the chat after a tool round.
+
+    The old behaviour broke the tool loop after *every* round in plan mode
+    (workbench.py `if guard_mode == 'plan': break`), so the model never got
+    a re-call to produce its plan/final answer — the 'tools abort the chat'
+    symptom. The fix: plan mode allows research re-calls, only pausing when
+    the model actually submits a plan; and an approved plan unblocks
+    mutations so it can be executed.
+    """
+
+    def test_submit_plan_never_blocked_in_plan_mode(self):
+        # submit_plan is the model's way to propose a plan; it must never be
+        # blocked by is_plan_mode_blocked (the loop special-cases it first).
+        assert is_plan_mode_blocked("submit_plan") is False
+        assert is_plan_mode_blocked("submitPlan") is False
+
+    def test_readonly_tools_allowed_in_plan_mode(self):
+        session = create_workbench_session(guard_mode="plan")
+        from app.services.workbench.workbench import _check_tool_guard
+        assert _check_tool_guard(session, "read_file", {"path": "/x"}) is None
+        assert _check_tool_guard(session, "list_directory", {"path": "/x"}) is None
+
+    def test_mutations_blocked_until_plan_approved(self):
+        from app.services.workbench.workbench import _check_tool_guard
+        session = create_workbench_session(guard_mode="plan")
+        # Before approval, mutations are blocked.
+        assert _check_tool_guard(session, "write_file", {"path": "/x", "content": "y"}) is not None
+        assert _check_tool_guard(session, "run_command", {"command": "ls"}) is not None
+        # After a plan is submitted and approved, mutations are allowed so
+        # the approved plan can actually execute.
+        submit_plan(session, {"plan": "1. write the file"})
+        assert approve_workbench_plan(session.id) is True
+        assert _check_tool_guard(session, "write_file", {"path": "/x", "content": "y"}) is None
+        assert _check_tool_guard(session, "run_command", {"command": "ls"}) is None
+
+    def test_all_non_destructive_tools_allowed_in_plan_mode(self):
+        """In plan mode only DESTRUCTIVE tools are blocked; everything else
+        (including unknown / custom / MCP tool names) is allowed so the model
+        can investigate freely."""
+        # Known read-only tools.
+        for name in ("read_file", "list_directory", "search_files",
+                     "context_read", "web_fetch", "web_search",
+                     "memory_search", "fact_search", "list_skills", "load_skill"):
+            assert is_plan_mode_blocked(name) is False, name
+        # Unknown / custom / MCP-style tool names that aren't destructive
+        # must be allowed (not silently dropped or blocked).
+        for name in ("mcp__github__search", "spawn_subagent",
+                     "analyze_code", "fetch_logs", "get_status"):
+            assert is_plan_mode_blocked(name) is False, name
+
+    def test_destructive_tools_blocked_in_plan_mode(self):
+        for name in ("write_file", "edit_file", "delete_file", "run_command",
+                     "bash", "apply_patch", "install", "StrReplaceEditTool"):
+            assert is_plan_mode_blocked(name) is True, name
+
+    def test_blocked_message_guides_model_to_submit_plan(self):
+        """When the model tries a destructive tool in plan mode, the guard
+        message must tell it to submit_plan and ask the user — this is the
+        tool result the model receives on the next re-call."""
+        from app.services.workbench.workbench import _check_tool_guard
+        session = create_workbench_session(guard_mode="plan")
+        reason = _check_tool_guard(session, "write_file", {"path": "/x", "content": "y"})
+        assert reason is not None
+        assert "submit_plan" in reason
+        assert "approve" in reason.lower() or "permission" in reason.lower()
 
 
 class TestManagedToolPolicy:

@@ -310,32 +310,46 @@ def normalize_guard_mode(mode: str) -> str:
 
 
 def is_plan_mode_blocked(tool_name: str, args: dict[str, Any] | None = None) -> bool:
-    """Check if a tool is blocked in plan mode.
+    """In plan mode, only DESTRUCTIVE tools are blocked.
 
-    In plan mode, the model can only use tools that are read-only
-    or related to planning.
+    Everything else — read-only file tools, search, web, memory, agent,
+    skill, MCP, and any other non-mutating tool — may run so the model can
+    investigate freely. Destructive actions (writes, edits, deletes, shell
+    commands, installs) require an approved plan; when the model attempts
+    one it gets a tool result telling it to call `submit_plan` and ask the
+    user for permission.
     """
     if not tool_name:
         return False
 
-    # Allowed in plan mode
-    allowed_plan_tools = {
-        "read_file", "search_files", "list_directory",
-        "WebSearch", "WebFetch", "web_search", "web_fetch",
-        "memory_search", "fact_search", "context_read",
-        "list_skills", "load_skill",
+    name = tool_name.lower()
+
+    # Explicitly destructive tool names (filesystem / shell / package
+    # mutations with side effects).
+    destructive = {
+        # File mutations
+        "write_file", "edit_file", "create_file", "str_replace",
+        "str_replace_editor", "strreplaceeditttool", "apply_patch",
+        "patch_file", "delete_file", "remove_file", "move_file",
+        "rename_file", "mkdir", "makedirs",
+        # Shell / execution
+        "run_command", "bash", "bashtool", "shell", "exec", "execute",
+        "terminal",
+        # Package management
+        "install", "uninstall", "pip_install", "npm_install", "pnpm_add",
     }
+    if name in destructive:
+        return True
 
-    if tool_name in allowed_plan_tools:
-        return False
-
-    # Tools that are always blocked in plan mode
-    blocked_plan_tools = {
-        "write_file", "run_command", "bash",
-        "StrReplaceEditTool", "BashTool",
-    }
-
-    return tool_name in blocked_plan_tools
+    # Conservative heuristic: tool names that clearly indicate a mutation.
+    # Anything that doesn't match is allowed (investigate freely). This
+    # intentionally errs on the side of *blocking* ambiguously-named
+    # destructive tools rather than letting one slip through.
+    destructive_markers = (
+        "write", "edit", "delete", "remove", "install", "uninstall",
+        "exec", "command", "bash", "shell", "patch", "rename",
+    )
+    return any(marker in name for marker in destructive_markers)
 
 
 # ── System prompt building ───────────────────────────────────────────
@@ -369,8 +383,16 @@ def build_system_prompt(session: WorkbenchSession) -> str:
     if session.guard_mode == "plan":
         parts.append(
             "## Plan Mode\n"
-            "You are in plan mode. Create a plan first using submitPlan, "
-            "then get it approved before making any changes."
+            "You are in plan mode. You may use ANY non-destructive tool freely "
+            "to investigate (read_file, list_directory, search_files, "
+            "context_read, web_fetch, web_search, memory, skills, agents, and "
+            "MCP tools). Destructive tools (file writes/edits/deletes, shell "
+            "commands, installs) are BLOCKED until a plan is approved — if you "
+            "call one, you'll get a message saying it can't run and to submit a "
+            "plan instead. Once you've investigated enough, call the "
+            "`submit_plan` tool with a concise ordered list of the steps you "
+            "intend to take, then stop and wait. The user must approve the plan "
+            "before you may execute anything."
         )
     elif session.guard_mode == "ask":
         parts.append(
@@ -657,6 +679,7 @@ async def send_workbench_message_stream(
 
         # ── Tool calls present → execute each tool ──
         tool_results: list[dict[str, Any]] = []
+        plan_submitted_this_round = False
         for tu in tool_uses:
             # Check cancellation before each tool execution
             if _is_cancelled():
@@ -665,9 +688,40 @@ async def send_workbench_message_stream(
             tool_input = tu.get("input", {})
             tool_use_id = tu.get("id", f"toolu_{uuid.uuid4().hex[:16]}")
 
+            # Special-case plan submission (no such tool is registered in the
+            # registry — the model is instructed to call it to propose a plan).
+            # Accept both `submit_plan` and the camelCase `submitPlan` the
+            # system prompt historically referenced, then break out for
+            # approval instead of attempting a registry dispatch (which would
+            # return "Tool not found" and leave the chat with no output).
+            if tool_name in ("submit_plan", "submitPlan"):
+                plan_payload = tool_input.get("plan") or tool_input.get("steps") or tool_input
+                submit_plan(session, plan_payload if isinstance(plan_payload, dict) else {"plan": plan_payload})
+                if emit:
+                    emit({"type": "plan_proposed", "plan": session.plan})
+                    emit({
+                        "type": "tool_result",
+                        "id": tool_use_id,
+                        "name": tool_name,
+                        "content": "Plan submitted. Awaiting user approval.",
+                        "status": "done",
+                    })
+                tool_results.append({
+                    "tool_use_id": tool_use_id,
+                    "role": "tool",
+                    "content": "Plan submitted. Awaiting user approval.",
+                })
+                plan_submitted_this_round = True
+                continue
+
             # Check permissions
             blocked_reason = _check_tool_guard(session, tool_name, tool_input)
             if blocked_reason:
+                # The tool is blocked (e.g. destructive in plan mode). Do NOT
+                # abort the loop — append the reason as the tool result so the
+                # model receives the guidance ("submit_plan and ask the user")
+                # and can continue on the next re-call. Previously this broke
+                # the loop in plan mode, causing the silent-stop symptom.
                 if emit:
                     emit({"type": "tool_result", "name": tool_name, "error": blocked_reason, "status": "blocked"})
                 tool_results.append({
@@ -675,8 +729,6 @@ async def send_workbench_message_stream(
                     "role": "tool",
                     "content": f"[Blocked] {blocked_reason}",
                 })
-                if session.guard_mode == "plan":
-                    break
                 continue
 
             # Execute
@@ -724,7 +776,11 @@ async def send_workbench_message_stream(
         current_messages.append(assistant_msg)
         current_messages.extend(tool_results)
 
-        if session.guard_mode == "plan":
+        # If the model submitted a plan this round, pause for user approval
+        # rather than re-calling. (Previously plan mode broke after *every*
+        # tool round, which prevented the research re-calls and left the chat
+        # with no final output — the "tools abort the chat" symptom.)
+        if plan_submitted_this_round:
             break
 
     # ── After loop: persist the complete conversation ──
@@ -1138,9 +1194,19 @@ def _check_tool_guard(
 
     Returns None if allowed, or a string reason if blocked.
     """
-    # Plan mode blocks
-    if session.guard_mode == "plan" and is_plan_mode_blocked(tool_name, args):
-        return f"Tool '{tool_name}' is blocked in plan mode. Create and approve a plan first."
+    # Plan mode blocks destructive tools until a plan is approved. Once
+    # approved, the model may execute the approved changes.
+    if (
+        session.guard_mode == "plan"
+        and not session.plan_approved
+        and is_plan_mode_blocked(tool_name, args)
+    ):
+        return (
+            f"Tool '{tool_name}' is destructive and cannot run in plan mode. "
+            "You cannot execute destructive tools here. Finish investigating "
+            "with the non-destructive tools, then call `submit_plan` with your "
+            "proposed steps and ask the user to approve it before executing."
+        )
 
     return None
 
