@@ -9,8 +9,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import time
+
 from fastapi import APIRouter, HTTPException, Query
 
+from app.config import settings
 from app.services.logger import (
     get_activity_log,
     get_pending_requests,
@@ -21,6 +24,8 @@ from app.services.logger import (
 from app.services.host_agent import get_host_info
 
 router = APIRouter(prefix="/api")
+
+_started_at: float = time.time()
 
 
 # ── Activity log ───────────────────────────────────────────────────────
@@ -82,3 +87,13 @@ async def get_stats(period: str = Query(default="all", alias="period")):
 async def host_agent_health():
     """Return host agent availability and health status."""
     return await get_host_info()
+
+
+@router.get("/health")
+async def gateway_health():
+    """Return proxy gateway health (consumed by the desktop gateway store)."""
+    return {
+        "status": "ok",
+        "port": settings.port,
+        "uptime": time.time() - _started_at,
+    }

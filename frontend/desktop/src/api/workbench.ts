@@ -33,7 +33,7 @@ export async function confirmWorkbenchMutation(
   token: string,
   handlers: WorkbenchEventHandlers
 ): Promise<void> {
-  const res = await fetch('/api/workbench/confirm-mutation', {
+  const res = await fetch('/api/workbench/mutations/respond', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token }),
@@ -513,7 +513,7 @@ function dispatchWorkbenchEvent(
 }
 
 export async function approveWorkbenchPlan(sessionId: string): Promise<WorkbenchSession> {
-  const res = await fetch('/api/workbench/approve', {
+  const res = await fetch('/api/workbench/plan/approve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
@@ -523,7 +523,7 @@ export async function approveWorkbenchPlan(sessionId: string): Promise<Workbench
 }
 
 export async function rejectWorkbenchPlan(sessionId: string): Promise<WorkbenchSession> {
-  const res = await fetch('/api/workbench/reject', {
+  const res = await fetch('/api/workbench/plan/reject', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
@@ -611,7 +611,8 @@ export interface ResetWorkbenchSessionParams {
 export async function resetWorkbenchSession(
   params: ResetWorkbenchSessionParams = {}
 ): Promise<WorkbenchSession> {
-  const res = await fetch('/api/workbench/reset', {
+  const sid = params.sessionId ? encodeURIComponent(params.sessionId) : '';
+  const res = await fetch(`/api/workbench/sessions/${sid}/reset`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
