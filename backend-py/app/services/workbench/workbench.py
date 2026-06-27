@@ -454,27 +454,9 @@ def build_system_prompt(session: WorkbenchSession) -> str:
     # ── Append session-specific sections ──
     extra_parts: list[str] = []
 
-    # Guard mode instructions (session-specific, not in context_builder)
-    if session.guard_mode == "plan":
-        extra_parts.append(
-            "## Plan Mode\n"
-            "You are in plan mode. You may use ANY non-destructive tool freely "
-            "to investigate (read_file, list_directory, search_files, "
-            "context_read, web_fetch, web_search, memory, skills, agents, and "
-            "MCP tools). Destructive tools (file writes/edits/deletes, shell "
-            "commands, installs) are BLOCKED until a plan is approved — if you "
-            "call one, you'll get a message saying it can't run and to submit a "
-            "plan instead. Once you've investigated enough, call the "
-            "`submit_plan` tool with a concise ordered list of the steps you "
-            "intend to take, then stop and wait. The user must approve the plan "
-            "before you may execute anything."
-        )
-    elif session.guard_mode == "ask":
-        extra_parts.append(
-            "## Approval Required\n"
-            "File writes and command execution require user approval. "
-            "Present the intended changes clearly."
-        )
+    # Guard mode is enforced at the tool-execution layer (in _check_tool_guard),
+    # not injected into the system prompt. The tool result message returned by
+    # _check_tool_guard provides clear feedback when a tool is blocked.
 
     # Goal and plan (already in context_builder's session dict, but
     # we append explicitly to ensure they're at the end near the user msg)
@@ -1523,6 +1505,20 @@ def _check_tool_guard(
             "You cannot execute destructive tools here. Finish investigating "
             "with the non-destructive tools, then call `submit_plan` with your "
             "proposed steps and ask the user to approve it before executing."
+        )
+
+    # Ask-before-changes mode blocks destructive tools and returns an
+    # approval-required message to the model. The model should present the
+    # intended change to the user and wait for explicit approval before
+    # retrying the tool call.
+    if (
+        session.guard_mode == "ask"
+        and is_plan_mode_blocked(tool_name, args)
+    ):
+        return (
+            f"Tool '{tool_name}' requires your approval. "
+            "Present the intended change to the user and wait for them to "
+            "approve it before calling this tool again."
         )
 
     return None

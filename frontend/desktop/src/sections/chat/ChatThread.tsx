@@ -27,6 +27,7 @@ import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/comp
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
 import { Statusbar } from '@/components/shell/Statusbar';
 import { dispatchFocusComposer, dispatchInsertComposerText } from '@/api/ui-events';
+import { useModels } from '@/hooks/useModels';
 import { chatRuntime, type ChatTurnRecord } from './chat-runtime';
 import {
   $sessionStreamStates,
@@ -395,8 +396,32 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       return { toolProgress: next };
     });
   };
-  const [models, setModels] = useState<ModelItem[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(false);
+  // Shared react-query-backed model list — auto-refetches when models are
+  // added/removed in Settings (via query key invalidation) and polls every 60s.
+  const { models: aggregatedModels, isLoading: modelsLoading, refetch: refetchModels } = useModels();
+
+  // Providers that have API keys set, used to filter the model list.
+  const [availableProviders, setAvailableProviders] = useState<Set<string>>(new Set());
+
+  // Filter to only show models from providers with keys, but always include
+  // user-defined alias models (provider === 'Alias'). Normalise optional
+  // fields to match the required ModelItem shape.
+  const models = useMemo(() => {
+    if (aggregatedModels.length === 0) return [];
+    const list = availableProviders.size === 0
+      ? aggregatedModels
+      : aggregatedModels.filter(m => availableProviders.has(m.provider) || m.provider === 'Alias');
+    return list.map(m => ({
+      id: m.id,
+      name: m.name || m.id,
+      provider: m.provider,
+      contextWindow: m.contextWindow || 128000,
+      isFree: m.isFree,
+      supportsReasoning: m.supportsReasoning,
+      supportsThinking: m.supportsThinking,
+    }));
+  }, [aggregatedModels, availableProviders]);
+
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(loadHiddenModels);
   const [showModelVisibility, setShowModelVisibility] = useState(false);
   const workbenchSession = streamState.workbenchSession;
@@ -722,17 +747,35 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     });
   }, [sessionId, activeSession?.model, activeSession?.provider]);
 
-  // ── Two-phase model loading ───────────────────────────────────────
+  // ── Model loading ──────────────────────────────────────────────────
   // Phase 1 (instant): read config only — fast, small payload.
   //   Sets selectedModel immediately so the button renders with the right label.
-  // Phase 2 (background): fetch full model list — may be slow (5s per provider).
-  //   Merges the list into state; only updates selectedModel if the user hasn't
-  //   manually picked something in the meantime.
-  const handleRefreshModels = useCallback(async (isRefresh = false) => {
-    setModelsLoading(true);
+  // Phase 2 (background): the useModels hook above provides the aggregated
+  //   model list via react-query, auto-refetching on invalidation and every 60s.
+  //   The `models` computed value above filters it by provider availability.
+  //
+  // Provider availability is fetched separately so we can filter the model list
+  // to only show models from providers that have API keys set.
+  const initProviderAvailability = useCallback(async () => {
+    try {
+      const providersRes = await fetch('/api/config/activeProvider');
+      if (providersRes.ok) {
+        const provData = await providersRes.json();
+        const avail = new Set<string>();
+        (provData.providers || []).forEach((p: any) => {
+          if (p.isAvailable) avail.add(p.id);
+        });
+        setAvailableProviders(avail);
+      }
+    } catch (e) {
+      console.warn('[Models] Provider availability fetch failed:', e);
+    }
+  }, []);
 
-    // ── Phase 1: quick config fetch ──
-    if (!isRefresh) {
+  // On mount: fetch active config for initial model selection + provider availability.
+  useEffect(() => {
+    (async () => {
+      // Phase 1: quick config fetch for initial model selection
       try {
         const configRes = await fetch('/api/config/safe');
         if (configRes.ok) {
@@ -758,59 +801,33 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       } catch (e) {
         console.warn('[Models] Config fetch failed, using localStorage fallback:', e);
       }
-    }
 
-    // ── Phase 2: full model list (background) ──
-    try {
-      // Fetch providers to know which ones have keys
-      const providersRes = await fetch('/api/config/activeProvider');
-      const availableProviders = new Set<string>();
-      if (providersRes.ok) {
-        const provData = await providersRes.json();
-        (provData.providers || []).forEach((p: any) => {
-          if (p.isAvailable) availableProviders.add(p.id);
-        });
-      }
+      // Phase 2: fetch provider availability
+      await initProviderAvailability();
+    })();
+  }, [initProviderAvailability]);
 
-      const modelsRes = await fetch('/api/models');
-      if (modelsRes.ok) {
-        const data = await modelsRes.json();
-        const allModels: ModelItem[] = data?.models || [];
-        // Filter to only show models from providers with keys set,
-        // but always include user-defined alias models.
-        const loadedModels = availableProviders.size > 0
-          ? allModels.filter(m => availableProviders.has(m.provider) || m.provider === 'Alias')
-          : allModels;
-        if (loadedModels.length > 0) {
-          setModels(loadedModels);
-          // Only update selected model if the user hasn't manually chosen one
-          setSelectedModel(prev => {
-            const targetId = userSelectedRef.current || prev?.id || null;
-            if (!targetId) return loadedModels[0];
-            const matched = loadedModels.find(
-              m => m.id === targetId || m.id.toLowerCase() === targetId.toLowerCase()
-            );
-            return matched || prev || loadedModels[0];
-          });
-        }
-      }
-    } catch (e) {
-      console.error('[Models] Full list fetch failed:', e);
-    } finally {
-      setModelsLoading(false);
-    }
-  }, []);
-
+  // Re-fetch provider availability when session changes.
   useEffect(() => {
-    handleRefreshModels();
-  }, [handleRefreshModels]);
+    initProviderAvailability();
+    refetchModels();
+  }, [sessionId, initProviderAvailability, refetchModels]);
 
-  // Re-fetch models when the session changes (e.g. user navigated back from
-  // Settings after adding a provider). This keeps the model dropdown in sync
-  // without requiring a manual refresh.
+  // Reconcile selectedModel when the filtered model list changes (models were
+  // refetched or provider availability changed). Preserve user's manual choice.
+  const prevModelsRef = useRef<ModelItem[]>(models);
   useEffect(() => {
-    handleRefreshModels(true);
-  }, [sessionId]);
+    if (models.length === 0 || models === prevModelsRef.current) return;
+    prevModelsRef.current = models;
+    setSelectedModel(prev => {
+      const targetId = userSelectedRef.current || prev?.id || null;
+      if (!targetId) return models[0];
+      const matched = models.find(
+        m => m.id === targetId || m.id.toLowerCase() === targetId.toLowerCase()
+      );
+      return matched || prev || models[0];
+    });
+  }, [models]);
 
   // Remove hardcoded fallback — rely on API only
   const currentModel = selectedModel || null;
@@ -1721,7 +1738,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 visibleModels={visibleModels}
                 loading={modelsLoading}
                 selected={selectedModel}
-                onRefresh={() => handleRefreshModels(true)}
+                onRefresh={() => refetchModels()}
                 onEditModels={() => setShowModelVisibility(true)}
                 onSelect={async (m) => {
                   if (!m) return;
@@ -2068,7 +2085,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           onNavigate={(p) => {
             window.location.href = p;
           }}
-          onRefreshModels={() => handleRefreshModels(true)}
+          onRefreshModels={() => refetchModels()}
         />
       </div>
     </div>

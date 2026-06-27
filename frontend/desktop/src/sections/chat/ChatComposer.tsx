@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { Paperclip, AtSign, Mic, Send, StopCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -497,6 +498,28 @@ export function ContextRing({
   const tone = clamped > 90 ? '#ef4444' : clamped > 70 ? '#eab308' : '#22c55e';
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
+
+  // Recompute tooltip position when opening or when viewport changes
+  useEffect(() => {
+    if (!open) {
+      setTooltipPos(null);
+      return;
+    }
+    const compute = () => {
+      if (!rootRef.current) return;
+      const r = rootRef.current.getBoundingClientRect();
+      // Position the tooltip above and right-aligned with the trigger
+      setTooltipPos({ top: r.top - 8, left: r.right - 288 }); // 288 = w-72
+    };
+    requestAnimationFrame(compute);
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => {
+      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('resize', compute);
+    };
+  }, [open]);
 
   // Close on click outside + Escape
   useEffect(() => {
@@ -561,10 +584,17 @@ export function ContextRing({
         </svg>
       </button>
 
-      {open && (
+      {tooltipPos && createPortal(
         <div
-          className="absolute right-0 bottom-full mb-2 z-30 w-72 rounded-lg shadow-2xl p-3 text-left animate-in fade-in slide-in-from-bottom-1 duration-100"
-          style={{ backgroundColor: '#1c1c1c', border: '0.5px solid rgba(255,255,255,0.12)' }}
+          className="fixed z-50 w-72 rounded-lg shadow-2xl p-3 text-left animate-in fade-in slide-in-from-bottom-1 duration-100"
+          style={{
+            top: tooltipPos.top,
+            left: tooltipPos.left,
+            backgroundColor: '#1c1c1c',
+            border: '0.5px solid rgba(255,255,255,0.12)',
+            willChange: 'transform, opacity',
+          }}
+          data-composer-popover=""
         >
           <div className="flex items-center justify-between text-[12.5px] mb-1.5">
             <span className="font-medium text-[#e0e0e0]">Session Context</span>
@@ -620,7 +650,8 @@ export function ContextRing({
               </div>
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

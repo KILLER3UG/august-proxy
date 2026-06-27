@@ -387,6 +387,7 @@ function AllModelsTab() {
         toast.error(`Failed for ${fail.length} provider${fail.length === 1 ? '' : 's'}: ${fail.map((f) => f.provider).join(', ')}`);
       }
       qc.invalidateQueries({ queryKey: ['ws-providers'] });
+      qc.invalidateQueries({ queryKey: ['aggregated-models'] });
       setDiscovering(false);
     },
     onError: () => {
