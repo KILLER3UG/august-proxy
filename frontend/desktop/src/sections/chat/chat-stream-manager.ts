@@ -560,10 +560,21 @@ export function ensureSessionSubscriber(sessionId: string): void {
         id: data.id,
         content: data.content,
         is_error: data.is_error,
-        status: data.status || (data.is_error ? 'error' : 'done'),
-      });
-    },
-  };
+      status: data.status || (data.is_error ? 'error' : 'done'),
+        });
+      },
+      onCompaction: (_data) => {
+        // Compaction events are handled by the per-turn handler
+        // (makeStreamHandlers); the background subscriber acknowledges
+        // them so the SSE stream stays healthy.
+      },
+      onWarning: (data) => {
+        console.warn('[chat-stream-manager] warning:', data?.message || data);
+      },
+      onInfo: (data) => {
+        console.info('[chat-stream-manager] info:', data?.message || data);
+      },
+    };
 
   streamWorkbenchReconnect(sessionId, handlers, controller.signal, sinceSeq)
     .catch((err) => {

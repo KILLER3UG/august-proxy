@@ -136,6 +136,11 @@ async def _do_review(
                     category=rec.get("category", "uncategorized"),
                 )
                 result["skills_created"].append(name)
+                try:
+                    from app.services.skills.curator import SkillCurator
+                    SkillCurator().bump_use(name)
+                except Exception:
+                    pass
             elif action == "patch":
                 skill_service.patch_skill(
                     name,
@@ -143,6 +148,11 @@ async def _do_review(
                     description=rec.get("description"),
                 )
                 result["skills_patched"].append(name)
+                try:
+                    from app.services.skills.curator import SkillCurator
+                    SkillCurator().bump_use(name)
+                except Exception:
+                    pass
         except Exception as exc:
             log.warning("background_review: skill '%s' failed: %s", rec.get("name"), exc)
             result["errors"].append(str(exc))

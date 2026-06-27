@@ -401,6 +401,18 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content: notice });
       scheduleUpdate();
     },
+    onWarning: ({ message }) => {
+      const warning = `\n\n⚠️ ${message || 'Warning'}`;
+      assistantContent += warning;
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content: warning });
+      scheduleUpdate();
+    },
+    onInfo: ({ message }) => {
+      const info = `\n\nℹ️ ${message || ''}`;
+      assistantContent += info;
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content: info });
+      scheduleUpdate();
+    },
     onDone: async () => {
       if (latestMutationCount > beforeMutationCount && sessionId) {
         try {

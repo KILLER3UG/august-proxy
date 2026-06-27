@@ -61,6 +61,9 @@ class WorkbenchSession:
     mutation_log: list[dict[str, Any]] = field(default_factory=list)
     status: str = "idle"  # idle / streaming / awaiting_approval
     metadata: dict[str, Any] = field(default_factory=dict)
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_cost: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -84,6 +87,9 @@ class WorkbenchSession:
             "mutationLog": self.mutation_log,
             "status": self.status,
             "metadata": self.metadata,
+            "totalInputTokens": self.total_input_tokens,
+            "totalOutputTokens": self.total_output_tokens,
+            "totalCost": self.total_cost,
         }
 
     @staticmethod
@@ -109,6 +115,9 @@ class WorkbenchSession:
             mutation_log=d.get("mutationLog", []),
             status=d.get("status", "idle"),
             metadata=d.get("metadata", {}),
+            total_input_tokens=d.get("totalInputTokens", 0),
+            total_output_tokens=d.get("totalOutputTokens", 0),
+            total_cost=d.get("totalCost", 0.0),
         )
 
 
@@ -379,30 +388,75 @@ def is_plan_mode_blocked(tool_name: str, args: dict[str, Any] | None = None) -> 
 def build_system_prompt(session: WorkbenchSession) -> str:
     """Assemble the system prompt for a workbench session.
 
-    Uses a 3-tier structure:
-    - Tier 1: Hard rules (system identity, core constraints)
-    - Tier 2: Tool guidance, agent guide, team skills
-    - Tier 3: Volatile (session-specific context, goal, plan)
+    Uses context_builder.build_system_prompt() as the base, then appends
+    session-specific sections (guard mode, goal, plan) on top.
+
+    The base includes:
+    - Platform identity (August Proxy)
+    - Memory context (user profile, global context, projects)
+    - Agent context (active agent identity + permissions)
+    - Tool guidance (how to use the available tools)
     """
-    parts: list[str] = []
+    from app.services.memory.context_builder import build_system_prompt as ctx_build
+    from app.services.memory_store import get_memory
 
-    # Tier 1: Hard rules
-    parts.append(
-        "You are August Proxy — an AI-powered development assistant. "
-        "You have access to tools for file operations, web access, "
-        "bash commands, and memory."
-    )
-    parts.append(
-        "## Operational Rules\n"
-        "- Always verify file paths before writing.\n"
-        "- When browsing, prefer fetching text content directly.\n"
-        "- If a tool fails, retry with corrected parameters.\n"
-        "- Respect user privacy and data boundaries.\n"
+    # ── Build memory payload for context_builder ──
+    memory = {}
+
+    # User profile & context
+    profile = get_memory("user_profile")
+    if profile:
+        memory["user_profile"] = profile
+
+    context = get_memory("current_context")
+    if context:
+        memory["global_context"] = context
+
+    projects = get_memory("active_projects")
+    if projects:
+        memory["active_projects"] = projects
+
+    # Inject active skills as part of memory context so the model
+    # knows what it can do without needing to call list_skills first.
+    try:
+        from app.services import skill_service
+        active = skill_service.search(enabled_only=True)
+        if active:
+            skill_lines = [f"  - {s['name']}: {s.get('description', '')[:80]}" for s in active[:15]]
+            memory["active_skills"] = "\n".join(skill_lines)
+    except Exception:
+        pass
+
+    # ── Agent context ──
+    agent_context = None
+    if session.agent_id:
+        try:
+            from app.services.tools.agent_registry import render_agent_context
+            agent_context = render_agent_context(session.agent_id)
+        except Exception:
+            pass
+
+    # ── Build base prompt via context_builder ──
+    session_dict = {
+        "goal": session.goal,
+        "plan": session.plan.to_dict() if hasattr(session.plan, 'to_dict') else session.plan,
+        "planApproved": session.plan_approved,
+    }
+
+    tools = tool_definitions(session)  # for tool guidance
+    base = ctx_build(
+        session=session_dict,
+        memory=memory,
+        tools=tools,
+        agent_context=agent_context,
     )
 
-    # Guard mode
+    # ── Append session-specific sections ──
+    extra_parts: list[str] = []
+
+    # Guard mode instructions (session-specific, not in context_builder)
     if session.guard_mode == "plan":
-        parts.append(
+        extra_parts.append(
             "## Plan Mode\n"
             "You are in plan mode. You may use ANY non-destructive tool freely "
             "to investigate (read_file, list_directory, search_files, "
@@ -416,31 +470,25 @@ def build_system_prompt(session: WorkbenchSession) -> str:
             "before you may execute anything."
         )
     elif session.guard_mode == "ask":
-        parts.append(
+        extra_parts.append(
             "## Approval Required\n"
             "File writes and command execution require user approval. "
             "Present the intended changes clearly."
         )
 
-    # Tier 3: Volatile context
-    if session.agent_id:
-        try:
-            from app.services.tools.agent_registry import render_agent_context
-            agent_ctx = render_agent_context(session.agent_id)
-            if agent_ctx:
-                parts.append(f"## Active Agent\n{agent_ctx}")
-        except Exception:
-            pass
-
+    # Goal and plan (already in context_builder's session dict, but
+    # we append explicitly to ensure they're at the end near the user msg)
     if session.goal:
-        parts.append(f"## Active Goal\n{session.goal}")
+        extra_parts.append(f"## Active Goal\n{session.goal}")
 
     if session.plan:
         status = " (approved)" if session.plan_approved else " (pending approval)"
         plan_text = session.plan.get("plan", json.dumps(session.plan))
-        parts.append(f"## Current Plan{status}\n{plan_text}")
+        extra_parts.append(f"## Current Plan{status}\n{plan_text}")
 
-    return "\n\n".join(parts)
+    if extra_parts:
+        return base + "\n\n" + "\n\n".join(extra_parts)
+    return base
 
 
 # ── Effort / thinking budget ─────────────────────────────────────────
@@ -636,9 +684,50 @@ async def send_workbench_message_stream(
     def _is_cancelled() -> bool:
         return signal is not None and signal.is_set()
 
+    # ── Check if context compression is needed before the main loop ──
+    try:
+        from app.services.memory.context_compressor import (
+            compress_messages,
+            is_feature_enabled,
+        )
+        from app.providers.clients.base import estimate_tokens
+
+        if is_feature_enabled():
+            original_tokens = estimate_tokens(session.messages)
+            threshold = WORKBENCH_TOKEN_BUDGET // 2  # 50% triggers compression
+            current_messages = list(session.messages)
+
+            if original_tokens > threshold:
+                compressed = compress_messages(
+                    current_messages,
+                    threshold=threshold,
+                    head_count=4,
+                    tail_count=6,
+                )
+                compressed_tokens = estimate_tokens(compressed)
+                if compressed_tokens < original_tokens:
+                    compressed_count = len(current_messages) - len(compressed)
+                    current_messages = compressed
+                    if emit:
+                        emit({
+                            "type": "compaction",
+                            "originalTokens": original_tokens,
+                            "compressedTokens": compressed_tokens,
+                            "compressedCount": compressed_count,
+                            "headCount": 4,
+                            "tailCount": 6,
+                        })
+        else:
+            current_messages = list(session.messages)
+    except Exception:
+        current_messages = list(session.messages)
+
+    # ── Usage accumulator ──
+    total_input_tokens = 0
+    total_output_tokens = 0
+
     # Main chat loop
     tool_round = 0
-    current_messages = list(session.messages)
 
     while tool_round < MAX_MANAGED_TOOL_ROUNDS:
         tool_round += 1
@@ -668,6 +757,12 @@ async def send_workbench_message_stream(
             if emit:
                 emit({"type": "error", "message": response["error"]})
             break
+
+        # Accumulate usage from this response
+        resp_usage = response.get("usage", {})
+        if resp_usage:
+            total_input_tokens += resp_usage.get("input_tokens", 0)
+            total_output_tokens += resp_usage.get("output_tokens", 0)
 
         # Extract the assistant message from the streaming response.
         # Thinking, final_output, and tool_use events were already emitted
@@ -825,16 +920,175 @@ async def send_workbench_message_stream(
     save_sessions()
     _emit_session_status(session_id)
 
+    # ── Record token usage ──
+    if total_input_tokens > 0 or total_output_tokens > 0:
+        try:
+            from app.services.memory_store import record_usage
+            record_usage(
+                session_id=session.id,
+                model=resolved_model,
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+            )
+            session.total_input_tokens += total_input_tokens
+            session.total_output_tokens += total_output_tokens
+        except Exception:
+            pass
+
     if emit:
         emit({"type": "done", "sessionId": session_id})
 
-    # Background review (fire-and-forget, interval-gated).
-    try:
-        from app.services.memory.background_review import try_background_review
+    # ── Post-turn background tasks (fire-and-forget) ──
 
-        asyncio.create_task(try_background_review(session, list(current_messages)))
+    # Background review (interval-gated LLM review).
+    try:
+        from app.services.memory.background_review import try_background_review, ReviewGates
+
+        asyncio.create_task(try_background_review(
+            session,
+            list(current_messages),
+            gates=ReviewGates(turn_interval=3, tool_round_interval=6),
+            llm_client=_make_review_llm_client(resolved_provider),
+        ))
     except Exception:
         pass
+
+    # Auto-memory sync (conversation summaries, todo extraction).
+    try:
+        asyncio.create_task(asyncio.to_thread(
+            _sync_auto_memory, session, list(current_messages),
+        ))
+    except Exception:
+        pass
+
+    # Self-evolution reflection (lightweight rule-based, runs every turn).
+    try:
+        from app.services.memory.self_evolution import reflect_on_turn
+        asyncio.create_task(asyncio.to_thread(
+            reflect_on_turn, list(current_messages), resolved_model,
+        ))
+    except Exception:
+        pass
+
+
+def _sync_auto_memory(session: WorkbenchSession, messages: list[dict[str, Any]]) -> None:
+    """Auto-memory sync — save conversation summaries and extract todos.
+
+    Runs fire-and-forget after each workbench turn so it never delays
+    the response. These lightweight rule-based extractions complement
+    the heavier LLM-based background_review."""
+
+    from app.services.memory.auto_memory import save_auto_memory, extract_and_save_todos
+
+    # Extract todos from assistant messages (saves to memory_store as side effect)
+    try:
+        extract_and_save_todos(messages)
+    except Exception:
+        pass
+
+    # Save a lightweight conversation summary as auto-memory
+    try:
+        last_user_msg = _last_user_message_text(session)
+        if last_user_msg:
+            summary = f"User asked: {last_user_msg[:300]}"
+            save_auto_memory(
+                f"conv_summary_{session.id[:8]}",
+                summary,
+                category="conversation",
+                importance=0.3,
+            )
+    except Exception:
+        pass
+
+
+def _last_user_message_text(session: WorkbenchSession) -> str:
+    """Extract text content from the last user message in a session."""
+    for msg in reversed(session.messages):
+        if msg.get("role") == "user":
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                return content
+            elif isinstance(content, list):
+                texts = [
+                    b.get("text", "") for b in content
+                    if isinstance(b, dict) and b.get("type") == "text"
+                ]
+                return " ".join(texts)
+    return ""
+
+
+def _make_review_llm_client(
+    main_provider: dict[str, Any] | None,
+) -> Callable | None:
+    """Create an LLM client for background review calls.
+
+    Uses the auxiliary/review provider config if available, falling back
+    to the main session provider. Returns None if no provider available
+    (review will be a no-op).
+    """
+    try:
+        # Try to find a suitable provider for the lightweight review
+        from app.providers import resolver as provider_resolver
+
+        provider = None
+        review_config: dict[str, Any] | None = None
+
+        # First, check config for an explicit review provider/model
+        try:
+            from app.config import settings
+            aux_config = settings.config.get("auxiliary", {}) or {}
+            review_config = aux_config.get("background_review", {}) or {}
+            review_provider_name = review_config.get("provider", "")
+            if review_provider_name:
+                provider = provider_resolver.resolve(review_provider_name)
+        except Exception:
+            pass
+
+        # Fallback: use main provider
+        if not provider:
+            provider = main_provider
+        if not provider:
+            provider = provider_resolver.resolve("")
+        if not provider:
+            return None
+
+        from app.providers.clients import get_client
+        client = get_client(provider)
+        if not client:
+            return None
+
+        api_key = client.resolve_api_key()
+        if not api_key:
+            return None
+
+        # Use closure-bound variables for the inner function
+        _client = client
+        _review_config = review_config
+
+        async def review_llm(prompt: list[dict[str, Any]]) -> str:
+            """Call a cheap/fast model for background review."""
+            try:
+                review_model = _review_config.get("model", "claude-sonnet-4-20250514") if _review_config else "claude-sonnet-4-20250514"
+                body = {
+                    "model": review_model,
+                    "messages": prompt,
+                    "max_tokens": 1024,
+                }
+                # Use non-streaming for simplicity
+                resp = await _client.chat_completions(body)
+                body_json = resp.body_json or {}
+                if resp.is_error or "error" in body_json:
+                    return ""
+                choices = body_json.get("choices", [])
+                if not choices:
+                    return ""
+                return choices[0].get("message", {}).get("content", "")
+            except Exception:
+                return ""
+
+        return review_llm
+    except Exception:
+        return None
 
 
 def _resolve_workbench_provider(provider_name: str, model_hint: str = "") -> dict[str, Any] | None:
@@ -937,97 +1191,106 @@ async def _call_anthropic_workbench(
     if thinking_budget > 0 and _supports_thinking(provider, model):
         body["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
 
-    # ── Stream from upstream ───────────────────────────────────────────
-    content_blocks: list[dict[str, Any]] = []
-    accumulated_text = ""
-    accumulated_thinking = ""
-    tool_uses: list[dict[str, Any]] = []
-    current_tool_block: dict[str, Any] | None = None
-    current_tool_input_parts: list[str] = []
+        # ── Stream from upstream ───────────────────────────────────────────
+        content_blocks: list[dict[str, Any]] = []
+        accumulated_text = ""
+        accumulated_thinking = ""
+        tool_uses: list[dict[str, Any]] = []
+        current_tool_block: dict[str, Any] | None = None
+        current_tool_input_parts: list[str] = []
+        usage: dict[str, int] = {}  # input_tokens, output_tokens captured at end
 
-    try:
-        async for event in client.messages_stream(body):
-            event_type = event.get("_event_type", "")
+        try:
+            async for event in client.messages_stream(body):
+                event_type = event.get("_event_type", "")
 
-            if event_type == "content_block_start":
-                block = event.get("content_block", {})
-                block_type = block.get("type", "")
-                if block_type == "tool_use":
-                    current_tool_block = {
-                        "type": "tool_use",
-                        "id": block.get("id", f"toolu_{uuid.uuid4().hex[:16]}"),
-                        "name": block.get("name", ""),
-                        "input": {},
-                    }
-                    current_tool_input_parts = []
-                elif block_type == "text":
-                    text = block.get("text", "")
-                    if text:
-                        accumulated_text += text
-                        if emit:
-                            emit({"type": "final_output", "content": text})
-                elif block_type == "thinking":
-                    text = block.get("thinking", "")
-                    if text:
-                        accumulated_thinking += text
-                        if emit:
-                            emit({"type": "thinking", "content": text})
+                if event_type == "content_block_start":
+                    block = event.get("content_block", {})
+                    block_type = block.get("type", "")
+                    if block_type == "tool_use":
+                        current_tool_block = {
+                            "type": "tool_use",
+                            "id": block.get("id", f"toolu_{uuid.uuid4().hex[:16]}"),
+                            "name": block.get("name", ""),
+                            "input": {},
+                        }
+                        current_tool_input_parts = []
+                    elif block_type == "text":
+                        text = block.get("text", "")
+                        if text:
+                            accumulated_text += text
+                            if emit:
+                                emit({"type": "final_output", "content": text})
+                    elif block_type == "thinking":
+                        text = block.get("thinking", "")
+                        if text:
+                            accumulated_thinking += text
+                            if emit:
+                                emit({"type": "thinking", "content": text})
 
-            elif event_type == "content_block_delta":
-                delta = event.get("delta", {})
-                delta_type = delta.get("type", "")
-                if delta_type == "text_delta":
-                    text = delta.get("text", "")
-                    if text:
-                        accumulated_text += text
-                        if emit:
-                            emit({"type": "final_output", "content": text})
-                elif delta_type == "thinking_delta":
-                    text = delta.get("thinking", "")
-                    if text:
-                        accumulated_thinking += text
-                        if emit:
-                            emit({"type": "thinking", "content": text})
-                elif delta_type == "input_json_delta":
-                    current_tool_input_parts.append(delta.get("partial_json", ""))
+                elif event_type == "content_block_delta":
+                    delta = event.get("delta", {})
+                    delta_type = delta.get("type", "")
+                    if delta_type == "text_delta":
+                        text = delta.get("text", "")
+                        if text:
+                            accumulated_text += text
+                            if emit:
+                                emit({"type": "final_output", "content": text})
+                    elif delta_type == "thinking_delta":
+                        text = delta.get("thinking", "")
+                        if text:
+                            accumulated_thinking += text
+                            if emit:
+                                emit({"type": "thinking", "content": text})
+                    elif delta_type == "input_json_delta":
+                        current_tool_input_parts.append(delta.get("partial_json", ""))
 
-            elif event_type == "content_block_stop":
-                if current_tool_block:
-                    raw = "".join(current_tool_input_parts)
-                    if raw:
-                        try:
-                            current_tool_block["input"] = json.loads(raw)
-                        except json.JSONDecodeError:
-                            current_tool_block["input"] = {"_raw": raw}
-                    tool_uses.append(current_tool_block)
-                    # Note: tool_use event is deliberately NOT emitted here.
-                    # The main loop in send_workbench_message_stream() emits a
-                    # single `tool_call` event per tool with status="running"
-                    # right before execution. Emitting both a `tool_use` event
-                    # from the streaming layer AND a `tool_call` from the main
-                    # loop creates duplicate UI entries on the frontend.
-                    current_tool_block = None
-                    current_tool_input_parts = []
+                elif event_type == "content_block_stop":
+                    if current_tool_block:
+                        raw = "".join(current_tool_input_parts)
+                        if raw:
+                            try:
+                                current_tool_block["input"] = json.loads(raw)
+                            except json.JSONDecodeError:
+                                current_tool_block["input"] = {"_raw": raw}
+                        tool_uses.append(current_tool_block)
+                        # Note: tool_use event is deliberately NOT emitted here.
+                        # The main loop in send_workbench_message_stream() emits a
+                        # single `tool_call` event per tool with status="running"
+                        # right before execution. Emitting both a `tool_use` event
+                        # from the streaming layer AND a `tool_call` from the main
+                        # loop creates duplicate UI entries on the frontend.
+                        current_tool_block = None
+                        current_tool_input_parts = []
 
-            elif event_type == "error":
-                return {"error": f"Stream error: {event}"}
+                elif event_type == "message_delta":
+                    # Capture usage from the final message delta event
+                    msg_usage = event.get("usage", {})
+                    if msg_usage:
+                        usage["input_tokens"] = msg_usage.get("input_tokens", 0)
+                        usage["output_tokens"] = msg_usage.get("output_tokens", 0)
 
-    except Exception as exc:
-        return {"error": str(exc)}
+                elif event_type == "error":
+                    return {"error": f"Stream error: {event}"}
 
-    # Build content blocks preserving order
-    if accumulated_thinking:
-        content_blocks.append({"type": "thinking", "text": accumulated_thinking})
-    if accumulated_text:
-        content_blocks.append({"type": "text", "text": accumulated_text})
-    content_blocks.extend(tool_uses)
+        except Exception as exc:
+            return {"error": str(exc)}
 
-    return {
-        "content": content_blocks,
-        "text": accumulated_text,
-        "thinking": accumulated_thinking,
-        "tool_uses": tool_uses,
-    }
+        # Build content blocks preserving order
+        if accumulated_thinking:
+            content_blocks.append({"type": "thinking", "text": accumulated_thinking})
+        if accumulated_text:
+            content_blocks.append({"type": "text", "text": accumulated_text})
+        content_blocks.extend(tool_uses)
+
+        return {
+            "content": content_blocks,
+            "text": accumulated_text,
+            "thinking": accumulated_thinking,
+            "tool_uses": tool_uses,
+            "usage": usage,
+        }
 
 
 async def _call_openai_workbench(
@@ -1077,69 +1340,77 @@ async def _call_openai_workbench(
     if reasoning:
         body["reasoning_effort"] = reasoning
 
-    # ── Stream from upstream ───────────────────────────────────────────
-    content_text = ""
-    thinking_text = ""
-    tool_calls_accum: dict[int, dict[str, Any]] = {}
-    finish_reason: str | None = None
+        # ── Stream from upstream ───────────────────────────────────────────
+        content_text = ""
+        thinking_text = ""
+        tool_calls_accum: dict[int, dict[str, Any]] = {}
+        finish_reason: str | None = None
+        usage: dict[str, int] = {}  # input_tokens, output_tokens from final chunk
 
-    try:
-        async for event in client.chat_completions_stream(body):
-            event_type = event.get("_event_type", "")
+        try:
+            async for event in client.chat_completions_stream(body):
+                event_type = event.get("_event_type", "")
 
-            # OpenAI streaming sends "chat.completion.chunk" events
-            if event_type not in ("chat.completion.chunk", ""):
-                # Some providers omit the event type — proceed anyway
-                pass
+                # OpenAI streaming sends "chat.completion.chunk" events
+                if event_type not in ("chat.completion.chunk", ""):
+                    # Some providers omit the event type — proceed anyway
+                    pass
 
-            choices = event.get("choices", [])
-            if not choices:
-                continue
+                # Capture usage from the final chunk (OpenAI sends it
+                # in the last chunk when finish_reason is set)
+                event_usage = event.get("usage")
+                if event_usage:
+                    usage["input_tokens"] = event_usage.get("prompt_tokens", 0)
+                    usage["output_tokens"] = event_usage.get("completion_tokens", 0)
 
-            choice = choices[0]
-            delta = choice.get("delta", {})
+                choices = event.get("choices", [])
+                if not choices:
+                    continue
 
-            # Reasoner content (thinking)
-            reasoner = delta.get("reasoning_content") or delta.get("reasoning")
-            if reasoner:
-                thinking_text += reasoner
-                if emit:
-                    emit({"type": "thinking", "content": reasoner})
+                choice = choices[0]
+                delta = choice.get("delta", {})
 
-            # Normal text content
-            text_delta = delta.get("content", "")
-            if text_delta:
-                content_text += text_delta
-                if emit:
-                    emit({"type": "final_output", "content": text_delta})
+                # Reasoner content (thinking)
+                reasoner = delta.get("reasoning_content") or delta.get("reasoning")
+                if reasoner:
+                    thinking_text += reasoner
+                    if emit:
+                        emit({"type": "thinking", "content": reasoner})
 
-            # Tool calls
-            for tc in delta.get("tool_calls", []):
-                idx = tc.get("index", 0)
-                if idx not in tool_calls_accum:
-                    fn = tc.get("function", {})
-                    tool_calls_accum[idx] = {
-                        "id": tc.get("id", f"call_{uuid.uuid4().hex[:12]}"),
-                        "type": "function",
-                        "function": {
-                            "name": fn.get("name", ""),
-                            "arguments": fn.get("arguments", ""),
-                        },
-                    }
-                else:
-                    fn = tc.get("function", {})
-                    existing = tool_calls_accum[idx]["function"]
-                    if fn.get("arguments"):
-                        existing["arguments"] += fn["arguments"]
-                    if fn.get("name"):
-                        existing["name"] += fn["name"]
+                # Normal text content
+                text_delta = delta.get("content", "")
+                if text_delta:
+                    content_text += text_delta
+                    if emit:
+                        emit({"type": "final_output", "content": text_delta})
 
-            # Finish reason
-            if choice.get("finish_reason"):
-                finish_reason = choice["finish_reason"]
+                # Tool calls
+                for tc in delta.get("tool_calls", []):
+                    idx = tc.get("index", 0)
+                    if idx not in tool_calls_accum:
+                        fn = tc.get("function", {})
+                        tool_calls_accum[idx] = {
+                            "id": tc.get("id", f"call_{uuid.uuid4().hex[:12]}"),
+                            "type": "function",
+                            "function": {
+                                "name": fn.get("name", ""),
+                                "arguments": fn.get("arguments", ""),
+                            },
+                        }
+                    else:
+                        fn = tc.get("function", {})
+                        existing = tool_calls_accum[idx]["function"]
+                        if fn.get("arguments"):
+                            existing["arguments"] += fn["arguments"]
+                        if fn.get("name"):
+                            existing["name"] += fn["name"]
 
-    except Exception as exc:
-        return {"error": str(exc)}
+                # Finish reason
+                if choice.get("finish_reason"):
+                    finish_reason = choice["finish_reason"]
+
+        except Exception as exc:
+            return {"error": str(exc)}
 
     # Build OpenAI-style response
     assistant_message: dict[str, Any] = {
@@ -1192,6 +1463,7 @@ async def _call_openai_workbench(
         "text": content_text,
         "thinking": thinking_text,
         "tool_uses": tool_uses,
+        "usage": usage,
     }
 
 

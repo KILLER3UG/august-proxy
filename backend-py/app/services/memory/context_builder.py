@@ -90,6 +90,13 @@ def build_slim_core_context(memory: dict[str, Any] | None = None) -> str:
         if names:
             lines.append(f"Projects: {', '.join(names)}")
 
+    # Active skills (injected by workbench.build_system_prompt)
+    skills = memory.get("active_skills", "")
+    if skills:
+        lines.append("")
+        lines.append("Active Skills:")
+        lines.append(skills)
+
     return "\n".join(lines)
 
 

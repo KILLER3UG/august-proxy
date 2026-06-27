@@ -466,6 +466,22 @@ export function updateSubAgentFallback(config: SubAgentFallbackConfig): Promise<
   return api.put<{ ok: boolean }>('/api/config/subagent-fallback', { config });
 }
 
+/* ── Background Review / Reflection model config ───────────────────── */
+
+export interface ReviewBackgroundConfig {
+  enabled: boolean;
+  provider: string;
+  model: string;
+}
+
+export function getReviewBackgroundConfig(): Promise<ReviewBackgroundConfig> {
+  return api.get<ReviewBackgroundConfig>('/api/config/background-review');
+}
+
+export function updateReviewBackgroundConfig(config: ReviewBackgroundConfig): Promise<ReviewBackgroundConfig> {
+  return api.put<ReviewBackgroundConfig>('/api/config/background-review', config);
+}
+
 export function restartBackend(): Promise<{ ok: boolean }> {
   return api.post<{ ok: boolean }>('/api/system/restart');
 }

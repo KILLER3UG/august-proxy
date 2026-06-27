@@ -228,6 +228,11 @@ export interface WorkbenchEventHandlers {
     toolUseId?: string;
     [k: string]: any;
   }) => void;
+  /** Informational messages (auto-memory sync, guideline updates, etc.). */
+  onInfo?: (data: {
+    message?: string;
+    [k: string]: any;
+  }) => void;
   onDone?: () => void;
   onError?: (data: { message: string }) => void;
 }

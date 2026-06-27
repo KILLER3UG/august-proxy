@@ -26,6 +26,20 @@ try:
 except ImportError:
     log.warning("gateway: telegram adapter not available (httpx?)")
 
+try:
+    from app.services.gateway.platforms.slack import SlackAdapter
+    register_adapter("slack", lambda config=None, bridge=None: SlackAdapter(config, bridge))
+    log.debug("gateway: registered slack adapter factory")
+except ImportError:
+    log.warning("gateway: slack adapter not available (slack_sdk?)")
+
+try:
+    from app.services.gateway.platforms.discord import DiscordAdapter
+    register_adapter("discord", lambda config=None, bridge=None: DiscordAdapter(config, bridge))
+    log.debug("gateway: registered discord adapter factory")
+except ImportError:
+    log.warning("gateway: discord adapter not available (discord.py?)")
+
 # ── Router ────────────────────────────────────────────────────────────
 
 router = APIRouter(prefix="/api/gateway")

@@ -148,3 +148,29 @@ async def test_subagent_fallback(body: FallbackTest):
     """Probe resolution of a model id without saving."""
     from app.services import fallback_service
     return fallback_service.test_fallback(body.model)
+
+
+class BackgroundReviewUpdate(BaseModel):
+    enabled: bool | None = None
+    provider: str | None = None
+    model: str | None = None
+
+
+@router.get("/background-review")
+async def get_background_review():
+    """Return the current background review config."""
+    from app.services import background_review_service
+
+    return background_review_service.get_config()
+
+
+@router.put("/background-review")
+async def put_background_review(body: BackgroundReviewUpdate):
+    """Update background review config fields (partial)."""
+    from app.services import background_review_service
+
+    return background_review_service.save_config(
+        enabled=body.enabled,
+        provider=body.provider,
+        model=body.model,
+    )

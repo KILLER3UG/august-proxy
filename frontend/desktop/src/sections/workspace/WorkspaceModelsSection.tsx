@@ -39,6 +39,7 @@ import {
   Bot,
   ShieldCheck,
   Plug,
+  Brain,
   CheckCircle2,
   AlertCircle,
   type LucideIcon,
@@ -56,9 +57,12 @@ import {
   restartBackend,
   getSubAgentFallback,
   updateSubAgentFallback,
+  getReviewBackgroundConfig,
+  updateReviewBackgroundConfig,
   type UserModelAlias,
   type AggregatedModel,
   type SubAgentFallbackConfig,
+  type ReviewBackgroundConfig,
 } from '@/api/api-client';
 import { WorkspaceField } from '@/components/workspace/WorkspaceField';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
@@ -81,11 +85,12 @@ const API_FORMATS: { value: ApiFormat; label: string }[] = [
 
 const DEFAULT_API_FORMAT: ApiFormat = 'anthropic';
 
-const SUBTABS: { key: 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback'; label: string; icon: LucideIcon }[] = [
+const SUBTABS: { key: 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection'; label: string; icon: LucideIcon }[] = [
   { key: 'providers', label: 'Providers', icon: Server },
   { key: 'all-models', label: 'All models', icon: Boxes },
   { key: 'aliases',   label: 'Aliases',   icon: ArrowRightLeft },
   { key: 'fallback',  label: 'Fallback',  icon: ShieldCheck },
+  { key: 'reflection', label: 'Background & Reflection', icon: Brain },
   { key: 'quotas',    label: 'Quotas',    icon: Gauge },
 ];
 
@@ -97,7 +102,7 @@ function fmtContextWindow(n?: number) {
 }
 
 export function WorkspaceModelsSection() {
-  const [subtab, setSubtab] = useState<'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback'>('providers');
+  const [subtab, setSubtab] = useState<'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection'>('providers');
 
   return (
     <div className="px-8 py-6 space-y-4 h-full flex flex-col">
@@ -114,7 +119,7 @@ export function WorkspaceModelsSection() {
       <div className="shrink-0">
         <WorkspaceTabs
           value={subtab}
-          onChange={(k) => setSubtab(k as 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback')}
+          onChange={(k) => setSubtab(k as 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection')}
           items={SUBTABS}
           label="Model settings subtabs"
         />
@@ -125,6 +130,7 @@ export function WorkspaceModelsSection() {
         {subtab === 'all-models' && <AllModelsTab />}
         {subtab === 'aliases'   && <AliasesTab />}
         {subtab === 'fallback'  && <FallbackTab />}
+        {subtab === 'reflection' && <BackgroundReflectionTab />}
         {subtab === 'quotas'    && <QuotasTab />}
       </div>
     </div>
@@ -928,6 +934,122 @@ function FallbackTab() {
             </>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Background & Reflection subtab ────────────────────────────────── */
+
+const DEFAULT_BG_CONFIG: ReviewBackgroundConfig = { enabled: false, provider: '', model: '' };
+
+function BackgroundReflectionTab() {
+  const qc = useQueryClient();
+
+  const bgQ = useQuery({
+    queryKey: ['review-background-config'],
+    queryFn: () => getReviewBackgroundConfig(),
+  });
+  const modelsQ = useQuery({
+    queryKey: ['aggregated-models'],
+    queryFn: () => getAggregatedModels(),
+  });
+
+  const config: ReviewBackgroundConfig = bgQ.data ?? DEFAULT_BG_CONFIG;
+  const [editConfig, setEditConfig] = useState<ReviewBackgroundConfig | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const activeConfig = editConfig ?? config;
+  const dirty = JSON.stringify(editConfig) !== JSON.stringify(config) && editConfig !== null;
+
+  const allModels = modelsQ.data?.models ?? [];
+  const providers = [...new Set(allModels.map((m) => m.provider))].sort();
+  const availableModels = allModels
+    .filter((m) => !activeConfig.provider || m.provider === activeConfig.provider)
+    .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
+
+  const handleSave = async () => {
+    if (!editConfig) return;
+    setSaving(true);
+    try {
+      const saved = await updateReviewBackgroundConfig(editConfig);
+      setEditConfig(null);
+      qc.invalidateQueries({ queryKey: ['review-background-config'] });
+      toast.success('Saved background review settings');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (bgQ.isLoading || modelsQ.isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
+        <div>
+          <p className="text-sm font-semibold">Background review & reflection</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Configure a separate model for background review, reflection, and auto‑memory extraction.
+            When disabled, the chat session model is used automatically.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between p-3 rounded-lg border border-white/[0.06] bg-black/10">
+          <div>
+            <p className="text-xs font-semibold">Use separate model</p>
+            <p className="text-[10px] text-muted-foreground">Route background tasks to a different model.</p>
+          </div>
+          <WorkspaceToggle
+            enabled={activeConfig.enabled}
+            onToggle={(checked) => setEditConfig({ ...activeConfig, enabled: checked })}
+            disabled={bgQ.isFetching}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <WorkspaceField label="Provider">
+            <WorkspaceSelect
+              value={activeConfig.provider}
+              onChange={(e) => setEditConfig({ ...activeConfig, provider: e.target.value, model: '' })}
+              options={providers.map((p) => ({ value: p, label: p }))}
+              disabled={!activeConfig.enabled}
+            />
+          </WorkspaceField>
+
+          <WorkspaceField label="Model">
+            <ModelPickerDropdown
+              models={availableModels}
+              value={activeConfig.model}
+              onChange={(modelId, _provider) => setEditConfig({ ...activeConfig, model: modelId })}
+              disabled={!activeConfig.enabled}
+            />
+          </WorkspaceField>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          If no model is selected, the system will automatically use the chat session's model.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {dirty && (
+          <>
+            <Button size="sm" onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving...' : 'Save'}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setEditConfig(null)}>
+              Cancel
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

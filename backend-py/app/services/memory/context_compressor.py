@@ -20,8 +20,14 @@ FEATURE_FLAG = "AUGUST_SUMMARIZING_COMPACTOR"
 
 
 def is_feature_enabled() -> bool:
-    """Check if the summarizing compactor feature flag is set."""
-    return os.environ.get(FEATURE_FLAG) == "1"
+    """Check if the summarizing compactor feature flag is set.
+
+    Enabled by default — the env var AUGUST_SUMMARIZING_COMPACTOR
+    can be set to "0" to disable."""
+    val = os.environ.get(FEATURE_FLAG)
+    if val is not None:
+        return val == "1"
+    return True  # enabled by default
 
 
 def local_summarize(
