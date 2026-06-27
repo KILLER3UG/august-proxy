@@ -611,6 +611,8 @@ async def send_workbench_message_stream(
             break
 
         if response.get("error"):
+            if tool_round > 1:
+                print(f"[workbench] Model re-call failed after tool round {tool_round - 1}: {response['error']}")
             if emit:
                 emit({"type": "error", "message": response["error"]})
             break
@@ -640,12 +642,20 @@ async def send_workbench_message_stream(
             thinking_content = response.get("thinking", "")
             tool_uses = response.get("tool_uses", [])
 
-        session.messages.append(assistant_msg)
-
+        # ── No tool calls → normal text reply ──
         if not tool_uses:
+            if tool_round > 1 and not text_content and not thinking_content:
+                # Diagnostic only: with the tool_calls-preservation fix in
+                # translate_messages this should be rare. If it fires, the
+                # model genuinely returned nothing after tools — log it for
+                # investigation rather than surfacing a speculative warning
+                # (the previous "tool result formats" message misdiagnosed
+                # the now-fixed tool_calls-drop bug).
+                print(f"[workbench] Model re-call returned empty content after tool round {tool_round - 1} (no text, no tools)")
+            current_messages.append(assistant_msg)
             break
 
-        # Execute tools
+        # ── Tool calls present → execute each tool ──
         tool_results: list[dict[str, Any]] = []
         for tu in tool_uses:
             # Check cancellation before each tool execution
@@ -680,12 +690,24 @@ async def send_workbench_message_stream(
 
             result = await _execute_tool(tool_name, tool_input, session)
 
+            # Cap tool result size in the SSE payload so a single large
+            # result (e.g. a big file read) doesn't bloat the stream and
+            # the in-memory event log. The frontend's SSE reader reassembles
+            # split data: lines, so this is a size guard, not a parse guard.
+            MAX_SSE_CONTENT = 100 * 1024  # 100 KB
+            content_truncated = len(result) > MAX_SSE_CONTENT
+            sse_content = result[:MAX_SSE_CONTENT]
+            if content_truncated:
+                sse_content += "\n\n[... Tool result truncated at 100 KB — full length: {} bytes]".format(len(result))
+
             if emit:
                 emit({
                     "type": "tool_result",
                     "id": tool_use_id,
                     "name": tool_name,
-                    "content": result,
+                    "content": sse_content,
+                    "content_truncated": content_truncated,
+                    "content_full_length": len(result),
                     "summary": str(result)[:2000],
                     "status": "done",
                 })
@@ -705,6 +727,13 @@ async def send_workbench_message_stream(
         if session.guard_mode == "plan":
             break
 
+    # ── After loop: persist the complete conversation ──
+    # Instead of updating session.messages piecemeal inside the loop
+    # (which would miss tool results), assign the accumulated
+    # current_messages as the canonical conversation history.
+    # This ensures tool results survive session serialization and
+    # are available on the next user turn.
+    session.messages = list(current_messages)
     session.status = "idle"
     session.updated_at = _now()
     save_sessions()
@@ -877,13 +906,12 @@ async def _call_anthropic_workbench(
                         except json.JSONDecodeError:
                             current_tool_block["input"] = {"_raw": raw}
                     tool_uses.append(current_tool_block)
-                    if emit:
-                        emit({
-                            "type": "tool_use",
-                            "id": current_tool_block["id"],
-                            "name": current_tool_block["name"],
-                            "input": current_tool_block["input"],
-                        })
+                    # Note: tool_use event is deliberately NOT emitted here.
+                    # The main loop in send_workbench_message_stream() emits a
+                    # single `tool_call` event per tool with status="running"
+                    # right before execution. Emitting both a `tool_use` event
+                    # from the streaming layer AND a `tool_call` from the main
+                    # loop creates duplicate UI entries on the frontend.
                     current_tool_block = None
                     current_tool_input_parts = []
 
@@ -1035,12 +1063,18 @@ async def _call_openai_workbench(
                 parsed_args = json.loads(fn["arguments"]) if fn["arguments"] else {}
             except (json.JSONDecodeError, TypeError):
                 parsed_args = {}
+            # OpenAI API spec requires function.arguments to be a JSON
+            # string, NOT a parsed dict. Re-stringify here so that when
+            # this tool_calls entry is sent back to the upstream provider
+            # on the next round (tool re-call), the provider receives a
+            # valid format — otherwise many providers (including DeepSeek)
+            # return empty or error content.
             tc_list.append({
                 "id": tc["id"],
                 "type": "function",
                 "function": {
                     "name": fn["name"],
-                    "arguments": parsed_args,
+                    "arguments": json.dumps(parsed_args),
                 },
             })
             tool_uses.append({
@@ -1050,15 +1084,10 @@ async def _call_openai_workbench(
                 "input": parsed_args,
             })
 
-            if emit:
-                emit({
-                    "type": "tool_use",
-                    "id": tc["id"],
-                    "name": fn["name"],
-                    "input": parsed_args,
-                })
+            # tool_use event is deliberately NOT emitted here — the main
+            # loop emits a single `tool_call` event per tool before execution.
 
-        assistant_message["tool_calls"] = tc_list
+            assistant_message["tool_calls"] = tc_list
 
     return {
         "choices": [{

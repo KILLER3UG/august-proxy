@@ -57,13 +57,28 @@ class EventLog:
         entry = self._get_or_create(session_id)
         q: asyncio.Queue = asyncio.Queue()
 
-        # Replay past events (sync iteration, async yield)
-        for ev in list(entry.events):
-            if ev["seq"] > since_seq:
-                yield ev
-
+        # Register the queue BEFORE replaying past events. Otherwise an
+        # event appended while we are suspended at a replay `yield` lands
+        # in entry.events but is absent from both the already-materialised
+        # snapshot and the not-yet-registered queue — silently dropped.
         entry.subscribers.add(q)
         try:
+            replayed: set[int] = set()
+            for ev in list(entry.events):
+                if ev["seq"] > since_seq:
+                    replayed.add(ev["seq"])
+                    yield ev
+
+            # Drain anything appended concurrently during replay (present
+            # in q, and possibly also in the snapshot above) without
+            # duplicating or re-delivering events the caller already saw.
+            while not q.empty():
+                ev = q.get_nowait()
+                if ev["seq"] in replayed or ev["seq"] <= since_seq:
+                    continue
+                replayed.add(ev["seq"])
+                yield ev
+
             while True:
                 try:
                     ev = await asyncio.wait_for(q.get(), timeout=30.0)
