@@ -354,9 +354,27 @@ def translate_messages(
                 asst_msg["content"] = "".join(text_parts) if text_parts else ""
                 if tool_calls:
                     asst_msg["tool_calls"] = tool_calls
-            elif msg.get("tool_calls"):
-                asst_msg["content"] = msg.get("content", "")
-                asst_msg["tool_calls"] = msg["tool_calls"]
+            # Preserve a top-level OpenAI-style tool_calls list even when
+            # content is a plain string. The workbench stores OpenAI-path
+            # assistant turns as {content: <str>, tool_calls: [...]} — the
+            # str branch above would otherwise win and silently drop
+            # tool_calls, orphaning the following role:"tool" messages'
+            # tool_call_id and causing the upstream provider to reject
+            # (HTTP 400) or empty-respond on the re-call after tools.
+            if msg.get("tool_calls") and "tool_calls" not in asst_msg:
+                asst_msg.setdefault("content", msg.get("content", ""))
+                # Ensure function.arguments is always a JSON string (not a
+                # parsed dict) for OpenAI API compatibility — some providers
+                # silently return empty content when arguments is a dict.
+                safe_calls = []
+                for tc in msg["tool_calls"]:
+                    tc_copy = dict(tc)
+                    fn = dict(tc_copy.get("function", {}))
+                    if "arguments" in fn and not isinstance(fn["arguments"], str):
+                        fn["arguments"] = json.dumps(fn["arguments"])
+                    tc_copy["function"] = fn
+                    safe_calls.append(tc_copy)
+                asst_msg["tool_calls"] = safe_calls
             openai_messages.append(asst_msg)
 
         elif role == "tool":
@@ -1472,7 +1490,26 @@ def translate_messages_to_anthropic(messages: list[dict[str, Any]]) -> list[dict
                     "content": content_blocks
                 })
             else:
-                translated.append(msg)
+                # Strip thinking blocks that lack a signature before
+                # resending to Anthropic. The streaming layer rebuilds
+                # thinking blocks from thinking_delta text only — it does
+                # not capture signature_delta — so thinking blocks stored
+                # in history have no signature. Anthropic rejects assistant
+                # messages containing a thinking block without a valid
+                # signature, which aborts the re-call after tool execution.
+                if role == "assistant" and isinstance(msg.get("content"), list):
+                    filtered = [
+                        b for b in msg["content"]
+                        if not (isinstance(b, dict)
+                                and b.get("type") == "thinking"
+                                and not b.get("signature"))
+                    ]
+                    translated.append({
+                        "role": "assistant",
+                        "content": filtered if filtered else [{"type": "text", "text": ""}],
+                    })
+                else:
+                    translated.append(msg)
             i += 1
 
     return translated

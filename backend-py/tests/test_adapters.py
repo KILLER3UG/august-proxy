@@ -20,7 +20,7 @@ from app.adapters.anthropic import (
     is_claude_family_model, resolve_claude_public_model_alias,
     resolve_claude_client_facing_model, normalize_system_blocks,
     system_blocks_to_text, build_anthropic_system_blocks,
-    translate_messages, build_openai_request,
+    translate_messages, translate_messages_to_anthropic, build_openai_request,
     write_anthropic_sse_data, send_simulated_anthropic_stream,
     stream_openai_delta_as_anthropic, create_openai_to_anthropic_stream_state,
     handle_count_tokens,
@@ -175,6 +175,60 @@ class TestAnthropicAdapter:
         assert len(openai_msgs) == 3
         assert openai_msgs[1]["role"] == "assistant"
         assert len(openai_msgs[1].get("tool_calls", [])) == 1
+
+    def test_translate_preserves_tool_calls_with_string_content(self):
+        """Regression: OpenAI-path assistant turns are stored as
+        {content: <str>, tool_calls: [...]}. translate_messages must keep
+        tool_calls so subsequent role:"tool" tool_call_id values resolve;
+        otherwise the upstream provider 400s/empties on the re-call after
+        tools (the 'chat aborts during tool use' bug)."""
+        msgs = [
+            {"role": "user", "content": "use a tool"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "call_1", "type": "function",
+                 "function": {"name": "echo", "arguments": '{"msg":"hi"}'}},
+            ]},
+            {"role": "tool", "tool_use_id": "call_1", "content": "hi"},
+        ]
+        out = translate_messages(msgs)
+        asst = out[1]
+        tcs = asst.get("tool_calls")
+        assert tcs and len(tcs) == 1, "tool_calls must be preserved when content is a string"
+        assert tcs[0]["id"] == "call_1"
+        assert isinstance(tcs[0]["function"]["arguments"], str)
+        tool_msg = out[2]
+        assert tool_msg["role"] == "tool"
+        assert tool_msg["tool_call_id"] == "call_1"
+        assert tool_msg["tool_call_id"] in {tc["id"] for tc in tcs}
+
+    def test_translate_to_anthropic_strips_signatureless_thinking(self):
+        """Regression: streaming stores thinking blocks without a signature
+        (signature_delta is not captured). Anthropic rejects assistant
+        messages with a signature-less thinking block, aborting the re-call
+        after tool execution on Claude models with thinking enabled."""
+        msgs = [
+            {"role": "user", "content": "use a tool"},
+            {"role": "assistant", "content": [
+                {"type": "thinking", "text": "reasoning..."},  # no signature
+                {"type": "tool_use", "id": "tu_1", "name": "echo", "input": {}},
+            ]},
+            {"role": "tool", "tool_use_id": "tu_1", "content": "hi"},
+        ]
+        out = translate_messages_to_anthropic(msgs)
+        asst = next(m for m in out if m.get("role") == "assistant")
+        blocks = asst["content"]
+        assert not any(b.get("type") == "thinking" and not b.get("signature") for b in blocks)
+        assert any(b.get("type") == "tool_use" and b.get("id") == "tu_1" for b in blocks)
+        # The tool_result blocks live in a (grouped) user-role message,
+        # NOT the first user message (which is the original prompt string).
+        user_tool = next(
+            m for m in out
+            if m.get("role") == "user"
+            and isinstance(m.get("content"), list)
+            and any(isinstance(b, dict) and b.get("type") == "tool_result" for b in m["content"])
+        )
+        assert any(b.get("type") == "tool_result" and b.get("tool_use_id") == "tu_1"
+                   for b in user_tool["content"])
 
     def test_openai_request_builder(self):
         req = build_openai_request(
