@@ -15,7 +15,14 @@ from app.services.memory.brain_orchestrator import (
 from app.services.memory.context_builder import (
     normalize_system_blocks, system_blocks_to_text, build_slim_core_context,
 )
-from app.services.memory.context_compressor import compress_messages, local_summarize
+from app.services.memory.context_compressor import (
+    compress_messages,
+    local_summarize,
+    build_summary_message,
+    _is_summary_message,
+    _extract_summary_text,
+    DEFAULT_SUMMARY_MARKER,
+)
 from app.services.memory.context_scrubber import ContextScrubber, strip_memory_blocks
 from app.services.memory.topic_index import classify_topic
 
@@ -238,6 +245,54 @@ class TestContextCompressor:
         # Use a tiny threshold to force compression
         compressed = compress_messages(msgs, threshold=1, head_count=1, tail_count=1)
         assert len(compressed) <= len(msgs)
+
+    def test_summary_helpers_detect_and_extract(self):
+        """s4 plumbing: prior summaries are detected and their text recovered."""
+        msg = build_summary_message(
+            [{"role": "user", "content": "x"}], "the summary body text"
+        )
+        assert _is_summary_message(msg) is True
+        assert _extract_summary_text(msg) == "the summary body text"
+        # Non-summary system messages are not mis-detected.
+        plain = {"role": "system", "content": "You are helpful."}
+        assert _is_summary_message(plain) is False
+        assert _extract_summary_text(plain) == ""
+        # Non-system messages are not summaries.
+        assert _is_summary_message({"role": "user", "content": DEFAULT_SUMMARY_MARKER}) is False
+
+    def test_repeated_compaction_does_not_accumulate_summary_blocks(self):
+        """s4 regression: a conversation that already contains a prior
+        compressed-summary system block must, on re-compaction, keep exactly
+        ONE summary (not the prior one + a new one = N blocks after N
+        compactions) and fold the prior summary's text into the survivor so
+        no information is lost."""
+        prior_summary = build_summary_message(
+            [{"role": "user", "content": "old"}], "PRIOR SUMMARY BODY"
+        )
+        # Non-summary system + the prior summary + enough turns to force the
+        # middle-summarize path (non_system count > head_count + tail_count).
+        msgs = [
+            {"role": "system", "content": "You are helpful."},
+            prior_summary,
+        ] + [{"role": "user", "content": f"turn {i}"} for i in range(20)] \
+          + [{"role": "assistant", "content": f"reply {i}"} for i in range(20)]
+
+        out = compress_messages(msgs, threshold=1, head_count=2, tail_count=2)
+        summaries = [m for m in out if _is_summary_message(m)]
+        # Before the fix this was 2 (prior survived in system_msgs + a new one).
+        assert len(summaries) == 1, (
+            f"re-compaction must not accumulate summary blocks (s4); got {len(summaries)}"
+        )
+        # The prior summary's text must survive inside the single summary
+        # (folded, not dropped) so earlier context isn't silently lost.
+        assert "PRIOR SUMMARY BODY" in summaries[0]["content"]
+        assert "Earlier summary" in summaries[0]["content"]
+        # The non-summary system message is preserved (dedup targets only
+        # summary blocks, not all system messages).
+        assert any(
+            m.get("role") == "system" and "You are helpful." in m.get("content", "")
+            for m in out
+        )
 
 
 class TestContextScrubber:

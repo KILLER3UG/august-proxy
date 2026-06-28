@@ -95,6 +95,41 @@ def build_summary_message(
     }
 
 
+def _is_summary_message(msg: dict[str, Any], summary_marker: str = DEFAULT_SUMMARY_MARKER) -> bool:
+    """True if msg is a prior compressed-summary system block.
+
+    Detected by the opening marker (`<<compressed_summary`) in a system
+    message's string content. The compactor emits exactly this shape from
+    build_summary_message, so this reliably identifies prior summaries that
+    would otherwise accumulate across repeated compactions (s4).
+    """
+    if msg.get("role") != "system":
+        return False
+    content = msg.get("content", "")
+    if not isinstance(content, str):
+        return False
+    return content.startswith(summary_marker)
+
+
+def _extract_summary_text(msg: dict[str, Any], summary_marker: str = DEFAULT_SUMMARY_MARKER) -> str:
+    """Recover the human summary text from a fenced summary message.
+
+    build_summary_message emits
+    ``{marker}\n{meta_json}\n{summary_text}\n{closing}``. Drop the first line
+    (marker), the second (meta json), and the last (closing marker) to get the
+    body. Returns "" if the shape is unexpected.
+    """
+    content = msg.get("content", "")
+    if not isinstance(content, str) or not content.startswith(summary_marker):
+        return ""
+    lines = content.split("\n")
+    # lines[0] = marker, lines[1] = meta json, lines[-1] = closing marker,
+    # body = everything in between.
+    if len(lines) < 3:
+        return ""
+    return "\n".join(lines[2:-1])
+
+
 def compress_messages(
     messages: list[dict[str, Any]],
     threshold: int,
@@ -128,6 +163,17 @@ def compress_messages(
     non_system = [m for m in messages if m.get("role") != "system"]
     system_msgs = [m for m in messages if m.get("role") == "system"]
 
+    # s4: a prior compaction's summary is itself a system message, so without
+    # dedup it would survive in `system_msgs` and a NEW summary would be
+    # appended on every compaction — accumulating duplicate summary blocks.
+    # Fold any prior summary text into the new summary (preserves information)
+    # and keep only non-summary system messages.
+    prior_summary_texts = [
+        _extract_summary_text(m) for m in system_msgs if _is_summary_message(m)
+    ]
+    prior_summary_texts = [t for t in prior_summary_texts if t]
+    other_system = [m for m in system_msgs if not _is_summary_message(m)]
+
     if len(non_system) <= head_count + tail_count:
         # Not enough messages to compress meaningfully
         return list(messages)
@@ -145,9 +191,17 @@ def compress_messages(
     else:
         summary_text = local_summarize(middle)
 
+    # Prepend prior summaries so their information survives in the single
+    # consolidated summary block (no duplication across compactions).
+    if prior_summary_texts:
+        summary_text = (
+            "Earlier summary:\n" + "\n---\n".join(prior_summary_texts)
+            + "\n\nRecent summary:\n" + summary_text
+        )
+
     summary_msg = build_summary_message(middle, summary_text)
 
-    compressed = system_msgs + head + [summary_msg] + tail
+    compressed = other_system + head + [summary_msg] + tail
 
     # Double-check we actually saved tokens
     compressed_tokens = estimate_tokens(compressed)
