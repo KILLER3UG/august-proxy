@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS usage_events (
   provider            TEXT DEFAULT '',
   input_tokens        INTEGER DEFAULT 0,
   output_tokens       INTEGER DEFAULT 0,
+  context_tokens      INTEGER DEFAULT 0,
   cache_creation_input_tokens INTEGER DEFAULT 0,
   cache_read_input_tokens     INTEGER DEFAULT 0,
   total_tokens        INTEGER DEFAULT 0,
@@ -205,11 +206,28 @@ async function init() {
       try { db.exec(stmt + ';'); } catch (e) { /* trigger may already exist */ }
     }
 
+    // Idempotent additive migration: add `context_tokens` to pre-existing
+    // usage_events tables created before this column shipped. The CREATE
+    // TABLE above already includes it for fresh databases; this ALTER is
+    // guarded so re-runs on an already-migrated DB are a no-op.
+    ensureColumn('usage_events', 'context_tokens', 'INTEGER DEFAULT 0');
+
     ready = true;
     console.log('[SessionStore] Initialized SQLite session store at', DB_PATH);
   } catch (e) {
     console.error('[SessionStore] Failed to initialize:', e.message);
     throw e;
+  }
+}
+
+/**
+ * Add a column to a table if it does not already exist (idempotent).
+ * Used for additive migrations on pre-existing databases.
+ */
+function ensureColumn(table, column, decl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(r => r.name);
+  if (!cols.includes(column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
   }
 }
 
@@ -440,6 +458,10 @@ function recordUsageEvent({
   provider = '',
   inputTokens = 0,
   outputTokens = 0,
+  // Provider-reported input_tokens of the FINAL sub-call in the turn — the
+  // true current context fill (system prompt + tools + messages, counted
+  // once). Defaults to 0 so existing callers are unaffected.
+  contextTokens = 0,
   cacheCreationInputTokens = 0,
   cacheReadInputTokens = 0,
   totalTokens = 0,
@@ -461,9 +483,9 @@ function recordUsageEvent({
   const result = db.prepare(`
     INSERT INTO usage_events (
       session_id, request_id, source, request_type, model, provider,
-      input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_tokens,
+      input_tokens, output_tokens, context_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_tokens,
       input_cost_per_1m, output_cost_per_1m, input_cost, output_cost, total_cost, metadata, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     sessionId,
     requestId || '',
@@ -473,6 +495,7 @@ function recordUsageEvent({
     provider || '',
     Number(inputTokens || 0),
     Number(outputTokens || 0),
+    Number(contextTokens || 0),
     Number(cacheCreationInputTokens || 0),
     Number(cacheReadInputTokens || 0),
     normalizedTotalTokens,

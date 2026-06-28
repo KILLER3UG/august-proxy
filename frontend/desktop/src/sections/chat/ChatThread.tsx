@@ -436,7 +436,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const planPending = !!workbenchSession?.plan && !workbenchSession?.approved && !workbenchSession?.approvedAt;
   const [workbenchToolCount, setWorkbenchToolCount] = useState<number | null>(null);
   const [workbenchToolTokens, setWorkbenchToolTokens] = useState<number | null>(null);
-  const [sessionUsage, setSessionUsage] = useState<{ total: number; input: number; output: number } | null>(null);
+  const [sessionUsage, setSessionUsage] = useState<{ total: number; input: number; output: number; contextTokens: number } | null>(null);
   const [workbenchMode, setWorkbenchMode] = useState<WorkbenchGuardMode>(() => {
     const saved = localStorage.getItem('august_last_workbench_guard_mode') as WorkbenchGuardMode | null;
     return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'full';
@@ -682,6 +682,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           total: data.totalTokens,
           input: data.totalInputTokens,
           output: data.totalOutputTokens,
+          // True current context fill: the provider-reported input_tokens of
+          // the most recent provider request (system prompt + tools +
+          // messages, counted once). Drives the gauge percentage.
+          contextTokens: data.contextTokens ?? 0,
         });
       })
       .catch(() => {
@@ -872,27 +876,50 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // from the backend capability endpoint; 30 is only a startup fallback.
   const toolCountForBreakdown = workbenchToolCount ?? 30;
   const toolTokenEstimate = workbenchToolTokens;
+
+  // Ground-truth total: once at least one provider request has completed,
+  // the backend reports the true current context fill as `contextTokens`
+  // (the input_tokens of the most recent request — system prompt + tools +
+  // messages, counted exactly once by the provider's tokenizer). Before the
+  // first request we fall back to a minimal, non-inflated heuristic over the
+  // composer input + active tools only (no flat 3000, no +15% thinking
+  // double-count — those previously caused >50% inflation).
+  const serverContextTokens = sessionUsage?.contextTokens ?? 0;
+  const hasServerTruth = serverContextTokens > 0;
+  // Tool definitions are a real context cost — but only once something is
+  // actually being sent. On a fresh, empty session (no input, no messages, no
+  // completed request) nothing is "used" yet, so the gauge reads ~0% instead
+  // of pre-counting the tool-definition overhead. Once the user types input
+  // or a request has run, the tool overhead is included (it's part of the
+  // next/actual request's context).
+  const hasContentToSend = input.length > 0 || messages.length > 0;
+  const toolOverhead = (hasServerTruth || hasContentToSend)
+    ? (toolTokenEstimate ?? Math.ceil(toolCountForBreakdown * 180))
+    : 0;
+  const fallbackEstimate =
+    Math.ceil((input.length + messages.reduce((s, m) => s + m.content.length, 0)) / 4)
+    + toolOverhead;
+  const estTokens = hasServerTruth ? serverContextTokens : fallbackEstimate;
+  const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
+
+  // The per-category breakdown is informational. When we have a server ground
+  // truth we scale the category estimates to sum exactly to `estTokens` so the
+  // tooltip's breakdown rows always agree with the ring's numerator.
   const contextBreakdown: ContextBreakdown = useMemo(
     () => estimateContextBreakdown({
       messages,
       input,
       toolCount: toolCountForBreakdown,
       toolTokenEstimate: toolTokenEstimate ?? undefined,
+      // Scale to the server ground truth when available. On a fresh empty
+      // session (nothing to send, no request yet) anchor to 0 so the tooltip
+      // breakdown matches the 0% ring instead of pre-counting tool overhead.
+      // When the user has typed input, leave undefined (raw estimate includes
+      // tool definitions — they're a real cost on the next request).
+      scaleToTotal: hasServerTruth ? serverContextTokens : (hasContentToSend ? undefined : 0),
     }),
-    [messages, input, toolCountForBreakdown, toolTokenEstimate]
+    [messages, input, toolCountForBreakdown, toolTokenEstimate, hasServerTruth, serverContextTokens, hasContentToSend]
   );
-
-  // The gauge total and percentage use the breakdown sum so the donut arc
-  // and the per‑category percentages are consistent — previously estTokens
-  // was calculated separately (messages × 4 + flat 120) while the breakdown
-  // included systemTools + systemPrompt + meta, making them disagree.
-  const estTokens = contextBreakdown.messages
-    + contextBreakdown.thinking
-    + contextBreakdown.systemTools
-    + contextBreakdown.systemPrompt
-    + contextBreakdown.skills
-    + contextBreakdown.meta;
-  const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
 
   // ── Workbench chat client ─────────────────────────────────────────
   // Workbench only accepts claude/codex engine ids. The normal provider/model

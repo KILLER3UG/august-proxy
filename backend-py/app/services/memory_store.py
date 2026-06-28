@@ -161,6 +161,7 @@ def init() -> None:
             model TEXT,
             input_tokens INTEGER DEFAULT 0,
             output_tokens INTEGER DEFAULT 0,
+            context_tokens INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now'))
         );
 
@@ -183,6 +184,20 @@ def init() -> None:
         CREATE INDEX IF NOT EXISTS idx_config_audit_created ON config_audit(created_at);
     """)
     conn.commit()
+
+    # Idempotent additive migration: add `context_tokens` to pre-existing
+    # usage_events tables that were created before this column shipped. The
+    # CREATE TABLE above already includes it for fresh databases; this ALTER
+    # is guarded so re-runs on an already-migrated DB are a no-op.
+    _ensure_column(conn, "usage_events", "context_tokens", "INTEGER DEFAULT 0")
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
+    """Add a column to a table if it does not already exist (idempotent)."""
+    cols = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        conn.commit()
 
 
 # ── Memory key-value store ───────────────────────────────────────────
@@ -613,26 +628,89 @@ def delete_session_messages(session_id: str) -> int:
 # ── Usage events ─────────────────────────────────────────────────────
 
 
-def record_usage(session_id: str, model: str, input_tokens: int = 0, output_tokens: int = 0) -> int:
-    """Record a usage event."""
+def record_usage(
+    session_id: str,
+    model: str,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    context_tokens: int = 0,
+) -> int:
+    """Record a usage event.
+
+    ``context_tokens`` captures the provider-reported ``input_tokens`` of the
+    FINAL sub-call in the agentic turn — i.e. the true current context fill
+    (system prompt + tools + messages, counted once). The cumulative
+    ``input_tokens``/``output_tokens`` are still recorded for Usage-page totals.
+    """
     conn = _conn()
     cursor = conn.execute(
-        "INSERT INTO usage_events (session_id, model, input_tokens, output_tokens) VALUES (?, ?, ?, ?)",
-        (session_id, model, input_tokens, output_tokens),
+        "INSERT INTO usage_events (session_id, model, input_tokens, output_tokens, context_tokens) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (session_id, model, input_tokens, output_tokens, context_tokens),
     )
     conn.commit()
     return cursor.lastrowid
 
 
 def get_usage(session_id: str) -> dict[str, Any]:
-    """Get aggregated usage for a session."""
+    """Get aggregated usage for a session.
+
+    Returns cumulative totals (for the Usage page) plus ``latest_context_tokens``
+    — the ``context_tokens`` of the most recent usage event, which equals the
+    provider-reported input_tokens of the final sub-call of the latest turn
+    (the true current context fill). Also returns the per-event list ordered
+    newest-first so the caller can derive the same value independently.
+    """
     conn = _conn()
     row = conn.execute(
         "SELECT SUM(input_tokens) as total_input, SUM(output_tokens) as total_output, COUNT(*) as request_count "
         "FROM usage_events WHERE session_id = ?",
         (session_id,),
     ).fetchone()
-    return dict(row) if row else {"total_input": 0, "total_output": 0, "request_count": 0}
+    totals = dict(row) if row else {"total_input": 0, "total_output": 0, "request_count": 0}
+
+    latest = conn.execute(
+        "SELECT context_tokens, input_tokens FROM usage_events "
+        "WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    if latest:
+        # Prefer the dedicated context_tokens column; fall back to input_tokens
+        # for rows recorded before the column existed (context_tokens == 0).
+        latest_ctx = latest["context_tokens"] or latest["input_tokens"]
+    else:
+        latest_ctx = 0
+
+    events = [
+        {
+            "id": e["id"],
+            "model": e["model"],
+            "inputTokens": e["input_tokens"],
+            "outputTokens": e["output_tokens"],
+            "contextTokens": e["context_tokens"] or e["input_tokens"],
+            "totalTokens": (e["input_tokens"] or 0) + (e["output_tokens"] or 0),
+            "createdAt": e["created_at"],
+        }
+        for e in conn.execute(
+            "SELECT id, model, input_tokens, output_tokens, context_tokens, created_at "
+            "FROM usage_events WHERE session_id = ? ORDER BY created_at DESC, id DESC",
+            (session_id,),
+        ).fetchall()
+    ]
+
+    return {
+        "sessionId": session_id,
+        "totalEvents": totals.get("request_count", 0) or 0,
+        "totalInputTokens": totals.get("total_input", 0) or 0,
+        "totalOutputTokens": totals.get("total_output", 0) or 0,
+        "totalTokens": (totals.get("total_input", 0) or 0) + (totals.get("total_output", 0) or 0),
+        "totalCost": 0.0,
+        "model": events[0]["model"] if events else None,
+        "provider": None,
+        "contextTokens": latest_ctx,
+        "latestContextTokens": latest_ctx,
+        "events": events,
+    }
 
 
 # ── Maintenance ──────────────────────────────────────────────────────

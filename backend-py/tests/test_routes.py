@@ -120,6 +120,73 @@ async def test_api_usage(client):
 
 
 @pytest.mark.asyncio
+async def test_api_usage_session_records_and_returns_context_tokens(client, isolated_data):
+    """POST /api/usage records an event; GET /api/usage/session?id= returns
+    contextTokens = the recorded context_tokens (true current context fill)."""
+    from app.services import memory_store
+
+    sid = "test-ctx-session"
+    # Record one usage event with context_tokens = 4823 (final sub-call input).
+    memory_store.record_usage(
+        session_id=sid,
+        model="claude-sonnet",
+        input_tokens=12000,  # cumulative sum across sub-calls
+        output_tokens=900,
+        context_tokens=4823,  # final sub-call input = true current context fill
+    )
+
+    resp = await client.get(f"/api/usage/session?id={sid}")
+    assert resp.status_code == 200
+    data = resp.json()
+    # The gauge ground-truth field is present and equals the recorded value.
+    assert data["contextTokens"] == 4823
+    assert data["latestContextTokens"] == 4823
+    # Cumulative totals are unchanged (Usage-page numbers do not regress).
+    assert data["totalInputTokens"] == 12000
+    assert data["totalOutputTokens"] == 900
+    assert data["totalEvents"] == 1
+    # The per-event list also carries the per-event context fill.
+    assert data["events"][0]["contextTokens"] == 4823
+
+
+@pytest.mark.asyncio
+async def test_api_usage_session_missing_id_is_400(client):
+    # FastAPI returns 422 for a missing required query param; both 400 and 422
+    # are acceptable rejections — the point is the request does not succeed
+    # and does not return a usage payload.
+    resp = await client.get("/api/usage/session")
+    assert resp.status_code in (400, 422)
+
+
+@pytest.mark.asyncio
+async def test_api_usage_session_unknown_session_returns_zeros(client, isolated_data):
+    resp = await client.get("/api/usage/session?id=nonexistent-session")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["contextTokens"] == 0
+    assert data["totalEvents"] == 0
+
+
+@pytest.mark.asyncio
+async def test_api_usage_session_context_tokens_falls_back_to_input_tokens(client, isolated_data):
+    """For rows recorded before the context_tokens column existed (value 0),
+    the endpoint falls back to input_tokens so the gauge still has a value."""
+    from app.services import memory_store
+
+    sid = "test-fallback-session"
+    # Simulate a pre-migration row by recording with context_tokens=0.
+    memory_store.record_usage(
+        session_id=sid, model="claude-sonnet",
+        input_tokens=7777, output_tokens=100, context_tokens=0,
+    )
+    resp = await client.get(f"/api/usage/session?id={sid}")
+    data = resp.json()
+    assert resp.status_code == 200
+    # Falls back to input_tokens when context_tokens is 0.
+    assert data["contextTokens"] == 7777
+
+
+@pytest.mark.asyncio
 async def test_api_cron(client):
     resp = await client.get("/api/cron")
     assert resp.status_code == 200

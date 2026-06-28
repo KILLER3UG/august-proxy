@@ -46,12 +46,20 @@ export interface SessionUsage {
   totalCost: number;
   model: string | null;
   provider: string | null;
+  /** Provider-reported input_tokens of the FINAL sub-call of the latest turn —
+   *  the true current context fill (system prompt + tools + messages, counted
+   *  once). The context gauge derives its percentage from this value. */
+  contextTokens: number;
+  /** Alias kept for clarity in some call sites. */
+  latestContextTokens?: number;
   events: {
     id: number;
     requestType: string;
     model: string;
     inputTokens: number;
     outputTokens: number;
+    /** Per-event context fill (falls back to inputTokens for pre-migration rows). */
+    contextTokens: number;
     totalTokens: number;
     totalCost: number;
     createdAt: string;

@@ -31,6 +31,15 @@ function handleUsageRoutes(req, res) {
                 return true;
             }
             const events = listUsageEvents(sessionId);
+            // `contextTokens` = the provider-reported input_tokens of the FINAL
+            // sub-call of the latest turn (events are DESC-ordered, so events[0]
+            // is newest). This is the true current context fill — the value the
+            // frontend context gauge displays. Falls back to the event's
+            // input_tokens for rows recorded before the column existed.
+            const latestEvent = events.length > 0 ? events[0] : null;
+            const contextTokens = latestEvent
+                ? (latestEvent.context_tokens || latestEvent.input_tokens || 0)
+                : 0;
             const aggregated = {
                 sessionId,
                 totalEvents: events.length,
@@ -40,12 +49,17 @@ function handleUsageRoutes(req, res) {
                 totalCost: events.reduce((s, e) => s + (e.total_cost || 0), 0),
                 model: events.length > 0 ? events[0].model : null,
                 provider: events.length > 0 ? events[0].provider : null,
+                // True current context fill (most recent provider request).
+                contextTokens,
+                latestContextTokens: contextTokens,
                 events: events.map(e => ({
                     id: e.id,
                     requestType: e.request_type,
                     model: e.model,
                     inputTokens: e.input_tokens,
                     outputTokens: e.output_tokens,
+                    // Per-event context fill (falls back for pre-migration rows).
+                    contextTokens: e.context_tokens || e.input_tokens || 0,
                     totalTokens: e.total_tokens,
                     totalCost: e.total_cost,
                     createdAt: e.created_at,

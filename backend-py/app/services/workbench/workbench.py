@@ -707,6 +707,13 @@ async def send_workbench_message_stream(
     # ── Usage accumulator ──
     total_input_tokens = 0
     total_output_tokens = 0
+    # ``final_context_tokens`` tracks the provider-reported input_tokens of the
+    # MOST RECENT sub-call in the turn. After the loop it equals the true
+    # current context fill (system prompt + tools + messages, counted once) —
+    # what the context gauge should display. It is overwritten each round so
+    # only the last value survives; the cumulative ``total_input_tokens``
+    # (used for Usage-page totals) is still summed separately above/below.
+    final_context_tokens = 0
 
     # Main chat loop
     tool_round = 0
@@ -745,6 +752,8 @@ async def send_workbench_message_stream(
         if resp_usage:
             total_input_tokens += resp_usage.get("input_tokens", 0)
             total_output_tokens += resp_usage.get("output_tokens", 0)
+            # Overwrite each round → the final sub-call's input_tokens survives.
+            final_context_tokens = resp_usage.get("input_tokens", 0)
 
         # Extract the assistant message from the streaming response.
         # Thinking, final_output, and tool_use events were already emitted
@@ -937,6 +946,7 @@ async def send_workbench_message_stream(
                 model=resolved_model,
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
+                context_tokens=final_context_tokens,
             )
             session.total_input_tokens += total_input_tokens
             session.total_output_tokens += total_output_tokens

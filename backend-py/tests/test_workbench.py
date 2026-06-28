@@ -383,3 +383,70 @@ class TestAnthropicWorkbenchStreaming:
         # No thinking content for a non-thinking model.
         assert result["thinking"] == ""
         assert not any(b.get("type") == "thinking" for b in result["content"])
+
+    async def test_workbench_records_context_tokens_as_final_subcall_input(self, monkeypatch):
+        """The gauge ground truth: record_usage must be called with
+        context_tokens = the input_tokens of the FINAL provider sub-call in
+        the turn (the true current context fill), not the cumulative sum."""
+        from app.services.workbench import workbench as wb
+        from app.services.workbench.workbench import (
+            send_workbench_message_stream, create_workbench_session,
+        )
+
+        session = create_workbench_session(provider="anthropic", guard_mode="full")
+
+        class _FakeClient:
+            def resolve_api_key(self):
+                return "test-key"
+
+            async def messages_stream(self, body):
+                yield {"_event_type": "content_block_start",
+                       "content_block": {"type": "text", "text": ""}}
+                yield {"_event_type": "content_block_delta",
+                       "delta": {"type": "text_delta", "text": "done"}}
+                yield {"_event_type": "content_block_stop"}
+                yield {"_event_type": "message_delta",
+                       "usage": {"input_tokens": 4823, "output_tokens": 40}}
+
+        import app.providers.clients as clients
+        monkeypatch.setattr(clients, "get_client", lambda provider: _FakeClient())
+
+        recorded: list[dict] = []
+
+        def fake_record_usage(session_id, model, input_tokens=0, output_tokens=0, context_tokens=0):
+            recorded.append({
+                "session_id": session_id,
+                "model": model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "context_tokens": context_tokens,
+            })
+            return 1
+
+        # The workbench imports record_usage lazily inside the function, so
+        # patch it on the memory_store module the import resolves to.
+        import app.services.memory_store as memory_store
+        monkeypatch.setattr(memory_store, "record_usage", fake_record_usage)
+
+        # No tools → single sub-call → context_tokens == input_tokens.
+        # Provide a provider config so resolution succeeds.
+        provider_config = {
+            "name": "anthropic",
+            "model_profiles": {"*": {}},
+            "api_mode": "anthropic_messages",
+        }
+        monkeypatch.setattr(wb, "_resolve_workbench_provider", lambda *a, **k: provider_config)
+        monkeypatch.setattr(wb, "_resolve_model", lambda *a, **k: "claude-3-5-sonnet-20241022")
+
+        await send_workbench_message_stream(
+            session_id=session.id,
+            message="hi",
+            provider="anthropic",
+            emit=lambda e: None,
+        )
+
+        assert len(recorded) == 1
+        rec = recorded[0]
+        # context_tokens is the final sub-call's input_tokens (the true
+        # current context fill), NOT the cumulative sum.
+        assert rec["context_tokens"] == 4823
