@@ -139,15 +139,18 @@ class TestSystemPrompt:
         assert "My plan" in prompt
         assert "approved" in prompt
 
-    def test_plan_mode_prompt(self):
+    def test_plan_mode_not_injected_into_prompt(self):
+        # Regression for the guardrail refactor (a638767): plan-mode
+        # enforcement moved from the system prompt to the tool-execution
+        # layer (_check_tool_guard, workbench.py). build_system_prompt must
+        # NOT inject a "## Plan Mode" section — the submit_plan guidance is
+        # now delivered via the blocked-tool result message. Behavioral
+        # coverage lives in TestPlanModeGuard below.
         session = create_workbench_session(guard_mode="plan")
         prompt = build_system_prompt(session)
-        assert "Plan Mode" in prompt
-        # The prompt must reference the real submit_plan tool (the old
-        # wording pointed at a non-existent "submitPlan", causing the model
-        # to hallucinate a tool call that errored and aborted the chat).
-        assert "submit_plan" in prompt
-        assert "submitPlan" not in prompt
+        assert "## Plan Mode" not in prompt
+        assert "You are in plan mode" not in prompt
+        assert prompt  # prompt still builds for a plan-mode session
 
 
 class TestPlanModeGuard:
@@ -310,3 +313,73 @@ class TestValidator:
         msg = build_validation_error_tool_message("call_1", "WebSearch", "Missing field")
         assert "Validation Error" in msg["content"]
         assert msg["tool_call_id"] == "call_1"
+
+
+@pytest.mark.asyncio
+class TestAnthropicWorkbenchStreaming:
+    """Regression for the C1 streaming bug.
+
+    A non-thinking-capable model (claude-3-5-sonnet-20241022, haiku*) must
+    still stream and return a dict. Before the fix, the streaming block was
+    nested inside the `if thinking_budget > 0 and _supports_thinking(...)`
+    guard, so a non-thinking model fell through to an implicit `return None`
+    and the chat loop crashed with AttributeError at the caller's
+    `response.get(...)`. This test mocks the upstream stream so the path is
+    exercised end-to-end.
+    """
+
+    async def test_non_thinking_model_streams_and_returns_dict(self, monkeypatch):
+        from app.services.workbench.workbench import _call_anthropic_workbench
+
+        captured_body: dict = {}
+
+        class _FakeClient:
+            def resolve_api_key(self):
+                return "test-key"
+
+            async def messages_stream(self, body):
+                captured_body.update(body)
+                yield {"_event_type": "content_block_start",
+                       "content_block": {"type": "text", "text": ""}}
+                yield {"_event_type": "content_block_delta",
+                       "delta": {"type": "text_delta", "text": "Hello "}}
+                yield {"_event_type": "content_block_delta",
+                       "delta": {"type": "text_delta", "text": "world"}}
+                yield {"_event_type": "content_block_stop"}
+                yield {"_event_type": "message_delta",
+                       "usage": {"input_tokens": 10, "output_tokens": 5}}
+
+        import app.providers.clients as clients
+        monkeypatch.setattr(clients, "get_client", lambda provider: _FakeClient())
+
+        emitted: list[dict] = []
+        # No supportsThinking profile → _supports_thinking is False, while
+        # effort_to_thinking_budget("medium") > 0: the exact C1 path where
+        # the guard is False but streaming must still run.
+        provider = {"name": "test", "model_profiles": {"*": {}},
+                    "api_mode": "anthropic_messages"}
+        result = await _call_anthropic_workbench(
+            [{"role": "user", "content": "hi"}],
+            "You are helpful.",
+            "claude-3-5-sonnet-20241022",
+            [],
+            "medium",
+            provider=provider,
+            emit=emitted.append,
+        )
+
+        # The pre-fix bug returned None here, crashing the caller's .get().
+        assert result is not None
+        assert "error" not in result
+        assert result["text"] == "Hello world"
+        assert any(b.get("type") == "text" for b in result["content"])
+        assert result["usage"]["input_tokens"] == 10
+        assert result["usage"]["output_tokens"] == 5
+        # The thinking request field is correctly conditional: a
+        # non-thinking model must not send `thinking` upstream.
+        assert "thinking" not in captured_body
+        # Progressive emission happened during streaming.
+        assert any(e.get("type") == "final_output" for e in emitted)
+        # No thinking content for a non-thinking model.
+        assert result["thinking"] == ""
+        assert not any(b.get("type") == "thinking" for b in result["content"])

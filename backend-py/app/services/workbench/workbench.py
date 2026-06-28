@@ -1225,106 +1225,112 @@ async def _call_anthropic_workbench(
     if thinking_budget > 0 and _supports_thinking(provider, model):
         body["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
 
-        # ── Stream from upstream ───────────────────────────────────────────
-        content_blocks: list[dict[str, Any]] = []
-        accumulated_text = ""
-        accumulated_thinking = ""
-        tool_uses: list[dict[str, Any]] = []
-        current_tool_block: dict[str, Any] | None = None
-        current_tool_input_parts: list[str] = []
-        usage: dict[str, int] = {}  # input_tokens, output_tokens captured at end
+    # ── Stream from upstream ───────────────────────────────────────────
+    # Streaming is model-agnostic: non-thinking models simply yield no
+    # thinking_delta events (accumulated_thinking stays ""). The `thinking`
+    # *request* field above is the only model-conditional piece. Keeping
+    # the stream unconditional avoids an implicit `return None` for
+    # non-thinking models (claude-3-5-sonnet-20241022, haiku*), which
+    # crashed the chat loop with AttributeError at the caller's .get().
+    content_blocks: list[dict[str, Any]] = []
+    accumulated_text = ""
+    accumulated_thinking = ""
+    tool_uses: list[dict[str, Any]] = []
+    current_tool_block: dict[str, Any] | None = None
+    current_tool_input_parts: list[str] = []
+    usage: dict[str, int] = {}  # input_tokens, output_tokens captured at end
 
-        try:
-            async for event in client.messages_stream(body):
-                event_type = event.get("_event_type", "")
+    try:
+        async for event in client.messages_stream(body):
+            event_type = event.get("_event_type", "")
 
-                if event_type == "content_block_start":
-                    block = event.get("content_block", {})
-                    block_type = block.get("type", "")
-                    if block_type == "tool_use":
-                        current_tool_block = {
-                            "type": "tool_use",
-                            "id": block.get("id", f"toolu_{uuid.uuid4().hex[:16]}"),
-                            "name": block.get("name", ""),
-                            "input": {},
-                        }
-                        current_tool_input_parts = []
-                    elif block_type == "text":
-                        text = block.get("text", "")
-                        if text:
-                            accumulated_text += text
-                            if emit:
-                                emit({"type": "final_output", "content": text})
-                    elif block_type == "thinking":
-                        text = block.get("thinking", "")
-                        if text:
-                            accumulated_thinking += text
-                            if emit:
-                                emit({"type": "thinking", "content": text})
+            if event_type == "content_block_start":
+                block = event.get("content_block", {})
+                block_type = block.get("type", "")
+                if block_type == "tool_use":
+                    current_tool_block = {
+                        "type": "tool_use",
+                        "id": block.get("id", f"toolu_{uuid.uuid4().hex[:16]}"),
+                        "name": block.get("name", ""),
+                        "input": {},
+                    }
+                    current_tool_input_parts = []
+                elif block_type == "text":
+                    text = block.get("text", "")
+                    if text:
+                        accumulated_text += text
+                        if emit:
+                            emit({"type": "final_output", "content": text})
+                elif block_type == "thinking":
+                    text = block.get("thinking", "")
+                    if text:
+                        accumulated_thinking += text
+                        if emit:
+                            emit({"type": "thinking", "content": text})
 
-                elif event_type == "content_block_delta":
-                    delta = event.get("delta", {})
-                    delta_type = delta.get("type", "")
-                    if delta_type == "text_delta":
-                        text = delta.get("text", "")
-                        if text:
-                            accumulated_text += text
-                            if emit:
-                                emit({"type": "final_output", "content": text})
-                    elif delta_type == "thinking_delta":
-                        text = delta.get("thinking", "")
-                        if text:
-                            accumulated_thinking += text
-                            if emit:
-                                emit({"type": "thinking", "content": text})
-                    elif delta_type == "input_json_delta":
-                        current_tool_input_parts.append(delta.get("partial_json", ""))
+            elif event_type == "content_block_delta":
+                delta = event.get("delta", {})
+                delta_type = delta.get("type", "")
+                if delta_type == "text_delta":
+                    text = delta.get("text", "")
+                    if text:
+                        accumulated_text += text
+                        if emit:
+                            emit({"type": "final_output", "content": text})
+                elif delta_type == "thinking_delta":
+                    text = delta.get("thinking", "")
+                    if text:
+                        accumulated_thinking += text
+                        if emit:
+                            emit({"type": "thinking", "content": text})
+                elif delta_type == "input_json_delta":
+                    current_tool_input_parts.append(delta.get("partial_json", ""))
 
-                elif event_type == "content_block_stop":
-                    if current_tool_block:
-                        raw = "".join(current_tool_input_parts)
-                        if raw:
-                            try:
-                                current_tool_block["input"] = json.loads(raw)
-                            except json.JSONDecodeError:
-                                current_tool_block["input"] = {"_raw": raw}
-                        tool_uses.append(current_tool_block)
-                        # Note: tool_use event is deliberately NOT emitted here.
-                        # The main loop in send_workbench_message_stream() emits a
-                        # single `tool_call` event per tool with status="running"
-                        # right before execution. Emitting both a `tool_use` event
-                        # from the streaming layer AND a `tool_call` from the main
-                        # loop creates duplicate UI entries on the frontend.
-                        current_tool_block = None
-                        current_tool_input_parts = []
+            elif event_type == "content_block_stop":
+                if current_tool_block:
+                    raw = "".join(current_tool_input_parts)
+                    if raw:
+                        try:
+                            current_tool_block["input"] = json.loads(raw)
+                        except json.JSONDecodeError:
+                            current_tool_block["input"] = {"_raw": raw}
+                    tool_uses.append(current_tool_block)
+                    # Note: tool_use event is deliberately NOT emitted here.
+                    # The main loop in send_workbench_message_stream() emits a
+                    # single `tool_call` event per tool with status="running"
+                    # right before execution. Emitting both a `tool_use` event
+                    # from the streaming layer AND a `tool_call` from the main
+                    # loop creates duplicate UI entries on the frontend.
+                    current_tool_block = None
+                    current_tool_input_parts = []
 
-                elif event_type == "message_delta":
-                    # Capture usage from the final message delta event
-                    msg_usage = event.get("usage", {})
-                    if msg_usage:
-                        usage["input_tokens"] = msg_usage.get("input_tokens", 0)
-                        usage["output_tokens"] = msg_usage.get("output_tokens", 0)
+            elif event_type == "message_delta":
+                # Capture usage from the final message delta event
+                msg_usage = event.get("usage", {})
+                if msg_usage:
+                    usage["input_tokens"] = msg_usage.get("input_tokens", 0)
+                    usage["output_tokens"] = msg_usage.get("output_tokens", 0)
 
-                elif event_type == "error":
-                    return {"error": f"Stream error: {event}"}
+            elif event_type == "error":
+                return {"error": f"Stream error: {event}"}
 
-        except Exception as exc:
-            return {"error": str(exc)}
+    except Exception as exc:
+        return {"error": str(exc)}
 
-        # Build content blocks preserving order
-        if accumulated_thinking:
-            content_blocks.append({"type": "thinking", "text": accumulated_thinking})
-        if accumulated_text:
-            content_blocks.append({"type": "text", "text": accumulated_text})
-        content_blocks.extend(tool_uses)
+    # Build content blocks preserving order
+    if accumulated_thinking:
+        content_blocks.append({"type": "thinking", "text": accumulated_thinking})
+    if accumulated_text:
+        content_blocks.append({"type": "text", "text": accumulated_text})
+    content_blocks.extend(tool_uses)
 
-        return {
-            "content": content_blocks,
-            "text": accumulated_text,
-            "thinking": accumulated_thinking,
-            "tool_uses": tool_uses,
-            "usage": usage,
-        }
+    return {
+        "content": content_blocks,
+        "text": accumulated_text,
+        "thinking": accumulated_thinking,
+        "tool_uses": tool_uses,
+        "usage": usage,
+    }
 
 
 async def _call_openai_workbench(

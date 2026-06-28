@@ -8,6 +8,7 @@ This is the Python equivalent of the original Node.js index.js.
 from __future__ import annotations
 
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -167,10 +168,26 @@ if _WEB_DIST.is_dir():
 
 # ── Health ────────────────────────────────────────────────────────────
 
+_started_at: float = time.time()
+
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "0.1.0", "python": True}
+    """Single source of truth for /api/health.
+
+    Returns both the app-health fields (status/version/python) asserted by
+    tests and the gateway fields (port/uptime) polled by the desktop gateway
+    store (frontend/desktop/src/store/gateway.ts). The monitoring router's
+    /health handler was removed to avoid a first-match-wins collision that
+    dropped the `python` field.
+    """
+    return {
+        "status": "ok",
+        "version": "0.1.0",
+        "python": True,
+        "port": settings.port,
+        "uptime": time.time() - _started_at,
+    }
 
 
 @app.get("/api/health/detailed")
