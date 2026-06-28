@@ -105,55 +105,55 @@ export function Memory() {
 
   const storeStatus = useQuery<StoreStatus>({
     queryKey: ['memory-store-status'],
-    queryFn: () => api.get<StoreStatus>('/ui/memory/store/status'),
+    queryFn: () => api.get<StoreStatus>('/api/brain/status'),
     refetchInterval: 30_000,
   });
 
   const memoryItems = useQuery<{ items: MemoryItem[] }>({
     queryKey: ['memory-items'],
-    queryFn: () => api.get<{ items: MemoryItem[] }>('/ui/memory/items'),
+    queryFn: () => api.get<{ items: MemoryItem[] }>('/api/brain/items'),
     refetchInterval: 30_000,
   });
 
   const vectorData = useQuery<{ entries: VectorEntry[] }>({
     queryKey: ['memory-vector'],
-    queryFn: () => api.get<{ entries: VectorEntry[] }>('/ui/memory/vector'),
+    queryFn: () => api.get<{ entries: VectorEntry[] }>('/api/brain/vectors'),
     refetchInterval: 30_000,
   });
 
   const guidelinesData = useQuery<{ guidelines: Guideline[] }>({
     queryKey: ['brain-guidelines'],
-    queryFn: () => api.get<{ guidelines: Guideline[] }>('/ui/brain/guidelines'),
+    queryFn: () => api.get<{ guidelines: Guideline[] }>('/api/brain/guidelines'),
     refetchInterval: 60_000,
   });
 
   const graphData = useQuery<GraphStats>({
     queryKey: ['brain-graph'],
-    queryFn: () => api.get<GraphStats>('/ui/brain/graph'),
+    queryFn: () => api.get<GraphStats>('/api/brain/graph'),
     refetchInterval: 60_000,
   });
 
   const brainData = useQuery<BrainDiagnostics>({
     queryKey: ['brain-diagnostics'],
-    queryFn: () => api.get<BrainDiagnostics>('/ui/brain/diagnostics'),
+    queryFn: () => api.get<BrainDiagnostics>('/api/brain/diagnostics'),
     refetchInterval: 30_000,
   });
 
   const learningData = useQuery<LearningStatus>({
     queryKey: ['memory-learning-status'],
-    queryFn: () => api.get<LearningStatus>('/ui/memory/learning-status'),
+    queryFn: () => api.get<LearningStatus>('/api/brain/learning'),
     refetchInterval: 15_000,
   });
 
   const promptData = useQuery<{ prompt: string; length?: number }>({
     queryKey: ['memory-preview'],
-    queryFn: () => api.get<{ prompt: string; length?: number }>('/ui/memory/preview'),
+    queryFn: () => api.get<{ prompt: string; length?: number }>('/api/brain/prompt'),
     refetchInterval: 60_000,
   });
 
   const searchResults = useQuery<{ results: SearchResult[] }>({
     queryKey: ['memory-search', searchQuery],
-    queryFn: () => api.get<{ results: SearchResult[] }>(`/ui/memory/search?q=${encodeURIComponent(searchQuery)}`),
+    queryFn: () => api.get<{ results: SearchResult[] }>(`/api/brain/search?q=${encodeURIComponent(searchQuery)}`),
     enabled: tab === 'search' && searchQuery.trim().length > 0,
   });
 

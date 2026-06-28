@@ -593,7 +593,14 @@ export function ensureSessionSubscriber(sessionId: string): void {
       },
     };
 
-  streamWorkbenchReconnect(sessionId, handlers, controller.signal, sinceSeq)
+  streamWorkbenchReconnect(sessionId, handlers, controller.signal, sinceSeq, {
+    // Durable subscriber: effectively-unbounded retry with capped backoff.
+    // The backend always emits a terminal event (done/error/aborted) when
+    // the turn ends, so retries converge; a dead backend fails fast at the
+    // POST /chat that started the turn. This keeps the stream bound to the
+    // session across transient drops / tab switches (issue #2).
+    maxRetries: Infinity,
+  })
     .catch((err) => {
       if (err?.name !== 'AbortError') {
         console.warn('[chat-stream-manager] subscriber error:', err?.message || err);
@@ -836,4 +843,41 @@ export function applySubagentEvent(
     return { subagentBlocks: blocks };
   });
   return mutated;
+}
+
+// ── Resilience: re-attach SSE subscribers on tab refocus / network recovery ──
+//
+// A dropped per-turn stream (tab switch, throttling, brief network blip) used
+// to finalize the turn as errored even though the backend kept generating.
+// The durable per-session subscriber (ensureSessionSubscriber, unbounded
+// retries) keeps the stream bound to the session, but it only gets re-attached
+// if something calls syncActiveStreams. We trigger that here on:
+//   * visibilitychange (document refocus / tab switch back)
+//   * online (network recovered after going offline)
+// in addition to the existing poller. This is the frontend half of issue #2:
+// long tool→think cycles stay live across interruptions.
+
+let _registeredEnsureSession: ((sessionId: string) => Promise<any>) | null = null;
+let _resyncListenersAttached = false;
+
+/** Register the ensureWorkbenchSession callback used by the auto-resync
+ *  listeners, and attach the window listeners (idempotently). Called once
+ *  at app init with the real session-ensure function. */
+export function registerStreamResync(
+  ensureWorkbenchSession: (sessionId: string) => Promise<any>,
+): void {
+  _registeredEnsureSession = ensureWorkbenchSession;
+  if (_resyncListenersAttached || typeof window === 'undefined') return;
+  _resyncListenersAttached = true;
+
+  const resync = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    // syncActiveStreams accepts a no-arg ensureWorkbenchSession; wrap ours.
+    syncActiveStreams(() => _registeredEnsureSession
+      ? _registeredEnsureSession('')
+      : Promise.resolve(null));
+  };
+
+  window.addEventListener('visibilitychange', resync);
+  window.addEventListener('online', resync);
 }

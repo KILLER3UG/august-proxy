@@ -59,7 +59,7 @@ export function Statusbar() {
 
   const { data: learning, error } = useQuery<LearningStatus>({
     queryKey: ['memory-learning-status'],
-    queryFn: () => api.get<LearningStatus>('/ui/memory/learning-status'),
+    queryFn: () => api.get<LearningStatus>('/api/brain/learning'),
     refetchInterval: 15_000,
     refetchOnWindowFocus: false,
     retry: 1,

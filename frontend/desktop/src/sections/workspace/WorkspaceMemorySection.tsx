@@ -26,32 +26,32 @@ interface BrainDiagnostics { guidelines?: number; semanticFacts?: number; vector
 export function WorkspaceMemorySection() {
   const storeStatus = useQuery<StoreStatus>({
     queryKey: ['ws-mem-store'],
-    queryFn: () => api.get<StoreStatus>('/ui/memory/store/status'),
+    queryFn: () => api.get<StoreStatus>('/api/brain/status'),
     refetchInterval: 30_000,
   });
   const vectorData = useQuery<VectorData>({
     queryKey: ['ws-mem-vector'],
-    queryFn: () => api.get<VectorData>('/ui/memory/vector'),
+    queryFn: () => api.get<VectorData>('/api/brain/vectors'),
     refetchInterval: 30_000,
   });
   const memoryItems = useQuery<MemoryItems>({
     queryKey: ['ws-mem-items'],
-    queryFn: () => api.get<MemoryItems>('/ui/memory/items'),
+    queryFn: () => api.get<MemoryItems>('/api/brain/items'),
     refetchInterval: 30_000,
   });
   const graphData = useQuery<GraphStats>({
     queryKey: ['ws-mem-graph'],
-    queryFn: () => api.get<GraphStats>('/ui/brain/graph'),
+    queryFn: () => api.get<GraphStats>('/api/brain/graph'),
     refetchInterval: 60_000,
   });
   const brainData = useQuery<BrainDiagnostics>({
     queryKey: ['ws-mem-brain'],
-    queryFn: () => api.get<BrainDiagnostics>('/ui/brain/diagnostics'),
+    queryFn: () => api.get<BrainDiagnostics>('/api/brain/diagnostics'),
     refetchInterval: 30_000,
   });
   const learningData = useQuery<LearningStatus>({
     queryKey: ['ws-mem-learning'],
-    queryFn: () => api.get<LearningStatus>('/ui/memory/learning-status'),
+    queryFn: () => api.get<LearningStatus>('/api/brain/learning'),
     refetchInterval: 15_000,
   });
 

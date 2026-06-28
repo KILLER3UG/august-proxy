@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
 import uuid
@@ -26,6 +27,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable
+
+logger = logging.getLogger("workbench")
 
 # ── Constants ─────────────────────────────────────────────────────────
 
@@ -416,16 +419,14 @@ def build_system_prompt(session: WorkbenchSession) -> str:
     if projects:
         memory["active_projects"] = projects
 
-    # Inject active skills as part of memory context so the model
-    # knows what it can do without needing to call list_skills first.
-    try:
-        from app.services import skill_service
-        active = skill_service.search(enabled_only=True)
-        if active:
-            skill_lines = [f"  - {s['name']}: {s.get('description', '')[:80]}" for s in active[:15]]
-            memory["active_skills"] = "\n".join(skill_lines)
-    except Exception:
-        pass
+    # Skills follow the Claude-Code progressive-disclosure pattern: the
+    # full catalogue (name + description + trigger) is appended to the
+    # system prompt as a dedicated section below; only metadata sits in
+    # context until the model calls `load_skill(name)` to pull the full
+    # SKILL.md body on demand. We do NOT inject skills into `memory`
+    # here — that path rendered only the first 15 active skills as a
+    # shallow one-liner, which under-exposed the skill set.
+    # (Catalogue assembly happens in extra_parts below.)
 
     # ── Agent context ──
     agent_context = None
@@ -467,6 +468,33 @@ def build_system_prompt(session: WorkbenchSession) -> str:
         status = " (approved)" if session.plan_approved else " (pending approval)"
         plan_text = session.plan.get("plan", json.dumps(session.plan))
         extra_parts.append(f"## Current Plan{status}\n{plan_text}")
+
+    # ── Skills catalogue (progressive disclosure) ──
+    # Surface every discoverable skill as name + description (+ optional
+    # trigger). The model calls `load_skill(name)` to load the full
+    # instructions for the one it needs. This keeps prompt overhead low
+    # (~1 line per skill) while making the full skill set visible.
+    try:
+        from app.services import skill_service
+        cat = skill_service.catalogue()
+        if cat:
+            intro = (
+                "Skills are on-demand capability extensions. Each entry below "
+                "lists a skill's name, description, and optional trigger. To "
+                "use a skill, call the `load_skill` tool with its name to load "
+                "the full instructions, then follow them."
+            )
+            lines = [intro, ""]
+            for s in cat:
+                desc = s.get("description", "")
+                trigger = s.get("trigger", "")
+                entry = f"- {s['name']}: {desc}" if desc else f"- {s['name']}"
+                if trigger:
+                    entry += f" (trigger: {trigger})"
+                lines.append(entry)
+            extra_parts.append("## Available Skills\n" + "\n".join(lines))
+    except Exception:
+        pass
 
     if extra_parts:
         return base + "\n\n" + "\n\n".join(extra_parts)
@@ -526,41 +554,102 @@ def effort_to_openai_reasoning_effort(effort: str) -> str:
 
 
 def tool_definitions(session: WorkbenchSession) -> list[dict[str, Any]]:
-    """Return tool definitions in Anthropic format for a session."""
-    from app.adapters.proxy_tools import (
-        get_canonical_managed_anthropic_web_tools,
-        get_managed_anthropic_web_tool_definitions,
-    )
+    """Return tool definitions in Anthropic format for a session.
+
+    The tool registry stores definitions in OpenAI format
+    (``{"type":"function","function":{...}}``). Anthropic's API expects a
+    different shape (``{"name","description","input_schema"}``). We
+    canonicalize every registered tool through
+    ``sanitize_anthropic_tool_definition`` (a no-op for already-Anthropic
+    entries, a converter for OpenAI entries) and dedupe by name.
+
+    We deliberately do NOT append the proxy-passthrough ``mcp__workspace__*``
+    / ``WebSearch`` / ``WebFetch`` managed tools here: those are only
+    dispatchable inside the proxy passthrough adapter, not in the
+    workbench (whose ``_execute_tool`` consults ``tool_registry`` only).
+    The workbench registers its own ``web_search`` / ``web_fetch`` /
+    ``run_command`` handlers, which cover the same surface and *are*
+    dispatchable here. MCP server tools are added separately (see
+    ``_mcp_tool_definitions_anthropic``).
+    """
+    from app.adapters.proxy_tools import sanitize_anthropic_tool_definition
     from app.services.tool_registry import list_tools
 
-    tools = list_tools()  # Registered tools (Anthropic format if available)
+    tools: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in list_tools():
+        t = sanitize_anthropic_tool_definition(raw)
+        if not t:
+            continue
+        if t["name"] in seen:
+            continue
+        seen.add(t["name"])
+        tools.append(t)
 
-    # Add managed web tools
-    web_tools = get_canonical_managed_anthropic_web_tools()
-    for wt in web_tools:
-        if wt["name"] not in {t.get("name", t.get("function", {}).get("name", "")) for t in tools}:
-            tools.append(wt)
+    # Append real MCP server tools (lazy-cached; may be empty until the
+    # startup refresh completes). See mcp_client.get_mcp_tool_definitions_sync.
+    tools.extend(_mcp_tool_definitions_anthropic(seen))
 
     return tools
 
 
 def openai_tool_definitions(session: WorkbenchSession) -> list[dict[str, Any]]:
-    """Return tool definitions in OpenAI format for a session."""
-    from app.adapters.proxy_tools import (
-        get_canonical_managed_openai_web_tools,
-        anthropic_to_openai_tool_definition,
-    )
+    """Return tool definitions in OpenAI format for a session.
+
+    Mirrors ``tool_definitions``: registry tools (which may be in mixed
+    OpenAI/Anthropic format) are normalized to OpenAI format and deduped
+    by name, then real MCP server tools are appended.
+    """
+    from app.adapters.proxy_tools import anthropic_to_openai_tool_definition
     from app.services.tool_registry import list_tools
 
-    anthropic_tools = list_tools()  # May be mixed format
-    openai_tools = []
-    for t in anthropic_tools:
-        if t.get("type") == "function":
-            openai_tools.append(t)
-        else:
-            openai_tools.append(anthropic_to_openai_tool_definition(t))
+    tools: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in list_tools():
+        if raw.get("type") == "function" and isinstance(raw.get("function"), dict):
+            name = raw["function"].get("name", "")
+            if name and name not in seen:
+                seen.add(name)
+                tools.append(raw)
+            continue
+        t = anthropic_to_openai_tool_definition(raw)
+        name = t.get("function", {}).get("name", "")
+        if name and name not in seen:
+            seen.add(name)
+            tools.append(t)
 
-    return openai_tools
+    tools.extend(_mcp_tool_definitions_openai(seen))
+
+    return tools
+
+
+def _mcp_tool_definitions_anthropic(seen: set[str]) -> list[dict[str, Any]]:
+    """Real MCP server tools in Anthropic format, deduped against ``seen``."""
+    from app.adapters.proxy_tools import openai_to_anthropic_tool_definition
+    from app.services.tools.mcp_client import get_mcp_tool_definitions_sync
+
+    out: list[dict[str, Any]] = []
+    for raw in get_mcp_tool_definitions_sync():
+        t = openai_to_anthropic_tool_definition(raw)
+        name = t.get("name", "")
+        if name and name not in seen:
+            seen.add(name)
+            out.append(t)
+    return out
+
+
+def _mcp_tool_definitions_openai(seen: set[str]) -> list[dict[str, Any]]:
+    """Real MCP server tools in OpenAI format, deduped against ``seen``."""
+    from app.services.tools.mcp_client import get_mcp_tool_definitions_sync
+
+    out: list[dict[str, Any]] = []
+    for raw in get_mcp_tool_definitions_sync():
+        fn = raw.get("function", {}) if raw.get("type") == "function" else {}
+        name = fn.get("name", "")
+        if name and name not in seen:
+            seen.add(name)
+            out.append(raw)
+    return out
 
 
 # ── Streaming chat loop ──────────────────────────────────────────────
@@ -716,14 +805,39 @@ async def send_workbench_message_stream(
     final_context_tokens = 0
 
     # Main chat loop
+    #
+    # The round cap (previously MAX_MANAGED_TOOL_ROUNDS=10) is REMOVED.
+    # It was the leading cause of the "no final output, resume by sending
+    # a new message" abort: when a task legitimately needed more than 10
+    # tool rounds, the loop exited mid-cycle with the last round being
+    # tool calls and no final text synthesis — `done` fired, the UI saw
+    # tool activity but no answer. The loop now runs until the model
+    # stops calling tools, submits a plan, or the user cancels. Runaway
+    # loops are bounded by: the cancellation signal (checked before every
+    # model call and every tool), token-budget compression, and the
+    # provider rejecting oversized requests (→ error → done).
     tool_round = 0
 
-    while tool_round < MAX_MANAGED_TOOL_ROUNDS:
+    while True:
         tool_round += 1
 
         # Check cancellation before each model call
         if _is_cancelled():
             break
+
+        logger.debug("workbench round %d start (model=%s, in=%d, out=%d)",
+                     tool_round, resolved_model,
+                     total_input_tokens, total_output_tokens)
+
+        # One-time per-generation debug log of the tool names presented to
+        # the model (objective step 4: "Log the full tool list sent to the
+        # model for debugging"). Logged at round 1 only to avoid noise —
+        # the tool list doesn't change between rounds within a turn.
+        if tool_round == 1:
+            tool_names = [t.get("name") for t in tools] if is_anthropic else \
+                [t.get("function", {}).get("name") for t in openai_tools]
+            logger.debug("workbench presenting %d tools to model: %s",
+                         len(tool_names), tool_names)
 
         if is_anthropic:
             response = await _call_anthropic_workbench(
@@ -742,7 +856,8 @@ async def send_workbench_message_stream(
 
         if response.get("error"):
             if tool_round > 1:
-                print(f"[workbench] Model re-call failed after tool round {tool_round - 1}: {response['error']}")
+                logger.warning("workbench model re-call failed after tool round %d: %s",
+                               tool_round - 1, response["error"])
             if emit:
                 emit({"type": "error", "message": response["error"]})
             break
@@ -789,7 +904,8 @@ async def send_workbench_message_stream(
                 # investigation rather than surfacing a speculative warning
                 # (the previous "tool result formats" message misdiagnosed
                 # the now-fixed tool_calls-drop bug).
-                print(f"[workbench] Model re-call returned empty content after tool round {tool_round - 1} (no text, no tools)")
+                logger.warning("workbench model re-call returned empty content after tool round %d (no text, no tools)",
+                               tool_round - 1)
             current_messages.append(assistant_msg)
             break
 
@@ -931,30 +1047,44 @@ async def send_workbench_message_stream(
     # current_messages as the canonical conversation history.
     # This ensures tool results survive session serialization and
     # are available on the next user turn.
-    session.messages = list(current_messages)
-    session.status = "idle"
-    session.updated_at = _now()
-    save_sessions()
-    _emit_session_status(session_id)
-
-    # ── Record token usage ──
-    if total_input_tokens > 0 or total_output_tokens > 0:
+    #
+    # CRITICAL (issue #2): the terminal ``done`` event MUST be emitted
+    # even if persistence/usage-recording raises — otherwise the SSE
+    # stream sits open forever and the user must send a new message to
+    # resume (the exact abort symptom we're fixing). The router's
+    # ``safe_stream`` already has a ``finally`` that appends ``done``,
+    # but we guarantee it here too so the contract holds at the engine
+    # layer regardless of caller.
+    try:
+        logger.debug("workbench turn complete: %d rounds, in=%d out=%d",
+                     tool_round, total_input_tokens, total_output_tokens)
+        session.messages = list(current_messages)
+        session.status = "idle"
+        session.updated_at = _now()
         try:
-            from app.services.memory_store import record_usage
-            record_usage(
-                session_id=session.id,
-                model=resolved_model,
-                input_tokens=total_input_tokens,
-                output_tokens=total_output_tokens,
-                context_tokens=final_context_tokens,
-            )
-            session.total_input_tokens += total_input_tokens
-            session.total_output_tokens += total_output_tokens
+            save_sessions()
         except Exception:
-            pass
+            logger.exception("workbench save_sessions failed; still emitting done")
+        _emit_session_status(session_id)
 
-    if emit:
-        emit({"type": "done", "sessionId": session_id})
+        # ── Record token usage ──
+        if total_input_tokens > 0 or total_output_tokens > 0:
+            try:
+                from app.services.memory_store import record_usage
+                record_usage(
+                    session_id=session.id,
+                    model=resolved_model,
+                    input_tokens=total_input_tokens,
+                    output_tokens=total_output_tokens,
+                    context_tokens=final_context_tokens,
+                )
+                session.total_input_tokens += total_input_tokens
+                session.total_output_tokens += total_output_tokens
+            except Exception:
+                logger.exception("workbench record_usage failed")
+    finally:
+        if emit:
+            emit({"type": "done", "sessionId": session_id})
 
     # ── Post-turn background tasks (fire-and-forget) ──
 
@@ -1532,7 +1662,14 @@ async def _execute_tool(
     args: dict[str, Any],
     session: WorkbenchSession,
 ) -> str:
-    """Execute a workbench tool by dispatching to the correct handler."""
+    """Execute a workbench tool by dispatching to the correct handler.
+
+    Two dispatch paths:
+      * ``mcp__<server_id>__<tool>`` names route to the MCP client
+        (``execute_mcp_tool_call``), which talks to the relevant MCP
+        server subprocess over JSON-RPC.
+      * everything else dispatches through ``tool_registry``.
+    """
     from app.services.tool_registry import dispatch as dispatch_tool
     from app.services.workbench.context import current_session_id
 
@@ -1541,6 +1678,17 @@ async def _execute_tool(
     # dispatch's (name, args) signature.
     token = current_session_id.set(session.id)
     try:
+        # MCP server tools are presented with mcp__-prefixed names but are
+        # NOT registered in tool_registry (they live behind a subprocess).
+        # Route them to the MCP client before the registry lookup so the
+        # model can actually invoke the MCP tools it was shown.
+        from app.services.tools.mcp_client import (
+            execute_mcp_tool_call,
+            is_mcp_tool_name,
+        )
+        if is_mcp_tool_name(tool_name):
+            return str(await execute_mcp_tool_call(tool_name, args))
+
         result = await dispatch_tool(tool_name, args)
         return str(result)
     except Exception as exc:

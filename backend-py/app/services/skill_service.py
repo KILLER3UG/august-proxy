@@ -199,6 +199,30 @@ def get(name: str) -> Optional[dict[str, Any]]:
     return None
 
 
+def catalogue() -> list[dict[str, Any]]:
+    """Compact metadata for every discoverable skill — the skill catalogue.
+
+    Following the Claude-Code progressive-disclosure pattern: only this
+    lightweight metadata (name + description + optional trigger) is placed
+    in the system prompt so the model knows what skills exist. The full
+    SKILL.md body is loaded on demand via the ``load_skill`` tool when the
+    model decides a skill is relevant.
+
+    All discoverable skills are surfaced (not just ``enabled`` ones) —
+    discovery is the standard. Returns entries sorted by name for stable
+    prompt output.
+    """
+    return [
+        {
+            "name": s["name"],
+            "description": s.get("description", ""),
+            "trigger": s.get("trigger", ""),
+            "category": s.get("category", "uncategorized"),
+        }
+        for s in list_all()
+    ]
+
+
 # ── Authoring API (create / patch / delete / write_file / remove_file) ──
 
 

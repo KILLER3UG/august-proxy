@@ -240,7 +240,8 @@ export async function streamWorkbenchReconnect(
   sessionId: string,
   handlers: WorkbenchEventHandlers,
   signal?: AbortSignal,
-  sinceSeq?: number
+  sinceSeq?: number,
+  options?: { maxRetries?: number }
 ): Promise<void> {
   let currentSeq = sinceSeq;
 
@@ -254,7 +255,17 @@ export async function streamWorkbenchReconnect(
     }
   };
 
-  const maxRetries = 10;
+  // Retry budget. The durable per-session subscriber (which exists only to
+  // keep the SSE stream bound to the session across tab switches / drops)
+  // is given an effectively-unbounded budget with capped backoff: the
+  // backend ALWAYS emits a terminal event (done/error/aborted) when the
+  // turn ends, so retries converge and never spin forever against a dead
+  // backend (the POST /chat that started the turn fails fast first).
+  // Per-turn callers keep the default bounded budget so a transient user
+  // error surfaces instead of silently retrying.
+  const maxRetries = options?.maxRetries ?? 10;
+  // Backoff is capped so even unbounded retry doesn't stall for minutes.
+  const maxBackoffMs = 15000;
   let retryCount = 0;
   const baseDelayMs = 1000;
 
@@ -325,14 +336,18 @@ export async function streamWorkbenchReconnect(
       }
 
       retryCount++;
-      if (retryCount > maxRetries) {
+      // Unbounded retry (subscriber path) never hits this ceiling, so
+      // the turn stays alive across transient drops. Bounded callers
+      // surface the error once exhausted.
+      if (maxRetries > 0 && retryCount > maxRetries) {
         console.error(`[streamWorkbenchReconnect] Max retries reached (${maxRetries}). Connection failed:`, e);
         handlers.onError?.({ message: e?.message || 'Connection failed' });
         break;
       }
 
-      const delay = Math.min(10000, baseDelayMs * Math.pow(2, retryCount - 1) + Math.random() * 1000);
-      console.warn(`[streamWorkbenchReconnect] Connection lost. Retrying in ${Math.round(delay)}ms (attempt ${retryCount}/${maxRetries}). Error:`, e.message || e);
+      const delay = Math.min(maxBackoffMs, baseDelayMs * Math.pow(2, retryCount - 1) + Math.random() * 1000);
+      const budgetLabel = maxRetries > 0 ? `attempt ${retryCount}/${maxRetries}` : `attempt ${retryCount} (unbounded)`;
+      console.warn(`[streamWorkbenchReconnect] Connection lost. Retrying in ${Math.round(delay)}ms (${budgetLabel}). Error:`, e.message || e);
       
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(resolve, delay);

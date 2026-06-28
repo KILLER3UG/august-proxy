@@ -236,6 +236,38 @@ def get_mcp_tool_definitions() -> list[dict[str, Any]]:
     ]
 
 
+def get_mcp_tool_definitions_sync() -> list[dict[str, Any]]:
+    """Synchronous accessor over the lazily-populated MCP tool cache.
+
+    Returns the currently-discovered MCP server tools in OpenAI tool format
+    (``{"type":"function","function":{...}}``), prefixed
+    ``mcp__<server_id>__<tool_name>``. Empty until ``refresh_mcp_tools``
+    (called fire-and-forget at startup, and whenever MCP config changes)
+    has populated ``_tools_cache``.
+
+    Workbench tool-definition builders call this each generation so the
+    tool list reflects whatever is currently discovered, without blocking
+    on a subprocess round-trip.
+    """
+    return get_mcp_tool_definitions()
+
+
+async def refresh_mcp_tools() -> None:
+    """Discover tools from every registered MCP server into the cache.
+
+    Fire-and-forget-safe: called at startup (lifespan) and whenever MCP
+    configuration changes. Failures per-server are swallowed and logged
+    so one unhealthy server doesn't blank the rest of the tool list.
+    """
+    for server_id in list(_servers.keys()):
+        try:
+            await discover_tools(server_id)
+        except Exception as exc:  # noqa: BLE001 — one bad server shouldn't blank the rest
+            srv = _servers.get(server_id)
+            if isinstance(srv, dict):
+                srv["error"] = str(exc)
+
+
 def is_mcp_tool_name(name: str) -> bool:
     """Check if a tool name belongs to an MCP server."""
     return isinstance(name, str) and name.startswith("mcp__")

@@ -96,9 +96,19 @@ export function useTrafficActivity(period: Period) {
     refetchInterval: 5_000,
   });
 
-  const pending = reqQuery.data?.pending ?? [];
-  const rows = useMemo(() => (reqQuery.data?.completed ?? []).map(toRow), [reqQuery.data]);
-  const activity = activityQuery.data ?? [];
+  // ── Defensive normalization ──────────────────────────────────────
+  // The backend may return a 404, an error envelope ({ error, ... }), or a
+  // wrapper object ({ entries: [...] }) instead of the bare array/shape the
+  // UI expects. `?? []` only guards null/undefined — a truthy object would
+  // reach the `for...of` below and throw "activity is not iterable", crashing
+  // the whole Observability section (black screen). Coerce every source to a
+  // real array before any iteration.
+  const asArray = <T,>(v: unknown): T[] => (Array.isArray(v) ? v : []);
+
+  const reqData = reqQuery.data as { pending?: unknown; completed?: unknown } | undefined;
+  const pending = asArray<PendingRequest>(reqData?.pending);
+  const rows = useMemo(() => asArray<RequestEntry>(reqData?.completed).map(toRow), [reqQuery.data]);
+  const activity = asArray<ActivityEntry>(activityQuery.data);
   const stats = statsQuery.data;
 
   const lines = useMemo<LogLine[]>(() => {

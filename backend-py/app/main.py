@@ -7,6 +7,7 @@ This is the Python equivalent of the original Node.js index.js.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
@@ -35,6 +36,16 @@ async def lifespan(app: FastAPI):
     # Ensure brain SQLite tables (incl. config_audit) exist.
     from app.services import memory_store
     memory_store.init()
+    # Discover MCP server tools fire-and-forget so they appear in the
+    # workbench tool list shortly after boot. MCP servers are optional —
+    # refresh_mcp_tools swallows per-server failures, and the workbench
+    # re-reads the (lazily-populated) cache on every generation, so a
+    # slow/missing server never blocks startup.
+    try:
+        from app.services.tools.mcp_client import refresh_mcp_tools
+        asyncio.create_task(refresh_mcp_tools())
+    except Exception:
+        pass
     # Start gateway adapters (reads gateway config; no-op if disabled).
     _gateway = None
     try:
@@ -114,6 +125,7 @@ from app.routers import monitoring as monitoring_routes
 from app.routers import august as august_routes
 from app.routers import gateway as gateway_routes
 from app.routers import curator as curator_routes
+from app.routers import ui_memory as ui_memory_routes
 
 app.include_router(config_routes.router)
 app.include_router(providers_routes.router)
@@ -138,6 +150,7 @@ app.include_router(manage_routes.router)
 app.include_router(monitoring_routes.router)
 app.include_router(august_routes.router)
 app.include_router(gateway_routes.router)
+app.include_router(ui_memory_routes.router)
 
 
 # ── Static files (SPA) ────────────────────────────────────────────────
