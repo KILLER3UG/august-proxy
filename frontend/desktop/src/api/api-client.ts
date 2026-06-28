@@ -454,24 +454,25 @@ export interface SubAgentFallbackConfig {
   model: string;
 }
 
-export interface SubAgentFallbackResponse {
-  config: SubAgentFallbackConfig;
+// NOTE: the backend returns the fallback config object directly (not wrapped in
+// { config: ... }), and the PUT endpoint accepts the config fields directly.
+export function getSubAgentFallback(): Promise<SubAgentFallbackConfig> {
+  return api.get<SubAgentFallbackConfig>('/api/config/subagent-fallback');
 }
 
-export function getSubAgentFallback(): Promise<SubAgentFallbackResponse> {
-  return api.get<SubAgentFallbackResponse>('/api/config/subagent-fallback');
-}
-
-export function updateSubAgentFallback(config: SubAgentFallbackConfig): Promise<{ ok: boolean }> {
-  return api.put<{ ok: boolean }>('/api/config/subagent-fallback', { config });
+export function updateSubAgentFallback(config: SubAgentFallbackConfig): Promise<SubAgentFallbackConfig> {
+  return api.put<SubAgentFallbackConfig>('/api/config/subagent-fallback', config);
 }
 
 /* ── Background Review / Reflection model config ───────────────────── */
-
+// Three independent model selectors (review, reflection, auto-memory).
+// Each model field is an alias/model id that resolves to a real provider+model.
+// When a field is empty, the chat session's model is used for that task.
 export interface ReviewBackgroundConfig {
   enabled: boolean;
-  provider: string;
-  model: string;
+  reviewModel: string;
+  reflectionModel: string;
+  autoMemoryModel: string;
 }
 
 export function getReviewBackgroundConfig(): Promise<ReviewBackgroundConfig> {

@@ -2,6 +2,7 @@ request-log.json
 .env
 # Claude agent cache (local only, never commit)
 .claude/
+.kimchi/
 # Dependencies (never commit)
 node_modules/
 backend/host-agent/node_modules/

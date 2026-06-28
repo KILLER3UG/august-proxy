@@ -1,400 +1,222 @@
-# august Proxy — Setup Guide
+# Setup Guide
 
-## Quick Answer: Use Docker (Recommended)
-
-This project is **already fully containerized**. The best way to share it is via Docker — anyone can run it with two commands. Building from scratch is only needed if you want to modify the code.
+This guide takes you from a clean checkout to a running August Proxy with a
+client connected.
 
 ---
 
-## Option 1: Run with Docker (2 minutes)
+## Table of Contents
 
-This is the exact setup running on the author's machine.
+1. [Prerequisites](#prerequisites)
+2. [Option A — Run with Docker (recommended)](#option-a--run-with-docker-recommended)
+3. [Option B — Run locally with Python](#option-b--run-locally-with-python)
+4. [First-run Configuration](#first-run-configuration)
+5. [Pointing a Client at the Proxy](#pointing-a-client-at-the-proxy)
+6. [Verifying It Works](#verifying-it-works)
+7. [Stopping and Updating](#stopping-and-updating)
 
-### Prerequisites
+---
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows, Mac, or Linux)
-- PowerShell (Windows) or Terminal (Mac/Linux)
+## Prerequisites
 
-### Step 1: Get the Files
+- An API key for at least one provider (Anthropic, OpenAI, OpenRouter, Kilo,
+  Opencode, Gemini, etc.). See [`CONFIGURATION.md`](CONFIGURATION.md) for the
+  full list.
+- **Docker** (for Option A) **or** **Python 3.13+** (for Option B).
+- (Optional) The dashboard frontend built into `web-dist/` — it ships pre-built
+  in this repo, but you can rebuild it from the frontend source.
 
-Copy the `august-proxy` folder to your machine. You need these files:
+---
 
+## Option A — Run with Docker (recommended)
+
+Docker isolates dependencies and matches the production deployment.
+
+```bash
+# 1. Create your secrets file
+cp .env.example .env
+#    Edit .env and add at least one provider API key.
+
+# 2. Build and start the container
+docker compose up --build -d
+
+# 3. Confirm it is running
+docker ps            # expect: august-proxy   Up
+docker logs august-proxy --tail 30
 ```
-august-proxy/
-├── bridge.js
-├── launch.js
-├── ui.html
-├── Dockerfile
-├── docker-compose.yml
-├── adapters/
-│   ├── anthropic.js
-│   └── openai.js
-└── utils/
-    ├── config.js
-    ├── logger.js
-    ├── models.js
-    ├── tokens.js
-    └── selfheal.js
+
+The dashboard is served at **http://localhost:8085**. The container maps host
+port `8085` to container port `8080` (configurable in `docker-compose.yml`).
+
+`data/` is bind-mounted, so your `config.json`, `providers.json`, databases,
+and logs persist across container restarts.
+
+---
+
+## Option B — Run locally with Python
+
+Use this for development, or when you don't want Docker.
+
+```bash
+cd backend-py
+
+# Create and activate a virtual environment (Python 3.13+)
+python -m venv .venv
+# Windows (PowerShell):     .venv\Scripts\Activate.ps1
+# Windows (cmd):            .venv\Scripts\activate.bat
+# macOS / Linux:            source .venv/bin/activate
+
+# Install dependencies (including the dev/test extras)
+pip install -e ".[dev]"
+
+# (Optional) install browser automation + ML extras
+pip install -e ".[ml]"
+python -m playwright install chromium
+
+# Run the server with hot reload
+uvicorn app.main:app --reload --port 8085
 ```
 
-Optional but recommended:
-- `claude-local.bat` / `codex-local.bat` — launch scripts
-- `install-global.bat` / `install-global.ps1` — add to PATH
-- `mock-upstream.js` — local test server
-- `test-tool-flow.js` / `test-parallel.js` — integration tests
+The server listens on **http://localhost:8085**. If `web-dist/` exists the
+dashboard is served at `/`; otherwise you can run the Vite dev server for the
+frontend and proxy `/api` requests to `:8085`.
 
-### Step 2: Create `config.json`
+> **Note:** If you see `RuntimeError: asyncio.run() cannot be called from a
+> running event loop` under uvicorn `--reload`, run without `--reload` or use
+> `python -m app` if a `__main__` entrypoint is configured.
 
-Create this file in the `august-proxy` folder:
+---
+
+## First-run Configuration
+
+On first start, the proxy reads (or creates) two files in `data/`. You can
+edit them directly or use the dashboard.
+
+### 1. Add API keys
+
+Edit `data/config.json` and add your provider key under its name:
 
 ```json
 {
-  "claude": {
-    "currentModel": "minimax-m2.5-free",
-    "targetUrl": "https://opencode.ai/zen/v1/chat/completions",
-    "apiKey": "YOUR_OPENCODE_KEY_HERE",
-    "contextWindow": 256000,
-    "contextModelId": "minimax-m2.5-free"
-  },
-  "codex": {
-    "currentModel": "inclusionai/ling-2.6-1t:free",
-    "targetUrl": "https://api.kilo.ai/api/gateway/chat/completions",
-    "apiKey": "YOUR_KILOCODE_KEY_HERE",
-    "contextWindow": 256000,
-    "contextModelId": "inclusionai/ling-2.6-1t:free"
-  }
+  "anthropic": { "apiKey": "sk-ant-..." },
+  "openrouter": { "apiKey": "sk-or-v1-..." }
 }
 ```
 
-### Step 3: Create `.env`
+Equivalently, set the matching environment variable in `.env` (see
+[`.env.example`](../.env.example) for the full list).
 
-Create this file in the same folder:
+### 2. Set an active provider / model aliases (optional)
 
-```env
-KILOCODE_API_KEY=your_kilocode_key_here
-OPENCODE_API_KEY=your_opencode_key_here
-OPENROUTER_API_KEY=your_openrouter_key_here
-CLINE_API_KEY=your_cline_key_here
+```json
+{
+  "activeProvider": "anthropic",
+  "modelAliases": [
+    {
+      "alias": "sonnet",
+      "targetModel": "claude-sonnet-4-20250514",
+      "targetProvider": "anthropic",
+      "displayAlias": "Sonnet"
+    }
+  ]
+}
 ```
 
-You only need keys for the providers you plan to use. See [Getting API Keys](#getting-api-keys) below.
+The model alias lets clients request `sonnet` (or `claude-sonnet-4-6`) while
+the proxy routes to the real model on the configured provider. Aliases are also
+editable from the dashboard's **Aliases** tab.
 
-### Step 4: Start the Container
+### 3. (Optional) Add a custom provider
 
-```powershell
-cd august-proxy
-docker compose up --build -d
+In the dashboard's **Providers** page, or by editing `data/providers.json`:
+
+```json
+{
+  "providers": [
+    {
+      "name": "My Gateway",
+      "baseUrl": "https://api.example.com/v1",
+      "apiFormat": "openai-chat",
+      "apiKey": "sk-...",
+      "enabled": true,
+      "models": []
+    }
+  ]
+}
 ```
 
-### Step 5: Verify
+See [`CONFIGURATION.md`](CONFIGURATION.md) for every field.
 
-```powershell
-docker ps
-# Should show: august-proxy   Up X seconds   0.0.0.0:8085->8080/tcp
-```
+---
 
-Open http://localhost:8085 in your browser.
+## Pointing a Client at the Proxy
 
-### Step 6: Launch Claude or Codex
+The proxy exposes both the Anthropic Messages API and the OpenAI Chat
+Completions API from the same port.
 
-```powershell
-# Claude
-$env:ANTHROPIC_BASE_URL = "http://localhost:8085"
+### Claude Code / Anthropic clients
+
+```bash
+export ANTHROPIC_BASE_URL=http://localhost:8085
+# The proxy resolves the real key from your config; the client value is ignored.
+export ANTHROPIC_API_KEY=dummy
 claude
+```
 
-# Codex
-$env:OPENAI_API_KEY = "dummy"
-$env:OPENAI_BASE_URL = "http://localhost:8085"
+### OpenAI clients (Codex, Cline, Continue.dev, etc.)
+
+```bash
+export OPENAI_BASE_URL=http://localhost:8085
+export OPENAI_API_KEY=dummy
 codex
 ```
 
-Or use the batch files (see below).
+### Any "OpenAI-compatible" tool
+
+Set base URL to `http://localhost:8085` and use any non-empty API key. The
+proxy resolves the upstream key from `config.json` / `.env`.
 
 ---
 
-## Option 2: Build from Scratch (For Developers)
+## Verifying It Works
 
-If you want to understand every piece or modify the code, here's how to build it from an empty folder.
+```bash
+# Health check
+curl http://localhost:8085/api/health
+# -> {"status":"ok","version":"0.1.0","python":true}
 
-### Step 1: Create Project Folder
+# List models the proxy advertises
+curl http://localhost:8085/v1/models
 
-```powershell
-mkdir august-proxy
-cd august-proxy
-npm init -y
+# Send a test chat completion
+curl http://localhost:8085/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"sonnet","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-### Step 2: Create `package.json`
-
-```json
-{
-  "name": "august-proxy",
-  "version": "1.0.0",
-  "description": "HTTP bridge for Claude Code and OpenAI Codex",
-  "main": "bridge.js",
-  "scripts": {
-    "start": "node bridge.js",
-    "test": "node test-tool-flow.js",
-    "mock": "node mock-upstream.js"
-  }
-}
-```
-
-### Step 3: Create Folder Structure
-
-```powershell
-mkdir adapters
-mkdir utils
-```
-
-### Step 4: Create Core Files
-
-You need to create each file. The complete source code is in this repository. Key files:
-
-| File | Purpose |
-|------|---------|
-| `bridge.js` | HTTP server, routing, UI endpoints |
-| `adapters/anthropic.js` | `/v1/messages` handler |
-| `adapters/openai.js` | `/v1/chat/completions` & `/v1/responses` handler |
-| `utils/config.js` | Config loader with mtime caching |
-| `utils/logger.js` | Activity & request tracking |
-| `utils/models.js` | Model registry & context window detection |
-| `utils/tokens.js` | Token estimation |
-| `utils/selfheal.js` | Error detection & fix hints |
-| `ui.html` | Web dashboard |
-| `launch.js` | Interactive CLI launcher |
-
-### Step 5: Create `Dockerfile`
-
-```dockerfile
-FROM node:20-slim
-WORKDIR /app
-RUN npm install http-proxy
-COPY bridge.js config.json ui.html ./
-COPY adapters/ ./adapters/
-COPY utils/ ./utils/
-EXPOSE 8080
-CMD ["node", "bridge.js"]
-```
-
-### Step 6: Create `docker-compose.yml`
-
-```yaml
-services:
-  august-proxy:
-    build: .
-    container_name: august-proxy
-    env_file:
-      - .env
-    volumes:
-      - ./config.json:/app/config.json
-    ports:
-      - "8085:8080"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: always
-    tty: true
-    stdin_open: true
-```
-
-### Step 7: Build and Run
-
-```powershell
-docker compose up --build -d
-```
+Then open **http://localhost:8085** in your browser to use the dashboard.
 
 ---
 
-## Option 3: Run Without Docker (Node.js Directly)
+## Stopping and Updating
 
-If you don't want Docker, you can run the proxy directly with Node.js 20+.
-
-### Prerequisites
-
-- Node.js 20 or higher
-- All files from the project
-
-### Steps
-
-```powershell
-cd august-proxy
-
-# Set environment variables
-$env:KILOCODE_API_KEY = "your_key"
-$env:OPENCODE_API_KEY = "your_key"
-$env:OPENROUTER_API_KEY = "your_key"
-
-# Create config.json (same as above)
-
-# Start the server
-node bridge.js
-```
-
-The proxy will listen on port 8080. Access it at http://localhost:8080.
-
-**Note:** When running outside Docker, the proxy listens on port 8080 (not 8085). Update your client environment variables accordingly.
-
----
-
-## Getting API Keys
-
-### KiloCode
-1. Go to https://kilo.ai
-2. Sign up and go to Dashboard → API Keys
-3. Copy the key (starts with `eyJ...`)
-
-### Opencode
-1. Go to https://opencode.ai
-2. Sign up and go to Settings → API
-3. Generate and copy the key
-
-### OpenRouter
-1. Go to https://openrouter.ai
-2. Sign up and go to Keys → Create Key
-3. Copy the key (starts with `sk-or-v1-...`)
-
-### NVIDIA NIM (Free Models)
-1. Go to https://build.nvidia.com
-2. Sign up and generate an API key
-3. Base URL: `https://integrate.api.nvidia.com/v1`
-
----
-
-## Launch Scripts
-
-### Quick PowerShell
-
-```powershell
-# Claude
-$env:ANTHROPIC_BASE_URL = "http://localhost:8085"; claude
-
-# Codex
-$env:OPENAI_API_KEY = "dummy"
-$env:OPENAI_BASE_URL = "http://localhost:8085"; codex
-```
-
-### Batch Files
-
-Create `claude-local.bat`:
-```bat
-@echo off
-node "%~dp0launch.js" claude %*
-```
-
-Create `codex-local.bat`:
-```bat
-@echo off
-node "%~dp0launch.js" codex %*
-```
-
-### Add to PATH (Optional)
-
-Run `install-global.bat` to add the folder to your user PATH, then run `claude-local` or `codex-local` from anywhere.
-
----
-
-## Docker Commands Reference
-
-```powershell
-# Build and start
-docker compose up --build -d
-
-# Stop
+```bash
+# Stop the container
 docker compose down
 
-# Restart
-docker compose down && docker compose up --build -d
+# Rebuild after pulling updates
+docker compose up --build -d
 
-# View logs
+# Tail logs
 docker logs august-proxy -f
 
-# View last 50 lines
-docker logs august-proxy --tail 50
-
-# Restart container only
-docker restart august-proxy
-
-# Shell into container
+# Shell into the container
 docker exec -it august-proxy /bin/sh
 ```
 
----
+If port `8085` is taken, change the host-side port in `docker-compose.yml`:
 
-## Troubleshooting
-
-### "Docker Desktop not running"
-```powershell
-Stop-Process -Name "Docker Desktop" -Force
-Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-```
-
-### "Port 8085 already in use"
-Change the port in `docker-compose.yml`:
 ```yaml
 ports:
-  - "8086:8080"
+  - "8086:8080"   # serve on 8086 instead
 ```
-
-### "No models found"
-1. Check `.env` has correct API keys
-2. Check Docker logs: `docker logs august-proxy --tail 20`
-3. Try the Custom Provider section in the UI
-
-### Container exits immediately
-Make sure `tty: true` and `stdin_open: true` are in `docker-compose.yml`.
-
----
-
-## Why Docker is Better for Sharing
-
-| Aspect | Docker | From Scratch |
-|--------|--------|-------------|
-| Setup time | 2 minutes | 30+ minutes |
-| Node.js version | Guaranteed 20-slim | Must install manually |
-| Dependencies | Pre-installed | Must install manually |
-| Portability | Works on any OS | OS-specific setup |
-| Isolation | Won't conflict with other projects | May conflict |
-| Sharing | Just share the folder | Must document every step |
-| Updates | `docker compose up --build -d` | Manual file changes |
-
-**Bottom line:** Docker is the intended deployment method. The from-scratch guide exists for educational purposes only.
-
----
-
-## File Checklist
-
-To verify you have everything, check for these files:
-
-```powershell
-# Required
-Test-Path bridge.js         # $true
-Test-Path adapters/anthropic.js   # $true
-Test-Path adapters/openai.js      # $true
-Test-Path utils/config.js   # $true
-Test-Path utils/logger.js   # $true
-Test-Path utils/models.js   # $true
-Test-Path utils/tokens.js   # $true
-Test-Path utils/selfheal.js # $true
-Test-Path ui.html           # $true
-Test-Path Dockerfile        # $true
-Test-Path docker-compose.yml # $true
-
-# Optional but recommended
-Test-Path launch.js         # $true
-Test-Path claude-local.bat  # $true
-Test-Path codex-local.bat   # $true
-Test-Path mock-upstream.js  # $true
-Test-Path test-tool-flow.js # $true
-
-# You must create these
-Test-Path config.json       # YOU CREATE THIS
-Test-Path .env              # YOU CREATE THIS
-```
-
----
-
-## Next Steps
-
-1. Read [DOCUMENTATION.md](DOCUMENTATION.md) for full feature documentation
-2. Open http://localhost:8085 to configure models via the Web UI
-3. Run `claude-local.bat` or `codex-local.bat` to start coding

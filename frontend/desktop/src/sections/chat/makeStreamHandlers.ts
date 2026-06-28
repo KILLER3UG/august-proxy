@@ -31,6 +31,7 @@ import type { WorkbenchEventHandlers, WorkbenchSession } from '@/types/workbench
 import type { GitDiffResult } from '@/api/git';
 import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
 import { applyToolProgress } from '@/lib/tool-progress';
+import { pushBrowserAction } from '@/lib/browser-store';
 import { applySubagentEvent } from './chat-stream-manager';
 
 export interface MakeStreamHandlersOptions {
@@ -378,6 +379,22 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       latestMutationCount = sessionState.mutationCount;
       setWorkbenchSession(sessionState);
       scheduleUpdate();
+    },
+    onBrowserAction: (data) => {
+      pushBrowserAction({
+        id: data.id,
+        name: data.name,
+        input: data.input,
+        url: data.url,
+        title: data.title,
+        target: data.target ?? null,
+        screenshot: data.screenshot ?? null,
+        typed: data.typed,
+        selected: data.selected,
+        scrolled: data.scrolled,
+        status: data.status,
+        ts: Date.now(),
+      });
     },
     onToolProgress: (event) => {
       const e: ToolProgressEvent = {

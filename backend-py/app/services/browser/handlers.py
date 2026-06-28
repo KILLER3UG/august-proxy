@@ -42,6 +42,51 @@ def _err(message: str, **fields: Any) -> str:
     return json.dumps({"status": "error", "error": message, **fields}, default=str)
 
 
+async def _capture_screenshot(page: Any) -> dict[str, Any] | None:
+    """Save a screenshot to disk and return metadata for the frontend drawer.
+
+    Returns ``{path, width, height}`` or ``None`` if capture fails (the tool
+    result still succeeds; a missing screenshot is non-fatal).
+    """
+    try:
+        sid = current_session_id.get() or "default"
+        folder = data_path("browser_screenshots", sid)
+        folder.mkdir(parents=True, exist_ok=True)
+        filename = f"{int(time.time() * 1000)}.png"
+        path = folder / filename
+        await page.screenshot(path=str(path), full_page=False)
+        viewport = page.viewport_size or {}
+        return {
+            "path": str(path),
+            "width": viewport.get("width"),
+            "height": viewport.get("height"),
+        }
+    except Exception:
+        return None
+
+
+async def _locator_bbox(page: Any, ref: str | None, selector: str | None, text: str | None) -> dict[str, Any] | None:
+    """Return the bounding box {x, y, width, height} of the target element.
+
+    Used so the frontend can render a cursor/highlight over the element a
+    click/type/select acted on. Returns ``None`` if it can't be resolved.
+    """
+    try:
+        locator = await resolve_locator(page, ref=ref, selector=selector, text=text)
+        box = await locator.bounding_box()
+        if not box:
+            return None
+        # centre the cursor on the element
+        return {
+            "x": round(box["x"] + box["width"] / 2),
+            "y": round(box["y"] + box["height"] / 2),
+            "width": round(box["width"]),
+            "height": round(box["height"]),
+        }
+    except Exception:
+        return None
+
+
 async def _page() -> tuple[Any, str | None]:
     """Return ``(page, error_json)``. error_json is set if unavailable."""
     sid = current_session_id.get()
@@ -101,7 +146,8 @@ async def browser_open(url: str, wait_until: str = "load") -> str:
         await page.goto(url, wait_until=wait_until, timeout=_NAV_TIMEOUT_MS)
         title = await page.title()
         elements = await _elements_snapshot(page)
-        return _ok(url=page.url, title=title, elements=elements)
+        screenshot = await _capture_screenshot(page)
+        return _ok(url=page.url, title=title, elements=elements, screenshot=screenshot)
     except Exception as exc:
         return _err(f"Navigation failed: {exc}", url=url)
 
@@ -117,9 +163,11 @@ async def browser_click(
         return err
     try:
         locator = await resolve_locator(page, ref=ref, selector=selector, text=text)
+        target = await _locator_bbox(page, ref=ref, selector=selector, text=text)
         await locator.click(timeout=_NAV_TIMEOUT_MS)
         elements = await _elements_snapshot(page)
-        return _ok(elements=elements)
+        screenshot = await _capture_screenshot(page)
+        return _ok(elements=elements, target=target, screenshot=screenshot)
     except Exception as exc:
         return _err(f"Click failed: {exc}")
 
@@ -136,11 +184,13 @@ async def browser_type(
         return err
     try:
         locator = await resolve_locator(page, ref=ref, selector=selector)
+        target = await _locator_bbox(page, ref=ref, selector=selector, text=None)
         await locator.fill(text, timeout=_NAV_TIMEOUT_MS)
         if submit:
             await locator.press("Enter")
         elements = await _elements_snapshot(page)
-        return _ok(typed=text, elements=elements)
+        screenshot = await _capture_screenshot(page)
+        return _ok(typed=text, elements=elements, target=target, screenshot=screenshot)
     except Exception as exc:
         return _err(f"Type failed: {exc}")
 
@@ -156,9 +206,11 @@ async def browser_select(
         return err
     try:
         locator = await resolve_locator(page, ref=ref, selector=selector)
+        target = await _locator_bbox(page, ref=ref, selector=selector, text=None)
         await locator.select_option(value, timeout=_NAV_TIMEOUT_MS)
         elements = await _elements_snapshot(page)
-        return _ok(selected=value, elements=elements)
+        screenshot = await _capture_screenshot(page)
+        return _ok(selected=value, elements=elements, target=target, screenshot=screenshot)
     except Exception as exc:
         return _err(f"Select failed: {exc}")
 
@@ -184,7 +236,8 @@ async def browser_scroll(
             await page.mouse.wheel(0, dy)
         await page.wait_for_timeout(300)
         elements = await _elements_snapshot(page)
-        return _ok(scrolled=direction, amount=abs(dy), elements=elements)
+        screenshot = await _capture_screenshot(page)
+        return _ok(scrolled=direction, amount=abs(dy), elements=elements, screenshot=screenshot)
     except Exception as exc:
         return _err(f"Scroll failed: {exc}")
 

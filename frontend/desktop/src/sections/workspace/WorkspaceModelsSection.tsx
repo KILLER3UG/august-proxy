@@ -786,7 +786,7 @@ function FallbackTab() {
 
   useEffect(() => {
     if (fallbackQ.data && fallbackEdits === null) {
-      setFallbackConfig(fallbackQ.data.config);
+      setFallbackConfig(fallbackQ.data);
     }
   }, [fallbackQ.data, fallbackEdits]);
 
@@ -942,7 +942,12 @@ function FallbackTab() {
 
 /* ── Background & Reflection subtab ────────────────────────────────── */
 
-const DEFAULT_BG_CONFIG: ReviewBackgroundConfig = { enabled: false, provider: '', model: '' };
+const DEFAULT_BG_CONFIG: ReviewBackgroundConfig = {
+  enabled: false,
+  reviewModel: '',
+  reflectionModel: '',
+  autoMemoryModel: '',
+};
 
 function BackgroundReflectionTab() {
   const qc = useQueryClient();
@@ -961,19 +966,26 @@ function BackgroundReflectionTab() {
   const [saving, setSaving] = useState(false);
 
   const activeConfig = editConfig ?? config;
-  const dirty = JSON.stringify(editConfig) !== JSON.stringify(config) && editConfig !== null;
+  const dirty = editConfig !== null && JSON.stringify(editConfig) !== JSON.stringify(config);
 
-  const allModels = modelsQ.data?.models ?? [];
-  const providers = [...new Set(allModels.map((m) => m.provider))].sort();
-  const availableModels = allModels
-    .filter((m) => !activeConfig.provider || m.provider === activeConfig.provider)
-    .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
+  // Show ALL models from ALL providers — the ModelPickerDropdown groups them
+  // by provider automatically. No provider pre-filter needed.
+  const models: AggregatedModel[] = (modelsQ.data?.models ?? []).map((m) => ({
+    ...m,
+    isFree: m.isFree ?? false,
+  }));
+  const seen = new Set<string>();
+  const availableModels = models.filter((m) => {
+    if (seen.has(m.id)) return false;
+    seen.add(m.id);
+    return true;
+  });
 
   const handleSave = async () => {
     if (!editConfig) return;
     setSaving(true);
     try {
-      const saved = await updateReviewBackgroundConfig(editConfig);
+      await updateReviewBackgroundConfig(editConfig);
       setEditConfig(null);
       qc.invalidateQueries({ queryKey: ['review-background-config'] });
       toast.success('Saved background review settings');
@@ -992,21 +1004,23 @@ function BackgroundReflectionTab() {
     );
   }
 
+  const noModels = availableModels.length === 0;
+
   return (
     <div className="space-y-6 max-w-2xl">
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
         <div>
           <p className="text-sm font-semibold">Background review & reflection</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Configure a separate model for background review, reflection, and auto‑memory extraction.
-            When disabled, the chat session model is used automatically.
+            Configure separate models for background review, reflection, and auto‑memory extraction.
+            When a task has no model selected (or background tasks are disabled), the chat session model is used automatically.
           </p>
         </div>
 
         <div className="flex items-center justify-between p-3 rounded-lg border border-white/[0.06] bg-black/10">
           <div>
-            <p className="text-xs font-semibold">Use separate model</p>
-            <p className="text-[10px] text-muted-foreground">Route background tasks to a different model.</p>
+            <p className="text-xs font-semibold">Enable background tasks</p>
+            <p className="text-[10px] text-muted-foreground">Route background tasks to the models configured below.</p>
           </div>
           <WorkspaceToggle
             enabled={activeConfig.enabled}
@@ -1015,28 +1029,52 @@ function BackgroundReflectionTab() {
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <WorkspaceField label="Provider">
-            <WorkspaceSelect
-              value={activeConfig.provider}
-              onChange={(e) => setEditConfig({ ...activeConfig, provider: e.target.value, model: '' })}
-              options={providers.map((p) => ({ value: p, label: p }))}
-              disabled={!activeConfig.enabled}
-            />
-          </WorkspaceField>
+        {noModels ? (
+          <div className="p-3 rounded-lg border border-white/[0.06] bg-black/10 text-xs text-muted-foreground">
+            No models available. Please add a provider first.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <WorkspaceField
+              label="Review model"
+              hint="Used for reviewing and summarising conversations."
+            >
+              <ModelPickerDropdown
+                models={availableModels}
+                value={activeConfig.reviewModel}
+                onChange={(modelId) => setEditConfig({ ...activeConfig, reviewModel: modelId })}
+                disabled={!activeConfig.enabled}
+              />
+            </WorkspaceField>
 
-          <WorkspaceField label="Model">
-            <ModelPickerDropdown
-              models={availableModels}
-              value={activeConfig.model}
-              onChange={(modelId, _provider) => setEditConfig({ ...activeConfig, model: modelId })}
-              disabled={!activeConfig.enabled}
-            />
-          </WorkspaceField>
-        </div>
+            <WorkspaceField
+              label="Reflection model"
+              hint="Used for the agent's self‑evaluation and learning loop."
+            >
+              <ModelPickerDropdown
+                models={availableModels}
+                value={activeConfig.reflectionModel}
+                onChange={(modelId) => setEditConfig({ ...activeConfig, reflectionModel: modelId })}
+                disabled={!activeConfig.enabled}
+              />
+            </WorkspaceField>
+
+            <WorkspaceField
+              label="Auto‑memory extraction model"
+              hint="Used for extracting facts and storing them in memory."
+            >
+              <ModelPickerDropdown
+                models={availableModels}
+                value={activeConfig.autoMemoryModel}
+                onChange={(modelId) => setEditConfig({ ...activeConfig, autoMemoryModel: modelId })}
+                disabled={!activeConfig.enabled}
+              />
+            </WorkspaceField>
+          </div>
+        )}
 
         <p className="text-xs text-muted-foreground">
-          If no model is selected, the system will automatically use the chat session's model.
+          If no model is selected for a task, the system will automatically use the chat session's model.
         </p>
       </div>
 

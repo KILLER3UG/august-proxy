@@ -726,6 +726,88 @@ def register_all() -> None:
         },
     )
 
+    # ── Desktop automation tools (real screen/mouse/keyboard via pyautogui) ──
+    # Distinct from the headless browser_* tools above: these control the
+    # user's actual physical desktop. Lazily import so the proxy boots even
+    # when pyautogui isn't installed (tools then return a clear error).
+    from app.services import desktop_automation as _desktop
+
+    tool_registry.register(
+        "desktop_screenshot",
+        "Capture the real desktop screen as a base64-encoded PNG image.",
+        _desktop.take_screenshot,
+        {"type": "object", "properties": {}, "required": []},
+    )
+    tool_registry.register(
+        "desktop_screen_size",
+        "Return the real screen dimensions in pixels.",
+        _desktop.get_screen_size,
+        {"type": "object", "properties": {}, "required": []},
+    )
+    tool_registry.register(
+        "desktop_mouse_position",
+        "Return the current real cursor (x, y) position.",
+        _desktop.get_mouse_position,
+        {"type": "object", "properties": {}, "required": []},
+    )
+    tool_registry.register(
+        "desktop_click",
+        "Move the real mouse to (x, y) and click. button: left|right|middle.",
+        _desktop.click_mouse,
+        {
+            "type": "object",
+            "properties": {
+                "x": {"type": "integer", "description": "Screen X coordinate."},
+                "y": {"type": "integer", "description": "Screen Y coordinate."},
+                "button": {"type": "string", "enum": ["left", "right", "middle"], "description": "Mouse button (default left)."},
+            },
+            "required": ["x", "y"],
+        },
+    )
+    tool_registry.register(
+        "desktop_type",
+        "Type text on the real keyboard.",
+        _desktop.type_text,
+        {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "The text to type."},
+            },
+            "required": ["text"],
+        },
+    )
+    tool_registry.register(
+        "desktop_press_key",
+        "Press a single real keyboard key (e.g. enter, escape, tab, f1).",
+        _desktop.press_key,
+        {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "Key name (e.g. 'enter', 'escape')."},
+            },
+            "required": ["key"],
+        },
+    )
+    tool_registry.register(
+        "desktop_list_windows",
+        "List visible desktop windows with title and geometry.",
+        _desktop.list_windows,
+        {"type": "object", "properties": {}, "required": []},
+    )
+    tool_registry.register(
+        "desktop_open_url",
+        "Open a URL in the user's default *visible* browser (not headless). "
+        "Use browser_open instead for background page inspection.",
+        _desktop.open_url,
+        {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "The URL to open."},
+            },
+            "required": ["url"],
+        },
+    )
+
     # ── Memory tools ──
     tool_registry.register(
         "memory_search",

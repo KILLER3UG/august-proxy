@@ -2,9 +2,17 @@
 Background review config service — read/write the background review model config.
 
 Backed by ``config.json`` ``auxiliary.background_review`` key. The reflection
-loop and auto-memory extraction read this config to determine which provider
-and model to use for background tasks. If not configured or disabled, they
-fall back to the chat session's provider/model (the default).
+loop and auto-memory extraction read this config to determine which model to
+use for each background task. If not configured or disabled, they fall back
+to the chat session's model (the default).
+
+Three independent model selectors are supported:
+  • reviewModel      — reviewing and summarising conversations
+  • reflectionModel  — agent self-evaluation / learning loop
+  • autoMemoryModel  — extracting facts and storing them in memory
+
+Each field is a model alias/id that resolves to a real provider+model.
+When empty, the chat session's model is used for that task.
 """
 
 from __future__ import annotations
@@ -17,8 +25,9 @@ from app.lib.paths import data_path
 
 _DEFAULT_CONFIG: dict[str, Any] = {
     "enabled": False,
-    "provider": "",
-    "model": "",
+    "reviewModel": "",
+    "reflectionModel": "",
+    "autoMemoryModel": "",
 }
 
 
@@ -46,17 +55,35 @@ def _write_config(data: dict[str, Any]) -> None:
 
 def save_config(
     enabled: bool | None = None,
-    provider: str | None = None,
-    model: str | None = None,
+    review_model: str | None = None,
+    reflection_model: str | None = None,
+    auto_memory_model: str | None = None,
 ) -> dict[str, Any]:
-    """Update background review config fields (partial merge)."""
+    """Update background review config fields (partial merge).
+
+    Also performs a one-time migration from the legacy ``provider``/``model``
+    schema: if ``reviewModel`` is empty but the legacy ``model`` field is set,
+    the legacy value is promoted to ``reviewModel``.
+    """
     current = get_config()
+
+    # One-time migration from legacy {provider, model} → reviewModel.
+    if not current.get("reviewModel") and current.get("model"):
+        current["reviewModel"] = current.pop("model", "")
+    # Drop the legacy provider field — providers are now resolved from the model.
+    current.pop("provider", None)
+    current.pop("model", None)
+
     if enabled is not None:
         current["enabled"] = bool(enabled)
-    if provider is not None:
-        current["provider"] = provider
-    if model is not None:
-        current["model"] = model
+    if review_model is not None:
+        current["reviewModel"] = review_model
+    if reflection_model is not None:
+        current["reflectionModel"] = reflection_model
+    if auto_memory_model is not None:
+        current["autoMemoryModel"] = auto_memory_model
 
-    _write_config(current)
-    return dict(current)
+    # Ensure only the canonical keys are persisted.
+    result = {k: current.get(k, _DEFAULT_CONFIG.get(k)) for k in _DEFAULT_CONFIG}
+    _write_config(result)
+    return dict(result)

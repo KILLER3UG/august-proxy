@@ -6,6 +6,7 @@ import { setSessionStatus, clearSessionStatus, $sessions } from '@/store/session
 import { makeStreamHandlers } from './makeStreamHandlers';
 import { gitApi } from '@/api/git';
 import { chatRuntime } from './chat-runtime';
+import { pushBrowserAction } from '@/lib/browser-store';
 
 export interface SessionStreamState {
   messages: ChatMessage[];
@@ -573,6 +574,22 @@ export function ensureSessionSubscriber(sessionId: string): void {
       },
       onInfo: (data) => {
         console.info('[chat-stream-manager] info:', data?.message || data);
+      },
+      onBrowserAction: (data) => {
+        pushBrowserAction({
+          id: data.id,
+          name: data.name,
+          input: data.input,
+          url: data.url,
+          title: data.title,
+          target: data.target ?? null,
+          screenshot: data.screenshot ?? null,
+          typed: data.typed,
+          selected: data.selected,
+          scrolled: data.scrolled,
+          status: data.status,
+          ts: Date.now(),
+        });
       },
     };
 

@@ -30,6 +30,13 @@ ml = [
     "sentence-transformers>=3.3.0",
     "numpy>=2.0.0",
 ]
+desktop = [
+    # Real desktop automation (screen/mouse/keyboard) — distinct from the
+    # headless Playwright browser layer. Optional: install with
+    # `uv sync --extra desktop` when desktop computer-use is desired.
+    "pyautogui>=0.9.54",
+    "pygetwindow>=0.0.9; sys_platform == 'win32'",
+]
 
 [tool.setuptools.packages.find]
 where = ["app"]

@@ -12,6 +12,7 @@ import {
   TerminalSquare,
   Play,
   Check,
+  Globe,
 } from 'lucide-react';
 import { useRightDrawer, type RightDrawerSectionId } from './RightDrawerState';
 
@@ -36,9 +37,13 @@ const SECTION_META: Record<RightDrawerSectionId, { label: string; Icon: typeof F
     label: 'Plan',
     Icon: ClipboardList,
   },
+  browser: {
+    label: 'Browser',
+    Icon: Globe,
+  },
 };
 
-const OPTIONS: RightDrawerSectionId[] = ['diff', 'terminal', 'plan', 'tasks', 'preview'];
+const OPTIONS: RightDrawerSectionId[] = ['diff', 'terminal', 'plan', 'tasks', 'preview', 'browser'];
 
 export function RightDrawerDropdown({ drawerOpen, onSelect }: {
   drawerOpen: boolean;

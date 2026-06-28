@@ -146,6 +146,19 @@ export interface WorkbenchEventHandlers {
     underThreshold?: boolean;
     threshold?: number;
   }) => void;
+  onBrowserAction?: (data: {
+    id: string;
+    name: string;
+    input?: Record<string, unknown>;
+    url?: string;
+    title?: string;
+    target?: { x: number; y: number; width: number; height: number } | null;
+    screenshot?: { path: string; width: number; height: number } | null;
+    typed?: string;
+    selected?: string;
+    scrolled?: string;
+    status: 'success' | 'error';
+  }) => void;
   onPrompt?: (data: {
     content: string;
     systemPrompt?: string;

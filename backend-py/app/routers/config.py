@@ -152,8 +152,9 @@ async def test_subagent_fallback(body: FallbackTest):
 
 class BackgroundReviewUpdate(BaseModel):
     enabled: bool | None = None
-    provider: str | None = None
-    model: str | None = None
+    reviewModel: str | None = None
+    reflectionModel: str | None = None
+    autoMemoryModel: str | None = None
 
 
 @router.get("/background-review")
@@ -171,6 +172,7 @@ async def put_background_review(body: BackgroundReviewUpdate):
 
     return background_review_service.save_config(
         enabled=body.enabled,
-        provider=body.provider,
-        model=body.model,
+        review_model=body.reviewModel,
+        reflection_model=body.reflectionModel,
+        auto_memory_model=body.autoMemoryModel,
     )

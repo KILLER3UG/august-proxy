@@ -844,6 +844,7 @@ async def send_workbench_message_stream(
                     "type": "tool_call",
                     "id": tool_use_id,
                     "name": tool_name,
+                    "input": tool_input,
                     "status": "running",
                 })
 
@@ -870,6 +871,31 @@ async def send_workbench_message_stream(
                     "summary": str(result)[:2000],
                     "status": "done",
                 })
+
+                # Browser tools return a JSON result containing a screenshot
+                # path + target element bbox. Emit a dedicated browser_action
+                # event so the frontend's browser drawer can render the live
+                # screenshot + cursor overlay without parsing tool_result JSON.
+                if tool_name.startswith("browser_"):
+                    try:
+                        parsed = json.loads(result)
+                    except Exception:
+                        parsed = None
+                    if isinstance(parsed, dict) and parsed.get("status") == "success":
+                        emit({
+                            "type": "browser_action",
+                            "id": tool_use_id,
+                            "name": tool_name,
+                            "input": tool_input,
+                            "url": parsed.get("url"),
+                            "title": parsed.get("title"),
+                            "target": parsed.get("target"),
+                            "screenshot": parsed.get("screenshot"),
+                            "typed": parsed.get("typed"),
+                            "selected": parsed.get("selected"),
+                            "scrolled": parsed.get("scrolled"),
+                            "status": "success",
+                        })
 
             tool_results.append({
                 "tool_use_id": tool_use_id,
@@ -922,6 +948,13 @@ async def send_workbench_message_stream(
 
     # ── Post-turn background tasks (fire-and-forget) ──
 
+    # Resolve per-task models from the background-review config. Each task
+    # uses its configured model if background tasks are enabled and a model
+    # is set; otherwise it falls back to the chat session's model.
+    review_model = _background_task_model("reviewModel", resolved_model)
+    reflection_model = _background_task_model("reflectionModel", resolved_model)
+    auto_memory_model = _background_task_model("autoMemoryModel", resolved_model)
+
     # Background review (interval-gated LLM review).
     try:
         from app.services.memory.background_review import try_background_review, ReviewGates
@@ -930,7 +963,7 @@ async def send_workbench_message_stream(
             session,
             list(current_messages),
             gates=ReviewGates(turn_interval=3, tool_round_interval=6),
-            llm_client=_make_review_llm_client(resolved_provider),
+            llm_client=_make_review_llm_client(resolved_provider, review_model),
         ))
     except Exception:
         pass
@@ -938,7 +971,7 @@ async def send_workbench_message_stream(
     # Auto-memory sync (conversation summaries, todo extraction).
     try:
         asyncio.create_task(asyncio.to_thread(
-            _sync_auto_memory, session, list(current_messages),
+            _sync_auto_memory, session, list(current_messages), auto_memory_model,
         ))
     except Exception:
         pass
@@ -947,18 +980,37 @@ async def send_workbench_message_stream(
     try:
         from app.services.memory.self_evolution import reflect_on_turn
         asyncio.create_task(asyncio.to_thread(
-            reflect_on_turn, list(current_messages), resolved_model,
+            reflect_on_turn, list(current_messages), reflection_model,
         ))
     except Exception:
         pass
 
 
-def _sync_auto_memory(session: WorkbenchSession, messages: list[dict[str, Any]]) -> None:
+def _background_task_model(task_key: str, chat_model: str) -> str:
+    """Resolve the model to use for a background task.
+
+    Uses the per-task model from the background-review config when background
+    tasks are enabled and a model is configured; otherwise falls back to the
+    chat session's model.
+    """
+    try:
+        from app.services.background_review_service import get_config
+        cfg = get_config()
+        if cfg.get("enabled") and cfg.get(task_key):
+            return cfg[task_key]
+    except Exception:
+        pass
+    return chat_model
+
+
+def _sync_auto_memory(session: WorkbenchSession, messages: list[dict[str, Any]], model: str = "") -> None:
     """Auto-memory sync — save conversation summaries and extract todos.
 
     Runs fire-and-forget after each workbench turn so it never delays
     the response. These lightweight rule-based extractions complement
-    the heavier LLM-based background_review."""
+    the heavier LLM-based background_review. The ``model`` argument is
+    the resolved auto-memory model (falls back to the chat model) used
+    for audit/metadata on the saved memories."""
 
     from app.services.memory.auto_memory import save_auto_memory, extract_and_save_todos
 
@@ -1001,12 +1053,14 @@ def _last_user_message_text(session: WorkbenchSession) -> str:
 
 def _make_review_llm_client(
     main_provider: dict[str, Any] | None,
+    review_model_hint: str = "",
 ) -> Callable | None:
     """Create an LLM client for background review calls.
 
-    Uses the auxiliary/review provider config if available, falling back
-    to the main session provider. Returns None if no provider available
-    (review will be a no-op).
+    Resolves the provider from the ``reviewModel`` config (or the provided
+    ``review_model_hint``, which is already the per-task resolved model),
+    falling back to the main session provider. Returns None if no provider
+    is available (review will be a no-op).
     """
     try:
         # Try to find a suitable provider for the lightweight review
@@ -1015,16 +1069,15 @@ def _make_review_llm_client(
         provider = None
         review_config: dict[str, Any] | None = None
 
-        # First, check config for an explicit review provider/model
+        # First, check config for an explicit review model and resolve its provider.
         try:
-            from app.config import settings
-            aux_config = settings.config.get("auxiliary", {}) or {}
-            review_config = aux_config.get("background_review", {}) or {}
-            review_provider_name = review_config.get("provider", "")
-            if review_provider_name:
-                provider = provider_resolver.resolve(review_provider_name)
+            from app.services.background_review_service import get_config
+            review_config = get_config()
+            review_model = review_config.get("reviewModel", "") or review_model_hint
+            if review_model:
+                provider = provider_resolver.resolve(review_model)
         except Exception:
-            pass
+            review_model = review_model_hint
 
         # Fallback: use main provider
         if not provider:
@@ -1045,14 +1098,13 @@ def _make_review_llm_client(
 
         # Use closure-bound variables for the inner function
         _client = client
-        _review_config = review_config
+        _review_model = review_model or "claude-sonnet-4-20250514"
 
         async def review_llm(prompt: list[dict[str, Any]]) -> str:
             """Call a cheap/fast model for background review."""
             try:
-                review_model = _review_config.get("model", "claude-sonnet-4-20250514") if _review_config else "claude-sonnet-4-20250514"
                 body = {
-                    "model": review_model,
+                    "model": _review_model,
                     "messages": prompt,
                     "max_tokens": 1024,
                 }

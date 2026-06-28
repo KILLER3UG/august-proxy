@@ -14,6 +14,7 @@ import { RightDrawerTasksSection } from './RightDrawerTasksSection';
 import { RightDrawerPlanSection } from './RightDrawerPlanSection';
 import { RightDrawerTerminalSection } from './RightDrawerTerminalSection';
 import { RightDrawerPreviewSection } from './RightDrawerPreviewSection';
+import { RightDrawerBrowserSection } from './RightDrawerBrowserSection';
 import type { WorkbenchSession } from '@/types/workbench';
 
 const DEFAULT_BASE_WIDTH = 320;   // 1-2 sections
@@ -235,6 +236,8 @@ function renderSection(
           onRevise={ctx.onRevisePlan}
         />
       );
+    case 'browser':
+      return <RightDrawerBrowserSection />;
   }
 }
 

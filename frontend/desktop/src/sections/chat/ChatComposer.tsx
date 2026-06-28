@@ -500,7 +500,10 @@ export function ContextRing({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
 
-  // Recompute tooltip position when opening or when viewport changes
+  // Recompute tooltip position when opening or when viewport changes.
+  // Position is computed synchronously (not via requestAnimationFrame) so the
+  // portal renders in the same commit as `open` — rAF is not reliably flushed
+  // in jsdom and left the tooltip absent.
   useEffect(() => {
     if (!open) {
       setTooltipPos(null);
@@ -509,10 +512,24 @@ export function ContextRing({
     const compute = () => {
       if (!rootRef.current) return;
       const r = rootRef.current.getBoundingClientRect();
-      // Position the tooltip above and right-aligned with the trigger
-      setTooltipPos({ top: r.top - 8, left: r.right - 288 }); // 288 = w-72
+      const TOOLTIP_W = 288; // w-72
+      const TOOLTIP_H = 180; // approximate popover height for clamping
+      const margin = 8;
+      // Position the tooltip above and right-aligned with the trigger,
+      // clamped so it never spills outside the viewport (negative coords
+      // + position:fixed produced the black-rectangle regression).
+      let left = r.right - TOOLTIP_W;
+      let top = r.top - TOOLTIP_H - margin;
+      left = Math.max(margin, Math.min(left, window.innerWidth - TOOLTIP_W - margin));
+      if (top < margin) {
+        // Not enough room above — show below the trigger instead.
+        top = r.bottom + margin;
+        top = Math.min(top, window.innerHeight - TOOLTIP_H - margin);
+      }
+      top = Math.max(margin, top);
+      setTooltipPos({ top, left });
     };
-    requestAnimationFrame(compute);
+    compute();
     window.addEventListener('scroll', compute, true);
     window.addEventListener('resize', compute);
     return () => {
@@ -592,7 +609,6 @@ export function ContextRing({
             left: tooltipPos.left,
             backgroundColor: '#1c1c1c',
             border: '0.5px solid rgba(255,255,255,0.12)',
-            willChange: 'transform, opacity',
           }}
           data-composer-popover=""
         >
@@ -657,7 +673,8 @@ export function ContextRing({
   );
 }
 
-function formatTokens(n: number): string {
+function formatTokens(n: number | undefined | null): string {
+  if (n == null || typeof n !== 'number' || !Number.isFinite(n)) return '0';
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
   return n.toLocaleString();

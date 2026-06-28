@@ -503,6 +503,21 @@ function dispatchWorkbenchEvent(
       // explicit `aborted` event lets the runtime distinguish if it wants.
       handlers.onDone?.();
       break;
+    case 'browser_action':
+      handlers.onBrowserAction?.({
+        id: String(payload?.id || ''),
+        name: String(payload?.name || ''),
+        input: payload?.input || {},
+        url: payload?.url,
+        title: payload?.title,
+        target: payload?.target ?? null,
+        screenshot: payload?.screenshot ?? null,
+        typed: payload?.typed,
+        selected: payload?.selected,
+        scrolled: payload?.scrolled,
+        status: payload?.status === 'error' ? 'error' : 'success',
+      });
+      break;
     case 'done':
       handlers.onDone?.();
       break;

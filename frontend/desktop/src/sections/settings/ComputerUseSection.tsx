@@ -44,7 +44,7 @@ export function ComputerUseSection() {
 
   const fetchHealth = useCallback(async () => {
     try {
-      const res = await fetch('/api/computer-use/health');
+      const res = await fetch('/api/desktop-automation/health');
       if (!res.ok) throw new Error('Failed to fetch health status');
       const data = await res.json();
       setHealth(data);
@@ -55,7 +55,7 @@ export function ComputerUseSection() {
 
   const fetchConfig = useCallback(async () => {
     try {
-      const res = await fetch('/api/computer-use/config');
+      const res = await fetch('/api/desktop-automation/config');
       if (!res.ok) throw new Error('Failed to fetch config');
       const data = await res.json();
       setConfig(data);
