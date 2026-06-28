@@ -175,4 +175,5 @@ async def put_background_review(body: BackgroundReviewUpdate):
         review_model=body.reviewModel,
         reflection_model=body.reflectionModel,
         auto_memory_model=body.autoMemoryModel,
+        actor="ui",
     )

@@ -22,6 +22,7 @@ from typing import Any
 
 from app.config import settings
 from app.lib.paths import data_path
+from app.services.memory_store import record_config_audit
 
 _DEFAULT_CONFIG: dict[str, Any] = {
     "enabled": False,
@@ -58,6 +59,7 @@ def save_config(
     review_model: str | None = None,
     reflection_model: str | None = None,
     auto_memory_model: str | None = None,
+    actor: str = "system",
 ) -> dict[str, Any]:
     """Update background review config fields (partial merge).
 
@@ -66,6 +68,7 @@ def save_config(
     the legacy value is promoted to ``reviewModel``.
     """
     current = get_config()
+    before = dict(current)
 
     # One-time migration from legacy {provider, model} → reviewModel.
     if not current.get("reviewModel") and current.get("model"):
@@ -86,4 +89,5 @@ def save_config(
     # Ensure only the canonical keys are persisted.
     result = {k: current.get(k, _DEFAULT_CONFIG.get(k)) for k in _DEFAULT_CONFIG}
     _write_config(result)
+    record_config_audit("background_review", "update", actor, before=before, after=dict(result))
     return dict(result)
