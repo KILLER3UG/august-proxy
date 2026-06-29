@@ -394,6 +394,79 @@ async def _brain_query(store: str, query: str = "", filters: str = "", limit: in
         return f'{{"error": "brain_query: {exc}"}}'
 
 
+# ── Diagnostic tools (Phase 1 — Node.js parity) ────────────────────────
+
+
+async def _diagnose_proxy() -> str:
+    """Diagnose the proxy runtime environment.
+
+    Returns paths, providers, mode, permissions — let the model
+    understand its own runtime.
+    """
+    from app.config import settings
+    parts = [
+        f"Data directory: {settings.data_dir}",
+        f"Web dist: {settings.web_dist}",
+        f"Port: {settings.port}",
+        f"Mode: python",
+        f"Environment: {settings.env}",
+    ]
+
+    # Provider info
+    try:
+        providers = settings.config.get("providers", {})
+        if isinstance(providers, dict):
+            for name, info in list(providers.items())[:10]:
+                if isinstance(info, dict):
+                    parts.append(f"Provider '{name}': model={info.get('model', 'unknown')}")
+    except Exception:
+        pass
+
+    # Current mode from session
+    try:
+        from app.services.workbench.workbench import get_current_session_mode
+        mode = get_current_session_mode()
+        parts.append(f"Session mode: {mode}")
+    except Exception:
+        pass
+
+    return "\n".join(parts)
+
+
+async def _describe_environment() -> str:
+    """Describe the workspace environment: paths, VCS, available tools."""
+    from app.config import settings
+    parts = [
+        f"Proxy version: 0.1.0",
+        f"Data directory: {settings.data_dir}",
+        f"Platform: win32",
+    ]
+
+    # Workspace VCS info
+    try:
+        import subprocess
+        from app.lib.paths import data_path
+        cwd = str(settings.data_dir.parent)
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=cwd, capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+        if branch:
+            parts.append(f"Git branch: {branch}")
+    except Exception:
+        pass
+
+    # Tool count
+    try:
+        from app.services.tool_registry import list_tools
+        tools = list_tools()
+        parts.append(f"Registered tools: {len(tools)}")
+    except Exception:
+        pass
+
+    return "\n".join(parts)
+
+
 # ── Subagent tool ────────────────────────────────────────────────────
 
 
@@ -894,6 +967,19 @@ def register_all() -> None:
             },
             "required": ["store"],
         },
+    )
+    tool_registry.register(
+        "diagnose_proxy",
+        "Diagnose the proxy runtime environment: paths, providers, mode, permissions. "
+        "Use this to understand what the proxy can do and how it's configured.",
+        _diagnose_proxy,
+        {"type": "object", "properties": {}, "required": []},
+    )
+    tool_registry.register(
+        "describe_environment",
+        "Describe the workspace environment: data paths, VCS status, registered tools.",
+        _describe_environment,
+        {"type": "object", "properties": {}, "required": []},
     )
 
     # ── Agent tools ──

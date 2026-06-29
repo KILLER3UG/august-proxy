@@ -389,16 +389,15 @@ def is_plan_mode_blocked(tool_name: str, args: dict[str, Any] | None = None) -> 
 
 
 def build_system_prompt(session: WorkbenchSession) -> str:
-    """Assemble the system prompt for a workbench session.
+    """Assemble the 3-tier XML system prompt for a workbench session (Phase 1).
 
-    Uses context_builder.build_system_prompt() as the base, then appends
-    session-specific sections (guard mode, goal, plan) on top.
+    Uses the Phase 1 context_builder which emits the 3-tier structure:
+      Tier 1: Identity & Constraints (static)
+      Tier 2: Environment & Experience (semi-stable)
+      Tier 3: Dynamic Runtime (volatile)
 
-    The base includes:
-    - Platform identity (August Proxy)
-    - Memory context (user profile, global context, projects)
-    - Agent context (active agent identity + permissions)
-    - Tool guidance (how to use the available tools)
+    Wires brain_orchestrator classification, workspace, VCS, memory stats,
+    whats-new, and guard mode rules — achieving Node.js parity.
     """
     from app.services.memory.context_builder import build_system_prompt as ctx_build
     from app.services.memory_store import get_memory
@@ -419,53 +418,43 @@ def build_system_prompt(session: WorkbenchSession) -> str:
     if projects:
         memory["active_projects"] = projects
 
-	    # Skills follow the Claude-Code progressive-disclosure pattern: the
-	    # full catalogue (name + description + trigger) is appended to the
-	    # system prompt as a dedicated section below; only metadata sits in
-	    # context until the model calls `load_skill(name)` to pull the full
-	    # SKILL.md body on demand. We do NOT inject skills into `memory`
-	    # here — that path rendered only the first 15 active skills as a
-	    # shallow one-liner, which under-exposed the skill set.
-	    # (Catalogue assembly happens in extra_parts below.)
+    # Skills follow the Claude-Code progressive-disclosure pattern: the
+    # full catalogue is appended below; only metadata sits here.
+    # (Catalogue assembly happens via the skills manifest below.)
 
-	    # ── Phase 0: Proactive memory prefetch ──
-	    # Before the model wakes up, pull relevant auto-memories, all learned
-	    # heuristics, and core user facts so they can be injected into the
-	    # prompt (Tier 2/3 in Phase 1; flat for now).
-	    try:
-	        from app.services.memory.auto_memory import get_relevant_memories
-	        # Use conversation summary as query for auto_memories FTS
-	        recent_text = ""
-	        if session.messages:
-	            recent = session.messages[-6:] if len(session.messages) > 6 else session.messages
-	            recent_text = " ".join(
-	                str(m.get("content", "") or "") for m in recent
-	                if isinstance(m, dict) and m.get("role") in ("user", "assistant")
-	            )
-	        if recent_text:
-	            prefetched_memories = get_relevant_memories(recent_text, limit=5)
-	            if prefetched_memories:
-	                memory["auto_memories"] = prefetched_memories
-	    except Exception:
-	        pass
+    # ── Phase 0: Proactive memory prefetch ──
+    try:
+        from app.services.memory.auto_memory import get_relevant_memories
+        recent_text = ""
+        if session.messages:
+            recent = session.messages[-6:] if len(session.messages) > 6 else session.messages
+            recent_text = " ".join(
+                str(m.get("content", "") or "") for m in recent
+                if isinstance(m, dict) and m.get("role") in ("user", "assistant")
+            )
+        if recent_text:
+            prefetched = get_relevant_memories(recent_text, limit=5)
+            if prefetched:
+                memory["auto_memories"] = prefetched
+    except Exception:
+        pass
 
-	    # Learned heuristics (all active rules)
-	    try:
-	        from app.services.memory_store import _conn as brain_conn
-	        conn = brain_conn()
-	        heuristics_rows = conn.execute(
-	            "SELECT rule, source, category FROM learned_heuristics ORDER BY updated_at DESC"
-	        ).fetchall()
-	        if heuristics_rows:
-	            memory["learned_heuristics"] = [dict(r) for r in heuristics_rows]
-	    except Exception:
-	        pass
+    # Learned heuristics (all active rules)
+    try:
+        from app.services.memory_store import _conn as brain_conn
+        conn = brain_conn()
+        heuristics_rows = conn.execute(
+            "SELECT rule, source, category FROM learned_heuristics ORDER BY updated_at DESC"
+        ).fetchall()
+        if heuristics_rows:
+            memory["learned_heuristics"] = [dict(r) for r in heuristics_rows]
+    except Exception:
+        pass
 
-	    # Core memory facts (fixing the dead write — background_review writes to
-	    # this key but nothing ever reads it back into the prompt)
-	    core_facts = get_memory("core_memory")
-	    if core_facts:
-	        memory["core_memory"] = core_facts
+    # Core memory facts
+    core_facts = get_memory("core_memory")
+    if core_facts:
+        memory["core_memory"] = core_facts
 
     # ── Agent context ──
     agent_context = None
@@ -476,14 +465,102 @@ def build_system_prompt(session: WorkbenchSession) -> str:
         except Exception:
             pass
 
-    # ── Build base prompt via context_builder ──
+    # ── Brain orchestrator: classify + policy ──
+    brain_policy = None
+    try:
+        from app.services.memory.brain_orchestrator import (
+            extract_text_from_messages,
+            classify_task,
+            policy_for_task,
+        )
+        msgs = []
+        if hasattr(session, "messages") and session.messages:
+            msgs = session.messages
+        task_text = extract_text_from_messages(msgs)
+        task_type = classify_task(task_text)
+        brain_policy = policy_for_task(task_type)
+    except Exception:
+        pass
+
+    # ── Workspace & VCS ──
+    workspace_path = str(session.workspace_path) if hasattr(session, "workspace_path") and session.workspace_path else ""
+    vcs_info = ""
+    if workspace_path:
+        try:
+            import subprocess
+            branch = subprocess.run(
+                ["git", "branch", "--show-current"],
+                cwd=workspace_path, capture_output=True, text=True, timeout=5
+            ).stdout.strip()
+            status = subprocess.run(
+                ["git", "status", "--short"],
+                cwd=workspace_path, capture_output=True, text=True, timeout=5
+            ).stdout.strip()
+            if branch:
+                dirty = " (dirty)" if status else " (clean)"
+                vcs_info = f"{branch}{dirty}"
+        except Exception:
+            pass
+
+    # ── Memory stats ──
+    memory_stats = {}
+    try:
+        from app.services.memory_store import get_stats as mem_stats
+        memory_stats = mem_stats()
+    except Exception:
+        pass
+
+    # ── What's new (last 24h git commits) ──
+    whats_new = ""
+    if workspace_path:
+        try:
+            import subprocess
+            log = subprocess.run(
+                ["git", "log", "--oneline", "--since=24 hours ago", "--max-count=10"],
+                cwd=workspace_path, capture_output=True, text=True, timeout=5
+            ).stdout.strip()
+            if log:
+                lines = log.split("\n")
+                whats_new = "Recent git activity:\n" + "\n".join(f"  - {l}" for l in lines)
+        except Exception:
+            pass
+
+    # ── Skills manifest ──
+    skills_manifest = ""
+    try:
+        from app.services import skill_service
+        cat = skill_service.catalogue()
+        if cat:
+            lines = []
+            for s in cat:
+                desc = s.get("description", "")
+                trigger = s.get("trigger", "")
+                entry = f"{s['name']}: {desc}" if desc else f"{s['name']}"
+                if trigger:
+                    entry += f" (trigger: {trigger})"
+                lines.append(entry)
+            skills_manifest = "\n".join(lines)
+    except Exception:
+        pass
+
+    # ── Assemble session dict for context_builder ──
     session_dict = {
         "goal": session.goal,
         "plan": session.plan.to_dict() if hasattr(session.plan, 'to_dict') else session.plan,
         "planApproved": session.plan_approved,
+        "workspace_path": workspace_path,
+        "vcs": vcs_info,
+        "brain_policy": brain_policy,
+        "memory_stats": memory_stats,
+        "whats_new": whats_new,
+        "skills_manifest": skills_manifest,
     }
+    # Merge prefetched memory into session_dict for context_builder
+    for k in ("core_memory", "learned_heuristics", "auto_memories"):
+        if k in memory:
+            session_dict[k] = memory[k]
 
-    tools = tool_definitions(session)  # for tool guidance
+    tools = tool_definitions(session)
     base = ctx_build(
         session=session_dict,
         memory=memory,
@@ -491,28 +568,10 @@ def build_system_prompt(session: WorkbenchSession) -> str:
         agent_context=agent_context,
     )
 
-    # ── Append session-specific sections ──
+    # ── Skills section (appended at the end near the user message) ──
+    # The manifest is already in Tier 1 <user_state>, but we repeat the
+    # full catalogue here so it's fresh near the user's latest turn.
     extra_parts: list[str] = []
-
-    # Guard mode is enforced at the tool-execution layer (in _check_tool_guard),
-    # not injected into the system prompt. The tool result message returned by
-    # _check_tool_guard provides clear feedback when a tool is blocked.
-
-    # Goal and plan (already in context_builder's session dict, but
-    # we append explicitly to ensure they're at the end near the user msg)
-    if session.goal:
-        extra_parts.append(f"## Active Goal\n{session.goal}")
-
-    if session.plan:
-        status = " (approved)" if session.plan_approved else " (pending approval)"
-        plan_text = session.plan.get("plan", json.dumps(session.plan))
-        extra_parts.append(f"## Current Plan{status}\n{plan_text}")
-
-    # ── Skills catalogue (progressive disclosure) ──
-    # Surface every discoverable skill as name + description (+ optional
-    # trigger). The model calls `load_skill(name)` to load the full
-    # instructions for the one it needs. This keeps prompt overhead low
-    # (~1 line per skill) while making the full skill set visible.
     try:
         from app.services import skill_service
         cat = skill_service.catalogue()
@@ -1919,9 +1978,86 @@ def get_workbench_activity(args: dict[str, Any] | None = None) -> dict[str, Any]
 
 
 def list_proxy_capabilities() -> dict[str, Any]:
-    """List all tools grouped by source."""
-    from app.services.tool_registry import list_tools
+    """List all tools grouped by source with mutation flags and token estimates.
+
+    Phase 1 rewrite — port of workbench.js:1540 behavior:
+    - Groups tools by source category (file, shell, memory, web, agent, bridge, mcp)
+    - Flags mutating vs non-mutating per tool
+    - Estimates per-tool schema token cost
+    - Includes agent registry count
+    """
+    from app.services.tool_registry import list_tools as reg_list_tools
+
+    # Comprehensive mutation list (tools that modify state)
+    _MUTATING_TOOLS = frozenset({
+        "write_file", "edit_file", "delete_file", "create_file",
+        "run_command",  # can mutate — marked read-only when flagged
+        "save_memory", "save_fact", "update_heuristics", "update_state",
+        "write_scratchpad", "delete_memory",
+        "submit_plan", "approve_plan", "reject_plan",
+        "load_skill", "skill_manage",
+        "spawn_subagent", "spawn_daemon", "kill_daemon",
+        "write_blackboard", "clear_blackboard",
+    })
+
+    all_tools = reg_list_tools()
+    grouped: dict[str, list[dict[str, Any]]] = {}
+
+    for tool in all_tools:
+        name = tool.get("name", "") if isinstance(tool, dict) else str(tool)
+        if not name:
+            continue
+
+        # Determine source group
+        if name in ("read_file", "write_file", "list_directory", "search_files", "edit_file", "delete_file", "create_file"):
+            group = "file"
+        elif name in ("run_command",):
+            group = "shell"
+        elif name in ("memory_search", "fact_search", "context_read", "brain_query",
+                       "save_memory", "delete_memory", "save_fact",
+                       "update_heuristics", "load_skill", "list_skills", "skill_manage"):
+            group = "memory"
+        elif name in ("web_fetch", "web_search"):
+            group = "web"
+        elif name in ("spawn_subagent", "create_agent", "list_agents"):
+            group = "agent"
+        elif name in ("spawn_daemon", "list_daemons", "kill_daemon"):
+            group = "daemon"
+        elif name in ("tool_search", "tool_describe", "tool_call"):
+            group = "bridge"
+        elif name.startswith("mcp__"):
+            group = "mcp"
+        else:
+            group = "other"
+
+        is_mutating = name in _MUTATING_TOOLS
+
+        # Estimate schema token cost (rough: ~100 per tool + params)
+        schema_str = str(tool.get("input_schema", tool.get("parameters", {})))
+        estimated_tokens = len(schema_str) // 4 + 50
+
+        entry = {
+            "name": name,
+            "mutating": is_mutating,
+            "estimated_tokens": estimated_tokens,
+        }
+
+        if group not in grouped:
+            grouped[group] = []
+        grouped[group].append(entry)
+
+    # Agent registry count
+    agent_count = 0
+    try:
+        from app.services.tools.agent_registry import list_agents
+        agent_count = len(list_agents())
+    except Exception:
+        pass
+
     return {
-        "workbench_tools": list_tools(),
-        "web_tools": ["WebSearch", "WebFetch", "web_search", "web_fetch"],
+        "tools_by_group": grouped,
+        "total_tools": len(all_tools),
+        "mutating_tools": sum(1 for t in all_tools if (t.get("name") if isinstance(t, dict) else t) in _MUTATING_TOOLS),
+        "estimated_total_tokens": sum(len(str(t)) // 4 + 50 for t in all_tools),
+        "agent_count": agent_count,
     }

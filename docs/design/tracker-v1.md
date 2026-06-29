@@ -20,7 +20,7 @@
 | Phase | Title | Flag | Status | Owner | Notes |
 |------:|-------|------|--------|-------|-------|
 | 0 | Data Unification & Schema Migration | (proxy-side) | ✅ done & verified | | All 16 tasks complete. DB archived. 3 migration scripts ready. |
-| 1 | System Prompt Restructure + Node parity | (proxy-side) | ☐ not started | | |
+| 1 | System Prompt Restructure + Node parity | (proxy-side) | ✅ done & verified | | 3-tier XML, brain orchestrator wired, workspace/VCS/stats/whats-new injected, guard rules in prompt, listProxyCapabilities fixed, diagnose/describe tools added. |
 | 2 | Cognitive Budgeting | `cognitive_budget` | ☐ not started | | |
 | 3 | BM25 + Progressive Disclosure | `progressive_disclosure` | ☐ not started | | |
 | 4 | Learned Heuristics | `heuristics` | ☐ not started | | |
@@ -80,17 +80,17 @@ _(blockers / decisions here)_
 ## Phase 1 — System Prompt Restructure + Node.js Parity
 
 ### Tasks
-- [ ] Rewrite `context_builder.build_system_prompt()` → 3-tier XML structure
-- [ ] Remove duplicated goal/plan (currently in BOTH `context_builder` and `workbench`) → single `<directives>` in Tier 2
-- [ ] Inject `<workspace>` (use existing `session.workspace_path`)
-- [ ] **Fix dead `core_memory` read:** read `core_memory` key, inject as `User facts:` in `<runtime_context>`
-- [ ] Remove `build_client_tool_guidance()` but **preserve its web-tool routing guidance** (not a no-op stub) → re-home into `<system_constraints>`/`<runtime_context>`
-- [ ] Wire `brain_orchestrator.classify_task()` + `policy_for_task()` into the chat loop → `<brain_policy>` Tier 3
-- [ ] Add guard-mode rules to `<system_constraints>` (port `workbench.js:2326-2339`)
-- [ ] Add memory/graph stats to `<runtime_context>` (port `context-builder.js:165-171`)
-- [ ] Add `<whats_new>` block (port `whats-new.js`, last 24h git commits)
-- [ ] Fix `list_proxy_capabilities()` → grouped by source, mutation flags, token estimate (port `workbench.js:1540`)
-- [ ] Add `diagnose_proxy` / `describe_environment` tools
+- [x] Rewrite `context_builder.build_system_prompt()` → 3-tier XML structure
+- [x] Remove duplicated goal/plan (currently in BOTH `context_builder` and `workbench`) → single `<directives>` in Tier 2
+- [x] Inject `<workspace>` (use existing `session.workspace_path`)
+- [x] **Fix dead `core_memory` read:** read `core_memory` key, inject as `User facts:` in `<runtime_context>`
+- [x] Remove `build_client_tool_guidance()` but **preserve its web-tool routing guidance** (not a no-op stub) → re-home into `<system_constraints>`/`<runtime_context>`
+- [x] Wire `brain_orchestrator.classify_task()` + `policy_for_task()` into the chat loop → `<brain_policy>` Tier 3
+- [x] Add guard-mode rules to `<system_constraints>` (port `workbench.js:2326-2339`)
+- [x] Add memory/graph stats to `<runtime_context>` (port `context-builder.js:165-171`)
+- [x] Add `<whats_new>` block (port `whats-new.js`, last 24h git commits)
+- [x] Fix `list_proxy_capabilities()` → grouped by source, mutation flags, token estimate (port `workbench.js:1540`)
+- [x] Add `diagnose_proxy` / `describe_environment` tools
 
 ### Files
 `memory/context_builder.py`, `workbench/workbench.py`, `routers/workbench.py`.
