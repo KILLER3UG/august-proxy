@@ -43,7 +43,7 @@ Status legend: ☐ not started · ◐ in progress · ✅ done & verified · ⚠ 
 - [x] Restricted read-only tool set by default (web_fetch, read_file, list_directory, search_files, run_command read-only); `tools` allowlist param; `tools=[]` disables
 - [x] Watch conditions: `on_completion` / `on_match:KEYWORD` / `on_change` / null
 - [x] Inject `<subconscious_updates>` Tier 3 from results
-- [ ] Proactive interrupt rules in `<system_constraints>`; `[CRITICAL]` prefix → model must pause
+- [x] Proactive interrupt rules in `<system_constraints>`; `[CRITICAL]` prefix → model must pause
 - [x] Max 3 concurrent daemons/session; results expire after 5 turns
 - [x] Crash handling: wrap each run in try/except → status `errored` + truncated traceback; cap 2 retries
 - [x] Exponential backoff on API failure (5→15→45→135s, cap 5min); reset on success
