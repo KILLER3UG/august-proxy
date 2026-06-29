@@ -201,7 +201,8 @@ def init() -> None:
             category TEXT DEFAULT 'auto',
             importance REAL DEFAULT 0.5,
             source TEXT DEFAULT '',
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
         );
 
         CREATE VIRTUAL TABLE IF NOT EXISTS auto_memories_fts USING fts5(
@@ -265,6 +266,20 @@ def init() -> None:
         SELECT rowid, key, value FROM memory_store
     """)
     conn.commit()
+
+    # v1.1 migration: add updated_at to auto_memories if missing
+    # (the column is declared in the CREATE TABLE above for new DBs; this
+    # block handles DBs created before v1.1.)
+    # Note: SQLite ALTER TABLE ADD COLUMN cannot use a non-constant DEFAULT
+    # like datetime('now'). Existing rows get NULL; auto_memory.save_auto_memory
+    # always sets updated_at explicitly on UPDATE, so new rows are fine.
+    try:
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(auto_memories)").fetchall()]
+        if "updated_at" not in cols:
+            conn.execute("ALTER TABLE auto_memories ADD COLUMN updated_at TEXT")
+    except Exception as exc:
+        import logging
+        logging.warning("auto_memories updated_at migration failed: %s", exc)
 
     # Phase 9: episodic_timeline table (idempotent)
     conn.execute("""
