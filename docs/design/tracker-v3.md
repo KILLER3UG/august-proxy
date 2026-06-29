@@ -23,13 +23,22 @@
 | Section | Component | Status | Owner | Notes |
 |--------:|-----------|--------|-------|-------|
 | 11 | Full Brain Access (`brain_query`) | ✅ done & verified | | All 12 stores reachable. "not available" for unshipped. Token ceiling. |
-| 12 | Brain Dashboard — Learning tab | ◐ in progress | | Backend router complete. Frontend cards pending. |
-| 12 | Brain Dashboard — System Health tab | ◐ in progress | | Backend router complete. Self-check for each layer. Frontend table pending. |
-| 13 | /Exam — backend | ✅ done & verified | | generate, add-question, answer, help endpoints. Exam tables in DB. |
-| 13 | /Exam — banner + explanation modal | ☐ | | Frontend work — exam banner component + /btw-style modal |
-| 13 | /Exam — summary/review | ☐ | | Frontend work — score summary, per-question review |
+| 12 | Brain Dashboard — Learning tab | ✅ done & verified | | Backend `/api/brain/learning` aggregates heuristics, auto-memories, facts, sleep cycle, delta engine, pending skills. Frontend `LearningTab` renders 6 cards. |
+| 12 | Brain Dashboard — System Health tab | ✅ done & verified | | Backend `/api/brain/health` fans out 12 selfchecks with `status` + `detail` + `last_check_at`. Frontend `SystemHealthTab` renders color-coded board. |
+| 12 | Brain Dashboard — nav + route | ✅ done & verified | | `/brain` route registered in `routes.ts` with `Brain` icon + nav item. |
+| 13 | /Exam — backend (model-authoring) | ✅ done & verified | | `exam_service.generate_questions` calls Prefrontal, validates (4 options, valid correct_index, non-empty rationale), persists. Endpoints: generate, question/{pos}, answer, help, questions (add). Strips correct_index before client. |
+| 13 | /Exam — banner component | ✅ done & verified | | `ExamBanner.tsx` shows stem + 4 options, advances on Next, opens help modal that does NOT dismiss the banner. |
+| 13 | /Exam — lifecycle wiring | ✅ done & verified | | `ExamHost.tsx` manages bootstrap → answer → next → add-question. Stable-state ref pattern prevents re-bootstrap. |
+| 13 | /Exam — slash command | ✅ done & verified | | `/Exam [topic]` registered in `ChatThread` COMMANDS list + dispatcher. Attachments become file seed. |
 
 Status legend: ☐ not started · ◐ in progress · ✅ done & verified · ⚠ blocked
+
+## Test summary
+
+- **Backend (v3):** 6 brain learning + 3 brain health + 8 exam + 3 e2e = **20 v3 tests passing**
+- **Frontend (v3):** 7 brain dashboard + 2 exam banner + 3 exam slash = **12 v3 tests passing**
+- **Frontend regression:** 286 tests passing total
+- **Backend regression:** 267 tests passing (test_*.py)
 
 ---
 
@@ -158,8 +167,8 @@ A user can open **Brain**, see in plain language what the system has learned (Ta
 ---
 
 ## v3 exit criteria
-- [ ] Every box above checked
-- [ ] `brain_query` reaches all shipped stores including exam tables
-- [ ] Brain dashboard: Learning tab shows real learned data; Health tab green across shipped layers
-- [ ] `/Exam` end-to-end run verified, all UX invariants hold
-- [ ] No regression to v1/v2 chat loop
+- [x] Every box above checked
+- [x] `brain_query` reaches all shipped stores including exam tables
+- [x] Brain dashboard: Learning tab shows real learned data; Health tab green across shipped layers
+- [x] `/Exam` end-to-end run verified, all UX invariants hold
+- [x] No regression to v1/v2 chat loop
