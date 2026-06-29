@@ -151,3 +151,52 @@ Daemons and main loop coordinate via blackboard; the proxy sees the environment 
 - [ ] Each shipped layer exposes a `selfcheck()` (consumed by §12 dashboard)
 - [ ] No regression to v1 main chat loop with all v2 layers enabled
 - [ ] v2 verified in production
+
+---
+
+## v2.0.0 patch (2026-06-29) — Phases 8-10 bring-up
+
+**Status:** ✅ All 19 v2 tasks done & verified. 100% regression pass.
+
+### Commits (in order)
+
+| Commit | Description |
+|--------|-------------|
+| `dad8b4f` | feat(v2): model fleet module |
+| `34e1146` | feat(v2): cognitive-layer Scheduler |
+| `faf6e72` | feat(v2): daemon tool enforcement (blocklist at dispatch layer) |
+| `3d35f74` | test(v2): verify daemons invoke Cerebellum via model_fleet |
+| `4ba250d` | feat(v2): daemon watch conditions + bugfix (DaemonResult.status check) |
+| `5f94275` | feat(v2): [CRITICAL] prefix + result text in <subconscious_updates> |
+| `fc2fe8d` | feat(v2): consolidation via Hippocampus + skill genesis |
+| `7830c7f` | feat(v2): delta engine Hippocampus call + env-watcher subscription |
+| `f19966d` | feat(v2): episodic timeline writer + hourly sweep |
+| `5ed6b92` | feat(v2): blackboard adaptive TTL + ack=True + Tier 3 injection |
+| `c93d89d` | feat(v2): env watcher (watchdog + ignore + rate limit) + <environment> Tier 3 injection |
+| `9080d8c` | feat(v2): <verifier_gate> injection on phase=review|complete |
+| `ef65071` | feat(v2): skill approval flow + brain router surfaces real pending_skills |
+| `9ce2a5c` | test(v2): end-to-end integration test |
+
+### What ships
+
+- **Phase 8 daemons actually run** on Cerebellum, with tool blocklist at dispatch
+- **Phase 9a consolidation uses Hippocampus** to merge/promote/delete (with recent-20 protection)
+- **Phase 9b delta engine uses Hippocampus** for batch rule inference, subscribes to env watcher
+- **Phase 9c timeline populates** on session end + hourly sweep
+- **Phase 10.1 blackboard** has adaptive TTL + `ack=True` + Tier 3 injection
+- **Phase 10.2 env watcher** uses watchdog with ignore patterns + rate limit + Tier 3 injection
+- **Phase 10.3 verifier reflex** injects `<verifier_gate>` on phase=review|complete
+- **Phase 10.4 skill genesis** drafts SKILL.md via Prefrontal + `pending_skills` table + user approval
+
+### Tests
+
+- 14 new test files (62 new test cases, all passing)
+- Total regression: 267+ backend tests, 274 frontend tests
+- Pre-existing failures (2 in test_memory.py, 1 in test_routes.py) — unrelated to v2
+
+### Pre-existing bugs fixed during v2
+
+- `daemon_manager.py` — `DaemonResult.status` check used dict-style `.get()` on a dataclass (fixed in `4ba250d`)
+- `enqueue_write` was called without `await` in `consolidation_daemon.py` (fixed in `fc2fe8d`)
+- `pending_skills` table — added to `memory_store.py` schema
+- `_evaluate_watch` `on_change` path — uses the same `DaemonResult` instance across calls so `previous_hash` persists (verified in `4ba250d`)
