@@ -49,6 +49,101 @@ function renderMath(body: string, displayMode: boolean): string {
   }
 }
 
+/**
+ * v1.1: Convert common LaTeX-style math to unicode math symbols.
+ * Skips content inside code blocks (fenced or inline) and inside
+ * already-rendered KaTeX blocks. Best-effort: matches simple patterns only.
+ */
+function convertLatexToUnicode(input: string): string {
+  // Split on code blocks and inline code so we never touch them.
+  // Use a placeholder strategy: replace protected regions with
+  // unique tokens, convert, then restore. Use hyphens (not underscores)
+  // in the placeholder name so the subscript regex doesn't touch it.
+  const placeholders: string[] = [];
+  const stash = (text: string): string => {
+    const idx = placeholders.length;
+    placeholders.push(text);
+    return `\u0000MATH-PROTECTED-${idx}\u0000`;
+  };
+
+  // 1) Protect fenced code blocks ```...```
+  let s = input.replace(/```[\s\S]*?```/g, (m) => stash(m));
+  // 2) Protect inline code `...`
+  s = s.replace(/`[^`\n]+`/g, (m) => stash(m));
+  // 3) Protect KaTeX-rendered blocks (already wrapped in \(...\) or \[...\])
+  s = s.replace(/\\\([\s\S]*?\\\)/g, (m) => stash(m));
+  s = s.replace(/\\\[[\s\S]*?\\\]/g, (m) => stash(m));
+  s = s.replace(/\$\$[\s\S]*?\$\$/g, (m) => stash(m));
+
+  // 4) Common LaTeX → unicode conversions
+  // Greek letters (use negative lookahead to allow _ for subscripts)
+  s = s.replace(/\\pi(?![a-zA-Z])/g, 'π');
+  s = s.replace(/\\theta(?![a-zA-Z])/g, 'θ');
+  s = s.replace(/\\alpha(?![a-zA-Z])/g, 'α');
+  s = s.replace(/\\beta(?![a-zA-Z])/g, 'β');
+  s = s.replace(/\\gamma(?![a-zA-Z])/g, 'γ');
+  s = s.replace(/\\delta(?![a-zA-Z])/g, 'δ');
+  s = s.replace(/\\epsilon(?![a-zA-Z])/g, 'ε');
+  s = s.replace(/\\lambda(?![a-zA-Z])/g, 'λ');
+  s = s.replace(/\\mu(?![a-zA-Z])/g, 'μ');
+  s = s.replace(/\\sigma(?![a-zA-Z])/g, 'σ');
+  s = s.replace(/\\omega(?![a-zA-Z])/g, 'ω');
+
+  // Operators (same lookahead pattern)
+  s = s.replace(/\\sum(?![a-zA-Z])/g, '∑');
+  s = s.replace(/\\prod(?![a-zA-Z])/g, '∏');
+  s = s.replace(/\\int(?![a-zA-Z])/g, '∫');
+  s = s.replace(/\\partial(?![a-zA-Z])/g, '∂');
+  s = s.replace(/\\infty(?![a-zA-Z])/g, '∞');
+  s = s.replace(/\\sqrt\s*\{([^}]+)\}/g, '√($1)');
+  s = s.replace(/\\cdot(?![a-zA-Z])/g, '·');
+  s = s.replace(/\\times(?![a-zA-Z])/g, '×');
+  s = s.replace(/\\div(?![a-zA-Z])/g, '÷');
+  s = s.replace(/\\pm(?![a-zA-Z])/g, '±');
+  s = s.replace(/\\leq(?![a-zA-Z])/g, '≤');
+  s = s.replace(/\\geq(?![a-zA-Z])/g, '≥');
+  s = s.replace(/\\neq(?![a-zA-Z])/g, '≠');
+  s = s.replace(/\\approx(?![a-zA-Z])/g, '≈');
+  s = s.replace(/\\rightarrow(?![a-zA-Z])/g, '→');
+  s = s.replace(/\\to(?![a-zA-Z])/g, '→');
+  s = s.replace(/\\in(?![a-zA-Z])/g, '∈');
+  s = s.replace(/\\notin(?![a-zA-Z])/g, '∉');
+
+  // Superscripts: x^2, x^n, x^{10}
+  const supMap: Record<string, string> = {
+    '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+    '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+  };
+  s = s.replace(/\^(\d)/g, (_m, d) => supMap[d] || _m);
+  s = s.replace(/\^\{([^}]+)\}/g, (_m, body) =>
+    body.split('').map((c: string) => supMap[c] || c).join('')
+  );
+
+  // Subscripts: x_1, x_n, x_{10}
+  const subMap: Record<string, string> = {
+    '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
+    '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
+  };
+  s = s.replace(/_(\d)/g, (_m, d) => subMap[d] || _m);
+  s = s.replace(/_\{([^}]+)\}/g, (_m, body) =>
+    body.split('').map((c: string) => subMap[c] || c).join('')
+  );
+
+  // ASCII operator shorthand (both raw and HTML-encoded forms)
+  s = s.replace(/&gt;=/g, '≥');
+  s = s.replace(/&lt;=/g, '≤');
+  s = s.replace(/>=/g, '≥');
+  s = s.replace(/<=/g, '≤');
+  s = s.replace(/!=/g, '≠');
+  s = s.replace(/->/g, '→');
+  s = s.replace(/=>/g, '⇒');
+
+  // 5) Restore protected regions
+  s = s.replace(/\u0000MATH-PROTECTED-(\d+)\u0000/g, (_m, idx) => placeholders[Number(idx)] || '');
+
+  return s;
+}
+
 const mathInlineExtension = {
   name: 'mathInline',
   level: 'inline',
@@ -137,7 +232,9 @@ export function Markdown({ content }: { content: string }) {
 
   const html = useMemo(() => {
     if (!content) return '';
-    return marked.parse(content, { async: false }) as string;
+    // v1.1: convert common LaTeX math to unicode before marked parsing
+    const processed = convertLatexToUnicode(content);
+    return marked.parse(processed, { async: false }) as string;
   }, [content]);
 
   // Copy button handler
@@ -184,5 +281,7 @@ export function Markdown({ content }: { content: string }) {
 
 export function renderMarkdown(content: string): string {
   if (!content) return '';
-  return marked.parse(content, { async: false }) as string;
+  // v1.1: convert common LaTeX math to unicode before marked parsing
+  const processed = convertLatexToUnicode(content);
+  return marked.parse(processed, { async: false }) as string;
 }
