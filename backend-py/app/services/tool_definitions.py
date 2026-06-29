@@ -369,6 +369,31 @@ async def _context_read() -> str:
         return f"Error reading context: {exc}"
 
 
+# ── brain_query (Phase 0, §11 of the cognitive spec) ────────────────────
+
+
+async def _brain_query(store: str, query: str = "", filters: str = "", limit: int = 10) -> str:
+    """Read-only unified brain query across any cognitive store.
+
+    Returns compact JSON. Stores not yet shipped return "not available".
+    """
+    from app.services.memory_store import brain_query as _bq
+
+    try:
+        filters_dict = {}
+        if filters and filters.strip():
+            import json as _json
+            try:
+                filters_dict = _json.loads(filters)
+            except _json.JSONDecodeError:
+                pass
+
+        result = _bq(store, query, filters_dict or None, limit)
+        return result
+    except Exception as exc:
+        return f'{{"error": "brain_query: {exc}"}}'
+
+
 # ── Subagent tool ────────────────────────────────────────────────────
 
 
@@ -838,6 +863,37 @@ def register_all() -> None:
         "Read current user context and profile from memory.",
         _context_read,
         {"type": "object", "properties": {}, "required": []},
+    )
+    tool_registry.register(
+        "brain_query",
+        "Read-only query across any brain store (memory, auto_memories, heuristics, "
+        "facts, sessions, messages, and future stores). Stores not yet shipped return "
+        "'not available'. Returns compact JSON rows. Use store names from the enum: "
+        "memory, auto_memories, heuristics, facts, sessions, messages.",
+        _brain_query,
+        {
+            "type": "object",
+            "properties": {
+                "store": {
+                    "type": "string",
+                    "description": "Which brain store to read: memory | auto_memories | heuristics | facts | sessions | messages",
+                    "enum": ["memory", "auto_memories", "heuristics", "facts", "sessions", "messages"],
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Search text (FTS or LIKE). Optional.",
+                },
+                "filters": {
+                    "type": "string",
+                    "description": "JSON object of column filters (e.g. '{\"category\": \"auth\"}'). Optional.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max rows to return (1-100). Default 10.",
+                },
+            },
+            "required": ["store"],
+        },
     )
 
     # ── Agent tools ──

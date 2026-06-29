@@ -2,71 +2,142 @@
 Auto-memory — automatically saves and retrieves relevant memory context.
 
 Port of backend/services/memory/auto-memory.js + background-review.js.
+Phase 0 rewrite: writes individual FTS-indexed rows to the `auto_memories`
+table instead of a JSON blob under one key in `memory_store`.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
 
-from app.services.memory_store import save_memory, get_memory, search_memory
+from app.services.memory_store import save_memory, get_memory
 
-_KEY_MEMORIES = "auto_memories"
 _MAX_MEMORIES = 100
 
 
+# ── Direct DB helpers (bypass memory_store key-value layer) ──────────────
+
+
+def _conn():
+    """Get the thread-local brain DB connection."""
+    from app.services.memory_store import _conn as get_conn
+    return get_conn()
+
+
+# ── CRUD ────────────────────────────────────────────────────────────────
+
+
 def save_auto_memory(key: str, content: Any, category: str = "auto", importance: float = 0.5) -> None:
-    """Save an automatically captured memory."""
-    memories = get_memory(_KEY_MEMORIES) or []
-    if not isinstance(memories, list):
-        memories = []
+    """Save an automatically captured memory as an individual FTS-indexed row.
 
-    # Avoid exact duplicates
-    for m in memories:
-        if m.get("key") == key:
-            m["content"] = content
-            m["updated_at"] = __import__("datetime").datetime.utcnow().isoformat() + "Z"
-            m["importance"] = importance
-            save_memory(_KEY_MEMORIES, memories)
-            return
+    The FTS5 triggers on `auto_memories` (created in Phase 0) automatically
+    keep `auto_memories_fts` in sync — no manual FTS insert needed.
+    """
+    conn = _conn()
+    now = __import__("datetime").datetime.utcnow().isoformat() + "Z"
+    content_json = content if isinstance(content, str) else json.dumps(content)
 
-    memories.append({
-        "key": key,
-        "content": content,
-        "category": category,
-        "importance": importance,
-        "created_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
-    })
+    # Try to update an existing entry with the same key
+    existing = conn.execute(
+        "SELECT id FROM auto_memories WHERE key = ?", (key,)
+    ).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE auto_memories SET content = ?, importance = ?, updated_at = ? WHERE id = ?",
+            (content_json, importance, now, existing["id"]),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO auto_memories (key, content, category, importance, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (key, content_json, category, importance, now),
+        )
 
-    # Trim oldest
-    memories.sort(key=lambda m: m.get("importance", 0), reverse=True)
-    memories = memories[:_MAX_MEMORIES]
-    save_memory(_KEY_MEMORIES, memories)
+    # Trim to max rows (delete lowest-importance, oldest-first for ties)
+    conn.execute("""
+        DELETE FROM auto_memories WHERE id NOT IN (
+            SELECT id FROM auto_memories ORDER BY importance DESC, id DESC LIMIT ?
+        )
+    """, (_MAX_MEMORIES,))
+    conn.commit()
 
 
 def get_relevant_memories(query: str, limit: int = 5) -> list[dict[str, Any]]:
-    """Find memories relevant to a query."""
-    all_memories = get_memory(_KEY_MEMORIES) or []
-    if not isinstance(all_memories, list):
-        return []
+    """Find memories relevant to a query using FTS5 ranking.
 
+    Falls back to LIKE-based search if FTS returns nothing.
+    """
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT key, content, category, importance, created_at "
+            "FROM auto_memories_fts "
+            "WHERE content MATCH ? "
+            "ORDER BY rank "
+            "LIMIT ?",
+            (query, limit),
+        ).fetchall()
+        if rows:
+            result = []
+            for r in rows:
+                item = dict(r)
+                # Try to parse content as JSON if it looks like one
+                try:
+                    item["content"] = json.loads(item["content"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                result.append(item)
+            return result
+    except Exception:
+        pass
+
+    # FTS fallback: LIKE-based
+    all_rows = conn.execute(
+        "SELECT key, content, category, importance, created_at FROM auto_memories"
+    ).fetchall()
     scored = []
     q = query.lower()
-    for m in all_memories:
+    for r in all_rows:
         score = 0.0
-        key = str(m.get("key", "")).lower()
-        content = str(m.get("content", "")).lower()
-        if q in key:
+        key = str(r["key"] or "").lower()
+        content = str(r["content"] or "").lower()
+        if q and q in key:
             score += 0.5
-        if q in content:
+        if q and q in content:
             score += 0.3
-        score += m.get("importance", 0) * 0.2
+        score += r["importance"] * 0.2
         if score > 0:
-            scored.append((score, m))
+            item = dict(r)
+            try:
+                item["content"] = json.loads(item["content"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+            scored.append((score, item))
 
     scored.sort(key=lambda x: x[0], reverse=True)
     return [m for _, m in scored[:limit]]
+
+
+# ── Orphan cleanup ──────────────────────────────────────────────────────
+
+
+def delete_orphaned_blob() -> bool:
+    """Delete the old JSON blob from memory_store if it exists.
+
+    Returns True if the blob was found and deleted, False otherwise.
+    Call this once after migration to avoid polluting LIKE-based searches.
+    """
+    blob = get_memory("auto_memories")
+    if blob is not None:
+        save_memory("auto_memories", None)  # Delete the key
+        return True
+    return False
+
+
+# ── Background tasks ────────────────────────────────────────────────────
 
 
 def extract_and_save_todos(messages: list[dict[str, Any]]) -> list[str]:
@@ -122,7 +193,7 @@ def background_review(messages: list[dict[str, Any]]) -> dict[str, Any]:
     # Save notable reviews
     if result["needs_attention"]:
         save_auto_memory(
-            f"review_{__import__('time').time()}",
+            f"review_{time.time()}",
             result,
             category="review",
             importance=0.9,

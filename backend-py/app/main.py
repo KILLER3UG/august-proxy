@@ -19,7 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from app.config import settings
-from app.database import init_db, close_db
+# database.py removed in Phase 0 — SQLAlchemy was dead code (no ORM models exist).
+# Session lifecycle is managed by memory_store.py (august_brain.sqlite) directly.
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────
@@ -32,7 +33,6 @@ async def lifespan(app: FastAPI):
     from app.services import tool_definitions
 
     tool_definitions.register_all()
-    await init_db()
     # Ensure brain SQLite tables (incl. config_audit) exist.
     from app.services import memory_store
     memory_store.init()
@@ -79,7 +79,8 @@ async def lifespan(app: FastAPI):
         await close_browsers()
     except Exception:
         pass
-    await close_db()
+    # close_db() removed in Phase 0 — SQLAlchemy was dead code.
+    # memory_store cleanup (if any) happens in memory_store.close() if needed.
 
 
 # ── App ───────────────────────────────────────────────────────────────

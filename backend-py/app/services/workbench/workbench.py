@@ -419,14 +419,53 @@ def build_system_prompt(session: WorkbenchSession) -> str:
     if projects:
         memory["active_projects"] = projects
 
-    # Skills follow the Claude-Code progressive-disclosure pattern: the
-    # full catalogue (name + description + trigger) is appended to the
-    # system prompt as a dedicated section below; only metadata sits in
-    # context until the model calls `load_skill(name)` to pull the full
-    # SKILL.md body on demand. We do NOT inject skills into `memory`
-    # here — that path rendered only the first 15 active skills as a
-    # shallow one-liner, which under-exposed the skill set.
-    # (Catalogue assembly happens in extra_parts below.)
+	    # Skills follow the Claude-Code progressive-disclosure pattern: the
+	    # full catalogue (name + description + trigger) is appended to the
+	    # system prompt as a dedicated section below; only metadata sits in
+	    # context until the model calls `load_skill(name)` to pull the full
+	    # SKILL.md body on demand. We do NOT inject skills into `memory`
+	    # here — that path rendered only the first 15 active skills as a
+	    # shallow one-liner, which under-exposed the skill set.
+	    # (Catalogue assembly happens in extra_parts below.)
+
+	    # ── Phase 0: Proactive memory prefetch ──
+	    # Before the model wakes up, pull relevant auto-memories, all learned
+	    # heuristics, and core user facts so they can be injected into the
+	    # prompt (Tier 2/3 in Phase 1; flat for now).
+	    try:
+	        from app.services.memory.auto_memory import get_relevant_memories
+	        # Use conversation summary as query for auto_memories FTS
+	        recent_text = ""
+	        if session.messages:
+	            recent = session.messages[-6:] if len(session.messages) > 6 else session.messages
+	            recent_text = " ".join(
+	                str(m.get("content", "") or "") for m in recent
+	                if isinstance(m, dict) and m.get("role") in ("user", "assistant")
+	            )
+	        if recent_text:
+	            prefetched_memories = get_relevant_memories(recent_text, limit=5)
+	            if prefetched_memories:
+	                memory["auto_memories"] = prefetched_memories
+	    except Exception:
+	        pass
+
+	    # Learned heuristics (all active rules)
+	    try:
+	        from app.services.memory_store import _conn as brain_conn
+	        conn = brain_conn()
+	        heuristics_rows = conn.execute(
+	            "SELECT rule, source, category FROM learned_heuristics ORDER BY updated_at DESC"
+	        ).fetchall()
+	        if heuristics_rows:
+	            memory["learned_heuristics"] = [dict(r) for r in heuristics_rows]
+	    except Exception:
+	        pass
+
+	    # Core memory facts (fixing the dead write — background_review writes to
+	    # this key but nothing ever reads it back into the prompt)
+	    core_facts = get_memory("core_memory")
+	    if core_facts:
+	        memory["core_memory"] = core_facts
 
     # ── Agent context ──
     agent_context = None

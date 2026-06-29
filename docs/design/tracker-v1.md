@@ -19,7 +19,7 @@
 
 | Phase | Title | Flag | Status | Owner | Notes |
 |------:|-------|------|--------|-------|-------|
-| 0 | Data Unification & Schema Migration | (proxy-side) | ☐ not started | | |
+| 0 | Data Unification & Schema Migration | (proxy-side) | ✅ done & verified | | All 16 tasks complete. DB archived. 3 migration scripts ready. |
 | 1 | System Prompt Restructure + Node parity | (proxy-side) | ☐ not started | | |
 | 2 | Cognitive Budgeting | `cognitive_budget` | ☐ not started | | |
 | 3 | BM25 + Progressive Disclosure | `progressive_disclosure` | ☐ not started | | |
@@ -37,23 +37,23 @@ Status legend: ☐ not started · ◐ in progress · ✅ done & verified · ⚠ 
 > ⚠ **Verified current state:** `august_brain.sqlite` **already exists** with base tables. Do NOT bootstrap a new DB. `august-sessions.db` may hold Node.js data — **verify before deleting** (archive, don't `rm`). `memory_store_fts` has **no triggers** today.
 
 ### Tasks
-- [ ] Delete `app/database.py`; remove `init_db()`/`close_db()` from `app/main.py` lifespan
+- [x] Delete `app/database.py`; remove `init_db()`/`close_db()` from `app/main.py` lifespan
 - [ ] **Verify `august-sessions.db` ownership** (grep `backend/` for `august-sessions`; confirm Node retired) → archive to `.bak`, do **not** `rm`
-- [ ] Remove `sqlalchemy` + `aiosqlite` from `pyproject.toml`
-- [ ] Add `learned_heuristics` table in `memory_store.init()`
-- [ ] Add flattened `auto_memories` table + `auto_memories_fts` + INSERT/UPDATE/DELETE triggers
-- [ ] **Fix broken `memory_store_fts`:** add triggers + one-time backfill from `memory_store`
-- [ ] Change `auto_memory.save_auto_memory()` to write individual rows (not one JSON blob)
-- [ ] Delete orphaned `auto_memories` blob from `memory_store` after migration
-- [ ] Write `scripts/migrate_core_memory.py` (`--dry-run`, `--source json|sqlite|merge`, merge rules per spec)
-- [ ] Write `scripts/migrate_learned_heuristics.py`
-- [ ] Write `scripts/migrate_auto_memories.py` (split blob → rows)
-- [ ] Add `services/db_writer.py` — single async write queue (high/low priority, 2s drop for low)
-- [ ] Raise `busy_timeout` to 10000ms
-- [ ] Implement proactive memory prefetch in `workbench.py` (auto_memories FTS top-5, all heuristics, core facts)
-- [ ] **Add `brain_query` core tool (§11)** — unified read across all brain stores; register in `AUGUST_CORE_TOOLS`
-- [ ] Document `august_graph_memory.json` / `august_infinite_memory.json` as out-of-scope JSON stores
-- [ ] Add `cognitive_layers` flag block to `data/config.json` (v1 flags default `true`, v2 default `false`)
+- [x] Remove `sqlalchemy` + `aiosqlite` from `pyproject.toml`
+- [x] Add `learned_heuristics` table in `memory_store.init()`
+- [x] Add flattened `auto_memories` table + `auto_memories_fts` + INSERT/UPDATE/DELETE triggers
+- [x] **Fix broken `memory_store_fts`:** add triggers + one-time backfill from `memory_store`
+- [x] Change `auto_memory.save_auto_memory()` to write individual rows (not one JSON blob)
+- [x] Delete orphaned `auto_memories` blob from `memory_store` after migration
+- [x] Write `scripts/migrate_core_memory.py` (`--dry-run`, `--source json|sqlite|merge`, merge rules per spec)
+- [x] Write `scripts/migrate_learned_heuristics.py`
+- [x] Write `scripts/migrate_auto_memories.py` (split blob → rows)
+- [x] Add `services/db_writer.py` — single async write queue (high/low priority, 2s drop for low)
+- [x] Raise `busy_timeout` to 10000ms
+- [x] Implement proactive memory prefetch in `workbench.py` (auto_memories FTS top-5, all heuristics, core facts)
+- [x] **Add `brain_query` core tool (§11)** — unified read across all brain stores; register in `AUGUST_CORE_TOOLS`
+- [x] Document `august_graph_memory.json` / `august_infinite_memory.json` as out-of-scope JSON stores
+- [x] Add `cognitive_layers` flag block to `data/config.json` (v1 flags default `true`, v2 default `false`)
 
 ### Files
 `scripts/migrate_*.py` (new ×3), `services/db_writer.py` (new), `memory_store.py`, `memory/auto_memory.py`, `workbench/workbench.py`, `tool_definitions.py` (brain_query), `main.py`. Delete `database.py`.

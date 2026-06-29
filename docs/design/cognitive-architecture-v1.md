@@ -14,11 +14,14 @@
 > enough to warrant their own design review and are grouped as **v2**; do not
 > begin v2 implementation until v1 is shipped and verified in production.
 > Each v2 phase can be built independently once the Phase 8 daemon infrastructure
-> and Phase 0 DB write queue are in place. **v3** (Sections 11–13) is a
-> user-facing delivery built on top of v1/v2: full model access to the brain,
-> a combined **Brain dashboard** (Learning + System Health tabs), and the
-> **/Exam** preparation-skills feature. v3 is its own delivery boundary — do not
-> start it until v1 is shipped.
+> and Phase 0 DB write queue are in place. **Section 11 (`brain_query`) is a v1
+> tool** (added in Phase 0) — it is documented out of order, next to the data
+> layer, because its store list spans all phases. **v3** (Sections 12–13) is a
+> user-facing delivery built on top of v1/v2: a combined **Brain dashboard**
+> (Learning + System Health tabs) and the **/Exam** preparation-skills feature.
+> **v4** (Sections 14–16) adds August Live (voice + command execution), the UI
+> redesign, and rendering/input fixes. v3 and v4 are each their own delivery
+> boundary — do not start them until v1 is shipped.
 >
 > **Implementation tracking:** Progress is tracked in four checklist files under
 > `docs/design/` — agents work them in order and only advance to the next file
@@ -31,6 +34,8 @@
 ---
 
 ## Table of Contents
+
+**v1 — Core cognitive loop (Phases 0–7) · v2 — Autonomous layers (Phases 8–10)**
 
 1. [Architecture Overview](#1-architecture-overview)
 2. [System Prompt Structure](#2-system-prompt-structure)
@@ -45,9 +50,15 @@
 8. [Appendix: Current State Analysis](#8-appendix-current-state-analysis)
 9. [Failure Modes & Edge Cases](#9-failure-modes--edge-cases)
 10. [Model Fleet Architecture](#10-model-fleet-architecture)
-11. [Full Brain Access (Model Self-Query)](#11-full-brain-access-model-self-query)
+11. [Full Brain Access (Model Self-Query)](#11-full-brain-access-model-self-query) — *v1 tool (Phase 0), documented here*
+
+**v3 — User-facing features** *(see [`tracker-v3.md`](./tracker-v3.md))*
+
 12. [Brain Dashboard (Learning + System Health UI)](#12-brain-dashboard-learning--system-health-ui)
 13. [v3: /Exam — Preparation Skills](#13-v3-exam--preparation-skills)
+
+**v4 — Voice, UI & polish** *(see [`tracker-v4.md`](./tracker-v4.md))*
+
 14. [v4: August Live (Voice + Command Execution)](#14-v4-august-live-voice--command-execution)
 15. [v4: UI Redesign — Modern & Minimalist](#15-v4-ui-redesign--modern--minimalist)
 16. [v4: Rendering & Input Fixes (Math, Auto-Grow Composer, Scroll Thumb)](#16-v4-rendering--input-fixes-math-auto-grow-composer-chat-scroll-thumb)
@@ -1529,6 +1540,8 @@ Four model picker dropdowns, each backed by the same `ModelPickerDropdown` compo
 
 > **Principle:** The model must be able to read **everything** in the Jarvis brain (`august_brain.sqlite`) on demand — not only the slices the proxy chooses to inject. Auto-priming and prefetch are the *push* path (proxy decides what's relevant). This section defines the *pull* path (the model decides what it wants).
 
+> **Delivery boundary — this is a v1 tool.** `brain_query` is added to `AUGUST_CORE_TOOLS` in **Phase 0 (v1)** and is tracked in [`tracker-v1.md`](./tracker-v1.md), not v3. It is documented here, after the data-layer sections, only because its store list spans tables introduced across all phases. On day one it serves the v1 stores (`memory`, `auto_memories`, `heuristics`, `facts`, `sessions`, `messages`); stores backed by later phases (`timeline`, `blackboard`, `daemons`, `exams`) return a structured "not available" until their table ships. v3's job (§13, dashboard, /Exam) is to *consume* `brain_query` and to verify the later stores resolve — not to introduce the tool.
+
 ### Problem
 
 After Phase 0 unifies all memory into `august_brain.sqlite`, the model only sees what the prefetcher pushes into the prompt (top-5 auto-memories, all heuristics, core facts). It cannot reach the long tail: an old session summary, a specific fact category, a graph relation, a blackboard note from another agent, a timeline entry. Today there is no single "ask the brain anything" entry point — `memory_search` and `fact_search` cover only two tables.
@@ -1633,6 +1646,7 @@ A green board = "all implementation is working." A red cell points directly at t
 - New router: `GET /api/brain/learning` (Tab 1 aggregation) and `GET /api/brain/health` (Tab 2: flags + `selfcheck()` results), parallel to the existing config routers.
 - `selfcheck()` functions live next to each layer's service; the router fans out and aggregates.
 - New frontend **Brain** section with two tabs, reusing existing card/table components.
+- **Read-poll caching (required, not optional):** the Learning tab polls every ~5s and aggregates 5+ tables (heuristics, auto-memories, facts, delta-engine rows, pending skills). Left raw that is 60+ reads/min against `august_brain.sqlite` whenever the dashboard is open. WAL permits concurrent reads, but the I/O is wasteful. Put a **lightweight in-memory cache with a 10s TTL** on the `/api/brain/learning` aggregation (cache the assembled payload, not per-row) so an always-open dashboard costs ~6 aggregations/min regardless of poll rate. Invalidate the cache on any heuristic curation write (delete/edit from the tab) so user edits reflect immediately. `/api/brain/health` self-checks are already cheap and run on demand — no cache needed there, but debounce to once per ~10s if a layer's `selfcheck()` does real work.
 
 **Files touched:** new `app/routers/brain.py`; `selfcheck()` added to each cognitive-layer service; frontend Brain section (2 tabs). Delivered in **v3**, but each layer's `selfcheck()` can be added in the same phase that ships the layer (so health coverage grows with v1/v2).
 
@@ -1680,6 +1694,8 @@ v3, standalone. Depends on v1 (skills system, brain access, system prompt struct
 - The explanation modal is **non-blocking** relative to the banner — the user can read it and still interact with the question.
 
 ### Data model (in `august_brain.sqlite`)
+
+> **Schema delivery:** these three tables are **added in the v3 delivery**, not in the Phase 0 schema. Add them via the same idempotent `CREATE TABLE IF NOT EXISTS` path `memory_store.init()` uses (or a small additive migration), so an existing v1/v2 `august_brain.sqlite` gains them on first v3 startup. Until then, `brain_query(store="exams")` returns the standard "not available" (§11).
 
 ```sql
 CREATE TABLE exams (
@@ -1779,12 +1795,13 @@ v4, standalone. Built on v1 (the workbench tool loop, guard mode, brain access).
 
 **Two provider-agnostic adapters** (mirroring the existing provider/model-fleet pattern):
 
-| Adapter | Role | Options (configurable, like Model Fleet) |
-|---------|------|------------------------------------------|
-| **STT** (speech→text) | Streaming transcription of mic audio | OpenAI `whisper`/`gpt-4o-transcribe`, Deepgram, local `whisper.cpp`, or browser `SpeechRecognition` fallback |
-| **TTS** (text→speech) | Streamed spoken output | OpenAI TTS, ElevenLabs, Piper (local), or browser `speechSynthesis` fallback |
+| Adapter | Role | Default when **not configured** | Optional providers |
+|---------|------|--------------------------------|--------------------|
+| **STT** (speech→text) | Streaming transcription of mic audio | Browser `SpeechRecognition` / `webkitSpeechRecognition` (the already-present path in `ChatThread.tsx:1442`) — **this is the default, on by design, no setup required** | OpenAI `whisper`/`gpt-4o-transcribe`, Deepgram, local `whisper.cpp` |
+| **TTS** (text→speech) | Streamed spoken output | Browser `speechSynthesis` — **default, no setup required** | OpenAI TTS, ElevenLabs, Piper (local) |
 
-- STT/TTS provider + model are chosen in settings, stored under `config.json → auxiliary.live` (parallel to `background_review` and `model_fleet`).
+- **Browser STT/TTS are the out-of-the-box defaults, not merely a fallback.** August Live works with zero configuration on first launch using the WebView's built-in speech APIs. Configuring a provider in settings is a quality *upgrade* (better transcription/voices), not a prerequisite. If a configured provider errors at runtime, Live degrades back to the browser default rather than failing the turn.
+- STT/TTS provider + model are chosen in settings, stored under `config.json → auxiliary.live` (parallel to `background_review` and `model_fleet`). An unset/empty provider field means "use browser default."
 - The **reasoning** model for a Live turn is the **Cortex** model (same as chat) — Live does not downgrade the brain.
 - A short **barge-in** rule: if the mic detects speech while TTS is playing, TTS pauses (interruptible, like Gemini Live).
 
@@ -1966,7 +1983,7 @@ Use the `security-review` skill (or `/security-review`) on the Live diff; record
 
 ### Theme toggle & scope
 
-- Ship **dark as the default** (the reference apps are dark-first) while keeping the polished light theme.
+- Ship **dark as the default** (the reference apps are dark-first) while keeping the polished light theme. **Decision confirmed** — this intentionally reverses the current light default. Migration rule: only users with **no saved theme preference** flip to dark on update; anyone who has explicitly chosen light keeps light. The theme toggle remains, so the flip is one click to undo.
 - All changes are confined to `src/styles.css` (token values), `tailwind.config.cjs` (default radius/line-height), and the chat-thread + composer components for the bubble-less layout. **No component API changes** — the `--dt-*` indirection means most of the app re-skins for free.
 
 ### Tests / acceptance

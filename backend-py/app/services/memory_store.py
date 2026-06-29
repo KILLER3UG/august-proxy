@@ -48,7 +48,7 @@ def _conn() -> sqlite3.Connection:
         conn = sqlite3.connect(str(db_path), timeout=_TIMEOUT_MS / 1000)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA busy_timeout=10000")  # Phase 0: raised from 5000 for write-queue safety
         conn.execute("PRAGMA foreign_keys=ON")
         _local.conn = conn
     return _local.conn
@@ -85,6 +85,9 @@ def _json(value: Any) -> str:
 def init() -> None:
     """Create all tables on first use."""
     conn = _conn()
+
+    # ── Phase 0 schema additions ──────────────────────────────────────
+    # These go through executescript so the full DDL + triggers are atomic.
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS memory_store (
             key TEXT PRIMARY KEY,
@@ -92,6 +95,7 @@ def init() -> None:
             updated_at TEXT DEFAULT (datetime('now'))
         );
 
+        -- FTS5 on memory_store (content-sync table — triggers added below in Phase 0)
         CREATE VIRTUAL TABLE IF NOT EXISTS memory_store_fts USING fts5(
             key, value, content='memory_store', content_rowid='rowid'
         );
@@ -175,6 +179,73 @@ def init() -> None:
             created_at TEXT DEFAULT (datetime('now'))
         );
 
+        -- ═══════════════════════════════════════════════════════════════
+        -- Phase 0: Learned Heuristics table
+        -- ═══════════════════════════════════════════════════════════════
+        CREATE TABLE IF NOT EXISTS learned_heuristics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule TEXT NOT NULL,
+            source TEXT DEFAULT '',
+            category TEXT DEFAULT 'general',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- ═══════════════════════════════════════════════════════════════
+        -- Phase 0: Flattened auto_memories (individual FTS-indexed rows)
+        -- ═══════════════════════════════════════════════════════════════
+        CREATE TABLE IF NOT EXISTS auto_memories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key TEXT,
+            content TEXT,
+            category TEXT DEFAULT 'auto',
+            importance REAL DEFAULT 0.5,
+            source TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS auto_memories_fts USING fts5(
+            key, content, content='auto_memories', content_rowid='rowid'
+        );
+
+        -- ═══════════════════════════════════════════════════════════════
+        -- Phase 0: FTS5 triggers — CRITICAL — without these FTS indexes
+        -- stay empty. Both memory_store_fts and auto_memories_fts need
+        -- INSERT/UPDATE/DELETE triggers.
+        -- ═══════════════════════════════════════════════════════════════
+
+        -- memory_store_fts triggers (fixes existing broken FTS)
+        CREATE TRIGGER IF NOT EXISTS memory_store_fts_ai AFTER INSERT ON memory_store BEGIN
+            INSERT INTO memory_store_fts(rowid, key, value)
+            VALUES (new.rowid, new.key, new.value);
+        END;
+        CREATE TRIGGER IF NOT EXISTS memory_store_fts_ad AFTER DELETE ON memory_store BEGIN
+            INSERT INTO memory_store_fts(memory_store_fts, rowid, key, value)
+            VALUES('delete', old.rowid, old.key, old.value);
+        END;
+        CREATE TRIGGER IF NOT EXISTS memory_store_fts_au AFTER UPDATE ON memory_store BEGIN
+            INSERT INTO memory_store_fts(memory_store_fts, rowid, key, value)
+            VALUES('delete', old.rowid, old.key, old.value);
+            INSERT INTO memory_store_fts(rowid, key, value)
+            VALUES (new.rowid, new.key, new.value);
+        END;
+
+        -- auto_memories_fts triggers
+        CREATE TRIGGER IF NOT EXISTS auto_memories_ai AFTER INSERT ON auto_memories BEGIN
+            INSERT INTO auto_memories_fts(rowid, key, content)
+            VALUES (new.id, new.key, new.content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS auto_memories_ad AFTER DELETE ON auto_memories BEGIN
+            INSERT INTO auto_memories_fts(auto_memories_fts, rowid, key, content)
+            VALUES('delete', old.id, old.key, old.content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS auto_memories_au AFTER UPDATE ON auto_memories BEGIN
+            INSERT INTO auto_memories_fts(auto_memories_fts, rowid, key, content)
+            VALUES('delete', old.id, old.key, old.content);
+            INSERT INTO auto_memories_fts(rowid, key, content)
+            VALUES (new.id, new.key, new.content);
+        END;
+
         CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category);
         CREATE INDEX IF NOT EXISTS idx_facts_updated ON facts(updated_at);
         CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals(session_id);
@@ -185,10 +256,18 @@ def init() -> None:
     """)
     conn.commit()
 
-    # Idempotent additive migration: add `context_tokens` to pre-existing
-    # usage_events tables that were created before this column shipped. The
-    # CREATE TABLE above already includes it for fresh databases; this ALTER
-    # is guarded so re-runs on an already-migrated DB are a no-op.
+    # Idempotent backfill: populate memory_store_fts for rows inserted before
+    # triggers existed. Only runs if the FTS table is empty.
+    row_count = conn.execute("SELECT count(*) FROM memory_store_fts").fetchone()[0]
+    if row_count == 0:
+        conn.execute("""
+            INSERT INTO memory_store_fts(rowid, key, value)
+            SELECT rowid, key, value FROM memory_store
+        """)
+        conn.commit()
+
+    # Idempotent additive migration: add context_tokens to pre-existing
+    # usage_events tables that were created before this column shipped.
     _ensure_column(conn, "usage_events", "context_tokens", "INTEGER DEFAULT 0")
 
 
@@ -737,3 +816,158 @@ def get_stats() -> dict[str, Any]:
 
     stats["db_size_bytes"] = _db_path().stat().st_size if _db_path().exists() else 0
     return stats
+
+
+# ── brain_query (Phase 0, §11 of the cognitive architecture spec) ────────
+
+# Supported stores and their backing tables/sources.
+# Stores from later phases (timeline, blackboard, daemons, exams) return
+# "not available" until their table ships.
+_BRAIN_STORES: dict[str, dict[str, Any]] = {
+    "memory": {
+        "table": "memory_store",
+        "fts": "memory_store_fts",
+        "columns": "key, value, updated_at",
+        "search_cols": ["key", "value"],
+        "label": "key-value memory store",
+    },
+    "auto_memories": {
+        "table": "auto_memories",
+        "fts": "auto_memories_fts",
+        "columns": "id, key, content, category, importance, created_at",
+        "search_cols": ["key", "content"],
+        "label": "auto-captured memories",
+    },
+    "heuristics": {
+        "table": "learned_heuristics",
+        "fts": None,
+        "columns": "id, rule, source, category, created_at, updated_at",
+        "search_cols": ["rule", "source"],
+        "label": "learned behavioral rules",
+    },
+    "facts": {
+        "table": "facts",
+        "fts": None,
+        "columns": "id, fact_key, fact_value, category, source, confidence, created_at, updated_at",
+        "search_cols": ["fact_key", "fact_value"],
+        "label": "structured semantic facts",
+    },
+    "sessions": {
+        "table": "sessions",
+        "fts": None,
+        "columns": "id, title, started_at, message_count, provider, model, workspace_path",
+        "search_cols": ["title", "id"],
+        "label": "conversation sessions",
+    },
+    "messages": {
+        "table": "messages",
+        "fts": None,
+        "columns": "id, session_id, role, content, created_at",
+        "search_cols": ["content"],
+        "label": "chat messages",
+    },
+    # ── Future-phase stores (documented here, resolve when their table ships) ──
+    # "timeline":  {"table": "episodic_timeline", ...}    Phase 9
+    # "blackboard": {"table": "blackboard", ...}           Phase 10
+    # "daemons":    (live registry, not a table)            Phase 8
+    # "exams":      {table: "exams", ...}                   v3
+}
+
+
+def brain_query(store: str, query: str = "", filters: dict | None = None, limit: int = 10) -> str:
+    """Read-only query across any brain store (§11 of the cognitive spec).
+
+    Returns compact JSON rows. Capped at ``limit`` and at a hard token
+    ceiling (truncated with "N more rows; narrow your query" if exceeded).
+
+    Unknown or not-yet-shipped stores return a structured error string
+    rather than raising — keeps the tool stable across phases.
+    """
+    _TOKEN_CEILING = 2000  # hard cap on output tokens
+    conn = _conn()
+
+    if store not in _BRAIN_STORES:
+        return json.dumps({
+            "error": f"store '{store}' not available in this build",
+            "available": sorted(_BRAIN_STORES.keys()),
+        })
+
+    info = _BRAIN_STORES[store]
+    try:
+        # Verify the backing table exists
+        table_check = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (info["table"],),
+        ).fetchone()
+        if not table_check:
+            return json.dumps({"error": f"store '{store}' table not yet created"})
+
+        # Build query
+        cols = info["columns"]
+        sql = f"SELECT {cols} FROM {info['table']}"
+        params: list[Any] = []
+
+        # Apply text search
+        where_clauses: list[str] = []
+        if query:
+            fts = info.get("fts")
+            if fts:
+                # FTS-backed store
+                fts_q = " OR ".join(f'"{w}"*' for w in query.strip().split() if w)
+                if fts_q:
+                    sql = f"SELECT {cols} FROM {fts} WHERE content MATCH ? ORDER BY rank"
+                    params = [fts_q]
+                else:
+                    where_clauses.append("1=0")
+            else:
+                # LIKE-based search
+                search_parts = []
+                for col in info["search_cols"]:
+                    search_parts.append(f"{col} LIKE ?")
+                    params.append(f"%{query}%")
+                where_clauses.append(f"({' OR '.join(search_parts)})")
+
+        # Apply filters
+        if filters:
+            for key, val in filters.items():
+                # Validate column exists (safety check)
+                col_info = conn.execute(f"PRAGMA table_info({info['table']})").fetchall()
+                col_names = {c["name"] for c in col_info}
+                if key in col_names:
+                    where_clauses.append(f"{key} = ?")
+                    params.append(val)
+
+        if where_clauses:
+            if "WHERE" not in sql and "MATCH" not in sql:
+                sql += " WHERE " + " AND ".join(where_clauses)
+            elif "MATCH" in sql and "WHERE" in sql:
+                pass  # FTS already has WHERE
+            elif "MATCH" not in sql:
+                sql += " WHERE " + " AND ".join(where_clauses)
+
+        sql += f" LIMIT {min(limit, 100)}"
+        rows = conn.execute(sql, params).fetchall()
+
+        results = [dict(r) for r in rows]
+        # Estimate token count (conservative: 4 chars ≈ 1 token)
+        result_json = json.dumps(results, default=str, ensure_ascii=False)
+        if len(result_json) > _TOKEN_CEILING * 4:
+            # Truncate rows to fit
+            truncated = []
+            char_budget = _TOKEN_CEILING * 4
+            for r in results:
+                row_s = json.dumps(r, default=str, ensure_ascii=False)
+                if len(json.dumps(truncated, default=str, ensure_ascii=False)) + len(row_s) < char_budget:
+                    truncated.append(r)
+                else:
+                    break
+            n_more = len(results) - len(truncated)
+            result_json = json.dumps(
+                {"rows": truncated, "note": f"{n_more} more rows; narrow your query"},
+                default=str, ensure_ascii=False,
+            )
+
+        return result_json
+
+    except Exception as exc:
+        return json.dumps({"error": f"brain_query({store}): {exc}"})

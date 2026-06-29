@@ -6,9 +6,8 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
-    "sqlalchemy[asyncio]>=2.0.35",
-    "aiosqlite>=0.20.0",
-    "alembic>=1.14.0",
+    # sqlalchemy + aiosqlite + alembic removed in Phase 0 — no ORM models exist.
+    # All persistence uses memory_store.py (august_brain.sqlite) directly.
     "httpx>=0.28.0",
     "sse-starlette>=2.2.0",
     "pydantic>=2.10.0",

@@ -97,6 +97,21 @@ def build_slim_core_context(memory: dict[str, Any] | None = None) -> str:
         lines.append("Active Skills:")
         lines.append(skills)
 
+    # Phase 0: Core memory facts (fixes dead write — background_review saves
+    # to 'core_memory' key but nothing reads it back into the prompt)
+    core_facts = memory.get("core_memory")
+    if core_facts:
+        lines.append("")
+        lines.append("User Facts:")
+        if isinstance(core_facts, dict):
+            for k, v in core_facts.items():
+                lines.append(f"  {k}: {str(v)[:300]}")
+        elif isinstance(core_facts, str):
+            lines.append(f"  {str(core_facts)[:500]}")
+        elif isinstance(core_facts, list):
+            for item in core_facts[:10]:
+                lines.append(f"  {str(item)[:300]}")
+
     return "\n".join(lines)
 
 
