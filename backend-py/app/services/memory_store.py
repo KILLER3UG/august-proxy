@@ -261,10 +261,22 @@ def init() -> None:
     row_count = conn.execute("SELECT count(*) FROM memory_store_fts").fetchone()[0]
     if row_count == 0:
         conn.execute("""
-            INSERT INTO memory_store_fts(rowid, key, value)
-            SELECT rowid, key, value FROM memory_store
-        """)
-        conn.commit()
+        INSERT INTO memory_store_fts(rowid, key, value)
+        SELECT rowid, key, value FROM memory_store
+    """)
+    conn.commit()
+
+    # Phase 9: episodic_timeline table (idempotent)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS episodic_timeline (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            session_id TEXT,
+            event_summary TEXT,
+            category TEXT DEFAULT 'general'
+        )
+    """)
+    conn.commit()
 
     # Idempotent additive migration: add context_tokens to pre-existing
     # usage_events tables that were created before this column shipped.
@@ -865,6 +877,13 @@ _BRAIN_STORES: dict[str, dict[str, Any]] = {
         "columns": "id, session_id, role, content, created_at",
         "search_cols": ["content"],
         "label": "chat messages",
+    },
+    "timeline": {
+        "table": "episodic_timeline",
+        "fts": None,
+        "columns": "id, timestamp, session_id, event_summary, category",
+        "search_cols": ["event_summary", "category", "session_id"],
+        "label": "episodic timeline entries",
     },
     # ── Future-phase stores (documented here, resolve when their table ships) ──
     # "timeline":  {"table": "episodic_timeline", ...}    Phase 9

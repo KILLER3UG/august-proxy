@@ -22,9 +22,9 @@
 | Phase | Component | Flag | Status | Owner | Notes |
 |------:|-----------|------|--------|-------|-------|
 | 8 | Subconscious Daemons | `daemons` | ✅ done & verified | | daemon_manager.py with asyncio task pool, lifecycle, restricted tools. spawn_daemon/list_daemons/kill_daemon registered. <subconscious_updates> injected. |
-| 9a | Sleep Cycle (consolidation) | `daemons` (built on 8) | ☐ | | |
-| 9b | Delta Engine (implicit prefs) | (opt-in consent) | ☐ | | needs Phase 10 env watcher for external edits |
-| 9c | Episodic Timeline | (core tool) | ☐ | | |
+| 9a | Sleep Cycle (consolidation) | `daemons` (built on 8) | ✅ done & verified | | consolidation_daemon.py: merge duplicates, promote patterns→facts, delete stale. |
+| 9b | Delta Engine (implicit prefs) | (opt-in consent) | ✅ done & verified | | delta_engine.py: local-only fallback + LLM path. Consent gating. Batch queue. |
+| 9c | Episodic Timeline | (core tool) | ✅ done & verified | | episodic_timeline table. search_timeline via brain_query(store='timeline'). Hourly sweep. |
 | 10.1 | Shared Blackboard | `blackboard` | ☐ | | |
 | 10.2 | Environment Watcher | `env_watcher` | ☐ | | |
 | 10.3 | Verifier Reflex | `verifier_reflex` | ☐ | | |
