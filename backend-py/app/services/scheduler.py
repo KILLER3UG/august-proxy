@@ -10,9 +10,10 @@ import asyncio
 import json
 import os
 import re
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from app.lib.paths import data_path
 
@@ -201,3 +202,92 @@ def stop_scheduler() -> None:
     for t in _tasks.values():
         t.cancel()
     _tasks.clear()
+
+
+# ── v2: Cognitive-layer Scheduler ──────────────────────────────────────
+# The Scheduler class below provides in-process periodic + idle-triggered
+# task execution for v2 cognitive layers (consolidation, timeline sweep,
+# delta engine batch flush). It does NOT replace the cron-based scheduler
+# above; both coexist.
+
+
+class Scheduler:
+    """v2: In-process scheduler for cognitive-layer tasks.
+
+    - register_periodic: run `fn` every `interval_seconds`
+    - register_idle: run `fn` when no activity for `idle_threshold_seconds`
+    - record_activity: reset the idle timer (call from workbench on each turn)
+    """
+
+    def __init__(self):
+        self._periodic: list[tuple[str, Callable[[], Awaitable[None]], float]] = []
+        self._idle: list[tuple[str, Callable[[], Awaitable[None]], float]] = []
+        self._periodic_tasks: list[asyncio.Task] = []
+        self._idle_task: asyncio.Task | None = None
+        self._stopped = False
+        self._last_activity: float = time.monotonic()
+        self._idle_resets: int = 0
+
+    def register_periodic(self, name: str, fn: Callable[[], Awaitable[None]],
+                          interval_seconds: float) -> None:
+        """Register a task to run every `interval_seconds`."""
+        self._periodic.append((name, fn, interval_seconds))
+
+    def register_idle(self, name: str, fn: Callable[[], Awaitable[None]],
+                      idle_threshold_seconds: float = 300.0) -> None:
+        """Register a task to run when no activity for `idle_threshold_seconds`."""
+        self._idle.append((name, fn, idle_threshold_seconds))
+
+    def record_activity(self, session_id: str) -> None:
+        """Reset the idle timer. Called by workbench on each turn."""
+        self._last_activity = time.monotonic()
+        self._idle_resets += 1
+
+    async def start(self) -> None:
+        """Boot the scheduler. Idempotent."""
+        if self._periodic_tasks or self._idle_task:
+            return
+        for name, fn, interval in self._periodic:
+            t = asyncio.create_task(self._periodic_loop(name, fn, interval))
+            self._periodic_tasks.append(t)
+        if self._idle:
+            self._idle_task = asyncio.create_task(self._idle_loop())
+
+    async def stop(self) -> None:
+        """Stop all scheduled tasks."""
+        self._stopped = True
+        for t in self._periodic_tasks:
+            t.cancel()
+        if self._idle_task:
+            self._idle_task.cancel()
+        # Filter out None to avoid gather errors when no idle task was started
+        awaitable_tasks = [t for t in self._periodic_tasks if t is not None]
+        if self._idle_task is not None:
+            awaitable_tasks.append(self._idle_task)
+        if awaitable_tasks:
+            await asyncio.gather(*awaitable_tasks, return_exceptions=True)
+        self._periodic_tasks = []
+        self._idle_task = None
+
+    async def _periodic_loop(self, name: str, fn: Callable[[], Awaitable[None]],
+                              interval: float) -> None:
+        while not self._stopped:
+            try:
+                await fn()
+            except Exception:
+                pass
+            await asyncio.sleep(interval)
+
+    async def _idle_loop(self) -> None:
+        # Use a short check interval (100ms) so the threshold check
+        # happens frequently; the actual fire rate is gated by `threshold`.
+        check_interval = 0.1
+        while not self._stopped:
+            for name, fn, threshold in self._idle:
+                if time.monotonic() - self._last_activity >= threshold:
+                    try:
+                        await fn()
+                    except Exception:
+                        pass
+                    self._last_activity = time.monotonic()
+            await asyncio.sleep(check_interval)
