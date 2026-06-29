@@ -652,6 +652,16 @@ def build_system_prompt(session: WorkbenchSession) -> str:
     return base
 
 
+def _should_auto_compact(attention_pressure: str, turns_since_compaction: int) -> bool:
+    """v1.1: Compaction triggers only at critical pressure and after 5-turn cooldown.
+
+    Spec reference: cognitive-architecture-v1.md §5.5
+    - Trigger: attention_pressure == "critical" (90% with accurate tokenizer, 85% with fallback)
+    - Cooldown: minimum 5 turns between compactions
+    """
+    return attention_pressure == "critical" and turns_since_compaction >= 5
+
+
 # ── Daemon updates (Phase 8) ───────────────────────────────────────────
 
 
@@ -976,10 +986,26 @@ async def send_workbench_message_stream(
 
         if is_feature_enabled():
             original_tokens = estimate_tokens(session.messages)
-            threshold = WORKBENCH_TOKEN_BUDGET // 2  # 50% triggers compression
+            # v1.1: gate on attention_pressure == "critical" (90%) + 5-turn cooldown
+            ratio = original_tokens / WORKBENCH_TOKEN_BUDGET if WORKBENCH_TOKEN_BUDGET else 0.0
+            if ratio >= 0.90:
+                attention_pressure = "critical"
+            elif ratio >= 0.75:
+                attention_pressure = "high"
+            elif ratio >= 0.50:
+                attention_pressure = "medium"
+            else:
+                attention_pressure = "low"
+
+            # Track last compaction for 5-turn cooldown
+            current_turn = getattr(session, "turn_count", 0)
+            last_compaction = getattr(session, "_last_compaction_turn", -100)
+            turns_since_compaction = current_turn - last_compaction
+
+            threshold = WORKBENCH_TOKEN_BUDGET // 2  # target after compression
             current_messages = list(session.messages)
 
-            if original_tokens > threshold:
+            if _should_auto_compact(attention_pressure, turns_since_compaction):
                 compressed = compress_messages(
                     current_messages,
                     threshold=threshold,
@@ -990,6 +1016,7 @@ async def send_workbench_message_stream(
                 if compressed_tokens < original_tokens:
                     compressed_count = len(current_messages) - len(compressed)
                     current_messages = compressed
+                    session._last_compaction_turn = current_turn
                     if emit:
                         emit({
                             "type": "compaction",
