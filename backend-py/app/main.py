@@ -133,6 +133,8 @@ from app.routers import august as august_routes
 from app.routers import gateway as gateway_routes
 from app.routers import curator as curator_routes
 from app.routers import ui_memory as ui_memory_routes
+from app.routers import brain as brain_routes
+from app.routers import exam as exam_routes
 
 app.include_router(config_routes.router)
 app.include_router(providers_routes.router)
@@ -158,6 +160,8 @@ app.include_router(monitoring_routes.router)
 app.include_router(august_routes.router)
 app.include_router(gateway_routes.router)
 app.include_router(ui_memory_routes.router)
+app.include_router(brain_routes.router)
+app.include_router(exam_routes.router)
 
 
 # ── Static files (SPA) ────────────────────────────────────────────────

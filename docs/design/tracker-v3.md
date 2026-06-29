@@ -22,12 +22,12 @@
 
 | Section | Component | Status | Owner | Notes |
 |--------:|-----------|--------|-------|-------|
-| 11 | Full Brain Access (`brain_query`) | ☐ | | core tool itself ships in v1 Phase 0; v3 verifies all stores reachable |
-| 12 | Brain Dashboard — Learning tab | ☐ | | |
-| 12 | Brain Dashboard — System Health tab | ☐ | | |
-| 13 | /Exam — backend | ☐ | | |
-| 13 | /Exam — banner + explanation modal | ☐ | | |
-| 13 | /Exam — summary/review | ☐ | | |
+| 11 | Full Brain Access (`brain_query`) | ✅ done & verified | | All 12 stores reachable. "not available" for unshipped. Token ceiling. |
+| 12 | Brain Dashboard — Learning tab | ◐ in progress | | Backend router complete. Frontend cards pending. |
+| 12 | Brain Dashboard — System Health tab | ◐ in progress | | Backend router complete. Self-check for each layer. Frontend table pending. |
+| 13 | /Exam — backend | ✅ done & verified | | generate, add-question, answer, help endpoints. Exam tables in DB. |
+| 13 | /Exam — banner + explanation modal | ☐ | | Frontend work — exam banner component + /btw-style modal |
+| 13 | /Exam — summary/review | ☐ | | Frontend work — score summary, per-question review |
 
 Status legend: ☐ not started · ◐ in progress · ✅ done & verified · ⚠ blocked
 

@@ -290,6 +290,43 @@ def init() -> None:
             expires_at TEXT
         )
     """)
+
+    # v3: Exam tables (added idempotently; only created if not exist)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS exams (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            topic TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            source TEXT DEFAULT 'model',
+            source_files TEXT DEFAULT ''
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS exam_questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            exam_id INTEGER NOT NULL,
+            position INTEGER NOT NULL,
+            stem TEXT NOT NULL,
+            options TEXT NOT NULL,
+            correct_index INTEGER NOT NULL,
+            rationale TEXT DEFAULT '',
+            source_snippet TEXT DEFAULT '',
+            origin TEXT DEFAULT 'generated',
+            FOREIGN KEY (exam_id) REFERENCES exams(id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS exam_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            exam_id INTEGER NOT NULL,
+            question_id INTEGER NOT NULL,
+            selected_index INTEGER,
+            is_correct INTEGER DEFAULT 0,
+            asked_for_help INTEGER DEFAULT 0,
+            answered_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
     conn.commit()
 
     # Idempotent additive migration: add context_tokens to pre-existing
