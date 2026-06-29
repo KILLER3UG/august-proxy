@@ -25,10 +25,10 @@
 | 9a | Sleep Cycle (consolidation) | `daemons` (built on 8) | ✅ done & verified | | consolidation_daemon.py: merge duplicates, promote patterns→facts, delete stale. |
 | 9b | Delta Engine (implicit prefs) | (opt-in consent) | ✅ done & verified | | delta_engine.py: local-only fallback + LLM path. Consent gating. Batch queue. |
 | 9c | Episodic Timeline | (core tool) | ✅ done & verified | | episodic_timeline table. search_timeline via brain_query(store='timeline'). Hourly sweep. |
-| 10.1 | Shared Blackboard | `blackboard` | ☐ | | |
-| 10.2 | Environment Watcher | `env_watcher` | ☐ | | |
-| 10.3 | Verifier Reflex | `verifier_reflex` | ☐ | | |
-| 10.4 | Skill Genesis | `skill_genesis` | ☐ | | |
+| 10.1 | Shared Blackboard | `blackboard` | ✅ done & verified | | blackboard table, CRUD service, 3 core tools. Session-scoped with TTL. |
+| 10.2 | Environment Watcher | `env_watcher` | ✅ done & verified | | environment_watcher.py with polling-based git/file change detection. |
+| 10.3 | Verifier Reflex | `verifier_reflex` | ✅ done & verified | | verification_command field in update_state. Verifier gate in system_constraints. |
+| 10.4 | Skill Genesis | `skill_genesis` | ✅ done & verified | | consolidation_daemon upgraded for skill drafting. Staging directory + user approval. |
 
 Status legend: ☐ not started · ◐ in progress · ✅ done & verified · ⚠ blocked
 

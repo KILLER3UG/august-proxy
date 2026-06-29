@@ -630,6 +630,58 @@ async def _kill_daemon(daemon_id: str) -> str:
         return f"Error killing daemon: {exc}"
 
 
+# ── Blackboard tools (Phase 10.1) ───────────────────────────────────────
+
+
+async def _write_blackboard(key: str, value: str, priority: int = 0) -> str:
+    """Write a note to the shared blackboard.
+
+    Blackboard notes are visible to all agents in the session (main loop
+    and daemons). They expire after a TTL or when acknowledged.
+    """
+    from app.services.workbench.workbench import get_session
+    from app.services.blackboard_service import write_note
+    try:
+        session = get_session()
+        session_id = getattr(session, "id", "") if session else ""
+        agent = getattr(session, "_current_agent", "main")
+        write_note(session_id, agent, key, value, priority)
+        return f"Blackboard note written: {key}"
+    except Exception as exc:
+        return f"Error writing blackboard: {exc}"
+
+
+async def _read_blackboard(agent: str = "", key: str = "") -> str:
+    """Read notes from the shared blackboard."""
+    from app.services.workbench.workbench import get_session
+    from app.services.blackboard_service import read_notes
+    try:
+        session = get_session()
+        session_id = getattr(session, "id", "") if session else ""
+        notes = read_notes(session_id, agent, key)
+        if not notes:
+            return "No blackboard notes found."
+        lines = ["Blackboard notes:"]
+        for n in notes[:20]:
+            lines.append(f"  [{n['agent']}] {n['key']}: {str(n['value'])[:200]}")
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"Error reading blackboard: {exc}"
+
+
+async def _clear_blackboard(agent: str = "") -> str:
+    """Clear blackboard notes."""
+    from app.services.workbench.workbench import get_session
+    from app.services.blackboard_service import clear_notes
+    try:
+        session = get_session()
+        session_id = getattr(session, "id", "") if session else ""
+        count = clear_notes(session_id, agent)
+        return f"Cleared {count} blackboard note(s)."
+    except Exception as exc:
+        return f"Error clearing blackboard: {exc}"
+
+
 # ── update_state tool (Phase 5) ─────────────────────────────────────────
 
 
@@ -1151,8 +1203,8 @@ def register_all() -> None:
             "properties": {
                 "store": {
                     "type": "string",
-                    "description": "Which brain store to read: memory | auto_memories | heuristics | facts | sessions | messages | timeline",
-                    "enum": ["memory", "auto_memories", "heuristics", "facts", "sessions", "messages", "timeline"],
+                    "description": "Which brain store to read: memory | auto_memories | heuristics | facts | sessions | messages | timeline | blackboard",
+                    "enum": ["memory", "auto_memories", "heuristics", "facts", "sessions", "messages", "timeline", "blackboard"],
                 },
                 "query": {
                     "type": "string",
@@ -1304,6 +1356,49 @@ def register_all() -> None:
                 "daemon_id": {"type": "string", "description": "Daemon ID to kill."},
             },
             "required": ["daemon_id"],
+        },
+    )
+
+    # ── Blackboard tools (Phase 10.1) ──
+    tool_registry.register(
+        "write_blackboard",
+        "Write a note to the shared blackboard. Notes are visible to all "
+        "agents (main loop and daemons) in the session. Use for inter-agent "
+        "coordination (e.g. daemon posting test results for the main model).",
+        _write_blackboard,
+        {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "Note key (e.g. test_result, file_change)."},
+                "value": {"type": "string", "description": "Note content (plain text or JSON)."},
+                "priority": {"type": "integer", "description": "Priority (0-10, higher = more urgent). Default 0."},
+            },
+            "required": ["key", "value"],
+        },
+    )
+    tool_registry.register(
+        "read_blackboard",
+        "Read notes from the shared blackboard, filtered by agent and/or key.",
+        _read_blackboard,
+        {
+            "type": "object",
+            "properties": {
+                "agent": {"type": "string", "description": "Filter by agent name (optional)."},
+                "key": {"type": "string", "description": "Filter by key (optional)."},
+            },
+            "required": [],
+        },
+    )
+    tool_registry.register(
+        "clear_blackboard",
+        "Clear notes from the shared blackboard.",
+        _clear_blackboard,
+        {
+            "type": "object",
+            "properties": {
+                "agent": {"type": "string", "description": "Only clear notes from this agent (optional)."},
+            },
+            "required": [],
         },
     )
 

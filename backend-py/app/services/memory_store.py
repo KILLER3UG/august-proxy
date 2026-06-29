@@ -276,6 +276,20 @@ def init() -> None:
             category TEXT DEFAULT 'general'
         )
     """)
+
+    # Phase 10: blackboard table (inter-agent coordination)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS blackboard (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            agent TEXT NOT NULL DEFAULT 'main',
+            key TEXT NOT NULL,
+            value TEXT NOT NULL,
+            priority INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            expires_at TEXT
+        )
+    """)
     conn.commit()
 
     # Idempotent additive migration: add context_tokens to pre-existing
@@ -884,6 +898,13 @@ _BRAIN_STORES: dict[str, dict[str, Any]] = {
         "columns": "id, timestamp, session_id, event_summary, category",
         "search_cols": ["event_summary", "category", "session_id"],
         "label": "episodic timeline entries",
+    },
+    "blackboard": {
+        "table": "blackboard",
+        "fts": None,
+        "columns": "id, session_id, agent, key, value, priority, created_at, expires_at",
+        "search_cols": ["agent", "key", "value"],
+        "label": "inter-agent blackboard notes",
     },
     # ── Future-phase stores (documented here, resolve when their table ships) ──
     # "timeline":  {"table": "episodic_timeline", ...}    Phase 9
