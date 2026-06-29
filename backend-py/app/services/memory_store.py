@@ -342,6 +342,24 @@ def init() -> None:
             answered_at TEXT DEFAULT (datetime('now'))
         )
     """)
+
+    # v2: pending_skills table (Phase 10.4 skill genesis)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS pending_skills (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            trigger_text TEXT,
+            draft_path TEXT NOT NULL,
+            source_session_id TEXT,
+            source_workflow TEXT,
+            created_by TEXT DEFAULT 'auto-gen',
+            created_at TEXT DEFAULT (datetime('now')),
+            status TEXT DEFAULT 'pending',
+            use_count INTEGER DEFAULT 0,
+            last_surfaced_at TEXT
+        )
+    """)
     conn.commit()
 
     # Idempotent additive migration: add context_tokens to pre-existing
