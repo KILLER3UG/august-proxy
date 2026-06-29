@@ -211,7 +211,10 @@ async def draft_skill_for_session(session_id: str) -> str | None:
         prompt = (
             "This session completed a complex multi-step workflow. "
             "Is this workflow generic enough to be turned into a reusable skill? "
-            "If yes, draft a SKILL.md with: name, description, trigger, and step-by-step body. "
+            "If yes, draft a SKILL.md. "
+            "Constraints: the 'name' MUST be a valid camelCase identifier "
+            "(e.g., 'debugPythonScript', 'userPreferences', 'jwtAuthFlow') — "
+            "lowercase first word, capitalized subsequent words, no separators, no spaces, no special chars, <= 50 chars. "
             "Return JSON: {'name': str, 'description': str, 'trigger': str, 'body': str} "
             "or {'skip': true, 'reason': str}.\n\n"
             f"Session summary:\n{summary}\n"

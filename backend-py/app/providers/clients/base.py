@@ -469,6 +469,38 @@ class BaseProviderClient:
 
         return ProviderResponse(status=0, body={"error": "Max retries exceeded"})
 
+    # ── Simple text generation helper (v2: used by cognitive layers) ─────
+
+    async def generate(self, prompt: str, system: str | None = None) -> str:
+        """v2: Simple text-in/text-out helper used by consolidation, delta engine,
+        skill genesis, and daemon code paths.
+
+        Default implementation uses chat_completions (OpenAI-compatible).
+        AnthropicClient and other subclasses override this.
+        """
+        # v2: Try chat_completions (OpenAI-compatible)
+        if hasattr(self, "chat_completions"):
+            messages: list[dict[str, str]] = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+            model = self.config.get("model", "")
+            body = {"model": model, "messages": messages, "stream": False}
+            try:
+                resp = await self.chat_completions(body)
+            except (AttributeError, TypeError):
+                return ""
+            if resp.status != 200:
+                return ""
+            body_data = resp.body if isinstance(resp.body, dict) else {}
+            choices = body_data.get("choices", [])
+            if choices and isinstance(choices, list):
+                msg = choices[0].get("message", {})
+                content = msg.get("content", "")
+                return content if isinstance(content, str) else ""
+            return ""
+        return ""
+
     # ── Streaming request ─────────────────────────────────────────────────
 
     async def stream_sse(

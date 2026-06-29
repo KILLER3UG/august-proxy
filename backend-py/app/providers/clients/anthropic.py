@@ -56,6 +56,29 @@ class AnthropicClient(BaseProviderClient):
         url = f"{self.resolve_base_url()}/messages"
         return await self.request_json("POST", url, headers, body)
 
+    async def generate(self, prompt: str, system: str | None = None) -> str:
+        """v2: Anthropic-specific generate using the messages API."""
+        body: dict[str, Any] = {
+            "model": self.config.get("model", ""),
+            "max_tokens": 2048,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if system:
+            body["system"] = system
+        try:
+            resp = await self.messages(body)
+        except (AttributeError, TypeError):
+            return ""
+        if resp.status != 200:
+            return ""
+        body_data = resp.body if isinstance(resp.body, dict) else {}
+        content = body_data.get("content", [])
+        if isinstance(content, list) and content:
+            block = content[0]
+            if isinstance(block, dict):
+                return block.get("text", "")
+        return ""
+
     async def messages_stream(
         self,
         body: dict[str, Any],
