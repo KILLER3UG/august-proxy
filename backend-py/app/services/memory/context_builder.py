@@ -195,10 +195,34 @@ def build_tier3(session: dict[str, Any] | None = None) -> str:
     if daemon_updates:
         blocks.append(wrap_tag("subconscious_updates", daemon_updates))
 
-    # Blackboard state (populated by Phase 10 — empty for now)
+    # Blackboard state (populated by Phase 10)
     blackboard = (session or {}).get("blackboard_state")
     if blackboard:
         blocks.append(wrap_tag("blackboard_state", blackboard))
+
+    # v2: Environment changes (file/git/terminal) from environment_watcher
+    environment = (session or {}).get("environment", [])
+    if environment:
+        env_lines: list[str] = []
+        for e in environment:
+            if isinstance(e, dict):
+                if "path" in e:
+                    env_lines.append(
+                        f"File changed: {e['path']} "
+                        f"({e.get('kind', 'modify')}, {e.get('when', 'recently')})"
+                    )
+                if "git_branch" in e:
+                    env_lines.append(
+                        f"Git branch: {e['git_branch']} "
+                        f"(ahead of main by {e.get('ahead', 0)} commits)"
+                    )
+                if "last_command" in e:
+                    env_lines.append(
+                        f"Last command: {e['last_command']} "
+                        f"({e.get('when', 'recently')})"
+                    )
+        if env_lines:
+            blocks.append(wrap_tag("environment", "\n".join(env_lines)))
 
     # Primed playbooks (populated by Phase 3 BM25 — empty for now)
     primed = (session or {}).get("primed_playbooks")
