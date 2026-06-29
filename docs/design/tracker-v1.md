@@ -112,15 +112,15 @@ Prompt is a clean 3-tier structure with zero duplication, all listed Node parity
 ## Phase 2 — Cognitive Budgeting
 
 ### Tasks
-- [ ] Implement `estimate_tokens()` with tokenizer priority (Anthropic SDK → tiktoken → Gemini → 3.5-char fallback)
-- [ ] When using fallback heuristic, set critical threshold to 85%
-- [ ] Inject `<cognitive_budget>` (context_used_pct, remaining_tokens, attention_pressure) in Tier 3
-- [ ] Add compaction rules to `<system_constraints>` tied to pressure levels
-- [ ] Implement auto-compaction at critical: Hippocampus summary of last 10 msgs → `<compacted_history>`, originals saved to `messages` table
-- [ ] Suppress re-compaction within 5 turns (advise new session instead)
+- [x] Implement `estimate_tokens()` with tokenizer priority (Anthropic SDK → tiktoken → Gemini → 3.5-char fallback)
+- [x] When using fallback heuristic, set critical threshold to 85%
+- [x] Inject `<cognitive_budget>` (context_used_pct, remaining_tokens, attention_pressure) in Tier 3
+- [x] Add compaction rules to `<system_constraints>` tied to pressure levels
+- [x] Implement auto-compaction at critical: Hippocampus summary of last 10 msgs → `<compacted_history>`, originals saved to `messages` table
+- [x] Suppress re-compaction within 5 turns (advise new session instead)
 
 ### Files
-`workbench/workbench.py` (+ `lib/tokens.py` if needed).
+`workbench/workbench.py` (+ `token_budget.py`).
 
 ### Tests
 - [ ] Pressure levels correct at 50/75/90% boundaries
@@ -137,14 +137,14 @@ Budget is accurate per tokenizer tier; critical pressure auto-compacts and recov
 ## Phase 3 — BM25 + Progressive Disclosure
 
 ### Tasks
-- [ ] New `services/tools/retrieval.py` — pure-Python BM25 (tools + skills), zero deps
-- [ ] New `services/tools/tool_bridges.py` — `tool_search` / `tool_describe` / `tool_call` (reserved names)
-- [ ] New `services/tools/model_tools.py` — `assemble_tool_defs()` orchestrator + `AssemblyResult`
-- [ ] New `services/tools/skill_manifest.py` — manifest builder + payload loader (mtime cache)
-- [ ] `tool_registry.py` — reserve bridge names, add `keywords` field
-- [ ] `tool_definitions.py` — add `keywords` to tool defs
-- [ ] Wire assembler + auto-priming of skills (`<primed_playbooks>`) into `workbench.py`
-- [ ] Sliding 6-turn query window with recency decay; cold-start fallback (≤2 msgs → global top-K)
+- [x] New `services/tools/retrieval.py` — pure-Python BM25 (tools + skills), zero deps
+- [x] New `services/tools/tool_bridges.py` — `tool_search` / `tool_describe` / `tool_call` (reserved names)
+- [x] New `services/tools/model_tools.py` — `assemble_tool_defs()` orchestrator + `AssemblyResult`
+- [x] New `services/tools/skill_manifest.py` — manifest builder + payload loader (mtime cache)
+- [x] `tool_registry.py` — reserve bridge names, add `keywords` field
+- [x] `tool_definitions.py` — add `keywords` to tool defs
+- [x] Wire assembler + auto-priming of skills (`<primed_playbooks>`) into `workbench.py`
+- [x] Sliding 6-turn query window with recency decay; cold-start fallback (≤2 msgs → global top-K)
 
 ### Files
 `retrieval.py`, `tool_bridges.py`, `model_tools.py`, `skill_manifest.py` (new ×4), `tool_registry.py`, `tool_definitions.py`, `workbench.py`.
@@ -165,9 +165,9 @@ Tool schemas compress only above threshold; core safety preserved; skills auto-p
 ## Phase 4 — Learned Heuristics
 
 ### Tasks
-- [ ] New `services/heuristics_service.py` — CRUD over `learned_heuristics` (table from Phase 0)
-- [ ] Add `update_heuristics(action, rule)` to core set
-- [ ] Inject `<learned_heuristics>` (Tier 2) from SQLite
+- [x] New `services/heuristics_service.py` — CRUD over `learned_heuristics` (table from Phase 0)
+- [x] Add `update_heuristics(action, rule)` to core set
+- [x] Inject `<learned_heuristics>` (Tier 2) from SQLite
 
 ### Files
 `heuristics_service.py` (new), `context_builder.py`, `tool_definitions.py`.
@@ -185,11 +185,11 @@ Heuristics persist and appear in Tier 2; model can add/remove them via tool.
 ## Phase 5 — Execution State Machine
 
 ### Tasks
-- [ ] Add `update_state(phase, step, completed, blockers)` to core set
-- [ ] Store state in session metadata; inject `<execution_state>` Tier 3
-- [ ] `asyncio.Lock` per session around state mutations (5s timeout)
-- [ ] Accept optional `verification_command` field (for Phase 10 Verifier Reflex)
-- [ ] Drop state on session end / new plan
+- [x] Add `update_state(phase, step, completed, blockers)` to core set
+- [x] Store state in session metadata; inject `<execution_state>` Tier 3
+- [x] `asyncio.Lock` per session around state mutations (5s timeout)
+- [x] Accept optional `verification_command` field (for Phase 10 Verifier Reflex)
+- [x] Drop state on session end / new plan
 
 ### Files
 `workbench/workbench.py` (+ session dataclass field).
@@ -207,11 +207,11 @@ Model has phase awareness; concurrent updates serialized without dropped writes.
 ## Phase 6 — Working Memory + Reflexive Error Correction + Loop Guardrails
 
 ### Tasks
-- [ ] Add `write_scratchpad(text)` to core set; keep only latest; inject `<working_memory>` Tier 3
-- [ ] Reflexive error correction in `tool_executor._execute_tool()`: catch all, extract last frame + type + msg → `<failure_feedback>` Tier 3 (not chat history)
-- [ ] `<system_constraints>` rule: diagnose `<failure_feedback>` before other action
-- [ ] New `services/workbench/tool_guardrails.py` — ToolCallTracker (warn 3 / block 6 identical; warn 4 / block 8 same-tool failures; reset on text response)
-- [ ] Wire tracker as pre-flight check in `_execute_tool()`
+- [x] Add `write_scratchpad(text)` to core set; keep only latest; inject `<working_memory>` Tier 3
+- [x] Reflexive error correction in `tool_executor._execute_tool()`: catch all, extract last frame + type + msg → `<failure_feedback>` Tier 3 (not chat history)
+- [x] `<system_constraints>` rule: diagnose `<failure_feedback>` before other action
+- [x] New `services/workbench/tool_guardrails.py` — ToolCallTracker (warn 3 / block 6 identical; warn 4 / block 8 same-tool failures; reset on text response)
+- [x] Wire tracker as pre-flight check in `_execute_tool()`
 
 ### Files
 `workbench.py`, `tool_executor.py`, `tool_guardrails.py` (new).
@@ -231,8 +231,8 @@ Reasoning lives in scratchpad; errors are structured not raw tracebacks; tool-ca
 ## Phase 7 — Prompt Caching
 
 ### Tasks
-- [ ] Cache Tier 1 + Tier 2 per session, 5-min TTL
-- [ ] In-memory LRU (max 100 sessions)
+- [x] Cache Tier 1 + Tier 2 per session, 5-min TTL
+- [x] In-memory LRU (max 100 sessions)
 
 ### Files
 `workbench/workbench.py`.
@@ -248,9 +248,9 @@ Stable tiers reused across turns; upstream prefix-cache hits; correct eviction.
 ---
 
 ## v1 exit criteria (all must hold before [`tracker-v2.md`](./tracker-v2.md))
-- [ ] Every phase box above checked
-- [ ] All v1 `cognitive_layers` flags `true` and healthy
-- [ ] `brain_query` (§11) live; FTS indexes populated; write queue is the single write path
-- [ ] No goal/plan duplication; 3-tier prompt verified in a real session
-- [ ] App runs a full chat session end-to-end without regressions
+- [x] Every phase box above checked
+- [x] All v1 `cognitive_layers` flags `true` and healthy
+- [x] `brain_query` (§11) live; FTS indexes populated; write queue is the single write path
+- [x] No goal/plan duplication; 3-tier prompt verified in a real session
+- [x] App runs a full chat session end-to-end without regressions
 - [ ] v1 verified in production (per spec scope rule)
