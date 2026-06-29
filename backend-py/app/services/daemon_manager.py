@@ -83,7 +83,7 @@ class DaemonManager:
             session_daemons = [
                 d for d in self._daemons.values()
                 if d.get("session_id") == session_id
-                and d.get("result", {}).get("status") != "errored"
+                and getattr(d.get("result"), "status", "") != "errored"
             ]
             if len(session_daemons) >= MAX_DAEMONS_PER_SESSION:
                 return f"Error: max {MAX_DAEMONS_PER_SESSION} daemons per session"
