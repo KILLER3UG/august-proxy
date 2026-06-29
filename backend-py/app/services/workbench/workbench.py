@@ -666,7 +666,11 @@ def _should_auto_compact(attention_pressure: str, turns_since_compaction: int) -
 
 
 def _build_daemon_updates(session_id: str) -> str:
-    """Build the <subconscious_updates> XML block from daemon results."""
+    """Build the <subconscious_updates> XML block from daemon results.
+
+    v2: Preserves the [CRITICAL] prefix on daemon output so the model
+    can detect critical alerts and pause to inform the user.
+    """
     try:
         from app.services.daemon_manager import get_manager
         manager = get_manager()
@@ -675,22 +679,36 @@ def _build_daemon_updates(session_id: str) -> str:
         if not daemons:
             return ""
 
-        lines: list[str] = []
+        lines: list[str] = ["<subconscious_updates>"]
         for d in daemons:
-            attrs = f'name="{d["name"]}" status="{d["status"]}"'
+            attrs = f'name="{_xml_escape(d["name"])}" status="{d["status"]}"'
             if d.get("triggered"):
                 attrs += ' triggered="true"'
+            output = d.get("output") or ""
             if d.get("error"):
-                lines.append(f'  <daemon {attrs} error="{d["error"]}">')
+                # Error case: include error in attribute, no body
+                attrs += f' error="{_xml_escape(str(d["error"]))}"'
+                lines.append(f'  <daemon {attrs} />')
+            elif output:
+                # Preserve [CRITICAL] prefix verbatim
+                lines.append(f'  <daemon {attrs}>{_xml_escape(output)}</daemon>')
             else:
-                lines.append(f"  <daemon {attrs}>")
-            if d.get("last_check"):
-                lines.append(f"    last_check={d['last_check']:.0f}s ago")
-            lines.append("  </daemon>")
+                lines.append(f'  <daemon {attrs} />')
+        lines.append("</subconscious_updates>")
 
         return "\n".join(lines)
     except Exception:
         return ""
+
+
+def _xml_escape(s: str) -> str:
+    """Minimal XML attribute/text escape."""
+    return (
+        s.replace("&", "&amp;")
+         .replace("<", "&lt;")
+         .replace(">", "&gt;")
+         .replace('"', "&quot;")
+    )
 
 
 # ── Effort / thinking budget ─────────────────────────────────────────

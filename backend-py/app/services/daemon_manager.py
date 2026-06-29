@@ -152,6 +152,7 @@ class DaemonManager:
                 "error": r.error or None,
                 "last_check": r.last_check,
                 "turns_alive": r.turns_alive,
+                "output": r.output,  # v2: include result text for [CRITICAL] preservation
             })
         return results
 
