@@ -103,3 +103,26 @@ def count_heuristics(category: str = "") -> int:
     else:
         row = conn.execute("SELECT COUNT(*) FROM learned_heuristics").fetchone()
     return row[0] if row else 0
+
+
+# ── v3: Mutation helpers (used by brain router mutation endpoints) ─────
+
+
+def remove_heuristic_by_id(heuristic_id: int) -> bool:
+    """v3: Remove a heuristic by id. Returns True if found and deleted."""
+    conn = _conn()
+    cur = conn.execute("DELETE FROM learned_heuristics WHERE id = ?", (heuristic_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def update_heuristic(heuristic_id: int, new_rule: str) -> bool:
+    """v3: Update a heuristic's rule text. Returns True if found and updated."""
+    conn = _conn()
+    cur = conn.execute(
+        "UPDATE learned_heuristics SET rule = ?, updated_at = datetime('now') "
+        "WHERE id = ?",
+        (new_rule, heuristic_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
