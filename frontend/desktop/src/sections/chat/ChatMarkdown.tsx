@@ -43,8 +43,9 @@ function renderMath(body: string, displayMode: boolean): string {
       strict: false,
     });
   } catch {
-    // On error, render the raw source in an error color
-    return `<span style="color: var(--dt-danger, #d2503f);">${body}</span>`;
+    // v1.1: render the raw source in normal body color (not red error).
+    // CSS override ensures .katex-error spans are also neutral.
+    return `<span class="math-fallback">${body}</span>`;
   }
 }
 
