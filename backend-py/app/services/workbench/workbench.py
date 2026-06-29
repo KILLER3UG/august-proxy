@@ -543,6 +543,25 @@ def build_system_prompt(session: WorkbenchSession) -> str:
     except Exception:
         pass
 
+    # ── Phase 2: Cognitive budget ──
+    cognitive_budget = None
+    try:
+        from app.services.workbench.token_budget import compute_budget
+        # Compute budget from the full conversation context
+        provider = getattr(session, "provider", None) or ""
+        model = getattr(session, "model", None) or ""
+        provider_name = provider.get("name", "") if isinstance(provider, dict) else str(provider)
+        model_name = model.get("name", "") if isinstance(model, dict) else str(model)
+        msgs_for_budget = getattr(session, "messages", []) or []
+        # Also include the soon-to-be-assembled system prompt length
+        cognitive_budget = compute_budget(
+            msgs_for_budget,
+            model=model_name or None,
+            provider=provider_name or None,
+        )
+    except Exception:
+        pass
+
     # ── Assemble session dict for context_builder ──
     session_dict = {
         "goal": session.goal,
@@ -551,6 +570,7 @@ def build_system_prompt(session: WorkbenchSession) -> str:
         "workspace_path": workspace_path,
         "vcs": vcs_info,
         "brain_policy": brain_policy,
+        "cognitive_budget": cognitive_budget,
         "memory_stats": memory_stats,
         "whats_new": whats_new,
         "skills_manifest": skills_manifest,
