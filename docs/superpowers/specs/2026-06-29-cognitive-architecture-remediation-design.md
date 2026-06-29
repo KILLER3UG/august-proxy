@@ -93,7 +93,7 @@ No new components. Every service that exists in the code today reaches working s
 
 | Plan | Scope | Estimated effort | Exit criteria |
 |------|-------|------------------|---------------|
-| **v1.1** | 3 critical bugs + cheap correctness items + 4 missing brain_query stores | 3–5 days | A real chat session runs end-to-end without error, prompts are correct, state drops on plan submit, brain_query returns rows for all 12 stores. |
+| **v1.1** | 3 critical bugs + 3 cheap correctness items + math rendering fix (unicode instead of LaTeX) | 3–5 days | A real chat session runs end-to-end without error, prompts are correct, state drops on plan submit, brain_query returns rows for all 12 stores, math renders as unicode (no red LaTeX). |
 | **v2** | Bring Phases 8–10 to working state (daemons call Cerebellum; consolidation calls Hippocampus; env watcher watches fs; blackboard adaptive TTL + ack + injection; verifier_gate injected; skill genesis → staging). | 2–3 weeks | All Phase 8-10 features work as the spec describes. No stubs. `pending_skills` table exists. Daemons actually run models. |
 | **v3** | Brain dashboard (Learning + System Health) registered in nav with real data; `/Exam` slash command registered; exam authoring uses Prefrontal; exam summary/review view; pending_skills UI. | 2 weeks | User opens Brain section, sees learned data + green health board. User types `/Exam <topic>`, gets a tutor session, ends with scored review. |
 | **v4** | August Live (backend reuses workbench turn engine; STT/TTS adapters; /live route; orb + captions + tool rail + approval cards; Tauri mic capability). UI redesign (bubble-less user; caps role label; 14px composer; tailwind 10px step; density toggle maps to turn-gap + composer padding). | 2–3 weeks | User holds a spoken conversation; mutating tools require spoken+visual approval; no regressions to chat. UI matches spec §15 reference feel. |
@@ -108,7 +108,7 @@ The first plan is the most important. It must be reviewable in a single sitting,
 
 ### 5.1 Scope
 
-**In scope (6 items):**
+**In scope (7 items):**
 
 1. **Critical bug: `cached_t12` undefined** (`context_builder.py:319`, `workbench.py:602`)
 2. **Critical bug: `auto_memories.updated_at` column missing** (`memory_store.py:197-205`, `auto_memory.py:49`)
@@ -116,6 +116,7 @@ The first plan is the most important. It must be reviewable in a single sitting,
 4. **Cheap correctness: state drop on new plan submit** (`workbench.py:1982-2012`)
 5. **Cheap correctness: auto-compaction threshold** (`workbench.py:972` — change from 50% to attention_pressure==critical; keep `local_summarize` heuristic; add 5-turn re-compaction suppression)
 6. **Cheap correctness: 4 missing `brain_query` stores** (graph, daemons, exams, exam_attempts)
+7. **UI/UX: math rendering uses unicode math symbols instead of LaTeX** (the model currently emits LaTeX which the KaTeX renderer either fails on or shows in red error color; replace the primary path with unicode)
 
 **Out of scope (deferred to v2/v3/v4):**
 - Wiring Hippocampus LLM into auto-compaction (deferred to v2 with consolidation_daemon upgrade).
@@ -278,6 +279,54 @@ Update the `brain_query` tool's `store` enum in `tool_definitions.py:1206-1207` 
 
 **Verification:** Call `brain_query(store="graph", query="auth")` → returns graph entities. Call `brain_query(store="exams", query="oauth")` → returns matching exams. Call `brain_query(store="daemons")` → returns live daemons.
 
+#### Fix 7: Math rendering uses unicode math symbols (UI/UX)
+
+**Files:** `frontend/desktop/src/sections/chat/ChatMarkdown.tsx`, `frontend/desktop/src/main.tsx`, `backend-py/app/services/memory/context_builder.py` (system constraint)
+
+**Problem:** The model frequently emits math formulas. Currently the rendering path tries to parse them as LaTeX via KaTeX (registered in `ChatMarkdown.tsx:51-125`, $`-guard, mathInline/mathBlock extensions). When the model writes a formula that doesn't match a registered KaTeX delimiter, the LaTeX source falls through to the markdown renderer, which displays it as raw text in the code/error color (red). The user reports this is the visible behavior today — formulas appear in red rather than rendering.
+
+**Root cause:** The model doesn't reliably use the registered KaTeX delimiters (`\( \)`, `\[ \]`, `$ $`, `$$ $$`). It often writes things like `x^2`, `sqrt(x)`, `sum_i a_i`, or `a/b` which neither KaTeX nor markdown handles well, so they end up in red error state. Forcing everything through LaTeX is the wrong default — it puts a heavy cognitive load on the model to remember delimiters, and any mistake degrades the user experience.
+
+**Solution:** Make unicode math symbols the primary path. KaTeX remains for genuinely complex formulas (block-level integrals, matrices) but the common case (superscripts, fractions, summations, common operators) is handled by inline unicode glyphs that render correctly in any font.
+
+**Three-part change:**
+
+1. **System constraint (Tier 1, in `context_builder.py`):** Add a one-line rule instructing the model to prefer unicode math symbols over LaTeX:
+   ```text
+   - Math: Prefer unicode math symbols (², ³, √, ∑, ∏, ∫, π, ≈, ≤, ≥, ±, →, ×, ÷, ∈, ∉, ∞, ∂) over LaTeX. Use plain unicode fractions (½) or parentheses ((a+b)/c) instead of \frac{a+b}{c}. Reserve LaTeX $...$ for genuinely complex formulas (matrices, multi-line derivations).
+   ```
+
+2. **Renderer: stop showing failed LaTeX in red error color.** In `ChatMarkdown.tsx:51-125`, the current `katex.renderToString({throwOnError: false, ...})` returns a placeholder in red when the LaTeX is invalid. Change the strategy:
+   - If the delimiters match and KaTeX parses successfully → render the math.
+   - If the delimiters match but KaTeX throws → render the **source** (not in red error color — in normal body color with a subtle code font) so the user can read it.
+   - If the LaTeX contains a `$` currency context (the spec's existing guard at `ChatMarkdown.tsx` already handles this) → do not attempt to render.
+
+3. **Common-formula auto-conversion (optional, but high-value):** Add a lightweight pre-processor in `ChatMarkdown.tsx` that catches the most common "model emitted raw LaTeX outside delimiters" patterns and converts them to unicode. Examples:
+   - `x^2`, `x^n` → `x²`, `xⁿ`
+   - `x_1`, `x_n` → `x₁`, `xₙ`
+   - `\sqrt{x}` → `√x`
+   - `\sum_{i=0}^{n}`, `\sum_i` → `∑ᵢ₌₀ⁿ` or `∑ᵢ`
+   - `\int`, `\int_a^b` → `∫`, `∫ₐᵇ`
+   - `\pi`, `\theta`, `\alpha` → `π`, `θ`, `α`
+   - `\frac{a}{b}` (when not in a code block) → `(a/b)` or `a/b`
+   - `a \cdot b`, `a \times b` → `a · b`, `a × b`
+   - `>=`, `<=`, `!=` → `≥`, `≤`, `≠`
+
+   The conversion is best-effort, applied before markdown parsing, and **skips content inside code blocks** (triple-backtick fences and inline backticks). It also **skips content inside KaTeX-rendered blocks** (so it doesn't double-process the same span).
+
+**Why unicode, not just "fix the LaTeX path":**
+- Unicode math symbols are native to all modern fonts. No library, no parser, no error states.
+- The model can be taught to emit them in one system-prompt line. LaTeX requires delimiter discipline.
+- The user gets readable math in the common case. KaTeX is reserved for the long tail.
+- Removes the "red LaTeX" failure mode entirely.
+
+**Files to touch:**
+- `frontend/desktop/src/sections/chat/ChatMarkdown.tsx` — relax KaTeX error color; add unicode auto-converter
+- `backend-py/app/services/memory/context_builder.py` — add the Tier 1 math preference constraint in `build_tier1` (alongside the existing guard-mode and verifier rules)
+- `frontend/desktop/src/styles.css` — confirm `.katex-error` no longer applies red (or override to normal body color)
+
+**Verification:** Ask the model to "calculate (3+2)² and the sum of 1 to 10". Observe: `(3+2)²` and `∑ᵢ₌₁¹⁰ i` render correctly in the body (not red). Ask "show me the quadratic formula" — observe the model emits unicode (or falls back to KaTeX correctly). No "red LaTeX" output in either case.
+
 ### 5.3 Data flow
 
 No data flow changes. All fixes are in-place repairs of existing code paths.
@@ -296,9 +345,10 @@ The `<failure_feedback>` producer (Fix 3) is itself an error-handling change. It
 | `test_v11_state_drop.py` | Set execution state; submit plan; assert state cleared. |
 | `test_v11_auto_compaction_threshold.py` | Force attention_pressure=critical; assert compaction runs. Force pressure=high; assert no compaction. Force compaction; assert 5-turn cooldown enforced. |
 | `test_v11_brain_query_all_stores.py` | For each of 12 stores, call brain_query; assert correct shape (rows or "not available"). |
+| `test_v11_math_unicode.py` | Render `x^2`, `\sum_i`, `>=`, `\pi` through ChatMarkdown; assert unicode output. Render invalid LaTeX (e.g., `\frac{`); assert it appears in normal body color, not red error color. Render a code block containing `$x^2$`; assert it stays as code (no conversion). |
 | `test_v11_e2e_chat.py` | End-to-end: user sends "Hello", model responds, second turn "What did I say?", model uses brain_query(history) to recall. No crashes. |
 
-Add tests as `backend-py/tests/v11_*.py` using pytest + aiohttp test client. They should run in <30s total and require no real model API.
+Add tests as `backend-py/tests/v11_*.py` and `frontend/desktop/src/__tests__/v11_*.test.tsx` using pytest + Vitest respectively. They should run in <30s total and require no real model API.
 
 ### 5.6 Risk register for v1.1
 
@@ -309,15 +359,19 @@ Add tests as `backend-py/tests/v11_*.py` using pytest + aiohttp test client. The
 | `<failure_feedback>` producer breaks the chat loop on a tool error | Low | High | The producer only stores on session; the tool result is still returned. Test the happy path and a forced error. |
 | Auto-compaction now happens mid-conversation unexpectedly | Medium | Low | The threshold (90%) is high; the cooldown (5 turns) prevents thrash. Test with 80% context — no compaction. |
 | `brain_query(store="graph")` reads large JSON file and stalls | Medium | Medium | Cap result rows; if JSON >1MB, return error. |
+| Unicode auto-converter breaks code blocks (e.g., converts `$x^2$` inside a fenced block) | Medium | High | Auto-converter explicitly skips content inside backtick fences and inline backticks. Test with code samples. |
+| System-prompt rule "use unicode math" is ignored by the model in practice | Medium | Low | Even if ignored, the renderer-side auto-converter catches the most common patterns. Belt + suspenders. |
+| The math-rendering change introduces a new "false positive" conversion (e.g., `$5.00` becoming `5.00` instead of staying as currency) | Low | Low | The existing `$`-currency guard in `ChatMarkdown.tsx` already handles the `$` boundary. Auto-converter is conservative (only acts on clear LaTeX-shaped input). |
 
 ### 5.7 v1.1 Definition of Done
 
-- All 5 bugs fixed and committed.
-- All 6 tests pass (`pytest backend-py/tests/v11_*.py`).
+- All 7 bugs fixed and committed.
+- All 7 tests pass (`pytest backend-py/tests/v11_*.py` + `vitest run frontend/desktop/src/__tests__/v11_*.test.tsx`).
 - A real chat session runs end-to-end without errors or warnings related to the fixes.
 - Trackers `tracker-v1.md` updated to reflect actual state (not aspirational).
 - The chat log shows `<failure_feedback>` working on a forced error.
 - `brain_query` returns rows for all 12 stores (or "not available" for genuinely unshipped ones).
+- Math in user-facing chat renders as unicode in the common case; no "red LaTeX" output; KaTeX still works for complex formulas.
 
 ---
 
