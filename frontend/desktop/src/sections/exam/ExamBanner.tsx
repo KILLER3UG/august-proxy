@@ -8,7 +8,8 @@ interface Question {
 }
 
 interface AnswerResult {
-  correct: boolean;
+  correct?: boolean;
+  is_correct?: boolean;
   correct_index: number;
   rationale: string;
 }
@@ -31,6 +32,10 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
   const [addRequest, setAddRequest] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const isCorrect = answerResult
+    ? (answerResult.is_correct ?? answerResult.correct ?? false)
+    : false;
+
   const handleSelect = useCallback(async (index: number) => {
     if (answerResult) return; // already answered
     setSelected(index);
@@ -39,7 +44,7 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
       const result = await onAnswer(question.id, index);
       setAnswerResult(result);
     } catch {
-      setAnswerResult({ correct: false, correct_index: 0, rationale: 'Error checking answer.' });
+      setAnswerResult({ is_correct: false, correct_index: 0, rationale: 'Error checking answer.' });
     }
     setIsSubmitting(false);
   }, [question.id, answerResult, onAnswer]);
@@ -104,7 +109,7 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
                 className += 'border-border hover:border-primary hover:bg-accent/30 cursor-pointer';
               } else if (i === answerResult.correct_index) {
                 className += 'border-success bg-success/10 text-success';
-              } else if (i === selected && !answerResult.correct) {
+              } else if (i === selected && !isCorrect) {
                 className += 'border-danger bg-danger/10 text-danger';
               } else {
                 className += 'border-border opacity-50';
@@ -113,7 +118,7 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
                 <button key={i} onClick={() => handleSelect(i)} className={className} disabled={answerResult !== null || isSubmitting}>
                   <span className="flex items-center gap-2">
                     {answerResult !== null && i === answerResult.correct_index && <CheckCircle2 className="size-3.5 shrink-0" />}
-                    {answerResult !== null && i === selected && !answerResult.correct && <XCircle className="size-3.5 shrink-0" />}
+                    {answerResult !== null && i === selected && !isCorrect && <XCircle className="size-3.5 shrink-0" />}
                     <span className="text-xs font-medium text-muted-foreground w-5">{String.fromCharCode(65 + i)}.</span>
                     {opt}
                   </span>
@@ -125,11 +130,12 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
           {/* Result + Next */}
           {answerResult && (
             <div className="flex items-center justify-between">
-              <p className={`text-xs ${answerResult.correct ? 'text-success' : 'text-danger'}`}>
-                {answerResult.correct ? 'Correct!' : 'Incorrect'}
+              <p className={`text-xs ${isCorrect ? 'text-success' : 'text-danger'}`}>
+                {isCorrect ? 'Correct!' : 'Incorrect'}
               </p>
               <button onClick={onNext} className="flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-                Next <ChevronRight className="size-3" />
+                <span>Next</span>
+                <ChevronRight className="size-3" />
               </button>
             </div>
           )}
@@ -178,8 +184,8 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
             </div>
             <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">{explanation}</div>
             {answerResult && (
-              <p className={`text-xs font-medium ${answerResult.correct ? 'text-success' : 'text-danger'}`}>
-                {answerResult.correct ? '✓ You got it right' : '✗ Keep studying'}
+              <p className={`text-xs font-medium ${isCorrect ? 'text-success' : 'text-danger'}`}>
+                {isCorrect ? '✓ You got it right' : '✗ Keep studying'}
               </p>
             )}
             <button onClick={() => setShowExplanation(false)} className="w-full mt-2 py-2 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition">

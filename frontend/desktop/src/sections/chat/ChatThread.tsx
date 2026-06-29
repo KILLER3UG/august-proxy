@@ -25,6 +25,7 @@ import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { SubagentBlock } from '@/components/chat/SubagentBlock';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
+import { ExamHost } from '@/sections/exam/ExamHost';
 import { Statusbar } from '@/components/shell/Statusbar';
 import { dispatchFocusComposer, dispatchInsertComposerText } from '@/api/ui-events';
 import { useModels } from '@/hooks/useModels';
@@ -275,6 +276,7 @@ const COMMANDS = [
   { name: '/provider', desc: 'Switch provider: /provider <name>' },
   { name: '/load', desc: 'Load a skill: /load <skill-name>' },
   { name: '/skills', desc: 'Search skills: /skills [query]' },
+  { name: '/exam', desc: 'Open exam mode: /exam [topic or attached files]' },
 ];
 
 const MESSAGES_STORAGE_PREFIX = 'chat_messages_';
@@ -481,6 +483,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
   const [showCommandsDropdown, setShowCommandsDropdown] = useState(false);
   const [queuedMessage, setQueuedMessage] = useState<{ text: string; attachments: FileAttachment[] } | null>(null);
+
+  // v3: /Exam slash command — overlay the ExamBanner with the given seed.
+  const [examActive, setExamActive] = useState(false);
+  const [examSeed, setExamSeed] = useState<{ topic?: string; files?: string[] }>({});
 
   // Refs for each popover trigger — used to compute the portaled panel's
   // viewport position. We portal the panels to document.body (see
@@ -1244,6 +1250,23 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         toast.error('/btw needs a question. Try: /btw What does this codebase do?');
         return;
       }
+      if (cmd === 'exam') {
+        // /Exam [topic] — open the ExamBanner with the optional topic as the
+        // generation seed. Attachments (if any) become the file seed.
+        const seed = arg || undefined;
+        if (attachments.length > 0) {
+          const filePaths = attachments
+            .map((a) => a.path || a.name)
+            .filter(Boolean) as string[];
+          setExamSeed({ topic: seed, files: filePaths });
+        } else {
+          setExamSeed({ topic: seed, files: [] });
+        }
+        setExamActive(true);
+        setInput('');
+        clearComposerDraft(sessionId);
+        return;
+      }
       // /btw, /goal, /reset, /debug, /model, /provider, /unknown — fall
       // through and let the backend (or the workbench parser) handle it.
     }
@@ -1811,6 +1834,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       />
       <div className="flex-1 flex flex-col min-w-0 bg-background h-full overflow-hidden relative">
         <ApprovalBanner sessionId={workbenchSession?.id ?? null} />
+        {examActive && (
+          <ExamHost
+            topic={examSeed.topic}
+            files={examSeed.files}
+            onDismiss={() => {
+              setExamActive(false);
+              setExamSeed({});
+            }}
+          />
+        )}
         {workbenchBtw && (
           <WorkbenchBtwDrawer
             result={workbenchBtw}
