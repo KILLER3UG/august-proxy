@@ -2002,9 +2002,12 @@ def _check_tool_guard(
 
 
 def submit_plan(session: WorkbenchSession, plan_data: dict[str, Any]) -> None:
-    """Store a plan on the session."""
+    """Store a plan on the session. v1.1: drop prior execution state and working memory."""
     session.plan = plan_data
     session.plan_approved = False
+    # v1.1: spec says state drops on new plan
+    session._execution_state = None
+    session._working_memory = None
     session.updated_at = _now()
     _emit_session_status(session.id)
 
@@ -2022,12 +2025,15 @@ def approve_workbench_plan(session_id: str) -> bool:
 
 
 def reject_workbench_plan(session_id: str) -> bool:
-    """Reject a pending plan."""
+    """Reject a pending plan. v1.1: drop prior execution state and working memory."""
     session = _sessions.get(session_id)
     if not session:
         return False
     session.plan = None
     session.plan_approved = False
+    # v1.1: rejection also implies a new plan is coming
+    session._execution_state = None
+    session._working_memory = None
     session.updated_at = _now()
     save_sessions()
     _emit_session_status(session_id)
