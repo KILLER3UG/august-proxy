@@ -1122,10 +1122,20 @@ def brain_query(store: str, query: str = "", filters: dict | None = None, limit:
         if query:
             fts = info.get("fts")
             if fts:
-                # FTS-backed store
+                # FTS-backed store: JOIN back to base table to get all columns.
+                # FTS virtual tables only contain indexed columns (key, value
+                # for memory_store_fts; key, content for auto_memories_fts);
+                # SELECT-ing other columns from the FTS table fails with
+                # "no such column". The JOIN gives us ranking + full row data.
                 fts_q = " OR ".join(f'"{w}"*' for w in query.strip().split() if w)
                 if fts_q:
-                    sql = f"SELECT {cols} FROM {fts} WHERE content MATCH ? ORDER BY rank"
+                    # Qualify columns with t. to disambiguate from FTS-side columns
+                    qualified_cols = ", ".join(f"t.{c.strip()}" for c in cols.split(","))
+                    sql = (
+                        f"SELECT {qualified_cols} FROM {fts} fts "
+                        f"JOIN {info['table']} t ON fts.rowid = t.rowid "
+                        f"WHERE fts.content MATCH ? ORDER BY rank"
+                    )
                     params = [fts_q]
                 else:
                     where_clauses.append("1=0")
