@@ -79,6 +79,10 @@ def build_tier1(session: dict[str, Any] | None = None) -> str:
         "  execute a verification command. Do not skip or fake verification output.",
         "- Brain Access: You have a unified long-term brain (august_brain.sqlite).",
         "  Call brain_query(store, query, filters) to recall anything not in the prompt.",
+        "- Math: Prefer unicode math symbols (², ³, √, ∑, ∏, ∫, π, ≈, ≤, ≥, ±, →,",
+        "  ×, ÷, ∈, ∉, ∞, ∂) over LaTeX. Use plain unicode fractions (½) or",
+        "  parentheses ((a+b)/c) instead of \\frac{a+b}{c}. Reserve LaTeX $...$",
+        "  / $$...$$ for genuinely complex formulas (matrices, multi-line derivations).",
     ])
     blocks.append(wrap_tag("system_constraints", "\n".join(constraints)))
 
