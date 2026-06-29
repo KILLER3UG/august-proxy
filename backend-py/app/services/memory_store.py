@@ -1209,3 +1209,77 @@ def brain_query(store: str, query: str = "", filters: dict | None = None, limit:
 
     except Exception as exc:
         return json.dumps({"error": f"brain_query({store}): {exc}"})
+
+
+# ── v2: Episodic timeline (Phase 9c) ────────────────────────────────────
+
+def write_timeline_event(
+    session_id: str,
+    event_summary: str,
+    category: str = "general",
+) -> int:
+    """v2: Append an entry to episodic_timeline. Returns the new row's id."""
+    conn = _conn()
+    cur = conn.execute(
+        "INSERT INTO episodic_timeline (timestamp, session_id, event_summary, category) "
+        "VALUES (datetime('now'), ?, ?, ?)",
+        (session_id, event_summary, category),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def timeline_sweep() -> int:
+    """v2: Hourly sweep. For sessions with no timeline entry, generate one.
+
+    Returns the number of new entries created.
+    """
+    conn = _conn()
+    # Find session IDs that have no timeline entry
+    rows = conn.execute("""
+        SELECT s.id FROM sessions s
+        LEFT JOIN episodic_timeline t ON t.session_id = s.id
+        WHERE t.id IS NULL
+        LIMIT 20
+    """).fetchall()
+
+    if not rows:
+        return 0
+
+    count = 0
+    for r in rows:
+        sid = r["id"]
+        # Get the last few messages for context
+        msgs = conn.execute(
+            "SELECT role, content FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 10",
+            (sid,),
+        ).fetchall()
+        if not msgs:
+            continue
+        # Try to call Hippocampus for a summary; fall back to a simple truncation
+        try:
+            from app.services.workbench import model_fleet
+            from app.providers.clients import get_client
+            model = model_fleet.get_model_for_role("hippocampus")
+            client = get_client({"model": model})
+            if client and hasattr(client, "generate"):
+                transcript = "\n".join(
+                    f"{m['role']}: {m['content'][:200]}" for m in msgs
+                )
+                prompt = f"Summarize this session in one line (under 100 words):\n\n{transcript}"
+                summary = client.generate(prompt)
+            else:
+                summary = None
+        except Exception:
+            summary = None
+        if not summary:
+            # Fallback: use the last user message as the summary
+            last = msgs[0]
+            content = last["content"]
+            if isinstance(content, str):
+                summary = content[:200]
+            else:
+                summary = "(session ended)"
+        write_timeline_event(sid, summary.strip()[:500], "sweep")
+        count += 1
+    return count
