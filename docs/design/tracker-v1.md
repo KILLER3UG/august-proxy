@@ -254,3 +254,62 @@ Stable tiers reused across turns; upstream prefix-cache hits; correct eviction.
 - [x] No goal/plan duplication; 3-tier prompt verified in a real session
 - [x] App runs a full chat session end-to-end without regressions
 - [ ] v1 verified in production (per spec scope rule)
+
+---
+
+## v1.1 patch (2026-06-29)
+
+**Scope:** 7 fixes — 3 critical bugs + 3 cheap correctness + 1 math rendering UI/UX
+
+### Critical bugs fixed (chat was broken without these)
+
+| Fix | Commit | Files |
+|-----|--------|-------|
+| `cached_t12` kwarg added to `build_system_prompt` (Phase 7 cache hook) | `fbfc2ad` | `app/services/memory/context_builder.py` |
+| `auto_memories.updated_at` column added (idempotent migration in `memory_store.init()`) | `9b42fad` | `app/services/memory_store.py` |
+| `<failure_feedback>` producer in `_execute_tool` with 3-turn decay | `327057d` | `app/services/workbench/workbench.py` |
+
+### Cheap correctness
+
+| Fix | Commit | Files |
+|-----|--------|-------|
+| `submit_plan` / `reject_workbench_plan` now drop `_execution_state` and `_working_memory` | `a50f39e` | `app/services/workbench/workbench.py` |
+| Auto-compaction gated on `attention_pressure == "critical"` + 5-turn cooldown | `c2472c0` | `app/services/workbench/workbench.py` |
+| 4 missing `brain_query` stores added: `graph`, `daemons`, `exams`, `exam_attempts` | `f0bb285` | `app/services/memory_store.py`, `app/services/tool_definitions.py` |
+
+### UI/UX fix (math rendering)
+
+| Fix | Commit | Files |
+|-----|--------|-------|
+| Tier 1 system constraint: model prefers unicode math over LaTeX | `0922d3f` | `app/services/memory/context_builder.py` |
+| KaTeX no longer renders failed math in red error color | `cf84cfd` | `frontend/desktop/src/styles.css`, `frontend/desktop/src/sections/chat/ChatMarkdown.tsx` |
+| Common-formula auto-converter in `ChatMarkdown.tsx` (LaTeX → unicode, skips code blocks) | `b26788d` | `frontend/desktop/src/sections/chat/ChatMarkdown.tsx` |
+
+### E2E smoke test
+
+| Item | Commit | Files |
+|-----|--------|-------|
+| End-to-end smoke test (full chat + brain_query round-trip) + FTS-path JOIN bug fix | `71a5fa2` | `tests/v11_e2e_chat.py`, `app/services/memory_store.py` |
+
+### Tests added (8 new test files)
+
+| Test | File |
+|------|------|
+| `v11_cached_t12.py` | 3 tests |
+| `v11_auto_memories_updated_at.py` | 2 tests |
+| `v11_failure_feedback.py` | 2 tests |
+| `v11_state_drop.py` | 2 tests |
+| `v11_auto_compaction_threshold.py` | 6 tests |
+| `v11_brain_query_all_stores.py` | 17 tests |
+| `v11_e2e_chat.py` | 5 tests |
+| `v11_math_unicode.test.tsx` | 7 tests |
+
+**Total:** 44 new test cases, all passing.
+
+### Pre-existing bugs fixed during v1.1
+
+- `brain_query` FTS path: `SELECT cols FROM fts_table` failed with "no such column" because FTS virtual tables only contain indexed columns. Now JOINs back to the base table and qualifies columns with the table alias. (Fixed in `71a5fa2`.)
+
+### Status
+
+✅ **done & verified** — end-to-end chat runs without crashes, all 12 brain_query stores respond correctly, math renders as unicode (no red LaTeX), and 267+ existing tests still pass (excluding 2 pre-existing failures in `test_memory.py` and `test_routes.py` that predate v1.1).
