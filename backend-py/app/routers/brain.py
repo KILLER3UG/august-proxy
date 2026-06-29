@@ -33,6 +33,19 @@ async def get_learning():
     except Exception:
         delta_queue_size = 0
 
+    # v2: pending skills (skill genesis) — query from pending_skills table
+    try:
+        from app.services.memory_store import _conn as _brain_conn
+        conn = _brain_conn()
+        pending_skills = [dict(r) for r in conn.execute(
+            "SELECT id, name, description, trigger_text, draft_path, "
+            "source_session_id, created_at, status, use_count "
+            "FROM pending_skills WHERE status = 'pending' "
+            "ORDER BY created_at DESC"
+        ).fetchall()]
+    except Exception:
+        pending_skills = []
+
     return {
         "heuristics": heuristics,
         "heuristic_count": len(heuristics),
@@ -42,7 +55,7 @@ async def get_learning():
             "consent_granted": False,
             "queue_size": delta_queue_size,
         },
-        "pending_skills": [],
+        "pending_skills": pending_skills,
     }
 
 
