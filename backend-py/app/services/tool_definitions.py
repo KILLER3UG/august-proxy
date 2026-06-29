@@ -517,6 +517,35 @@ async def _update_heuristics(action: str, rule: str = "") -> str:
         return f"Error managing heuristics: {exc}"
 
 
+# ── write_scratchpad tool (Phase 6) ─────────────────────────────────────
+
+
+async def _write_scratchpad(text: str) -> str:
+    """Write a scratchpad note to working memory.
+
+    Proxy keeps only the MOST RECENT scratchpad content. Old content is
+    DISCARDED — not accumulated. Use this to keep your current analysis,
+    code diff, or reasoning step in front of you across turns.
+    """
+    from app.services.workbench.workbench import get_session, update_session_state
+
+    try:
+        session = get_session()
+        if not session:
+            return "Error: no active workbench session."
+
+        await update_session_state(session, execution_state={
+            "phase": getattr(session, "_execution_state", {}).get("phase", "research"),
+            "step": getattr(session, "_execution_state", {}).get("step", 1),
+            "completed": getattr(session, "_execution_state", {}).get("completed", []),
+            "blockers": getattr(session, "_execution_state", {}).get("blockers", []),
+        })
+        session._working_memory = text
+        return "Scratchpad updated."
+    except Exception as exc:
+        return f"Error writing scratchpad: {exc}"
+
+
 # ── update_state tool (Phase 5) ─────────────────────────────────────────
 
 
@@ -1124,6 +1153,23 @@ def register_all() -> None:
                 },
             },
             "required": [],
+        },
+    )
+    tool_registry.register(
+        "write_scratchpad",
+        "Write a scratchpad note to working memory. Only the most recent "
+        "note is kept — old content is discarded. Use this to hold your "
+        "current analysis, code diff, or reasoning step across turns.",
+        _write_scratchpad,
+        {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "The scratchpad content. This REPLACES any previous scratchpad content.",
+                },
+            },
+            "required": ["text"],
         },
     )
 

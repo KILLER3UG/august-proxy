@@ -25,7 +25,7 @@
 | 3 | BM25 + Progressive Disclosure | `progressive_disclosure` | ✅ done & verified | | 4 new files (retrieval, bridges, assembler, manifest). Tool registry updated with reserved names + keywords. Wired into workbench tool_definitions(). |
 | 4 | Learned Heuristics | `heuristics` | ✅ done & verified | | heuristics_service.py (CRUD). update_heuristics tool registered in core set. Injection already wired from Phase 0 prefecth + Phase 1 Tier 2. |
 | 5 | Execution State Machine | `execution_state` | ✅ done & verified | | update_state tool with phase/step/completed/blockers/verification_command. asyncio.Lock per session. Injected into Tier 3 via session_dict. Cleared on session end. |
-| 6 | Working Memory + Error Correction + Guardrails | `scratchpad`,`failure_feedback`,`tool_guardrails` | ☐ not started | | |
+| 6 | Working Memory + Error Correction + Guardrails | `scratchpad`,`failure_feedback`,`tool_guardrails` | ✅ done & verified | | write_scratchpad tool. ToolCallTracker (warn3/block6 identical, warn4/block8 failure). Tracker reset on text response. Injected into Tier 3. |
 | 7 | Prompt Caching | `prompt_caching` | ☐ not started | | |
 
 Status legend: ☐ not started · ◐ in progress · ✅ done & verified · ⚠ blocked

@@ -576,6 +576,8 @@ def build_system_prompt(session: WorkbenchSession) -> str:
         "skills_manifest": skills_manifest,
         # Phase 5: execution state from session
         "execution_state": getattr(session, "_execution_state", None),
+        # Phase 6: working memory (scratchpad)
+        "working_memory": getattr(session, "_working_memory", None),
     }
     # Merge prefetched memory into session_dict for context_builder
     for k in ("core_memory", "learned_heuristics", "auto_memories"):
@@ -1115,7 +1117,25 @@ async def send_workbench_message_stream(
                     "status": "running",
                 })
 
-            result = await _execute_tool(tool_name, tool_input, session)
+            # Phase 6: ToolCallTracker guardrails
+            try:
+                from app.services.workbench.tool_guardrails import ToolCallTracker
+                if not hasattr(session, "_tool_tracker") or session._tool_tracker is None:
+                    session._tool_tracker = ToolCallTracker()
+                tracker = session._tool_tracker
+                status, msg = tracker.check(tool_name, tool_input)
+                if status == "block":
+                    result = msg
+                    tracker.record_failure(tool_name)  # don't count blocked as a success
+                else:
+                    result = await _execute_tool(tool_name, tool_input, session)
+                    # If the result contains "Error:", record as failure
+                    if isinstance(result, str) and result.startswith("Error:"):
+                        tracker.record_failure(tool_name)
+                    if status == "warn":
+                        result = msg + "\n" + result
+            except Exception:
+                result = await _execute_tool(tool_name, tool_input, session)
 
             # Cap tool result size in the SSE payload so a single large
             # result (e.g. a big file read) doesn't bloat the stream and
@@ -1171,6 +1191,13 @@ async def send_workbench_message_stream(
             })
 
         if not tool_results:
+            # Phase 6: model produced a text response — reset tool loop tracker
+            try:
+                from app.services.workbench.tool_guardrails import ToolCallTracker
+                if hasattr(session, "_tool_tracker") and session._tool_tracker:
+                    session._tool_tracker.record_text_response()
+            except Exception:
+                pass
             break
 
         current_messages.append(assistant_msg)
