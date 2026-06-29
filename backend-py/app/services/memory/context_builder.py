@@ -269,6 +269,7 @@ def build_system_prompt(
     memory: dict[str, Any] | None = None,
     tools: list[dict[str, Any]] | None = None,
     agent_context: str | None = None,
+    cached_t12: str | None = None,
 ) -> str:
     """Build the full 3-tier system prompt.
 
