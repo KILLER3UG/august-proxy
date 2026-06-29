@@ -958,12 +958,124 @@ _BRAIN_STORES: dict[str, dict[str, Any]] = {
         "search_cols": ["agent", "key", "value"],
         "label": "inter-agent blackboard notes",
     },
-    # ── Future-phase stores (documented here, resolve when their table ships) ──
-    # "timeline":  {"table": "episodic_timeline", ...}    Phase 9
-    # "blackboard": {"table": "blackboard", ...}           Phase 10
-    # "daemons":    (live registry, not a table)            Phase 8
-    # "exams":      {table: "exams", ...}                   v3
+    "exams": {
+        "table": "exams",
+        "fts": None,
+        "columns": "id, title, topic, created_at, source, source_files",
+        "search_cols": ["title", "topic"],
+        "label": "exam sessions",
+    },
+    "exam_attempts": {
+        "table": "exam_attempts",
+        "fts": None,
+        "columns": "id, exam_id, question_id, selected_index, is_correct, asked_for_help, answered_at",
+        "search_cols": ["exam_id"],
+        "label": "exam attempt history",
+    },
+    # ── Custom handlers (not metadata-driven; routed explicitly in brain_query) ──
+    # "graph":     JSON file (august_graph_memory.json)        v1.1
+    # "daemons":   live daemon registry (Phase 8)              v1.1
 }
+
+
+def _brain_query_graph(query: str, filters: dict | None, limit: int) -> str:
+    """v1.1: Read graph entities/relations from august_graph_memory.json.
+
+    Returns list of {entity, type, attributes} or {source, relation, target} rows.
+    If the JSON file is missing or empty, returns an empty list (NOT an error).
+    """
+    try:
+        import json as _json
+        import os as _os
+        # Try a few common locations for the graph JSON
+        candidates = [
+            _os.path.join("data", "august_graph_memory.json"),
+            "august_graph_memory.json",
+            _os.path.expanduser("~/.august/august_graph_memory.json"),
+        ]
+        graph_path = next((p for p in candidates if _os.path.exists(p)), None)
+        if graph_path is None:
+            return _json.dumps([])
+        with open(graph_path, "r", encoding="utf-8") as f:
+            data = _json.load(f)
+    except (ImportError, _json.JSONDecodeError, OSError):
+        return _json.dumps([])
+
+    rows: list[dict] = []
+    entities = data.get("entities", []) if isinstance(data, dict) else []
+    for ent in entities:
+        if not isinstance(ent, dict):
+            continue
+        name = ent.get("name", "")
+        if query and query.lower() not in name.lower():
+            continue
+        rows.append({"entity": name, "type": ent.get("type", ""), "attributes": ent.get("attributes", {})})
+        if len(rows) >= limit:
+            return _json.dumps(rows[:limit], ensure_ascii=False)
+
+    if len(rows) < limit:
+        relations = data.get("relations", []) if isinstance(data, dict) else []
+        for rel in relations:
+            if not isinstance(rel, dict):
+                continue
+            source = rel.get("source", "")
+            target = rel.get("target", "")
+            if query and query.lower() not in (source + target).lower():
+                continue
+            rows.append({"source": source, "relation": rel.get("relation", ""), "target": target})
+            if len(rows) >= limit:
+                break
+    return _json.dumps(rows[:limit], ensure_ascii=False)
+
+
+def _brain_query_daemons(query: str, filters: dict | None, limit: int) -> str:
+    """v1.1: Read live daemon registry (Phase 8).
+
+    Returns list of {session_id, name, status, watch_condition, last_check, error} rows.
+    If no daemons are running, returns an empty list.
+    Gracefully degrades if daemon_manager is unavailable (returns []).
+    """
+    import json as _json
+    try:
+        from app.services import daemon_manager
+    except ImportError:
+        return _json.dumps([])
+    try:
+        # Read internal daemon registry. The exact data shape may vary across
+        # daemon_manager revisions; be defensive and skip on any error.
+        internal = getattr(daemon_manager, "_daemons", None)
+        if not isinstance(internal, dict):
+            return _json.dumps([])
+        rows: list[dict] = []
+        for session_id, daemons in internal.items():
+            for d in daemons or []:
+                # DaemonSpec is a dataclass; convert via __dict__ or .keys
+                if hasattr(d, "__dict__"):
+                    info = dict(d.__dict__)
+                elif isinstance(d, dict):
+                    info = d
+                else:
+                    continue
+                row = {
+                    "session_id": session_id,
+                    "name": info.get("name", ""),
+                    "status": info.get("status", "unknown"),
+                    "watch_condition": info.get("watch_condition"),
+                    "last_check": info.get("last_check"),
+                    "error": info.get("error"),
+                }
+                if filters and filters.get("session_id") and filters["session_id"] != session_id:
+                    continue
+                if query and query.lower() not in row["name"].lower():
+                    continue
+                rows.append(row)
+                if len(rows) >= limit:
+                    break
+            if len(rows) >= limit:
+                break
+        return _json.dumps(rows[:limit], ensure_ascii=False)
+    except Exception:
+        return _json.dumps([])
 
 
 def brain_query(store: str, query: str = "", filters: dict | None = None, limit: int = 10) -> str:
@@ -977,6 +1089,12 @@ def brain_query(store: str, query: str = "", filters: dict | None = None, limit:
     """
     _TOKEN_CEILING = 2000  # hard cap on output tokens
     conn = _conn()
+
+    # v1.1: Route non-table stores to custom handlers
+    if store == "graph":
+        return _brain_query_graph(query, filters, limit)
+    if store == "daemons":
+        return _brain_query_daemons(query, filters, limit)
 
     if store not in _BRAIN_STORES:
         return json.dumps({

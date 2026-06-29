@@ -1194,17 +1194,30 @@ def register_all() -> None:
     tool_registry.register(
         "brain_query",
         "Read-only query across any brain store (memory, auto_memories, heuristics, "
-        "facts, sessions, messages, timeline). Stores not yet shipped return "
-        "'not available'. Returns compact JSON rows. Use store names from the enum: "
-        "memory, auto_memories, heuristics, facts, sessions, messages, timeline.",
+        "facts, sessions, messages, timeline, blackboard, graph, daemons, exams, "
+        "exam_attempts). Stores not yet shipped return 'not available'. "
+        "Returns compact JSON rows.",
         _brain_query,
         {
             "type": "object",
             "properties": {
                 "store": {
                     "type": "string",
-                    "description": "Which brain store to read: memory | auto_memories | heuristics | facts | sessions | messages | timeline | blackboard",
-                    "enum": ["memory", "auto_memories", "heuristics", "facts", "sessions", "messages", "timeline", "blackboard"],
+                    "description": "Which brain store to read: memory | auto_memories | heuristics | facts | sessions | messages | timeline | blackboard | graph | daemons | exams | exam_attempts",
+                    "enum": [
+                        "memory",
+                        "auto_memories",
+                        "heuristics",
+                        "facts",
+                        "sessions",
+                        "messages",
+                        "timeline",
+                        "blackboard",
+                        "graph",
+                        "daemons",
+                        "exams",
+                        "exam_attempts",
+                    ],
                 },
                 "query": {
                     "type": "string",
