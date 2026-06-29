@@ -467,6 +467,56 @@ async def _describe_environment() -> str:
     return "\n".join(parts)
 
 
+# ── update_heuristics tool (Phase 4) ────────────────────────────────────
+
+
+async def _update_heuristics(action: str, rule: str = "") -> str:
+    """Manage learned behavioral heuristics.
+
+    Actions:
+      add    — Persist a new rule: "Project uses Yarn, not NPM"
+      remove — Remove a rule by id or exact text
+      clear  — Clear all rules
+      list   — Return current rules
+    """
+    from app.services.heuristics_service import add_heuristic, remove_by_rule, clear_heuristics, list_heuristics
+
+    try:
+        if action == "add":
+            if not rule:
+                return "Error: 'rule' is required for add action."
+            result = add_heuristic(rule)
+            if result is not None:
+                return f"Heuristic added (id={result})."
+            return "Heuristic already exists (duplicate)."
+
+        elif action == "remove":
+            if not rule:
+                return "Error: 'rule' is required for remove action."
+            if remove_by_rule(rule):
+                return f"Heuristic removed: {rule}"
+            return f"Heuristic not found: {rule}"
+
+        elif action == "clear":
+            count = clear_heuristics()
+            return f"Cleared {count} heuristic(s)."
+
+        elif action == "list":
+            heuristics = list_heuristics()
+            if not heuristics:
+                return "No learned heuristics."
+            lines = ["Learned heuristics:"]
+            for h in heuristics:
+                lines.append(f"  [{h['id']}] {h['rule']} (source: {h['source']}, category: {h['category']})")
+            return "\n".join(lines)
+
+        else:
+            return f"Unknown action: {action}. Use add, remove, clear, or list."
+
+    except Exception as exc:
+        return f"Error managing heuristics: {exc}"
+
+
 # ── Subagent tool ────────────────────────────────────────────────────
 
 
@@ -980,6 +1030,28 @@ def register_all() -> None:
         "Describe the workspace environment: data paths, VCS status, registered tools.",
         _describe_environment,
         {"type": "object", "properties": {}, "required": []},
+    )
+    tool_registry.register(
+        "update_heuristics",
+        "Manage learned behavioral heuristics. Add a rule when you notice a "
+        "recurring user preference (e.g. 'Project uses Yarn, not NPM'). "
+        "Rules persist across sessions. Actions: add, remove, clear, list.",
+        _update_heuristics,
+        {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "Action to perform: add | remove | clear | list",
+                    "enum": ["add", "remove", "clear", "list"],
+                },
+                "rule": {
+                    "type": "string",
+                    "description": "The heuristic rule text (required for add/remove).",
+                },
+            },
+            "required": ["action"],
+        },
     )
 
     # ── Agent tools ──

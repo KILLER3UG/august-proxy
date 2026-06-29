@@ -33,7 +33,9 @@ AUGUST_CORE_TOOLS: frozenset[str] = frozenset({
     "diagnose_proxy", "describe_environment",
     # Bridge tools (always available)
     "tool_search", "tool_describe", "tool_call",
-    # Phase 4+ will add: update_heuristics, update_state, write_scratchpad
+    # Phase 4: Learned heuristics
+    "update_heuristics",
+    # Phase 5+ will add: update_state, write_scratchpad
     # Phase 8+ will add: spawn_daemon, list_daemons, kill_daemon
     # Phase 9+ will add: search_timeline
     # Phase 10+ will add: write_blackboard, read_blackboard, clear_blackboard

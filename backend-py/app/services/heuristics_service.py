@@ -1,0 +1,105 @@
+"""
+Heuristics service — CRUD over the learned_heuristics table (Phase 4).
+
+The table was created in Phase 0; this service provides the application
+layer for adding, removing, listing, and clearing heuristics.
+
+All writes go through the Phase 0 write queue (db_writer.enqueue_write)
+when called from async contexts, or directly from sync ones.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+def _conn():
+    """Get the thread-local brain DB connection."""
+    from app.services.memory_store import _conn as get_conn
+    return get_conn()
+
+
+def list_heuristics(category: str = "") -> list[dict[str, Any]]:
+    """List all learned heuristics, optionally filtered by category."""
+    conn = _conn()
+    if category:
+        rows = conn.execute(
+            "SELECT id, rule, source, category, created_at, updated_at "
+            "FROM learned_heuristics WHERE category = ? "
+            "ORDER BY updated_at DESC",
+            (category,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, rule, source, category, created_at, updated_at "
+            "FROM learned_heuristics ORDER BY updated_at DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_heuristic(rule: str, source: str = "auto", category: str = "general") -> int | None:
+    """Add a learned heuristic rule.
+
+    Returns the new row id, or None if the rule already exists (duplicate).
+    """
+    if not rule or not rule.strip():
+        return None
+
+    conn = _conn()
+    # Check for duplicate
+    existing = conn.execute(
+        "SELECT id FROM learned_heuristics WHERE rule = ?", (rule.strip(),)
+    ).fetchone()
+    if existing:
+        return None  # Duplicate, already exists
+
+    conn.execute(
+        "INSERT INTO learned_heuristics (rule, source, category, updated_at) "
+        "VALUES (?, ?, ?, datetime('now'))",
+        (rule.strip(), source, category),
+    )
+    conn.commit()
+    return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def remove_heuristic(rule_id: int) -> bool:
+    """Remove a heuristic by id. Returns True if it existed."""
+    conn = _conn()
+    cursor = conn.execute("DELETE FROM learned_heuristics WHERE id = ?", (rule_id,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def remove_by_rule(rule: str) -> bool:
+    """Remove a heuristic by exact rule text. Returns True if it existed."""
+    conn = _conn()
+    cursor = conn.execute(
+        "DELETE FROM learned_heuristics WHERE rule = ?", (rule.strip(),)
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def clear_heuristics(category: str = "") -> int:
+    """Clear all heuristics, optionally filtered by category. Returns count removed."""
+    conn = _conn()
+    if category:
+        cursor = conn.execute(
+            "DELETE FROM learned_heuristics WHERE category = ?", (category,)
+        )
+    else:
+        cursor = conn.execute("DELETE FROM learned_heuristics")
+    conn.commit()
+    return cursor.rowcount
+
+
+def count_heuristics(category: str = "") -> int:
+    """Count heuristics, optionally filtered by category."""
+    conn = _conn()
+    if category:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM learned_heuristics WHERE category = ?", (category,)
+        ).fetchone()
+    else:
+        row = conn.execute("SELECT COUNT(*) FROM learned_heuristics").fetchone()
+    return row[0] if row else 0
