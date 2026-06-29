@@ -262,6 +262,39 @@ def _infer_llm_rule(entry: dict) -> str | None:
 
 
 def _call_hippocampus(diff_text: str) -> str | None:
-    """Call the Hippocampus model to infer a rule from a diff."""
-    # Placeholder — in production this calls get_model_for_role("hippocampus")
+    """v2: Call the Hippocampus model to infer a rule from a diff.
+
+    Uses the provider client if available; falls back to None when no
+    model is configured.
+    """
+    try:
+        from app.services.workbench import model_fleet
+        from app.providers.clients import get_client
+        model = model_fleet.get_model_for_role("hippocampus")
+        client = get_client({"model": model})
+        if client and hasattr(client, "generate"):
+            prompt = (
+                "Review these diffs between the assistant's output and the user's edits. "
+                "Infer up to 3 behavioral rules. Return JSON: "
+                "{'rules': [{'rule': str, 'category': str}]} or {'rules': []}.\n\n"
+                f"Diffs:\n{diff_text}\n"
+            )
+            response = client.generate(prompt)
+            return response if isinstance(response, str) else None
+    except Exception:
+        pass
     return None
+
+
+def subscribe_env_watcher(watcher) -> None:
+    """v2: Subscribe delta engine to environment watcher events."""
+    watcher.subscribe(_on_env_change)
+
+
+def _on_env_change(event) -> None:
+    """v2: Handle env watcher change — call check_and_diff."""
+    if hasattr(event, "path"):
+        try:
+            check_and_diff(event.path)
+        except Exception:
+            pass
