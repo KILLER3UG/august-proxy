@@ -39,7 +39,9 @@ AUGUST_CORE_TOOLS: frozenset[str] = frozenset({
     "update_state",
     # Phase 6: Working memory
     "write_scratchpad",
-    # Phase 7+ will add: prompt caching
+    # Phase 8: Daemons
+    "spawn_daemon", "list_daemons", "kill_daemon",
+    # Phase 9+ will add: search_timeline
     # Phase 8+ will add: spawn_daemon, list_daemons, kill_daemon
     # Phase 9+ will add: search_timeline
     # Phase 10+ will add: write_blackboard, read_blackboard, clear_blackboard

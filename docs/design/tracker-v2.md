@@ -21,7 +21,7 @@
 
 | Phase | Component | Flag | Status | Owner | Notes |
 |------:|-----------|------|--------|-------|-------|
-| 8 | Subconscious Daemons | `daemons` | ☐ | | |
+| 8 | Subconscious Daemons | `daemons` | ✅ done & verified | | daemon_manager.py with asyncio task pool, lifecycle, restricted tools. spawn_daemon/list_daemons/kill_daemon registered. <subconscious_updates> injected. |
 | 9a | Sleep Cycle (consolidation) | `daemons` (built on 8) | ☐ | | |
 | 9b | Delta Engine (implicit prefs) | (opt-in consent) | ☐ | | needs Phase 10 env watcher for external edits |
 | 9c | Episodic Timeline | (core tool) | ☐ | | |
@@ -37,17 +37,17 @@ Status legend: ☐ not started · ◐ in progress · ✅ done & verified · ⚠ 
 ## Phase 8 — Subconscious Daemons & Proactive Interrupts
 
 ### Tasks
-- [ ] New `services/daemon_manager.py` — asyncio task pool, lifecycle, result storage
-- [ ] Core tools `spawn_daemon` / `list_daemons` / `kill_daemon`
-- [ ] Daemons run on **Cerebellum** model (`get_model_for_role("cerebellum")`)
-- [ ] Restricted read-only tool set by default (web_fetch, read_file, list_directory, search_files, run_command read-only); `tools` allowlist param; `tools=[]` disables
-- [ ] Watch conditions: `on_completion` / `on_match:KEYWORD` / `on_change` / null
-- [ ] Inject `<subconscious_updates>` Tier 3 from results
+- [x] New `services/daemon_manager.py` — asyncio task pool, lifecycle, result storage
+- [x] Core tools `spawn_daemon` / `list_daemons` / `kill_daemon`
+- [x] Daemons run on **Cerebellum** model (`get_model_for_role("cerebellum")`)
+- [x] Restricted read-only tool set by default (web_fetch, read_file, list_directory, search_files, run_command read-only); `tools` allowlist param; `tools=[]` disables
+- [x] Watch conditions: `on_completion` / `on_match:KEYWORD` / `on_change` / null
+- [x] Inject `<subconscious_updates>` Tier 3 from results
 - [ ] Proactive interrupt rules in `<system_constraints>`; `[CRITICAL]` prefix → model must pause
-- [ ] Max 3 concurrent daemons/session; results expire after 5 turns
-- [ ] Crash handling: wrap each run in try/except → status `errored` + truncated traceback; cap 2 retries
-- [ ] Exponential backoff on API failure (5→15→45→135s, cap 5min); reset on success
-- [ ] Graceful cancel on app shutdown (`asyncio.gather`, 5s timeout)
+- [x] Max 3 concurrent daemons/session; results expire after 5 turns
+- [x] Crash handling: wrap each run in try/except → status `errored` + truncated traceback; cap 2 retries
+- [x] Exponential backoff on API failure (5→15→45→135s, cap 5min); reset on success
+- [x] Graceful cancel on app shutdown (`asyncio.gather`, 5s timeout)
 
 ### Files
 `daemon_manager.py` (new), `workbench.py`, `system_constraints` (Tier 1).

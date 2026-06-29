@@ -79,6 +79,12 @@ async def lifespan(app: FastAPI):
         await close_browsers()
     except Exception:
         pass
+    # Phase 8: Shutdown daemon manager (cancel all background daemon tasks)
+    try:
+        from app.services.daemon_manager import shutdown_all
+        await shutdown_all()
+    except Exception:
+        pass
     # close_db() removed in Phase 0 — SQLAlchemy was dead code.
     # memory_store cleanup (if any) happens in memory_store.close() if needed.
 

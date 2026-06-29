@@ -578,6 +578,8 @@ def build_system_prompt(session: WorkbenchSession) -> str:
         "execution_state": getattr(session, "_execution_state", None),
         # Phase 6: working memory (scratchpad)
         "working_memory": getattr(session, "_working_memory", None),
+        # Phase 8: daemon subconscious updates
+        "subconscious_updates": _build_daemon_updates(getattr(session, "id", "")),
     }
     # Merge prefetched memory into session_dict for context_builder
     for k in ("core_memory", "learned_heuristics", "auto_memories"):
@@ -648,6 +650,37 @@ def build_system_prompt(session: WorkbenchSession) -> str:
     if extra_parts:
         return base + "\n\n" + "\n\n".join(extra_parts)
     return base
+
+
+# ── Daemon updates (Phase 8) ───────────────────────────────────────────
+
+
+def _build_daemon_updates(session_id: str) -> str:
+    """Build the <subconscious_updates> XML block from daemon results."""
+    try:
+        from app.services.daemon_manager import get_manager
+        manager = get_manager()
+        daemons = manager.list_daemons(session_id)
+
+        if not daemons:
+            return ""
+
+        lines: list[str] = []
+        for d in daemons:
+            attrs = f'name="{d["name"]}" status="{d["status"]}"'
+            if d.get("triggered"):
+                attrs += ' triggered="true"'
+            if d.get("error"):
+                lines.append(f'  <daemon {attrs} error="{d["error"]}">')
+            else:
+                lines.append(f"  <daemon {attrs}>")
+            if d.get("last_check"):
+                lines.append(f"    last_check={d['last_check']:.0f}s ago")
+            lines.append("  </daemon>")
+
+        return "\n".join(lines)
+    except Exception:
+        return ""
 
 
 # ── Effort / thinking budget ─────────────────────────────────────────
@@ -1223,6 +1256,13 @@ async def send_workbench_message_stream(
                 from app.services.workbench.tool_guardrails import ToolCallTracker
                 if hasattr(session, "_tool_tracker") and session._tool_tracker:
                     session._tool_tracker.record_text_response()
+            except Exception:
+                pass
+            # Phase 8: increment daemon turn counters
+            try:
+                from app.services.daemon_manager import get_manager
+                manager = get_manager()
+                manager.increment_turns(session.id)
             except Exception:
                 pass
             break

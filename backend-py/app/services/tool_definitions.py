@@ -546,6 +546,90 @@ async def _write_scratchpad(text: str) -> str:
         return f"Error writing scratchpad: {exc}"
 
 
+# ── Daemon tools (Phase 8) ──────────────────────────────────────────────
+
+
+async def _spawn_daemon(
+    name: str,
+    prompt: str,
+    watch_condition: str = "",
+    tools: str = "",
+) -> str:
+    """Spawn a background daemon (subconscious agent).
+
+    Daemons run headless on the Cerebellum model (fast, cheap) with a
+    restricted read-only tool set. They are best for polling, monitoring,
+    and watching. The model gets results in <subconscious_updates> on
+    subsequent turns.
+
+    For complex background tasks that need full tool access, use
+    ``spawn_subagent`` instead.
+    """
+    from app.services.daemon_manager import DaemonSpec, get_manager
+
+    try:
+        # Resolve tools param
+        tools_list: list[str] | None = None
+        if tools == "none":
+            tools_list = []  # no tools
+        elif tools:
+            tools_list = [t.strip() for t in tools.split(",") if t.strip()]
+
+        spec = DaemonSpec(
+            name=name,
+            prompt=prompt,
+            watch_condition=watch_condition or None,
+            tools=tools_list,
+        )
+
+        from app.services.workbench.workbench import get_session
+        session = get_session()
+        session_id = getattr(session, "id", "") if session else ""
+
+        manager = get_manager()
+        result = await manager.spawn(spec, session_id)
+        return result
+
+    except Exception as exc:
+        return f"Error spawning daemon: {exc}"
+
+
+async def _list_daemons(session_id: str = "") -> str:
+    """List active daemons and their status."""
+    from app.services.daemon_manager import get_manager
+
+    try:
+        manager = get_manager()
+        daemons = manager.list_daemons(session_id or None)
+
+        if not daemons:
+            return "No active daemons."
+
+        lines = ["Active daemons:"]
+        for d in daemons:
+            status = d["status"]
+            triggered = " [TRIGGERED]" if d["triggered"] else ""
+            error = f" error={d['error']}" if d["error"] else ""
+            lines.append(f"  [{d['name']}] {status}{triggered}{error}")
+        return "\n".join(lines)
+
+    except Exception as exc:
+        return f"Error listing daemons: {exc}"
+
+
+async def _kill_daemon(daemon_id: str) -> str:
+    """Kill a running daemon by its id."""
+    from app.services.daemon_manager import get_manager
+
+    try:
+        manager = get_manager()
+        if await manager.kill(daemon_id):
+            return f"Daemon '{daemon_id}' killed."
+        return f"Daemon '{daemon_id}' not found."
+    except Exception as exc:
+        return f"Error killing daemon: {exc}"
+
+
 # ── update_state tool (Phase 5) ─────────────────────────────────────────
 
 
@@ -1170,6 +1254,56 @@ def register_all() -> None:
                 },
             },
             "required": ["text"],
+        },
+    )
+
+    # ── Daemon tools (Phase 8) ──
+    tool_registry.register(
+        "spawn_daemon",
+        "Spawn a background daemon (subconscious agent). Daemons run on the "
+        "Cerebellum model (fast, cheap) with a restricted read-only tool set. "
+        "Use for polling, monitoring, and watching CI. Results appear in "
+        "<subconscious_updates> on subsequent turns. Max 3 daemons per session.",
+        _spawn_daemon,
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Unique name for the daemon."},
+                "prompt": {"type": "string", "description": "Instructions for the daemon."},
+                "watch_condition": {
+                    "type": "string",
+                    "description": "Trigger: on_completion | on_match:KEYWORD | on_change | (empty for none)",
+                },
+                "tools": {
+                    "type": "string",
+                    "description": "Comma-separated tool allowlist, or 'none' for no tools, or empty for defaults.",
+                },
+            },
+            "required": ["name", "prompt"],
+        },
+    )
+    tool_registry.register(
+        "list_daemons",
+        "List active daemons and their status (running, triggered, completed, errored).",
+        _list_daemons,
+        {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Session ID (optional; defaults to current)."},
+            },
+            "required": [],
+        },
+    )
+    tool_registry.register(
+        "kill_daemon",
+        "Kill a daemon by its id. Use list_daemons to find active daemon IDs.",
+        _kill_daemon,
+        {
+            "type": "object",
+            "properties": {
+                "daemon_id": {"type": "string", "description": "Daemon ID to kill."},
+            },
+            "required": ["daemon_id"],
         },
     )
 
