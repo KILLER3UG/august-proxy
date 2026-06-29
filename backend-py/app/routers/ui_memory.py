@@ -220,6 +220,7 @@ async def brain_learning() -> dict[str, Any]:
     }
 
     return {
+        "status": "idle",  # Legacy top-level field for the existing dashboard
         "heuristics": heuristics,
         "heuristic_count": len(heuristics),
         "core_facts": core_facts,
