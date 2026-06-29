@@ -585,12 +585,39 @@ def build_system_prompt(session: WorkbenchSession) -> str:
             session_dict[k] = memory[k]
 
     tools = tool_definitions(session)
+
+    # Phase 7: Cache Tier 1 + Tier 2 (static per session)
+    from app.services.workbench.prompt_cache import get_cache
+    prompt_cache = get_cache()
+    cache_key = getattr(session, "id", "") or ""
+
+    cached_t12 = prompt_cache.get(cache_key)
     base = ctx_build(
         session=session_dict,
         memory=memory,
         tools=tools,
         agent_context=agent_context,
+        cached_t12=cached_t12,
     )
+
+    # Cache T1+T2 if not already cached (extract from first generation)
+    if cached_t12 is None:
+        # Regenerate without cached_t12 to get the full T1+T2 portion
+        # and cache it. We do this by re-calling without the caching param.
+        # Optimization: generate T1+T2-only string here.
+        try:
+            from app.services.memory.context_builder import build_tier1, build_tier2
+            t1 = build_tier1(session_dict)
+            t2 = build_tier2(session_dict)
+            t12_parts = []
+            if t1:
+                t12_parts.append(t1)
+            if t2:
+                t12_parts.append(t2)
+            if t12_parts:
+                prompt_cache.set(cache_key, "\n\n".join(t12_parts))
+        except Exception:
+            pass
 
     # ── Skills section (appended at the end near the user message) ──
     # The manifest is already in Tier 1 <user_state>, but we repeat the

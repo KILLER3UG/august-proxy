@@ -26,7 +26,7 @@
 | 4 | Learned Heuristics | `heuristics` | ✅ done & verified | | heuristics_service.py (CRUD). update_heuristics tool registered in core set. Injection already wired from Phase 0 prefecth + Phase 1 Tier 2. |
 | 5 | Execution State Machine | `execution_state` | ✅ done & verified | | update_state tool with phase/step/completed/blockers/verification_command. asyncio.Lock per session. Injected into Tier 3 via session_dict. Cleared on session end. |
 | 6 | Working Memory + Error Correction + Guardrails | `scratchpad`,`failure_feedback`,`tool_guardrails` | ✅ done & verified | | write_scratchpad tool. ToolCallTracker (warn3/block6 identical, warn4/block8 failure). Tracker reset on text response. Injected into Tier 3. |
-| 7 | Prompt Caching | `prompt_caching` | ☐ not started | | |
+| 7 | Prompt Caching | `prompt_caching` | ✅ done & verified | | In-memory LRU cache (max 100 sessions). 5-min TTL. Tier 1 + Tier 2 cached by session ID. Tier 3 rebuilt every turn. cached_t12 parameter in context_builder. |
 
 Status legend: ☐ not started · ◐ in progress · ✅ done & verified · ⚠ blocked
 

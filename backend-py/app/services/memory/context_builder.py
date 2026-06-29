@@ -313,16 +313,21 @@ def build_system_prompt(
 
     tiers: list[str] = []
 
-    tier1 = build_tier1(merged)
-    if tier1:
-        tiers.append(wrap_tag("tier1_identity", tier1))
-        tiers.append(tier1)  # Also emit unwrapped for readability
+    if cached_t12:
+        # Use cached T1+T2 (Phase 7 optimization)
+        tiers.append(cached_t12)
+    else:
+        tier1 = build_tier1(merged)
+        if tier1:
+            tiers.append(wrap_tag("tier1_identity", tier1))
+            tiers.append(tier1)
 
-    tier2 = build_tier2(merged)
-    if tier2:
-        tiers.append(wrap_tag("tier2_experience", tier2))
-        tiers.append(tier2)
+        tier2 = build_tier2(merged)
+        if tier2:
+            tiers.append(wrap_tag("tier2_experience", tier2))
+            tiers.append(tier2)
 
+    # Tier 3 is ALWAYS regenerated (volatile runtime state)
     tier3 = build_tier3(merged)
     if tier3:
         tiers.append(wrap_tag("tier3_runtime", tier3))
