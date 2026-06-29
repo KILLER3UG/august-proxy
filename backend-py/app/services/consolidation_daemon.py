@@ -28,6 +28,36 @@ _staging_dir = os.path.join("data", "skills", "staging")
 _active_skills_dir = os.path.join("skills")  # adjust to your tree
 
 
+def _sanitize_skill_name(name: str) -> str:
+    """v2 hardening: Convert any name to a valid camelCase identifier.
+
+    LLMs may produce names with spaces, hyphens, underscores, or starting
+    with uppercase. This function normalizes the name to camelCase so it's
+    a valid filename-safe identifier. Examples:
+      "Debug Python Script" -> "debugPythonScript"
+      "user_preferences"    -> "userPreferences"
+      "JWT-Auth-Flow"       -> "jwtAuthFlow"
+      "  Hello World  "      -> "helloWorld"
+    """
+    if not name:
+        return ""
+    import re
+    # Strip whitespace
+    s = name.strip()
+    # Split on any non-alphanumeric char (space, hyphen, underscore, dot, etc.)
+    parts = re.split(r"[^A-Za-z0-9]+", s)
+    # Drop empty parts
+    parts = [p for p in parts if p]
+    if not parts:
+        return ""
+    # First word lowercase; subsequent words capitalized (camelCase)
+    result = parts[0].lower()
+    for p in parts[1:]:
+        result += p[0].upper() + p[1:].lower() if len(p) > 0 else ""
+    # Truncate to 50 chars (sanity)
+    return result[:50]
+
+
 async def _call_hippocampus(prompt: str) -> str:
     """v2: Call the Hippocampus model. Returns raw text response.
 
@@ -226,7 +256,9 @@ async def draft_skill_for_session(session_id: str) -> str | None:
             return None
         if plan.get("skip"):
             return None
-        name = plan.get("name")
+        # v2 hardening: sanitize the skill name to camelCase (LLMs may
+        # produce spaces, hyphens, or uppercase first letters).
+        name = _sanitize_skill_name(plan.get("name", ""))
         description = plan.get("description", "")
         trigger = plan.get("trigger", "")
         body = plan.get("body", "")
