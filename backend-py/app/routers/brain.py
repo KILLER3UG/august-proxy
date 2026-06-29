@@ -1,8 +1,11 @@
 """
-Brain router — Learning + System Health endpoints (v3, §12).
+Brain router — mutation endpoints + System Health (v3, §12).
 
-GET /api/brain/learning — aggregates heuristics, auto-memories, facts, etc.
-GET /api/brain/health  — per-phase feature flags + selfcheck() results.
+The /api/brain/learning endpoint is served by ui_memory.py (v3 enhanced
+that to return the rich aggregation including auto-memories, sleep
+cycle, delta engine, and pending skills). This router adds the
+mutation endpoints (delete/edit heuristic, approve/reject skill,
+run consolidation) and the System Health fan-out.
 """
 
 from __future__ import annotations
@@ -10,53 +13,6 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/api/brain")
-
-
-@router.get("/learning")
-async def get_learning():
-    """Aggregate everything the brain has learned."""
-    from app.services.heuristics_service import list_heuristics
-    from app.services.memory_store import get_memory
-    from app.services.consolidation_daemon import run_consolidation as _consol
-
-    # Learned heuristics
-    heuristics = list_heuristics()
-
-    # Core facts & auto-memories
-    core_facts = get_memory("core_memory")
-    user_profile = get_memory("user_profile")
-
-    # Delta engine stats
-    try:
-        from app.services.delta_engine import _diff_queue
-        delta_queue_size = len(_diff_queue)
-    except Exception:
-        delta_queue_size = 0
-
-    # v2: pending skills (skill genesis) — query from pending_skills table
-    try:
-        from app.services.memory_store import _conn as _brain_conn
-        conn = _brain_conn()
-        pending_skills = [dict(r) for r in conn.execute(
-            "SELECT id, name, description, trigger_text, draft_path, "
-            "source_session_id, created_at, status, use_count "
-            "FROM pending_skills WHERE status = 'pending' "
-            "ORDER BY created_at DESC"
-        ).fetchall()]
-    except Exception:
-        pending_skills = []
-
-    return {
-        "heuristics": heuristics,
-        "heuristic_count": len(heuristics),
-        "core_facts": core_facts,
-        "user_profile": user_profile,
-        "delta_engine": {
-            "consent_granted": False,
-            "queue_size": delta_queue_size,
-        },
-        "pending_skills": pending_skills,
-    }
 
 
 @router.get("/health")

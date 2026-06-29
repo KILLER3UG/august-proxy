@@ -141,18 +141,100 @@ async def brain_vectors() -> dict[str, Any]:
 
 @router.get("/learning")
 async def brain_learning() -> dict[str, Any]:
-    """Return learning loop status — { status, lastStartedAt?, lastTopic? }.
+    """v3: Return the rich Brain dashboard learning aggregation.
 
-    Python does not yet run the Node learning loop; report idle so the
-    dashboard renders a clean state rather than 404ing.
+    Includes heuristics, core facts, user profile, auto-memories,
+    sleep cycle stats, delta engine stats, and pending skills.
+    The legacy `{status, lastStartedAt, lastTopic}` shape is preserved
+    as a top-level `background_review` field for backward compatibility.
     """
+    from app.services.heuristics_service import list_heuristics
+    from app.services import consolidation_daemon as _cd
+    from app.services import delta_engine as _de
+
+    # Heuristics
+    heuristics = list_heuristics()
+
+    # Core facts & user profile
+    core_facts = memory_store.get_memory("core_memory")
+    user_profile = memory_store.get_memory("user_profile")
+
+    # Delta engine queue size
+    try:
+        delta_queue_size = len(getattr(_de, "_diff_queue", []) or [])
+    except Exception:
+        delta_queue_size = 0
+    last_flush_at = getattr(_de, "_last_flush", None)
+
+    # Auto-memories (top 20 by importance)
+    auto_memories: list[dict[str, Any]] = []
+    try:
+        rows = memory_store._conn().execute(
+            "SELECT id, key, content, importance, created_at "
+            "FROM auto_memories ORDER BY importance DESC, id DESC LIMIT 20"
+        ).fetchall()
+        auto_memories = [dict(r) for r in rows]
+    except Exception:
+        pass
+
+    # Sleep cycle stats
+    sleep_cycle: dict[str, Any] = {
+        "last_run_at": None,
+        "last_merged": 0,
+        "last_promoted": 0,
+        "last_deleted": 0,
+    }
+    last = getattr(_cd, "_last_run", None)
+    if last:
+        sleep_cycle.update({
+            "last_run_at": last.get("at"),
+            "last_merged": last.get("merged", 0),
+            "last_promoted": last.get("promoted", 0),
+            "last_deleted": last.get("deleted_stale", 0),
+        })
+
+    # Pending skills
+    pending_skills: list[dict[str, Any]] = []
+    try:
+        rows = memory_store._conn().execute(
+            "SELECT id, name, description, trigger_text, draft_path, "
+            "source_session_id, created_at, status, use_count "
+            "FROM pending_skills WHERE status = 'pending' "
+            "ORDER BY created_at DESC"
+        ).fetchall()
+        pending_skills = [dict(r) for r in rows]
+    except Exception:
+        pass
+
+    # Legacy background_review status (for backward compat)
     try:
         topics = memory_store.list_topics(limit=1) or []
     except Exception:
         topics = []
     last_topic = topics[0].get("topic") if topics else None
     last_at = topics[0].get("classified_at") if topics else None
-    return {"status": "idle", "lastStartedAt": last_at, "lastTopic": last_topic}
+    background_review = {
+        "status": "idle",
+        "lastStartedAt": last_at,
+        "lastTopic": last_topic,
+    }
+
+    return {
+        "heuristics": heuristics,
+        "heuristic_count": len(heuristics),
+        "core_facts": core_facts,
+        "user_profile": user_profile,
+        "auto_memories": auto_memories,
+        "sleep_cycle": sleep_cycle,
+        "delta_engine": {
+            "consent_granted": False,
+            "queue_size": delta_queue_size,
+            "last_flush_at": last_flush_at,
+        },
+        "pending_skills": pending_skills,
+        # Legacy field for the existing dashboard
+        "background_review": background_review,
+    }
 
 
 # ── System prompt preview ─────────────────────────────────────────────

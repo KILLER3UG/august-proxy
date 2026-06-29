@@ -27,6 +27,9 @@ _SKILL_DRAFT_RATE_LIMIT = 1  # max 1 auto-gen skill per day
 _staging_dir = os.path.join("data", "skills", "staging")
 _active_skills_dir = os.path.join("skills")  # adjust to your tree
 
+# v3: Track last run for the brain dashboard
+_last_run: dict | None = None
+
 
 def _sanitize_skill_name(name: str) -> str:
     """v2 hardening: Convert any name to a valid camelCase identifier.
@@ -209,6 +212,15 @@ async def run_consolidation() -> dict[str, Any]:
     except Exception as exc:
         stats["errors"].append(str(exc))
         logger.error("Consolidation error: %s", exc)
+
+    # v3: Record last run for the brain dashboard
+    global _last_run
+    _last_run = {
+        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "merged": stats["merged"],
+        "promoted": stats["promoted"],
+        "deleted_stale": stats["deleted_stale"],
+    }
 
     return stats
 
