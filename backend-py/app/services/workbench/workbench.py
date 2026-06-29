@@ -944,6 +944,13 @@ async def send_workbench_message_stream(
                 emit({"type": "done", "sessionId": session_id})
             return
 
+    # v1.1: Decay stale failure_feedback (3-turn lifetime)
+    if getattr(session, "_failure_feedback_age", None) is not None:
+        session._failure_feedback_age += 1
+        if session._failure_feedback_age >= 3:
+            session._failure_feedback = None
+            session._failure_feedback_age = None
+
     # Build system prompt
     system_text = build_system_prompt(session)
 
@@ -1928,7 +1935,22 @@ async def _execute_tool(
         result = await dispatch_tool(tool_name, args)
         return str(result)
     except Exception as exc:
-        return f"Error: {exc}"
+        # v1.1: extract structured failure_feedback for next-turn Tier 3 injection
+        import traceback as _tb
+        tb_list = _tb.extract_tb(exc.__traceback__)
+        last_frame = tb_list[-1] if tb_list else None
+        feedback = {
+            "tool": tool_name,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "file": last_frame.filename if last_frame else None,
+            "line": last_frame.lineno if last_frame else None,
+            "function": last_frame.name if last_frame else None,
+            "offending_code": last_frame.line if last_frame else None,
+        }
+        session._failure_feedback = feedback
+        session._failure_feedback_age = 0
+        return f"Tool {tool_name} failed: {feedback['error_type']}: {feedback['error_message']}"
     finally:
         current_session_id.reset(token)
 
