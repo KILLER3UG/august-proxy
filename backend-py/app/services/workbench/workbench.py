@@ -689,6 +689,9 @@ def tool_definitions(session: WorkbenchSession) -> list[dict[str, Any]]:
     ``run_command`` handlers, which cover the same surface and *are*
     dispatchable here. MCP server tools are added separately (see
     ``_mcp_tool_definitions_anthropic``).
+
+    Phase 3: If progressive disclosure is active and the tool set exceeds
+    the threshold, BM25 pre-loads the most relevant tools and defers the rest.
     """
     from app.adapters.proxy_tools import sanitize_anthropic_tool_definition
     from app.services.tool_registry import list_tools
@@ -707,6 +710,25 @@ def tool_definitions(session: WorkbenchSession) -> list[dict[str, Any]]:
     # Append real MCP server tools (lazy-cached; may be empty until the
     # startup refresh completes). See mcp_client.get_mcp_tool_definitions_sync.
     tools.extend(_mcp_tool_definitions_anthropic(seen))
+
+    # Phase 3: Progressive disclosure via BM25
+    try:
+        from app.services.tools.model_tools import assemble_tool_defs
+
+        messages = getattr(session, "messages", None) or []
+        context_msgs = list(messages) if isinstance(messages, list) else []
+
+        result = assemble_tool_defs(
+            all_tool_defs=tools,
+            context_messages=context_msgs,
+        )
+
+        if result.activated:
+            # Store assembly info on session for build_system_prompt to read
+            session._tool_assembly = result
+            return result.tool_defs
+    except Exception:
+        pass
 
     return tools
 

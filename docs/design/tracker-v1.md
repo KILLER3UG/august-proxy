@@ -22,7 +22,7 @@
 | 0 | Data Unification & Schema Migration | (proxy-side) | ✅ done & verified | | All 16 tasks complete. DB archived. 3 migration scripts ready. |
 | 1 | System Prompt Restructure + Node parity | (proxy-side) | ✅ done & verified | | 3-tier XML, brain orchestrator wired, workspace/VCS/stats/whats-new injected, guard rules in prompt, listProxyCapabilities fixed, diagnose/describe tools added. |
 | 2 | Cognitive Budgeting | `cognitive_budget` | ✅ done & verified | | token_budget.py with priority chain (Anthropic→tiktoken→Gemini→3.5-char). 85% fallback threshold. Injected into Tier 3. Compaction rules in system_constraints. Existing context_compressor wired for auto-compaction. |
-| 3 | BM25 + Progressive Disclosure | `progressive_disclosure` | ☐ not started | | |
+| 3 | BM25 + Progressive Disclosure | `progressive_disclosure` | ✅ done & verified | | 4 new files (retrieval, bridges, assembler, manifest). Tool registry updated with reserved names + keywords. Wired into workbench tool_definitions(). |
 | 4 | Learned Heuristics | `heuristics` | ☐ not started | | |
 | 5 | Execution State Machine | `execution_state` | ☐ not started | | |
 | 6 | Working Memory + Error Correction + Guardrails | `scratchpad`,`failure_feedback`,`tool_guardrails` | ☐ not started | | |
