@@ -174,11 +174,31 @@ def build_tier3(session: dict[str, Any] | None = None) -> str:
         import json
         blocks.append(wrap_tag("brain_policy", json.dumps(brain_policy, indent=2)))
 
-    # Execution state (populated by Phase 5 — empty for now)
+    # Execution state (Phase 5)
     exec_state = (session or {}).get("execution_state")
     if exec_state:
         import json
         blocks.append(wrap_tag("execution_state", json.dumps(exec_state, indent=2)))
+
+        # v2: Verifier gate (Phase 10.3) — inject when phase=review|complete
+        phase = exec_state.get("phase", "")
+        if phase in ("review", "complete"):
+            verification_command = exec_state.get("verification_command", "")
+            step = exec_state.get("step", 0)
+            if verification_command:
+                gate_body = (
+                    f"You marked step {step} as complete. Verify before proceeding:\n"
+                    f"Run: {verification_command}\n"
+                    f"Confirm output shows \"PASSED\" or \"0 failed\".\n"
+                    f"Only then use update_state to transition to \"review\"."
+                )
+            else:
+                gate_body = (
+                    "You are about to mark a step complete without verification.\n"
+                    "Run the appropriate test/lint/validation command, then confirm\n"
+                    "the result before calling update_state(phase=\"review\")."
+                )
+            blocks.append(wrap_tag("verifier_gate", gate_body))
 
     # Working memory (populated by Phase 6 — empty for now)
     working_memory = (session or {}).get("working_memory")
