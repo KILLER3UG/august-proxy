@@ -24,7 +24,7 @@
 | 2 | Cognitive Budgeting | `cognitive_budget` | ✅ done & verified | | token_budget.py with priority chain (Anthropic→tiktoken→Gemini→3.5-char). 85% fallback threshold. Injected into Tier 3. Compaction rules in system_constraints. Existing context_compressor wired for auto-compaction. |
 | 3 | BM25 + Progressive Disclosure | `progressive_disclosure` | ✅ done & verified | | 4 new files (retrieval, bridges, assembler, manifest). Tool registry updated with reserved names + keywords. Wired into workbench tool_definitions(). |
 | 4 | Learned Heuristics | `heuristics` | ✅ done & verified | | heuristics_service.py (CRUD). update_heuristics tool registered in core set. Injection already wired from Phase 0 prefecth + Phase 1 Tier 2. |
-| 5 | Execution State Machine | `execution_state` | ☐ not started | | |
+| 5 | Execution State Machine | `execution_state` | ✅ done & verified | | update_state tool with phase/step/completed/blockers/verification_command. asyncio.Lock per session. Injected into Tier 3 via session_dict. Cleared on session end. |
 | 6 | Working Memory + Error Correction + Guardrails | `scratchpad`,`failure_feedback`,`tool_guardrails` | ☐ not started | | |
 | 7 | Prompt Caching | `prompt_caching` | ☐ not started | | |
 

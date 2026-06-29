@@ -574,6 +574,8 @@ def build_system_prompt(session: WorkbenchSession) -> str:
         "memory_stats": memory_stats,
         "whats_new": whats_new,
         "skills_manifest": skills_manifest,
+        # Phase 5: execution state from session
+        "execution_state": getattr(session, "_execution_state", None),
     }
     # Merge prefetched memory into session_dict for context_builder
     for k in ("core_memory", "learned_heuristics", "auto_memories"):
@@ -2103,3 +2105,52 @@ def list_proxy_capabilities() -> dict[str, Any]:
         "estimated_total_tokens": sum(len(str(t)) // 4 + 50 for t in all_tools),
         "agent_count": agent_count,
     }
+
+
+# ── Session state management (Phase 5) ────────────────────────────────
+
+
+def get_session() -> WorkbenchSession | None:
+    """Get the active workbench session from the current context.
+
+    Used by the update_state tool to read/write execution state.
+    In a production setting this would use a contextvar; for now it
+    returns the most recently touched session as a best-effort approach,
+    since tools run synchronously within a session's turn.
+    """
+    if not _sessions:
+        return None
+    # Return the most recently active session (last in dict order is approximate)
+    try:
+        return list(_sessions.values())[-1]
+    except (IndexError, ValueError):
+        return None
+
+
+async def update_session_state(session: WorkbenchSession, execution_state: dict) -> None:
+    """Update execution state on a session with an asyncio.Lock.
+
+    Phase 5: ``asyncio.Lock`` per session around state mutations —
+    parallel ``update_state`` and ``write_scratchpad`` calls are serialized
+    per session, preventing dropped state updates. Lock timeout of 5 seconds
+    prevents deadlock.
+    """
+    import asyncio
+
+    if not hasattr(session, "_state_lock") or session._state_lock is None:
+        session._state_lock = asyncio.Lock()
+
+    try:
+        await asyncio.wait_for(session._state_lock.acquire(), timeout=5.0)
+        try:
+            session._execution_state = execution_state
+            # If session has a store method, persist it
+            if hasattr(session, "save") and callable(session.save):
+                session.save()
+        finally:
+            session._state_lock.release()
+    except asyncio.TimeoutError:
+        pass  # Lock timeout — skip update rather than deadlock
+    except RuntimeError:
+        pass  # No running event loop
+

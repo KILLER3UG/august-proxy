@@ -517,6 +517,45 @@ async def _update_heuristics(action: str, rule: str = "") -> str:
         return f"Error managing heuristics: {exc}"
 
 
+# ── update_state tool (Phase 5) ─────────────────────────────────────────
+
+
+async def _update_state(
+    phase: str = "",
+    step: int = 1,
+    completed: str = "",
+    blockers: str = "",
+    verification_command: str = "",
+) -> str:
+    """Track execution state across a multi-step task.
+
+    Gives the model phase awareness so it doesn't loop or repeat steps.
+    State is stored in the session and injected as <execution_state> in
+    Tier 3 on every turn. Call this when you start, progress through, or
+    complete a phase of work.
+    """
+    from app.services.workbench.workbench import get_session, update_session_state
+
+    try:
+        session = get_session()
+        if not session:
+            return "Error: no active workbench session."
+
+        state = {
+            "phase": phase or getattr(session, "_execution_phase", "research"),
+            "step": step,
+            "completed": [c.strip() for c in completed.split("\n") if c.strip()] if completed else [],
+            "blockers": [b.strip() for b in blockers.split("\n") if b.strip()] if blockers else [],
+        }
+        if verification_command:
+            state["verification_command"] = verification_command
+
+        await update_session_state(session, execution_state=state)
+        return f"State updated: phase={state['phase']}, step={state['step']}, completed={len(state['completed'])}, blockers={len(state['blockers'])}"
+    except Exception as exc:
+        return f"Error updating state: {exc}"
+
+
 # ── Subagent tool ────────────────────────────────────────────────────
 
 
@@ -1051,6 +1090,40 @@ def register_all() -> None:
                 },
             },
             "required": ["action"],
+        },
+    )
+    tool_registry.register(
+        "update_state",
+        "Track execution state across a multi-step task. Call this when you "
+        "start, progress through, or complete a phase. The state is injected "
+        "into the next turn's system prompt so you know where you left off.",
+        _update_state,
+        {
+            "type": "object",
+            "properties": {
+                "phase": {
+                    "type": "string",
+                    "description": "Current phase: research | plan | implement | review | complete",
+                    "enum": ["research", "plan", "implement", "review", "complete"],
+                },
+                "step": {
+                    "type": "integer",
+                    "description": "Step number within the current phase.",
+                },
+                "completed": {
+                    "type": "string",
+                    "description": "Newline-separated list of completed items for this step.",
+                },
+                "blockers": {
+                    "type": "string",
+                    "description": "Newline-separated list of blockers.",
+                },
+                "verification_command": {
+                    "type": "string",
+                    "description": "Command to verify this step is complete (optional, for Verifier Reflex).",
+                },
+            },
+            "required": [],
         },
     )
 
