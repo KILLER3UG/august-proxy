@@ -21,15 +21,15 @@
 
 | Section | Component | Status | Owner | Notes |
 |--------:|-----------|--------|-------|-------|
-| 16.1 | Math rendering (KaTeX) | ☐ | | typeset LaTeX instead of raw source |
-| 16.2 | Composer auto-grow (value-driven) | ☐ | | fix paste/draft/insert not expanding |
-| 16.3 | Chat scroll thumb (draggable) | ☐ | | un-hide + style transcript scrollbar |
-| 15 | UI redesign — tokens (`styles.css`) | ☐ | | land first; re-skins app for free |
-| 15 | UI redesign — chat bubble-less layout + composer | ☐ | | |
-| 14 | August Live — backend (`live.py`) | ☐ | | reuses workbench turn engine |
-| 14 | August Live — STT/TTS adapters + config | ☐ | | |
-| 14 | August Live — frontend surface (orb/captions/tool rail) | ☐ | | |
-| 14 | August Live — command-exec safety (guard mode parity) | ☐ | | sensitive — review carefully |
+| 16.1 | Math rendering (KaTeX) | ✅ done & verified | | katex installed, ChatMarkdown tokenizers, CSS sizing, currency guard |
+| 16.2 | Composer auto-grow (value-driven) | ✅ done & verified | | useLayoutEffect keyed on input, onChange simplified |
+| 16.3 | Chat scroll thumb (draggable) | ✅ done & verified | | .chat-scroll CSS, min-height 40px, 10px gutter |
+| 15 | UI redesign — tokens (`styles.css`) | ✅ done & verified | | Light + dark retuned per spec. Body line-height 1.6. Type scale calmed. |
+| 15 | UI redesign — chat bubble-less layout + composer | ☐ | | pending — bubble-less layout + centered column |
+| 14 | August Live — backend (`live.py`) | ✅ done & verified | | session/turn/stt/tts endpoints. Reuses workbench turn engine. |
+| 14 | August Live — STT/TTS adapters + config | ☐ | | provider-agnostic adapters |
+| 14 | August Live — frontend surface (orb/captions/tool rail) | ☐ | | full-window /live route |
+| 14 | August Live — command-exec safety (guard mode parity) | ☐ | | verify guard mode inherited |
 | 14 | August Live — **mandatory security review** (gate) | ☐ | | hard gate before Live ships |
 
 Status legend: ☐ not started · ◐ in progress · ✅ done & verified · ⚠ blocked

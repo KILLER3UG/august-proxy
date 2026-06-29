@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { marked, type Tokens } from 'marked';
+import katex from 'katex';
 
 const COPY_PLACEHOLDER_ATTR = 'data-copy-placeholder';
 const COPY_CODE_ATTR = 'data-copy-code';
@@ -31,117 +32,156 @@ function renderCode(token: Tokens.Code): string {
   );
 }
 
+// ── KaTeX math extension (v4 §16.1) ───────────────────────────────────
+
+function renderMath(body: string, displayMode: boolean): string {
+  try {
+    return katex.renderToString(body, {
+      displayMode,
+      throwOnError: false,
+      output: 'htmlAndMathml',
+      strict: false,
+    });
+  } catch {
+    // On error, render the raw source in an error color
+    return `<span style="color: var(--dt-danger, #d2503f);">${body}</span>`;
+  }
+}
+
+const mathInlineExtension = {
+  name: 'mathInline',
+  level: 'inline',
+  start(src: string) {
+    // Look for \( or $ (but not digit-adjacent $)
+    const idx1 = src.indexOf('\\(');
+    const idx2 = src.indexOf('$');
+    // Skip $ if preceded by a digit (currency guard)
+    const candidates: number[] = [];
+    if (idx1 !== -1) candidates.push(idx1);
+    if (idx2 !== -1) {
+      // Only add $ if preceded by non-digit or start of string
+      if (idx2 === 0 || !/\d/.test(src[idx2 - 1])) {
+        candidates.push(idx2);
+      }
+    }
+    return candidates.length > 0 ? Math.min(...candidates) : -1;
+  },
+  tokenizer(src: string) {
+    // Try \( ... \) first
+    const matchParen = /^\\(\((.*?)\\\))/s.exec(src);
+    if (matchParen) {
+      return {
+        type: 'mathInline',
+        raw: matchParen[0],
+        body: matchParen[1].trim(),
+      };
+    }
+    // Try $ ... $ (inline, non-greedy)
+    const matchDollar = /^\$(.+?)\$/s.exec(src);
+    if (matchDollar) {
+      return {
+        type: 'mathInline',
+        raw: matchDollar[0],
+        body: matchDollar[1].trim(),
+      };
+    }
+    return undefined;
+  },
+  renderer(token: any) {
+    return renderMath(token.body, false);
+  },
+};
+
+const mathBlockExtension = {
+  name: 'mathBlock',
+  level: 'block',
+  start(src: string) {
+    return src.indexOf('$$');
+  },
+  tokenizer(src: string) {
+    // Try $$ ... $$ (display)
+    const match = /^\$\$([\s\S]*?)\$\$/s.exec(src);
+    if (match) {
+      return {
+        type: 'mathBlock',
+        raw: match[0],
+        body: match[1].trim(),
+      };
+    }
+    // Try \[ ... \] (display)
+    const matchBracket = /^\\\[([\s\S]*?)\\\]/s.exec(src);
+    if (matchBracket) {
+      return {
+        type: 'mathBlock',
+        raw: matchBracket[0],
+        body: matchBracket[1].trim(),
+      };
+    }
+    return undefined;
+  },
+  renderer(token: any) {
+    return renderMath(token.body, true);
+  },
+};
+
 marked.use({
   gfm: true,
   breaks: true,
   renderer: { code: renderCode },
+  extensions: [mathInlineExtension, mathBlockExtension],
 });
 
 export function Markdown({ content }: { content: string }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
 
-  const blocks = useMemo(() => {
-    if (!content) return [];
-    return marked.lexer(content)
-      .filter(token => token.type !== 'space')
-      .map((token, index) => {
-        const raw = token.raw ?? '';
-        let html = '';
-        try {
-          html = marked.parser([token]) as string;
-        } catch {
-          html = marked.parse(raw) as string;
-        }
-        return {
-          key: `${index}-${token.type}-${raw.slice(0, 32).replace(/\s+/g, '')}`,
-          html
-        };
-      });
+  const html = useMemo(() => {
+    if (!content) return '';
+    return marked.parse(content, { async: false }) as string;
   }, [content]);
 
-  // Hydrate copy-button placeholders into real React-driven buttons so they
-  // can own their "Copied!" state and call navigator.clipboard.
+  // Copy button handler
   useEffect(() => {
-    const root = containerRef.current;
-    if (!root) return;
+    const el = ref.current;
+    if (!el) return;
 
-    const placeholders = Array.from(
-      root.querySelectorAll<HTMLButtonElement>(`button[${COPY_PLACEHOLDER_ATTR}]`)
-    );
-
-    const cleanups: Array<() => void> = [];
-
-    for (const placeholder of placeholders) {
-      // Skip already-hydrated placeholders (edge case during streaming re-renders)
-      if (placeholder.dataset.hydrated === 'true') continue;
-      placeholder.dataset.hydrated = 'true';
-
-	    const code = placeholder.getAttribute(COPY_CODE_ATTR) ?? '';
-
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = placeholder.className;
-      button.setAttribute('aria-label', 'Copy code');
-      //
-      // z-index stacking: the <pre> that follows the button in the DOM has
-      // default static positioning and paints on top of the absolute button
-      // in some layering contexts, intercepting pointer events. z-10 ensures
-      // the button always receives clicks.
-      button.style.zIndex = '10';
-      button.innerHTML =
-        `<span class="markdown-copy-icon-copy"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span>` +
-        `<span class="markdown-copy-label">Copy</span>`;
-
-      let resetTimer: number | undefined;
-      let flashActive = false;
-      const flashCopied = () => {
-        if (flashActive) return; // already showing "Copied!"
-        flashActive = true;
-        button.querySelector('.markdown-copy-icon-copy')!.innerHTML =
-          `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
-        const label = button.querySelector('.markdown-copy-label');
-        if (label) label.textContent = 'Copied!';
-        if (resetTimer) window.clearTimeout(resetTimer);
-        resetTimer = window.setTimeout(() => {
-          flashActive = false;
-          button.querySelector('.markdown-copy-icon-copy')!.innerHTML =
-            `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
-          if (label) label.textContent = 'Copy';
-        }, COPY_RESET_MS);
-      };
-	      const onClick = (e: Event) => {
-	        e.stopPropagation();
-	        // Use clipboard API directly. Electron always has navigator.clipboard
-        // available. Always show "Copied!" feedback regardless of success
-        // so the user gets immediate visual confirmation.
-        navigator.clipboard.writeText(code).then(flashCopied, flashCopied);
-      };
-
-      button.addEventListener('click', onClick);
-      placeholder.replaceWith(button);
-
-      cleanups.push(() => {
-        button.removeEventListener('click', onClick);
-        if (resetTimer) window.clearTimeout(resetTimer);
-      });
+    function handleClick(e: MouseEvent) {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>(`[${COPY_CODE_ATTR}]`);
+      if (!btn) return;
+      const code = btn.getAttribute(COPY_CODE_ATTR);
+      if (!code) return;
+      navigator.clipboard.writeText(code).catch(() => {});
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = orig; }, COPY_RESET_MS);
     }
 
-    return () => {
-      for (const cleanup of cleanups) cleanup();
-    };
-  }, [blocks]);
+    el.addEventListener('click', handleClick);
+    return () => el.removeEventListener('click', handleClick);
+  }, []);
 
-  if (!content) return null;
+  // Prism-like highlighting for code blocks via highlight.js (already loaded)
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // Highlight all code blocks
+    const blocks = el.querySelectorAll<HTMLElement>('pre code[class*="language-"]');
+    if (blocks.length > 0 && (window as any).hljs) {
+      blocks.forEach((block) => {
+        try { (window as any).hljs.highlightElement(block); } catch {}
+      });
+    }
+  }, [html]);
 
   return (
-    <div className="markdown-content" ref={containerRef}>
-      {blocks.map(block => (
-        <div
-          key={block.key}
-          className="markdown-token"
-          dangerouslySetInnerHTML={{ __html: block.html }}
-        />
-      ))}
-    </div>
+    <div
+      ref={ref}
+      className="markdown-content"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
+}
+
+export function renderMarkdown(content: string): string {
+  if (!content) return '';
+  return marked.parse(content, { async: false }) as string;
 }

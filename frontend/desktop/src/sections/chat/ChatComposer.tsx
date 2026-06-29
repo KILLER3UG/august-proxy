@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState, useLayoutEffect, useCallback, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Paperclip, AtSign, Mic, Send, StopCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -132,6 +132,20 @@ export function ChatComposer({
     };
   }, [taRef, onInsertText]);
 
+  // v4 §16.2: Auto-grow textarea — value-driven, not event-driven
+  const MIN_H = 64;
+  const MAX_H = 360;
+  const resizeTextarea = useCallback(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const next = Math.min(el.scrollHeight, MAX_H);
+    el.style.height = next + 'px';
+    el.style.overflowY = el.scrollHeight > MAX_H ? 'auto' : 'hidden';
+  }, [taRef]);
+
+  useLayoutEffect(() => { resizeTextarea(); }, [input, resizeTextarea]);
+
   return (
     <>
       {showToolsDropdown && (
@@ -211,11 +225,7 @@ export function ChatComposer({
             <textarea
               ref={taRef}
               value={input}
-              onChange={(e) => {
-                onInputChange(e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = Math.min(e.target.scrollHeight, 360) + 'px';
-              }}
+              onChange={(e) => onInputChange(e.target.value)}
               onKeyDown={onKey}
               placeholder={streaming ? 'Type to queue your next message…' : (currentModel ? `Message ${currentModel.name}…` : 'Message August…')}
               rows={1}

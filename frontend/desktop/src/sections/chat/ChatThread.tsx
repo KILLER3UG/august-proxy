@@ -1951,7 +1951,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               >
                 <div
                   ref={scrollRef}
-                  className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]"
+                  className="flex-1 overflow-y-auto chat-scroll"
                   style={{ overflowAnchor: 'none' }}
                 >
                   <div className="mx-auto w-full max-w-3xl px-4 py-8 space-y-5 relative">

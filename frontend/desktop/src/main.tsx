@@ -9,6 +9,7 @@ import { Toaster } from 'sonner';
 import { hydrateTheme } from './lib/theme';
 import App from './App';
 import './styles.css';
+import 'katex/dist/katex.min.css'; // KaTeX math typesetting (v4 §16.1)
 
 // Apply persisted theme + text-size synchronously before React mounts
 // to prevent FOUC where the wrong theme flashes on first paint.
