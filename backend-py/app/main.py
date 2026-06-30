@@ -32,13 +32,13 @@ async def lifespan(app: FastAPI):
     _db_path_val = dataPath("august_brain.sqlite")
     if _db_path_val.exists():
         try:
-            from scripts.migrate_db_columns import migrateDatabase
+            from scripts.migrateDbColumns import migrateDatabase
             migrateDatabase(_db_path_val)
             logger.info("Database columns migrated: snake_case → camelCase")
         except Exception as exc:
             logger.warning("DB migration skipped: %s", exc)
     try:
-        from app.services.tools.mcp_client import refreshMcpTools
+        from app.services.tools.mcpClient import refreshMcpTools
         asyncio.create_task(refreshMcpTools())
     except Exception:
         pass
@@ -66,12 +66,12 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
     try:
-        from app.services.browser.session_manager import close_all as closeBrowsers
+        from app.services.browser.sessionManager import close_all as closeBrowsers
         await closeBrowsers()
     except Exception:
         pass
     try:
-        from app.services.daemon_manager import shutdownAll
+        from app.services.daemonManager import shutdownAll
         await shutdownAll()
     except Exception:
         pass
@@ -91,19 +91,19 @@ from app.routers import agents as agentsRoutes
 from app.routers import mcp as mcpRoutes
 from app.routers import cron as cronRoutes
 from app.routers import git as gitRoutes
-from app.routers import desktop_automation as desktopAutomationRoutes
+from app.routers import desktopAutomation as desktopAutomationRoutes
 from app.routers import browser as browserRoutes
 from app.routers import terminal as terminalRoutes
-from app.routers import terminal_routes as terminalWsRoutes
+from app.routers import terminalRoutes as terminalWsRoutes
 from app.routers import manage as manageRoutes
 from app.routers import monitoring as monitoringRoutes
 from app.routers import august as augustRoutes
 from app.routers import gateway as gatewayRoutes
 from app.routers import curator as curatorRoutes
-from app.routers import ui_memory as uiMemoryRoutes
+from app.routers import uiMemory as uiMemoryRoutes
 from app.routers import brain as brainRoutes
-from app.routers import brain_activity as brainActivityRoutes
-from app.routers import brain_config as brainConfigRoutes
+from app.routers import brainActivity as brainActivityRoutes
+from app.routers import brainConfig as brainConfigRoutes
 from app.routers import exam as examRoutes
 from app.routers import live as liveRoutes
 from app.routers import calendar as calendarRoutes

@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.services import aliasService
-from app.services.memory_store import listConfigAudit
+from app.services.memoryStore import listConfigAudit
 router = APIRouter(prefix='/api/august')
 
 class AliasManageItem(BaseModel):

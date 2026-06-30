@@ -217,8 +217,8 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     Wires brain_orchestrator classification, workspace, VCS, memory stats,
     whats-new, and guard mode rules — achieving Node.js parity.
     """
-    from app.services.memory.context_builder import build_system_prompt as ctxBuild
-    from app.services.memory_store import getMemory
+    from app.services.memory.contextBuilder import buildSystemPrompt as ctxBuild
+    from app.services.memoryStore import getMemory
     memory = {}
     profile = getMemory('user_profile')
     if profile:
@@ -230,7 +230,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     if projects:
         memory['active_projects'] = projects
     try:
-        from app.services.memory.auto_memory import getRelevantMemories
+        from app.services.memory.autoMemory import getRelevantMemories
         recentText = ''
         if session.messages:
             recent = session.messages[-6:] if len(session.messages) > 6 else session.messages
@@ -242,7 +242,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     except Exception:
         pass
     try:
-        from app.services.memory_store import _conn as brainConn
+        from app.services.memoryStore import _conn as brainConn
         conn = brainConn()
         heuristicsRows = conn.execute('SELECT rule, source, category FROM learned_heuristics ORDER BY updated_at DESC').fetchall()
         if heuristicsRows:
@@ -255,13 +255,13 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     agentContext = None
     if session.agent_id:
         try:
-            from app.services.tools.agent_registry import renderAgentContext
+            from app.services.tools.agentRegistry import renderAgentContext
             agentContext = renderAgentContext(session.agent_id)
         except Exception:
             pass
     brainPolicy = None
     try:
-        from app.services.memory.brain_orchestrator import extractTextFromMessages, classifyTask, policyForTask
+        from app.services.memory.brainOrchestrator import extractTextFromMessages, classifyTask, policyForTask
         msgs = []
         if hasattr(session, 'messages') and session.messages:
             msgs = session.messages
@@ -284,7 +284,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
             pass
     memoryStats = {}
     try:
-        from app.services.memory_store import get_stats as memStats
+        from app.services.memoryStore import getStats as memStats
         memoryStats = memStats()
     except Exception:
         pass
@@ -316,7 +316,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
         pass
     cognitiveBudget = None
     try:
-        from app.services.workbench.token_budget import computeBudget
+        from app.services.workbench.tokenBudget import computeBudget
         provider = getattr(session, 'provider', None) or ''
         model = getattr(session, 'model', None) or ''
         providerName = provider.get('name', '') if isinstance(provider, dict) else str(provider)
@@ -330,14 +330,14 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
         if k in memory:
             sessionDict[k] = memory[k]
     tools = toolDefinitions(session)
-    from app.services.workbench.prompt_cache import getCache
+    from app.services.workbench.promptCache import getCache
     promptCache = getCache()
     cacheKey = getattr(session, 'id', '') or ''
     cachedT12 = promptCache.get(cacheKey)
     base = ctxBuild(session=sessionDict, memory=memory, tools=tools, agent_context=agentContext, cached_t12=cachedT12)
     if cachedT12 is None:
         try:
-            from app.services.memory.context_builder import buildTier1, buildTier2
+            from app.services.memory.contextBuilder import buildTier1, buildTier2
             t1 = buildTier1(sessionDict)
             t2 = buildTier2(sessionDict)
             t12Parts = []
@@ -386,7 +386,7 @@ def _buildDaemonUpdates(sessionId: str) -> str:
     can detect critical alerts and pause to inform the user.
     """
     try:
-        from app.services.daemon_manager import getManager
+        from app.services.daemonManager import getManager
         manager = getManager()
         daemons = manager.list_daemons(sessionId)
         if not daemons:
@@ -458,8 +458,8 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, Any]]:
     Phase 3: If progressive disclosure is active and the tool set exceeds
     the threshold, BM25 pre-loads the most relevant tools and defers the rest.
     """
-    from app.adapters.proxy_tools import sanitizeAnthropicToolDefinition
-    from app.services.tool_registry import listTools
+    from app.adapters.proxyTools import sanitizeAnthropicToolDefinition
+    from app.services.toolRegistry import listTools
     tools: list[dict[str, Any]] = []
     seen: set[str] = set()
     for raw in listTools():
@@ -472,7 +472,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, Any]]:
         tools.append(t)
     tools.extend(_mcpToolDefinitionsAnthropic(seen))
     try:
-        from app.services.tools.model_tools import assembleToolDefs
+        from app.services.tools.modelTools import assembleToolDefs
         messages = getattr(session, 'messages', None) or []
         contextMsgs = list(messages) if isinstance(messages, list) else []
         result = assembleToolDefs(all_tool_defs=tools, context_messages=contextMsgs)
@@ -490,8 +490,8 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, Any]]:
     OpenAI/Anthropic format) are normalized to OpenAI format and deduped
     by name, then real MCP server tools are appended.
     """
-    from app.adapters.proxy_tools import anthropicToOpenaiToolDefinition
-    from app.services.tool_registry import listTools
+    from app.adapters.proxyTools import anthropicToOpenaiToolDefinition
+    from app.services.toolRegistry import listTools
     tools: list[dict[str, Any]] = []
     seen: set[str] = set()
     for raw in listTools():
@@ -511,8 +511,8 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, Any]]:
 
 def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, Any]]:
     """Real MCP server tools in Anthropic format, deduped against ``seen``."""
-    from app.adapters.proxy_tools import openaiToAnthropicToolDefinition
-    from app.services.tools.mcp_client import getMcpToolDefinitionsSync
+    from app.adapters.proxyTools import openaiToAnthropicToolDefinition
+    from app.services.tools.mcpClient import getMcpToolDefinitionsSync
     out: list[dict[str, Any]] = []
     for raw in getMcpToolDefinitionsSync():
         t = openaiToAnthropicToolDefinition(raw)
@@ -524,7 +524,7 @@ def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, Any]]:
 
 def _mcpToolDefinitionsOpenai(seen: set[str]) -> list[dict[str, Any]]:
     """Real MCP server tools in OpenAI format, deduped against ``seen``."""
-    from app.services.tools.mcp_client import getMcpToolDefinitionsSync
+    from app.services.tools.mcpClient import getMcpToolDefinitionsSync
     out: list[dict[str, Any]] = []
     for raw in getMcpToolDefinitionsSync():
         fn = raw.get('function', {}) if raw.get('type') == 'function' else {}
@@ -598,7 +598,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
     def _isCancelled() -> bool:
         return signal is not None and signal.is_set()
     try:
-        from app.services.memory.context_compressor import compressMessages, isFeatureEnabled
+        from app.services.memory.contextCompressor import compressMessages, isFeatureEnabled
         from app.providers.clients.base import estimateTokens
         if isFeatureEnabled():
             originalTokens = estimateTokens(session.messages)
@@ -705,7 +705,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
             if emit:
                 emit({'type': 'tool_call', 'id': toolUseId, 'name': toolName, 'input': toolInput, 'status': 'running'})
             try:
-                from app.services.workbench.tool_guardrails import ToolCallTracker
+                from app.services.workbench.toolGuardrails import ToolCallTracker
                 if not hasattr(session, '_tool_tracker') or session._tool_tracker is None:
                     session._tool_tracker = ToolCallTracker()
                 tracker = session._tool_tracker
@@ -738,13 +738,13 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
             toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': result})
         if not toolResults:
             try:
-                from app.services.workbench.tool_guardrails import ToolCallTracker
+                from app.services.workbench.toolGuardrails import ToolCallTracker
                 if hasattr(session, '_tool_tracker') and session._tool_tracker:
                     session._tool_tracker.record_text_response()
             except Exception:
                 pass
             try:
-                from app.services.daemon_manager import getManager
+                from app.services.daemonManager import getManager
                 manager = getManager()
                 manager.increment_turns(session.id)
             except Exception:
@@ -766,7 +766,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
         _emitSessionStatus(sessionId)
         if totalInputTokens > 0 or totalOutputTokens > 0:
             try:
-                from app.services.memory_store import recordUsage
+                from app.services.memoryStore import recordUsage
                 recordUsage(session_id=session.id, model=resolvedModel, input_tokens=totalInputTokens, output_tokens=totalOutputTokens, context_tokens=finalContextTokens)
                 session.total_input_tokens += totalInputTokens
                 session.total_output_tokens += totalOutputTokens
@@ -779,7 +779,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
     reflectionModel = _backgroundTaskModel('reflectionModel', resolvedModel)
     autoMemoryModel = _backgroundTaskModel('autoMemoryModel', resolvedModel)
     try:
-        from app.services.memory.background_review import tryBackgroundReview, ReviewGates
+        from app.services.memory.backgroundReview import tryBackgroundReview, ReviewGates
         asyncio.create_task(tryBackgroundReview(session, list(currentMessages), gates=ReviewGates(turn_interval=3, tool_round_interval=6), llm_client=_makeReviewLlmClient(resolvedProvider, reviewModel)))
     except Exception:
         pass
@@ -788,7 +788,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
     except Exception:
         pass
     try:
-        from app.services.memory.self_evolution import reflectOnTurn
+        from app.services.memory.selfEvolution import reflectOnTurn
         asyncio.create_task(asyncio.to_thread(reflectOnTurn, list(currentMessages), reflectionModel))
     except Exception:
         pass
@@ -801,7 +801,7 @@ def _backgroundTaskModel(taskKey: str, chatModel: str) -> str:
     chat session's model.
     """
     try:
-        from app.services.background_review_service import getConfig
+        from app.services.backgroundReviewService import getConfig
         cfg = getConfig()
         if cfg.get('enabled') and cfg.get(taskKey):
             return cfg[taskKey]
@@ -817,7 +817,7 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, Any]], m
     the heavier LLM-based background_review. The ``model`` argument is
     the resolved auto-memory model (falls back to the chat model) used
     for audit/metadata on the saved memories."""
-    from app.services.memory.auto_memory import saveAutoMemory, extractAndSaveTodos
+    from app.services.memory.autoMemory import saveAutoMemory, extractAndSaveTodos
     try:
         extractAndSaveTodos(messages)
     except Exception:
@@ -855,7 +855,7 @@ def _makeReviewLlmClient(mainProvider: dict[str, Any] | None, reviewModelHint: s
         provider = None
         reviewConfig: dict[str, Any] | None = None
         try:
-            from app.services.background_review_service import getConfig
+            from app.services.backgroundReviewService import getConfig
             reviewConfig = getConfig()
             reviewModel = reviewConfig.get('reviewModel', '') or reviewModelHint
             if reviewModel:
@@ -1142,11 +1142,11 @@ async def _executeTool(toolName: str, args: dict[str, Any], session: WorkbenchSe
         server subprocess over JSON-RPC.
       * everything else dispatches through ``tool_registry``.
     """
-    from app.services.tool_registry import dispatch as dispatchTool
+    from app.services.toolRegistry import dispatch as dispatchTool
     from app.services.workbench.context import currentSessionId
     token = currentSessionId.set(session.id)
     try:
-        from app.services.tools.mcp_client import executeMcpToolCall, isMcpToolName
+        from app.services.tools.mcpClient import executeMcpToolCall, isMcpToolName
         if isMcpToolName(toolName):
             return str(await executeMcpToolCall(toolName, args))
         result = await dispatchTool(toolName, args)
@@ -1281,7 +1281,7 @@ def listProxyCapabilities() -> dict[str, Any]:
     - Estimates per-tool schema token cost
     - Includes agent registry count
     """
-    from app.services.tool_registry import list_tools as regListTools
+    from app.services.toolRegistry import listTools as regListTools
     _MUTATINGTools = frozenset({'write_file', 'edit_file', 'delete_file', 'create_file', 'run_command', 'save_memory', 'save_fact', 'update_heuristics', 'update_state', 'write_scratchpad', 'delete_memory', 'submit_plan', 'approve_plan', 'reject_plan', 'load_skill', 'skill_manage', 'spawn_subagent', 'spawn_daemon', 'kill_daemon', 'write_blackboard', 'clear_blackboard'})
     allTools = regListTools()
     grouped: dict[str, list[dict[str, Any]]] = {}
@@ -1316,7 +1316,7 @@ def listProxyCapabilities() -> dict[str, Any]:
         grouped[group].append(entry)
     agentCount = 0
     try:
-        from app.services.tools.agent_registry import listAgents
+        from app.services.tools.agentRegistry import listAgents
         agentCount = len(listAgents())
     except Exception:
         pass

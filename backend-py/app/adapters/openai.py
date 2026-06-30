@@ -17,11 +17,11 @@ import time
 import uuid
 from typing import Any, AsyncIterator, Callable
 from app.adapters.base import streamSse, buildHeaders
-from app.adapters.proxy_tools import getProxyOpenaiToolDefinitions, appendMissingOpenaiTools, getCanonicalManagedOpenaiWebTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, isProxyManagedLocalToolName
-from app.adapters.tool_classification import classifyOpenaiToolCalls, getToolNameFromOpenaiTool
-from app.adapters.case_converters import snakeToCamel, camelToSnake
+from app.adapters.proxyTools import getProxyOpenaiToolDefinitions, appendMissingOpenaiTools, getCanonicalManagedOpenaiWebTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, isProxyManagedLocalToolName
+from app.adapters.toolClassification import classifyOpenaiToolCalls, getToolNameFromOpenaiTool
+from app.adapters.caseConverters import snakeToCamel, camelToSnake
 from app.providers import resolver as providerResolver
-from app.providers.model_resolver import resolve, resolveOrFallback
+from app.providers.modelResolver import resolve, resolveOrFallback
 from app.providers.clients import getClient
 MAX_MANAGED_TOOL_ROUNDS = 10
 

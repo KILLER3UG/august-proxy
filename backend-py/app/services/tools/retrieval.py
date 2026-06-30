@@ -5,7 +5,7 @@ Scores tools and skills against a conversation query using the BM25 ranking
 function. No vector DB, no embedding model, no rank_bm25 package.
 
 Usage:
-    from app.services.tools.retrieval import search_tools, search_skills
+    from app.services.tools.retrieval import searchTools, searchSkills
 
     results = search_tools(tool_catalog, "audit this Dockerfile", k=5)
 """

@@ -11,7 +11,7 @@ emitted to the parent session's SSE stream as ``subagent_*`` events.
 from __future__ import annotations
 import uuid
 from typing import Any, Callable
-from app.services.tools.agent_registry import _MAXAgentDepth, createJob, deriveChildPermissions, evaluateAgentTool, getAgent, renderAgentContext, updateJob
+from app.services.tools.agentRegistry import _MAXAgentDepth, createJob, deriveChildPermissions, evaluateAgentTool, getAgent, renderAgentContext, updateJob
 from app.services.workbench.context import currentSessionId
 
 def _toolName(t: dict[str, Any]) -> str:
@@ -34,10 +34,10 @@ def _toolAllowed(agent: dict[str, Any], name: str) -> bool:
 
 async def executeSubAgent(session: Any, agentId: str, goal: str, context: str='', emit: Callable[[dict[str, Any]], None] | None=None) -> dict[str, Any]:
     """Execute a sub-agent task and return ``{jobId, agentId, status, result}``."""
-    from app.providers.model_resolver import resolveOrFallback
-    from app.providers.route_resolver import resolveForModel
-    from app.services.fallback_service import getFallback
-    from app.services.tool_registry import dispatch as dispatchTool
+    from app.providers.modelResolver import resolveOrFallback
+    from app.providers.routeResolver import resolveForModel
+    from app.services.fallbackService import getFallback
+    from app.services.toolRegistry import dispatch as dispatchTool
     from app.services.workbench.workbench import MAX_MANAGED_TOOL_ROUNDS, _callAnthropicWorkbench, _callOpenaiWorkbench, _extractText, _isAnthropicProvider, _isOpenaiProvider, _resolveModel, _resolveWorkbenchProvider, openaiToolDefinitions, toolDefinitions
     parentAlias = getattr(session, 'model', '') or ''
     agent = _agentOrGeneral(agentId, parentAlias)

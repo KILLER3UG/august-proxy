@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.config import settings
 from app.providers import resolver as providerResolver
-from app.services.memory_store import getStats
+from app.services.memoryStore import getStats
 from app.services.workbench.workbench import listWorkbenchSessions
 router = APIRouter(prefix='/api/manage')
 

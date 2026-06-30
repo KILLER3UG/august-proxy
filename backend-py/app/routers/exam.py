@@ -9,7 +9,7 @@ import json
 import time
 from typing import Any
 from fastapi import APIRouter, HTTPException
-from app.services.memory_store import _conn
+from app.services.memoryStore import _conn
 from app.services import examService
 router = APIRouter(prefix='/api/exam')
 

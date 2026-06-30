@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from app.services import skillService
-from app.services.skill_service import SkillValidationError
+from app.services.skillService import SkillValidationError
 router = APIRouter(prefix='/api/skills')
 
 class SkillCreate(BaseModel):

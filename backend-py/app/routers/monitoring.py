@@ -27,9 +27,9 @@ dropped the `python` field); it was removed.
 from __future__ import annotations
 from typing import Any
 from fastapi import APIRouter, HTTPException, Query
-from app.services.logger import getActivityLog, getPendingRequests, getFilteredRequests, get_stats as getUsageStats, getRequestDetails, get_request_detail as getReqDetail, getRecentLogEvents
-from app.services.logger_conversations import getConversations
-from app.services.host_agent import getHostInfo
+from app.services.logger import getActivityLog, getPendingRequests, getFilteredRequests, getStats as getUsageStats, getRequestDetails, getRequestDetail as getReqDetail, getRecentLogEvents
+from app.services.loggerConversations import getConversations
+from app.services.hostAgent import getHostInfo
 router = APIRouter(prefix='/api')
 
 @router.get('/activity')

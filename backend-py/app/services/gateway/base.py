@@ -19,7 +19,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
-    from app.services.gateway.session_bridge import SessionBridge
+    from app.services.gateway.sessionBridge import SessionBridge
 BYPASS_COMMANDS = {'stop', 'new', 'reset', 'approve', 'deny', 'status'}
 
 @dataclass
