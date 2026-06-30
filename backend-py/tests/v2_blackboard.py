@@ -1,85 +1,65 @@
 """v2 — Test blackboard adaptive TTL + ack + session scoping + Tier 3 injection."""
 import pytest
-from app.services import blackboard_service
+from app.services import blackboardService
 from app.services.memory_store import init
 
-
 @pytest.fixture(autouse=True)
-def _init_db():
+def _initDb():
     init()
     yield
 
-
-def test_adaptive_ttl_from_poll_interval():
+def testAdaptiveTtlFromPollInterval():
     """TTL is max(poll_interval * 2, 60)."""
     from datetime import datetime
-    fmt = "%Y-%m-%d %H:%M:%S"
-
-    # poll_interval=30 → TTL = 60
-    expires_at = blackboard_service.compute_ttl(poll_interval=30)
-    parsed = datetime.strptime(expires_at, fmt)
+    fmt = '%Y-%m-%d %H:%M:%S'
+    expiresAt = blackboardService.compute_ttl(poll_interval=30)
+    parsed = datetime.strptime(expiresAt, fmt)
     now = datetime.utcnow()
     diff = (parsed - now).total_seconds()
     assert 55 < diff < 65
-
-    # poll_interval=10 → TTL = max(20, 60) = 60
-    expires_at = blackboard_service.compute_ttl(poll_interval=10)
-    parsed = datetime.strptime(expires_at, fmt)
+    expiresAt = blackboardService.compute_ttl(poll_interval=10)
+    parsed = datetime.strptime(expiresAt, fmt)
     diff = (parsed - now).total_seconds()
     assert 55 < diff < 65
-
-    # poll_interval=120 → TTL = 240
-    expires_at = blackboard_service.compute_ttl(poll_interval=120)
-    parsed = datetime.strptime(expires_at, fmt)
+    expiresAt = blackboardService.compute_ttl(poll_interval=120)
+    parsed = datetime.strptime(expiresAt, fmt)
     diff = (parsed - now).total_seconds()
     assert 235 < diff < 245
 
-
-def test_ack_deletes_note():
+def testAckDeletesNote():
     """read_notes(ack=True) deletes the note on read."""
     import uuid
-    sid = f"v2-ack-{uuid.uuid4().hex[:8]}"
-    blackboard_service.write_note(sid, "test-agent", "test-key", "test value", 60)
+    sid = f'v2-ack-{uuid.uuid4().hex[:8]}'
+    blackboardService.write_note(sid, 'test-agent', 'test-key', 'test value', 60)
+    notes = blackboardService.read_notes(sid, ack=True)
+    assert any((n.get('key') == 'test-key' for n in notes))
+    notesAfter = blackboardService.read_notes(sid)
+    assert not any((n.get('key') == 'test-key' for n in notesAfter))
 
-    notes = blackboard_service.read_notes(sid, ack=True)
-    assert any(n.get("key") == "test-key" for n in notes)
-
-    # Note should now be gone
-    notes_after = blackboard_service.read_notes(sid)
-    assert not any(n.get("key") == "test-key" for n in notes_after)
-
-
-def test_session_scoping():
+def testSessionScoping():
     """Notes from session A don't leak into session B."""
     import uuid
-    sid_a = f"v2-scope-a-{uuid.uuid4().hex[:8]}"
-    sid_b = f"v2-scope-b-{uuid.uuid4().hex[:8]}"
-    blackboard_service.write_note(sid_a, "agent", "key", "value-A", 60)
-    blackboard_service.write_note(sid_b, "agent", "key", "value-B", 60)
+    sidA = f'v2-scope-a-{uuid.uuid4().hex[:8]}'
+    sidB = f'v2-scope-b-{uuid.uuid4().hex[:8]}'
+    blackboardService.write_note(sidA, 'agent', 'key', 'value-A', 60)
+    blackboardService.write_note(sidB, 'agent', 'key', 'value-B', 60)
+    aNotes = blackboardService.read_notes(sidA)
+    bNotes = blackboardService.read_notes(sidB)
+    assert any((n.get('value') == 'value-A' for n in aNotes))
+    assert not any((n.get('value') == 'value-A' for n in bNotes))
+    assert any((n.get('value') == 'value-B' for n in bNotes))
+    blackboardService.clear_notes(sidA)
+    blackboardService.clear_notes(sidB)
 
-    a_notes = blackboard_service.read_notes(sid_a)
-    b_notes = blackboard_service.read_notes(sid_b)
-    assert any(n.get("value") == "value-A" for n in a_notes)
-    assert not any(n.get("value") == "value-A" for n in b_notes)
-    assert any(n.get("value") == "value-B" for n in b_notes)
-    # Cleanup
-    blackboard_service.clear_notes(sid_a)
-    blackboard_service.clear_notes(sid_b)
-
-
-def test_tier3_includes_blackboard_state():
+def testTier3IncludesBlackboardState():
     """<blackboard_state> is included in build_system_prompt when notes exist."""
-    from app.services.memory import context_builder
+    from app.services.memory import contextBuilder
     import uuid
-    sid = f"v2-tier3-{uuid.uuid4().hex[:8]}"
-    blackboard_service.write_note(sid, "ci_watcher", "test_result", "tests failing on line 45", 60)
-    session = {
-        "id": sid,
-        "blackboard_state": blackboard_service.read_notes(sid),
-    }
-    prompt = context_builder.build_system_prompt(session=session, memory={})
-    assert "<blackboard_state>" in prompt
-    assert "ci_watcher" in prompt
-    assert "tests failing on line 45" in prompt
-    # Cleanup
-    blackboard_service.clear_notes(sid)
+    sid = f'v2-tier3-{uuid.uuid4().hex[:8]}'
+    blackboardService.write_note(sid, 'ci_watcher', 'test_result', 'tests failing on line 45', 60)
+    session = {'id': sid, 'blackboard_state': blackboardService.read_notes(sid)}
+    prompt = contextBuilder.build_system_prompt(session=session, memory={})
+    assert '<blackboard_state>' in prompt
+    assert 'ci_watcher' in prompt
+    assert 'tests failing on line 45' in prompt
+    blackboardService.clear_notes(sid)

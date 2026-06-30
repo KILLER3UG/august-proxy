@@ -1,62 +1,48 @@
 """v3 — Test /api/brain/health returns selfcheck results for all layers."""
 import pytest
 
-
 @pytest.fixture(autouse=True)
-def _init_db():
+def _initDb():
     from app.services.memory_store import init
     init()
     yield
 
-
-def test_health_response_has_phases_array():
+def testHealthResponseHasPhasesArray():
     """/api/brain/health returns a 'phases' array covering the cognitive layers."""
     from fastapi.testclient import TestClient
     from app.main import app
     client = TestClient(app)
-    resp = client.get("/api/brain/health")
+    resp = client.get('/api/brain/health')
     assert resp.status_code == 200
     data = resp.json()
-    assert "phases" in data
-    assert isinstance(data["phases"], list)
-    assert len(data["phases"]) >= 12
+    assert 'phases' in data
+    assert isinstance(data['phases'], list)
+    assert len(data['phases']) >= 12
 
-
-def test_health_each_phase_has_required_fields():
+def testHealthEachPhaseHasRequiredFields():
     """Each phase has layer, flag, flag_value, status, detail, last_check_at."""
     from fastapi.testclient import TestClient
     from app.main import app
     client = TestClient(app)
-    resp = client.get("/api/brain/health")
-    phases = resp.json()["phases"]
-    assert phases, "expected at least one phase"
+    resp = client.get('/api/brain/health')
+    phases = resp.json()['phases']
+    assert phases, 'expected at least one phase'
     for phase in phases:
-        assert "layer" in phase
-        assert "flag" in phase
-        assert "flag_value" in phase
-        assert "status" in phase
-        assert "detail" in phase
-        assert "last_check_at" in phase
-        assert phase["status"] in (
-            "on & healthy",
-            "on & failing",
-            "off",
-            "not shipped",
-        )
+        assert 'layer' in phase
+        assert 'flag' in phase
+        assert 'flag_value' in phase
+        assert 'status' in phase
+        assert 'detail' in phase
+        assert 'last_check_at' in phase
+        assert phase['status'] in ('on & healthy', 'on & failing', 'off', 'not shipped')
 
-
-def test_health_covers_required_layers():
+def testHealthCoversRequiredLayers():
     """All 12 expected layers from the design doc are present."""
     from fastapi.testclient import TestClient
     from app.main import app
     client = TestClient(app)
-    resp = client.get("/api/brain/health")
-    flags = {p["flag"] for p in resp.json()["phases"]}
-    expected = {
-        "heuristics", "execution_state", "scratchpad", "tool_guardrails",
-        "progressive_disclosure", "prompt_caching", "cognitive_budget",
-        "daemons", "blackboard", "env_watcher", "verifier_reflex",
-        "skill_genesis",
-    }
+    resp = client.get('/api/brain/health')
+    flags = {p['flag'] for p in resp.json()['phases']}
+    expected = {'heuristics', 'execution_state', 'scratchpad', 'tool_guardrails', 'progressive_disclosure', 'prompt_caching', 'cognitive_budget', 'daemons', 'blackboard', 'env_watcher', 'verifier_reflex', 'skill_genesis'}
     missing = expected - flags
-    assert not missing, f"missing layers: {missing}"
+    assert not missing, f'missing layers: {missing}'

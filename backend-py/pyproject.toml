@@ -42,6 +42,7 @@ where = ["app"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+python_functions = "test*"
 
 [dependency-groups]
 dev = [

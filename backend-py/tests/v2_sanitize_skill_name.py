@@ -1,53 +1,45 @@
 """v2 hardening — Test skill name sanitizer (Title Case → camelCase)."""
 import pytest
-from app.services.consolidation_daemon import _sanitize_skill_name
+from app.services.consolidation_daemon import _sanitizeSkillName
 
-
-def test_sanitize_title_case():
+def testSanitizeTitleCase():
     """Title Case 'Debug Python Script' → camelCase 'debugPythonScript'."""
-    assert _sanitize_skill_name("Debug Python Script") == "debugPythonScript"
+    assert _sanitizeSkillName('Debug Python Script') == 'debugPythonScript'
 
-
-def test_sanitize_snake_case():
+def testSanitizeSnakeCase():
     """snake_case 'user_preferences' → camelCase 'userPreferences'."""
-    assert _sanitize_skill_name("user_preferences") == "userPreferences"
+    assert _sanitizeSkillName('user_preferences') == 'userPreferences'
 
-
-def test_sanitize_kebab_case():
+def testSanitizeKebabCase():
     """kebab-case 'JWT-Auth-Flow' → camelCase 'jwtAuthFlow'."""
-    assert _sanitize_skill_name("JWT-Auth-Flow") == "jwtAuthFlow"
+    assert _sanitizeSkillName('JWT-Auth-Flow') == 'jwtAuthFlow'
 
-
-def test_sanitize_mixed_separators():
+def testSanitizeMixedSeparators():
     """Mixed separators get normalized."""
-    assert _sanitize_skill_name("debug_python-script") == "debugPythonScript"
-    assert _sanitize_skill_name("debug_python.script") == "debugPythonScript"
+    assert _sanitizeSkillName('debug_python-script') == 'debugPythonScript'
+    assert _sanitizeSkillName('debug_python.script') == 'debugPythonScript'
 
-
-def test_sanitize_whitespace():
+def testSanitizeWhitespace():
     """Leading/trailing whitespace is trimmed."""
-    assert _sanitize_skill_name("  helloWorld  ") == "helloworld"
+    assert _sanitizeSkillName('  helloWorld  ') == 'helloworld'
 
-
-def test_sanitize_already_camel():
+def testSanitizeAlreadyCamel():
     """Already-camelCase is normalized to consistent lower-camelCase.
 
     The sanitizer is idempotent and consistent: regardless of input casing,
     it always produces the same canonical form.
     """
-    assert _sanitize_skill_name("debugPythonScript") == "debugpythonscript"
-    assert _sanitize_skill_name("DebugPythonScript") == "debugpythonscript"
+    assert _sanitizeSkillName('debugPythonScript') == 'debugpythonscript'
+    assert _sanitizeSkillName('DebugPythonScript') == 'debugpythonscript'
 
-
-def test_sanitize_empty():
+def testSanitizeEmpty():
     """Empty / whitespace-only / no-alphanumeric → empty string."""
-    assert _sanitize_skill_name("") == ""
-    assert _sanitize_skill_name("   ") == ""
-    assert _sanitize_skill_name("---") == ""
+    assert _sanitizeSkillName('') == ''
+    assert _sanitizeSkillName('   ') == ''
+    assert _sanitizeSkillName('---') == ''
 
-
-def test_sanitize_truncates_long_names():
+def testSanitizeTruncatesLongNames():
     """Long names are truncated to 50 chars."""
-    long_name = "a" * 100
-    result = _sanitize_skill_name(long_name)
+    longName = 'a' * 100
+    result = _sanitizeSkillName(longName)
     assert len(result) <= 50

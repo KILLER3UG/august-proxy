@@ -5,41 +5,31 @@ file to a temp path so tests that mutate aliases / fallback / agents never
 touch the user's real ``config.json`` or ``august_brain.sqlite``. It is
 opt-in — existing tests are unaffected.
 """
-
 from __future__ import annotations
-
 import pytest
 
-
 @pytest.fixture
-def isolated_data(tmp_path, monkeypatch):
+def isolatedData(tmp_path, monkeypatch):
     from app.config import settings
-    from app.services import memory_store
-
-    monkeypatch.setenv("AUGUST_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("AUGUST_BRAIN_SQLITE_FILE", str(tmp_path / "test_brain.sqlite"))
-    monkeypatch.setattr(settings, "data_dir", tmp_path)
-    settings.reload()  # read the empty temp config
-
-    # Reset the thread-local SQLite connection so it points at the temp DB.
-    memory_store.close()
-    memory_store.init()
-
+    from app.services import memoryStore
+    monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
+    monkeypatch.setenv('AUGUST_BRAIN_SQLITE_FILE', str(tmp_path / 'test_brain.sqlite'))
+    monkeypatch.setattr(settings, 'data_dir', tmp_path)
+    settings.reload()
+    memoryStore.close()
+    memoryStore.init()
     yield tmp_path
-
-    memory_store.close()
+    memoryStore.close()
     settings.reload()
 
-
 @pytest.fixture
-def isolated_skills(tmp_path, monkeypatch):
+def isolatedSkills(tmp_path, monkeypatch):
     """Redirect both skill roots to temp dirs (shared via conftest)."""
-    from app.services import skill_service
-
-    agent_root = tmp_path / "agent-skills"
-    bundled_root = tmp_path / "bundled-skills"
-    agent_root.mkdir()
-    bundled_root.mkdir()
-    monkeypatch.setattr(skill_service, "_agent_skills_dir", lambda: agent_root)
-    monkeypatch.setattr(skill_service, "SKILLS_DIR", bundled_root)
-    return agent_root, bundled_root
+    from app.services import skillService
+    agentRoot = tmp_path / 'agent-skills'
+    bundledRoot = tmp_path / 'bundled-skills'
+    agentRoot.mkdir()
+    bundledRoot.mkdir()
+    monkeypatch.setattr(skillService, '_agent_skills_dir', lambda: agentRoot)
+    monkeypatch.setattr(skillService, 'SKILLS_DIR', bundledRoot)
+    return (agentRoot, bundledRoot)
