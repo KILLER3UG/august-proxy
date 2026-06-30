@@ -24,7 +24,7 @@ class GeminiClient(BaseProviderClient):
         return headers
 
     def resolveBaseUrl(self) -> str:
-        base = super().resolve_base_url()
+        base = super().resolveBaseUrl()
         if not base:
             base = 'https://generativelanguage.googleapis.com/v1beta/openai'
         return base.rstrip('/')

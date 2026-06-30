@@ -14,7 +14,7 @@ def isolatedData(tmp_path, monkeypatch):
     from app.services import memoryStore
     monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
     monkeypatch.setenv('AUGUST_BRAIN_SQLITE_FILE', str(tmp_path / 'test_brain.sqlite'))
-    monkeypatch.setattr(settings, 'data_dir', tmp_path)
+    monkeypatch.setattr(settings, 'dataDir', tmp_path)
     settings.reload()
     memoryStore.close()
     memoryStore.init()
@@ -30,6 +30,6 @@ def isolatedSkills(tmp_path, monkeypatch):
     bundledRoot = tmp_path / 'bundled-skills'
     agentRoot.mkdir()
     bundledRoot.mkdir()
-    monkeypatch.setattr(skillService, '_agent_skills_dir', lambda: agentRoot)
+    monkeypatch.setattr(skillService, '_agentSkillsDir', lambda: agentRoot)
     monkeypatch.setattr(skillService, 'SKILLS_DIR', bundledRoot)
     return (agentRoot, bundledRoot)

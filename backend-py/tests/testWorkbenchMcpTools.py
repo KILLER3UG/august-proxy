@@ -24,8 +24,8 @@ def _isolateMcpState(monkeypatch):
 
 @pytest.fixture(scope='module', autouse=True)
 def _registerTools():
-    if not toolRegistry.list_tools():
-        toolDefsModule.register_all()
+    if not toolRegistry.listTools():
+        toolDefsModule.registerAll()
     yield
 
 @pytest.fixture

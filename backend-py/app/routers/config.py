@@ -18,19 +18,19 @@ async def activeProvider():
     either built-in providers with keys in config.json/env vars,
     or custom providers from providers.json.
     """
-    cfg = configService.get_config()
+    cfg = configService.getConfig()
     active = cfg.get('activeProvider')
     providers = []
-    for p in providerResolver.list_available():
+    for p in providerResolver.listAvailable():
         apiKey = cfg.get(p['name'], {}).get('apiKey', '')
         if not apiKey:
             from app.providers.clients import getClient
             client = getClient(p)
             if client:
-                apiKey = client.resolve_api_key() or ''
+                apiKey = client.resolveApiKey() or ''
         if apiKey:
             providers.append({'id': p['name'], 'name': p['name'], 'apiMode': p.get('api_mode', ''), 'isAvailable': True, 'redactedKey': secrets.mask(apiKey)})
-    store = configService.get_providers_store()
+    store = configService.getProvidersStore()
     for entry in store.get('providers', []):
         name = entry.get('name', '')
         if not name or any((p['id'] == name for p in providers)):
@@ -76,7 +76,7 @@ async def putModelAliases(body: ModelAliasesBulk):
 async def getSubagentFallback():
     """Return the current sub-agent fallback configuration."""
     from app.services import fallbackService
-    return fallbackService.get_fallback()
+    return fallbackService.getFallback()
 
 class FallbackUpdate(BaseModel):
     enabled: bool | None = None
@@ -89,7 +89,7 @@ async def putSubagentFallback(body: FallbackUpdate):
     """Update sub-agent fallback fields (partial)."""
     from app.services import fallbackService
     try:
-        return fallbackService.configure_fallback(enabled=body.enabled, mode=body.mode, provider=body.provider, model=body.model, actor='ui')
+        return fallbackService.configureFallback(enabled=body.enabled, mode=body.mode, provider=body.provider, model=body.model, actor='ui')
     except ValueError as exc:
         from fastapi import HTTPException
         raise HTTPException(400, detail={'code': 'validation', 'message': str(exc)})
@@ -113,13 +113,13 @@ class BackgroundReviewUpdate(BaseModel):
 async def getBackgroundReview():
     """Return the current background review config."""
     from app.services import backgroundReviewService
-    return backgroundReviewService.get_config()
+    return backgroundReviewService.getConfig()
 
 @router.put('/background-review')
 async def putBackgroundReview(body: BackgroundReviewUpdate):
     """Update background review config fields (partial)."""
     from app.services import backgroundReviewService
-    return backgroundReviewService.save_config(enabled=body.enabled, review_model=body.reviewModel, reflection_model=body.reflectionModel, auto_memory_model=body.autoMemoryModel, actor='ui')
+    return backgroundReviewService.saveConfig(enabled=body.enabled, review_model=body.reviewModel, reflection_model=body.reflectionModel, auto_memory_model=body.autoMemoryModel, actor='ui')
 
 @router.get('/model-fleet')
 async def getModelFleet():

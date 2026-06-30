@@ -10,7 +10,7 @@ def fakeProvidersStore(tmp_path, monkeypatch):
     from app.services import configService, providerCredentials
     path = tmp_path / 'providers.json'
     path.write_text(json.dumps({'providers': [{'id': 'custom-minimax-abc123', 'name': 'MiniMax (Global)', 'baseUrl': 'https://api.custom.example/anthropic', 'apiFormat': 'anthropic_messages', 'apiKey': 'sk-custom-key-12345', 'enabled': True}, {'id': 'openai-xyz', 'name': 'OpenAI', 'baseUrl': '', 'apiFormat': 'openai-chat', 'apiKey': 'sk-openai-67890', 'enabled': True}]}), encoding='utf-8')
-    monkeypatch.setattr(configService, 'data_path', lambda name, *a, **kw: path if name == 'providers.json' else path)
+    monkeypatch.setattr(configService, 'dataPath', lambda name, *a, **kw: path if name == 'providers.json' else path)
     providerCredentials.invalidate()
     yield path
     providerCredentials.invalidate()
@@ -39,7 +39,7 @@ def testBuiltInRegistryFallbackWhenCustomStoreEmpty(tmp_path, monkeypatch):
     from app.services import configService, providerCredentials
     path = tmp_path / 'providers.json'
     path.write_text(json.dumps({'providers': []}), encoding='utf-8')
-    monkeypatch.setattr(configService, 'data_path', lambda name, *a, **kw: path if name == 'providers.json' else path)
+    monkeypatch.setattr(configService, 'dataPath', lambda name, *a, **kw: path if name == 'providers.json' else path)
     providerCredentials.invalidate()
     monkeypatch.setenv('MINIMAX_API_KEY', 'sk-from-env')
     creds = providerCredentials.resolve('MiniMax (Global)')
@@ -61,7 +61,7 @@ def testResolveDisabledProviderFallsBackToRegistry(tmp_path, monkeypatch):
     from app.services import configService, providerCredentials
     path = tmp_path / 'providers.json'
     path.write_text(json.dumps({'providers': [{'id': 'custom-minimax-abc123', 'name': 'MiniMax (Global)', 'baseUrl': 'https://api.custom.example/anthropic', 'apiFormat': 'anthropic_messages', 'apiKey': 'sk-custom-key-12345', 'enabled': False}]}), encoding='utf-8')
-    monkeypatch.setattr(configService, 'data_path', lambda name, *a, **kw: path if name == 'providers.json' else path)
+    monkeypatch.setattr(configService, 'dataPath', lambda name, *a, **kw: path if name == 'providers.json' else path)
     providerCredentials.invalidate()
     monkeypatch.setenv('MINIMAX_API_KEY', 'sk-from-env')
     creds = providerCredentials.resolve('MiniMax (Global)')
@@ -76,7 +76,7 @@ def testResolveEmptyApiKeyFallsBackToRegistry(tmp_path, monkeypatch):
     from app.services import configService, providerCredentials
     path = tmp_path / 'providers.json'
     path.write_text(json.dumps({'providers': [{'id': 'custom-minimax-abc123', 'name': 'MiniMax (Global)', 'baseUrl': 'https://api.custom.example/anthropic', 'apiFormat': 'anthropic_messages', 'apiKey': '', 'enabled': True}]}), encoding='utf-8')
-    monkeypatch.setattr(configService, 'data_path', lambda name, *a, **kw: path if name == 'providers.json' else path)
+    monkeypatch.setattr(configService, 'dataPath', lambda name, *a, **kw: path if name == 'providers.json' else path)
     providerCredentials.invalidate()
     monkeypatch.setenv('MINIMAX_API_KEY', 'sk-from-env')
     creds = providerCredentials.resolve('MiniMax (Global)')
@@ -110,7 +110,7 @@ def testResolveIsCaseInsensitive(fakeProvidersStore):
 def testInvalidateClearsCache(fakeProvidersStore):
     """The public ``invalidate()`` API drops the in-memory cache so subsequent
     ``resolve()`` calls reload from disk. This is the contract
-    ``config_service.save_providers_store`` relies on to keep the helper
+    ``config_service.saveProvidersStore`` relies on to keep the helper
     in sync with on-disk writes."""
     from app.services import providerCredentials
     providerCredentials.resolve('MiniMax (Global)')
@@ -131,7 +131,7 @@ def testResolverFindsCustomStoreEntry(fakeProvidersStore):
 def testResolverHasApiKeyUsesCustomStore(fakeProvidersStore):
     from app.providers import resolver as providerResolver
     provider = providerResolver.resolve('MiniMax (Global)')
-    assert providerResolver._has_api_key(provider) is True
+    assert providerResolver.HasApiKey(provider) is True
 
 def testWorkbenchCredentialCheckUsesCustomStore(fakeProvidersStore):
     """Given a custom-store MiniMax with a key, the workbench credential check passes."""

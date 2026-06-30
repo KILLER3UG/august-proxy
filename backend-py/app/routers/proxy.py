@@ -40,9 +40,9 @@ async def _trackRequest(endpoint: str, body: dict[str, Any], request: Request):
     until the stale-cleanup sweep.
     """
     model = body.get('model', 'unknown')
-    reqId = trafficLogger.start_request({'model': model, 'provider': model, 'clientType': _clientTypeFor(endpoint), 'endpoint': f'/v1/{endpoint}', 'method': request.method if hasattr(request, 'method') else 'POST', 'path': f'/v1/{endpoint}', 'sessionId': body.get('sessionId') or body.get('session_id') or ''})
-    trafficLogger.capture_request(reqId, body)
-    trafficLogger.log_activity('request_start', f'{_clientTypeFor(endpoint)} /v1/{endpoint} → {model}')
+    reqId = trafficLogger.startRequest({'model': model, 'provider': model, 'clientType': _clientTypeFor(endpoint), 'endpoint': f'/v1/{endpoint}', 'method': request.method if hasattr(request, 'method') else 'POST', 'path': f'/v1/{endpoint}', 'sessionId': body.get('sessionId') or body.get('session_id') or ''})
+    trafficLogger.captureRequest(reqId, body)
+    trafficLogger.logActivity('request_start', f'{_clientTypeFor(endpoint)} /v1/{endpoint} → {model}')
     return reqId
 
 def _endNonStream(reqId: str, result: dict[str, Any]) -> dict[str, Any]:
@@ -50,8 +50,8 @@ def _endNonStream(reqId: str, result: dict[str, Any]) -> dict[str, Any]:
     if 'error' in result:
         trafficLogger.capture_error(reqId, str(result.get('error'))[:500])
         trafficLogger.capture_response(reqId, result)
-        trafficLogger.end_request(reqId, {'error': str(result.get('error'))})
-        trafficLogger.log_activity('request_error', f"[{reqId}] {result.get('error')}")
+        trafficLogger.endRequest(reqId, {'error': str(result.get('error'))})
+        trafficLogger.logActivity('request_error', f"[{reqId}] {result.get('error')}")
         return result
     trafficLogger.capture_response(reqId, result)
     usage = result.get('usage') or {}
@@ -59,8 +59,8 @@ def _endNonStream(reqId: str, result: dict[str, Any]) -> dict[str, Any]:
     outT = _safeInt(usage.get('completion_tokens') or usage.get('output_tokens'))
     if inT or outT:
         trafficLogger.capture_tokens(reqId, inT, outT)
-    trafficLogger.end_request(reqId, {'usage': usage})
-    trafficLogger.log_activity('request_complete', f"[{reqId}] {_clientTypeFor('')} ok ({inT + outT} tok)")
+    trafficLogger.endRequest(reqId, {'usage': usage})
+    trafficLogger.logActivity('request_complete', f"[{reqId}] {_clientTypeFor('')} ok ({inT + outT} tok)")
     return result
 
 async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[str]:
@@ -90,14 +90,14 @@ async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[s
             yield chunk
     except Exception as exc:
         trafficLogger.capture_error(reqId, str(exc)[:500])
-        trafficLogger.end_request(reqId, {'error': str(exc)})
-        trafficLogger.log_activity('request_error', f'[{reqId}] stream error: {exc}')
+        trafficLogger.endRequest(reqId, {'error': str(exc)})
+        trafficLogger.logActivity('request_error', f'[{reqId}] stream error: {exc}')
         raise
     else:
         if inT or outT:
             trafficLogger.capture_tokens(reqId, inT, outT)
-        trafficLogger.end_request(reqId, {'usage': {'input_tokens': inT, 'output_tokens': outT}})
-        trafficLogger.log_activity('request_complete', f'[{reqId}] stream ok ({inT + outT} tok)')
+        trafficLogger.endRequest(reqId, {'usage': {'input_tokens': inT, 'output_tokens': outT}})
+        trafficLogger.logActivity('request_complete', f'[{reqId}] stream ok ({inT + outT} tok)')
     finally:
         pass
 
@@ -119,7 +119,7 @@ async def anthropicMessages(request: Request):
         return _endNonStream(reqId, result)
     if isinstance(result, AsyncIterator):
         return StreamingResponse(_wrapStream(reqId, result), media_type='text/event-stream', headers=headers or {'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no'})
-    trafficLogger.end_request(reqId, {})
+    trafficLogger.endRequest(reqId, {})
     return result
 
 @router.post('/v1/chat/completions')
@@ -139,7 +139,7 @@ async def openaiChat(request: Request):
         return _endNonStream(reqId, result)
     if isinstance(result, AsyncIterator):
         return StreamingResponse(_wrapStream(reqId, result), media_type='text/event-stream', headers=headers or {'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no'})
-    trafficLogger.end_request(reqId, {})
+    trafficLogger.endRequest(reqId, {})
     return result
 
 @router.post('/v1/responses')
@@ -160,7 +160,7 @@ async def openaiResponses(request: Request):
         return _endNonStream(reqId, translated)
     if isinstance(result, AsyncIterator):
         return StreamingResponse(_wrapStream(reqId, result), media_type='text/event-stream', headers=headers or {'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no'})
-    trafficLogger.end_request(reqId, {})
+    trafficLogger.endRequest(reqId, {})
     return result
 
 def _translateToResponsesFormat(chatCompletion: dict) -> dict:
@@ -186,7 +186,7 @@ def _translateToResponsesFormat(chatCompletion: dict) -> dict:
 @router.get('/v1/models')
 async def listModels():
     """List available models from all configured providers."""
-    providers = providerResolver.list_available()
+    providers = providerResolver.listAvailable()
     models = []
     for p in providers:
         name = p.get('name', '')

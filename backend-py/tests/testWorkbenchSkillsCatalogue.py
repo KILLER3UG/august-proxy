@@ -87,7 +87,7 @@ class TestSkillToolsPresent:
     def testSkillToolsInRegistry(self):
         from app.services import toolDefinitions as toolDefsModule
         if not listTools():
-            toolDefsModule.register_all()
+            toolDefsModule.registerAll()
         names = {t['function']['name'] for t in listTools()}
         for expected in ('load_skill', 'list_skills', 'skill_manage'):
             assert expected in names, f'skill tool {expected} missing from registry'

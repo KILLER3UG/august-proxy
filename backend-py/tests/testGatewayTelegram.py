@@ -60,7 +60,7 @@ async def testNormalizeIgnoresEmptyText(adapter):
 
 @pytest.mark.asyncio
 async def testSendMessageCallsApi(adapter):
-    await adapter.send_message('789', 'Reply text')
+    await adapter.sendMessage('789', 'Reply text')
     adapter._request.assert_called_once()
     callArgs = adapter._request.call_args
     assert callArgs[0][0] == 'sendMessage'
@@ -69,13 +69,13 @@ async def testSendMessageCallsApi(adapter):
 
 @pytest.mark.asyncio
 async def testSendMessageWithThread(adapter):
-    await adapter.send_message('789', 'In thread', message_thread_id='7')
+    await adapter.sendMessage('789', 'In thread', message_thread_id='7')
     __, kwargs = adapter._request.call_args
     assert kwargs.get('message_thread_id') == '7'
 
 @pytest.mark.asyncio
 async def testSendMessageWithReply(adapter):
-    await adapter.send_message('789', 'Reply', reply_to_message_id='55')
+    await adapter.sendMessage('789', 'Reply', reply_to_message_id='55')
     __, kwargs = adapter._request.call_args
     assert kwargs.get('reply_to_message_id') == '55'
 

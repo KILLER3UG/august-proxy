@@ -144,7 +144,7 @@ async def brainLearning() -> dict[str, Any]:
 @router.get('/prompt')
 async def brainPrompt() -> dict[str, Any]:
     """Return the built system prompt — { prompt, length }."""
-    prompt = contextBuilder.build_system_prompt()
+    prompt = contextBuilder.buildSystemPrompt()
     return {'prompt': prompt, 'length': len(prompt)}
 
 @router.get('/search')
@@ -259,7 +259,7 @@ async def brainDiagnostics() -> dict[str, Any]:
             facts = int(stats.get('facts', 0) or 0)
         except Exception:
             facts = 0
-        prompt = contextBuilder.build_system_prompt()
+        prompt = contextBuilder.buildSystemPrompt()
         return {'injectedChars': len(prompt), 'maxChars': 32768, 'compacted': False, 'guidelines': guidelines, 'semanticFacts': facts, 'vectorEntries': vcount}
     except Exception as exc:
         return {'error': str(exc), 'injectedChars': 0, 'maxChars': 0, 'compacted': False, 'guidelines': 0, 'semanticFacts': 0, 'vectorEntries': 0}

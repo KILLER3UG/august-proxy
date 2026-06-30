@@ -20,7 +20,7 @@ class OpenAIClient(BaseProviderClient):
         Most OpenAI-compatible providers just need the standard
         ``Authorization: Bearer <key>`` header.
         """
-        headers = super().build_auth_headers(apiKey)
+        headers = super().buildAuthHeaders(apiKey)
         extra = self.config.get('default_headers')
         if isinstance(extra, dict):
             headers.update(extra)
@@ -31,7 +31,7 @@ class OpenAIClient(BaseProviderClient):
 
         Defaults to ``https://api.openai.com/v1``.
         """
-        base = super().resolve_base_url()
+        base = super().resolveBaseUrl()
         if not base:
             base = 'https://api.openai.com/v1'
         return base.rstrip('/')

@@ -256,13 +256,13 @@ class RequestTracker:
 _tracker = RequestTracker()
 
 def startRequest(info: dict[str, Any]) -> str:
-    return _tracker.start_request(info)
+    return _tracker.startRequest(info)
 
 def endRequest(reqId: str, result: dict[str, Any]) -> dict[str, Any] | None:
-    return _tracker.end_request(reqId, result)
+    return _tracker.endRequest(reqId, result)
 
 def captureRequest(reqId: str, body: Any, metadata: dict[str, Any] | None=None) -> None:
-    _tracker.capture_request(reqId, body, metadata)
+    _tracker.captureRequest(reqId, body, metadata)
 
 def captureResponse(reqId: str, responseData: dict[str, Any]) -> None:
     _tracker.capture_response(reqId, responseData)

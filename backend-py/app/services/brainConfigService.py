@@ -62,15 +62,15 @@ def getDefaults() -> dict[str, Any]:
 
 def _loadPersisted() -> dict[str, Any]:
     """Read ``cfg.brain_orchestrator`` (snake_case) from disk. Always fresh."""
-    cfg = configService.get_config()
+    cfg = configService.getConfig()
     val = cfg.get('brain_orchestrator')
     return val if isinstance(val, dict) else {}
 
 def _savePersisted(snakeCfg: dict[str, Any]) -> None:
     """Write snake_case ``cfg.brain_orchestrator`` and refresh the in-memory cache."""
-    cfg = configService.get_config()
+    cfg = configService.getConfig()
     cfg['brain_orchestrator'] = snakeCfg
-    configService.save_config(cfg)
+    configService.saveConfig(cfg)
     settings.reload()
 
 def _snakeToCamel(snakeCfg: dict[str, Any]) -> dict[str, Any]:
@@ -183,9 +183,9 @@ def saveBrainConfig(patch: dict[str, Any]) -> tuple[bool, str, dict[str, Any]]:
 def resetBrainConfig() -> tuple[bool, dict[str, Any]]:
     """Drop the persisted override entirely. Returns (ok, defaults_camel)."""
     before = _loadPersisted()
-    cfg = configService.get_config()
+    cfg = configService.getConfig()
     cfg.pop('brain_orchestrator', None)
-    configService.save_config(cfg)
+    configService.saveConfig(cfg)
     settings.reload()
     recordConfigAudit('brain', 'reset', 'user', before=before, after={})
     return (True, _defaultsCamel())

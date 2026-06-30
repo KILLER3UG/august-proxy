@@ -41,7 +41,7 @@ async def getSkill(name: str):
 async def createSkill(body: SkillCreate):
     """Create a new agent-authored skill."""
     try:
-        return skillService.create_skill(body.name, body.description, body.body, trigger=body.trigger, category=body.category)
+        return skillService.createSkill(body.name, body.description, body.body, trigger=body.trigger, category=body.category)
     except SkillValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -49,7 +49,7 @@ async def createSkill(body: SkillCreate):
 async def patchSkill(name: str, body: SkillPatch):
     """Patch an existing skill (copy-on-write for bundled skills)."""
     try:
-        return skillService.patch_skill(name, body=body.body, description=body.description, trigger=body.trigger, category=body.category)
+        return skillService.patchSkill(name, body=body.body, description=body.description, trigger=body.trigger, category=body.category)
     except SkillValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -57,7 +57,7 @@ async def patchSkill(name: str, body: SkillPatch):
 async def deleteSkill(name: str):
     """Delete an agent-authored skill. Refuses bundled skills."""
     try:
-        return skillService.delete_skill(name)
+        return skillService.deleteSkill(name)
     except SkillValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

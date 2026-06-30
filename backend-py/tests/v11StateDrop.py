@@ -17,7 +17,7 @@ class FakeSession:
 def _silenceStatusEmit(monkeypatch):
     """Avoid the SSE emit path which requires a full WorkbenchSession."""
     monkeypatch.setattr(wbMod, '_emit_session_status', lambda _id: None)
-    monkeypatch.setattr(wbMod, 'save_sessions', lambda: None)
+    monkeypatch.setattr(wbMod, 'saveSessions', lambda: None)
     yield
 
 def testSubmitPlanClearsExecutionState():
@@ -25,7 +25,7 @@ def testSubmitPlanClearsExecutionState():
     session = FakeSession()
     submitPlan(session, {'steps': ['new step 1']})
     assert session.plan == {'steps': ['new step 1']}
-    assert session.plan_approved is False
+    assert session.planApproved is False
     assert session._execution_state is None
     assert session._working_memory is None
 
@@ -35,7 +35,7 @@ def testRejectWorkbenchPlanClearsExecutionState():
     wbMod._sessions['test-session'] = session
     rejectWorkbenchPlan('test-session')
     assert session.plan is None
-    assert session.plan_approved is False
+    assert session.planApproved is False
     assert session._execution_state is None
     assert session._working_memory is None
     del wbMod._sessions['test-session']

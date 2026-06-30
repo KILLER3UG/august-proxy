@@ -39,7 +39,7 @@ async def manageAliases(body: AliasManageRequest):
         if not alias:
             raise HTTPException(400, detail={'code': 'bad_request', 'message': 'alias is required'})
         try:
-            entry = aliasService.create_alias(alias=alias, target_model=body.target_model or '', target_provider=body.target_provider or '', display_alias=body.display_alias or '', actor='ui')
+            entry = aliasService.createAlias(alias=alias, target_model=body.targetModel or '', target_provider=body.targetProvider or '', display_alias=body.displayAlias or '', actor='ui')
         except ValueError as exc:
             raise HTTPException(400, detail={'code': 'validation', 'message': str(exc)})
         return {'alias': entry}

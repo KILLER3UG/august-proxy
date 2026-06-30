@@ -54,13 +54,13 @@ def _isolate(monkeypatch, tmp_path):
     """Redirect the data dir + clear in-memory session state."""
     from app.config import settings
     monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
-    monkeypatch.setattr(settings, 'data_dir', tmp_path)
+    monkeypatch.setattr(settings, 'dataDir', tmp_path)
     settings.reload()
     monkeypatch.setattr(wb, '_sessions', {})
     monkeypatch.setattr(asyncio, 'create_task', lambda coro, **kw: asyncio.ensure_future(coro))
-    monkeypatch.setattr(wb, '_resolve_workbench_provider', lambda *a, **kw: STUB_PROVIDER)
-    monkeypatch.setattr(wb, '_resolve_model', lambda p, hint='': 'stub-claude')
-    monkeypatch.setattr(wb, 'build_system_prompt', lambda session: 'stub system prompt')
+    monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **kw: STUB_PROVIDER)
+    monkeypatch.setattr(wb, '_resolveModel', lambda p, hint='': 'stub-claude')
+    monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session: 'stub system prompt')
     import app.providers.clients as clientsMod
     stubHolder: dict[str, Any] = {}
 
@@ -143,7 +143,7 @@ class TestTerminalEventGuaranteed:
             if callCount['n'] >= 1:
                 raise RuntimeError('disk full')
             realSave()
-        monkeypatch.setattr(wb, 'save_sessions', boom)
+        monkeypatch.setattr(wb, 'saveSessions', boom)
         events = _capturedEvents()
         await wb.send_workbench_message_stream(session_id=sid, message='hi', model='stub-claude', emit=_emitTo(events))
         types = [e['type'] for e in events]

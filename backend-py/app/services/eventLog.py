@@ -22,8 +22,8 @@ class EventLog:
 
     def append(self, sessionId: str, eventType: str, payload: dict[str, Any] | None=None) -> int:
         entry = self._getOrCreate(sessionId)
-        seq = entry.next_seq
-        entry.next_seq += 1
+        seq = entry.nextSeq
+        entry.nextSeq += 1
         event = {'seq': seq, 'type': eventType, 'payload': payload or {}, 'at': int(time.time() * 1000)}
         entry.events.append(event)
         if len(entry.events) > MAX_IN_MEMORY:

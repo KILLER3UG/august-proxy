@@ -15,16 +15,16 @@ def isolatedSkills(tmp_path, monkeypatch):
     bundledRoot = tmp_path / 'bundled-skills'
     agentRoot.mkdir()
     bundledRoot.mkdir()
-    monkeypatch.setattr(skillService, '_agent_skills_dir', lambda: agentRoot)
+    monkeypatch.setattr(skillService, '_agentSkillsDir', lambda: agentRoot)
     monkeypatch.setattr(skillService, 'SKILLS_DIR', bundledRoot)
     return (agentRoot, bundledRoot)
 
 def testCreateSkillRoundTrip(isolatedSkills):
     agentRoot, __ = isolatedSkills
-    skill = skillService.create_skill('py-test-thing', 'Does a useful thing for tests.', '## When to Use\n\nWhen testing skill creation.\n', category='test')
+    skill = skillService.createSkill('py-test-thing', 'Does a useful thing for tests.', '## When to Use\n\nWhen testing skill creation.\n', category='test')
     assert skill['name'] == 'py-test-thing'
     assert skill.get('created_by') == 'agent'
-    names = [s['name'] for s in skillService.list_all()]
+    names = [s['name'] for s in skillService.listAll()]
     assert 'py-test-thing' in names
     fetched = skillService.get('py-test-thing')
     assert fetched is not None
@@ -33,39 +33,39 @@ def testCreateSkillRoundTrip(isolatedSkills):
 
 def testCreateSkillValidation(isolatedSkills):
     with pytest.raises(SkillValidationError):
-        skillService.create_skill('Bad Name', 'Valid desc.', 'body')
+        skillService.createSkill('Bad Name', 'Valid desc.', 'body')
     with pytest.raises(SkillValidationError):
-        skillService.create_skill('ok', 'x' * 61, 'body')
+        skillService.createSkill('ok', 'x' * 61, 'body')
     with pytest.raises(SkillValidationError):
-        skillService.create_skill('ok', 'A powerful seamless tool', 'body')
+        skillService.createSkill('ok', 'A powerful seamless tool', 'body')
     with pytest.raises(SkillValidationError):
-        skillService.create_skill('ok', 'Valid desc.', '   ')
+        skillService.createSkill('ok', 'Valid desc.', '   ')
 
 def testDuplicateCreateRefused(isolatedSkills):
-    skillService.create_skill('dup', 'First one.', 'body')
+    skillService.createSkill('dup', 'First one.', 'body')
     with pytest.raises(SkillValidationError):
-        skillService.create_skill('dup', 'Second one.', 'body')
+        skillService.createSkill('dup', 'Second one.', 'body')
 
 def testPatchSkillCopyOnWriteBundled(isolatedSkills):
     __, bundledRoot = isolatedSkills
     bdir = bundledRoot / 'bundled-thing'
     bdir.mkdir()
     (bdir / 'SKILL.md').write_text('---\nname: bundled-thing\ndescription: A bundled skill.\n---\n\nOld body.\n', 'utf-8')
-    skillService.patch_skill('bundled-thing', body='## When to Use\n\nNew body.\n')
+    skillService.patchSkill('bundled-thing', body='## When to Use\n\nNew body.\n')
     assert 'Old body.' in (bundledRoot / 'bundled-thing' / 'SKILL.md').read_text('utf-8')
     fetched = skillService.get('bundled-thing')
     assert 'New body.' in fetched['instructions']
     assert 'Old body.' not in fetched['instructions']
 
 def testPatchSkillAgent(isolatedSkills):
-    skillService.create_skill('ap', 'Agent patch.', 'Original body.')
-    skillService.patch_skill('ap', body='Updated body.')
+    skillService.createSkill('ap', 'Agent patch.', 'Original body.')
+    skillService.patchSkill('ap', body='Updated body.')
     fetched = skillService.get('ap')
     assert 'Updated body.' in fetched['instructions']
     assert 'Original body.' not in fetched['instructions']
 
 def testWriteAndRemoveSkillFile(isolatedSkills):
-    skillService.create_skill('files', 'Has support files.', 'body.')
+    skillService.createSkill('files', 'Has support files.', 'body.')
     skillService.write_skill_file('files', 'scripts/run.py', "print('hi')")
     with pytest.raises(SkillValidationError):
         skillService.write_skill_file('files', '../escape.txt', 'x')
@@ -81,9 +81,9 @@ def testDeleteSkillAgentOnly(isolatedSkills):
     bdir.mkdir()
     (bdir / 'SKILL.md').write_text('---\nname: bundled-del\ndescription: x.\n---\n\nbody\n', 'utf-8')
     with pytest.raises(SkillValidationError):
-        skillService.delete_skill('bundled-del')
-    skillService.create_skill('agent-del', 'To be deleted.', 'body.')
-    result = skillService.delete_skill('agent-del')
+        skillService.deleteSkill('bundled-del')
+    skillService.createSkill('agent-del', 'To be deleted.', 'body.')
+    result = skillService.deleteSkill('agent-del')
     assert result['deleted'] is True
     assert skillService.get('agent-del') is None
 

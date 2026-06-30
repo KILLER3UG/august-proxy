@@ -3,7 +3,7 @@ import pytest
 from app.services import aliasService
 
 def testCrudRoundtrip(isolatedData):
-    entry = aliasService.create_alias(alias='fast', target_model='claude-sonnet-4-7', target_provider='Anthropic', actor='test')
+    entry = aliasService.createAlias(alias='fast', target_model='claude-sonnet-4-7', target_provider='Anthropic', actor='test')
     assert entry['alias'] == 'fast'
     assert entry['targetModel'] == 'claude-sonnet-4-7'
     listed = aliasService.list_aliases()
@@ -15,7 +15,7 @@ def testCrudRoundtrip(isolatedData):
 
 def testUnknownProviderRejected(isolatedData):
     with pytest.raises(ValueError):
-        aliasService.create_alias(alias='bad', target_model='m', target_provider='ZZZ_NotAProvider', actor='test')
+        aliasService.createAlias(alias='bad', target_model='m', target_provider='ZZZ_NotAProvider', actor='test')
 
 def testKnownProviderAccepted(isolatedData):
     ok, __ = aliasService.validate_target('Anthropic', 'claude-sonnet-4-7')
@@ -27,6 +27,6 @@ def testReplaceValidatesEach(isolatedData):
 
 def testAuditRecorded(isolatedData):
     from app.services.memoryStore import listConfigAudit
-    aliasService.create_alias(alias='audited', target_model='claude-sonnet-4-7', target_provider='Anthropic', actor='test')
+    aliasService.createAlias(alias='audited', target_model='claude-sonnet-4-7', target_provider='Anthropic', actor='test')
     entries = listConfigAudit(category='alias')
     assert any((e['action'] == 'create' and e['after'].get('alias') == 'audited' for e in entries))

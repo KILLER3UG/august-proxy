@@ -44,12 +44,12 @@ class AgentJob(BaseModel):
 @router.get('')
 async def listAgents():
     """List all registered agents."""
-    return {'agents': agentRegistry.list_agents()}
+    return {'agents': agentRegistry.listAgents()}
 
 @router.post('')
 async def createAgent(body: AgentCreate):
     """Register a new agent (persisted)."""
-    return agentRegistry.create_agent(name=body.name, parent_id=body.parent_id, parent_agent=body.parent_agent, permissions=body.permissions, toolsets=body.toolsets, tools=body.tools, model=body.model, provider=body.provider, model_alias=body.model_alias, role=body.role, description=body.description, actor='ui')
+    return agentRegistry.createAgent(name=body.name, parent_id=body.parentId, parent_agent=body.parentAgent, permissions=body.permissions, toolsets=body.toolsets, tools=body.tools, model=body.model, provider=body.provider, model_alias=body.model_alias, role=body.role, description=body.description, actor='ui')
 
 @router.get('/tree')
 async def getTree(root: str='', maxDepth: int=Query(4)):
@@ -67,7 +67,7 @@ async def getAgent(agentId: str):
 async def updateAgent(agentId: str, body: AgentUpdate):
     """Update an existing agent's configuration."""
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
-    agent = agentRegistry.update_agent(agentId, updates, actor='ui')
+    agent = agentRegistry.updateAgent(agentId, updates, actor='ui')
     if not agent:
         raise HTTPException(status_code=404, detail='Agent not found')
     return agent
@@ -88,7 +88,7 @@ async def getAgentTree(agentId: str):
 
 @router.post('/jobs')
 async def createJob(body: AgentJob):
-    return agentRegistry.create_job(body.agent_id, body.goal, body.context)
+    return agentRegistry.create_job(body.agentId, body.goal, body.context)
 
 @router.get('/jobs')
 async def listJobs(agentId: str=''):

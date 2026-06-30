@@ -100,13 +100,13 @@ async def _fetchProviderModels(provider: dict[str, Any], timeoutS: float=5.0) ->
     client = getClient(provider)
     if not client:
         return []
-    apiKey = client.resolve_api_key()
-    baseUrl = client.resolve_base_url()
+    apiKey = client.resolveApiKey()
+    baseUrl = client.resolveBaseUrl()
     providerName = provider.get('name', '')
     modelsUrl = _deriveModelsUrl(baseUrl)
     if modelsUrl and apiKey:
         try:
-            headers = client.build_auth_headers(apiKey)
+            headers = client.buildAuthHeaders(apiKey)
             async with httpx.AsyncClient(timeout=timeoutS) as http:
                 resp = await http.get(modelsUrl, headers=headers)
                 if resp.status_code == 200:

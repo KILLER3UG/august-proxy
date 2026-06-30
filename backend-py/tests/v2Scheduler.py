@@ -11,7 +11,7 @@ async def testPeriodicTaskFiresAtInterval():
     callCount = 0
 
     async def task():
-        nonlocal call_count
+        nonlocal callCount
         callCount += 1
     sched.register_periodic('test', task, interval_seconds=0.05)
     await sched.start()

@@ -43,7 +43,7 @@ async def listMemoryKv():
 @router.post('/kv')
 async def saveMemoryKv(body: MemorySave):
     """Save a key-value pair to memory."""
-    memoryStore.save_memory(body.key, body.value)
+    memoryStore.saveMemory(body.key, body.value)
     return {'status': 'ok'}
 
 @router.get('/kv/{key}')
@@ -105,7 +105,7 @@ async def deleteFactRoute(key: str):
 @router.post('/proposals')
 async def createProposal(body: ProposalCreate):
     """Create a proposal (plan, mutation)."""
-    pid = memoryStore.save_proposal(body.session_id, body.proposal_type, body.content)
+    pid = memoryStore.save_proposal(body.sessionId, body.proposalType, body.content)
     return {'id': pid, 'status': 'pending'}
 
 @router.get('/proposals/{proposal_id}')

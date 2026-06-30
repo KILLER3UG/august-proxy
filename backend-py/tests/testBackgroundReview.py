@@ -95,7 +95,7 @@ async def testDoReviewCreatesSkillFromRecommendation(isolatedSkills):
 
 @pytest.mark.asyncio
 async def testDoReviewPatchesExistingSkill(isolatedSkills):
-    skillService.create_skill('patch-skill', 'Original.', '## When to Use\n\nOld body.\n')
+    skillService.createSkill('patch-skill', 'Original.', '## When to Use\n\nOld body.\n')
 
     async def stubLlm(_prompt):
         return json.dumps({'skills': [{'action': 'patch', 'name': 'patch-skill', 'body': '## When to Use\n\nPatched body.\n'}], 'memory': []})

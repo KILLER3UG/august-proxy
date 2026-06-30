@@ -547,11 +547,11 @@ async def handleMessages(body: dict[str, Any], request: Any=None) -> tuple[dict[
     client = getClient(provider)
     if not client:
         return ({'error': f"No client for provider: {provider.get('name')}"}, None)
-    apiKey = client.resolve_api_key()
+    apiKey = client.resolveApiKey()
     if not apiKey:
         return ({'error': 'API key not configured for provider'}, None)
-    headers = client.build_auth_headers(apiKey)
-    baseUrl = client.resolve_base_url()
+    headers = client.buildAuthHeaders(apiKey)
+    baseUrl = client.resolveBaseUrl()
     isAnthropicUpstream = client.api_format == 'anthropic_messages'
     if isAnthropicUpstream:
         upstreamUrl = f'{baseUrl}/messages'

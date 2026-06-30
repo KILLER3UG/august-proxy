@@ -16,4 +16,4 @@ def getProxyDiagnostics() -> dict[str, Any]:
 
 def getProxySettings() -> dict[str, Any]:
     from app.config import settings
-    return {'port': settings.port, 'data_dir': str(settings.data_dir), 'web_dist': str(settings.web_dist) if settings.web_dist.exists() else None}
+    return {'port': settings.port, 'data_dir': str(settings.dataDir), 'web_dist': str(settings.webDist) if settings.webDist.exists() else None}

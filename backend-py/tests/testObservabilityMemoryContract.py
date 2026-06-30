@@ -29,10 +29,10 @@ async def client():
 
 def _seedTraffic():
     """Seed one completed request and an activity entry."""
-    rid = traffic.start_request({'model': 'claude-sonnet-4-7', 'provider': 'anthropic', 'clientType': 'anthropic', 'endpoint': '/v1/messages', 'method': 'POST', 'path': '/v1/messages', 'sessionId': 's1'})
-    traffic.capture_request(rid, {'model': 'claude-sonnet-4-7'})
-    traffic.end_request(rid, {'usage': {'prompt_tokens': 5, 'completion_tokens': 3}})
-    traffic.log_activity('request_complete', 'regression test entry')
+    rid = traffic.startRequest({'model': 'claude-sonnet-4-7', 'provider': 'anthropic', 'clientType': 'anthropic', 'endpoint': '/v1/messages', 'method': 'POST', 'path': '/v1/messages', 'sessionId': 's1'})
+    traffic.captureRequest(rid, {'model': 'claude-sonnet-4-7'})
+    traffic.endRequest(rid, {'usage': {'prompt_tokens': 5, 'completion_tokens': 3}})
+    traffic.logActivity('request_complete', 'regression test entry')
     return rid
 
 @pytest.mark.asyncio
@@ -97,7 +97,7 @@ async def testApiConversationsIsDict(client):
 @pytest.mark.asyncio
 async def testApiBrainStatus(client, isolatedData):
     from app.services import memoryStore
-    memoryStore.save_memory('k1', {'summary': 'v1'})
+    memoryStore.saveMemory('k1', {'summary': 'v1'})
     r = await client.get('/api/brain/status')
     assert r.status_code == 200
     body = r.json()
@@ -108,7 +108,7 @@ async def testApiBrainStatus(client, isolatedData):
 @pytest.mark.asyncio
 async def testApiBrainItems(client, isolatedData):
     from app.services import memoryStore
-    memoryStore.save_memory('k1', {'summary': 'hello'})
+    memoryStore.saveMemory('k1', {'summary': 'hello'})
     r = await client.get('/api/brain/items')
     assert r.status_code == 200
     items = r.json().get('items', [])
@@ -131,7 +131,7 @@ async def testApiBrainPrompt(client):
 @pytest.mark.asyncio
 async def testApiBrainSearch(client, isolatedData):
     from app.services import memoryStore
-    memoryStore.save_memory('greeting', {'summary': 'hello world'})
+    memoryStore.saveMemory('greeting', {'summary': 'hello world'})
     r = await client.get('/api/brain/search?q=hello')
     assert r.status_code == 200
     results = r.json().get('results', [])

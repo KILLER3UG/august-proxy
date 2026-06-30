@@ -108,7 +108,7 @@ class BasePlatformAdapter(ABC):
 
     async def dispatch(self, event: MessageEvent) -> None:
         sessionKey = buildSessionKey(event.source, group_per_user=self.config.get('group_per_user', True))
-        cmd = event.get_command()
+        cmd = event.getCommand()
         if shouldBypassActiveSession(cmd):
             await self._handleBypassCommand(sessionKey, event, cmd)
             return

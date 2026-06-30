@@ -4,7 +4,7 @@ DOM snapshot — collect interactive elements and tag them with stable refs.
 Port of ``browser-tools.js``'s ``domSnapshotScript``. The improvement over
 the Node original: each interactive element is tagged with a
 ``data-august-ref="N"`` attribute during the walk, so a later
-``browser_click(ref="@e3")`` resolves to ``[data-august-ref="3"]`` regardless
+``browserClick(ref="@e3")`` resolves to ``[data-august-ref="3"]`` regardless
 of whether the element has an id/name (the Node selector fallback was empty
 for most elements).
 """

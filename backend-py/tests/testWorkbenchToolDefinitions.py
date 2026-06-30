@@ -15,8 +15,8 @@ from app.services.workbench.workbench import WorkbenchSession, openaiToolDefinit
 @pytest.fixture(scope='module', autouse=True)
 def _registerTools():
     """Ensure the full tool registry is populated for these tests."""
-    if not toolRegistry.list_tools():
-        toolDefsModule.register_all()
+    if not toolRegistry.listTools():
+        toolDefsModule.registerAll()
     yield
 
 @pytest.fixture
@@ -28,7 +28,7 @@ class TestAnthropicFormat:
     def testAllRegistryToolsPresentAnthropic(self, session):
         tools = toolDefinitions(session)
         names = {t['name'] for t in tools}
-        for reg in toolRegistry.list_tools():
+        for reg in toolRegistry.listTools():
             expected = reg['function']['name']
             assert expected in names, f'{expected} missing from anthropic tool list'
 
@@ -49,7 +49,7 @@ class TestOpenAIFormat:
     def testAllRegistryToolsPresentOpenai(self, session):
         tools = openaiToolDefinitions(session)
         names = {t['function']['name'] for t in tools}
-        for reg in toolRegistry.list_tools():
+        for reg in toolRegistry.listTools():
             assert reg['function']['name'] in names
 
     def testOpenaiShape(self, session):
@@ -82,9 +82,9 @@ class TestNoPassthroughTools:
         for expected in ('web_search', 'web_fetch', 'run_command'):
             assert expected in anthNames, f'workbench tool {expected} missing'
 
-@pytest.mark.parametrize('tool_name', ['read_file', 'list_skills', 'desktop_screenshot', 'spawn_subagent'])
+@pytest.mark.parametrize('toolName', ['read_file', 'list_skills', 'desktop_screenshot', 'spawn_subagent'])
 def testToolSchemaSurvivesConversion(session, toolName):
-    reg = next((r for r in toolRegistry.list_tools() if r['function']['name'] == toolName))
+    reg = next((r for r in toolRegistry.listTools() if r['function']['name'] == toolName))
     anth = next((t for t in toolDefinitions(session) if t['name'] == toolName))
     assert anth['input_schema']['type'] == 'object'
     assert 'properties' in anth['input_schema']

@@ -32,7 +32,7 @@ async def testMigrationScriptRoundTrip(isolatedData, isolatedSkills):
         description = text[:55].rstrip('.') + '.'
         body = f'## When to Use\n\n{text}\n\n## Procedure\n\n1. Apply this lesson.\n'
         category = g.get('category', 'learned')
-        skillService.create_skill(name, description, body, category=category)
+        skillService.createSkill(name, description, body, category=category)
         created += 1
     assert created == 2
     matching = skillService.search(query='powershell')

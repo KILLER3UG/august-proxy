@@ -87,19 +87,19 @@ async def _doReview(messagesSnapshot: list[dict[str, Any]], *, llmClient: Review
             if not name:
                 continue
             if action == 'create':
-                skillService.create_skill(name, rec.get('description', ''), rec.get('body', ''), trigger=rec.get('trigger', ''), category=rec.get('category', 'uncategorized'))
+                skillService.createSkill(name, rec.get('description', ''), rec.get('body', ''), trigger=rec.get('trigger', ''), category=rec.get('category', 'uncategorized'))
                 result['skills_created'].append(name)
                 try:
                     from app.services.skills.curator import SkillCurator
-                    SkillCurator().bump_use(name)
+                    SkillCurator().bumpUse(name)
                 except Exception:
                     pass
             elif action == 'patch':
-                skillService.patch_skill(name, body=rec.get('body'), description=rec.get('description'))
+                skillService.patchSkill(name, body=rec.get('body'), description=rec.get('description'))
                 result['skills_patched'].append(name)
                 try:
                     from app.services.skills.curator import SkillCurator
-                    SkillCurator().bump_use(name)
+                    SkillCurator().bumpUse(name)
                 except Exception:
                     pass
         except Exception as exc:

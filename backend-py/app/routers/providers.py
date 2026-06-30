@@ -39,7 +39,7 @@ class ModelUpdate(BaseModel):
 
 @router.get('')
 async def listProviders():
-    store = configService.get_providers_store()
+    store = configService.getProvidersStore()
     raw = store.get('providers', [])
     result = []
     for p in raw:
@@ -49,7 +49,7 @@ async def listProviders():
 @router.post('')
 async def createProvider(body: ProviderCreate):
     import hashlib, time
-    store = configService.get_providers_store()
+    store = configService.getProvidersStore()
     if 'providers' not in store:
         store['providers'] = []
     slug = body.name.lower().replace(' ', '-')[:40]
@@ -57,13 +57,13 @@ async def createProvider(body: ProviderCreate):
     providerId = f'{slug}-{rand}'
     entry = {'id': providerId, 'name': body.name, 'baseUrl': body.baseUrl, 'apiFormat': body.apiFormat, 'apiKey': body.apiKey, 'enabled': body.enabled, 'autoFetch': False, 'models': []}
     store['providers'].append(entry)
-    configService.save_providers_store(store)
+    configService.saveProvidersStore(store)
     modelService.invalidate_cache()
     return {**entry, 'apiKeySet': bool(body.apiKey)}
 
 @router.get('/{providerId}')
 async def getProvider(providerId: str):
-    store = configService.get_providers_store()
+    store = configService.getProvidersStore()
     for p in store.get('providers', []):
         if p.get('id') == providerId:
             return {**p, 'apiKeySet': bool(p.get('apiKey'))}
@@ -71,7 +71,7 @@ async def getProvider(providerId: str):
 
 @router.put('/{providerId}')
 async def updateProvider(providerId: str, body: ProviderUpdate):
-    store = configService.get_providers_store()
+    store = configService.getProvidersStore()
     for p in store.get('providers', []):
         if p.get('id') == providerId:
             if body.name is not None:
@@ -84,7 +84,7 @@ async def updateProvider(providerId: str, body: ProviderUpdate):
                 p['apiKey'] = body.apiKey
             if body.enabled is not None:
                 p['enabled'] = body.enabled
-            configService.save_providers_store(store)
+            configService.saveProvidersStore(store)
             modelService.invalidate_cache()
             return {**p, 'apiKeySet': bool(p.get('apiKey'))}
     raise HTTPException(status_code=404, detail='Provider not found')
@@ -95,12 +95,12 @@ async def patchProvider(providerId: str, body: ProviderUpdate):
 
 @router.delete('/{providerId}')
 async def deleteProvider(providerId: str):
-    store = configService.get_providers_store()
+    store = configService.getProvidersStore()
     before = len(store.get('providers', []))
     store['providers'] = [p for p in store.get('providers', []) if p.get('id') != providerId]
     if len(store['providers']) == before:
         raise HTTPException(status_code=404, detail='Provider not found')
-    configService.save_providers_store(store)
+    configService.saveProvidersStore(store)
     modelService.invalidate_cache()
     return {'deleted': True}
 
@@ -110,7 +110,7 @@ async def refreshModels(providerId: str):
 
     Returns added/updated/removed model ID arrays for the frontend.
     """
-    store = configService.get_providers_store()
+    store = configService.getProvidersStore()
     for p in store.get('providers', []):
         if p.get('id') != providerId:
             continue
@@ -159,7 +159,7 @@ async def refreshModels(providerId: str):
             if mid not in currentIds:
                 currentModels.append({'id': mid, 'name': mid, 'contextWindow': 128000, 'reasoning': False, 'free': ':free' in mid or '-free' in mid, 'source': 'fetched'})
         p['models'] = currentModels
-        configService.save_providers_store(store)
+        configService.saveProvidersStore(store)
         modelService.invalidate_cache()
         return {'added': added, 'updated': updated, 'removed': removed}
     raise HTTPException(status_code=404, detail='Provider not found')
@@ -170,19 +170,19 @@ async def providersHealth():
 
 @router.post('/{providerId}/models')
 async def addModel(providerId: str, body: ModelCreate):
-    store = configService.get_providers_store()
+    store = configService.getProvidersStore()
     for p in store.get('providers', []):
         if p.get('id') == providerId:
             models = p.setdefault('models', [])
             models.append({'id': body.id, 'name': body.name or body.id, 'contextWindow': body.contextWindow or 128000, 'reasoning': body.reasoning or False, 'free': body.free or False, 'source': 'manual'})
-            configService.save_providers_store(store)
+            configService.saveProvidersStore(store)
             modelService.invalidate_cache()
             return {**p, 'apiKeySet': bool(p.get('apiKey'))}
     raise HTTPException(status_code=404, detail='Provider not found')
 
 @router.patch('/{providerId}/models/{modelId}')
 async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
-    store = configService.get_providers_store()
+    store = configService.getProvidersStore()
     for p in store.get('providers', []):
         if p.get('id') == providerId:
             for m in p.get('models', []):
@@ -195,7 +195,7 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                         m['reasoning'] = body.reasoning
                     if body.free is not None:
                         m['free'] = body.free
-                    configService.save_providers_store(store)
+                    configService.saveProvidersStore(store)
                     modelService.invalidate_cache()
                     return {'updated': True}
             raise HTTPException(status_code=404, detail='Model not found')
@@ -203,14 +203,14 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
 
 @router.delete('/{providerId}/models/{modelId}')
 async def deleteModel(providerId: str, modelId: str):
-    store = configService.get_providers_store()
+    store = configService.getProvidersStore()
     for p in store.get('providers', []):
         if p.get('id') == providerId:
             before = len(p.get('models', []))
             p['models'] = [m for m in p.get('models', []) if m.get('id') != modelId]
             if len(p['models']) == before:
                 raise HTTPException(status_code=404, detail='Model not found')
-            configService.save_providers_store(store)
+            configService.saveProvidersStore(store)
             modelService.invalidate_cache()
             return {'deleted': True}
     raise HTTPException(status_code=404, detail='Provider not found')

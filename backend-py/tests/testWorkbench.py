@@ -42,13 +42,13 @@ class TestPlanAndApproval:
         session = createWorkbenchSession()
         submitPlan(session, {'plan': 'Test plan', 'steps': ['Step 1']})
         assert session.plan is not None
-        assert session.plan_approved is False
+        assert session.planApproved is False
 
     def testApprovePlan(self):
         session = createWorkbenchSession()
         submitPlan(session, {'plan': 'Test'})
         assert approveWorkbenchPlan(session.id) is True
-        assert session.plan_approved is True
+        assert session.planApproved is True
 
     def testRejectPlan(self):
         session = createWorkbenchSession()
@@ -341,8 +341,8 @@ class TestAnthropicWorkbenchStreaming:
         import app.services.memoryStore as memoryStore
         monkeypatch.setattr(memoryStore, 'record_usage', fakeRecordUsage)
         providerConfig = {'name': 'anthropic', 'model_profiles': {'*': {}}, 'api_mode': 'anthropic_messages'}
-        monkeypatch.setattr(wb, '_resolve_workbench_provider', lambda *a, **k: providerConfig)
-        monkeypatch.setattr(wb, '_resolve_model', lambda *a, **k: 'claude-3-5-sonnet-20241022')
+        monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **k: providerConfig)
+        monkeypatch.setattr(wb, '_resolveModel', lambda *a, **k: 'claude-3-5-sonnet-20241022')
         await sendWorkbenchMessageStream(session_id=session.id, message='hi', provider='anthropic', emit=lambda e: None)
         assert len(recorded) == 1
         rec = recorded[0]

@@ -20,7 +20,7 @@ def _agentSkillsDir() -> Path:
     """Agent-authored skills root. Lazily reads the configured data_dir."""
     try:
         from app.config import settings
-        base = Path(settings.data_dir)
+        base = Path(settings.dataDir)
     except Exception:
         base = SKILLS_DIR.parent / 'data'
     return base / 'skills'

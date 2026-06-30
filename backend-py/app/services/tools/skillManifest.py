@@ -48,7 +48,7 @@ def loadSkillPayloads(skillNames: list[str], skillsDir: str | Path | None=None) 
         return ''
     if skillsDir is None:
         from app.config import settings
-        skillsDir = settings.data_dir / 'skills'
+        skillsDir = settings.dataDir / 'skills'
     skillsDir = Path(skillsDir)
     if not skillsDir.exists():
         return ''

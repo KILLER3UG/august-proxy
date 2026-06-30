@@ -364,11 +364,11 @@ async def handleChatCompletions(body: dict[str, Any], request: Any=None) -> tupl
     client = getClient(provider)
     if not client:
         return ({'error': f"No client for provider: {provider.get('name')}"}, None)
-    apiKey = client.resolve_api_key()
+    apiKey = client.resolveApiKey()
     if not apiKey:
         return ({'error': 'API key not configured for provider'}, None)
-    headers = client.build_auth_headers(apiKey)
-    baseUrl = client.resolve_base_url()
+    headers = client.buildAuthHeaders(apiKey)
+    baseUrl = client.resolveBaseUrl()
     upstreamUrl = toOpenaiCompatibleTargetUrl(baseUrl)
     clientWantsStream = body.get('stream', False)
     isResponsesEndpoint = body.get('_endpoint') == 'responses'

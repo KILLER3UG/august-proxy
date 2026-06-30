@@ -95,23 +95,23 @@ class TestGetCommand:
 
     def testSlashStop(self):
         ev = MessageEvent(source=SessionSource('t', '1'), text='/stop')
-        assert ev.get_command() == 'stop'
+        assert ev.getCommand() == 'stop'
 
     def testSlashStopWithBotname(self):
         ev = MessageEvent(source=SessionSource('t', '1'), text='/stop@MyBot')
-        assert ev.get_command() == 'stop'
+        assert ev.getCommand() == 'stop'
 
     def testSlashNewWithArgs(self):
         ev = MessageEvent(source=SessionSource('t', '1'), text='/new what is 2+2?')
-        assert ev.get_command() == 'new'
+        assert ev.getCommand() == 'new'
 
     def testPlainTextReturnsEmpty(self):
         ev = MessageEvent(source=SessionSource('t', '1'), text='hello world')
-        assert ev.get_command() == ''
+        assert ev.getCommand() == ''
 
     def testSlashApprove(self):
         ev = MessageEvent(source=SessionSource('t', '1'), text='/approve')
-        assert ev.get_command() == 'approve'
+        assert ev.getCommand() == 'approve'
 
 class TestShouldBypass:
 

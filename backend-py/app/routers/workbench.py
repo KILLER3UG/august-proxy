@@ -112,7 +112,7 @@ async def startChat(request: Request):
                 if session:
                     session.status = 'idle'
                     session.updated_at = wb._now()
-                    wb.save_sessions()
+                    wb.saveSessions()
                     wb._emit_session_status(sessionId)
             except Exception:
                 pass
@@ -129,7 +129,7 @@ async def startChat(request: Request):
                 if session:
                     session.status = 'idle'
                     session.updated_at = wb._now()
-                    wb.save_sessions()
+                    wb.saveSessions()
                     wb._emit_session_status(sessionId)
             except Exception:
                 pass
@@ -242,7 +242,7 @@ async def proxyCapabilities():
 async def workbenchAgents(active: str=''):
     """List agents for the UI's Agents tab (frontend listWorkbenchAgents)."""
     from app.services.tools import agentRegistry
-    agents = agentRegistry.list_agents()
+    agents = agentRegistry.listAgents()
     if active:
         pass
     return {'agents': agents, 'active': active}

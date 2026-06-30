@@ -7,7 +7,7 @@ the chat thread sees the same availability the UI shows.
 Cache lifecycle:
 - The store is loaded once on first use and cached in ``_store_cache``.
 - Call :func:`invalidate` to clear the cache (e.g. after writing to
-  ``providers.json``). ``config_service.save_providers_store`` will
+  ``providers.json``). ``config_service.saveProvidersStore`` will
   automatically call :func:`invalidate` via the invalidation registry, so
   direct callers normally don't need to.
 
@@ -44,7 +44,7 @@ def invalidate() -> None:
     """Clear the in-memory providers.json cache.
 
     Call this after writing to ``providers.json`` so subsequent
-    :func:`resolve` calls reload from disk. ``config_service.save_providers_store``
+    :func:`resolve` calls reload from disk. ``config_service.saveProvidersStore``
     does this automatically via the invalidation registry.
     """
     global _store_cache
@@ -53,7 +53,7 @@ def invalidate() -> None:
 def _loadStore() -> dict[str, Any]:
     """Reload the providers.json cache from disk."""
     global _store_cache
-    _storeCache = configService.get_providers_store()
+    _storeCache = configService.getProvidersStore()
     return _storeCache
 
 def _customEntry(nameOrId: str) -> Optional[dict[str, Any]]:
@@ -105,6 +105,6 @@ def resolve(nameOrId: str) -> Optional[dict[str, Any]]:
     if not provider:
         return None
     client = getClient(provider) if provider else None
-    apiKey = client.resolve_api_key() if client else None
+    apiKey = client.resolveApiKey() if client else None
     return {'provider': provider, 'api_key': apiKey or '', 'base_url': provider.get('base_url', ''), 'api_mode': provider.get('api_mode', ''), 'source': 'registry'}
 registerInvalidationCallback(invalidate)

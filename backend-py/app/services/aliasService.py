@@ -52,20 +52,20 @@ def _providerNames() -> set[str]:
         from app.providers import registry, resolver as providerResolver
         try:
             from app.providers import builtin
-            builtin.register_all()
+            builtin.registerAll()
         except Exception:
             pass
-        for p in registry.list_all():
+        for p in registry.listAll():
             names.add(p.get('name', ''))
             for a in p.get('aliases', []) or []:
                 names.add(a)
-        for p in providerResolver.list_available():
+        for p in providerResolver.listAvailable():
             names.add(p.get('name', ''))
     except Exception:
         pass
     try:
         from app.services import configService
-        store = configService.get_providers_store()
+        store = configService.getProvidersStore()
         for entry in store.get('providers', []):
             names.add(entry.get('name', ''))
     except Exception:

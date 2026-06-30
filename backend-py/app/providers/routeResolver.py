@@ -23,7 +23,7 @@ def _hasCredentials(provider: dict[str, Any]) -> bool:
     client = getClient(provider)
     if not client:
         return False
-    return client.resolve_api_key() is not None
+    return client.resolveApiKey() is not None
 
 def resolveForModel(modelId: str, hint: Optional[str]=None) -> Optional[dict[str, Any]]:
     """
@@ -33,7 +33,7 @@ def resolveForModel(modelId: str, hint: Optional[str]=None) -> Optional[dict[str
     Falls through to credential-less providers only if no credentialled
     provider matches.
     """
-    providers = resolver.list_available()
+    providers = resolver.listAvailable()
     if not providers:
         return None
     modelLower = modelId.lower()

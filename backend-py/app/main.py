@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     settings.reload()
     from app.services import toolDefinitions
-    toolDefinitions.register_all()
+    toolDefinitions.registerAll()
     from app.services import memoryStore
     memoryStore.init()
     # Run database column migration (snake_case → camelCase)

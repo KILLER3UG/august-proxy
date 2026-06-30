@@ -21,7 +21,7 @@ class AnthropicClient(BaseProviderClient):
         Includes the required ``anthropic-version`` header and optional
         ``anthropic-beta`` headers from provider config.
         """
-        headers = super().build_auth_headers(apiKey)
+        headers = super().buildAuthHeaders(apiKey)
         headers.setdefault('anthropic-version', '2023-06-01')
         beta = self.config.get('anthropic_beta')
         if beta:
@@ -33,7 +33,7 @@ class AnthropicClient(BaseProviderClient):
 
         Defaults to ``https://api.anthropic.com``.
         """
-        base = super().resolve_base_url()
+        base = super().resolveBaseUrl()
         if not base:
             base = 'https://api.anthropic.com'
         return base.rstrip('/') + '/v1'

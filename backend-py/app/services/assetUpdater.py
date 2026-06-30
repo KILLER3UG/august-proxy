@@ -6,7 +6,7 @@ from typing import Any
 def getWebDistPath() -> Path | None:
     """Get the web-dist directory path."""
     from app.config import settings
-    p = settings.web_dist
+    p = settings.webDist
     return p if p.is_dir() else None
 
 def getAssetInfo() -> dict[str, Any]:

@@ -28,7 +28,7 @@ class TurnResult:
 def _defaultMapPath() -> Path:
     try:
         from app.config import settings
-        base = Path(settings.data_dir)
+        base = Path(settings.dataDir)
     except Exception:
         base = Path.cwd()
     return base / 'gateway' / 'session_map.json'

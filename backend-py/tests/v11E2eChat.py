@@ -13,17 +13,17 @@ def _initDb():
 
 def testBuildSystemPromptDoesNotCrashWithRealisticPayload():
     """The most common failure mode: build_system_prompt with a real-shaped session."""
-    session = {'id': 'e2e-test', 'user_state': {'profile': 'developer', 'skills': [{'name': 'test', 'description': 'x'}]}, 'workspace': {'path': '/tmp', 'vcs': 'git on main'}, 'directives': {'goal': 'test the chat', 'plan': None, 'plan_approved': False}, 'learned_heuristics': [{'rule': 'use unicode math'}], 'core_memory': {'facts': ['user prefers tabs']}, 'auto_memories': [{'key': 'x', 'content': 'y', 'importance': 0.5}]}
+    session = {'id': 'e2e-test', 'user_state': {'profile': 'developer', 'skills': [{'name': 'test', 'description': 'x'}]}, 'workspace': {'path': '/tmp', 'vcs': 'git on main'}, 'directives': {'goal': 'test the chat', 'plan': None, 'planApproved': False}, 'learned_heuristics': [{'rule': 'use unicode math'}], 'core_memory': {'facts': ['user prefers tabs']}, 'auto_memories': [{'key': 'x', 'content': 'y', 'importance': 0.5}]}
     memory = {'core_memory': {'facts': ['user prefers tabs']}, 'learned_heuristics': [{'rule': 'use unicode math'}], 'auto_memories': [{'key': 'x', 'content': 'y', 'importance': 0.5}]}
     tools = [{'name': 'read_file', 'description': 'read a file', 'parameters': []}, {'name': 'write_file', 'description': 'write a file', 'parameters': []}]
-    result = contextBuilder.build_system_prompt(session=session, memory=memory, tools=tools)
+    result = contextBuilder.buildSystemPrompt(session=session, memory=memory, tools=tools)
     assert isinstance(result, str)
     assert len(result) > 100
 
 def testBuildSystemPromptWithCachedT12DoesNotCrash():
     """Cache path: cached_t12 provided, should be included verbatim."""
     cachePayload = 'PRECOMPUTED_T1_T2_BLOCK'
-    result = contextBuilder.build_system_prompt(session={'id': 'e2e-test'}, memory={}, cached_t12=cachePayload)
+    result = contextBuilder.buildSystemPrompt(session={'id': 'e2e-test'}, memory={}, cached_t12=cachePayload)
     assert cachePayload in result
 
 def testSaveAutoMemoryThenBrainQueryRoundTrip():

@@ -108,7 +108,7 @@ async def testApiUsageSessionRecordsAndReturnsContextTokens(client, isolatedData
     contextTokens = the recorded context_tokens (true current context fill)."""
     from app.services import memoryStore
     sid = 'test-ctx-session'
-    memoryStore.record_usage(session_id=sid, model='claude-sonnet', input_tokens=12000, output_tokens=900, context_tokens=4823)
+    memoryStore.recordUsage(session_id=sid, model='claude-sonnet', input_tokens=12000, output_tokens=900, context_tokens=4823)
     resp = await client.get(f'/api/usage/session?id={sid}')
     assert resp.status_code == 200
     data = resp.json()
@@ -138,7 +138,7 @@ async def testApiUsageSessionContextTokensFallsBackToInputTokens(client, isolate
     the endpoint falls back to input_tokens so the gauge still has a value."""
     from app.services import memoryStore
     sid = 'test-fallback-session'
-    memoryStore.record_usage(session_id=sid, model='claude-sonnet', input_tokens=7777, output_tokens=100, context_tokens=0)
+    memoryStore.recordUsage(session_id=sid, model='claude-sonnet', input_tokens=7777, output_tokens=100, context_tokens=0)
     resp = await client.get(f'/api/usage/session?id={sid}')
     data = resp.json()
     assert resp.status_code == 200

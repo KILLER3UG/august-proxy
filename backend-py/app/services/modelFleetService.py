@@ -18,7 +18,7 @@ DEFAULTS: dict[str, str] = {'cortex': '', 'cerebellum': 'claude-3-haiku-20240307
 
 def getFleet() -> dict[str, str]:
     """Return the merged fleet (defaults + user overrides)."""
-    cfg = configService.get_config()
+    cfg = configService.getConfig()
     user = cfg.get('auxiliary', {}).get('model_fleet', {}) or {}
     out = DEFAULTS.copy()
     for role in ROLES:
@@ -43,9 +43,9 @@ def updateFleet(patch: dict[str, Any]) -> tuple[bool, str, dict[str, str]]:
     ok, err = validateRoles(patch)
     if not ok:
         return (False, err, getFleet())
-    cfg = configService.get_config()
+    cfg = configService.getConfig()
     aux = cfg.setdefault('auxiliary', {})
     fleet = aux.setdefault('model_fleet', {})
     fleet.update(patch)
-    configService.save_config(cfg)
+    configService.saveConfig(cfg)
     return (True, '', getFleet())

@@ -40,7 +40,7 @@ class SkillCurator:
         if dataDir is None:
             try:
                 from app.config import settings
-                dataDir = Path(settings.data_dir)
+                dataDir = Path(settings.dataDir)
             except Exception:
                 dataDir = Path.cwd()
         self._usagePath = Path(dataDir) / 'skills' / _USAGEFilename
@@ -59,7 +59,7 @@ class SkillCurator:
     def _save(self) -> None:
         try:
             self._usagePath.parent.mkdir(parents=True, exist_ok=True)
-            raw = {k: {'name': v.name, 'use_count': v.use_count, 'view_count': v.view_count, 'patch_count': v.patch_count, 'last_used_at': v.last_used_at, 'last_viewed_at': v.last_viewed_at, 'last_patched_at': v.last_patched_at, 'state': v.state, 'pinned': v.pinned, 'archived_at': v.archived_at} for k, v in self._usage.items()}
+            raw = {k: {'name': v.name, 'use_count': v.useCount, 'view_count': v.view_count, 'patch_count': v.patch_count, 'last_used_at': v.last_used_at, 'last_viewed_at': v.last_viewed_at, 'last_patched_at': v.last_patched_at, 'state': v.state, 'pinned': v.pinned, 'archived_at': v.archived_at} for k, v in self._usage.items()}
             tmp = self._usagePath.with_suffix('.tmp')
             tmp.write_text(json.dumps(raw, indent=2), 'utf-8')
             tmp.replace(self._usagePath)
@@ -68,7 +68,7 @@ class SkillCurator:
 
     def bumpUse(self, name: str) -> None:
         rec = self._ensure(name)
-        rec.use_count += 1
+        rec.useCount += 1
         rec.last_used_at = time.time()
         self._save()
 
@@ -93,7 +93,7 @@ class SkillCurator:
         return self._usage.get(name)
 
     def listUsage(self) -> list[dict[str, Any]]:
-        return [{'name': v.name, 'use_count': v.use_count, 'view_count': v.view_count, 'patch_count': v.patch_count, 'last_used_at': v.last_used_at, 'state': v.state, 'pinned': v.pinned, 'archived_at': v.archived_at} for v in sorted(self._usage.values(), key=lambda r: r.last_used_at or 0, reverse=True)]
+        return [{'name': v.name, 'use_count': v.useCount, 'view_count': v.view_count, 'patch_count': v.patch_count, 'last_used_at': v.last_used_at, 'state': v.state, 'pinned': v.pinned, 'archived_at': v.archived_at} for v in sorted(self._usage.values(), key=lambda r: r.last_used_at or 0, reverse=True)]
 
     def pin(self, name: str) -> bool:
         """Pin a skill (exempt from auto-transitions).  Only agent-authored."""

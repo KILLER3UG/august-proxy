@@ -22,7 +22,7 @@ def _err(message: str, **fields: Any) -> str:
 async def createAlias(alias: str, targetModel: str, targetProvider: str, displayAlias: str='') -> str:
     from app.services import aliasService
     try:
-        entry = aliasService.create_alias(alias=alias, target_model=targetModel, target_provider=targetProvider, display_alias=displayAlias, actor='agent')
+        entry = aliasService.createAlias(alias=alias, target_model=targetModel, target_provider=targetProvider, display_alias=displayAlias, actor='agent')
         return _ok(alias=entry)
     except (ValueError, KeyError) as exc:
         return _err(str(exc))
@@ -56,7 +56,7 @@ async def listAliases() -> str:
 async def configureFallback(enabled: bool | None=None, mode: str | None=None, provider: str | None=None, model: str | None=None) -> str:
     from app.services import fallbackService
     try:
-        fb = fallbackService.configure_fallback(enabled=enabled, mode=mode, provider=provider, model=model, actor='agent')
+        fb = fallbackService.configureFallback(enabled=enabled, mode=mode, provider=provider, model=model, actor='agent')
         return _ok(fallback=fb)
     except (ValueError, KeyError) as exc:
         return _err(str(exc))
@@ -65,12 +65,12 @@ async def configureFallback(enabled: bool | None=None, mode: str | None=None, pr
 
 async def getFallback() -> str:
     from app.services import fallbackService
-    return _ok(fallback=fallbackService.get_fallback())
+    return _ok(fallback=fallbackService.getFallback())
 
 async def createAgent(name: str, description: str='', role: str='', tools: list[str] | None=None, permissions: list[str] | None=None, modelAlias: str='', parentAgent: str='') -> str:
     from app.services.tools import agentRegistry
     try:
-        agent = agentRegistry.create_agent(name=name, description=description, role=role, tools=tools, permissions=permissions, model_alias=modelAlias, parent_agent=parentAgent, actor='agent')
+        agent = agentRegistry.createAgent(name=name, description=description, role=role, tools=tools, permissions=permissions, model_alias=modelAlias, parent_agent=parentAgent, actor='agent')
         return _ok(agent=agent)
     except Exception as exc:
         return _err(f'Failed to create agent: {exc}')
@@ -79,7 +79,7 @@ async def updateAgent(agentId: str, name: str | None=None, description: str | No
     from app.services.tools import agentRegistry
     updates = {k: v for k, v in {'name': name, 'description': description, 'role': role, 'tools': tools, 'permissions': permissions, 'modelAlias': modelAlias}.items() if v is not None}
     try:
-        agent = agentRegistry.update_agent(agentId, updates, actor='agent')
+        agent = agentRegistry.updateAgent(agentId, updates, actor='agent')
         if not agent:
             return _err(f"Agent '{agentId}' not found")
         return _ok(agent=agent)
@@ -98,7 +98,7 @@ async def deleteAgent(agentId: str) -> str:
 
 async def listAgents() -> str:
     from app.services.tools import agentRegistry
-    return _ok(agents=agentRegistry.list_agents())
+    return _ok(agents=agentRegistry.listAgents())
 
 def register() -> None:
     """Register all self-configuration tools (alias + fallback).

@@ -33,7 +33,7 @@ WORKBENCH_TOKEN_BUDGET = 2000000
 class WorkbenchSession:
     """In-memory representation of a workbench session.
 
-    Persisted to disk as JSON via save_sessions().
+    Persisted to disk as JSON via saveSessions().
     """
     id: str = ''
     title: str = 'New Session'
@@ -64,7 +64,7 @@ class WorkbenchSession:
 
     @staticmethod
     def fromDict(d: dict[str, Any]) -> WorkbenchSession:
-        return WorkbenchSession(id=d.get('id', ''), title=d.get('title', 'New Session'), provider=d.get('provider', ''), model=d.get('model', ''), agent_id=d.get('agentId', ''), guard_mode=d.get('guardMode', 'full'), created_at=d.get('createdAt', ''), updated_at=d.get('updatedAt', ''), started_at=d.get('startedAt', ''), message_count=d.get('messageCount', 0), mutation_count=d.get('mutationCount', 0), workspace_path=d.get('workspacePath', ''), goal=d.get('goal', ''), plan=d.get('plan'), plan_approved=d.get('planApproved', False), messages=d.get('messages', []), pending_mutations=d.get('pendingMutations', []), mutation_log=d.get('mutationLog', []), status=d.get('status', 'idle'), metadata=d.get('metadata', {}), total_input_tokens=d.get('totalInputTokens', 0), total_output_tokens=d.get('totalOutputTokens', 0), total_cost=d.get('totalCost', 0.0))
+        return WorkbenchSession(id=d.get('id', ''), title=d.get('title', 'New Session'), provider=d.get('provider', ''), model=d.get('model', ''), agent_id=d.get('agentId', ''), guard_mode=d.get('guardMode', 'full'), created_at=d.get('createdAt', ''), updated_at=d.get('updatedAt', ''), started_at=d.get('startedAt', ''), message_count=d.get('messageCount', 0), mutation_count=d.get('mutationCount', 0), workspace_path=d.get('workspacePath', ''), goal=d.get('goal', ''), plan=d.get('plan'), planApproved=d.get('planApproved', False), messages=d.get('messages', []), pending_mutations=d.get('pendingMutations', []), mutation_log=d.get('mutationLog', []), status=d.get('status', 'idle'), metadata=d.get('metadata', {}), total_input_tokens=d.get('totalInputTokens', 0), total_output_tokens=d.get('totalOutputTokens', 0), total_cost=d.get('totalCost', 0.0))
 _SESSIONFile = 'workbench-sessions.json'
 _sessions: dict[str, WorkbenchSession] = {}
 _statusSubscribers: list[Callable[[dict[str, Any]], None]] = []
@@ -133,7 +133,7 @@ def setWorkbenchSessionAgent(sessionId: str, agentId: str) -> WorkbenchSession |
     session = getWorkbenchSession(sessionId)
     if not session:
         return None
-    session.agent_id = agentId or ''
+    session.agentId = agentId or ''
     session.updated_at = _now()
     saveSessions()
     _emitSessionStatus(sessionId)
@@ -161,7 +161,7 @@ def resetWorkbenchSession(sessionId: str, provider: str='', agentId: str='') -> 
 
 def summarizeSession(session: WorkbenchSession) -> dict[str, Any]:
     """Return a lightweight summary of a session."""
-    return {'id': session.id, 'title': session.title, 'provider': session.provider, 'model': session.model, 'agentId': session.agent_id, 'guardMode': session.guard_mode, 'goal': session.goal, 'plan': session.plan is not None, 'planApproved': session.plan_approved, 'messageCount': session.message_count, 'mutationCount': session.mutation_count, 'status': session.status, 'createdAt': session.created_at, 'updatedAt': session.updated_at, 'startedAt': session.started_at, 'workspacePath': session.workspace_path}
+    return {'id': session.id, 'title': session.title, 'provider': session.provider, 'model': session.model, 'agentId': session.agentId, 'guardMode': session.guard_mode, 'goal': session.goal, 'plan': session.plan is not None, 'planApproved': session.planApproved, 'messageCount': session.message_count, 'mutationCount': session.mutation_count, 'status': session.status, 'createdAt': session.created_at, 'updatedAt': session.updated_at, 'startedAt': session.started_at, 'workspacePath': session.workspace_path}
 
 def getWorkbenchSessionStatus(sessionId: str) -> dict[str, Any] | None:
     """Return flat status for the UI's approval banner."""
@@ -169,7 +169,7 @@ def getWorkbenchSessionStatus(sessionId: str) -> dict[str, Any] | None:
     if not session:
         return None
     hasPending = len(session.pending_mutations) > 0
-    return {'sessionId': sessionId, 'status': session.status, 'guardMode': session.guard_mode, 'pendingMutation': session.pending_mutations[-1] if hasPending else None, 'plan': session.plan, 'planApproved': session.plan_approved}
+    return {'sessionId': sessionId, 'status': session.status, 'guardMode': session.guard_mode, 'pendingMutation': session.pending_mutations[-1] if hasPending else None, 'plan': session.plan, 'planApproved': session.planApproved}
 
 def subscribeSessionStatus(callback: Callable[[dict[str, Any]], None]) -> Callable[[], None]:
     """Register a session status subscriber. Returns unsubscribe function."""
@@ -253,10 +253,10 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     if coreFacts:
         memory['core_memory'] = coreFacts
     agentContext = None
-    if session.agent_id:
+    if session.agentId:
         try:
             from app.services.tools.agentRegistry import renderAgentContext
-            agentContext = renderAgentContext(session.agent_id)
+            agentContext = renderAgentContext(session.agentId)
         except Exception:
             pass
     brainPolicy = None
@@ -325,7 +325,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
         cognitiveBudget = computeBudget(msgsForBudget, model=modelName or None, provider=providerName or None)
     except Exception:
         pass
-    sessionDict = {'goal': session.goal, 'plan': session.plan.to_dict() if hasattr(session.plan, 'to_dict') else session.plan, 'planApproved': session.plan_approved, 'workspace_path': workspacePath, 'vcs': vcsInfo, 'brain_policy': brainPolicy, 'cognitive_budget': cognitiveBudget, 'memory_stats': memoryStats, 'whats_new': whatsNew, 'skills_manifest': skillsManifest, 'execution_state': getattr(session, '_execution_state', None), 'working_memory': getattr(session, '_working_memory', None), 'subconscious_updates': _buildDaemonUpdates(getattr(session, 'id', ''))}
+    sessionDict = {'goal': session.goal, 'plan': session.plan.to_dict() if hasattr(session.plan, 'to_dict') else session.plan, 'planApproved': session.planApproved, 'workspace_path': workspacePath, 'vcs': vcsInfo, 'brain_policy': brainPolicy, 'cognitive_budget': cognitiveBudget, 'memory_stats': memoryStats, 'whats_new': whatsNew, 'skills_manifest': skillsManifest, 'execution_state': getattr(session, '_execution_state', None), 'working_memory': getattr(session, '_working_memory', None), 'subconscious_updates': _buildDaemonUpdates(getattr(session, 'id', ''))}
     for k in ('core_memory', 'learned_heuristics', 'auto_memories'):
         if k in memory:
             sessionDict[k] = memory[k]
@@ -552,7 +552,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
     if provider:
         session.provider = provider
     if agentId:
-        session.agent_id = agentId
+        session.agentId = agentId
     if guardMode:
         session.guard_mode = normalizeGuardMode(guardMode)
     session.status = 'streaming'
@@ -872,7 +872,7 @@ def _makeReviewLlmClient(mainProvider: dict[str, Any] | None, reviewModelHint: s
         client = getClient(provider)
         if not client:
             return None
-        apiKey = client.resolve_api_key()
+        apiKey = client.resolveApiKey()
         if not apiKey:
             return None
         _client = client
@@ -956,7 +956,7 @@ async def _callAnthropicWorkbench(messages: list[dict[str, Any]], systemText: st
     client = getClient(provider)
     if not client:
         return {'error': f"No client for {provider.get('name')}"}
-    apiKey = client.resolve_api_key()
+    apiKey = client.resolveApiKey()
     if not apiKey:
         return {'error': 'API key not configured'}
     from app.adapters.anthropic import translateMessagesToAnthropic
@@ -1054,7 +1054,7 @@ async def _callOpenaiWorkbench(messages: list[dict[str, Any]], systemText: str, 
     client = getClient(provider)
     if not client:
         return {'error': f"No client for {provider.get('name')}"}
-    apiKey = client.resolve_api_key()
+    apiKey = client.resolveApiKey()
     if not apiKey:
         return {'error': 'API key not configured'}
     from app.adapters.anthropic import translateMessages
@@ -1167,7 +1167,7 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, An
 
     Returns None if allowed, or a string reason if blocked.
     """
-    if session.guard_mode == 'plan' and (not session.plan_approved) and isPlanModeBlocked(toolName, args):
+    if session.guard_mode == 'plan' and (not session.planApproved) and isPlanModeBlocked(toolName, args):
         return f"Tool '{toolName}' is destructive and cannot run in plan mode. You cannot execute destructive tools here. Finish investigating with the non-destructive tools, then call `submit_plan` with your proposed steps and ask the user to approve it before executing."
     if session.guard_mode == 'ask' and isPlanModeBlocked(toolName, args):
         return f"Tool '{toolName}' requires your approval. Present the intended change to the user and wait for them to approve it before calling this tool again."
@@ -1176,7 +1176,7 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, An
 def submitPlan(session: WorkbenchSession, planData: dict[str, Any]) -> None:
     """Store a plan on the session. v1.1: drop prior execution state and working memory."""
     session.plan = planData
-    session.plan_approved = False
+    session.planApproved = False
     session._execution_state = None
     session._working_memory = None
     session.updated_at = _now()
@@ -1187,7 +1187,7 @@ def approveWorkbenchPlan(sessionId: str) -> bool:
     session = _sessions.get(sessionId)
     if not session or not session.plan:
         return False
-    session.plan_approved = True
+    session.planApproved = True
     session.updated_at = _now()
     saveSessions()
     _emitSessionStatus(sessionId)
@@ -1199,7 +1199,7 @@ def rejectWorkbenchPlan(sessionId: str) -> bool:
     if not session:
         return False
     session.plan = None
-    session.plan_approved = False
+    session.planApproved = False
     session._execution_state = None
     session._working_memory = None
     session.updated_at = _now()

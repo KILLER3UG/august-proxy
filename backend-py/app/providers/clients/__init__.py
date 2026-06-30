@@ -31,4 +31,4 @@ def getClient(providerConfig: dict[str, Any]) -> BaseProviderClient | None:
             return BedrockClient(providerConfig)
         case _:
             return OpenAIClient(providerConfig)
-__all__ = ['BaseProviderClient', 'AnthropicClient', 'OpenAIClient', 'GeminiClient', 'MiniMaxClient', 'BedrockClient', 'get_client']
+__all__ = ['BaseProviderClient', 'AnthropicClient', 'OpenAIClient', 'GeminiClient', 'MiniMaxClient', 'BedrockClient', 'getClient']

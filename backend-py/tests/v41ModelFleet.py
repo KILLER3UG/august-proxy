@@ -8,7 +8,7 @@ def _isolated(tmp_path, monkeypatch):
     monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
     monkeypatch.setenv('AUGUST_BRAIN_SQLITE_FILE', str(tmp_path / 'test_brain.sqlite'))
     from app.config import settings
-    monkeypatch.setattr(settings, 'data_dir', tmp_path)
+    monkeypatch.setattr(settings, 'dataDir', tmp_path)
     settings.reload()
     yield tmp_path
     settings.reload()

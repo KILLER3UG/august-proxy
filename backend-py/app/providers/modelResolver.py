@@ -60,7 +60,7 @@ def _hasCredentials(provider: dict[str, Any]) -> bool:
     client = getClient(provider)
     if not client:
         return False
-    return client.resolve_api_key() is not None
+    return client.resolveApiKey() is not None
 
 def resolve(input: str | None, providerHint: str | None=None, defaultAlias: str | None=None) -> dict[str, Any]:
     """Resolve an alias or model ID to a ``{ alias, provider, model, is_fallback }`` tuple.
@@ -82,7 +82,7 @@ def resolve(input: str | None, providerHint: str | None=None, defaultAlias: str 
         routed = resolveForModel(userAlias['targetModel'], hint=userAlias.get('targetProvider') or providerHint)
         if routed and _hasCredentials(routed):
             return {'alias': normalized, 'provider': routed.get('name', userAlias.get('targetProvider', 'unknown')), 'model': userAlias['targetModel'], 'is_fallback': False}
-    allProviders = providerResolver.list_available()
+    allProviders = providerResolver.listAvailable()
     for p in allProviders:
         profiles = p.get('model_profiles', {})
         if normalized in profiles:
@@ -124,7 +124,7 @@ def resolveOrFallback(input: str | None, providerHint: str | None=None, defaultA
 
 def _resolveActiveProvider() -> dict[str, Any] | None:
     """Get the currently active provider (first available with credentials)."""
-    for p in providerResolver.list_available():
+    for p in providerResolver.listAvailable():
         if _hasCredentials(p):
             return p
     return None

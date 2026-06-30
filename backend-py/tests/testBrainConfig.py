@@ -21,7 +21,7 @@ _ALLCamelKeys = {'enabled', 'adaptivePolicy', 'failureLearning', 'graphMemory', 
 async def client(isolatedData):
     from app.services.workbench import workbench as wb
     wb._sessions.clear()
-    wb.save_sessions()
+    wb.saveSessions()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as ac:
         yield ac

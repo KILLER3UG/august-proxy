@@ -52,45 +52,45 @@ class TestAnthropicClient:
 
     def testAuthHeaders(self):
         client = AnthropicClient({'name': 'Anthropic'})
-        headers = client.build_auth_headers('sk-test')
+        headers = client.buildAuthHeaders('sk-test')
         assert headers['Authorization'] == 'Bearer sk-test'
         assert headers['anthropic-version'] == '2023-06-01'
 
     def testBaseUrl(self):
         client = AnthropicClient({'name': 'Anthropic'})
-        url = client.resolve_base_url()
+        url = client.resolveBaseUrl()
         assert 'anthropic.com' in url
         assert url.endswith('/v1')
 
     def testResolveApiKeyNoKey(self):
         client = AnthropicClient({'name': 'Anthropic'})
-        key = client.resolve_api_key()
+        key = client.resolveApiKey()
         assert key is None or key.startswith('sk-')
 
 class TestOpenAIClient:
 
     def testAuthHeaders(self):
         client = OpenAIClient({'name': 'OpenAI'})
-        headers = client.build_auth_headers('sk-test')
+        headers = client.buildAuthHeaders('sk-test')
         assert headers['Authorization'] == 'Bearer sk-test'
 
     def testBaseUrl(self):
         client = OpenAIClient({'name': 'OpenAI', 'base_url': 'https://custom.api.com/v1'})
-        url = client.resolve_base_url()
+        url = client.resolveBaseUrl()
         assert url == 'https://custom.api.com/v1'
 
 class TestGeminiClient:
 
     def testAuthHeaders(self):
         client = GeminiClient({'name': 'Google AI Studio'})
-        headers = client.build_auth_headers('gemini-key')
+        headers = client.buildAuthHeaders('gemini-key')
         assert 'x-goog-api-key' in headers
         assert headers['x-goog-api-key'] == 'gemini-key'
         assert 'Authorization' not in headers
 
     def testBaseUrl(self):
         client = GeminiClient({'name': 'Google AI Studio'})
-        url = client.resolve_base_url()
+        url = client.resolveBaseUrl()
         assert 'googleapis.com' in url
 
 class TestMiniMaxClient:
@@ -101,19 +101,19 @@ class TestMiniMaxClient:
 
     def testBaseUrl(self):
         client = MiniMaxClient({'name': 'MiniMax', 'base_url': 'https://api.minimax.io/anthropic'})
-        url = client.resolve_base_url()
+        url = client.resolveBaseUrl()
         assert 'minimax.io' in url
 
 class TestBedrockClient:
 
     def testAuthHeaders(self):
         client = BedrockClient({'name': 'AWS Bedrock'})
-        headers = client.build_auth_headers(None)
+        headers = client.buildAuthHeaders(None)
         assert headers['Content-Type'] == 'application/json'
 
     def testApiKey(self):
         client = BedrockClient({'name': 'AWS Bedrock'})
-        key = client.resolve_api_key()
+        key = client.resolveApiKey()
         assert key is None or key == '__aws_sdk__'
 
 class TestFactory:

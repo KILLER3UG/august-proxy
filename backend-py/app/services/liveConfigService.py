@@ -11,7 +11,7 @@ FIELDS = ('sttProvider', 'sttModel', 'ttsProvider', 'ttsModel', 'ttsVoice')
 DEFAULTS: dict[str, str] = {'sttProvider': '', 'sttModel': '', 'ttsProvider': '', 'ttsModel': '', 'ttsVoice': ''}
 
 def getLiveConfig() -> dict[str, str]:
-    cfg = configService.get_config()
+    cfg = configService.getConfig()
     user = cfg.get('auxiliary', {}).get('live', {}) or {}
     out = DEFAULTS.copy()
     for f in FIELDS:
@@ -31,9 +31,9 @@ def updateLiveConfig(patch: dict[str, Any]) -> tuple[bool, str, dict[str, str]]:
     ok, err = validatePatch(patch)
     if not ok:
         return (False, err, getLiveConfig())
-    cfg = configService.get_config()
+    cfg = configService.getConfig()
     aux = cfg.setdefault('auxiliary', {})
     live = aux.setdefault('live', {})
     live.update(patch)
-    configService.save_config(cfg)
+    configService.saveConfig(cfg)
     return (True, '', getLiveConfig())

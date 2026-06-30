@@ -280,7 +280,7 @@ async def _diagnoseProxy() -> str:
     understand its own runtime.
     """
     from app.config import settings
-    parts = [f'Data directory: {settings.data_dir}', f'Web dist: {settings.web_dist}', f'Port: {settings.port}', f'Mode: python', f'Environment: {settings.env}']
+    parts = [f'Data directory: {settings.dataDir}', f'Web dist: {settings.webDist}', f'Port: {settings.port}', f'Mode: python', f'Environment: {settings.env}']
     try:
         providers = settings.config.get('providers', {})
         if isinstance(providers, dict):
@@ -300,11 +300,11 @@ async def _diagnoseProxy() -> str:
 async def _describeEnvironment() -> str:
     """Describe the workspace environment: paths, VCS, available tools."""
     from app.config import settings
-    parts = [f'Proxy version: 0.1.0', f'Data directory: {settings.data_dir}', f'Platform: win32']
+    parts = [f'Proxy version: 0.1.0', f'Data directory: {settings.dataDir}', f'Platform: win32']
     try:
         import subprocess
         from app.lib.paths import dataPath
-        cwd = str(settings.data_dir.parent)
+        cwd = str(settings.dataDir.parent)
         branch = subprocess.run(['git', 'branch', '--show-current'], cwd=cwd, capture_output=True, text=True, timeout=5).stdout.strip()
         if branch:
             parts.append(f'Git branch: {branch}')
@@ -544,7 +544,7 @@ async def _listSkills(query: str='') -> str:
         if query:
             skills = skillService.search(query)
         else:
-            skills = skillService.list_all()
+            skills = skillService.listAll()
         if not skills:
             return 'No skills found.' if not query else f"No skills matching '{query}'."
         lines = [f'Available skills ({len(skills)}):\n']
@@ -564,10 +564,10 @@ async def _skillManage(action: str, name: str, body: str='', description: str=''
     from app.services.skillService import SkillValidationError
     try:
         if action == 'create':
-            result = skillService.create_skill(name, description, body, trigger=trigger, category=category)
+            result = skillService.createSkill(name, description, body, trigger=trigger, category=category)
             return f"Created skill '{name}'.\n" + json.dumps(result, default=str)
         if action == 'patch':
-            result = skillService.patch_skill(name, body=body or None, description=description or None, trigger=trigger or None, category=category or None)
+            result = skillService.patchSkill(name, body=body or None, description=description or None, trigger=trigger or None, category=category or None)
             return f"Patched skill '{name}'.\n" + json.dumps(result, default=str)
         if action == 'write_file':
             result = skillService.write_skill_file(name, filePath, content)
@@ -576,7 +576,7 @@ async def _skillManage(action: str, name: str, body: str='', description: str=''
             result = skillService.remove_skill_file(name, filePath)
             return f"Removed '{filePath}' from skill '{name}'.\n" + json.dumps(result, default=str)
         if action == 'delete':
-            result = skillService.delete_skill(name)
+            result = skillService.deleteSkill(name)
             return f"Deleted skill '{name}'.\n" + json.dumps(result, default=str)
         return f"Error: unknown skill_manage action '{action}'. Use one of: create, patch, write_file, remove_file, delete."
     except SkillValidationError as exc:
@@ -594,24 +594,24 @@ def registerAll() -> None:
     toolRegistry.register('web_fetch', 'Fetch a URL and return its content as clean Markdown.', _webFetch, {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'The URL to fetch.'}}, 'required': ['url']})
     toolRegistry.register('web_search', 'Search the web for information using DuckDuckGo.', _webSearch, {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'The search query.'}, 'max_results': {'type': 'integer', 'description': 'Maximum results (max 20).'}}, 'required': ['query']})
     from app.services.browser import handlers as _browser
-    toolRegistry.register('browser_open', 'Open a URL in the headless browser and return the page title plus an interactive-element snapshot (use the [@eN] refs for clicks/types).', _browser.browser_open, {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'The URL to open.'}, 'wait_until': {'type': 'string', 'enum': ['load', 'domcontentloaded', 'networkidle', 'commit'], 'description': 'When navigation is considered complete (default: load).'}}, 'required': ['url']})
-    toolRegistry.register('browser_click', "Click an element. Locate it by ref (e.g. '@e3'), CSS/XPath selector, or visible text.", _browser.browser_click, {'type': 'object', 'properties': {'ref': {'type': 'string', 'description': "Snapshot ref like '@e3'."}, 'selector': {'type': 'string', 'description': 'CSS selector or XPath (//...).'}, 'text': {'type': 'string', 'description': 'Visible text of the element.'}}})
-    toolRegistry.register('browser_type', 'Type text into a field located by ref or selector, optionally pressing Enter to submit.', _browser.browser_type, {'type': 'object', 'properties': {'ref': {'type': 'string', 'description': "Snapshot ref like '@e3'."}, 'selector': {'type': 'string', 'description': 'CSS selector or XPath.'}, 'text': {'type': 'string', 'description': 'The text to type into the field.'}, 'submit': {'type': 'boolean', 'description': 'Press Enter after typing (default false).'}}, 'required': ['text']})
-    toolRegistry.register('browser_select', 'Select an option value from a <select> dropdown located by ref or selector.', _browser.browser_select, {'type': 'object', 'properties': {'ref': {'type': 'string', 'description': "Snapshot ref like '@e3'."}, 'selector': {'type': 'string', 'description': 'CSS selector or XPath.'}, 'value': {'type': 'string', 'description': 'The option value to select.'}}, 'required': ['value']})
-    toolRegistry.register('browser_scroll', 'Scroll the page by a number of pixels, or scroll an element into view.', _browser.browser_scroll, {'type': 'object', 'properties': {'direction': {'type': 'string', 'enum': ['up', 'down'], 'description': 'Scroll direction (default down).'}, 'amount': {'type': 'integer', 'description': 'Pixels to scroll (default 400).'}, 'selector': {'type': 'string', 'description': 'Scroll this element into view instead of the page.'}}})
-    toolRegistry.register('browser_wait', 'Wait for an element to appear, a load state, or a fixed timeout.', _browser.browser_wait, {'type': 'object', 'properties': {'strategy': {'type': 'string', 'enum': ['selector', 'load', 'networkidle', 'timeout'], 'description': 'What to wait for (default selector).'}, 'selector': {'type': 'string', 'description': 'Required when strategy=selector.'}, 'timeout': {'type': 'integer', 'description': 'Seconds before giving up (default 30).'}}})
-    toolRegistry.register('browser_screenshot', 'Take a screenshot, save it to disk, and return the file path + dimensions.', _browser.browser_screenshot, {'type': 'object', 'properties': {'full_page': {'type': 'boolean', 'description': 'Capture the full scrollable page (default false).'}}})
-    toolRegistry.register('browser_evaluate', 'Execute JavaScript in the page and return the JSON-serialised result.', _browser.browser_evaluate, {'type': 'object', 'properties': {'script': {'type': 'string', 'description': 'JavaScript expression or function body to evaluate.'}}, 'required': ['script']})
-    toolRegistry.register('browser_get_content', 'Extract page content. format: html | text | markdown | elements (elements returns the interactive-element snapshot).', _browser.browser_get_content, {'type': 'object', 'properties': {'format': {'type': 'string', 'enum': ['html', 'text', 'markdown', 'elements'], 'description': 'What to extract (default text).'}}})
+    toolRegistry.register('browser_open', 'Open a URL in the headless browser and return the page title plus an interactive-element snapshot (use the [@eN] refs for clicks/types).', _browser.browserOpen, {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'The URL to open.'}, 'wait_until': {'type': 'string', 'enum': ['load', 'domcontentloaded', 'networkidle', 'commit'], 'description': 'When navigation is considered complete (default: load).'}}, 'required': ['url']})
+    toolRegistry.register('browser_click', "Click an element. Locate it by ref (e.g. '@e3'), CSS/XPath selector, or visible text.", _browser.browserClick, {'type': 'object', 'properties': {'ref': {'type': 'string', 'description': "Snapshot ref like '@e3'."}, 'selector': {'type': 'string', 'description': 'CSS selector or XPath (//...).'}, 'text': {'type': 'string', 'description': 'Visible text of the element.'}}})
+    toolRegistry.register('browser_type', 'Type text into a field located by ref or selector, optionally pressing Enter to submit.', _browser.browserType, {'type': 'object', 'properties': {'ref': {'type': 'string', 'description': "Snapshot ref like '@e3'."}, 'selector': {'type': 'string', 'description': 'CSS selector or XPath.'}, 'text': {'type': 'string', 'description': 'The text to type into the field.'}, 'submit': {'type': 'boolean', 'description': 'Press Enter after typing (default false).'}}, 'required': ['text']})
+    toolRegistry.register('browser_select', 'Select an option value from a <select> dropdown located by ref or selector.', _browser.browserSelect, {'type': 'object', 'properties': {'ref': {'type': 'string', 'description': "Snapshot ref like '@e3'."}, 'selector': {'type': 'string', 'description': 'CSS selector or XPath.'}, 'value': {'type': 'string', 'description': 'The option value to select.'}}, 'required': ['value']})
+    toolRegistry.register('browser_scroll', 'Scroll the page by a number of pixels, or scroll an element into view.', _browser.browserScroll, {'type': 'object', 'properties': {'direction': {'type': 'string', 'enum': ['up', 'down'], 'description': 'Scroll direction (default down).'}, 'amount': {'type': 'integer', 'description': 'Pixels to scroll (default 400).'}, 'selector': {'type': 'string', 'description': 'Scroll this element into view instead of the page.'}}})
+    toolRegistry.register('browser_wait', 'Wait for an element to appear, a load state, or a fixed timeout.', _browser.browserWait, {'type': 'object', 'properties': {'strategy': {'type': 'string', 'enum': ['selector', 'load', 'networkidle', 'timeout'], 'description': 'What to wait for (default selector).'}, 'selector': {'type': 'string', 'description': 'Required when strategy=selector.'}, 'timeout': {'type': 'integer', 'description': 'Seconds before giving up (default 30).'}}})
+    toolRegistry.register('browser_screenshot', 'Take a screenshot, save it to disk, and return the file path + dimensions.', _browser.browserScreenshot, {'type': 'object', 'properties': {'full_page': {'type': 'boolean', 'description': 'Capture the full scrollable page (default false).'}}})
+    toolRegistry.register('browser_evaluate', 'Execute JavaScript in the page and return the JSON-serialised result.', _browser.browserEvaluate, {'type': 'object', 'properties': {'script': {'type': 'string', 'description': 'JavaScript expression or function body to evaluate.'}}, 'required': ['script']})
+    toolRegistry.register('browser_get_content', 'Extract page content. format: html | text | markdown | elements (elements returns the interactive-element snapshot).', _browser.browserGetContent, {'type': 'object', 'properties': {'format': {'type': 'string', 'enum': ['html', 'text', 'markdown', 'elements'], 'description': 'What to extract (default text).'}}})
     from app.services import desktopAutomation as _desktop
-    toolRegistry.register('desktop_screenshot', 'Capture the real desktop screen as a base64-encoded PNG image.', _desktop.take_screenshot, {'type': 'object', 'properties': {}, 'required': []})
-    toolRegistry.register('desktop_screen_size', 'Return the real screen dimensions in pixels.', _desktop.get_screen_size, {'type': 'object', 'properties': {}, 'required': []})
-    toolRegistry.register('desktop_mouse_position', 'Return the current real cursor (x, y) position.', _desktop.get_mouse_position, {'type': 'object', 'properties': {}, 'required': []})
-    toolRegistry.register('desktop_click', 'Move the real mouse to (x, y) and click. button: left|right|middle.', _desktop.click_mouse, {'type': 'object', 'properties': {'x': {'type': 'integer', 'description': 'Screen X coordinate.'}, 'y': {'type': 'integer', 'description': 'Screen Y coordinate.'}, 'button': {'type': 'string', 'enum': ['left', 'right', 'middle'], 'description': 'Mouse button (default left).'}}, 'required': ['x', 'y']})
-    toolRegistry.register('desktop_type', 'Type text on the real keyboard.', _desktop.type_text, {'type': 'object', 'properties': {'text': {'type': 'string', 'description': 'The text to type.'}}, 'required': ['text']})
-    toolRegistry.register('desktop_press_key', 'Press a single real keyboard key (e.g. enter, escape, tab, f1).', _desktop.press_key, {'type': 'object', 'properties': {'key': {'type': 'string', 'description': "Key name (e.g. 'enter', 'escape')."}}, 'required': ['key']})
-    toolRegistry.register('desktop_list_windows', 'List visible desktop windows with title and geometry.', _desktop.list_windows, {'type': 'object', 'properties': {}, 'required': []})
-    toolRegistry.register('desktop_open_url', "Open a URL in the user's default *visible* browser (not headless). Use browser_open instead for background page inspection.", _desktop.open_url, {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'The URL to open.'}}, 'required': ['url']})
+    toolRegistry.register('desktop_screenshot', 'Capture the real desktop screen as a base64-encoded PNG image.', _desktop.takeScreenshot, {'type': 'object', 'properties': {}, 'required': []})
+    toolRegistry.register('desktop_screen_size', 'Return the real screen dimensions in pixels.', _desktop.getScreenSize, {'type': 'object', 'properties': {}, 'required': []})
+    toolRegistry.register('desktop_mouse_position', 'Return the current real cursor (x, y) position.', _desktop.getMousePosition, {'type': 'object', 'properties': {}, 'required': []})
+    toolRegistry.register('desktop_click', 'Move the real mouse to (x, y) and click. button: left|right|middle.', _desktop.clickMouse, {'type': 'object', 'properties': {'x': {'type': 'integer', 'description': 'Screen X coordinate.'}, 'y': {'type': 'integer', 'description': 'Screen Y coordinate.'}, 'button': {'type': 'string', 'enum': ['left', 'right', 'middle'], 'description': 'Mouse button (default left).'}}, 'required': ['x', 'y']})
+    toolRegistry.register('desktop_type', 'Type text on the real keyboard.', _desktop.typeText, {'type': 'object', 'properties': {'text': {'type': 'string', 'description': 'The text to type.'}}, 'required': ['text']})
+    toolRegistry.register('desktop_press_key', 'Press a single real keyboard key (e.g. enter, escape, tab, f1).', _desktop.pressKey, {'type': 'object', 'properties': {'key': {'type': 'string', 'description': "Key name (e.g. 'enter', 'escape')."}}, 'required': ['key']})
+    toolRegistry.register('desktop_list_windows', 'List visible desktop windows with title and geometry.', _desktop.listWindows, {'type': 'object', 'properties': {}, 'required': []})
+    toolRegistry.register('desktop_open_url', "Open a URL in the user's default *visible* browser (not headless). Use browser_open instead for background page inspection.", _desktop.openUrl, {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'The URL to open.'}}, 'required': ['url']})
     toolRegistry.register('memory_search', 'Search past conversation memory for relevant context.', _memorySearch, {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'Search query.'}}, 'required': ['query']})
     toolRegistry.register('fact_search', 'Search semantic facts in memory.', _factSearch, {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'Search query.'}}, 'required': ['query']})
     toolRegistry.register('context_read', 'Read current user context and profile from memory.', _contextRead, {'type': 'object', 'properties': {}, 'required': []})

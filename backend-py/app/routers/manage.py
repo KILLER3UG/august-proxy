@@ -49,7 +49,7 @@ def _err(code: str, message: str, status: int=404) -> HTTPException:
 @router.get('/snapshot')
 async def snapshot():
     """Full state snapshot for the UI's initial page load."""
-    providers = providerResolver.list_available()
+    providers = providerResolver.listAvailable()
     return {'providers': [{'id': p.get('name', ''), 'name': p.get('name', ''), 'description': p.get('description', ''), 'baseUrl': p.get('base_url', ''), 'apiFormat': p.get('api_mode', ''), 'defaultModel': p.get('default_model', ''), 'enabled': True, 'models': list(p.get('model_profiles', {}).keys())} for p in providers], 'sessions': listWorkbenchSessions(), 'memory': getStats()}
 
 @router.get('/aliases')
@@ -61,7 +61,7 @@ async def listAliases():
 async def createAlias(body: AliasCreate):
     """Create or update a model alias."""
     aliases = _readAliases()
-    entry = {'alias': body.alias, 'targetModel': body.target_model, 'targetProvider': body.target_provider}
+    entry = {'alias': body.alias, 'targetModel': body.targetModel, 'targetProvider': body.targetProvider}
     existing = next((a for a in aliases if a.get('alias') == body.alias), None)
     if existing:
         existing.update(entry)
@@ -77,10 +77,10 @@ async def updateAlias(aliasName: str, body: AliasUpdate):
     existing = next((a for a in aliases if a.get('alias') == aliasName), None)
     if not existing:
         raise _err('not_found', 'Alias not found')
-    if body.target_model is not None:
-        existing['targetModel'] = body.target_model
-    if body.target_provider is not None:
-        existing['targetProvider'] = body.target_provider
+    if body.targetModel is not None:
+        existing['targetModel'] = body.targetModel
+    if body.targetProvider is not None:
+        existing['targetProvider'] = body.targetProvider
     _writeAliases(aliases)
     return existing
 

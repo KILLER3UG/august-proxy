@@ -30,7 +30,7 @@ class UsageRecord(BaseModel):
 @router.post('')
 async def recordUsage(body: UsageRecord):
     """Record a usage event."""
-    usageId = memoryStore.record_usage(body.session_id, body.model, body.input_tokens, body.output_tokens, body.context_tokens)
+    usageId = memoryStore.recordUsage(body.sessionId, body.model, body.input_tokens, body.output_tokens, body.context_tokens)
     return {'id': usageId}
 
 @router.get('/session')

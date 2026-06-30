@@ -27,7 +27,7 @@ class MiniMaxClient(AnthropicClient):
         MiniMax provides an Anthropic-compatible endpoint.
         The base URL already includes the /anthropic path.
         """
-        base = super().resolve_base_url()
+        base = super().resolveBaseUrl()
         if not base:
             base = self.config.get('base_url', 'https://api.minimax.io/anthropic')
         return base.rstrip('/')

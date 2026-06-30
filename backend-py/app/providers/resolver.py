@@ -17,7 +17,7 @@ def _hasApiKey(provider: dict[str, Any]) -> bool:
     client = getClient(provider)
     if not client:
         return False
-    return client.resolve_api_key() is not None
+    return client.resolveApiKey() is not None
 
 def resolve(name: str) -> Optional[dict[str, Any]]:
     """Find a provider by name, alias, or model ID.
@@ -40,14 +40,14 @@ def resolve(name: str) -> Optional[dict[str, Any]]:
         return providers[0] if providers else None
     nameStr = str(name)
     from app.services import providerCredentials
-    customEntry = providerCredentials._custom_entry(nameStr)
+    customEntry = providerCredentials._customEntry(nameStr)
     if customEntry and customEntry.get('enabled') and customEntry.get('apiKey'):
         return providerCredentials._custom_provider_dict(customEntry)
     canonical = aliases.normalize(nameStr)
     provider = registry.get(canonical)
     if provider:
         return provider
-    allProviders = registry.list_all()
+    allProviders = registry.listAll()
     for p in allProviders:
         if p['name'].lower() == nameStr.lower():
             return p
@@ -92,4 +92,4 @@ def listAvailable() -> list[dict[str, Any]]:
     """Return all registered providers."""
     if not registry.names():
         registerAll()
-    return registry.list_all()
+    return registry.listAll()
