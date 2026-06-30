@@ -41,7 +41,7 @@ export function BrainSettings() {
   const [draft, setDraft] = useState<BrainConfig | null>(null);
   const [sourceInfo, setSourceInfo] = useState<BrainConfigResponse | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['brain-config'],
     queryFn: () => getBrainConfig(),
     refetchOnMount: 'always',
@@ -84,6 +84,21 @@ export function BrainSettings() {
     },
     onError: (e: Error) => toast.error(e.message || 'Pull failed'),
   });
+
+  if (isError) {
+    return (
+      <div
+        className="p-6 text-sm text-destructive flex items-center gap-3"
+        data-testid="brain-settings-error"
+      >
+        <span>Could not load brain config: {(error as Error)?.message || 'unknown error'}</span>
+        <Button size="sm" variant="outline" onClick={() => refetch()}>
+          <RotateCcw className="mr-1 h-3.5 w-3.5" />
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   if (isLoading || !draft) {
     return <div className="p-6 text-sm text-muted-foreground">Loading brain config…</div>;

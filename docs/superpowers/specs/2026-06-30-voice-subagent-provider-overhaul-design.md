@@ -790,10 +790,19 @@ const { models } = useModels(); // Reuse existing hook
 - `backend-py/app/routers/providers.py` — add `GET /api/providers/templates` endpoint
 - `backend-py/app/providers/builtin.py` — remove or stub out (no longer registers hardcoded providers)
 - `backend-py/app/providers/resolver.py` — remove builtin registry fallback, only read from `providers.json`
+- `backend-py/app/routers/terminal_routes.py` — verify PTY spawning works correctly on all platforms
 - `frontend/desktop/src/App.tsx` — mount onboarding modal
 - `frontend/desktop/src/sections/chat/ChatComposer.tsx` — show banner if no providers
 - `frontend/desktop/src/sections/workspace/LiveSettingsTab.tsx` — replace text inputs with model dropdowns
+- `frontend/desktop/src/sections/chat/ChatSidebar.tsx` (or ChatLayout) — add "Open Folder" button using Tauri dialog
+- `frontend/desktop/src/store/sessions.ts` — add auto-folder creation when session has workspacePath
+- `src-tauri/tauri.conf.json` — verify permissions (fs, dialog), backend bundling
 - Model Providers settings UI — add template picker
+
+**Audit:**
+- All settings sections (`frontend/desktop/src/sections/workspace/*`, `frontend/desktop/src/sections/settings/*`) — ensure React Query with staleTime
+- All WebSocket connections — ensure correct port in desktop mode
+- Backend spawning logic in `src-tauri/src/main.rs` — verify Python backend launches correctly
 
 **Removed:**
 - `backend-py/app/providers/anthropic.py` (and all other individual provider files — moved to templates)
@@ -801,7 +810,100 @@ const { models } = useModels(); // Reuse existing hook
 
 ---
 
-## Cross-Feature Concerns
+## Desktop App Requirements (Tauri)
+
+### Core Principle
+August is a **Tauri v2 desktop application**, not a web-only app. All features must work correctly when built and distributed as a native desktop app on Windows, macOS, and Linux.
+
+### Terminal Integration
+
+**Current behavior:**
+- Right drawer shows xterm.js terminal with WebSocket connection to backend PTY
+- "Starting real terminal..." message appears briefly during connection
+- Uses xterm.js for rendering, backend spawns actual shell (bash/zsh/PowerShell)
+
+**Requirements:**
+1. **System default shell** — Backend should spawn the user's default shell:
+   - Windows: PowerShell Core (pwsh) or Windows PowerShell (powershell.exe) or Git Bash
+   - macOS/Linux: user's `$SHELL` (bash, zsh, fish, etc.)
+2. **No persistent "starting terminal" message** — Connection should be fast (<500ms)
+   - If backend PTY fails to spawn, show error: "Failed to start terminal. Check logs."
+   - Once connected, the xterm.js terminal should immediately show the shell prompt
+3. **Verify backend PTY implementation:**
+   - `backend-py/app/routers/terminal_routes.py` and `terminal_service` must correctly spawn PTY sessions
+   - Use `pty.spawn()` (Unix) or `winpty`/`conpty` (Windows) for real shell sessions
+   - WebSocket should stream I/O bidirectionally without delays
+
+**If terminal is currently broken:**
+- Add this to Phase 2 implementation: audit and fix terminal PTY spawning
+- Ensure xterm.js WebSocket connects to `/api/terminal/connect` successfully
+- Test on Windows (PowerShell), macOS (zsh), and Linux (bash)
+
+### Folder/Project Selection → Session Creation
+
+**Expected behavior:**
+When a user opens a folder via File Explorer (or drag-drops a folder onto August):
+1. A new session is created with `workspacePath` set to the folder path
+2. The session appears in the sidebar, grouped under a folder if applicable
+3. The workspace file tree (right panel) automatically loads that folder's contents
+
+**Current implementation:**
+- `createSession(folderId, title, workspacePath)` already supports `workspacePath` (line 78-94 in `sessions.ts`)
+- Sessions have a `workspacePath` field (line 13 in `sessions.ts`)
+- Folders can have a `workspacePath` field (line 40-42 in `sessions.ts`)
+
+**Requirements:**
+1. **Tauri file dialog integration:**
+   ```tsx
+   // Example: Add "Open Folder" button in sidebar
+   import { open } from '@tauri-apps/plugin-dialog';
+   
+   const handleOpenFolder = async () => {
+     const selected = await open({
+       directory: true,
+       multiple: false,
+     });
+     if (selected) {
+       const newSession = createSession(null, selected.name || 'New Project', selected.path);
+       navigate(`/chat/${newSession.id}`);
+     }
+   };
+   ```
+2. **Auto-create folder in sidebar:**
+   - If a session has a `workspacePath` that doesn't match any existing folder, auto-create a folder for it
+   - Folder name = last path segment (e.g., `/home/user/my-project` → "my-project")
+3. **Workspace panel auto-loads:**
+   - When session has `workspacePath`, the workspace file tree (WorkspacePanel.tsx) should auto-load that directory
+   - Already implemented: line 28-35 in WorkspacePanel.tsx syncs with `activeSession.workspacePath`
+
+**Implementation:**
+- Add "Open Folder" button to sidebar (ChatSidebar or ChatLayout)
+- Use `@tauri-apps/plugin-dialog` for native folder picker
+- Call `createSession(null, folderName, folderPath)` on selection
+- Verify workspace panel auto-loads the folder
+
+### Build & Distribution
+
+**Tauri-specific concerns:**
+1. **Backend bundling** — Python backend (`backend-py`) must be bundled with the Tauri app
+   - Check `src-tauri/tauri.conf.json` for `beforeBuildCommand` and `beforeDevCommand`
+   - Backend binary should be included in `resources` and spawned by Tauri on app start
+2. **WebSocket URLs** — Use `ws://localhost:<PORT>` not `window.location.host` in production
+   - Port should be determined at runtime (backend chooses free port, communicates to frontend)
+3. **File system access** — Tauri restricts file access; ensure `allowlist` permissions are set
+   - `fs.readDir`, `fs.readFile`, `fs.writeFile` needed for workspace panel
+   - `dialog.open` needed for folder picker
+4. **Provider templates** — `backend-py/app/data/provider_templates.json` must be bundled in resources
+5. **Config persistence** — `providers.json`, `config.json` should be in user data directory
+   - Use Tauri's `appDataDir` or `appConfigDir` paths
+
+**Files to audit:**
+- `src-tauri/tauri.conf.json` — verify permissions, build commands, resources
+- `src-tauri/src/main.rs` — verify backend spawning, port negotiation
+- `frontend/desktop/src/lib/tauri-detect.ts` — verify runtime detection works
+- All WebSocket connections — ensure they use correct port in desktop mode
+
+### Cross-Feature Concerns
 
 ### Settings Navigation & Real-Time Data Flow
 
@@ -876,6 +978,14 @@ const { models } = useModels(); // Reuse existing hook
 - Fresh app launch, no providers → onboarding shows → skip → banner appears
 - **Settings navigation** — switch between tabs, verify no reload, data persists
 - **Real-time updates** — add provider in Settings → immediately appears in chat model dropdown and Live settings dropdown without refresh
+- **Desktop app** — build Tauri app, verify backend launches, terminal works, folder picker creates sessions
+
+**E2E (Desktop App):**
+- Launch Tauri app on Windows/macOS/Linux
+- Terminal: open right drawer, verify PowerShell/zsh/bash launches, run `ls`, see output
+- Folder picker: click "Open Folder", select project, verify new session created with workspace loaded
+- Verify WebSocket connections work (chat SSE, terminal PTY)
+- Verify provider config persists across app restarts
 
 ### Performance Considerations
 
@@ -900,16 +1010,25 @@ const { models } = useModels(); // Reuse existing hook
 - Verify voice + slash dispatch path is unified
 
 ### Phase 2: Provider Overhaul (Decoupling)
-- Remove hardcoded providers
+- Remove hardcoded providers, create provider templates
 - Build onboarding modal + banner
 - Verify provider-less state behaviors
+- **Live settings model dropdown** — replace text inputs
+- **Settings navigation audit** — ensure no reload, real-time data flow
 
 ### Phase 3: Subagent Orchestrator (New Capability)
 - Backend: message bus, orchestrator, worker, tool
 - Frontend: SubagentPanel, SSE subscription, approval card
 - Integration tests with multi-agent scenarios
 
-Each phase can ship independently. Phase 1 unblocks Phase 3 (voice triggers for subagent commands). Phase 2 unblocks both (clean provider state).
+### Phase 4: Desktop App Hardening (Platform)
+- Audit terminal PTY spawning on Windows/macOS/Linux
+- Implement "Open Folder" button with Tauri dialog
+- Verify auto-folder creation for workspace sessions
+- Test Tauri build & distribution (backend bundling, permissions, config persistence)
+- E2E testing on all platforms
+
+Each phase can ship independently. Phase 1 unblocks Phase 3 (voice triggers for subagent commands). Phase 2 unblocks both (clean provider state). Phase 4 ensures desktop app quality.
 
 ---
 
