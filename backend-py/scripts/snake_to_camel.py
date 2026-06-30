@@ -4,7 +4,7 @@ AST-based snake_case → camelCase converter for Python source files.
 
 Usage:
     python scripts/snake_to_camel.py file.py              # single file
-    python scripts/snake_to_camel.py --dir lib/            # directory
+    python scripts/snake_to_camel.py lib/                  # directory
     python scripts/snake_to_camel.py --dry-run file.py     # preview only
     python scripts/snake_to_camel.py --diff file.py        # show unified diff
     python scripts/snake_to_camel.py --report file.py      # audit log
@@ -38,7 +38,7 @@ _DENY_LIST: set[str] = {
     "__iadd__", "__isub__", "__imul__", "__itruediv__", "__ifloordiv__",
     "__imod__", "__ipow__", "__iand__", "__ior__", "__ixor__",
     # Pytest fixtures
-    "tmp_path", "monkeypatch", "capsys", "caplog",
+    "tmp_path", "monkeypatch", "capsys", "caplog", "request",
     # FastAPI/Pydantic
     "ConfigDict", "model_validator", "field_validator", "model_dump",
     "model_validate", "field_serializer", "model_config",
@@ -262,7 +262,6 @@ def main():
     parser.add_argument("--diff", action="store_true", help="Show unified diff")
     parser.add_argument("--report", action="store_true", help="Output JSON audit report")
     parser.add_argument("--deny-list", help="Additional deny-list file")
-    parser.add_argument("--recursive", "-r", action="store_true", help="Process directories recursively")
 
     args = parser.parse_args()
 
