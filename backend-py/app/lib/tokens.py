@@ -10,5 +10,5 @@ def estimate(text: str) -> int:
 def estimateMessages(messages: list[dict[str, object]]) -> int:
     total = 0
     for msg in messages:
-        total += estimate(msg.get('content', '') or '')
+        total += estimate(str(msg.get('content', '') or ''))
     return total

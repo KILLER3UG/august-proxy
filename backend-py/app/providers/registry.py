@@ -7,7 +7,7 @@ _registry: dict[str, dict[str, object]] = {}
 
 def register(info: dict[str, object]) -> None:
     """Register a provider by its name."""
-    name = info.get('name', '')
+    name = str(info.get('name', ''))
     if name:
         _registry[name] = dict(info)
 

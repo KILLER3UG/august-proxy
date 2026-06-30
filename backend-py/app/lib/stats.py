@@ -7,7 +7,7 @@ import os
 def cpuCount() -> int:
     return os.cpu_count() or 1
 
-def memoryMb() -> dict:
+def memoryMb() -> dict[str, object]:
     """Approximate memory info (cross-platform)."""
     import psutil
     try:

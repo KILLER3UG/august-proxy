@@ -16,12 +16,12 @@ class CronJobCreate(BaseModel):
     enabled: bool = True
 
 @router.get('')
-async def listCronJobs():
+async def listCronJobs() -> dict[str, object]:
     """List all cron jobs."""
     return {'jobs': list(_jobs.values())}
 
 @router.post('')
-async def createCronJob(body: CronJobCreate):
+async def createCronJob(body: CronJobCreate) -> dict[str, object]:
     """Create a new cron job."""
     import uuid
     jobId = f'cron_{uuid.uuid4().hex[:8]}'
@@ -30,7 +30,7 @@ async def createCronJob(body: CronJobCreate):
     return job
 
 @router.get('/{job_id}')
-async def getCronJob(jobId: str):
+async def getCronJob(jobId: str) -> dict[str, object]:
     """Get a cron job by ID."""
     job = _jobs.get(jobId)
     if not job:
@@ -38,7 +38,7 @@ async def getCronJob(jobId: str):
     return job
 
 @router.delete('/{job_id}')
-async def deleteCronJob(jobId: str):
+async def deleteCronJob(jobId: str) -> dict[str, object]:
     """Delete a cron job."""
     if jobId not in _jobs:
         raise HTTPException(status_code=404, detail='Job not found')
@@ -46,7 +46,7 @@ async def deleteCronJob(jobId: str):
     return {'status': 'ok'}
 
 @router.post('/{job_id}/toggle')
-async def toggleCronJob(jobId: str):
+async def toggleCronJob(jobId: str) -> dict[str, object]:
     """Enable or disable a cron job."""
     job = _jobs.get(jobId)
     if not job:
@@ -55,7 +55,7 @@ async def toggleCronJob(jobId: str):
     return {'enabled': job['enabled']}
 
 @router.post('/{job_id}/run')
-async def runCronJob(jobId: str):
+async def runCronJob(jobId: str) -> dict[str, object]:
     """Trigger immediate execution of a cron job."""
     job = _jobs.get(jobId)
     if not job:

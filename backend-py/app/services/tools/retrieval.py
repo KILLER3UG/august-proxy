@@ -17,7 +17,7 @@ from collections import Counter
 class CatalogEntry:
     """A pre-tokenized entry in the BM25 catalog."""
 
-    def __init__(self, name: str, tokens: list[str], metadata: dict | None=None):
+    def __init__(self, name: str, tokens: list[str], metadata: dict[str, object] | None = None):
         self.name = name
         self.tokens = tokens
         self.metadata = metadata or {}
@@ -87,7 +87,7 @@ class BM25:
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[:topK]
 
-def buildToolCatalog(toolDefs: list[dict]) -> list[CatalogEntry]:
+def buildToolCatalog(toolDefs: list[dict[str, object]]) -> list[CatalogEntry]:
     """Build a pre-tokenized tool catalog for BM25.
 
     Each entry's search text includes: tool name (underscores→words), description,
@@ -95,8 +95,8 @@ def buildToolCatalog(toolDefs: list[dict]) -> list[CatalogEntry]:
     """
     catalog: list[CatalogEntry] = []
     for tool in toolDefs:
-        name = tool.get('name', '') if isinstance(tool, dict) else str(tool)
-        desc = tool.get('description', '') if isinstance(tool, dict) else ''
+        name = str(tool.get('name', '') or '') if isinstance(tool, dict) else str(tool)
+        desc = str(tool.get('description', '') or '') if isinstance(tool, dict) else ''
         params = tool.get('input_schema', tool.get('parameters', {}))
         paramNames = list(params.get('properties', {}).keys()) if isinstance(params, dict) else []
         searchParts = [name.replace('_', ' '), desc]
@@ -110,15 +110,15 @@ def buildToolCatalog(toolDefs: list[dict]) -> list[CatalogEntry]:
         catalog.append(CatalogEntry(name, tokens, {'name': name, 'description': desc}))
     return catalog
 
-def buildSkillCatalog(skills: list[dict]) -> list[CatalogEntry]:
+def buildSkillCatalog(skills: list[dict[str, object]]) -> list[CatalogEntry]:
     """Build a pre-tokenized skill catalog for BM25.
 
     Each entry's search text includes: skill name, description, and tags.
     """
     catalog: list[CatalogEntry] = []
     for skill in skills:
-        name = skill.get('name', '') if isinstance(skill, dict) else str(skill)
-        desc = skill.get('description', '') if isinstance(skill, dict) else ''
+        name = str(skill.get('name', '') or '') if isinstance(skill, dict) else str(skill)
+        desc = str(skill.get('description', '') or '') if isinstance(skill, dict) else ''
         tags = skill.get('tags', []) if isinstance(skill, dict) else []
         searchParts = [name.replace('_', ' '), desc]
         if isinstance(tags, list):
@@ -128,7 +128,7 @@ def buildSkillCatalog(skills: list[dict]) -> list[CatalogEntry]:
         catalog.append(CatalogEntry(name, tokens, {'name': name, 'description': desc}))
     return catalog
 
-def buildQueryFromMessages(messages: list[dict], windowSize: int=6, decayFactor: float=0.85) -> str:
+def buildQueryFromMessages(messages: list[dict[str, object]], windowSize: int=6, decayFactor: float=0.85) -> str:
     """Build a BM25 query from the last N conversation turns.
 
     Messages beyond ``window_size`` are excluded. Within the window,
@@ -152,7 +152,7 @@ def buildQueryFromMessages(messages: list[dict], windowSize: int=6, decayFactor:
                     parts.append(block.get('text', ''))
     return '\n'.join(parts)
 
-def searchTools(catalog: list[CatalogEntry], query: str, k: int=10, bm25Params: dict | None=None) -> list[str]:
+def searchTools(catalog: list[CatalogEntry], query: str, k: int=10, bm25Params: dict[str, float] | None=None) -> list[str]:
     """BM25 tool search. Returns top-K tool names.
 
     ``catalog``: output of ``build_tool_catalog()``.
@@ -163,12 +163,12 @@ def searchTools(catalog: list[CatalogEntry], query: str, k: int=10, bm25Params: 
         return [e.name for e in catalog[:k]]
     corpus = [e.tokens for e in catalog]
     bm25 = BM25(corpus, **bm25Params or {})
-    results = bm25.search(query, top_k=k)
+    results = bm25.search(query, topK=k)
     if not results and catalog:
         return [e.name for e in catalog[:k]]
     return [catalog[idx].name for idx, __ in results]
 
-def searchSkills(catalog: list[CatalogEntry], query: str, j: int=3, bm25Params: dict | None=None) -> list[str]:
+def searchSkills(catalog: list[CatalogEntry], query: str, j: int=3, bm25Params: dict[str, float] | None=None) -> list[str]:
     """BM25 skill search. Returns top-J skill names.
 
     ``catalog``: output of ``build_skill_catalog()``.
@@ -177,7 +177,7 @@ def searchSkills(catalog: list[CatalogEntry], query: str, j: int=3, bm25Params: 
         return [e.name for e in catalog[:j]]
     corpus = [e.tokens for e in catalog]
     bm25 = BM25(corpus, **bm25Params or {})
-    results = bm25.search(query, top_k=j)
+    results = bm25.search(query, topK=j)
     if not results and catalog:
         return [e.name for e in catalog[:j]]
     return [catalog[idx].name for idx, __ in results]

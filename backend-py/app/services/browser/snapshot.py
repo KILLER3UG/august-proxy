@@ -14,7 +14,7 @@ DOM_SNAPSHOT_SCRIPT = '\n() => {\n  const interactiveTags = [\'A\',\'BUTTON\',\'
 async def runSnapshot(page: object) -> list[dict[str, object]]:
     """Execute the snapshot script on ``page`` and return element descriptors."""
     try:
-        elements = await page.evaluate(DOM_SNAPSHOT_SCRIPT)
+        elements = await page.evaluate(DOM_SNAPSHOT_SCRIPT)  # type: ignore[attr-defined]
     except Exception:
         elements = []
     return elements if isinstance(elements, list) else []
@@ -34,13 +34,13 @@ def buildCompactSnapshot(elements: list[dict[str, object]]) -> str:
         parts = [f"[{el.get('ref', '')}]"]
         if role:
             parts.append(role)
-        name = (el.get('name') or '')[:120]
+        name = str(el.get('name') or '')[:120]
         if name:
             parts.append('"' + name + '"')
-        value = (el.get('value') or '')[:80]
+        value = str(el.get('value') or '')[:80]
         if value:
             parts.append(f'value={value!r}')
-        desc = (el.get('description') or '')[:80]
+        desc = str(el.get('description') or '')[:80]
         if desc:
             parts.append(f'desc={desc!r}')
         lines.append(' '.join(parts))

@@ -9,7 +9,7 @@ from fastapi import APIRouter
 router = APIRouter(prefix='/api/calendar')
 
 @router.get('/internal')
-async def listInternalEvents():
+async def listInternalEvents() -> dict[str, object]:
     """Return August internal events (tasks, reminders, scheduled chats).
 
     Currently returns an empty list because no event/reminder store exists yet.
