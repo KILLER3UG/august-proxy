@@ -38,6 +38,12 @@ def get_providers_store() -> dict[str, Any]:
 
 def save_providers_store(data: dict[str, Any]) -> None:
     _write_json(data_path("providers.json"), data)
+    # Notify any registered invalidation callbacks (e.g.
+    # provider_credentials) so they can drop their in-memory cache.
+    # Lazy-imported to avoid a circular dependency: config_service is
+    # imported by provider_credentials at module load.
+    from app.services.provider_credentials import _fire_invalidation
+    _fire_invalidation()
 
 
 def get_env(key: str) -> Optional[str]:
