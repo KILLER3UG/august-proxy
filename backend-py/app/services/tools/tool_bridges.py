@@ -8,85 +8,62 @@ schemas taking up prompt space.
 Reserved names (registry rejects these):
     tool_search, tool_describe, tool_call
 """
-
 from __future__ import annotations
-
 import json
 from typing import Any
+_RESERVEDNames = frozenset({'tool_search', 'tool_describe', 'tool_call'})
 
-
-_RESERVED_NAMES = frozenset({"tool_search", "tool_describe", "tool_call"})
-
-
-def is_reserved(name: str) -> bool:
+def isReserved(name: str) -> bool:
     """Check if a tool name is reserved for bridges."""
-    return name in _RESERVED_NAMES
+    return name in _RESERVEDNames
 
-
-# ── Bridge tool handlers ────────────────────────────────────────────────
-
-
-async def handle_tool_search(query: str, limit: int = 5) -> str:
+async def handleToolSearch(query: str, limit: int=5) -> str:
     """Search across ALL deferred tools using BM25."""
-    from app.services.tools.retrieval import build_tool_catalog, search_tools
-    from app.services.tool_registry import list_tools
-
-    all_tools = list_tools()
-    catalog = build_tool_catalog(all_tools)
-    results = search_tools(catalog, query, k=limit)
-
+    from app.services.tools.retrieval import buildToolCatalog, searchTools
+    from app.services.tool_registry import listTools
+    allTools = listTools()
+    catalog = buildToolCatalog(allTools)
+    results = searchTools(catalog, query, k=limit)
     if not results:
-        return "No matching tools found."
-
-    lines = [f"Tool search results for: {query}"]
+        return 'No matching tools found.'
+    lines = [f'Tool search results for: {query}']
     for name in results:
-        # Find description
-        for t in all_tools:
-            if isinstance(t, dict) and t.get("name") == name:
-                desc = t.get("description", "")
+        for t in allTools:
+            if isinstance(t, dict) and t.get('name') == name:
+                desc = t.get('description', '')
                 if desc:
-                    lines.append(f"  {name}: {desc}")
+                    lines.append(f'  {name}: {desc}')
                 else:
-                    lines.append(f"  {name}")
+                    lines.append(f'  {name}')
                 break
         else:
-            lines.append(f"  {name}")
+            lines.append(f'  {name}')
+    return '\n'.join(lines)
 
-    return "\n".join(lines)
-
-
-async def handle_tool_describe(name: str) -> str:
+async def handleToolDescribe(name: str) -> str:
     """Return the full JSON schema for one deferred tool."""
-    from app.services.tool_registry import get_tool
-
-    tool = get_tool(name)
+    from app.services.tool_registry import getTool
+    tool = getTool(name)
     if not tool:
         return f"Tool '{name}' not found."
-
-    # Build schema description
-    schema = tool.get("input_schema", tool.get("parameters", {}))
-    desc = tool.get("description", "")
-
-    parts = [f"Tool: {name}"]
+    schema = tool.get('input_schema', tool.get('parameters', {}))
+    desc = tool.get('description', '')
+    parts = [f'Tool: {name}']
     if desc:
-        parts.append(f"Description: {desc}")
-    parts.append(f"Schema:\n{json.dumps(schema, indent=2)}")
+        parts.append(f'Description: {desc}')
+    parts.append(f'Schema:\n{json.dumps(schema, indent=2)}')
+    return '\n'.join(parts)
 
-    return "\n".join(parts)
-
-
-async def handle_tool_call(name: str, arguments: str) -> str:
+async def handleToolCall(name: str, arguments: str) -> str:
     """Invoke a deferred tool by name.
 
     ``arguments`` should be a JSON string matching the tool's schema.
     """
     from app.services.tool_registry import dispatch
-
     try:
         args = json.loads(arguments) if arguments else {}
     except json.JSONDecodeError as e:
-        return f"Invalid arguments JSON: {e}"
-
+        return f'Invalid arguments JSON: {e}'
     try:
         result = await dispatch(name, **args)
         return str(result)
