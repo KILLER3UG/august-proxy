@@ -209,3 +209,34 @@ async def put_model_fleet(body: dict[str, Any]):
     if not ok:
         raise HTTPException(status_code=400, detail={"code": "validation", "message": err})
     return fleet
+
+
+# ── Live (STT/TTS) config (v4.2) — parallel to model-fleet ──────────────
+
+
+@router.get("/live")
+async def get_live_config():
+    """v4.2: Return the Live config (defaults + user overrides) — see §14.
+
+    An empty `sttProvider`/`ttsProvider` means "use the browser default"
+    (Web Speech API). Setting a provider upgrades to a paid service.
+    """
+    from app.services import live_config_service
+    return live_config_service.get_live_config()
+
+
+@router.put("/live")
+async def put_live_config(body: dict[str, Any]):
+    """v4.2: Update Live config (partial).
+
+    Body may contain any subset of {sttProvider, sttModel, ttsProvider,
+    ttsModel, ttsVoice}. Each field is a string; empty values mean
+    "browser default."
+    """
+    from fastapi import HTTPException
+    from app.services import live_config_service
+
+    ok, err, cfg = live_config_service.update_live_config(body)
+    if not ok:
+        raise HTTPException(status_code=400, detail={"code": "validation", "message": err})
+    return cfg
