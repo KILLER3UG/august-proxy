@@ -75,6 +75,7 @@ import { Badge } from '@/components/ui/badge';
 import { QuotasPanel } from '@/sections/settings/QuotasPanel';
 import { cn } from '@/lib/utils';
 import { ModelPickerDropdown } from '@/components/overlays/ModelPickerDropdown';
+import { ModelFleetTab } from '@/sections/workspace/ModelFleetTab';
 
 /* ── API format dropdown options — match the screenshot EXACTLY ──────── */
 const API_FORMATS: { value: ApiFormat; label: string }[] = [
@@ -85,12 +86,13 @@ const API_FORMATS: { value: ApiFormat; label: string }[] = [
 
 const DEFAULT_API_FORMAT: ApiFormat = 'anthropic';
 
-const SUBTABS: { key: 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection'; label: string; icon: LucideIcon }[] = [
+const SUBTABS: { key: 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection' | 'fleet'; label: string; icon: LucideIcon }[] = [
   { key: 'providers', label: 'Providers', icon: Server },
   { key: 'all-models', label: 'All models', icon: Boxes },
   { key: 'aliases',   label: 'Aliases',   icon: ArrowRightLeft },
   { key: 'fallback',  label: 'Fallback',  icon: ShieldCheck },
   { key: 'reflection', label: 'Background & Reflection', icon: Brain },
+  { key: 'fleet',     label: 'Model Fleet', icon: Brain },
   { key: 'quotas',    label: 'Quotas',    icon: Gauge },
 ];
 
@@ -102,7 +104,7 @@ function fmtContextWindow(n?: number) {
 }
 
 export function WorkspaceModelsSection() {
-  const [subtab, setSubtab] = useState<'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection'>('providers');
+  const [subtab, setSubtab] = useState<'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection' | 'fleet'>('providers');
 
   return (
     <div className="px-8 py-6 space-y-4 h-full flex flex-col">
@@ -119,7 +121,7 @@ export function WorkspaceModelsSection() {
       <div className="shrink-0">
         <WorkspaceTabs
           value={subtab}
-          onChange={(k) => setSubtab(k as 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection')}
+          onChange={(k) => setSubtab(k as 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection' | 'fleet')}
           items={SUBTABS}
           label="Model settings subtabs"
         />
@@ -131,6 +133,7 @@ export function WorkspaceModelsSection() {
         {subtab === 'aliases'   && <AliasesTab />}
         {subtab === 'fallback'  && <FallbackTab />}
         {subtab === 'reflection' && <BackgroundReflectionTab />}
+        {subtab === 'fleet'     && <ModelFleetTab />}
         {subtab === 'quotas'    && <QuotasTab />}
       </div>
     </div>

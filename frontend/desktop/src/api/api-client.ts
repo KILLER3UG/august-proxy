@@ -483,6 +483,24 @@ export function updateReviewBackgroundConfig(config: ReviewBackgroundConfig): Pr
   return api.put<ReviewBackgroundConfig>('/api/config/background-review', config);
 }
 
+/* ── Model Fleet (v4.1) — four cognitive roles → models (spec §10) ────── */
+export interface ModelFleetConfig {
+  cortex: string;
+  cerebellum: string;
+  hippocampus: string;
+  prefrontal: string;
+}
+
+export function getModelFleet(): Promise<ModelFleetConfig> {
+  return api.get<ModelFleetConfig>('/api/config/model-fleet');
+}
+
+export function updateModelFleet(
+  patch: Partial<ModelFleetConfig>,
+): Promise<ModelFleetConfig> {
+  return api.put<ModelFleetConfig>('/api/config/model-fleet', patch);
+}
+
 export function restartBackend(): Promise<{ ok: boolean }> {
   return api.post<{ ok: boolean }>('/api/system/restart');
 }
