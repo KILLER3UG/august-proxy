@@ -148,7 +148,9 @@ def assemble_tool_defs(
 
     for td in all_tool_defs:
         name = td.get("name", "") if isinstance(td, dict) else ""
-        if name in core_tool_names:
+        # MCP tools are always core — they're expensive to reload per call
+        # and should be visible/executable regardless of disclosure pressure.
+        if name in core_tool_names or name.startswith("mcp__"):
             core_defs.append(td)
         else:
             deferrable_defs.append(td)

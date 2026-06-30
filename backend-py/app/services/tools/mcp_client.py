@@ -237,18 +237,20 @@ def get_mcp_tool_definitions() -> list[dict[str, Any]]:
 
 
 def get_mcp_tool_definitions_sync() -> list[dict[str, Any]]:
-    """Synchronous accessor over the lazily-populated MCP tool cache.
+    """Sync accessor over the lazily-populated MCP tool cache.
 
-    Returns the currently-discovered MCP server tools in OpenAI tool format
-    (``{"type":"function","function":{...}}``), prefixed
-    ``mcp__<server_id>__<tool_name>``. Empty until ``refresh_mcp_tools``
-    (called fire-and-forget at startup, and whenever MCP config changes)
-    has populated ``_tools_cache``.
-
-    Workbench tool-definition builders call this each generation so the
-    tool list reflects whatever is currently discovered, without blocking
-    on a subprocess round-trip.
+    Triggers a background ``refresh_mcp_tools()`` when the cache is empty
+    but servers are registered, so newly-added servers surface without a
+    restart.
     """
+    if not _tools_cache and _servers:
+        # Lazy refresh — fire and forget
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(refresh_mcp_tools())
+        except RuntimeError:
+            # No running loop (sync context, e.g. tests); skip
+            pass
     return get_mcp_tool_definitions()
 
 

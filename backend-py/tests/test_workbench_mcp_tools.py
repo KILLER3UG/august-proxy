@@ -169,3 +169,57 @@ class TestRefreshMcpTools:
         # Must not raise — one bad server shouldn't blank the rest.
         await mcp_client.refresh_mcp_tools()
         assert srv["status"] in ("error", "registered") or "error" in srv
+
+
+# ── MCP tools are always core (never deferred by BM25) ───────────────
+
+
+def test_assemble_tool_defs_keeps_mcp_tools_as_core():
+    """Even when deferrable token mass is over threshold, mcp__ tools must be presented."""
+    from app.services.tools.model_tools import assemble_tool_defs
+
+    # Build a synthetic deferrable set big enough to trigger BM25 disclosure.
+    # At ~75 tokens/tool (200-char desc + small schema), 300 tools ≈ 22,500 tokens,
+    # comfortably over the 20,000-token threshold (10% of 200K context).
+    big_deferrable = [
+        {"name": f"big_tool_{i}", "description": "x" * 200, "input_schema": {"type": "object"}}
+        for i in range(300)
+    ]
+    mcp_tools = [
+        {"name": "mcp__github__list_prs", "description": "List PRs", "input_schema": {"type": "object"}},
+        {"name": "mcp__workspace__create_doc", "description": "Create doc", "input_schema": {"type": "object"}},
+    ]
+    all_tools = big_deferrable + mcp_tools
+
+    result = assemble_tool_defs(all_tools, context_messages=None, context_length=200_000)
+    # Activated means disclosure is happening
+    assert result.activated
+    tool_names = {t.get("name") for t in result.tool_defs}
+    # Both MCP tools must be present
+    assert "mcp__github__list_prs" in tool_names
+    assert "mcp__workspace__create_doc" in tool_names
+
+
+def test_get_mcp_tool_definitions_sync_triggers_lazy_refresh(monkeypatch):
+    """When the cache is empty but servers are registered, lazy refresh kicks in."""
+    from app.services.tools import mcp_client
+    import asyncio
+
+    # Register a server but leave cache empty
+    monkeypatch.setattr(mcp_client, "_servers", {"mcp_xyz": {"id": "mcp_xyz", "name": "x"}})
+    monkeypatch.setattr(mcp_client, "_tools_cache", {})
+
+    refresh_called = {"v": False}
+
+    async def fake_refresh():
+        refresh_called["v"] = True
+        mcp_client._tools_cache["mcp_xyz"] = [{"name": "demo", "description": "demo", "inputSchema": {}}]
+
+    monkeypatch.setattr(mcp_client, "refresh_mcp_tools", fake_refresh)
+
+    # Run the sync getter inside a real event loop
+    async def runner():
+        return mcp_client.get_mcp_tool_definitions_sync()
+    asyncio.run(runner())
+
+    assert refresh_called["v"] is True
