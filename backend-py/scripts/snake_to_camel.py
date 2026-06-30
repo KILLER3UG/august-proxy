@@ -149,6 +149,16 @@ class SnakeToCamelTransformer(ast.NodeTransformer):
             node.id = new_id
         return node
 
+    def visit_Attribute(self, node: ast.Attribute) -> Any:
+        """Rename attribute access on 'self' (method calls within class definitions).
+        This is safe because 'self.method_name' always refers to our own methods.
+        Does NOT rename attributes on other objects (library objects, etc.)."""
+        if isinstance(node.value, ast.Name) and node.value.id == "self":
+            new_attr = self._rename(node.attr, "attribute", (node.lineno, node.col_offset))
+            node.attr = new_attr
+        self.generic_visit(node)
+        return node
+
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         """Rename imported names in 'from X import Y' statements."""
         for alias in node.names:
