@@ -1,7 +1,7 @@
 # August: Voice Commands, Parallel Subagents, and Provider Overhaul
 
 **Date:** 2026-06-30
-**Status:** Draft
+**Status:** Partially implemented (Phase 1 complete, Phases 2-4 pending)
 **Features:** Extensible voice command system, parallel subagent orchestration, removal of hardcoded providers
 
 ---
@@ -11,8 +11,11 @@
 This spec bundles three connected features that together make August more flexible, more powerful, and more user-driven:
 
 1. **Extensible Voice Command Registry** — A plugin-style registry where voice commands map to handlers and UI cards rendered inline in the chat thread. Ships with core commands (model picker, calendar view, help, clear, new chat) and exposes an extension point for future plugins.
+   - **Status: ✅ Phase 1 implemented** (registry, 10 built-in commands, ModelPickerCard rewrite, CalendarCard, useMcpTools hook, `/api/calendar/internal` endpoint, old files deleted).
 2. **Parallel Subagent System** — The main agent can spawn subagents that execute in parallel, communicate peer-to-peer, and inherit the main agent's tools (with optional restrictions). Includes work distribution, collaborative error recovery, and configurable per-agent visualization.
+   - **Status: ⬜ Phase 3 not yet started.**
 3. **Provider Overhaul** — All hardcoded providers are removed. Users configure their own providers via the existing Model Providers tab. New users get an onboarding flow with a "Skip for now" option so they can explore the app first.
+   - **Status: ⬜ Phase 2 not yet started (templates JSON, resolver refactor).**
 
 All three features build on existing infrastructure (voice spec, workbench, model providers tab) and are pure incremental additions.
 
@@ -20,11 +23,11 @@ All three features build on existing infrastructure (voice spec, workbench, mode
 
 ## Goals
 
-1. Voice commands trigger inline UI cards (model picker, calendar, future plugins) via an extensible registry.
-2. Main agent can spawn multiple subagents that execute in parallel, communicate peer-to-peer, and recover from failures collaboratively.
-3. Hardcoded providers removed; user-configured providers are the only source of truth; onboarding gracefully handles "no providers yet" state.
-4. Calendar feature uses August's internal events combined with external calendar via MCP tools (no new OAuth integrations).
-5. No breaking changes for the existing voice command spec — this work extends it.
+1. ✅ Voice commands trigger inline UI cards (model picker, calendar, future plugins) via an extensible registry.
+2. ⬜ Main agent can spawn multiple subagents that execute in parallel, communicate peer-to-peer, and recover from failures collaboratively.
+3. ⬜ Hardcoded providers removed; user-configured providers are the only source of truth; onboarding gracefully handles "no providers yet" state.
+4. ✅ CalendarCard shows week-view with internal events; MCP calendar detection via useMcpTools hook.
+5. ✅ No breaking changes for the existing voice command spec — this work extends it.
 
 ---
 
@@ -77,7 +80,7 @@ All three features build on existing infrastructure (voice spec, workbench, mode
 
 ---
 
-## Feature 1: Extensible Voice Command Registry
+## Feature 1: Extensible Voice Command Registry (✅ Phase 1 implemented)
 
 ### Core Concept
 
@@ -260,24 +263,24 @@ voiceCommandRegistry.register({
 
 ### Files
 
-**New:**
+**New (✅ implemented):**
 - `frontend/desktop/src/api/voice/registry.ts`
 - `frontend/desktop/src/api/voice/registry.test.ts`
 - `frontend/desktop/src/api/voice/builtins.ts` (registers all built-in commands)
-- `frontend/desktop/src/sections/chat/ModelPickerCard.tsx`
+- `frontend/desktop/src/sections/chat/ModelPickerCard.tsx` (rewritten)
 - `frontend/desktop/src/sections/chat/ModelPickerCard.test.tsx`
 - `frontend/desktop/src/sections/chat/CalendarCard.tsx`
 - `frontend/desktop/src/sections/chat/CalendarCard.test.tsx`
 
-**Modified:**
-- `frontend/desktop/src/sections/chat/commands-data.ts` (deprecate; registry is the new source)
+**Modified (✅ implemented):**
+- `frontend/desktop/src/sections/chat/commands-data.ts` (deleted; registry is the new source)
 - `frontend/desktop/src/sections/chat/ChatComposer.tsx`
 - `frontend/desktop/src/sections/chat/ChatThread.tsx`
 - `frontend/desktop/src/main.tsx` (import builtins to trigger registration)
 
 ---
 
-## Feature 2: Parallel Subagent System
+## Feature 2: Parallel Subagent System (⬜ Phase 3 — not started)
 
 ### Core Concept
 
@@ -538,7 +541,7 @@ export function subscribeToSubagentEvents(sessionId: string, onEvent: (event: Su
 
 ---
 
-## Feature 3: Provider Overhaul (No Hardcoded Providers)
+## Feature 3: Provider Overhaul — No Hardcoded Providers (⬜ Phase 2 — not started)
 
 ### Core Concept
 
@@ -810,7 +813,7 @@ const { models } = useModels(); // Reuse existing hook
 
 ---
 
-## Desktop App Requirements (Tauri)
+## Desktop App Requirements (Tauri) (⬜ Phase 4 — not started)
 
 ### Core Principle
 August is a **Tauri v2 desktop application**, not a web-only app. All features must work correctly when built and distributed as a native desktop app on Windows, macOS, and Linux.
@@ -1005,41 +1008,43 @@ When a user opens a folder via File Explorer (or drag-drops a folder onto August
 
 ## Implementation Phases
 
-### Phase 1: Voice Command Registry (Foundation)
-- Build registry, port existing commands, ship ModelPickerCard + CalendarCard
-- Verify voice + slash dispatch path is unified
+### Phase 1: Voice Command Registry (Foundation) ✅ COMPLETE
+- ✅ Build registry, port existing commands, ship ModelPickerCard + CalendarCard
+- ✅ Verify voice + slash dispatch path is unified (big-bang: deleted intent.ts, dispatch.ts, commands-data.ts)
+- ✅ useMcpTools hook + `/api/calendar/internal` backend endpoint
+- ✅ 48 test files / 423 tests all passing with registry integration
 
-### Phase 2: Provider Overhaul (Decoupling)
+### Phase 2: Provider Overhaul (Decoupling) ⬜ NOT STARTED
 - Remove hardcoded providers, create provider templates
 - Build onboarding modal + banner
 - Verify provider-less state behaviors
 - **Live settings model dropdown** — replace text inputs
 - **Settings navigation audit** — ensure no reload, real-time data flow
 
-### Phase 3: Subagent Orchestrator (New Capability)
+### Phase 3: Subagent Orchestrator (New Capability) ⬜ NOT STARTED
 - Backend: message bus, orchestrator, worker, tool
 - Frontend: SubagentPanel, SSE subscription, approval card
 - Integration tests with multi-agent scenarios
 
-### Phase 4: Desktop App Hardening (Platform)
+### Phase 4: Desktop App Hardening (Platform) ⬜ NOT STARTED
 - Audit terminal PTY spawning on Windows/macOS/Linux
 - Implement "Open Folder" button with Tauri dialog
 - Verify auto-folder creation for workspace sessions
 - Test Tauri build & distribution (backend bundling, permissions, config persistence)
 - E2E testing on all platforms
 
-Each phase can ship independently. Phase 1 unblocks Phase 3 (voice triggers for subagent commands). Phase 2 unblocks both (clean provider state). Phase 4 ensures desktop app quality.
+Each phase can ship independently. Phase 1 has shipped. Phase 2 unblocks Phase 3 (clean provider state). Phase 4 ensures desktop app quality.
 
 ---
 
 ## Success Metrics
 
-1. User says "switch model" → ModelPickerCard appears in chat → user clicks model → session model updates.
-2. User says "show calendar" → CalendarCard appears with internal events; if MCP calendar is configured, external events also show.
-3. Main agent spawns 3 subagents → all execute in parallel → results merge → user sees consolidated outcome.
-4. Subagent A fails → peer B recovers → user sees only success (no failure noise).
-5. Fresh app launch, no providers → onboarding modal appears → user can skip → app remains usable for exploration.
-6. New voice command can be registered by a plugin with one `voiceCommandRegistry.register({...})` call.
+1. ✅ User says "switch model" → ModelPickerCard appears in chat → user clicks model → session model updates.
+2. ✅ User says "show calendar" → CalendarCard appears with internal events; if MCP calendar is configured, external events also show (via useMcpTools hook).
+3. ⬜ Main agent spawns 3 subagents → all execute in parallel → results merge → user sees consolidated outcome.
+4. ⬜ Subagent A fails → peer B recovers → user sees only success (no failure noise).
+5. ⬜ Fresh app launch, no providers → onboarding modal appears → user can skip → app remains usable for exploration.
+6. ✅ New voice command can be registered by a plugin with one `voiceCommandRegistry.register({...})` call.
 
 ---
 

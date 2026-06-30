@@ -1,21 +1,43 @@
-import { COMMANDS, type ChatCommand } from './commands-data';
+import {
+  getDisplayCommands,
+  type DisplayCommand,
+} from '@/api/voice/registry';
 
 interface CommandHelpCardProps {
   /** Optional title override; defaults to "Available commands". */
   title?: string;
+  /** Optional override list. Defaults to commands registered with the registry. */
+  commands?: DisplayCommand[];
 }
 
-const CATEGORY_ORDER = ['Meta', 'Session', 'Provider', 'Workbench', 'Skills', 'Study', 'Other'];
+// Kept human-friendly for the UI; registry stores lowercase category ids.
+const CATEGORY_LABEL: Record<string, string> = {
+  core: 'Core',
+  plugin: 'Plugins',
+};
+const CATEGORY_ORDER = ['Core', 'Session', 'Provider', 'Workbench', 'Skills', 'Study', 'Plugin'];
 
-export function CommandHelpCard({ title = 'Available commands' }: CommandHelpCardProps) {
-  const grouped = new Map<string, ChatCommand[]>();
-  for (const c of COMMANDS) {
-    const cat = c.category || 'Other';
+function categoryLabel(category: string): string {
+  return CATEGORY_LABEL[category] ?? (CATEGORY_ORDER.includes(category) ? category : 'Other');
+}
+
+export function CommandHelpCard({
+  title = 'Available commands',
+  commands,
+}: CommandHelpCardProps) {
+  const list = commands ?? getDisplayCommands();
+  const grouped = new Map<string, DisplayCommand[]>();
+  for (const c of list) {
+    const cat = categoryLabel(c.category);
     if (!grouped.has(cat)) grouped.set(cat, []);
     grouped.get(cat)!.push(c);
   }
   const categories = Array.from(grouped.keys()).sort(
-    (a, b) => CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b)
+    (a, b) => {
+      const ai = CATEGORY_ORDER.indexOf(a);
+      const bi = CATEGORY_ORDER.indexOf(b);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    },
   );
 
   return (

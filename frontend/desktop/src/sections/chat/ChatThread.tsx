@@ -33,8 +33,13 @@ import { useProviderAvailability } from '@/hooks/useProviderAvailability';
 import { useQueryClient } from '@tanstack/react-query';
 import { getAggregatedModels } from '@/api/api-client';
 import { chatRuntime, type ChatTurnRecord } from './chat-runtime';
-import { COMMANDS } from './commands-data';
 import { CommandHelpCard } from './CommandHelpCard';
+import {
+  voiceCommandRegistry,
+  getDisplayCommands,
+  type VoiceCommandCardProps,
+} from '@/api/voice/registry';
+import { voiceCommandEvents, type VoiceCommandEvent } from '@/api/voice/registry-events';
 import {
   $sessionStreamStates,
   getOrInitSessionStreamState,
@@ -76,8 +81,6 @@ import { gitApi, type GitDiffResult } from '@/api/git';
 import { usageApi } from '@/api/usage';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import { addWorkspace } from '@/store/workspaces';
-import { matchIntent, isLikelyCommand } from '@/api/voice/intent';
-import { dispatchVoiceCommand, type VoiceDispatchContext } from '@/api/voice/dispatch';
 import { ModelPickerCard } from './ModelPickerCard';
 
 let visibleSessionId: string | null = null;
@@ -127,8 +130,15 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'tool';
   content: string;
   timestamp: string;
-  /** Optional message kind. Used for special rendering (e.g. 'help' panel). */
-  kind?: 'help';
+  /** Optional message kind. Used for special rendering (e.g. 'help' panel,
+   * registry-driven inline cards, subagent approval cards). */
+  kind?: 'help' | 'voice-command-card' | 'subagent-approval';
+  /** When kind === 'voice-command-card', the registry id of the command. */
+  commandId?: string;
+  /** Optional context payload for inline cards and approvals. */
+  context?: Record<string, unknown>;
+  /** Work breakdown items for kind === 'subagent-approval'. */
+  breakdown?: Array<{ goal: string; restrictedTools?: string[] }>;
   attachments?: FileAttachment[];
   tool?: {
     name: string;
@@ -717,6 +727,160 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     visibleSessionId = sessionId;
   }, [sessionId]);
 
+  // ── Voice command registry event subscription ─────────────────────────
+  // Phase 1A: handlers in `api/voice/builtins.ts` emit events; this
+  // effect wires them to local state mutations.
+  const messagesRef = useRef<ChatMessage[]>(messages);
+  messagesRef.current = messages;
+
+  useEffect(() => {
+    const unsubscribe = voiceCommandEvents.subscribe((event: VoiceCommandEvent) => {
+      switch (event.type) {
+        case 'push-card': {
+          const cardMsg: ChatMessage = {
+            id: `card-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            role: 'assistant',
+            content: '',
+            timestamp: new Date().toISOString(),
+            kind: 'voice-command-card',
+            commandId: event.commandId,
+            context: event.context,
+          };
+          setMessages(prev => [...prev, cardMsg]);
+          persistMessages(sessionId, [...messagesRef.current, cardMsg]);
+          setInput('');
+          clearComposerDraft(sessionId);
+          break;
+        }
+        case 'push-message': {
+          setMessages(prev => [...prev, event.message as ChatMessage]);
+          persistMessages(
+            sessionId,
+            [...messagesRef.current, event.message as ChatMessage],
+          );
+          break;
+        }
+        case 'clear-chat': {
+          setMessages([]);
+          persistMessages(sessionId, []);
+          setInput('');
+          setAttachments([]);
+          clearComposerDraft(sessionId);
+          break;
+        }
+        case 'new-session': {
+          window.dispatchEvent(new CustomEvent('august:new-session'));
+          break;
+        }
+        case 'insert-text': {
+          setInput(prev => prev + event.text);
+          break;
+        }
+        case 'send-message': {
+          send(event.text);
+          break;
+        }
+        case 'toast': {
+          if (event.level === 'error') toast.error(event.message);
+          else if (event.level === 'success') toast.success(event.message);
+          else toast.info(event.message);
+          break;
+        }
+        case 'open-skills': {
+          setInput('/skills ');
+          break;
+        }
+        case 'load-skill': {
+          fetch(`/api/skills?q=${encodeURIComponent(event.skillName)}`)
+            .then(r => r.json())
+            .then(data => {
+              if (data.total === 0) {
+                toast.error(
+                  'No skill found matching "' +
+                    event.skillName +
+                    '". Try /skills to list available skills.',
+                );
+                return;
+              }
+              const skill = data.skills[0];
+              const lines = [
+                '[Loaded skill: **' + skill.name + '**]',
+                '',
+                '> **' + skill.description + '**',
+                '> *Trigger: ' + (skill.trigger || '—') + '*',
+                '> *Category: ' + skill.category + '*',
+                '',
+                'Use august__load_skill { name: "' + skill.name + '" } to load the full instructions.',
+              ];
+              setInput(lines.join('\n'));
+              toast.success('Loaded skill: ' + skill.name);
+            })
+            .catch(() => toast.error('Failed to fetch skills.'));
+          break;
+        }
+        case 'fetch-skills': {
+          const url =
+            '/api/skills' + (event.query ? '?q=' + encodeURIComponent(event.query) : '');
+          fetch(url)
+            .then(r => r.json())
+            .then(data => {
+              if (data.total === 0) {
+                toast.info(
+                  'No skills found' +
+                    (event.query ? ' matching "' + event.query + '"' : '') +
+                    '.',
+                );
+                return;
+              }
+              const items = data.skills
+                .slice(0, 20)
+                .map((s: { name: string; category: string; enabled: boolean; description: string }) =>
+                  '• **' +
+                  s.name +
+                  '** [' +
+                  s.category +
+                  ']' +
+                  (s.enabled ? '' : ' ⚠️ inactive') +
+                  '\n  ' +
+                  s.description,
+                );
+              setInput(
+                '**Skills (' +
+                  data.total +
+                  ' found)**\n\n' +
+                  items.join('\n\n') +
+                  '\n\nUse /load <skill-name> to inject a skill into your message.',
+              );
+              toast.success('Found ' + data.total + ' skill' + (data.total > 1 ? 's' : ''));
+            })
+            .catch(() => toast.error('Failed to fetch skills.'));
+          break;
+        }
+        case 'open-exam': {
+          const seed = event.topic;
+          if (attachments.length > 0) {
+            const filePaths = attachments
+              .map(a => a.path || a.name)
+              .filter(Boolean) as string[];
+            setExamSeed({ topic: seed, files: filePaths });
+          } else {
+            setExamSeed({ topic: seed, files: [] });
+          }
+          setExamActive(true);
+          setInput('');
+          clearComposerDraft(sessionId);
+          break;
+        }
+        case 'reset-session': {
+          setInput('/reset');
+          setTimeout(() => send(), 0);
+          break;
+        }
+      }
+    });
+    return unsubscribe;
+  }, [sessionId, attachments, send]);
+
   useLayoutEffect(() => {
     if (!sessionId || loadedSessionId !== sessionId) return;
     // The chat thread no longer owns its own scrollbar — the scroll thumb
@@ -1181,116 +1345,47 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     // /btw and /goal at workbench.js:2334-2347 and answers them without
     // pushing a user message into the session, so we let those fall
     // through to the normal send path.
+    //
+    // Phase 1A: registry-driven dispatch. The handler is responsible for
+    // mutating state (via the registry event bus) and for clearing the
+    // composer / draft. Handlers that need data from the backend (e.g.
+    // /load, /skills fetching /api/skills) emit a 'load-skill' / 'fetch-skills'
+    // event that this component subscribes to.
     const slashMatch = text.match(/^\/([a-zA-Z][\w-]*)(?:\s+([\s\S]*))?$/);
     if (slashMatch) {
       const cmd = slashMatch[1].toLowerCase();
       const arg = String(slashMatch[2] || '').trim();
-      if (cmd === 'help' || cmd === 'commands') {
-        const helpMsg: ChatMessage = {
-          id: `m${Date.now()}`,
-          role: 'assistant',
-          content: '',
-          timestamp: new Date().toISOString(),
-        };
-        // Push a help message into the chat — MessageBubble renders the
-        // rich CommandHelpCard when `kind: 'help'` is set.
-        setMessages(prev => [...prev, { ...helpMsg, kind: 'help' }]);
-        persistMessages(sessionId, [...messages, { ...helpMsg, kind: 'help' }]);
-        setInput('');
-        clearComposerDraft(sessionId);
-        setShowCommandsDropdown(false);
-        return;
-      }
-      if (cmd === 'clear') {
-        setMessages([]);
-        persistMessages(sessionId, []);
-        setInput('');
-        setAttachments([]);
-        setShowToolsDropdown(false);
-        setShowCommandsDropdown(false);
-        clearComposerDraft(sessionId);
-        return;
-      }
-      if (cmd === 'new') {
-        // Dispatch event so the parent (App/ChatLayout) can create the session
-        window.dispatchEvent(new CustomEvent('august:new-session'));
-        return;
-      }
-      if (cmd === 'model') {
-        // v4 Voice Command UI: /model opens inline picker
-        setModelPickerActive(true);
-        setInput('');
-        clearComposerDraft(sessionId);
-        return;
-      }
-      if (cmd === 'load') {
-        if (!arg) {
-          toast.error('/load needs a skill name. Try: /load brainstorming');
+
+      const voiceCmd = voiceCommandRegistry.getBySlashCommand('/' + cmd);
+      if (voiceCmd) {
+        try {
+          const handlerResult = voiceCmd.handler({
+            sessionId: sessionId ?? '',
+            transcript: text,
+            args: arg,
+            messages,
+            setMessages,
+          });
+          void Promise.resolve(handlerResult).catch(err => {
+            // eslint-disable-next-line no-console
+            console.error('[slash] handler threw', err);
+            toast.error('Command failed');
+          });
+          setShowCommandsDropdown(false);
+          setShowToolsDropdown(false);
+          // Most handlers clear the composer themselves; the registry
+          // contract is that they do so for client-only commands.
+          // For commands that should fall through to the backend (e.g.
+          // /btw with an arg), the handler should NOT clear the composer.
+          return;
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error('[slash] handler threw synchronously', err);
+          toast.error('Command failed');
           return;
         }
-        fetch(`/api/skills?q=${encodeURIComponent(arg)}`)
-          .then(r => r.json())
-          .then(data => {
-            if (data.total === 0) {
-              toast.error('No skill found matching "' + arg + '". Try /skills to list available skills.');
-              return;
-            }
-            const skill = data.skills[0];
-            const lines = [
-              '[Loaded skill: **' + skill.name + '**]',
-              '',
-              '> **' + skill.description + '**',
-              '> *Trigger: ' + (skill.trigger || '—') + '*',
-              '> *Category: ' + skill.category + '*',
-              '',
-              'Use august__load_skill { name: "' + skill.name + '" } to load the full instructions.'
-            ];
-            setInput(lines.join('\n'));
-            toast.success('Loaded skill: ' + skill.name);
-          })
-          .catch(function () { toast.error('Failed to fetch skills.'); });
-        return;
       }
-      if (cmd === 'skills') {
-        fetch('/api/skills' + (arg ? '?q=' + encodeURIComponent(arg) : ''))
-          .then(r => r.json())
-          .then(data => {
-            if (data.total === 0) {
-              toast.info('No skills found' + (arg ? ' matching "' + arg + '"' : '') + '.');
-              return;
-            }
-            const items = data.skills.slice(0, 20).map(function (s: any) {
-              return '• **' + s.name + '** [' + s.category + ']' + (s.enabled ? '' : ' ⚠️ inactive') + '\n  ' + s.description;
-            });
-            setInput('**Skills (' + data.total + ' found)**\n\n' + items.join('\n\n') + '\n\nUse /load <skill-name> to inject a skill into your message.');
-            toast.success('Found ' + data.total + ' skill' + (data.total > 1 ? 's' : ''));
-          })
-          .catch(function () { toast.error('Failed to fetch skills.'); });
-        return;
-      }
-      if (cmd === 'btw' && !arg) {
-        toast.error('/btw needs a question. Try: /btw What does this codebase do?');
-        return;
-      }
-      if (cmd === 'exam') {
-        // /Exam [topic] — open the ExamBanner with the optional topic as the
-        // generation seed. Attachments (if any) become the file seed.
-        const seed = arg || undefined;
-        if (attachments.length > 0) {
-          const filePaths = attachments
-            .map((a) => a.path || a.name)
-            .filter(Boolean) as string[];
-          setExamSeed({ topic: seed, files: filePaths });
-        } else {
-          setExamSeed({ topic: seed, files: [] });
-        }
-        setExamActive(true);
-        setInput('');
-        clearComposerDraft(sessionId);
-        return;
-      }
-      // /btw, /goal, /reset, /debug, /model, /provider, /unknown — fall
-      // through and let the backend (or the workbench parser) handle it.
+      // Unrecognized slash command — let the backend handle it (or no-op).
     }
 
     // Queue when streaming instead of dropping the message. The next turn
@@ -1436,7 +1531,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (showCommandsDropdown) {
-      const visible = COMMANDS.filter(c => {
+      const allCommands = getDisplayCommands();
+      const visible = allCommands.filter(c => {
         const q = input.trim().toLowerCase();
         if (!q) return true;
         return c.name.toLowerCase().startsWith(q);
@@ -1534,63 +1630,36 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         return;
       }
 
-      // v4 Voice Command UI: Try to match intent
-      if (isLikelyCommand(finalTranscript, COMMANDS)) {
-        const matched = matchIntent(finalTranscript, COMMANDS);
-        if (matched) {
-          // Build dispatch context
-          const context: VoiceDispatchContext = {
-            onShowModelPicker: () => setModelPickerActive(true),
-            onInsertText: (text) => setInput(prev => prev + text),
-            onClearChat: () => {
-              setMessages([]);
-              persistMessages(sessionId, []);
-              setInput('');
-              setAttachments([]);
-              clearComposerDraft(sessionId);
-            },
-            onNewSession: () => {
-              window.dispatchEvent(new CustomEvent('august:new-session'));
-            },
-            onResetSession: () => {
-              // Reset sends /reset through to backend
-              setInput('/reset');
-              setTimeout(() => send(), 0);
-            },
-            onToggleDebug: () => {
-              // Toggle debug mode (not implemented in base, would be a setting)
-              toast.info('Debug toggle not implemented');
-            },
-            onShowHelp: () => {
-              const helpMsg: ChatMessage = {
-                id: `m${Date.now()}`,
-                role: 'assistant',
-                content: '',
-                timestamp: new Date().toISOString(),
-                kind: 'help',
-              };
-              setMessages(prev => [...prev, helpMsg]);
-              persistMessages(sessionId, [...messages, helpMsg]);
-            },
-            onShowSkills: () => {
-              setInput('/skills ');
-            },
-            onOpenExam: (topic) => {
-              setExamSeed({ topic });
-              setExamActive(true);
-            },
-          };
-
-          const result = dispatchVoiceCommand(matched, finalTranscript, context);
-          if (result.handled) {
-            toast.success(result.detail || 'Command executed');
-            // Clear the appended transcript if command was handled
-            setInput(prev => prev.replace(finalTranscript, '').trim());
-            return;
-          }
+      // Voice Command Registry (Phase 1A): unified match → handler.
+      // The handler either mutates state via the registry-event bus
+      // (subscribed in a useEffect above) or runs no-op. We treat
+      // any match above the registry threshold as "handled" and
+      // clear the appended transcript from the input.
+      const matched = voiceCommandRegistry.matchCommand(finalTranscript);
+      if (matched) {
+        try {
+          const handlerResult = matched.handler({
+            sessionId: sessionId ?? '',
+            transcript: finalTranscript,
+            messages,
+            setMessages,
+          });
+          // Fire-and-forget async handlers.
+          void Promise.resolve(handlerResult).catch(err => {
+            // eslint-disable-next-line no-console
+            console.error('[voice] handler threw', err);
+            toast.error('Voice command failed');
+          });
+          toast.success(`Command: ${matched.description || matched.id}`);
+          setInput(prev => prev.replace(finalTranscript, '').trim());
+          return;
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error('[voice] handler threw synchronously', err);
+          toast.error('Voice command failed');
         }
       }
-      // If not a command or not handled, transcript stays in input (dictation mode)
+      // No match (or below threshold): transcript stays as dictation.
     };
 
     recognition.onerror = (event: any) => {
@@ -1653,8 +1722,27 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       }
     };
     window.addEventListener('august-insert-composer-text', handleInsertText);
-    return () => window.removeEventListener('august-insert-composer-text', handleInsertText);
-  }, []);
+
+    // Handle model selection from ModelPickerCard (Phase 1C).
+    const handleModelSelected = (e: Event) => {
+      const { modelId, provider } = (e as CustomEvent).detail ?? {};
+      if (!modelId || !provider) return;
+      const model = models.find(m => m.id === modelId);
+      if (model) {
+        setSelectedModel(model);
+        userSelectedRef.current = model.id;
+        try { localStorage.setItem('august_last_model', JSON.stringify(model)); } catch {}
+        if (sessionId) updateSessionModel(sessionId, modelId, provider);
+        toast.success(`Switched to ${model.name}`);
+      }
+    };
+    window.addEventListener('august:model-selected', handleModelSelected);
+
+    return () => {
+      window.removeEventListener('august-insert-composer-text', handleInsertText);
+      window.removeEventListener('august:model-selected', handleModelSelected);
+    };
+  }, [models, sessionId]);
   const renderComposerContent = () => {
     return (
       <div className="relative" ref={composerRootRef}>
@@ -2125,6 +2213,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             message={m}
                             isLast={i === messages.length - 1}
                             streaming={streaming}
+                            sessionId={sessionId ?? undefined}
                             onRevert={() => handleRevert(i)}
                             onEdit={(text) => handleEdit(i, text)}
                             onRegenerate={() => handleRegenerate(i)}
@@ -2136,30 +2225,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                       );
                     })}
 
-                    {/* v4 Voice Command UI: Inline model picker */}
+                    {/* v4 Voice Command UI / Phase 1C: Inline model picker (registry-driven) */}
                     {modelPickerActive && (
                       <ModelPickerCard
-                        models={models.map(m => ({
-                          id: m.id,
-                          name: m.name,
-                          provider: m.provider,
-                          contextWindow: m.contextWindow,
-                          isFree: m.isFree,
-                          supportsReasoning: m.supportsReasoning,
-                        }))}
-                        currentModelId={selectedModel?.id || ''}
-                        onSelect={(modelId, provider) => {
-                          const model = models.find(m => m.id === modelId);
-                          if (model) {
-                            setSelectedModel(model);
-                            userSelectedRef.current = model.id;
-                            try { localStorage.setItem('august_last_model', JSON.stringify(model)); } catch {}
-                            if (sessionId) updateSessionModel(sessionId, model.id, model.provider);
-                            toast.success(`Switched to ${model.name}`);
-                          }
-                          setModelPickerActive(false);
-                        }}
-                        onClose={() => setModelPickerActive(false)}
+                        sessionId={sessionId ?? ''}
+                        onDismiss={() => setModelPickerActive(false)}
+                        context={{ currentModelId: selectedModel?.id }}
                       />
                     )}
                   </div>
@@ -2362,6 +2433,7 @@ function MessageBubble({
   message,
   isLast,
   streaming,
+  sessionId,
   onRevert,
   onEdit,
   onRegenerate,
@@ -2373,6 +2445,7 @@ function MessageBubble({
   message: ChatMessage;
   isLast?: boolean;
   streaming?: boolean;
+  sessionId?: string;
   onRevert?: () => void;
   onEdit?: (text: string) => void;
   onRegenerate?: () => void;
@@ -2437,6 +2510,47 @@ function MessageBubble({
     return (
       <div className="flex justify-start">
         <CommandHelpCard />
+      </div>
+    );
+  }
+
+  if (message.kind === 'voice-command-card' && message.commandId) {
+    const cmd = voiceCommandRegistry.getById(message.commandId);
+    const Card = cmd?.uiCard;
+    if (Card) {
+      const dismiss = () => {
+        // Bubble unmount: parent will re-render without this message.
+        // We can't reach setMessages from here without a callback; the
+        // message is removed when the user dismisses it via the card's
+        // own UI. If the card doesn't call onDismiss, the message stays.
+      };
+      const props: VoiceCommandCardProps = {
+        sessionId,
+        onDismiss: dismiss,
+        context: message.context,
+      };
+      return (
+        <div className="flex justify-start" data-command-id={message.commandId}>
+          <Card {...props} />
+        </div>
+      );
+    }
+    // Card component not found — fall through to a small toast-style hint.
+    return (
+      <div className="flex justify-start text-xs text-muted-foreground">
+        Unknown card: {message.commandId}
+      </div>
+    );
+  }
+
+  if (message.kind === 'subagent-approval') {
+    return (
+      <div className="flex justify-start">
+        <SubagentApprovalInline
+          breakdown={message.breakdown ?? []}
+          onApprove={() => toast.success('Subagent plan approved')}
+          onCancel={() => toast.info('Subagent plan cancelled')}
+        />
       </div>
     );
   }
@@ -2877,6 +2991,64 @@ function MessageBubble({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * Inline sub-agent approval card. Phase 3 will replace this with the full
+ * SubagentApprovalCard once the orchestrator's `propose-breakdown` endpoint
+ * is wired. For now this is a no-op stub that surfaces the breakdown items.
+ */
+function SubagentApprovalInline({
+  breakdown,
+  onApprove,
+  onCancel,
+}: {
+  breakdown: Array<{ goal: string; restrictedTools?: string[] }>;
+  onApprove: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      data-slot="subagent-approval-inline"
+      className="rounded-lg border border-border bg-card p-4 space-y-3 max-w-2xl"
+    >
+      <div className="text-sm font-semibold text-foreground">
+        Subagent plan ({breakdown.length} item{breakdown.length === 1 ? '' : 's'})
+      </div>
+      {breakdown.length === 0 ? (
+        <div className="text-xs text-muted-foreground">No items proposed.</div>
+      ) : (
+        <ul className="space-y-2">
+          {breakdown.map((item, idx) => (
+            <li key={idx} className="text-xs space-y-0.5">
+              <div className="text-foreground/90">{item.goal}</div>
+              {item.restrictedTools && item.restrictedTools.length > 0 && (
+                <div className="text-[11px] text-muted-foreground">
+                  Tools: {item.restrictedTools.join(', ')}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onApprove}
+          className="px-3 py-1 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90"
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-3 py-1 rounded-md border border-border text-xs font-medium hover:bg-muted"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }

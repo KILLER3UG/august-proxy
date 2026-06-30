@@ -138,6 +138,7 @@ from app.routers import brain_activity as brain_activity_routes
 from app.routers import brain_config as brain_config_routes
 from app.routers import exam as exam_routes
 from app.routers import live as live_routes
+from app.routers import calendar as calendar_routes
 
 app.include_router(config_routes.router)
 app.include_router(providers_routes.router)
@@ -168,6 +169,7 @@ app.include_router(brain_config_routes.router)
 app.include_router(brain_activity_routes.router)
 app.include_router(exam_routes.router)
 app.include_router(live_routes.router)
+app.include_router(calendar_routes.router)
 
 
 # ── Static files (SPA) ────────────────────────────────────────────────
