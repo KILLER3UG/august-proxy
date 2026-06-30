@@ -6,18 +6,11 @@ Port of backend/services/workbench/tool-executor.js (41 lines).
 Executes an array of tool uses, optionally in parallel if all tools
 are parallel-safe.
 """
-
 from __future__ import annotations
-
 import asyncio
 from typing import Any, Callable
 
-
-async def execute_tool_batch(
-    tool_uses: list[Any],
-    execute_one: Callable[[Any], Any],
-    options: dict[str, Any] | None = None,
-) -> list[Any]:
+async def executeToolBatch(toolUses: list[Any], executeOne: Callable[[Any], Any], options: dict[str, Any] | None=None) -> list[Any]:
     """Execute a batch of tool uses.
 
     Args:
@@ -33,37 +26,27 @@ async def execute_tool_batch(
         List of tool execution results.
     """
     opts = options or {}
-    parallel = opts.get("parallel", False)
-    can_run_in_parallel = opts.get("can_run_in_parallel")
-    on_result = opts.get("on_result")
-
-    if parallel and can_run_in_parallel:
-        # Check if all tools can run in parallel
-        all_safe = all(can_run_in_parallel(tu) for tu in tool_uses)
-        if all_safe:
-            # Run all in parallel
-            tasks = [execute_one(tu) for tu in tool_uses]
+    parallel = opts.get('parallel', False)
+    canRunInParallel = opts.get('can_run_in_parallel')
+    onResult = opts.get('on_result')
+    if parallel and canRunInParallel:
+        allSafe = all((canRunInParallel(tu) for tu in toolUses))
+        if allSafe:
+            tasks = [executeOne(tu) for tu in toolUses]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             final: list[Any] = []
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
-                    final.append({
-                        "tool_call_id": getattr(tool_uses[i], "get", lambda k, d=None: d)("id", ""),
-                        "role": "tool",
-                        "content": f"Error: {result}",
-                    })
+                    final.append({'tool_call_id': getattr(toolUses[i], 'get', lambda k, d=None: d)('id', ''), 'role': 'tool', 'content': f'Error: {result}'})
                 else:
                     final.append(result)
-                    if on_result:
-                        on_result(result)
+                    if onResult:
+                        onResult(result)
             return final
-
-    # Sequential execution (default)
     results = []
-    for tu in tool_uses:
-        result = await execute_one(tu)
+    for tu in toolUses:
+        result = await executeOne(tu)
         results.append(result)
-        if on_result:
-            on_result(result)
-
+        if onResult:
+            onResult(result)
     return results

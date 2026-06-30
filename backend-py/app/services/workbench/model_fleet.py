@@ -11,45 +11,33 @@ Four roles:
                  context compaction (Haiku)
   - prefrontal:  highest reasoning — for skill genesis (Sonnet 4, Opus)
 """
-
 import json
 import os
+DEFAULT_FLEET: dict[str, str] = {'cortex': '', 'cerebellum': 'claude-3-haiku-20240307', 'hippocampus': 'claude-3-haiku-20240307', 'prefrontal': 'claude-3-5-sonnet-20240620'}
+_configCache: dict | None = None
+_configPath = os.path.join('data', 'config.json')
 
-
-DEFAULT_FLEET: dict[str, str] = {
-    "cortex":      "",
-    "cerebellum":  "claude-3-haiku-20240307",
-    "hippocampus": "claude-3-haiku-20240307",
-    "prefrontal":  "claude-3-5-sonnet-20240620",
-}
-
-_config_cache: dict | None = None
-_config_path = os.path.join("data", "config.json")
-
-
-def _reset_cache() -> None:
+def _resetCache() -> None:
     """Reset the cached config (for tests)."""
     global _config_cache
-    _config_cache = None
+    _configCache = None
 
-
-def _load_config() -> dict:
+def _loadConfig() -> dict:
     """Load the user config, cached after first load."""
     global _config_cache
-    if _config_cache is not None:
-        return _config_cache
-    if not os.path.exists(_config_path):
-        _config_cache = {}
-        return _config_cache
+    if _configCache is not None:
+        return _configCache
+    if not os.path.exists(_configPath):
+        _configCache = {}
+        return _configCache
     try:
-        with open(_config_path, "r", encoding="utf-8") as f:
-            _config_cache = json.load(f)
+        with open(_configPath, 'r', encoding='utf-8') as f:
+            _configCache = json.load(f)
     except (OSError, json.JSONDecodeError):
-        _config_cache = {}
-    return _config_cache
+        _configCache = {}
+    return _configCache
 
-
-def get_model_for_role(role: str) -> str:
+def getModelForRole(role: str) -> str:
     """Return the configured model for a role.
 
     Reads `data/config.json → auxiliary.model_fleet` if present.
@@ -58,6 +46,6 @@ def get_model_for_role(role: str) -> str:
     uses whatever the session has).
     """
     fleet = DEFAULT_FLEET.copy()
-    user_fleet = _load_config().get("auxiliary", {}).get("model_fleet", {})
-    fleet.update(user_fleet)
-    return fleet.get(role, fleet.get("cortex", ""))
+    userFleet = _loadConfig().get('auxiliary', {}).get('model_fleet', {})
+    fleet.update(userFleet)
+    return fleet.get(role, fleet.get('cortex', ''))

@@ -3,45 +3,40 @@ Prompt cache — in-memory LRU for Tier 1 + Tier 2 system prompt content (Phase 
 
 Keyed by session ID with 5-minute TTL. Max 100 sessions.
 """
-
 from __future__ import annotations
-
 import time
 from collections import OrderedDict
 from typing import Any
 
-
 class PromptCache:
     """LRU cache for system prompt tiers with TTL eviction."""
 
-    def __init__(self, max_sessions: int = 100, ttl_seconds: int = 300):
-        self.max_sessions = max_sessions
-        self.ttl_seconds = ttl_seconds
+    def __init__(self, maxSessions: int=100, ttlSeconds: int=300):
+        self.maxSessions = maxSessions
+        self.ttlSeconds = ttlSeconds
         self._cache: OrderedDict[str, tuple[float, str]] = OrderedDict()
 
-    def get(self, session_id: str) -> str | None:
+    def get(self, sessionId: str) -> str | None:
         """Get cached prompt for a session. Returns None if miss or expired."""
-        if session_id not in self._cache:
+        if sessionId not in self._cache:
             return None
-        cached_at, content = self._cache[session_id]
-        if time.monotonic() - cached_at > self.ttl_seconds:
-            del self._cache[session_id]
+        cachedAt, content = self._cache[sessionId]
+        if time.monotonic() - cachedAt > self.ttlSeconds:
+            del self._cache[sessionId]
             return None
-        # Move to end (most recently used)
-        self._cache.move_to_end(session_id)
+        self._cache.move_to_end(sessionId)
         return content
 
-    def set(self, session_id: str, content: str) -> None:
+    def set(self, sessionId: str, content: str) -> None:
         """Cache prompt for a session."""
-        self._cache[session_id] = (time.monotonic(), content)
-        self._cache.move_to_end(session_id)
-        # Evict oldest if over max
-        while len(self._cache) > self.max_sessions:
+        self._cache[sessionId] = (time.monotonic(), content)
+        self._cache.move_to_end(sessionId)
+        while len(self._cache) > self.maxSessions:
             self._cache.popitem(last=False)
 
-    def invalidate(self, session_id: str) -> None:
+    def invalidate(self, sessionId: str) -> None:
         """Remove a session's cached prompt."""
-        self._cache.pop(session_id, None)
+        self._cache.pop(sessionId, None)
 
     def clear(self) -> None:
         """Clear all cached prompts."""
@@ -49,17 +44,9 @@ class PromptCache:
 
     def stats(self) -> dict[str, Any]:
         """Return cache statistics."""
-        return {
-            "size": len(self._cache),
-            "max_sessions": self.max_sessions,
-            "ttl_seconds": self.ttl_seconds,
-        }
-
-
-# Global singleton
+        return {'size': len(self._cache), 'max_sessions': self.maxSessions, 'ttl_seconds': self.ttlSeconds}
 _cache = PromptCache()
 
-
-def get_cache() -> PromptCache:
+def getCache() -> PromptCache:
     """Get the global prompt cache singleton."""
     return _cache
