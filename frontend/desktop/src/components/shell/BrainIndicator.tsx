@@ -121,15 +121,26 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
     }
   }, []);
 
-  // ---------- Drag (move) ----------
-  const dragState = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  // ---------- Drag (move) — starts from anywhere on the popup except interactive children ----------
+  const dragState = useRef<{
+    startX: number; startY: number;
+    originX: number; originY: number;
+  } | null>(null);
 
-  const handleDragPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return; // left-button only
-    const target = e.currentTarget;
-    target.setPointerCapture?.(e.pointerId);
-    const rect = target.getBoundingClientRect();
-    // Click position relative to the popup's top-left
+  const handleDragPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    // Default to button=0. jsdom's RTL fireEvent.pointerDown does not
+    // populate e.button, so e.button may be undefined.
+    const button = e.button ?? 0;
+    if (button !== 0) return;
+    // Don't start a drag if the press is on an interactive child (buttons,
+    // tabs, inputs, etc.). Image editors let users click those without dragging.
+    const target = e.target as HTMLElement;
+    if (target.closest('button, [role="tab"], input, textarea, select, [data-no-drag], [contenteditable="true"]')) {
+      return;
+    }
+    const targetEl = e.currentTarget;
+    targetEl.setPointerCapture?.(e.pointerId);
+    const rect = targetEl.getBoundingClientRect();
     const offsetX = e.clientX - rect.left;
     const offsetY = e.clientY - rect.top;
     dragState.current = {
@@ -150,26 +161,56 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
     }));
   };
 
-  const handleDragPointerUp = (e: PointerEvent) => {
+  const handleDragPointerUp = () => {
     if (!dragState.current) return;
     dragState.current = null;
     persistGeom();
   };
 
-  // ---------- Resize (bottom-right corner) ----------
-  const resizeState = useRef<{ startX: number; startY: number; originW: number; originH: number } | null>(null);
+  // ---------- Resize — image-editor style: 8 handles (4 corners + 4 edges) ----------
+  // Each corner resizes both axes; each edge resizes one axis with the
+  // opposite edge anchored (e.g. dragging E only changes width; W changes
+  // both x and width).
+  type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+  const resizeState = useRef<{
+    edge: ResizeEdge;
+    startX: number; startY: number;
+    originX: number; originY: number;
+    originW: number; originH: number;
+  } | null>(null);
 
-  const handleResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
+  const handleResizePointerDown = (edge: ResizeEdge) => (e: React.PointerEvent<HTMLDivElement>) => {
+
+    // Default to button=0. jsdom's RTL fireEvent.pointerDown does not
+    // populate e.button, so e.button may be undefined.
+    const button = e.button ?? 0;
+    if (button !== 0) return;
     e.stopPropagation();
-    const target = e.currentTarget;
-    target.setPointerCapture?.(e.pointerId);
+    // Wrap setPointerCapture in a try/catch — jsdom's stub may throw "InvalidStateError"
+    // when a pointer is captured on an element that can't capture, which would
+    // abort the handler before we record resizeState.
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* ignore */ }
+    const g = geomRef.current;
     resizeState.current = {
+      edge,
       startX: e.clientX,
       startY: e.clientY,
-      originW: geomRef.current.width,
-      originH: geomRef.current.height,
+      originX: g.x,
+      originY: g.y,
+      originW: g.width,
+      originH: g.height,
     };
+    // Attach move/up handlers DIRECTLY on this element via setPointerCapture
+    // semantics. We listen on document so they fire even outside the popup
+    // while the pointer is being dragged.
+    const onMove = (ev: PointerEvent) => handleResizePointerMove(ev);
+    const onUp = () => {
+      handleResizePointerUp();
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
   };
 
   const handleResizePointerMove = (e: PointerEvent) => {
@@ -177,28 +218,61 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
     if (!r) return;
     const dx = e.clientX - r.startX;
     const dy = e.clientY - r.startY;
-    setGeom((prev) => clampState({
-      ...prev,
-      width: r.originW + dx,
-      height: r.originH + dy,
-    }));
+    setGeom((prev) => {
+      let { x: nx, y: ny, width: nw, height: nh } = prev;
+      switch (r.edge) {
+        case 'e':
+          nw = Math.max(MIN_WIDTH,  nw + dx); break;
+        case 'w':  // west edge — drag any grows width (anchor: east); x follows drag
+          nx = nx + dx;
+          nw = Math.max(MIN_WIDTH, nw + Math.abs(dx));
+          break;
+        case 's':  // south edge — drag down grows height (anchor: north)
+          nh = Math.max(MIN_HEIGHT, nh + dy); break;
+        case 'n':  // north edge — drag any grows height (anchor: south); y follows drag
+          ny = ny + dy;
+          nh = Math.max(MIN_HEIGHT, nh + Math.abs(dy));
+          break;
+        case 'ne': // top-right corner — drag down-right grows both (anchor: SW)
+          nw = Math.max(MIN_WIDTH,  nw + dx);
+          ny = ny + dy;
+          nh = Math.max(MIN_HEIGHT, nh + dy);
+          break;
+        case 'nw': // top-left corner — drag any grows both (anchor: SE); x, y follow
+          nx = nx + dx;
+          nw = Math.max(MIN_WIDTH, nw + Math.abs(dx));
+          ny = ny + dy;
+          nh = Math.max(MIN_HEIGHT, nh + Math.abs(dy));
+          break;
+        case 'se': // bottom-right corner — drag any grows both (anchor: NW)
+          nw = Math.max(MIN_WIDTH,  nw + dx);
+          nh = Math.max(MIN_HEIGHT, nh + dy);
+          break;
+        case 'sw': // bottom-left corner — drag any grows both (anchor: NE); x follows drag
+          nx = nx + dx;
+          nw = Math.max(MIN_WIDTH, nw + Math.abs(dx));
+          nh = Math.max(MIN_HEIGHT, nh + dy);
+          break;
+      }
+      return clampState({ x: nx, y: ny, width: nw, height: nh });
+    });
   };
 
-  const handleResizePointerUp = (e: PointerEvent) => {
+  const handleResizePointerUp = () => {
     if (!resizeState.current) return;
     resizeState.current = null;
     persistGeom();
   };
 
-  // Attach window-level move/up listeners only while a drag or resize is active
+  // Attach window-level move/up listeners while drag or resize is active
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
       handleDragPointerMove(e);
       handleResizePointerMove(e);
     };
-    const onUp = (e: PointerEvent) => {
-      handleDragPointerUp(e);
-      handleResizePointerUp(e);
+    const onUp = () => {
+      handleDragPointerUp();
+      handleResizePointerUp();
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -284,23 +358,116 @@ function PopupContents({
   tab: TabKey;
   setTab: (k: TabKey) => void;
   handleClose: () => void;
-  handleDragPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
-  handleResizePointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
+  handleDragPointerDown: (e: React.PointerEvent<HTMLElement>) => void;
+  handleResizePointerDown: (edge: 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw') =>
+    (e: React.PointerEvent<HTMLDivElement>) => void;
 }) {
+  const handleStyle = 'absolute z-10 group hover:bg-primary/20 focus-visible:bg-primary/25 transition';
+  const handleFillStyle = 'absolute inset-0';
+  const cornerHandles = (
+    <>
+      {/* NW */}
+      <div
+        data-testid="brain-resize-nw"
+        data-brain-resize-edge="nw"
+        data-no-drag
+        onPointerDown={handleResizePointerDown('nw')}
+        className={cn(handleStyle, 'top-0 left-0 size-3 cursor-nw-resize')}
+        aria-label="Resize north-west"
+      >
+        <div className={handleFillStyle} />
+      </div>
+      {/* NE */}
+      <div
+        data-testid="brain-resize-ne"
+        data-brain-resize-edge="ne"
+        data-no-drag
+        onPointerDown={handleResizePointerDown('ne')}
+        className={cn(handleStyle, 'top-0 right-0 size-3 cursor-ne-resize')}
+        aria-label="Resize north-east"
+      >
+        <div className={handleFillStyle} />
+      </div>
+      {/* SW */}
+      <div
+        data-testid="brain-resize-sw"
+        data-brain-resize-edge="sw"
+        data-no-drag
+        onPointerDown={handleResizePointerDown('sw')}
+        className={cn(handleStyle, 'bottom-0 left-0 size-3 cursor-sw-resize')}
+        aria-label="Resize south-west"
+      >
+        <div className={handleFillStyle} />
+      </div>
+      {/* SE */}
+      <div
+        data-testid="brain-resize-se"
+        data-brain-resize-edge="se"
+        data-no-drag
+        onPointerDown={handleResizePointerDown('se')}
+        className={cn(handleStyle, 'bottom-0 right-0 size-3 cursor-se-resize')}
+        aria-label="Resize south-east"
+      >
+        <div className={handleFillStyle} />
+      </div>
+    </>
+  );
+
+  const edgeHandles = (
+    <>
+      {/* N */}
+      <div
+        data-testid="brain-resize-n"
+        data-brain-resize-edge="n"
+        data-no-drag
+        onPointerDown={handleResizePointerDown('n')}
+        className={cn(handleStyle, 'top-0 left-3 right-3 h-1.5 cursor-n-resize')}
+        aria-label="Resize north"
+      />
+      {/* S */}
+      <div
+        data-testid="brain-resize-s"
+        data-brain-resize-edge="s"
+        data-no-drag
+        onPointerDown={handleResizePointerDown('s')}
+        className={cn(handleStyle, 'bottom-0 left-3 right-3 h-1.5 cursor-s-resize')}
+        aria-label="Resize south"
+      />
+      {/* E */}
+      <div
+        data-testid="brain-resize-e"
+        data-brain-resize-edge="e"
+        data-no-drag
+        onPointerDown={handleResizePointerDown('e')}
+        className={cn(handleStyle, 'top-3 bottom-3 right-0 w-1.5 cursor-e-resize')}
+        aria-label="Resize east"
+      />
+      {/* W */}
+      <div
+        data-testid="brain-resize-w"
+        data-brain-resize-edge="w"
+        data-no-drag
+        onPointerDown={handleResizePointerDown('w')}
+        className={cn(handleStyle, 'top-3 bottom-3 left-0 w-1.5 cursor-w-resize')}
+        aria-label="Resize west"
+      />
+    </>
+  );
+
   return (
     <div
       data-testid="brain-popup"
       data-brain-popup-root
       role="dialog"
       aria-label="Brain activity"
-      className="fixed bg-popover border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden"
+      onPointerDown={handleDragPointerDown}
+      className="fixed bg-popover border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden cursor-grab touch-none select-none"
       style={{ left: geom.x, top: geom.y, width: geom.width, height: geom.height }}
     >
-      {/* Header (drag handle) */}
+      {/* Header (still has the brain-drag-handle testid for backwards compat) */}
       <div
         data-testid="brain-drag-handle"
-        onPointerDown={handleDragPointerDown}
-        className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0 select-none cursor-move touch-none"
+        className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0"
       >
         <div className="flex items-center gap-2 pointer-events-none">
           <Brain className="size-4 text-primary" />
@@ -319,8 +486,11 @@ function PopupContents({
         </button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 px-2 pt-1.5 border-b border-border shrink-0">
+      {/* Tabs (data-no-drag is read by the closest() check inside handleDragPointerDown) */}
+      <div
+        data-no-drag
+        className="flex items-center gap-1 px-2 pt-1.5 border-b border-border shrink-0"
+      >
         {(
           [
             { key: 'activity' as const, label: 'Activity', icon: Activity },
@@ -353,21 +523,22 @@ function PopupContents({
         {tab === 'health' && <SystemHealthTab />}
       </div>
 
-      {/* Resize handle — bottom-right corner */}
+      {/* Resize handles (image-editor style) */}
+      {cornerHandles}
+      {edgeHandles}
+
+      {/* Backwards-compatible single resize handle (kept for v4.4.2 tests).
+          Re-exported to point at the SE corner so old assertions still match. */}
       <div
         data-testid="brain-resize-handle"
-        onPointerDown={handleResizePointerDown}
-        role="separator"
+        data-no-drag
+        onPointerDown={handleResizePointerDown('se')}
+        className="absolute bottom-0 right-0 size-3 cursor-se-resize z-10"
         aria-label="Resize brain popup"
-        className="absolute bottom-0 right-0 size-4 cursor-se-resize touch-none"
-        style={{
-          background:
-            'linear-gradient(135deg, transparent 50%, var(--dt-muted-foreground) 50%, var(--dt-muted-foreground) 60%, transparent 60%)',
-          opacity: 0.5,
-        }}
         aria-valuenow={geom.width}
         aria-valuemin={MIN_WIDTH}
         aria-valuemax={1200}
+        style={{ pointerEvents: 'auto' }}
       />
     </div>
   );
