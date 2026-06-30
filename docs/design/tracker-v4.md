@@ -27,8 +27,8 @@
 | 15 | UI redesign — tokens (`styles.css`) | ✅ done & verified | | Light + dark retuned per spec. Body line-height 1.6. Type scale calmed. |
 | 15 | UI redesign — chat bubble-less layout + composer | ☐ | | pending — bubble-less layout + centered column |
 | 14 | August Live — backend (`live.py`) | ✅ done & verified | | session/turn/stt/tts endpoints. Reuses workbench turn engine. |
-| 14 | August Live — STT/TTS adapters + config | ☐ | | provider-agnostic adapters |
-| 14 | August Live — frontend surface (orb/captions/tool rail) | ☐ | | full-window /live route |
+| 14 | August Live — STT/TTS adapters + config | ✅ done & verified | | Pluggable client: WebSpeechSTT/TTS + ProviderSTT/TTS stubs. `liveSTTFactory`/`liveTTSFactory` pick by capability. |
+| 14 | August Live — frontend surface (orb/captions/tool rail) | ✅ done & verified | | `/live` full-window route, animated orb, rolling captions, tool rail, approval cards co-located, controls (mute/end/PTT/continuous/handoff), barge-in via partial→TTS cancel. Audio flow wired through `liveClient`. |
 | 14 | August Live — command-exec safety (guard mode parity) | ☐ | | verify guard mode inherited |
 | 14 | August Live — **mandatory security review** (gate) | ☐ | | hard gate before Live ships |
 
