@@ -29,6 +29,9 @@ import { ExamHost } from '@/sections/exam/ExamHost';
 import { Statusbar } from '@/components/shell/Statusbar';
 import { dispatchFocusComposer, dispatchInsertComposerText } from '@/api/ui-events';
 import { useModels } from '@/hooks/useModels';
+import { useProviderAvailability } from '@/hooks/useProviderAvailability';
+import { useQueryClient } from '@tanstack/react-query';
+import { getAggregatedModels } from '@/api/api-client';
 import { chatRuntime, type ChatTurnRecord } from './chat-runtime';
 import {
   $sessionStreamStates,
@@ -402,8 +405,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // added/removed in Settings (via query key invalidation) and polls every 60s.
   const { models: aggregatedModels, isLoading: modelsLoading, refetch: refetchModels } = useModels();
 
+  // Query client used to invalidate caches when the user explicitly refreshes.
+  const queryClient = useQueryClient();
+
   // Providers that have API keys set, used to filter the model list.
-  const [availableProviders, setAvailableProviders] = useState<Set<string>>(new Set());
+  // Driven by the useProviderAvailability react-query hook so newly-added
+  // providers appear without remounting the chat.
+  const { providers: availableProvidersList } = useProviderAvailability();
+  const availableProviders = useMemo(
+    () => new Set(availableProvidersList.filter(p => p.isAvailable).map(p => p.id)),
+    [availableProvidersList]
+  );
 
   // Filter to only show models from providers with keys, but always include
   // user-defined alias models (provider === 'Alias'). Normalise optional
@@ -764,25 +776,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   //   model list via react-query, auto-refetching on invalidation and every 60s.
   //   The `models` computed value above filters it by provider availability.
   //
-  // Provider availability is fetched separately so we can filter the model list
-  // to only show models from providers that have API keys set.
-  const initProviderAvailability = useCallback(async () => {
-    try {
-      const providersRes = await fetch('/api/config/activeProvider');
-      if (providersRes.ok) {
-        const provData = await providersRes.json();
-        const avail = new Set<string>();
-        (provData.providers || []).forEach((p: any) => {
-          if (p.isAvailable) avail.add(p.id);
-        });
-        setAvailableProviders(avail);
-      }
-    } catch (e) {
-      console.warn('[Models] Provider availability fetch failed:', e);
-    }
-  }, []);
+  // Provider availability is fetched separately via the useProviderAvailability
+  // hook (declared above alongside useModels) so we can filter the model list
+  // to only show models from providers that have API keys set. The hook polls
+  // every 30s and refetches on invalidation, so newly-added providers appear
+  // without remounting the chat.
 
-  // On mount: fetch active config for initial model selection + provider availability.
+  // On mount: fetch active config for initial model selection.
   useEffect(() => {
     (async () => {
       // Phase 1: quick config fetch for initial model selection
@@ -811,17 +811,26 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       } catch (e) {
         console.warn('[Models] Config fetch failed, using localStorage fallback:', e);
       }
-
-      // Phase 2: fetch provider availability
-      await initProviderAvailability();
     })();
-  }, [initProviderAvailability]);
+  }, []);
 
-  // Re-fetch provider availability when session changes.
+  // Re-fetch models when session changes (provider availability is handled by
+  // the useProviderAvailability hook above).
   useEffect(() => {
-    initProviderAvailability();
     refetchModels();
-  }, [sessionId, initProviderAvailability, refetchModels]);
+  }, [sessionId, refetchModels]);
+
+  // Force a full refresh: bypass any backend cache, invalidate both the
+  // aggregated-models and provider-availability react-query caches so every
+  // subscriber refetches, then refetch this component's own models list.
+  const handleRefreshModels = useCallback(async () => {
+    await Promise.all([
+      getAggregatedModels({ refresh: true }),
+      queryClient.invalidateQueries({ queryKey: ['aggregated-models'] }),
+      queryClient.invalidateQueries({ queryKey: ['provider-availability'] }),
+    ]);
+    refetchModels();
+  }, [queryClient, refetchModels]);
 
   // Reconcile selectedModel when the filtered model list changes (models were
   // refetched or provider availability changed). Preserve user's manual choice.
@@ -1788,7 +1797,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 visibleModels={visibleModels}
                 loading={modelsLoading}
                 selected={selectedModel}
-                onRefresh={() => refetchModels()}
+                onRefresh={handleRefreshModels}
                 onEditModels={() => setShowModelVisibility(true)}
                 onSelect={async (m) => {
                   if (!m) return;
@@ -2145,7 +2154,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           onNavigate={(p) => {
             window.location.href = p;
           }}
-          onRefreshModels={() => refetchModels()}
+          onRefreshModels={handleRefreshModels}
         />
       </div>
     </div>
