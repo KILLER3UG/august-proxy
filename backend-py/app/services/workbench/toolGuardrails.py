@@ -22,7 +22,7 @@ class ToolCallTracker:
         # result: ("ok", "") | ("warn", "message") | ("block", "message")
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._callSequence: list[tuple[str, str, float]] = []
         self._failureCount: defaultdict[str, int] = defaultdict(int)
         self._lastTextResponse: float = time.monotonic()

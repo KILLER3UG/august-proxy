@@ -14,17 +14,17 @@ Four roles:
 import json
 import os
 DEFAULT_FLEET: dict[str, str] = {'cortex': '', 'cerebellum': 'claude-3-haiku-20240307', 'hippocampus': 'claude-3-haiku-20240307', 'prefrontal': 'claude-3-5-sonnet-20240620'}
-_configCache: dict | None = None
+_configCache: dict[str, object] | None = None
 _configPath = os.path.join('data', 'config.json')
 
 def _resetCache() -> None:
     """Reset the cached config (for tests)."""
-    global _config_cache
+    global _configCache
     _configCache = None
 
-def _loadConfig() -> dict:
+def _loadConfig() -> dict[str, object]:
     """Load the user config, cached after first load."""
-    global _config_cache
+    global _configCache
     if _configCache is not None:
         return _configCache
     if not os.path.exists(_configPath):
@@ -46,6 +46,10 @@ def getModelForRole(role: str) -> str:
     uses whatever the session has).
     """
     fleet = DEFAULT_FLEET.copy()
-    userFleet = _loadConfig().get('auxiliary', {}).get('model_fleet', {})
+    config = _loadConfig()
+    auxiliary = config.get('auxiliary', {})
+    assert isinstance(auxiliary, dict)
+    userFleet = auxiliary.get('model_fleet', {})
+    assert isinstance(userFleet, dict)
     fleet.update(userFleet)
     return fleet.get(role, fleet.get('cortex', ''))

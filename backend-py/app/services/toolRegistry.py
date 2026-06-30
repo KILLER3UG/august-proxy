@@ -6,6 +6,7 @@ Supports reserved bridge names and optional keywords per tool.
 from __future__ import annotations
 import contextvars
 from typing import Callable, Coroutine
+from app.types import JsonValue
 _registry: dict[str, dict[str, object]] = {}
 ToolHandler = Callable[..., Coroutine[object, object, str]]
 _RESERVEDNames: frozenset[str] = frozenset({'tool_search', 'tool_describe', 'tool_call'})
@@ -33,7 +34,7 @@ def isCommandBlocked(command: str) -> bool:
     cmdLower = command.lower()
     return any((p in cmdLower for p in _DAEMONBlockedCommandPatterns))
 
-def register(name: str, description: str, handler: ToolHandler, parameters: dict[str, object] | None=None, keywords: list[str] | None=None) -> None:
+def register(name: str, description: str, handler: ToolHandler, parameters: dict[str, JsonValue] | None = None, keywords: list[str] | None = None) -> None:
     """Register a tool.
 
     Raises ValueError if the name is reserved (tool_search, tool_describe, tool_call).
@@ -52,15 +53,24 @@ def getTool(name: str) -> dict[str, object] | None:
     """Alias for get()."""
     return _registry.get(name)
 
-def listTools() -> list[dict[str, object]]:
+def listTools() -> list[dict[str, JsonValue]]:
     """List all registered tools in Anthropic/OpenAI-compatible format."""
-    return [{'type': 'function', 'function': {'name': t['name'], 'description': t['description'], 'parameters': t['parameters']}} for t in _registry.values()]
+    result: list[dict[str, JsonValue]] = []
+    for t in _registry.values():
+        name = t.get('name')
+        description = t.get('description')
+        parameters = t.get('parameters')
+        assert isinstance(name, str)
+        assert isinstance(description, str)
+        assert isinstance(parameters, dict)
+        result.append({'type': 'function', 'function': {'name': name, 'description': description, 'parameters': parameters}})
+    return result
 
 def listRaw() -> list[dict[str, object]]:
     """List all registered tools in raw (internal) format with keywords."""
     return list(_registry.values())
 
-async def dispatch(name: str, args: dict[str, object]) -> str:
+async def dispatch(name: str, args: dict[str, JsonValue]) -> str:
     """Dispatch a tool call by name and arguments.
 
     v2: When called from a daemon (set via set_daemon_context), `run_command`
@@ -71,9 +81,13 @@ async def dispatch(name: str, args: dict[str, object]) -> str:
         return f'Error: Tool "{name}" not found.'
     if name == 'run_command' and isDaemonContext():
         command = args.get('command', '')
+        assert isinstance(command, str)
         if isCommandBlocked(command):
             return f"[BLOCKED] run_command rejected in daemon context: '{command}' contains a mutating pattern. Daemons are read-only."
     try:
-        return await tool['handler'](**args)
+        handler = tool['handler']
+        assert callable(handler)
+        result: str = await handler(**args)
+        return result
     except Exception as e:
         return f'Error executing {name}: {e}'

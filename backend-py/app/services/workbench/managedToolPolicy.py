@@ -9,10 +9,11 @@ Determines which tools are safe to run in parallel vs. mutating
 from __future__ import annotations
 import json
 import re
+from app.types import JsonValue
 MUTATING_NAME_PATTERN = re.compile('^(write|edit|create|delete|install|run|bash|launch|click|type|focus|set|add|remove|rename|copy|move|mkdir|touch|chmod|kill|uninstall|stop|restart|upload|download|patch|apply|commit|push|merge|deploy|start|reboot|shutdown|format|mount|unmount|browser_navigate|browser_click|browser_type|browser_snapshot)', re.IGNORECASE)
 SAFE_NAME_PATTERN = re.compile('^(read|list|search|fetch|get|describe|diagnose|status|recall|view|find|show|check|inspect|lookup|resolve|ping|health|info|memory_search|fact_search|context_read|list_skills)', re.IGNORECASE)
 
-def isManagedToolParallelSafe(toolName: str, args: dict[str, object] | None=None) -> bool:
+def isManagedToolParallelSafe(toolName: str, args: dict[str, JsonValue] | None = None) -> bool:
     """Check if a managed tool is safe to run in parallel.
 
     Returns True for:
@@ -32,28 +33,39 @@ def isManagedToolParallelSafe(toolName: str, args: dict[str, object] | None=None
         return True
     return False
 
-def isOpenaiToolCallParallelSafe(toolCall: dict[str, object]) -> bool:
+def isOpenaiToolCallParallelSafe(toolCall: dict[str, JsonValue]) -> bool:
     """Check if an OpenAI-format tool call is parallel-safe."""
-    name = toolCall.get('function', {}).get('name', '')
-    argsStr = toolCall.get('function', {}).get('arguments', '{}')
+    func = toolCall.get('function', {})
+    assert isinstance(func, dict)
+    name = func.get('name', '')
+    assert isinstance(name, str)
+    argsStr = func.get('arguments', '{}')
     try:
         args = json.loads(argsStr) if isinstance(argsStr, str) else argsStr
     except (json.JSONDecodeError, TypeError):
         args = {}
+    assert isinstance(args, dict)
     return isManagedToolParallelSafe(name, args)
 
-def isAnthropicToolUseParallelSafe(toolUse: dict[str, object]) -> bool:
+def isAnthropicToolUseParallelSafe(toolUse: dict[str, JsonValue]) -> bool:
     """Check if an Anthropic-format tool use is parallel-safe."""
     name = toolUse.get('name', '')
+    assert isinstance(name, str)
     args = toolUse.get('input', {})
+    assert isinstance(args, dict)
     return isManagedToolParallelSafe(name, args)
 
-def parseOpenaiToolArgs(toolCall: dict[str, object]) -> dict[str, object]:
+def parseOpenaiToolArgs(toolCall: dict[str, JsonValue]) -> dict[str, JsonValue]:
     """Parse the function.arguments JSON string from an OpenAI tool call."""
-    argsStr = toolCall.get('function', {}).get('arguments', '{}')
+    func = toolCall.get('function', {})
+    if not isinstance(func, dict):
+        return {}
+    argsStr = func.get('arguments', '{}')
     if isinstance(argsStr, str):
         try:
-            return json.loads(argsStr)
+            result = json.loads(argsStr)
+            assert isinstance(result, dict)
+            return result
         except (json.JSONDecodeError, TypeError):
             return {}
     return argsStr if isinstance(argsStr, dict) else {}
