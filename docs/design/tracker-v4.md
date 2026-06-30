@@ -32,6 +32,7 @@
 | 14 | August Live — command-exec safety (guard mode parity) | ☐ | | verify guard mode inherited |
 | 14 | August Live — **mandatory security review** (gate) | ☐ | | hard gate before Live ships |
 | 10 | Model Fleet UI (4 cognitive roles → models) | ✅ done & verified | | `v4.1.0-fleet` — `GET/PUT /api/config/model-fleet` + `ModelFleetTab` subtab in `WorkspaceModelsSection`. Pickers for cortex/cerebellum/hippocampus/prefrontal. |
+| 14 | Live (STT/TTS) settings UI | ✅ done & verified | | `v4.2.0-live` — `GET/PUT /api/config/live` + `LiveSettingsTab` subtab. 5 fields: sttProvider/sttModel/ttsProvider/ttsModel/ttsVoice. Empty = browser default. |
 
 Status legend: ☐ not started · ◐ in progress · ✅ done & verified · ⚠ blocked
 
