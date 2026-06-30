@@ -960,11 +960,16 @@ async def send_workbench_message_stream(
             "model": resolved_model,
         })
 
-    # Check credentials early
+    # Check credentials early — consult custom store first so user-added
+    # API keys (Providers tab) are honored even when the built-in registry
+    # entry has no env var.
     if resolved_provider:
-        from app.providers.clients import get_client
-        client = get_client(resolved_provider)
-        if client and not client.resolve_api_key():
+        from app.services import provider_credentials
+        creds = provider_credentials.resolve(
+            resolved_provider.get("name") or resolved_provider.get("id") or ""
+        )
+        api_key = (creds or {}).get("api_key") if creds else None
+        if not api_key:
             if emit:
                 emit({"type": "error", "message": f"API key not configured for {resolved_provider.get('name', 'unknown')}"})
             session.status = "idle"

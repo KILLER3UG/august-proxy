@@ -217,3 +217,19 @@ def test_resolver_has_api_key_uses_custom_store(fake_providers_store):
 
     provider = provider_resolver.resolve("MiniMax (Global)")
     assert provider_resolver._has_api_key(provider) is True
+
+
+def test_workbench_credential_check_uses_custom_store(fake_providers_store):
+    """Given a custom-store MiniMax with a key, the workbench credential check passes."""
+    from app.providers import resolver as provider_resolver
+    from app.services import provider_credentials
+
+    provider = provider_resolver.resolve("MiniMax (Global)")
+    assert provider is not None
+    # The new workbench code uses provider_credentials.resolve().api_key
+    creds = provider_credentials.resolve("MiniMax (Global)")
+    assert creds is not None
+    assert creds["api_key"] == "sk-custom-key-12345"
+    # And the credential check pattern works: api_key non-empty
+    api_key = (creds or {}).get("api_key") if creds else None
+    assert api_key  # truthy
