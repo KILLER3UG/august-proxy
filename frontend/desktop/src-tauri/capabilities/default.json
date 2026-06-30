@@ -16,6 +16,8 @@
     "clipboard-manager:default",
     "process:default",
     "shell:default",
-    "updater:default"
+    "updater:default",
+    "core:audio:default",
+    "core:audio:allow-capture"
   ]
 }
