@@ -1,55 +1,39 @@
 """
 Settings — loads config.json, providers.json, and .env into Pydantic models.
 """
-
 from __future__ import annotations
-
 import json
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
-def _find_project_root() -> Path:
+def _findProjectRoot() -> Path:
     """Walk up from this file's location to find the project root."""
-    here = Path(__file__).resolve().parent.parent.parent  # app/../.. = project root
+    here = Path(__file__).resolve().parent.parent.parent
     return here
 
-
-def _load_json(path: Path) -> Dict[str, Any]:
+def _loadJson(path: Path) -> Dict[str, Any]:
     try:
-        return json.loads(path.read_text("utf-8"))
+        return json.loads(path.read_text('utf-8'))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
-
 class Settings(BaseSettings):
     """Global settings loaded from config.json, providers.json, and .env."""
-
-    # ── Port ──────────────────────────────────────────────────────────
-    port: int = int(os.environ.get("AUGUST_PROXY_PORT", "8085"))
-
-    # ── Paths ─────────────────────────────────────────────────────────
-    project_root: Path = _find_project_root()
-    data_dir: Path = Path(os.environ.get(
-        "AUGUST_DATA_DIR",
-        str(_find_project_root() / "data"),
-    ))
-    web_dist: Path = _find_project_root() / "web-dist"
-
-    # ── Config cache (lazy-loaded) ────────────────────────────────────
+    port: int = int(os.environ.get('AUGUST_PROXY_PORT', '8085'))
+    projectRoot: Path = _findProjectRoot()
+    dataDir: Path = Path(os.environ.get('AUGUST_DATA_DIR', str(_findProjectRoot() / 'data')))
+    webDist: Path = _findProjectRoot() / 'web-dist'
     _config: Dict[str, Any] = {}
     _providers: Dict[str, Any] = {}
 
     def reload(self) -> None:
         """Re-read config.json and providers.json from disk."""
-        config_path = self.data_dir / "config.json"
-        providers_path = self.data_dir / "providers.json"
-
-        self._config = _load_json(config_path)
-        self._providers = _load_json(providers_path)
+        configPath = self.dataDir / 'config.json'
+        providersPath = self.dataDir / 'providers.json'
+        self._config = _loadJson(configPath)
+        self._providers = _loadJson(providersPath)
 
     @property
     def config(self) -> Dict[str, Any]:
@@ -62,8 +46,5 @@ class Settings(BaseSettings):
         if not self._providers:
             self.reload()
         return self._providers
-
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
-
-
+    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 settings = Settings()

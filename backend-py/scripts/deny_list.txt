@@ -76,3 +76,6 @@ model_config
 # Environment variable names
 AUGUST_DATA_DIR
 AUGUST_BRAIN_SQLITE_FILE
+
+# Module-level UPPER_SNAKE constants (not true snake_case)
+_WEB_DIST

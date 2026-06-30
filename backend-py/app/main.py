@@ -4,206 +4,161 @@ FastAPI application entry point.
 Serves the SPA from web-dist/ and routes API requests.
 This is the Python equivalent of the original Node.js index.js.
 """
-
 from __future__ import annotations
-
 import asyncio
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-
 from app.config import settings
-# database.py removed in Phase 0 — SQLAlchemy was dead code (no ORM models exist).
-# Session lifecycle is managed by memory_store.py (august_brain.sqlite) directly.
 
-
-# ── Lifespan ──────────────────────────────────────────────────────────
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.reload()
-    # Register tool handlers
-    from app.services import tool_definitions
-
-    tool_definitions.register_all()
-    # Ensure brain SQLite tables (incl. config_audit) exist.
-    from app.services import memory_store
-    memory_store.init()
-    # Discover MCP server tools fire-and-forget so they appear in the
-    # workbench tool list shortly after boot. MCP servers are optional —
-    # refresh_mcp_tools swallows per-server failures, and the workbench
-    # re-reads the (lazily-populated) cache on every generation, so a
-    # slow/missing server never blocks startup.
+    from app.services import toolDefinitions
+    toolDefinitions.register_all()
+    from app.services import memoryStore
+    memoryStore.init()
+    # Run database column migration (snake_case → camelCase)
+    from app.lib.paths import dataPath
+    _db_path_val = dataPath("august_brain.sqlite")
+    if _db_path_val.exists():
+        try:
+            from scripts.migrate_db_columns import migrateDatabase
+            migrateDatabase(_db_path_val)
+            logger.info("Database columns migrated: snake_case → camelCase")
+        except Exception as exc:
+            logger.warning("DB migration skipped: %s", exc)
     try:
-        from app.services.tools.mcp_client import refresh_mcp_tools
-        asyncio.create_task(refresh_mcp_tools())
+        from app.services.tools.mcp_client import refreshMcpTools
+        asyncio.create_task(refreshMcpTools())
     except Exception:
         pass
-    # Start gateway adapters (reads gateway config; no-op if disabled).
     _gateway = None
     try:
-        from app.services.gateway.runner import start_gateway
-        _gateway = await start_gateway(settings)
+        from app.services.gateway.runner import startGateway
+        _gateway = await startGateway(settings)
         app.state.gateway_runner = _gateway
     except Exception:
         pass
-    # Start skill curator background loop.
     _curator = None
-    _curator_task = None
+    _curatorTask = None
     try:
-        from app.services.skills.curator import make_background_curator
-        _curator, _curator_task = make_background_curator()
+        from app.services.skills.curator import makeBackgroundCurator
+        _curator, _curatorTask = makeBackgroundCurator()
         app.state.curator = _curator
     except Exception:
         pass
     yield
-    # Shutdown curator
-    if _curator_task is not None:
-        _curator_task.cancel()
-    # Shutdown gateway
+    if _curatorTask is not None:
+        _curatorTask.cancel()
     if _gateway is not None:
         try:
             await _gateway.stop()
         except Exception:
             pass
-    # Close all headless browser sessions on shutdown.
     try:
-        from app.services.browser.session_manager import close_all as close_browsers
-        await close_browsers()
+        from app.services.browser.session_manager import close_all as closeBrowsers
+        await closeBrowsers()
     except Exception:
         pass
-    # Phase 8: Shutdown daemon manager (cancel all background daemon tasks)
     try:
-        from app.services.daemon_manager import shutdown_all
-        await shutdown_all()
+        from app.services.daemon_manager import shutdownAll
+        await shutdownAll()
     except Exception:
         pass
-    # close_db() removed in Phase 0 — SQLAlchemy was dead code.
-    # memory_store cleanup (if any) happens in memory_store.close() if needed.
-
-
-# ── App ───────────────────────────────────────────────────────────────
-
-
-app = FastAPI(
-    title="August Proxy",
-    version="0.1.0",
-    lifespan=lifespan,
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# ── Routers ────────────────────────────────────────────────────────────
-
-from app.routers import config as config_routes
-from app.routers import providers as providers_routes
-from app.routers import skills as skills_routes
-from app.routers import models as models_routes
-from app.routers import proxy as proxy_routes
-from app.routers import workbench as workbench_routes
-from app.routers import sessions as sessions_routes
-from app.routers import memory as memory_routes
-from app.routers import audit as audit_routes
-from app.routers import usage as usage_routes
-from app.routers import agents as agents_routes
-from app.routers import mcp as mcp_routes
-from app.routers import cron as cron_routes
-from app.routers import git as git_routes
-from app.routers import desktop_automation as desktop_automation_routes
-from app.routers import browser as browser_routes
-from app.routers import terminal as terminal_routes
-from app.routers import terminal_routes as terminal_ws_routes
-from app.routers import manage as manage_routes
-from app.routers import monitoring as monitoring_routes
-from app.routers import august as august_routes
-from app.routers import gateway as gateway_routes
-from app.routers import curator as curator_routes
-from app.routers import ui_memory as ui_memory_routes
-from app.routers import brain as brain_routes
-from app.routers import brain_activity as brain_activity_routes
-from app.routers import brain_config as brain_config_routes
-from app.routers import exam as exam_routes
-from app.routers import live as live_routes
-from app.routers import calendar as calendar_routes
-
-app.include_router(config_routes.router)
-app.include_router(providers_routes.router)
-app.include_router(skills_routes.router)
-app.include_router(curator_routes.router)
-app.include_router(models_routes.router)
-app.include_router(proxy_routes.router)
-app.include_router(workbench_routes.router)
-app.include_router(sessions_routes.router)
-app.include_router(memory_routes.router)
-app.include_router(audit_routes.router)
-app.include_router(usage_routes.router)
-app.include_router(agents_routes.router)
-app.include_router(mcp_routes.router)
-app.include_router(cron_routes.router)
-app.include_router(git_routes.router)
-app.include_router(desktop_automation_routes.router)
-app.include_router(browser_routes.router)
-app.include_router(terminal_routes.router)
-app.include_router(terminal_ws_routes.router)
-app.include_router(manage_routes.router)
-app.include_router(monitoring_routes.router)
-app.include_router(august_routes.router)
-app.include_router(gateway_routes.router)
-app.include_router(ui_memory_routes.router)
-app.include_router(brain_routes.router)
-app.include_router(brain_config_routes.router)
-app.include_router(brain_activity_routes.router)
-app.include_router(exam_routes.router)
-app.include_router(live_routes.router)
-app.include_router(calendar_routes.router)
-
-
-# ── Static files (SPA) ────────────────────────────────────────────────
-
-_WEB_DIST = settings.web_dist
-
-if _WEB_DIST.is_dir():
-    app.mount("/assets", StaticFiles(directory=str(_WEB_DIST / "assets")), name="assets")
-
+app = FastAPI(title='August Proxy', version='0.1.0', lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
+from app.routers import config as configRoutes
+from app.routers import providers as providersRoutes
+from app.routers import skills as skillsRoutes
+from app.routers import models as modelsRoutes
+from app.routers import proxy as proxyRoutes
+from app.routers import workbench as workbenchRoutes
+from app.routers import sessions as sessionsRoutes
+from app.routers import memory as memoryRoutes
+from app.routers import audit as auditRoutes
+from app.routers import usage as usageRoutes
+from app.routers import agents as agentsRoutes
+from app.routers import mcp as mcpRoutes
+from app.routers import cron as cronRoutes
+from app.routers import git as gitRoutes
+from app.routers import desktop_automation as desktopAutomationRoutes
+from app.routers import browser as browserRoutes
+from app.routers import terminal as terminalRoutes
+from app.routers import terminal_routes as terminalWsRoutes
+from app.routers import manage as manageRoutes
+from app.routers import monitoring as monitoringRoutes
+from app.routers import august as augustRoutes
+from app.routers import gateway as gatewayRoutes
+from app.routers import curator as curatorRoutes
+from app.routers import ui_memory as uiMemoryRoutes
+from app.routers import brain as brainRoutes
+from app.routers import brain_activity as brainActivityRoutes
+from app.routers import brain_config as brainConfigRoutes
+from app.routers import exam as examRoutes
+from app.routers import live as liveRoutes
+from app.routers import calendar as calendarRoutes
+app.include_router(configRoutes.router)
+app.include_router(providersRoutes.router)
+app.include_router(skillsRoutes.router)
+app.include_router(curatorRoutes.router)
+app.include_router(modelsRoutes.router)
+app.include_router(proxyRoutes.router)
+app.include_router(workbenchRoutes.router)
+app.include_router(sessionsRoutes.router)
+app.include_router(memoryRoutes.router)
+app.include_router(auditRoutes.router)
+app.include_router(usageRoutes.router)
+app.include_router(agentsRoutes.router)
+app.include_router(mcpRoutes.router)
+app.include_router(cronRoutes.router)
+app.include_router(gitRoutes.router)
+app.include_router(desktopAutomationRoutes.router)
+app.include_router(browserRoutes.router)
+app.include_router(terminalRoutes.router)
+app.include_router(terminalWsRoutes.router)
+app.include_router(manageRoutes.router)
+app.include_router(monitoringRoutes.router)
+app.include_router(augustRoutes.router)
+app.include_router(gatewayRoutes.router)
+app.include_router(uiMemoryRoutes.router)
+app.include_router(brainRoutes.router)
+app.include_router(brainConfigRoutes.router)
+app.include_router(brainActivityRoutes.router)
+app.include_router(examRoutes.router)
+app.include_router(liveRoutes.router)
+app.include_router(calendarRoutes.router)
+_WEBDist = settings.webDist
+if _WEBDist.is_dir():
+    app.mount('/assets', StaticFiles(directory=str(_WEBDist / 'assets')), name='assets')
 
     @app.exception_handler(404)
-    async def spa_fallback(request, exc):
+    async def spaFallback(request, exc):
         """Return index.html for unmatched routes.
 
         API routes (/api/, /v1/) return a JSON 404 so the frontend
         doesn't try to parse HTML as SSE/JSON.
         """
         path = request.url.path
-        if path.startswith("/api/") or path.startswith("/v1/"):
+        if path.startswith('/api/') or path.startswith('/v1/'):
             from fastapi.responses import JSONResponse
-            return JSONResponse({"error": "Not found", "path": path}, status_code=404)
-
-        index = _WEB_DIST / "index.html"
+            return JSONResponse({'error': 'Not found', 'path': path}, status_code=404)
+        index = _WEBDist / 'index.html'
         if index.exists():
             return FileResponse(str(index))
         return FileResponse(str(index)) if index.exists() else None
+_startedAt: float = time.time()
 
-
-# ── Health ────────────────────────────────────────────────────────────
-
-_started_at: float = time.time()
-
-
-@app.get("/api/health")
+@app.get('/api/health')
 async def health():
     """Single source of truth for /api/health.
 
@@ -213,20 +168,8 @@ async def health():
     /health handler was removed to avoid a first-match-wins collision that
     dropped the `python` field.
     """
-    return {
-        "status": "ok",
-        "version": "0.1.0",
-        "python": True,
-        "port": settings.port,
-        "uptime": time.time() - _started_at,
-    }
+    return {'status': 'ok', 'version': '0.1.0', 'python': True, 'port': settings.port, 'uptime': time.time() - _startedAt}
 
-
-@app.get("/api/health/detailed")
-async def health_detailed():
-    return {
-        "status": "ok",
-        "mode": "python",
-        "port": settings.port,
-        "data_dir": str(settings.data_dir),
-    }
+@app.get('/api/health/detailed')
+async def healthDetailed():
+    return {'status': 'ok', 'mode': 'python', 'port': settings.port, 'data_dir': str(settings.dataDir)}
