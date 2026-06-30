@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Optional
 from app.lib.paths import dataPath
-from app.types import JsonValue
+from app.typeAliases import JsonValue
 
 def _readJson(path: Path) -> dict[str, JsonValue]:
     try:

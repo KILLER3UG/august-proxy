@@ -13,7 +13,7 @@ This module provides:
 from __future__ import annotations
 import json
 from typing import Callable
-from app.types import JsonValue
+from app.typeAliases import JsonValue
 MANAGED_WEB_TOOL_NAMES: set[str] = {'WebSearch', 'WebFetch', 'web_search', 'web_fetch', 'mcp__workspace__web_search', 'mcp__workspace__web_fetch'}
 MANAGED_BASH_TOOL_NAMES: set[str] = {'bash', 'mcp__workspace__bash'}
 

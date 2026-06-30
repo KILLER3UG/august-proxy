@@ -9,7 +9,7 @@ Determines which tools are safe to run in parallel vs. mutating
 from __future__ import annotations
 import json
 import re
-from app.types import JsonValue
+from app.typeAliases import JsonValue
 MUTATING_NAME_PATTERN = re.compile('^(write|edit|create|delete|install|run|bash|launch|click|type|focus|set|add|remove|rename|copy|move|mkdir|touch|chmod|kill|uninstall|stop|restart|upload|download|patch|apply|commit|push|merge|deploy|start|reboot|shutdown|format|mount|unmount|browser_navigate|browser_click|browser_type|browser_snapshot)', re.IGNORECASE)
 SAFE_NAME_PATTERN = re.compile('^(read|list|search|fetch|get|describe|diagnose|status|recall|view|find|show|check|inspect|lookup|resolve|ping|health|info|memory_search|fact_search|context_read|list_skills)', re.IGNORECASE)
 

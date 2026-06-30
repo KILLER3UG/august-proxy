@@ -7,7 +7,7 @@ internal camelCase code and external snake_case wire formats.
 
 from __future__ import annotations
 
-from app.types import JsonValue
+from app.typeAliases import JsonValue
 
 
 def _snakeToCamelKey(key: str) -> str:

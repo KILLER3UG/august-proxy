@@ -20,7 +20,7 @@ import json
 import time
 import uuid
 from typing import AsyncIterator, Callable
-from app.types import JsonValue
+from app.typeAliases import JsonValue
 from app.adapters.base import streamSse, buildHeaders
 from app.adapters.proxyTools import getProxyOpenaiToolDefinitionsForAnthropic, getCanonicalManagedAnthropicWebTools, appendMissingAnthropicTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, dedupeAndCanonicalizeAnthropicTools, sanitizeAnthropicToolDefinition, getManagedAnthropicWebToolDefinitions, openaiToAnthropicToolDefinition, anthropicToOpenaiToolDefinition, isProxyManagedLocalToolName, isBrowserAutomationToolName, buildClientToolGuidance
 from app.adapters.toolClassification import classifyAnthropicToolUses, classifyOpenaiToolCalls, getToolNameFromAnthropicTool, getToolNameFromOpenaiTool

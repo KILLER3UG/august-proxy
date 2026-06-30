@@ -11,7 +11,7 @@ from __future__ import annotations
 from app.config import settings
 from app.lib.paths import dataPath
 from app.services.memoryStore import recordConfigAudit
-from app.types import AliasDict
+from app.typeAliases import AliasDict
 
 def listAliases() -> list[AliasDict]:
     """Return all model-alias entries (full records, not just names)."""

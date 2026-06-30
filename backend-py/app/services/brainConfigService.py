@@ -38,7 +38,7 @@ from app.services import configService
 from app.services.memory.brainOrchestrator import DEFAULT_FEATURES
 from app.services.memoryStore import recordConfigAudit
 from app.services.workbench import workbench as workbenchSvc
-from app.types import BrainConfigDict, JsonValue
+from app.typeAliases import BrainConfigDict, JsonValue
 boolKeys: tuple[str, ...] = ('enabled', 'adaptivePolicy', 'failureLearning', 'graphMemory', 'agentJobs', 'hierarchicalAgents', 'adapterParallelTools', 'parallelReadTools', 'reviewLearnedGuidelines')
 numKeys: tuple[str, ...] = ('maxAgentDepth', 'maxWorkbenchToolLoops')
 allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys)
