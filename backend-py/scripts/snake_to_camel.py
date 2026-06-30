@@ -50,11 +50,14 @@ _DENY_LIST: set[str] = {
 def _load_deny_list(path: str) -> set[str]:
     """Extend deny-list from a file (one identifier per line, # comments ignored)."""
     result = set(_DENY_LIST)
-    with open(path) as f:
-        for line in f:
-            stripped = line.split("#")[0].strip()
-            if stripped:
-                result.add(stripped)
+    try:
+        with open(path) as f:
+            for line in f:
+                stripped = line.split("#")[0].strip()
+                if stripped:
+                    result.add(stripped)
+    except FileNotFoundError:
+        print(f"Warning: deny-list file not found: {path} — using built-in list", file=sys.stderr)
     return result
 
 
@@ -114,10 +117,8 @@ class SnakeToCamelTransformer(ast.NodeTransformer):
             })
         return camel
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
-        new_name = self._rename(node.name, "function", (node.lineno, node.col_offset))
-        node.name = new_name
-        # Rename parameters
+    def _rename_function_params(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        """Rename all parameters of a function definition (shared by sync and async)."""
         for arg in node.args.args:
             arg.arg = self._rename(arg.arg, "parameter", (arg.lineno or node.lineno, arg.col_offset or 0))
         for arg in node.args.kwonlyargs:
@@ -128,29 +129,22 @@ class SnakeToCamelTransformer(ast.NodeTransformer):
         if node.args.kwarg:
             node.args.kwarg.arg = self._rename(node.args.kwarg.arg, "parameter",
                                                  (node.args.kwarg.lineno or node.lineno, 0))
-        # Rename decorators
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
+        node.name = self._rename(node.name, "function", (node.lineno, node.col_offset))
+        self._rename_function_params(node)
         self.generic_visit(node)
         return node
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
-        new_name = self._rename(node.name, "function", (node.lineno, node.col_offset))
-        node.name = new_name
-        for arg in node.args.args:
-            arg.arg = self._rename(arg.arg, "parameter", (arg.lineno or node.lineno, arg.col_offset or 0))
-        for arg in node.args.kwonlyargs:
-            arg.arg = self._rename(arg.arg, "parameter", (arg.lineno or node.lineno, arg.col_offset or 0))
-        if node.args.vararg:
-            node.args.vararg.arg = self._rename(node.args.vararg.arg, "parameter",
-                                                  (node.args.vararg.lineno or node.lineno, 0))
-        if node.args.kwarg:
-            node.args.kwarg.arg = self._rename(node.args.kwarg.arg, "parameter",
-                                                 (node.args.kwarg.lineno or node.lineno, 0))
+        node.name = self._rename(node.name, "function", (node.lineno, node.col_offset))
+        self._rename_function_params(node)
         self.generic_visit(node)
         return node
 
     def visit_Name(self, node: ast.Name) -> Any:
-        """Rename variable references in store context (assignments)."""
-        if isinstance(node.ctx, ast.Store):
+        """Rename ALL variable references — both assignments (Store) and usages (Load)."""
+        if isinstance(node.ctx, (ast.Store, ast.Load)):
             new_id = self._rename(node.id, "variable", (node.lineno, node.col_offset))
             node.id = new_id
         return node
@@ -190,10 +184,13 @@ class SnakeToCamelTransformer(ast.NodeTransformer):
 
 
 def convert_file(path: Path, deny: set[str], *, dry_run: bool = False,
-                 show_diff: bool = False, audit: bool = False) -> dict[str, Any]:
+                 show_diff: bool = False) -> dict[str, Any]:
     """Process a single Python file. Returns audit info."""
     original = path.read_text(encoding="utf-8")
-    tree = ast.parse(original, filename=str(path))
+    try:
+        tree = ast.parse(original, filename=str(path))
+    except SyntaxError as e:
+        return {"file": str(path), "status": "error", "error": f"SyntaxError: {e}", "renames": []}
 
     transformer = SnakeToCamelTransformer(deny)
     modified_tree = transformer.visit(tree)
@@ -275,11 +272,11 @@ def main():
         path = Path(target)
         if path.is_file():
             r = convert_file(path, deny, dry_run=args.dry_run,
-                             show_diff=args.diff, audit=args.report)
+                             show_diff=args.diff)
             all_results.append(r)
         elif path.is_dir():
             r = convert_directory(path, deny, dry_run=args.dry_run,
-                                  show_diff=args.diff, audit=args.report)
+                                  show_diff=args.diff)
             all_results.extend(r)
         else:
             print(f"Warning: {target} not found", file=sys.stderr)
