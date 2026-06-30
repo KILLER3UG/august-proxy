@@ -40,6 +40,7 @@ __pycache__/
 
 # Temp files
 *.tmp
+*.stackdump
 *.timestamp-*.mjs
 backend/host-agent/tmp/
 

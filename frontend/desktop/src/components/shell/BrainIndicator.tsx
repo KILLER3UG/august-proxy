@@ -128,10 +128,13 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
   } | null>(null);
 
   const handleDragPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    console.log('[DRAG] pointerdown', e.clientX, e.clientY, 'button', e.button);
     const button = e.button ?? 0;
     if (button !== 0) return;
     const target = e.target as HTMLElement;
-    if (target.closest('button, [role="tab"], input, textarea, select, [data-no-drag], [contenteditable="true"]')) {
+    const blocked = target.closest('button, [role="tab"], input, textarea, select, [data-no-drag], [contenteditable="true"]');
+    if (blocked) {
+      console.log('[DRAG] blocked by', blocked);
       return;
     }
     const targetEl = e.currentTarget;
@@ -145,9 +148,14 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
       originX: geomRef.current.x - offsetX,
       originY: geomRef.current.y - offsetY,
     };
+    console.log('[DRAG] state set, attaching listeners', dragState.current);
     // Attach move/up handlers inline (same pattern as resize)
-    const onMove = (ev: PointerEvent) => handleDragPointerMove(ev);
+    const onMove = (ev: PointerEvent) => {
+      console.log('[DRAG] move', ev.clientX, ev.clientY);
+      handleDragPointerMove(ev);
+    };
     const onUp = () => {
+      console.log('[DRAG] up');
       handleDragPointerUp();
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
@@ -185,15 +193,10 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
   } | null>(null);
 
   const handleResizePointerDown = (edge: ResizeEdge) => (e: React.PointerEvent<HTMLDivElement>) => {
-
-    // Default to button=0. jsdom's RTL fireEvent.pointerDown does not
-    // populate e.button, so e.button may be undefined.
+    console.log('[RESIZE] pointerdown edge', edge, e.clientX, e.clientY);
     const button = e.button ?? 0;
     if (button !== 0) return;
     e.stopPropagation();
-    // Wrap setPointerCapture in a try/catch — jsdom's stub may throw "InvalidStateError"
-    // when a pointer is captured on an element that can't capture, which would
-    // abort the handler before we record resizeState.
     try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* ignore */ }
     const g = geomRef.current;
     resizeState.current = {
@@ -205,11 +208,13 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
       originW: g.width,
       originH: g.height,
     };
-    // Attach move/up handlers DIRECTLY on this element via setPointerCapture
-    // semantics. We listen on document so they fire even outside the popup
-    // while the pointer is being dragged.
-    const onMove = (ev: PointerEvent) => handleResizePointerMove(ev);
+    console.log('[RESIZE] state set, attaching listeners', resizeState.current);
+    const onMove = (ev: PointerEvent) => {
+      console.log('[RESIZE] move edge', edge, ev.clientX, ev.clientY);
+      handleResizePointerMove(ev);
+    };
     const onUp = () => {
+      console.log('[RESIZE] up edge', edge);
       handleResizePointerUp();
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);

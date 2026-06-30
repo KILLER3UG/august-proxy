@@ -76,6 +76,9 @@ import { gitApi, type GitDiffResult } from '@/api/git';
 import { usageApi } from '@/api/usage';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import { addWorkspace } from '@/store/workspaces';
+import { matchIntent, isLikelyCommand } from '@/api/voice/intent';
+import { dispatchVoiceCommand, type VoiceDispatchContext } from '@/api/voice/dispatch';
+import { ModelPickerCard } from './ModelPickerCard';
 
 let visibleSessionId: string | null = null;
 let visibleGeneration = 0;
@@ -489,6 +492,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // v3: /Exam slash command — overlay the ExamBanner with the given seed.
   const [examActive, setExamActive] = useState(false);
   const [examSeed, setExamSeed] = useState<{ topic?: string; files?: string[] }>({});
+
+  // v4: Voice command UI — inline model picker card
+  const [modelPickerActive, setModelPickerActive] = useState(false);
 
   // Refs for each popover trigger — used to compute the portaled panel's
   // viewport position. We portal the panels to document.body (see
@@ -1210,6 +1216,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         window.dispatchEvent(new CustomEvent('august:new-session'));
         return;
       }
+      if (cmd === 'model') {
+        // v4 Voice Command UI: /model opens inline picker
+        setModelPickerActive(true);
+        setInput('');
+        clearComposerDraft(sessionId);
+        return;
+      }
       if (cmd === 'load') {
         if (!arg) {
           toast.error('/load needs a skill name. Try: /load brainstorming');
@@ -1518,7 +1531,66 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       setVoiceActive(false);
       if (!finalTranscript) {
         toast.info('No speech detected');
+        return;
       }
+
+      // v4 Voice Command UI: Try to match intent
+      if (isLikelyCommand(finalTranscript, COMMANDS)) {
+        const matched = matchIntent(finalTranscript, COMMANDS);
+        if (matched) {
+          // Build dispatch context
+          const context: VoiceDispatchContext = {
+            onShowModelPicker: () => setModelPickerActive(true),
+            onInsertText: (text) => setInput(prev => prev + text),
+            onClearChat: () => {
+              setMessages([]);
+              persistMessages(sessionId, []);
+              setInput('');
+              setAttachments([]);
+              clearComposerDraft(sessionId);
+            },
+            onNewSession: () => {
+              window.dispatchEvent(new CustomEvent('august:new-session'));
+            },
+            onResetSession: () => {
+              // Reset sends /reset through to backend
+              setInput('/reset');
+              setTimeout(() => send(), 0);
+            },
+            onToggleDebug: () => {
+              // Toggle debug mode (not implemented in base, would be a setting)
+              toast.info('Debug toggle not implemented');
+            },
+            onShowHelp: () => {
+              const helpMsg: ChatMessage = {
+                id: `m${Date.now()}`,
+                role: 'assistant',
+                content: '',
+                timestamp: new Date().toISOString(),
+                kind: 'help',
+              };
+              setMessages(prev => [...prev, helpMsg]);
+              persistMessages(sessionId, [...messages, helpMsg]);
+            },
+            onShowSkills: () => {
+              setInput('/skills ');
+            },
+            onOpenExam: (topic) => {
+              setExamSeed({ topic });
+              setExamActive(true);
+            },
+          };
+
+          const result = dispatchVoiceCommand(matched, finalTranscript, context);
+          if (result.handled) {
+            toast.success(result.detail || 'Command executed');
+            // Clear the appended transcript if command was handled
+            setInput(prev => prev.replace(finalTranscript, '').trim());
+            return;
+          }
+        }
+      }
+      // If not a command or not handled, transcript stays in input (dictation mode)
     };
 
     recognition.onerror = (event: any) => {
@@ -2063,6 +2135,33 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         </div>
                       );
                     })}
+
+                    {/* v4 Voice Command UI: Inline model picker */}
+                    {modelPickerActive && (
+                      <ModelPickerCard
+                        models={models.map(m => ({
+                          id: m.id,
+                          name: m.name,
+                          provider: m.provider,
+                          contextWindow: m.contextWindow,
+                          isFree: m.isFree,
+                          supportsReasoning: m.supportsReasoning,
+                        }))}
+                        currentModelId={selectedModel?.id || ''}
+                        onSelect={(modelId, provider) => {
+                          const model = models.find(m => m.id === modelId);
+                          if (model) {
+                            setSelectedModel(model);
+                            userSelectedRef.current = model.id;
+                            try { localStorage.setItem('august_last_model', JSON.stringify(model)); } catch {}
+                            if (sessionId) updateSessionModel(sessionId, model.id, model.provider);
+                            toast.success(`Switched to ${model.name}`);
+                          }
+                          setModelPickerActive(false);
+                        }}
+                        onClose={() => setModelPickerActive(false)}
+                      />
+                    )}
                   </div>
 
                   {/* Scroll-to-bottom chevron at the right edge */}
