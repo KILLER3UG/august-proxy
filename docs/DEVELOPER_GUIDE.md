@@ -116,11 +116,17 @@ report):
 
 ### Naming
 
-- **camelCase for all JSON/API fields**, consistently — no aliases or
-  converters (the codebase migrated away from a `camel_model` adapter layer).
-  See commits `2ca6320` and `35382d7`.
-- Python identifiers are `snake_case`.
+- **camelCase for all identifiers** throughout the codebase: Python function
+  names, variables, parameters, class attributes, and JSON/API fields.
 - Constants are `UPPER_SNAKE`.
+- Private-by-convention names use a leading underscore (`_privateName`).
+- External API boundary files (`adapters/`) translate between internal
+  `camelCase` and the external wire format via `case_converters.py`.
+- **Underscores are NOT used as word separators** in Python code.
+  Notable exceptions (never renamed):
+  - Python dunder methods: `__init__`, `__str__`, etc.
+  - Pytest test discovery: `test` prefix (e.g., `testHealth`)
+  - Environment variable names: `AUGUST_DATA_DIR`
 
 ### Structure
 
