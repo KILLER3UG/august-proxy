@@ -10,9 +10,7 @@ Key functions:
 - ``resolve_model_alias_details()`` — find provider for an alias
 - ``invalidate_cache()`` — clear the cache
 """
-
 from __future__ import annotations
-
 import asyncio
 import json
 import os
@@ -20,281 +18,178 @@ import re
 import time
 from pathlib import Path
 from typing import Any
-
 import httpx
-
 from app.config import settings
-from app.providers import resolver as provider_resolver
-from app.providers.clients import get_client
+from app.providers import resolver as providerResolver
+from app.providers.clients import getClient
+_modelCache: list[dict[str, Any]] | None = None
+_modelCacheAt: float = 0
+_MODELCacheTtl: float = 300
+_aliasCache: dict[str, Any] | None = None
+_aliasCacheAt: float = 0
+_ALIASCacheTtl: float = 60
+_refreshInFlight: asyncio.Task | None = None
 
-# ── Cache ────────────────────────────────────────────────────────────
-
-_model_cache: list[dict[str, Any]] | None = None
-_model_cache_at: float = 0
-_MODEL_CACHE_TTL: float = 300  # 5 minutes
-_alias_cache: dict[str, Any] | None = None
-_alias_cache_at: float = 0
-_ALIAS_CACHE_TTL: float = 60  # 1 minute
-_refresh_in_flight: asyncio.Task | None = None
-
-
-def invalidate_cache() -> None:
+def invalidateCache() -> None:
     global _model_cache, _model_cache_at, _alias_cache, _alias_cache_at
-    _model_cache = None
-    _model_cache_at = 0
-    _alias_cache = None
-    _alias_cache_at = 0
+    _modelCache = None
+    _modelCacheAt = 0
+    _aliasCache = None
+    _aliasCacheAt = 0
+_STATICModelLists: dict[str, list[dict[str, Any]]] = {'Anthropic': [{'id': 'claude-sonnet-4-7', 'contextWindow': 200000}, {'id': 'claude-sonnet-4-6', 'contextWindow': 200000}, {'id': 'claude-opus-4-7', 'contextWindow': 200000}, {'id': 'claude-opus-4-6', 'contextWindow': 200000}, {'id': 'claude-haiku-4-5', 'contextWindow': 200000}], 'OpenAI API': [{'id': 'gpt-4o', 'contextWindow': 128000}, {'id': 'gpt-4o-mini', 'contextWindow': 128000}, {'id': 'o1', 'contextWindow': 200000}, {'id': 'o3', 'contextWindow': 200000}], 'Google AI Studio': [{'id': 'gemini-2.0-flash', 'contextWindow': 1048576}, {'id': 'gemini-2.0-pro', 'contextWindow': 1048576}, {'id': 'gemini-1.5-pro', 'contextWindow': 1048576}], 'DeepSeek': [{'id': 'deepseek-v4', 'contextWindow': 131072}, {'id': 'deepseek-v4-flash', 'contextWindow': 131072}, {'id': 'deepseek-reasoner', 'contextWindow': 131072}]}
 
-
-# ── Model fetching ───────────────────────────────────────────────────
-
-_STATIC_MODEL_LISTS: dict[str, list[dict[str, Any]]] = {
-    "Anthropic": [
-        {"id": "claude-sonnet-4-7", "contextWindow": 200000},
-        {"id": "claude-sonnet-4-6", "contextWindow": 200000},
-        {"id": "claude-opus-4-7", "contextWindow": 200000},
-        {"id": "claude-opus-4-6", "contextWindow": 200000},
-        {"id": "claude-haiku-4-5", "contextWindow": 200000},
-    ],
-    "OpenAI API": [
-        {"id": "gpt-4o", "contextWindow": 128000},
-        {"id": "gpt-4o-mini", "contextWindow": 128000},
-        {"id": "o1", "contextWindow": 200000},
-        {"id": "o3", "contextWindow": 200000},
-    ],
-    "Google AI Studio": [
-        {"id": "gemini-2.0-flash", "contextWindow": 1048576},
-        {"id": "gemini-2.0-pro", "contextWindow": 1048576},
-        {"id": "gemini-1.5-pro", "contextWindow": 1048576},
-    ],
-    "DeepSeek": [
-        {"id": "deepseek-v4", "contextWindow": 131072},
-        {"id": "deepseek-v4-flash", "contextWindow": 131072},
-        {"id": "deepseek-reasoner", "contextWindow": 131072},
-    ],
-}
-
-
-def _derive_models_url(base_url: str) -> str | None:
+def _deriveModelsUrl(baseUrl: str) -> str | None:
     """Derive the /models endpoint URL from a provider's base URL."""
-    base = base_url.rstrip("/")
-    # Strip known API path suffixes
-    for suffix in ["/chat/completions", "/messages", "/responses", "/v1"]:
+    base = baseUrl.rstrip('/')
+    for suffix in ['/chat/completions', '/messages', '/responses', '/v1']:
         if base.endswith(suffix):
-            base = base[: -len(suffix)]
-    return f"{base}/models" if base else None
+            base = base[:-len(suffix)]
+    return f'{base}/models' if base else None
 
-
-def _get_context_window(model_id: str, provider: dict[str, Any] | None = None, fallback: int | None = None) -> int:
+def _getContextWindow(modelId: str, provider: dict[str, Any] | None=None, fallback: int | None=None) -> int:
     """Resolve context window from provider profile or inference."""
     if provider:
-        profiles = provider.get("model_profiles", {})
-        for key in [model_id] + [k for k in profiles if model_id.startswith(k)]:
+        profiles = provider.get('model_profiles', {})
+        for key in [modelId] + [k for k in profiles if modelId.startswith(k)]:
             profile = profiles.get(key)
-            if isinstance(profile, dict) and profile.get("contextWindow"):
-                return profile["contextWindow"]
-        wildcard = profiles.get("*", {})
-        if isinstance(wildcard, dict) and wildcard.get("contextWindow"):
-            return wildcard["contextWindow"]
+            if isinstance(profile, dict) and profile.get('contextWindow'):
+                return profile['contextWindow']
+        wildcard = profiles.get('*', {})
+        if isinstance(wildcard, dict) and wildcard.get('contextWindow'):
+            return wildcard['contextWindow']
     return fallback or 128000
 
-
-def _is_free_model_id(model_id: str) -> bool:
+def _isFreeModelId(modelId: str) -> bool:
     """Check if a model ID indicates a free tier (:free / -free)."""
-    if not isinstance(model_id, str):
+    if not isinstance(modelId, str):
         return False
-    lower = model_id.lower()
-    return ":free" in lower or "-free" in lower or lower.endswith("free")
+    lower = modelId.lower()
+    return ':free' in lower or '-free' in lower or lower.endswith('free')
 
-
-def _prettify_model_base(base: str) -> str:
+def _prettifyModelBase(base: str) -> str:
     """Generate a human-readable model name."""
-    if re.match(r"^claude-", base, re.IGNORECASE):
-        name = re.sub(r"^claude-", "", base, flags=re.IGNORECASE).replace("-", " ")
+    if re.match('^claude-', base, re.IGNORECASE):
+        name = re.sub('^claude-', '', base, flags=re.IGNORECASE).replace('-', ' ')
         return name.title()
-    if re.match(r"^gpt-", base, re.IGNORECASE):
-        return base.replace("gpt-", "GPT-", 1)
-    if re.match(r"^gemini-", base, re.IGNORECASE):
-        return "Gemini " + re.sub(r"^gemini-", "", base, flags=re.IGNORECASE).replace("-", " ").title()
-    if re.match(r"^deepseek-", base, re.IGNORECASE):
-        return "DeepSeek " + re.sub(r"^deepseek-", "", base, flags=re.IGNORECASE).replace("-", " ").title()
-    return base.replace("-", " ").title()
+    if re.match('^gpt-', base, re.IGNORECASE):
+        return base.replace('gpt-', 'GPT-', 1)
+    if re.match('^gemini-', base, re.IGNORECASE):
+        return 'Gemini ' + re.sub('^gemini-', '', base, flags=re.IGNORECASE).replace('-', ' ').title()
+    if re.match('^deepseek-', base, re.IGNORECASE):
+        return 'DeepSeek ' + re.sub('^deepseek-', '', base, flags=re.IGNORECASE).replace('-', ' ').title()
+    return base.replace('-', ' ').title()
 
-
-def _get_model_display_alias(model: dict[str, Any]) -> str:
+def _getModelDisplayAlias(model: dict[str, Any]) -> str:
     """Generate a display alias for a model."""
-    model_id = model.get("id", "")
-    base = model_id.split("/")[-1].split(":")[-1] if "/" in model_id or ":" in model_id else model_id
-
-    # Strip variant tags
-    tag = ""
-    for pattern, label in [
-        (r"-fast$", "Fast"), (r"-thinking$", "Thinking"), (r"-preview$", "Preview"),
-        (r"-latest$", "Latest"), (r":free$", "Free"), (r"-free$", "Free"),
-    ]:
+    modelId = model.get('id', '')
+    base = modelId.split('/')[-1].split(':')[-1] if '/' in modelId or ':' in modelId else modelId
+    tag = ''
+    for pattern, label in [('-fast$', 'Fast'), ('-thinking$', 'Thinking'), ('-preview$', 'Preview'), ('-latest$', 'Latest'), (':free$', 'Free'), ('-free$', 'Free')]:
         if re.search(pattern, base, re.IGNORECASE):
-            base = re.sub(pattern, "", base, flags=re.IGNORECASE)
+            base = re.sub(pattern, '', base, flags=re.IGNORECASE)
             tag = label
             break
+    display = _prettifyModelBase(base)
+    return f"{display}{(f' ({tag})' if tag else '')}"
 
-    display = _prettify_model_base(base)
-    return f"{display}{f' ({tag})' if tag else ''}"
-
-
-# ── Per-provider fetch (with timeout) ────────────────────────────────
-
-
-async def _fetch_provider_models(provider: dict[str, Any], timeout_s: float = 5.0) -> list[dict[str, Any]]:
+async def _fetchProviderModels(provider: dict[str, Any], timeoutS: float=5.0) -> list[dict[str, Any]]:
     """Fetch models from a provider's /models endpoint.
 
     Falls back to static list if the endpoint is unavailable.
     """
-    client = get_client(provider)
+    client = getClient(provider)
     if not client:
         return []
-
-    api_key = client.resolve_api_key()
-    base_url = client.resolve_base_url()
-    provider_name = provider.get("name", "")
-
-    # Try live fetch
-    models_url = _derive_models_url(base_url)
-    if models_url and api_key:
+    apiKey = client.resolve_api_key()
+    baseUrl = client.resolve_base_url()
+    providerName = provider.get('name', '')
+    modelsUrl = _deriveModelsUrl(baseUrl)
+    if modelsUrl and apiKey:
         try:
-            headers = client.build_auth_headers(api_key)
-            async with httpx.AsyncClient(timeout=timeout_s) as http:
-                resp = await http.get(models_url, headers=headers)
+            headers = client.build_auth_headers(apiKey)
+            async with httpx.AsyncClient(timeout=timeoutS) as http:
+                resp = await http.get(modelsUrl, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
-                    model_list = data.get("data", data.get("models", data if isinstance(data, list) else []))
-                    return [
-                        {
-                            "id": m["id"],
-                            "name": m["id"],
-                            "provider": provider_name,
-                            "contextWindow": _get_context_window(m["id"], provider, m.get("context_length")),
-                        }
-                        for m in (model_list if isinstance(model_list, list) else [])
-                    ]
+                    modelList = data.get('data', data.get('models', data if isinstance(data, list) else []))
+                    return [{'id': m['id'], 'name': m['id'], 'provider': providerName, 'contextWindow': _getContextWindow(m['id'], provider, m.get('context_length'))} for m in (modelList if isinstance(modelList, list) else [])]
         except Exception:
             pass
-
-    # Fallback to static list
-    static = _STATIC_MODEL_LISTS.get(provider_name, [])
+    static = _STATICModelLists.get(providerName, [])
     if not static:
-        default_model = provider.get("default_model")
-        if default_model:
-            static = [{"id": default_model, "contextWindow": _get_context_window(default_model, provider)}]
-        fallback_models = provider.get("fallback_models", [])
-        for fm in fallback_models:
-            if not any(s["id"] == fm for s in static):
-                static.append({"id": fm, "contextWindow": _get_context_window(fm, provider)})
+        defaultModel = provider.get('default_model')
+        if defaultModel:
+            static = [{'id': defaultModel, 'contextWindow': _getContextWindow(defaultModel, provider)}]
+        fallbackModels = provider.get('fallback_models', [])
+        for fm in fallbackModels:
+            if not any((s['id'] == fm for s in static)):
+                static.append({'id': fm, 'contextWindow': _getContextWindow(fm, provider)})
+    return [{'id': m['id'], 'name': m['id'], 'provider': providerName, 'contextWindow': m.get('contextWindow', 128000)} for m in static]
 
-    return [
-        {"id": m["id"], "name": m["id"], "provider": provider_name, "contextWindow": m.get("contextWindow", 128000)}
-        for m in static
-    ]
-
-
-# ── Aggregation ──────────────────────────────────────────────────────
-
-
-async def _aggregate_models() -> list[dict[str, Any]]:
+async def _aggregateModels() -> list[dict[str, Any]]:
     """Aggregate models from user-configured providers in providers.json only."""
-    all_models: list[dict[str, Any]] = []
-
+    allModels: list[dict[str, Any]] = []
     try:
         store = settings.providers
-        for entry in store.get("providers", []):
-            if not entry.get("enabled") or not entry.get("apiKey"):
+        for entry in store.get('providers', []):
+            if not entry.get('enabled') or not entry.get('apiKey'):
                 continue
-            for m in entry.get("models", []):
+            for m in entry.get('models', []):
                 import re
-                mid = m["id"]
-                reasoning = m.get("reasoning", False) or bool(re.search(
-                    r"\b(o1|o3|reasoner|thinking|reasoning)\b", mid, re.IGNORECASE
-                ))
-                all_models.append({
-                    "id": mid,
-                    "name": m.get("name", mid),
-                    "provider": entry["name"],
-                    "contextWindow": m.get("contextWindow", 128000),
-                    "supportsReasoning": reasoning,
-                    "supportsThinking": reasoning,
-                    "isFree": m.get("free", False) or _is_free_model_id(m["id"]),
-                })
+                mid = m['id']
+                reasoning = m.get('reasoning', False) or bool(re.search('\\b(o1|o3|reasoner|thinking|reasoning)\\b', mid, re.IGNORECASE))
+                allModels.append({'id': mid, 'name': m.get('name', mid), 'provider': entry['name'], 'contextWindow': m.get('contextWindow', 128000), 'supportsReasoning': reasoning, 'supportsThinking': reasoning, 'isFree': m.get('free', False) or _isFreeModelId(m['id'])})
     except Exception:
         pass
-
-    # De-duplicate by id (free models first)
     seen: dict[str, dict[str, Any]] = {}
-    for m in all_models:
-        mid = m["id"]
-        if mid not in seen or (m.get("isFree") and not seen[mid].get("isFree")):
+    for m in allModels:
+        mid = m['id']
+        if mid not in seen or (m.get('isFree') and (not seen[mid].get('isFree'))):
             seen[mid] = m
-
     result = list(seen.values())
-    result.sort(key=lambda m: (0 if m.get("isFree") else 1, m.get("id", "")))
-
+    result.sort(key=lambda m: (0 if m.get('isFree') else 1, m.get('id', '')))
     return result
 
-
-# ── Public API ───────────────────────────────────────────────────────
-
-
-async def aggregate(refresh: bool = False) -> list[dict[str, Any]]:
+async def aggregate(refresh: bool=False) -> list[dict[str, Any]]:
     """Get the aggregated model list with caching."""
     global _model_cache, _model_cache_at, _refresh_in_flight
-
     now = time.time()
-
-    # Force refresh
     if refresh:
-        _model_cache = None
-        _model_cache_at = 0
-
-    # Return cached if fresh
-    if _model_cache is not None and (now - _model_cache_at) < _MODEL_CACHE_TTL:
-        return _model_cache
-
-    # Background refresh if stale
-    if _model_cache is not None:
-        if _refresh_in_flight is None or _refresh_in_flight.done():
-            _refresh_in_flight = asyncio.create_task(_refresh_background())
-        return _model_cache
-
-    # Cold cache — fetch synchronously
-    models = await _aggregate_models()
-    _model_cache = models
-    _model_cache_at = now
+        _modelCache = None
+        _modelCacheAt = 0
+    if _modelCache is not None and now - _modelCacheAt < _MODELCacheTtl:
+        return _modelCache
+    if _modelCache is not None:
+        if _refreshInFlight is None or _refreshInFlight.done():
+            _refreshInFlight = asyncio.create_task(_refreshBackground())
+        return _modelCache
+    models = await _aggregateModels()
+    _modelCache = models
+    _modelCacheAt = now
     return models
 
-
-async def _refresh_background() -> None:
+async def _refreshBackground() -> None:
     """Background cache refresh."""
     global _model_cache, _model_cache_at
     try:
-        fresh = await _aggregate_models()
-        _model_cache = fresh
-        _model_cache_at = time.time()
+        fresh = await _aggregateModels()
+        _modelCache = fresh
+        _modelCacheAt = time.time()
     except Exception:
         pass
-
 
 async def prewarm() -> None:
     """Pre-warm the model cache on startup."""
     try:
-        models = await _aggregate_models()
+        models = await _aggregateModels()
         global _model_cache, _model_cache_at
-        _model_cache = models
-        _model_cache_at = time.time()
+        _modelCache = models
+        _modelCacheAt = time.time()
     except Exception:
         pass
 
+def getModelDisplayAlias(model: dict[str, Any]) -> str:
+    return _getModelDisplayAlias(model)
 
-def get_model_display_alias(model: dict[str, Any]) -> str:
-    return _get_model_display_alias(model)
-
-
-def is_free_model_id(model_id: str) -> bool:
-    return _is_free_model_id(model_id)
+def isFreeModelId(modelId: str) -> bool:
+    return _isFreeModelId(modelId)

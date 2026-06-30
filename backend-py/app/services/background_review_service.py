@@ -14,80 +14,56 @@ Three independent model selectors are supported:
 Each field is a model alias/id that resolves to a real provider+model.
 When empty, the chat session's model is used for that task.
 """
-
 from __future__ import annotations
-
 import json
 from typing import Any
-
 from app.config import settings
-from app.lib.paths import data_path
-from app.services.memory_store import record_config_audit
+from app.lib.paths import dataPath
+from app.services.memory_store import recordConfigAudit
+_DEFAULTConfig: dict[str, Any] = {'enabled': False, 'reviewModel': '', 'reflectionModel': '', 'autoMemoryModel': ''}
 
-_DEFAULT_CONFIG: dict[str, Any] = {
-    "enabled": False,
-    "reviewModel": "",
-    "reflectionModel": "",
-    "autoMemoryModel": "",
-}
-
-
-def get_config() -> dict[str, Any]:
+def getConfig() -> dict[str, Any]:
     """Return the current background review config (with defaults filled)."""
-    aux = settings.config.get("auxiliary", {})
+    aux = settings.config.get('auxiliary', {})
     if not isinstance(aux, dict):
-        return dict(_DEFAULT_CONFIG)
-    br = aux.get("background_review", {})
+        return dict(_DEFAULTConfig)
+    br = aux.get('background_review', {})
     if not isinstance(br, dict):
-        return dict(_DEFAULT_CONFIG)
-    merged = dict(_DEFAULT_CONFIG)
+        return dict(_DEFAULTConfig)
+    merged = dict(_DEFAULTConfig)
     merged.update(br)
     return merged
 
-
-def _write_config(data: dict[str, Any]) -> None:
-    p = data_path("config.json")
-    cfg = json.loads(p.read_text("utf-8")) if p.exists() else {}
-    cfg.setdefault("auxiliary", {})
-    cfg["auxiliary"]["background_review"] = data
-    p.write_text(json.dumps(cfg, indent=2), "utf-8")
+def _writeConfig(data: dict[str, Any]) -> None:
+    p = dataPath('config.json')
+    cfg = json.loads(p.read_text('utf-8')) if p.exists() else {}
+    cfg.setdefault('auxiliary', {})
+    cfg['auxiliary']['background_review'] = data
+    p.write_text(json.dumps(cfg, indent=2), 'utf-8')
     settings.reload()
 
-
-def save_config(
-    enabled: bool | None = None,
-    review_model: str | None = None,
-    reflection_model: str | None = None,
-    auto_memory_model: str | None = None,
-    actor: str = "system",
-) -> dict[str, Any]:
+def saveConfig(enabled: bool | None=None, reviewModel: str | None=None, reflectionModel: str | None=None, autoMemoryModel: str | None=None, actor: str='system') -> dict[str, Any]:
     """Update background review config fields (partial merge).
 
     Also performs a one-time migration from the legacy ``provider``/``model``
     schema: if ``reviewModel`` is empty but the legacy ``model`` field is set,
     the legacy value is promoted to ``reviewModel``.
     """
-    current = get_config()
+    current = getConfig()
     before = dict(current)
-
-    # One-time migration from legacy {provider, model} → reviewModel.
-    if not current.get("reviewModel") and current.get("model"):
-        current["reviewModel"] = current.pop("model", "")
-    # Drop the legacy provider field — providers are now resolved from the model.
-    current.pop("provider", None)
-    current.pop("model", None)
-
+    if not current.get('reviewModel') and current.get('model'):
+        current['reviewModel'] = current.pop('model', '')
+    current.pop('provider', None)
+    current.pop('model', None)
     if enabled is not None:
-        current["enabled"] = bool(enabled)
-    if review_model is not None:
-        current["reviewModel"] = review_model
-    if reflection_model is not None:
-        current["reflectionModel"] = reflection_model
-    if auto_memory_model is not None:
-        current["autoMemoryModel"] = auto_memory_model
-
-    # Ensure only the canonical keys are persisted.
-    result = {k: current.get(k, _DEFAULT_CONFIG.get(k)) for k in _DEFAULT_CONFIG}
-    _write_config(result)
-    record_config_audit("background_review", "update", actor, before=before, after=dict(result))
+        current['enabled'] = bool(enabled)
+    if reviewModel is not None:
+        current['reviewModel'] = reviewModel
+    if reflectionModel is not None:
+        current['reflectionModel'] = reflectionModel
+    if autoMemoryModel is not None:
+        current['autoMemoryModel'] = autoMemoryModel
+    result = {k: current.get(k, _DEFAULTConfig.get(k)) for k in _DEFAULTConfig}
+    _writeConfig(result)
+    recordConfigAudit('background_review', 'update', actor, before=before, after=dict(result))
     return dict(result)

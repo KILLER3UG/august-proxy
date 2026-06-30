@@ -32,68 +32,22 @@ Response shapes (match the frontend types):
 
 ``source`` is one of ``"persisted" | "session" | "fallback"``.
 """
-
 from __future__ import annotations
-
 from typing import Any
-
 from app.config import settings
-from app.services import config_service
+from app.services import configService
 from app.services.memory.brain_orchestrator import DEFAULT_FEATURES
-from app.services.memory_store import record_config_audit
+from app.services.memory_store import recordConfigAudit
 from app.services.workbench import workbench as workbenchSvc
-
-# ── Field catalog (camelCase, mirrors BOOLEAN_KEYS in BrainSettings.tsx) ──
-
-# 9 booleans + 2 numeric limits — total 11 keys. Must stay in sync with the
-# React form. Unknown keys in the PUT body are rejected with HTTP 400.
-boolKeys: tuple[str, ...] = (
-    "enabled",
-    "adaptivePolicy",
-    "failureLearning",
-    "graphMemory",
-    "agentJobs",
-    "hierarchicalAgents",
-    "adapterParallelTools",
-    "parallelReadTools",
-    "reviewLearnedGuidelines",
-)
-numKeys: tuple[str, ...] = ("maxAgentDepth", "maxWorkbenchToolLoops")
+boolKeys: tuple[str, ...] = ('enabled', 'adaptivePolicy', 'failureLearning', 'graphMemory', 'agentJobs', 'hierarchicalAgents', 'adapterParallelTools', 'parallelReadTools', 'reviewLearnedGuidelines')
+numKeys: tuple[str, ...] = ('maxAgentDepth', 'maxWorkbenchToolLoops')
 allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys)
-
-# Numeric bounds — same ranges the React form enforces.
 maxAgentDepthRange = (1, 5)
 maxWorkbenchLoopsRange = (1, 500)
-
-
-# ── snake_case ↔ camelCase mapping (for the on-disk JSON key) ─────────
-
-
-# Each entry: (camel, snake, default, kind).
-# Stored as a tuple of tuples (not dict) to preserve insertion order.
-fieldTable: tuple[tuple[str, str, Any, str], ...] = (
-    ("enabled",                 "enabled",                  DEFAULT_FEATURES.get("enabled", True),                "bool"),
-    ("adaptivePolicy",          "adaptive_policy",          DEFAULT_FEATURES.get("adaptive_policy", True),       "bool"),
-    ("failureLearning",         "failure_learning",         DEFAULT_FEATURES.get("failure_learning", True),      "bool"),
-    ("graphMemory",             "graph_memory",             DEFAULT_FEATURES.get("graph_memory", True),          "bool"),
-    ("agentJobs",               "agent_jobs",               DEFAULT_FEATURES.get("agent_jobs", True),            "bool"),
-    ("hierarchicalAgents",      "hierarchical_agents",      DEFAULT_FEATURES.get("hierarchical_agents", True),   "bool"),
-    ("adapterParallelTools",    "adapter_parallel_tools",   DEFAULT_FEATURES.get("adapter_parallel_tools", True),"bool"),
-    ("parallelReadTools",       "parallel_read_tools",      DEFAULT_FEATURES.get("parallel_read_tools", True),   "bool"),
-    # review_learned_guidelines is NEW in v4.4 — no DEFAULT_FEATURES entry yet.
-    # We default it to True so the existing React form has a meaningful initial value.
-    ("reviewLearnedGuidelines", "review_learned_guidelines", True,                                              "bool"),
-    ("maxAgentDepth",           "max_agent_depth",          DEFAULT_FEATURES.get("max_agent_depth", 4),          "num"),
-    ("maxWorkbenchToolLoops",   "max_workbench_tool_loops", DEFAULT_FEATURES.get("max_workbench_tool_loops", 100),"num"),
-)
-
+fieldTable: tuple[tuple[str, str, Any, str], ...] = (('enabled', 'enabled', DEFAULT_FEATURES.get('enabled', True), 'bool'), ('adaptivePolicy', 'adaptive_policy', DEFAULT_FEATURES.get('adaptive_policy', True), 'bool'), ('failureLearning', 'failure_learning', DEFAULT_FEATURES.get('failure_learning', True), 'bool'), ('graphMemory', 'graph_memory', DEFAULT_FEATURES.get('graph_memory', True), 'bool'), ('agentJobs', 'agent_jobs', DEFAULT_FEATURES.get('agent_jobs', True), 'bool'), ('hierarchicalAgents', 'hierarchical_agents', DEFAULT_FEATURES.get('hierarchical_agents', True), 'bool'), ('adapterParallelTools', 'adapter_parallel_tools', DEFAULT_FEATURES.get('adapter_parallel_tools', True), 'bool'), ('parallelReadTools', 'parallel_read_tools', DEFAULT_FEATURES.get('parallel_read_tools', True), 'bool'), ('reviewLearnedGuidelines', 'review_learned_guidelines', True, 'bool'), ('maxAgentDepth', 'max_agent_depth', DEFAULT_FEATURES.get('max_agent_depth', 4), 'num'), ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', DEFAULT_FEATURES.get('max_workbench_tool_loops', 100), 'num'))
 snakeToCamel: dict[str, str] = {snake: camel for camel, snake, _d, _k in fieldTable}
 camelToSnake: dict[str, str] = {camel: snake for camel, snake, _d, _k in fieldTable}
 fieldKind: dict[str, str] = {camel: kind for camel, _s, _d, kind in fieldTable}
-
-
-# ── Defaults (camelCase, ready for the wire) ──────────────────────────
-
 
 def _defaultsCamel() -> dict[str, Any]:
     """Return the full defaults dict in camelCase (matches ``BrainConfig``)."""
@@ -102,29 +56,22 @@ def _defaultsCamel() -> dict[str, Any]:
         out[camel] = default
     return out
 
-
 def getDefaults() -> dict[str, Any]:
     """Public accessor — returns the camelCase defaults the frontend renders."""
     return _defaultsCamel()
 
-
-# ── Persistence helpers ──────────────────────────────────────────────
-
-
 def _loadPersisted() -> dict[str, Any]:
     """Read ``cfg.brain_orchestrator`` (snake_case) from disk. Always fresh."""
-    cfg = config_service.get_config()
-    val = cfg.get("brain_orchestrator")
+    cfg = configService.get_config()
+    val = cfg.get('brain_orchestrator')
     return val if isinstance(val, dict) else {}
-
 
 def _savePersisted(snakeCfg: dict[str, Any]) -> None:
     """Write snake_case ``cfg.brain_orchestrator`` and refresh the in-memory cache."""
-    cfg = config_service.get_config()
-    cfg["brain_orchestrator"] = snakeCfg
-    config_service.save_config(cfg)
+    cfg = configService.get_config()
+    cfg['brain_orchestrator'] = snakeCfg
+    configService.save_config(cfg)
     settings.reload()
-
 
 def _snakeToCamel(snakeCfg: dict[str, Any]) -> dict[str, Any]:
     """Translate a snake_case persisted dict into the camelCase response shape."""
@@ -132,10 +79,9 @@ def _snakeToCamel(snakeCfg: dict[str, Any]) -> dict[str, Any]:
     for snakeKey, value in snakeCfg.items():
         camelKey = snakeToCamel.get(snakeKey)
         if camelKey is None:
-            continue  # ignore unknown persisted keys (forward-compat)
+            continue
         out[camelKey] = value
     return out
-
 
 def _camelPatchToSnake(patch: dict[str, Any]) -> dict[str, Any]:
     """Translate a camelCase patch (from the React form) into the snake_case
@@ -146,50 +92,34 @@ def _camelPatchToSnake(patch: dict[str, Any]) -> dict[str, Any]:
         out[snakeKey] = value
     return out
 
-
-# ── Validation ────────────────────────────────────────────────────────
-
-
 def validatePatch(patch: Any) -> tuple[bool, str]:
     """Return (ok, error_message). Reject non-dicts, unknown keys, wrong types
     or out-of-range numeric values."""
     if not isinstance(patch, dict):
-        return False, "body must be a JSON object"
-
+        return (False, 'body must be a JSON object')
     for key, value in patch.items():
         if key not in allowedKeys:
-            return False, f"unknown field: {key!r} (expected one of {sorted(allowedKeys)})"
-
+            return (False, f'unknown field: {key!r} (expected one of {sorted(allowedKeys)})')
         kind = fieldKind[key]
-        if kind == "bool":
+        if kind == 'bool':
             if not isinstance(value, bool):
-                return False, f"{key!r} must be a boolean (got {type(value).__name__})"
-        else:  # "num"
+                return (False, f'{key!r} must be a boolean (got {type(value).__name__})')
+        else:
             if isinstance(value, bool) or not isinstance(value, int):
-                # bool is a subclass of int — reject it explicitly so True/False
-                # can't masquerade as 1/0.
-                return False, f"{key!r} must be an integer (got {type(value).__name__})"
-            if key == "maxAgentDepth":
+                return (False, f'{key!r} must be an integer (got {type(value).__name__})')
+            if key == 'maxAgentDepth':
                 lo, hi = maxAgentDepthRange
             else:
                 lo, hi = maxWorkbenchLoopsRange
             if value < lo or value > hi:
-                return False, f"{key!r} must be between {lo} and {hi} (got {value})"
+                return (False, f'{key!r} must be between {lo} and {hi} (got {value})')
+    return (True, '')
 
-    return True, ""
-
-
-# ── Session join (advisory) ──────────────────────────────────────────
-
-
-def _sessionInfo(sessionId: str | None = None) -> dict[str, Any] | None:
+def _sessionInfo(sessionId: str | None=None) -> dict[str, Any] | None:
     """Return ``{id, task}`` for the most-recent workbench session, or ``None``
     when none exist. ``task`` is mapped from ``WorkbenchSession.goal`` because
     the dataclass has no ``task`` field (see workbench.py:41-69)."""
     try:
-        # NB: list_workbench_sessions is an existing snake_case API in
-        # app.services.workbench.workbench — we don't rename it from this
-        # module. Keep the call snake_case at the boundary.
         sessions = workbenchSvc.list_workbench_sessions() or []
     except Exception:
         return None
@@ -198,23 +128,16 @@ def _sessionInfo(sessionId: str | None = None) -> dict[str, Any] | None:
     target: dict[str, Any] | None = None
     if sessionId:
         for s in sessions:
-            if s.get("id") == sessionId:
+            if s.get('id') == sessionId:
                 target = s
                 break
     if target is None:
-        target = sessions[0]  # already newest-first from list_workbench_sessions
+        target = sessions[0]
     if not target:
         return None
-    return {
-        "id": target.get("id", ""),
-        "task": target.get("goal") or None,
-    }
+    return {'id': target.get('id', ''), 'task': target.get('goal') or None}
 
-
-# ── Source resolution ────────────────────────────────────────────────
-
-
-def _resolveSource(*, forceSession: bool = False) -> str:
+def _resolveSource(*, forceSession: bool=False) -> str:
     """Return the ``source`` tag for the current settings view.
 
     * ``forceSession=True`` is set by ``/config/from-session`` — the
@@ -226,18 +149,14 @@ def _resolveSource(*, forceSession: bool = False) -> str:
       "Defaults pulled from your last chat session" still shows).
     """
     if forceSession:
-        return "session"
+        return 'session'
     if _loadPersisted():
-        return "persisted"
+        return 'persisted'
     if _sessionInfo() is not None:
-        return "session"
-    return "fallback"
+        return 'session'
+    return 'fallback'
 
-
-# ── Public API ────────────────────────────────────────────────────────
-
-
-def getBrainConfigForSettings(*, sessionId: str | None = None) -> dict[str, Any]:
+def getBrainConfigForSettings(*, sessionId: str | None=None) -> dict[str, Any]:
     """Shape returned to the React ``useQuery(['brain-config'])`` call.
 
     Always includes the full default set so the UI can render a meaningful
@@ -246,54 +165,30 @@ def getBrainConfigForSettings(*, sessionId: str | None = None) -> dict[str, Any]
     persistedSnake = _loadPersisted()
     source = _resolveSource()
     sess = _sessionInfo(sessionId)
-
-    return {
-        "source": source,
-        "config": _snakeToCamel(persistedSnake),
-        "defaults": _defaultsCamel(),
-        "sessionId": sess["id"] if sess else None,
-        "session": sess,
-    }
-
+    return {'source': source, 'config': _snakeToCamel(persistedSnake), 'defaults': _defaultsCamel(), 'sessionId': sess['id'] if sess else None, 'session': sess}
 
 def saveBrainConfig(patch: dict[str, Any]) -> tuple[bool, str, dict[str, Any]]:
     """Apply a partial camelCase patch. Returns (ok, error_message, merged)."""
     ok, err = validatePatch(patch)
     if not ok:
-        return False, err, _snakeToCamel(_loadPersisted())
-
+        return (False, err, _snakeToCamel(_loadPersisted()))
     currentSnake = _loadPersisted()
     before = dict(currentSnake)
     snakePatch = _camelPatchToSnake(patch)
     mergedSnake = {**currentSnake, **snakePatch}
-
     _savePersisted(mergedSnake)
-    record_config_audit(
-        "brain",
-        "update",
-        "user",
-        before=before,
-        after=dict(mergedSnake),
-    )
-    return True, "", _snakeToCamel(mergedSnake)
-
+    recordConfigAudit('brain', 'update', 'user', before=before, after=dict(mergedSnake))
+    return (True, '', _snakeToCamel(mergedSnake))
 
 def resetBrainConfig() -> tuple[bool, dict[str, Any]]:
     """Drop the persisted override entirely. Returns (ok, defaults_camel)."""
     before = _loadPersisted()
-    cfg = config_service.get_config()
-    cfg.pop("brain_orchestrator", None)
-    config_service.save_config(cfg)
+    cfg = configService.get_config()
+    cfg.pop('brain_orchestrator', None)
+    configService.save_config(cfg)
     settings.reload()
-    record_config_audit(
-        "brain",
-        "reset",
-        "user",
-        before=before,
-        after={},
-    )
-    return True, _defaultsCamel()
-
+    recordConfigAudit('brain', 'reset', 'user', before=before, after={})
+    return (True, _defaultsCamel())
 
 def getBrainConfigFromSession(sessionId: str) -> dict[str, Any]:
     """Return the brain config tagged ``source='session'`` for the requested
@@ -301,15 +196,6 @@ def getBrainConfigFromSession(sessionId: str) -> dict[str, Any]:
     unknown (matches the lenient lookup in :func:`_sessionInfo`)."""
     sess = _sessionInfo(sessionId) or _sessionInfo()
     if not sess:
-        # No session at all — surface the fallback shape so the React form
-        # still has data to render.
         return getBrainConfigForSettings()
-
     persistedSnake = _loadPersisted()
-    return {
-        "source": "session",
-        "config": _snakeToCamel(persistedSnake),
-        "defaults": _defaultsCamel(),
-        "sessionId": sess["id"],
-        "session": sess,
-    }
+    return {'source': 'session', 'config': _snakeToCamel(persistedSnake), 'defaults': _defaultsCamel(), 'sessionId': sess['id'], 'session': sess}

@@ -4,20 +4,15 @@ Replaces chat-event-log.js.
 
 Pattern: in-memory ring buffer + JSONL file + asyncio.Queue fan-out.
 """
-
 from __future__ import annotations
-
 import asyncio
 import json
 import time
 from collections import deque
 from pathlib import Path
 from typing import Any, AsyncIterator
-
-from app.lib.paths import data_path
-
+from app.lib.paths import dataPath
 MAX_IN_MEMORY = 2000
-
 
 class EventLog:
     """Per-session append-only event log with SSE fan-out."""
@@ -25,22 +20,14 @@ class EventLog:
     def __init__(self) -> None:
         self._sessions: dict[str, _SessionLog] = {}
 
-    def append(self, session_id: str, event_type: str, payload: dict[str, Any] | None = None) -> int:
-        entry = self._get_or_create(session_id)
+    def append(self, sessionId: str, eventType: str, payload: dict[str, Any] | None=None) -> int:
+        entry = self._getOrCreate(sessionId)
         seq = entry.next_seq
         entry.next_seq += 1
-
-        event = {
-            "seq": seq,
-            "type": event_type,
-            "payload": payload or {},
-            "at": int(time.time() * 1000),
-        }
+        event = {'seq': seq, 'type': eventType, 'payload': payload or {}, 'at': int(time.time() * 1000)}
         entry.events.append(event)
         if len(entry.events) > MAX_IN_MEMORY:
             entry.events.popleft()
-
-        # Fan-out to all subscribers
         dead: list[asyncio.Queue] = []
         for q in entry.subscribers:
             try:
@@ -49,56 +36,43 @@ class EventLog:
                 dead.append(q)
         for q in dead:
             entry.subscribers.remove(q)
-
         return seq
 
-    async def subscribe(self, session_id: str, since_seq: int = 0) -> AsyncIterator[dict[str, Any]]:
+    async def subscribe(self, sessionId: str, sinceSeq: int=0) -> AsyncIterator[dict[str, Any]]:
         """Yield events for a session, starting from since_seq."""
-        entry = self._get_or_create(session_id)
+        entry = self._getOrCreate(sessionId)
         q: asyncio.Queue = asyncio.Queue()
-
-        # Register the queue BEFORE replaying past events. Otherwise an
-        # event appended while we are suspended at a replay `yield` lands
-        # in entry.events but is absent from both the already-materialised
-        # snapshot and the not-yet-registered queue — silently dropped.
         entry.subscribers.add(q)
         try:
             replayed: set[int] = set()
             for ev in list(entry.events):
-                if ev["seq"] > since_seq:
-                    replayed.add(ev["seq"])
+                if ev['seq'] > sinceSeq:
+                    replayed.add(ev['seq'])
                     yield ev
-
-            # Drain anything appended concurrently during replay (present
-            # in q, and possibly also in the snapshot above) without
-            # duplicating or re-delivering events the caller already saw.
             while not q.empty():
                 ev = q.get_nowait()
-                if ev["seq"] in replayed or ev["seq"] <= since_seq:
+                if ev['seq'] in replayed or ev['seq'] <= sinceSeq:
                     continue
-                replayed.add(ev["seq"])
+                replayed.add(ev['seq'])
                 yield ev
-
             while True:
                 try:
                     ev = await asyncio.wait_for(q.get(), timeout=30.0)
                     yield ev
                 except asyncio.TimeoutError:
-                    yield {"type": "keepalive", "seq": 0, "payload": {}}
+                    yield {'type': 'keepalive', 'seq': 0, 'payload': {}}
         finally:
             entry.subscribers.discard(q)
 
-    def _get_or_create(self, session_id: str) -> _SessionLog:
-        if session_id not in self._sessions:
-            self._sessions[session_id] = _SessionLog()
-        return self._sessions[session_id]
-
+    def _getOrCreate(self, sessionId: str) -> _SessionLog:
+        if sessionId not in self._sessions:
+            self._sessions[sessionId] = _SessionLog()
+        return self._sessions[sessionId]
 
 class _SessionLog:
+
     def __init__(self) -> None:
-        self.next_seq: int = 1
+        self.nextSeq: int = 1
         self.events: deque[dict] = deque(maxlen=MAX_IN_MEMORY)
         self.subscribers: set[asyncio.Queue] = set()
-
-
-event_log = EventLog()
+eventLog = EventLog()
