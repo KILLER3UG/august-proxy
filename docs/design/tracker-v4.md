@@ -31,6 +31,7 @@
 | 14 | August Live — frontend surface (orb/captions/tool rail) | ✅ done & verified | | `/live` full-window route, animated orb, rolling captions, tool rail, approval cards co-located, controls (mute/end/PTT/continuous/handoff), barge-in via partial→TTS cancel. Audio flow wired through `liveClient`. |
 | 14 | August Live — command-exec safety (guard mode parity) | ☐ | | verify guard mode inherited |
 | 14 | August Live — **mandatory security review** (gate) | ☐ | | hard gate before Live ships |
+| 10 | Model Fleet UI (4 cognitive roles → models) | ✅ done & verified | | `v4.1.0-fleet` — `GET/PUT /api/config/model-fleet` + `ModelFleetTab` subtab in `WorkspaceModelsSection`. Pickers for cortex/cerebellum/hippocampus/prefrontal. |
 
 Status legend: ☐ not started · ◐ in progress · ✅ done & verified · ⚠ blocked
 
