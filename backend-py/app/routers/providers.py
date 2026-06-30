@@ -2,26 +2,20 @@
 Provider configuration management API routes.
 Uses camelCase throughout matching the frontend convention.
 """
-
 from __future__ import annotations
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-
 from app.providers import registry, resolver
-from app.services import config_service
-from app.services import model_service
-
-router = APIRouter(prefix="/api/providers")
-
+from app.services import configService
+from app.services import modelService
+router = APIRouter(prefix='/api/providers')
 
 class ProviderCreate(BaseModel):
     name: str
-    baseUrl: str = ""
-    apiFormat: str = "openai-chat"
-    apiKey: str = ""
+    baseUrl: str = ''
+    apiFormat: str = 'openai-chat'
+    apiKey: str = ''
     enabled: bool = True
-
 
 class ProviderUpdate(BaseModel):
     name: str | None = None
@@ -30,7 +24,6 @@ class ProviderUpdate(BaseModel):
     apiKey: str | None = None
     enabled: bool | None = None
 
-
 class ModelCreate(BaseModel):
     id: str
     name: str | None = None
@@ -38,152 +31,124 @@ class ModelCreate(BaseModel):
     reasoning: bool | None = None
     free: bool | None = None
 
-
 class ModelUpdate(BaseModel):
     name: str | None = None
     contextWindow: int | None = None
     reasoning: bool | None = None
     free: bool | None = None
 
-
-@router.get("")
+@router.get('')
 async def listProviders():
-    store = config_service.get_providers_store()
-    raw = store.get("providers", [])
+    store = configService.get_providers_store()
+    raw = store.get('providers', [])
     result = []
     for p in raw:
-        result.append({
-            "id": p.get("id", ""),
-            "name": p.get("name", ""),
-            "baseUrl": p.get("baseUrl", ""),
-            "apiFormat": p.get("apiFormat", ""),
-            "enabled": p.get("enabled", False),
-            "apiKeySet": bool(p.get("apiKey")),
-            "autoFetch": p.get("autoFetch", False),
-            "models": p.get("models", []),
-        })
+        result.append({'id': p.get('id', ''), 'name': p.get('name', ''), 'baseUrl': p.get('baseUrl', ''), 'apiFormat': p.get('apiFormat', ''), 'enabled': p.get('enabled', False), 'apiKeySet': bool(p.get('apiKey')), 'autoFetch': p.get('autoFetch', False), 'models': p.get('models', [])})
     return result
 
-
-@router.post("")
+@router.post('')
 async def createProvider(body: ProviderCreate):
     import hashlib, time
-    store = config_service.get_providers_store()
-    if "providers" not in store:
-        store["providers"] = []
-    slug = body.name.lower().replace(" ", "-")[:40]
+    store = configService.get_providers_store()
+    if 'providers' not in store:
+        store['providers'] = []
+    slug = body.name.lower().replace(' ', '-')[:40]
     rand = hashlib.md5(str(time.time()).encode()).hexdigest()[:6]
-    providerId = f"{slug}-{rand}"
-    entry = {
-        "id": providerId,
-        "name": body.name,
-        "baseUrl": body.baseUrl,
-        "apiFormat": body.apiFormat,
-        "apiKey": body.apiKey,
-        "enabled": body.enabled,
-        "autoFetch": False,
-        "models": [],
-    }
-    store["providers"].append(entry)
-    config_service.save_providers_store(store)
-    model_service.invalidate_cache()
-    return {**entry, "apiKeySet": bool(body.apiKey)}
+    providerId = f'{slug}-{rand}'
+    entry = {'id': providerId, 'name': body.name, 'baseUrl': body.baseUrl, 'apiFormat': body.apiFormat, 'apiKey': body.apiKey, 'enabled': body.enabled, 'autoFetch': False, 'models': []}
+    store['providers'].append(entry)
+    configService.save_providers_store(store)
+    modelService.invalidate_cache()
+    return {**entry, 'apiKeySet': bool(body.apiKey)}
 
-
-@router.get("/{providerId}")
+@router.get('/{providerId}')
 async def getProvider(providerId: str):
-    store = config_service.get_providers_store()
-    for p in store.get("providers", []):
-        if p.get("id") == providerId:
-            return {**p, "apiKeySet": bool(p.get("apiKey"))}
-    raise HTTPException(status_code=404, detail="Provider not found")
+    store = configService.get_providers_store()
+    for p in store.get('providers', []):
+        if p.get('id') == providerId:
+            return {**p, 'apiKeySet': bool(p.get('apiKey'))}
+    raise HTTPException(status_code=404, detail='Provider not found')
 
-
-@router.put("/{providerId}")
+@router.put('/{providerId}')
 async def updateProvider(providerId: str, body: ProviderUpdate):
-    store = config_service.get_providers_store()
-    for p in store.get("providers", []):
-        if p.get("id") == providerId:
+    store = configService.get_providers_store()
+    for p in store.get('providers', []):
+        if p.get('id') == providerId:
             if body.name is not None:
-                p["name"] = body.name
+                p['name'] = body.name
             if body.baseUrl is not None:
-                p["baseUrl"] = body.baseUrl
+                p['baseUrl'] = body.baseUrl
             if body.apiFormat is not None:
-                p["apiFormat"] = body.apiFormat
+                p['apiFormat'] = body.apiFormat
             if body.apiKey is not None:
-                p["apiKey"] = body.apiKey
+                p['apiKey'] = body.apiKey
             if body.enabled is not None:
-                p["enabled"] = body.enabled
-            config_service.save_providers_store(store)
-            model_service.invalidate_cache()
-            return {**p, "apiKeySet": bool(p.get("apiKey"))}
-    raise HTTPException(status_code=404, detail="Provider not found")
+                p['enabled'] = body.enabled
+            configService.save_providers_store(store)
+            modelService.invalidate_cache()
+            return {**p, 'apiKeySet': bool(p.get('apiKey'))}
+    raise HTTPException(status_code=404, detail='Provider not found')
 
-
-@router.patch("/{providerId}")
+@router.patch('/{providerId}')
 async def patchProvider(providerId: str, body: ProviderUpdate):
     return await updateProvider(providerId, body)
 
-
-@router.delete("/{providerId}")
+@router.delete('/{providerId}')
 async def deleteProvider(providerId: str):
-    store = config_service.get_providers_store()
-    before = len(store.get("providers", []))
-    store["providers"] = [p for p in store.get("providers", []) if p.get("id") != providerId]
-    if len(store["providers"]) == before:
-        raise HTTPException(status_code=404, detail="Provider not found")
-    config_service.save_providers_store(store)
-    model_service.invalidate_cache()
-    return {"deleted": True}
+    store = configService.get_providers_store()
+    before = len(store.get('providers', []))
+    store['providers'] = [p for p in store.get('providers', []) if p.get('id') != providerId]
+    if len(store['providers']) == before:
+        raise HTTPException(status_code=404, detail='Provider not found')
+    configService.save_providers_store(store)
+    modelService.invalidate_cache()
+    return {'deleted': True}
 
-
-@router.post("/{providerId}/models/refresh")
+@router.post('/{providerId}/models/refresh')
 async def refreshModels(providerId: str):
     """Fetch live models from a provider's /models endpoint.
 
     Returns added/updated/removed model ID arrays for the frontend.
     """
-    store = config_service.get_providers_store()
-    for p in store.get("providers", []):
-        if p.get("id") != providerId:
+    store = configService.get_providers_store()
+    for p in store.get('providers', []):
+        if p.get('id') != providerId:
             continue
-        currentModels = p.get("models", [])
-        currentIds = {m["id"] for m in currentModels if isinstance(m, dict) and m.get("id")}
+        currentModels = p.get('models', [])
+        currentIds = {m['id'] for m in currentModels if isinstance(m, dict) and m.get('id')}
         liveModels: list[str] = []
-        baseUrl = p.get("baseUrl", "")
-        apiKey = p.get("apiKey", "")
+        baseUrl = p.get('baseUrl', '')
+        apiKey = p.get('apiKey', '')
         if baseUrl and apiKey:
             try:
                 import httpx
-                base = baseUrl.rstrip("/")
-                # Try /v1/models first, then /models
+                base = baseUrl.rstrip('/')
                 candidates: list[str] = []
-                if base.endswith("/chat/completions"):
-                    candidates.append(base.replace("/chat/completions", "/v1/models"))
-                    candidates.append(base.replace("/chat/completions", "/models"))
-                elif base.endswith("/v1"):
-                    candidates.append(base + "/models")
-                    candidates.append(base.replace("/v1", "") + "/models")
+                if base.endswith('/chat/completions'):
+                    candidates.append(base.replace('/chat/completions', '/v1/models'))
+                    candidates.append(base.replace('/chat/completions', '/models'))
+                elif base.endswith('/v1'):
+                    candidates.append(base + '/models')
+                    candidates.append(base.replace('/v1', '') + '/models')
                 else:
-                    candidates.append(base + "/v1/models")
-                    candidates.append(base + "/models")
-
+                    candidates.append(base + '/v1/models')
+                    candidates.append(base + '/models')
                 async with httpx.AsyncClient(timeout=5) as client:
                     for url in candidates:
                         try:
-                            resp = await client.get(url, headers={"Authorization": f"Bearer {apiKey}"})
+                            resp = await client.get(url, headers={'Authorization': f'Bearer {apiKey}'})
                             if resp.status_code == 200:
                                 data = resp.json()
-                                raw = data.get("data", data.get("models", data if isinstance(data, list) else []))
+                                raw = data.get('data', data.get('models', data if isinstance(data, list) else []))
                                 if isinstance(raw, list):
-                                    liveModels = [m["id"] for m in raw if isinstance(m, dict) and m.get("id")]
+                                    liveModels = [m['id'] for m in raw if isinstance(m, dict) and m.get('id')]
                                 break
                         except Exception:
                             continue
                         data = resp.json()
-                        raw = data.get("data", data.get("models", data if isinstance(data, list) else []))
+                        raw = data.get('data', data.get('models', data if isinstance(data, list) else []))
                         if isinstance(raw, list):
-                            liveModels = [m["id"] for m in raw if isinstance(m, dict) and m.get("id")]
+                            liveModels = [m['id'] for m in raw if isinstance(m, dict) and m.get('id')]
             except Exception:
                 pass
         liveIds = set(liveModels)
@@ -192,76 +157,64 @@ async def refreshModels(providerId: str):
         updated = sorted(currentIds & liveIds)
         for mid in liveModels:
             if mid not in currentIds:
-                currentModels.append({"id": mid, "name": mid, "contextWindow": 128000, "reasoning": False, "free": ":free" in mid or "-free" in mid, "source": "fetched"})
-        p["models"] = currentModels
-        config_service.save_providers_store(store)
-        model_service.invalidate_cache()
-        return {"added": added, "updated": updated, "removed": removed}
-    raise HTTPException(status_code=404, detail="Provider not found")
+                currentModels.append({'id': mid, 'name': mid, 'contextWindow': 128000, 'reasoning': False, 'free': ':free' in mid or '-free' in mid, 'source': 'fetched'})
+        p['models'] = currentModels
+        configService.save_providers_store(store)
+        modelService.invalidate_cache()
+        return {'added': added, 'updated': updated, 'removed': removed}
+    raise HTTPException(status_code=404, detail='Provider not found')
 
-
-@router.get("/health")
+@router.get('/health')
 async def providersHealth():
-    return {"status": "ok"}
+    return {'status': 'ok'}
 
-
-@router.post("/{providerId}/models")
+@router.post('/{providerId}/models')
 async def addModel(providerId: str, body: ModelCreate):
-    store = config_service.get_providers_store()
-    for p in store.get("providers", []):
-        if p.get("id") == providerId:
-            models = p.setdefault("models", [])
-            models.append({
-                "id": body.id,
-                "name": body.name or body.id,
-                "contextWindow": body.contextWindow or 128000,
-                "reasoning": body.reasoning or False,
-                "free": body.free or False,
-                "source": "manual",
-            })
-            config_service.save_providers_store(store)
-            model_service.invalidate_cache()
-            return {**p, "apiKeySet": bool(p.get("apiKey"))}
-    raise HTTPException(status_code=404, detail="Provider not found")
+    store = configService.get_providers_store()
+    for p in store.get('providers', []):
+        if p.get('id') == providerId:
+            models = p.setdefault('models', [])
+            models.append({'id': body.id, 'name': body.name or body.id, 'contextWindow': body.contextWindow or 128000, 'reasoning': body.reasoning or False, 'free': body.free or False, 'source': 'manual'})
+            configService.save_providers_store(store)
+            modelService.invalidate_cache()
+            return {**p, 'apiKeySet': bool(p.get('apiKey'))}
+    raise HTTPException(status_code=404, detail='Provider not found')
 
-
-@router.patch("/{providerId}/models/{modelId}")
+@router.patch('/{providerId}/models/{modelId}')
 async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
-    store = config_service.get_providers_store()
-    for p in store.get("providers", []):
-        if p.get("id") == providerId:
-            for m in p.get("models", []):
-                if m.get("id") == modelId:
+    store = configService.get_providers_store()
+    for p in store.get('providers', []):
+        if p.get('id') == providerId:
+            for m in p.get('models', []):
+                if m.get('id') == modelId:
                     if body.name is not None:
-                        m["name"] = body.name
+                        m['name'] = body.name
                     if body.contextWindow is not None:
-                        m["contextWindow"] = body.contextWindow
+                        m['contextWindow'] = body.contextWindow
                     if body.reasoning is not None:
-                        m["reasoning"] = body.reasoning
+                        m['reasoning'] = body.reasoning
                     if body.free is not None:
-                        m["free"] = body.free
-                    config_service.save_providers_store(store)
-                    model_service.invalidate_cache()
-                    return {"updated": True}
-            raise HTTPException(status_code=404, detail="Model not found")
-    raise HTTPException(status_code=404, detail="Provider not found")
+                        m['free'] = body.free
+                    configService.save_providers_store(store)
+                    modelService.invalidate_cache()
+                    return {'updated': True}
+            raise HTTPException(status_code=404, detail='Model not found')
+    raise HTTPException(status_code=404, detail='Provider not found')
 
-
-@router.delete("/{providerId}/models/{modelId}")
+@router.delete('/{providerId}/models/{modelId}')
 async def deleteModel(providerId: str, modelId: str):
-    store = config_service.get_providers_store()
-    for p in store.get("providers", []):
-        if p.get("id") == providerId:
-            before = len(p.get("models", []))
-            p["models"] = [m for m in p.get("models", []) if m.get("id") != modelId]
-            if len(p["models"]) == before:
-                raise HTTPException(status_code=404, detail="Model not found")
-            config_service.save_providers_store(store)
-            model_service.invalidate_cache()
-            return {"deleted": True}
-    raise HTTPException(status_code=404, detail="Provider not found")
+    store = configService.get_providers_store()
+    for p in store.get('providers', []):
+        if p.get('id') == providerId:
+            before = len(p.get('models', []))
+            p['models'] = [m for m in p.get('models', []) if m.get('id') != modelId]
+            if len(p['models']) == before:
+                raise HTTPException(status_code=404, detail='Model not found')
+            configService.save_providers_store(store)
+            modelService.invalidate_cache()
+            return {'deleted': True}
+    raise HTTPException(status_code=404, detail='Provider not found')
 
-
-@router.post("/{providerId}/models/{modelId}/test")
+@router.post('/{providerId}/models/{modelId}/test')
 async def testModel(providerId: str, modelId: str):
-    return {"success": True, "latencyMs": 0, "content": "WORKING"}
+    return {'success': True, 'latencyMs': 0, 'content': 'WORKING'}

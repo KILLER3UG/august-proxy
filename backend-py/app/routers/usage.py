@@ -14,40 +14,27 @@ which the frontend never called (it requests ``/api/usage/session?id=``) and
 which collided with the literal ``/session`` segment. The literal route is
 declared first so FastAPI cannot shadow it.
 """
-
 from __future__ import annotations
-
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-
-from app.services import memory_store
-
-router = APIRouter(prefix="/api/usage")
-
+from app.services import memoryStore
+router = APIRouter(prefix='/api/usage')
 
 class UsageRecord(BaseModel):
-    session_id: str
+    sessionId: str
     model: str
-    input_tokens: int = 0
-    output_tokens: int = 0
-    context_tokens: int = 0
+    inputTokens: int = 0
+    outputTokens: int = 0
+    contextTokens: int = 0
 
-
-@router.post("")
-async def record_usage(body: UsageRecord):
+@router.post('')
+async def recordUsage(body: UsageRecord):
     """Record a usage event."""
-    usage_id = memory_store.record_usage(
-        body.session_id,
-        body.model,
-        body.input_tokens,
-        body.output_tokens,
-        body.context_tokens,
-    )
-    return {"id": usage_id}
+    usageId = memoryStore.record_usage(body.session_id, body.model, body.input_tokens, body.output_tokens, body.context_tokens)
+    return {'id': usageId}
 
-
-@router.get("/session")
-async def get_session_usage(id: str = Query(..., description="Session id")):
+@router.get('/session')
+async def getSessionUsage(id: str=Query(..., description='Session id')):
     """Get aggregated usage for a session.
 
     Returns the full ``SessionUsage`` shape the frontend expects, including
@@ -55,11 +42,10 @@ async def get_session_usage(id: str = Query(..., description="Session id")):
     recent provider request (the true current context fill, counted once).
     """
     if not id:
-        raise HTTPException(status_code=400, detail="Missing session id")
-    return memory_store.get_usage(id)
+        raise HTTPException(status_code=400, detail='Missing session id')
+    return memoryStore.get_usage(id)
 
-
-@router.get("")
-async def list_usage():
+@router.get('')
+async def listUsage():
     """List all usage events (stub)."""
-    return {"usage": [], "message": "Full usage listing requires phase 7 implementation"}
+    return {'usage': [], 'message': 'Full usage listing requires phase 7 implementation'}

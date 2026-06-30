@@ -4,16 +4,12 @@ External calendar events are fetched via MCP tools on the frontend side.
 
 Spec: docs/superpowers/specs/2026-06-30-voice-subagent-provider-overhaul-design.md
 """
-
 from __future__ import annotations
-
 from fastapi import APIRouter
+router = APIRouter(prefix='/api/calendar')
 
-router = APIRouter(prefix="/api/calendar")
-
-
-@router.get("/internal")
-async def list_internal_events():
+@router.get('/internal')
+async def listInternalEvents():
     """Return August internal events (tasks, reminders, scheduled chats).
 
     Currently returns an empty list because no event/reminder store exists yet.
@@ -28,4 +24,4 @@ async def list_internal_events():
       source: 'internal'
     }
     """
-    return {"events": []}
+    return {'events': []}

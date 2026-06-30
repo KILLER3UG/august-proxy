@@ -1,119 +1,82 @@
 """
 Configuration API routes.
 """
-
 from __future__ import annotations
-
 from typing import Any
-
 from fastapi import APIRouter
 from pydantic import BaseModel
-
-from app.providers import resolver as provider_resolver
+from app.providers import resolver as providerResolver
 from app.lib import secrets
-from app.services import config_service
+from app.services import configService
+router = APIRouter(prefix='/api/config')
 
-router = APIRouter(prefix="/api/config")
-
-
-@router.get("/activeProvider")
-async def active_provider():
+@router.get('/activeProvider')
+async def activeProvider():
     """Get active provider and list all available providers.
 
     Only returns providers that have API keys configured —
     either built-in providers with keys in config.json/env vars,
     or custom providers from providers.json.
     """
-    cfg = config_service.get_config()
-    active = cfg.get("activeProvider")
-
+    cfg = configService.get_config()
+    active = cfg.get('activeProvider')
     providers = []
-
-    # Built-in providers that have API keys configured
-    for p in provider_resolver.list_available():
-        api_key = cfg.get(p["name"], {}).get("apiKey", "")
-        if not api_key:
-            from app.providers.clients import get_client
-            client = get_client(p)
+    for p in providerResolver.list_available():
+        apiKey = cfg.get(p['name'], {}).get('apiKey', '')
+        if not apiKey:
+            from app.providers.clients import getClient
+            client = getClient(p)
             if client:
-                api_key = client.resolve_api_key() or ""
-        if api_key:
-            providers.append({
-                "id": p["name"],
-                "name": p["name"],
-                "apiMode": p.get("api_mode", ""),
-                "isAvailable": True,
-                "redactedKey": secrets.mask(api_key),
-            })
-
-    # Custom providers from providers.json (user-added via Settings UI)
-    store = config_service.get_providers_store()
-    for entry in store.get("providers", []):
-        name = entry.get("name", "")
-        if not name or any(p["id"] == name for p in providers):
+                apiKey = client.resolve_api_key() or ''
+        if apiKey:
+            providers.append({'id': p['name'], 'name': p['name'], 'apiMode': p.get('api_mode', ''), 'isAvailable': True, 'redactedKey': secrets.mask(apiKey)})
+    store = configService.get_providers_store()
+    for entry in store.get('providers', []):
+        name = entry.get('name', '')
+        if not name or any((p['id'] == name for p in providers)):
             continue
-        api_key = entry.get("apiKey", "")
-        if api_key:
-            providers.append({
-                "id": name,
-                "name": name,
-                "apiMode": entry.get("apiFormat", "openai-chat"),
-                "isAvailable": True,
-                "redactedKey": secrets.mask(api_key),
-            })
+        apiKey = entry.get('apiKey', '')
+        if apiKey:
+            providers.append({'id': name, 'name': name, 'apiMode': entry.get('apiFormat', 'openai-chat'), 'isAvailable': True, 'redactedKey': secrets.mask(apiKey)})
+    return {'activeProvider': active, 'providers': providers}
 
-    return {"activeProvider": active, "providers": providers}
-
-
-@router.get("/safe")
-async def config_safe():
+@router.get('/safe')
+async def configSafe():
     """Get full config (safe endpoint — returns everything the UI needs).
 
     Used by the frontend to read the active provider and its model settings.
     Returns the full config dict from config.json.
     """
-    from app.lib.paths import data_path
+    from app.lib.paths import dataPath
     import json
-
-    cfg_path = data_path("config.json")
-    cfg = json.loads(cfg_path.read_text("utf-8")) if cfg_path.exists() else {}
+    cfgPath = dataPath('config.json')
+    cfg = json.loads(cfgPath.read_text('utf-8')) if cfgPath.exists() else {}
     return cfg
 
-
-# ── Model aliases (frontend: getUserModelAliases) ────────────────────
-
-
-@router.get("/model-aliases")
-async def get_model_aliases():
+@router.get('/model-aliases')
+async def getModelAliases():
     """Return all model-alias entries for the UI's Aliases tab."""
-    from app.services import alias_service
-    return {"aliases": alias_service.list_aliases()}
-
+    from app.services import aliasService
+    return {'aliases': aliasService.list_aliases()}
 
 class ModelAliasesBulk(BaseModel):
     aliases: list[dict[str, Any]]
 
-
-@router.put("/model-aliases")
-async def put_model_aliases(body: ModelAliasesBulk):
+@router.put('/model-aliases')
+async def putModelAliases(body: ModelAliasesBulk):
     """Replace the entire alias list (validated)."""
-    from app.services import alias_service
+    from app.services import aliasService
     try:
-        return {"aliases": alias_service.replace_aliases(body.aliases, actor="ui")}
+        return {'aliases': aliasService.replace_aliases(body.aliases, actor='ui')}
     except ValueError as exc:
         from fastapi import HTTPException
-        raise HTTPException(400, detail={"code": "validation", "message": str(exc)})
+        raise HTTPException(400, detail={'code': 'validation', 'message': str(exc)})
 
-
-# ── Sub-agent fallback (frontend: getSubAgentFallback) ───────────────
-
-
-@router.get("/subagent-fallback")
-async def get_subagent_fallback():
+@router.get('/subagent-fallback')
+async def getSubagentFallback():
     """Return the current sub-agent fallback configuration."""
-    from app.services import fallback_service
-    return fallback_service.get_fallback()
-
+    from app.services import fallbackService
+    return fallbackService.get_fallback()
 
 class FallbackUpdate(BaseModel):
     enabled: bool | None = None
@@ -121,34 +84,24 @@ class FallbackUpdate(BaseModel):
     provider: str | None = None
     model: str | None = None
 
-
-@router.put("/subagent-fallback")
-async def put_subagent_fallback(body: FallbackUpdate):
+@router.put('/subagent-fallback')
+async def putSubagentFallback(body: FallbackUpdate):
     """Update sub-agent fallback fields (partial)."""
-    from app.services import fallback_service
+    from app.services import fallbackService
     try:
-        return fallback_service.configure_fallback(
-            enabled=body.enabled,
-            mode=body.mode,
-            provider=body.provider,
-            model=body.model,
-            actor="ui",
-        )
+        return fallbackService.configure_fallback(enabled=body.enabled, mode=body.mode, provider=body.provider, model=body.model, actor='ui')
     except ValueError as exc:
         from fastapi import HTTPException
-        raise HTTPException(400, detail={"code": "validation", "message": str(exc)})
-
+        raise HTTPException(400, detail={'code': 'validation', 'message': str(exc)})
 
 class FallbackTest(BaseModel):
     model: str
 
-
-@router.post("/subagent-fallback/test")
-async def test_subagent_fallback(body: FallbackTest):
+@router.post('/subagent-fallback/test')
+async def testSubagentFallback(body: FallbackTest):
     """Probe resolution of a model id without saving."""
-    from app.services import fallback_service
-    return fallback_service.test_fallback(body.model)
-
+    from app.services import fallbackService
+    return fallbackService.test_fallback(body.model)
 
 class BackgroundReviewUpdate(BaseModel):
     enabled: bool | None = None
@@ -156,41 +109,26 @@ class BackgroundReviewUpdate(BaseModel):
     reflectionModel: str | None = None
     autoMemoryModel: str | None = None
 
-
-@router.get("/background-review")
-async def get_background_review():
+@router.get('/background-review')
+async def getBackgroundReview():
     """Return the current background review config."""
-    from app.services import background_review_service
+    from app.services import backgroundReviewService
+    return backgroundReviewService.get_config()
 
-    return background_review_service.get_config()
-
-
-@router.put("/background-review")
-async def put_background_review(body: BackgroundReviewUpdate):
+@router.put('/background-review')
+async def putBackgroundReview(body: BackgroundReviewUpdate):
     """Update background review config fields (partial)."""
-    from app.services import background_review_service
+    from app.services import backgroundReviewService
+    return backgroundReviewService.save_config(enabled=body.enabled, review_model=body.reviewModel, reflection_model=body.reflectionModel, auto_memory_model=body.autoMemoryModel, actor='ui')
 
-    return background_review_service.save_config(
-        enabled=body.enabled,
-        review_model=body.reviewModel,
-        reflection_model=body.reflectionModel,
-        auto_memory_model=body.autoMemoryModel,
-        actor="ui",
-    )
-
-
-# ── Model Fleet (v4.1) — maps cognitive roles to models ──────────────────
-
-
-@router.get("/model-fleet")
-async def get_model_fleet():
+@router.get('/model-fleet')
+async def getModelFleet():
     """v4.1: Return the merged fleet (defaults + user overrides) — see §10."""
-    from app.services import model_fleet_service
-    return model_fleet_service.get_fleet()
+    from app.services import modelFleetService
+    return modelFleetService.get_fleet()
 
-
-@router.put("/model-fleet")
-async def put_model_fleet(body: dict[str, Any]):
+@router.put('/model-fleet')
+async def putModelFleet(body: dict[str, Any]):
     """v4.1: Update model fleet config (partial).
 
     Body is a JSON object of any subset of {cortex, cerebellum, hippocampus,
@@ -203,30 +141,24 @@ async def put_model_fleet(body: dict[str, Any]):
     would 422 with a generic shape error).
     """
     from fastapi import HTTPException
-    from app.services import model_fleet_service
-
-    ok, err, fleet = model_fleet_service.update_fleet(body)
+    from app.services import modelFleetService
+    ok, err, fleet = modelFleetService.update_fleet(body)
     if not ok:
-        raise HTTPException(status_code=400, detail={"code": "validation", "message": err})
+        raise HTTPException(status_code=400, detail={'code': 'validation', 'message': err})
     return fleet
 
-
-# ── Live (STT/TTS) config (v4.2) — parallel to model-fleet ──────────────
-
-
-@router.get("/live")
-async def get_live_config():
+@router.get('/live')
+async def getLiveConfig():
     """v4.2: Return the Live config (defaults + user overrides) — see §14.
 
     An empty `sttProvider`/`ttsProvider` means "use the browser default"
     (Web Speech API). Setting a provider upgrades to a paid service.
     """
-    from app.services import live_config_service
-    return live_config_service.get_live_config()
+    from app.services import liveConfigService
+    return liveConfigService.get_live_config()
 
-
-@router.put("/live")
-async def put_live_config(body: dict[str, Any]):
+@router.put('/live')
+async def putLiveConfig(body: dict[str, Any]):
     """v4.2: Update Live config (partial).
 
     Body may contain any subset of {sttProvider, sttModel, ttsProvider,
@@ -234,9 +166,8 @@ async def put_live_config(body: dict[str, Any]):
     "browser default."
     """
     from fastapi import HTTPException
-    from app.services import live_config_service
-
-    ok, err, cfg = live_config_service.update_live_config(body)
+    from app.services import liveConfigService
+    ok, err, cfg = liveConfigService.update_live_config(body)
     if not ok:
-        raise HTTPException(status_code=400, detail={"code": "validation", "message": err})
+        raise HTTPException(status_code=400, detail={'code': 'validation', 'message': err})
     return cfg

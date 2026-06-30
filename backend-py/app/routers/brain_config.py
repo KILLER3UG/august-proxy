@@ -19,26 +19,19 @@ must stay backward-compatible).
 Port of the deleted Node.js ``backend/index.js`` brain-config block
 (commit 6d61910, 2026-06-21).
 """
-
 from __future__ import annotations
-
 from typing import Any
-
 from fastapi import APIRouter, HTTPException, Query
+from app.services import brainConfigService
+router = APIRouter(prefix='/api/brain', tags=['brain-config'])
 
-from app.services import brain_config_service
-
-router = APIRouter(prefix="/api/brain", tags=["brain-config"])
-
-
-@router.get("/config")
+@router.get('/config')
 async def getBrainConfig():
     """Return the effective brain config + defaults + source tag + session
     info. The React ``BrainSettings`` page calls this on mount."""
-    return brain_config_service.getBrainConfigForSettings()
+    return brainConfigService.getBrainConfigForSettings()
 
-
-@router.put("/config")
+@router.put('/config')
 async def putBrainConfig(body: dict[str, Any]):
     """Apply a partial patch to ``cfg.brain_orchestrator``.
 
@@ -46,26 +39,21 @@ async def putBrainConfig(body: dict[str, Any]):
     fields (9 booleans + 2 numeric limits). Unknown keys, wrong types, or
     out-of-range numbers → HTTP 400 with ``{code, message}``.
     """
-    ok, err, merged = brain_config_service.saveBrainConfig(body or {})
+    ok, err, merged = brainConfigService.saveBrainConfig(body or {})
     if not ok:
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "EBRAIN_UNKNOWN_KEY" if "unknown" in err else "validation", "message": err},
-        )
-    return {"ok": True, "config": merged, "defaults": brain_config_service.getDefaults()}
+        raise HTTPException(status_code=400, detail={'code': 'EBRAIN_UNKNOWN_KEY' if 'unknown' in err else 'validation', 'message': err})
+    return {'ok': True, 'config': merged, 'defaults': brainConfigService.getDefaults()}
 
-
-@router.post("/config/reset")
+@router.post('/config/reset')
 async def postBrainConfigReset():
     """Clear ``cfg.brain_orchestrator`` and return the factory defaults."""
-    ok, defaults = brain_config_service.resetBrainConfig()
-    return {"ok": ok, "config": defaults, "defaults": defaults}
+    ok, defaults = brainConfigService.resetBrainConfig()
+    return {'ok': ok, 'config': defaults, 'defaults': defaults}
 
-
-@router.get("/config/from-session")
-async def getBrainConfigFromSession(sessionId: str = Query(..., min_length=1)):
+@router.get('/config/from-session')
+async def getBrainConfigFromSession(sessionId: str=Query(..., min_length=1)):
     """Return the brain config tagged ``source='session'`` for a specific
     workbench session. ``sessionId`` is required (400 if missing)."""
     if not sessionId:
-        raise HTTPException(status_code=400, detail={"code": "validation", "message": "sessionId query param is required"})
-    return brain_config_service.getBrainConfigFromSession(sessionId)
+        raise HTTPException(status_code=400, detail={'code': 'validation', 'message': 'sessionId query param is required'})
+    return brainConfigService.getBrainConfigFromSession(sessionId)
