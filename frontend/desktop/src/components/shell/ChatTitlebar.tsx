@@ -10,6 +10,7 @@ import {
   GitBranch,
   Download,
   Minimize2,
+  Brain,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { gitApi } from "@/api/git";
@@ -17,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { isTauri } from "@/lib/tauri-detect";
 import { toast } from "sonner";
 import { RightDrawerDropdown } from "./RightDrawerLauncher";
+import { BrainModal } from "./BrainModal";
 import type { Session } from "@/store/sessions";
 import type { RightDrawerSectionId } from "./RightDrawerState";
 
@@ -43,6 +45,8 @@ export function ChatTitlebar({
     version: string;
   } | null>(null);
   const [updating, setUpdating] = useState(false);
+  // v4.4 — Brain modal state (toggled by the titlebar Brain icon)
+  const [brainOpen, setBrainOpen] = useState(false);
 
   const branch = useQuery({
     queryKey: ['git', 'branch', session?.id],
@@ -191,8 +195,20 @@ export function ChatTitlebar({
           >
             <Settings className="size-4" />
           </button>
+          {/* v4.4 — Brain icon opens the realtime brain flow modal (defaults to Activity tab) */}
+          <button
+            onClick={() => setBrainOpen(true)}
+            className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition"
+            title="Open Brain (realtime flow)"
+            data-testid="titlebar-brain-button"
+          >
+            <Brain className="size-4" />
+          </button>
         </div>
       </div>
+
+      {/* v4.4 — Brain modal (realtime flow + learning + system health) */}
+      <BrainModal open={brainOpen} onClose={() => setBrainOpen(false)} />
 
       <div className="flex items-center gap-3">
         <button
