@@ -128,18 +128,14 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
   } | null>(null);
 
   const handleDragPointerDown = (e: React.PointerEvent<HTMLElement>) => {
-    // Default to button=0. jsdom's RTL fireEvent.pointerDown does not
-    // populate e.button, so e.button may be undefined.
     const button = e.button ?? 0;
     if (button !== 0) return;
-    // Don't start a drag if the press is on an interactive child (buttons,
-    // tabs, inputs, etc.). Image editors let users click those without dragging.
     const target = e.target as HTMLElement;
     if (target.closest('button, [role="tab"], input, textarea, select, [data-no-drag], [contenteditable="true"]')) {
       return;
     }
     const targetEl = e.currentTarget;
-    targetEl.setPointerCapture?.(e.pointerId);
+    try { targetEl.setPointerCapture?.(e.pointerId); } catch { /* ignore */ }
     const rect = targetEl.getBoundingClientRect();
     const offsetX = e.clientX - rect.left;
     const offsetY = e.clientY - rect.top;
@@ -149,6 +145,15 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
       originX: geomRef.current.x - offsetX,
       originY: geomRef.current.y - offsetY,
     };
+    // Attach move/up handlers inline (same pattern as resize)
+    const onMove = (ev: PointerEvent) => handleDragPointerMove(ev);
+    const onUp = () => {
+      handleDragPointerUp();
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
   };
 
   const handleDragPointerMove = (e: PointerEvent) => {
@@ -265,23 +270,6 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
   };
 
   // Attach window-level move/up listeners while drag or resize is active
-  useEffect(() => {
-    const onMove = (e: PointerEvent) => {
-      handleDragPointerMove(e);
-      handleResizePointerMove(e);
-    };
-    const onUp = () => {
-      handleDragPointerUp();
-      handleResizePointerUp();
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
-  });
-
   // Persist beforeunload (best-effort)
   useEffect(() => {
     const handler = () => persistGeom();
