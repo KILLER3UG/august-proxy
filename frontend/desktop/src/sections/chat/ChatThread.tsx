@@ -2124,6 +2124,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     className="shrink-0 z-10 w-full bg-background py-3"
                   >
                     <div className="mx-auto w-full max-w-3xl px-4">
+                      {streaming && <div className="px-4 pb-2 text-xs text-muted-foreground"><WorkingIndicator /></div>}
                       {renderComposerContent()}
                     </div>
                   </motion.div>
@@ -2668,7 +2669,6 @@ function MessageBubble({
             {!isUser && message.changedFiles && message.changedFiles.files.length > 0 && (
               <ChangedFilesCard changes={message.changedFiles} />
             )}
-            {isLast && streaming && !showRaw && <WorkingIndicator className="mt-1" />}
           </div>
           {/* Action buttons below assistant message */}
           <div className={cn(
