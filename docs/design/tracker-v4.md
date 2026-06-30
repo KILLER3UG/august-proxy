@@ -34,7 +34,7 @@
 | 10 | Model Fleet UI (4 cognitive roles → models) | ✅ done & verified | | `v4.1.0-fleet` — `GET/PUT /api/config/model-fleet` + `ModelFleetTab` subtab in `WorkspaceModelsSection`. Pickers for cortex/cerebellum/hippocampus/prefrontal. |
 | 14 | Live (STT/TTS) settings UI | ✅ done & verified | | `v4.2.0-live` — `GET/PUT /api/config/live` + `LiveSettingsTab` subtab. 5 fields: sttProvider/sttModel/ttsProvider/ttsModel/ttsVoice. Empty = browser default. |
 | §12 | Brain Activity tab (realtime brain feed) | ✅ done & verified | | `v4.3.0-brain-activity` — in-process event bus + 5 publishers (consolidation / heuristic / delta_engine / review / skill_genesis) + SSE-stream + `BrainActivityTab` as 3rd tab in `/brain`. Cross-session tail of "what the brain is doing right now." |
-| §12 | Titlebar Brain icon → mini modal | ✅ done & verified | | `v4.4.1-brain-popup` — `Brain` icon in `ChatTitlebar` (next to Settings) opens a **floating popup** (no backdrop, doesn't block chat) anchored under the icon. Defaults to Activity tab (realtime flow), with Learning + System Health tabs reachable. Esc + click-outside close. Pulse dot animates on the icon when unseen brain events arrive (SSE-driven). |
+| §12 | Titlebar Brain icon → floating popup | ✅ done & verified | | `v4.4.3-portal-fix` — Brain icon opens draggable + resizable floating popup (drag header to move; SE corner to resize; only × button closes; position + size persist). Pulse dot animates when unseen events arrive. **Bug fix:** popup renders via `createPortal(document.body)` so `position: fixed` escapes framer-motion's transform containing block (otherwise the popup is trapped in the titlebar on the chat route). |
 
 Status legend: ☐ not started · ◐ in progress · ✅ done & verified · ⚠ blocked
 
