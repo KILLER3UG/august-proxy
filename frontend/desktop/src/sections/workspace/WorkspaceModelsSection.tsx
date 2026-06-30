@@ -76,6 +76,7 @@ import { QuotasPanel } from '@/sections/settings/QuotasPanel';
 import { cn } from '@/lib/utils';
 import { ModelPickerDropdown } from '@/components/overlays/ModelPickerDropdown';
 import { ModelFleetTab } from '@/sections/workspace/ModelFleetTab';
+import { LiveSettingsTab } from '@/sections/workspace/LiveSettingsTab';
 
 /* ── API format dropdown options — match the screenshot EXACTLY ──────── */
 const API_FORMATS: { value: ApiFormat; label: string }[] = [
@@ -86,13 +87,14 @@ const API_FORMATS: { value: ApiFormat; label: string }[] = [
 
 const DEFAULT_API_FORMAT: ApiFormat = 'anthropic';
 
-const SUBTABS: { key: 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection' | 'fleet'; label: string; icon: LucideIcon }[] = [
+const SUBTABS: { key: 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection' | 'fleet' | 'live'; label: string; icon: LucideIcon }[] = [
   { key: 'providers', label: 'Providers', icon: Server },
   { key: 'all-models', label: 'All models', icon: Boxes },
   { key: 'aliases',   label: 'Aliases',   icon: ArrowRightLeft },
   { key: 'fallback',  label: 'Fallback',  icon: ShieldCheck },
   { key: 'reflection', label: 'Background & Reflection', icon: Brain },
   { key: 'fleet',     label: 'Model Fleet', icon: Brain },
+  { key: 'live',      label: 'Live (STT/TTS)', icon: Brain },
   { key: 'quotas',    label: 'Quotas',    icon: Gauge },
 ];
 
@@ -134,6 +136,7 @@ export function WorkspaceModelsSection() {
         {subtab === 'fallback'  && <FallbackTab />}
         {subtab === 'reflection' && <BackgroundReflectionTab />}
         {subtab === 'fleet'     && <ModelFleetTab />}
+        {subtab === 'live'      && <LiveSettingsTab />}
         {subtab === 'quotas'    && <QuotasTab />}
       </div>
     </div>
