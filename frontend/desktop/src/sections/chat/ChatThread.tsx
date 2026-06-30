@@ -494,6 +494,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [showComposerActionsDropdown, setShowComposerActionsDropdown] = useState(false);
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
   const [showCommandsDropdown, setShowCommandsDropdown] = useState(false);
+  const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
   const [queuedMessage, setQueuedMessage] = useState<{ text: string; attachments: FileAttachment[] } | null>(null);
 
   // v3: /Exam slash command — overlay the ExamBanner with the given seed.
@@ -1205,9 +1206,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         return;
       }
       if (cmd === 'new') {
-        // Defer to the parent (App) to create a fresh chat session.
-        // No listener wires this up yet, so just tell the user how.
-        toast.info('Use the sidebar to start a new session.');
+        // Dispatch event so the parent (App/ChatLayout) can create the session
+        window.dispatchEvent(new CustomEvent('august:new-session'));
         return;
       }
       if (cmd === 'load') {
@@ -1422,12 +1422,25 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showCommandsDropdown) {
+      const visible = COMMANDS.filter(c => {
+        const q = input.trim().toLowerCase();
+        if (!q) return true;
+        return c.name.toLowerCase().startsWith(q);
+      });
+      // highlightedCommandIndex = (i ± 1) % visible.length
+      if (e.key === 'ArrowDown') { e.preventDefault(); /* highlightedCommandIndex = (i + 1) % visible.length */ setHighlightedCommandIndex(i => (i + 1) % Math.max(1, visible.length)); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); /* highlightedCommandIndex = (i - 1 + visible.length) % visible.length */ setHighlightedCommandIndex(i => (i - 1 + Math.max(1, visible.length)) % Math.max(1, visible.length)); return; }
+      if (e.key === 'Enter' && !e.shiftKey && visible.length > 0) { e.preventDefault(); const cmd = visible[highlightedCommandIndex] ?? visible[0]; insertCommand(cmd.name); setShowCommandsDropdown(false); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setShowCommandsDropdown(false); return; }
+    }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
   // Detect slash commands as user types
   const handleInputChange = (value: string) => {
     setInput(value);
+    setHighlightedCommandIndex(0);
     // Show commands dropdown when text starts with /
     if (value.startsWith('/')) {
       setShowCommandsDropdown(true);
@@ -1534,6 +1547,32 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }, 50);
   };
 
+  const insertCommand = (name: string) => {
+    // Replace the leading /token (if any) so the typed `/` doesn't double up.
+    const fullCmd = name + ' ';
+    const ta = taRef.current;
+    if (!ta) {
+      setInput(prev => {
+        const replaced = prev.replace(/^\s*\/[\w-]*/, '');
+        const trimmed = replaced.trimStart();
+        return '/' + name + ' ';
+      });
+      return;
+    }
+    const cursor = ta.selectionStart ?? ta.value.length;
+    const before = ta.value.slice(0, cursor);
+    const match = before.match(/\/[\w-]*$/);
+    const tokenStart = match ? cursor - match[0].length : cursor;
+    const after = ta.value.slice(cursor);
+    const nextText = ta.value.slice(0, tokenStart) + fullCmd + after;
+    setInput(nextText);
+    setTimeout(() => {
+      ta.focus();
+      const newCursor = tokenStart + fullCmd.length;
+      ta.selectionStart = ta.selectionEnd = newCursor;
+    }, 50);
+  };
+
   useEffect(() => {
     const handleInsertText = (e: Event) => {
       const customEvent = e as CustomEvent;
@@ -1584,14 +1623,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               const q = input.trim().toLowerCase();
               if (!q) return true;
               return c.name.toLowerCase().startsWith(q);
-            }).map((c) => (
+            }).map((c, idx) => (
               <button
                 key={c.name}
                 onClick={() => {
-                  insertText(c.name + ' ');
+                  insertCommand(c.name);
                   setShowCommandsDropdown(false);
                 }}
-                className="w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between gap-2"
+                className={cn(
+                  "w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between gap-2",
+                  idx === highlightedCommandIndex && "bg-muted"
+                )}
               >
                 <span className="font-mono font-medium text-warning shrink-0">{c.name}</span>
                 <span className="text-[10px] text-muted-foreground truncate">{c.desc}</span>
