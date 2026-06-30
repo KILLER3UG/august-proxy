@@ -4,36 +4,27 @@ while preserving head and tail messages.
 
 Port of backend/services/memory/context-compressor.js (177 lines).
 """
-
 from __future__ import annotations
-
 import os
 from typing import Any, Callable
-
-from app.providers.clients.base import estimate_tokens
-
+from app.providers.clients.base import estimateTokens
 DEFAULT_HEAD_COUNT = 4
 DEFAULT_TAIL_COUNT = 6
-DEFAULT_SUMMARY_MARKER = "<<compressed_summary"
+DEFAULT_SUMMARY_MARKER = '<<compressed_summary'
 DEFAULT_MAX_SUMMARY_CHARS = 2000
-FEATURE_FLAG = "AUGUST_SUMMARIZING_COMPACTOR"
+FEATURE_FLAG = 'AUGUST_SUMMARIZING_COMPACTOR'
 
-
-def is_feature_enabled() -> bool:
+def isFeatureEnabled() -> bool:
     """Check if the summarizing compactor feature flag is set.
 
     Enabled by default — the env var AUGUST_SUMMARIZING_COMPACTOR
     can be set to "0" to disable."""
     val = os.environ.get(FEATURE_FLAG)
     if val is not None:
-        return val == "1"
-    return True  # enabled by default
+        return val == '1'
+    return True
 
-
-def local_summarize(
-    messages: list[dict[str, Any]],
-    max_summary_chars: int = DEFAULT_MAX_SUMMARY_CHARS,
-) -> str:
+def localSummarize(messages: list[dict[str, Any]], maxSummaryChars: int=DEFAULT_MAX_SUMMARY_CHARS) -> str:
     """Default local summarizer.
 
     Joins text content from each message, truncates to max_summary_chars,
@@ -41,61 +32,40 @@ def local_summarize(
     """
     lines: list[str] = []
     for msg in messages:
-        role = msg.get("role", "unknown")
-        content = msg.get("content", "")
-
-        text = ""
+        role = msg.get('role', 'unknown')
+        content = msg.get('content', '')
+        text = ''
         if isinstance(content, str):
             text = content
         elif isinstance(content, list):
-            text = " ".join(
-                str(b.get("text", ""))
-                for b in content
-                if isinstance(b, dict) and b.get("type") in ("text", "output_text")
-            )
+            text = ' '.join((str(b.get('text', '')) for b in content if isinstance(b, dict) and b.get('type') in ('text', 'output_text')))
         elif content:
             try:
                 import json
                 text = json.dumps(content)
             except (TypeError, ValueError):
                 text = str(content)
-
-        # Append tool call names
-        tool_calls = msg.get("tool_calls", [])
-        if tool_calls:
-            names = [tc.get("function", {}).get("name", tc.get("name", "")) for tc in tool_calls]
+        toolCalls = msg.get('tool_calls', [])
+        if toolCalls:
+            names = [tc.get('function', {}).get('name', tc.get('name', '')) for tc in toolCalls]
             names = [n for n in names if n]
             if names:
                 text += f" [tool_calls: {', '.join(names)}]"
-
-        trimmed = " ".join(text.split())[:600]
+        trimmed = ' '.join(text.split())[:600]
         if trimmed:
-            lines.append(f"[{role}] {trimmed}")
-
-    summary = "\n".join(lines)
-    if len(summary) > max_summary_chars:
-        summary = summary[:max_summary_chars] + "…"
+            lines.append(f'[{role}] {trimmed}')
+    summary = '\n'.join(lines)
+    if len(summary) > maxSummaryChars:
+        summary = summary[:maxSummaryChars] + '…'
     return summary
 
-
-def build_summary_message(
-    middle_messages: list[dict[str, Any]],
-    summary_text: str,
-    summary_marker: str = DEFAULT_SUMMARY_MARKER,
-) -> dict[str, Any]:
+def buildSummaryMessage(middleMessages: list[dict[str, Any]], summaryText: str, summaryMarker: str=DEFAULT_SUMMARY_MARKER) -> dict[str, Any]:
     """Build a fenced summary message from the middle messages."""
     import json
-    meta = json.dumps({
-        "marker": "august.summary",
-        "compressed_count": len(middle_messages),
-    })
-    return {
-        "role": "system",
-        "content": f"{summary_marker}\n{meta}\n{summary_text}\n{summary_marker.replace('<', '</')}>>",
-    }
+    meta = json.dumps({'marker': 'august.summary', 'compressed_count': len(middleMessages)})
+    return {'role': 'system', 'content': f"{summaryMarker}\n{meta}\n{summaryText}\n{summaryMarker.replace('<', '</')}>>"}
 
-
-def _is_summary_message(msg: dict[str, Any], summary_marker: str = DEFAULT_SUMMARY_MARKER) -> bool:
+def _isSummaryMessage(msg: dict[str, Any], summaryMarker: str=DEFAULT_SUMMARY_MARKER) -> bool:
     """True if msg is a prior compressed-summary system block.
 
     Detected by the opening marker (`<<compressed_summary`) in a system
@@ -103,40 +73,33 @@ def _is_summary_message(msg: dict[str, Any], summary_marker: str = DEFAULT_SUMMA
     build_summary_message, so this reliably identifies prior summaries that
     would otherwise accumulate across repeated compactions (s4).
     """
-    if msg.get("role") != "system":
+    if msg.get('role') != 'system':
         return False
-    content = msg.get("content", "")
+    content = msg.get('content', '')
     if not isinstance(content, str):
         return False
-    return content.startswith(summary_marker)
+    return content.startswith(summaryMarker)
 
-
-def _extract_summary_text(msg: dict[str, Any], summary_marker: str = DEFAULT_SUMMARY_MARKER) -> str:
+def _extractSummaryText(msg: dict[str, Any], summaryMarker: str=DEFAULT_SUMMARY_MARKER) -> str:
     """Recover the human summary text from a fenced summary message.
 
     build_summary_message emits
-    ``{marker}\n{meta_json}\n{summary_text}\n{closing}``. Drop the first line
+    ``{marker}
+{meta_json}
+{summary_text}
+{closing}``. Drop the first line
     (marker), the second (meta json), and the last (closing marker) to get the
     body. Returns "" if the shape is unexpected.
     """
-    content = msg.get("content", "")
-    if not isinstance(content, str) or not content.startswith(summary_marker):
-        return ""
-    lines = content.split("\n")
-    # lines[0] = marker, lines[1] = meta json, lines[-1] = closing marker,
-    # body = everything in between.
+    content = msg.get('content', '')
+    if not isinstance(content, str) or not content.startswith(summaryMarker):
+        return ''
+    lines = content.split('\n')
     if len(lines) < 3:
-        return ""
-    return "\n".join(lines[2:-1])
+        return ''
+    return '\n'.join(lines[2:-1])
 
-
-def compress_messages(
-    messages: list[dict[str, Any]],
-    threshold: int,
-    head_count: int = DEFAULT_HEAD_COUNT,
-    tail_count: int = DEFAULT_TAIL_COUNT,
-    summarizer: Callable | None = None,
-) -> list[dict[str, Any]]:
+def compressMessages(messages: list[dict[str, Any]], threshold: int, headCount: int=DEFAULT_HEAD_COUNT, tailCount: int=DEFAULT_TAIL_COUNT, summarizer: Callable | None=None) -> list[dict[str, Any]]:
     """Compress messages to fit within a token threshold by summarizing the middle.
 
     Preserves the first ``head_count`` and last ``tail_count`` messages,
@@ -154,59 +117,30 @@ def compress_messages(
     """
     if not messages:
         return messages
-
-    # Quick check — if already under threshold, return unchanged
-    current_tokens = estimate_tokens(messages)
-    if current_tokens <= threshold:
+    currentTokens = estimateTokens(messages)
+    if currentTokens <= threshold:
         return list(messages)
-
-    non_system = [m for m in messages if m.get("role") != "system"]
-    system_msgs = [m for m in messages if m.get("role") == "system"]
-
-    # s4: a prior compaction's summary is itself a system message, so without
-    # dedup it would survive in `system_msgs` and a NEW summary would be
-    # appended on every compaction — accumulating duplicate summary blocks.
-    # Fold any prior summary text into the new summary (preserves information)
-    # and keep only non-summary system messages.
-    prior_summary_texts = [
-        _extract_summary_text(m) for m in system_msgs if _is_summary_message(m)
-    ]
-    prior_summary_texts = [t for t in prior_summary_texts if t]
-    other_system = [m for m in system_msgs if not _is_summary_message(m)]
-
-    if len(non_system) <= head_count + tail_count:
-        # Not enough messages to compress meaningfully
+    nonSystem = [m for m in messages if m.get('role') != 'system']
+    systemMsgs = [m for m in messages if m.get('role') == 'system']
+    priorSummaryTexts = [_extractSummaryText(m) for m in systemMsgs if _isSummaryMessage(m)]
+    priorSummaryTexts = [t for t in priorSummaryTexts if t]
+    otherSystem = [m for m in systemMsgs if not _isSummaryMessage(m)]
+    if len(nonSystem) <= headCount + tailCount:
         return list(messages)
-
-    head = non_system[:head_count]
-    tail = non_system[-tail_count:]
-    middle = non_system[head_count:-tail_count] if tail_count > 0 else non_system[head_count:]
-
+    head = nonSystem[:headCount]
+    tail = nonSystem[-tailCount:]
+    middle = nonSystem[headCount:-tailCount] if tailCount > 0 else nonSystem[headCount:]
     if not middle:
         return list(messages)
-
-    # Summarize
     if summarizer:
-        summary_text = summarizer(middle)
+        summaryText = summarizer(middle)
     else:
-        summary_text = local_summarize(middle)
-
-    # Prepend prior summaries so their information survives in the single
-    # consolidated summary block (no duplication across compactions).
-    if prior_summary_texts:
-        summary_text = (
-            "Earlier summary:\n" + "\n---\n".join(prior_summary_texts)
-            + "\n\nRecent summary:\n" + summary_text
-        )
-
-    summary_msg = build_summary_message(middle, summary_text)
-
-    compressed = other_system + head + [summary_msg] + tail
-
-    # Double-check we actually saved tokens
-    compressed_tokens = estimate_tokens(compressed)
-    if compressed_tokens >= current_tokens:
-        # Compression didn't help; return original
+        summaryText = localSummarize(middle)
+    if priorSummaryTexts:
+        summaryText = 'Earlier summary:\n' + '\n---\n'.join(priorSummaryTexts) + '\n\nRecent summary:\n' + summaryText
+    summaryMsg = buildSummaryMessage(middle, summaryText)
+    compressed = otherSystem + head + [summaryMsg] + tail
+    compressedTokens = estimateTokens(compressed)
+    if compressedTokens >= currentTokens:
         return list(messages)
-
     return compressed

@@ -3,60 +3,44 @@ Memory retention — time-based eviction and importance-weighted retention polic
 
 Port of backend/services/memory/memory-retention.js.
 """
-
 from __future__ import annotations
-
 import time
 from datetime import datetime, timezone
 from typing import Any
+from app.services.memory_store import listMemory, deleteMemory, listFacts, deleteFact
+_RETENTION = {'transient': 86400 * 7, 'normal': 86400 * 30, 'important': 86400 * 90, 'critical': 86400 * 365}
 
-from app.services.memory_store import list_memory, delete_memory, list_facts, delete_fact
-
-# Retention periods (seconds)
-_RETENTION = {
-    "transient": 86400 * 7,       # 1 week
-    "normal": 86400 * 30,          # 30 days
-    "important": 86400 * 90,       # 90 days
-    "critical": 86400 * 365,       # 1 year
-}
-
-
-def _parse_timestamp(ts: str) -> float:
+def _parseTimestamp(ts: str) -> float:
     try:
-        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
         return dt.timestamp()
     except (ValueError, AttributeError):
         return time.time()
 
-
-def apply_retention_policy(policy: str = "normal") -> dict[str, Any]:
+def applyRetentionPolicy(policy: str='normal') -> dict[str, Any]:
     """Apply retention policy, removing expired entries."""
-    max_age = _RETENTION.get(policy, _RETENTION["normal"])
+    maxAge = _RETENTION.get(policy, _RETENTION['normal'])
     now = time.time()
-    stats = {"memory_removed": 0, "facts_removed": 0}
-
-    for entry in list_memory():
-        updated = entry.get("updated_at", "")
-        age = now - _parse_timestamp(updated) if updated else max_age + 1
-        if age > max_age:
-            delete_memory(entry["key"])
-            stats["memory_removed"] += 1
-
-    for fact in list_facts():
-        updated = fact.get("updated_at", "")
-        age = now - _parse_timestamp(updated) if updated else max_age + 1
-        if age > max_age:
-            delete_fact(fact["fact_key"])
-            stats["facts_removed"] += 1
-
+    stats = {'memory_removed': 0, 'facts_removed': 0}
+    for entry in listMemory():
+        updated = entry.get('updated_at', '')
+        age = now - _parseTimestamp(updated) if updated else maxAge + 1
+        if age > maxAge:
+            deleteMemory(entry['key'])
+            stats['memory_removed'] += 1
+    for fact in listFacts():
+        updated = fact.get('updated_at', '')
+        age = now - _parseTimestamp(updated) if updated else maxAge + 1
+        if age > maxAge:
+            deleteFact(fact['fact_key'])
+            stats['facts_removed'] += 1
     return stats
 
-
-def get_entry_age(key: str) -> float | None:
+def getEntryAge(key: str) -> float | None:
     """Get the age in seconds of a memory entry."""
-    for entry in list_memory():
-        if entry.get("key") == key:
-            updated = entry.get("updated_at", "")
+    for entry in listMemory():
+        if entry.get('key') == key:
+            updated = entry.get('updated_at', '')
             if updated:
-                return time.time() - _parse_timestamp(updated)
+                return time.time() - _parseTimestamp(updated)
     return None
