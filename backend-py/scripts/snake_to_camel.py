@@ -149,13 +149,6 @@ class SnakeToCamelTransformer(ast.NodeTransformer):
             node.id = new_id
         return node
 
-    def visit_Attribute(self, node: ast.Attribute) -> Any:
-        """Rename attribute access."""
-        new_attr = self._rename(node.attr, "attribute", (node.lineno, node.col_offset))
-        node.attr = new_attr
-        self.generic_visit(node)
-        return node
-
     def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         """Rename imported names in 'from X import Y' statements."""
         for alias in node.names:

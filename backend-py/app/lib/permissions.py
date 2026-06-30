@@ -1,17 +1,23 @@
 """
 Filesystem path access control.
 """
+
 from __future__ import annotations
+
 from pathlib import Path
+
+
 ALLOWED_ROOTS: list[Path] = []
 
-def allowPath(path: str | Path) -> None:
+
+def allow_path(path: str | Path) -> None:
     ALLOWED_ROOTS.append(Path(path).resolve())
 
-def isAllowed(path: str | Path) -> bool:
+
+def is_allowed(path: str | Path) -> bool:
     target = Path(path).resolve()
     if not ALLOWED_ROOTS:
-        return True
+        return True  # no restrictions
     for root in ALLOWED_ROOTS:
         if root in target.parents or root == target:
             return True
