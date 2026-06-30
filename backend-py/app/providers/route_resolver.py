@@ -12,29 +12,20 @@ Resolution order:
 6. Prefix match (any provider)
 7. Active provider (first with credentials)
 """
-
 from __future__ import annotations
-
 from typing import Any, Optional
-
 from app.config import settings
 from app.providers import registry, resolver
 
-
-def _has_credentials(provider: dict[str, Any]) -> bool:
+def _hasCredentials(provider: dict[str, Any]) -> bool:
     """Check if a provider has API credentials configured."""
-    from app.providers.clients import get_client
-
-    client = get_client(provider)
+    from app.providers.clients import getClient
+    client = getClient(provider)
     if not client:
         return False
     return client.resolve_api_key() is not None
 
-
-def resolve_for_model(
-    model_id: str,
-    hint: Optional[str] = None,
-) -> Optional[dict[str, Any]]:
+def resolveForModel(modelId: str, hint: Optional[str]=None) -> Optional[dict[str, Any]]:
     """
     Find the best provider for a model ID.
 
@@ -45,75 +36,56 @@ def resolve_for_model(
     providers = resolver.list_available()
     if not providers:
         return None
-
-    model_lower = model_id.lower()
-
-    # 1. Explicit hint
+    modelLower = modelId.lower()
     if hint:
         for p in providers:
-            if p["name"].lower() == hint.lower():
+            if p['name'].lower() == hint.lower():
                 return p
-            if hint.lower() in [a.lower() for a in p.get("aliases", [])]:
+            if hint.lower() in [a.lower() for a in p.get('aliases', [])]:
                 return p
-
-    # 2. User-defined alias in config.json modelAliases
-    aliases = settings.config.get("modelAliases", [])
+    aliases = settings.config.get('modelAliases', [])
     if isinstance(aliases, list):
-        for alias_entry in aliases:
-            if alias_entry.get("alias", "").lower() == model_lower:
-                target_provider = alias_entry.get("targetProvider", "")
-                if target_provider:
+        for aliasEntry in aliases:
+            if aliasEntry.get('alias', '').lower() == modelLower:
+                targetProvider = aliasEntry.get('targetProvider', '')
+                if targetProvider:
                     for p in providers:
-                        if p["name"].lower() == target_provider.lower():
+                        if p['name'].lower() == targetProvider.lower():
                             return p
-                        if target_provider.lower() in [a.lower() for a in p.get("aliases", [])]:
+                        if targetProvider.lower() in [a.lower() for a in p.get('aliases', [])]:
                             return p
-
-    # 3. Exact model match in model_profiles (credential-aware first)
     for p in providers:
-        profiles = p.get("model_profiles", {})
-        if (model_id in profiles or model_lower in {k.lower() for k in profiles}) and _has_credentials(p):
+        profiles = p.get('model_profiles', {})
+        if (modelId in profiles or modelLower in {k.lower() for k in profiles}) and _hasCredentials(p):
             return p
-
-    # 4. Prefix match on provider name (credential-aware)
     for p in providers:
-        pname = p["name"].lower().split()[0]
-        if model_lower.startswith(pname) and _has_credentials(p):
+        pname = p['name'].lower().split()[0]
+        if modelLower.startswith(pname) and _hasCredentials(p):
             return p
-
-    # 5. Partial match on model_profiles keys (credential-aware)
     for p in providers:
-        profiles = p.get("model_profiles", {})
-        for profile_key in profiles:
-            if profile_key != "*" and model_lower.startswith(profile_key.lower()) and _has_credentials(p):
+        profiles = p.get('model_profiles', {})
+        for profileKey in profiles:
+            if profileKey != '*' and modelLower.startswith(profileKey.lower()) and _hasCredentials(p):
                 return p
-
-    # 6. Alias name match (credential-aware)
     for p in providers:
-        for alias in p.get("aliases", []):
-            if model_lower.startswith(alias.lower()) and _has_credentials(p):
+        for alias in p.get('aliases', []):
+            if modelLower.startswith(alias.lower()) and _hasCredentials(p):
                 return p
-
-    # 7-10: Same matches but without credential requirement
     for p in providers:
-        profiles = p.get("model_profiles", {})
-        if model_id in profiles or model_lower in {k.lower() for k in profiles}:
+        profiles = p.get('model_profiles', {})
+        if modelId in profiles or modelLower in {k.lower() for k in profiles}:
             return p
-
     for p in providers:
-        pname = p["name"].lower().split()[0]
-        if model_lower.startswith(pname):
+        pname = p['name'].lower().split()[0]
+        if modelLower.startswith(pname):
             return p
-
     for p in providers:
-        profiles = p.get("model_profiles", {})
-        for profile_key in profiles:
-            if profile_key != "*" and model_lower.startswith(profile_key.lower()):
+        profiles = p.get('model_profiles', {})
+        for profileKey in profiles:
+            if profileKey != '*' and modelLower.startswith(profileKey.lower()):
                 return p
-
     for p in providers:
-        for alias in p.get("aliases", []):
-            if model_lower.startswith(alias.lower()):
+        for alias in p.get('aliases', []):
+            if modelLower.startswith(alias.lower()):
                 return p
-
     return providers[0] if providers else None
