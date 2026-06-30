@@ -200,3 +200,20 @@ def test_invalidate_clears_cache(fake_providers_store):
     creds = provider_credentials.resolve("MiniMax (Global)")
     assert creds is not None
     assert creds["source"] == "custom_store"
+
+
+def test_resolver_finds_custom_store_entry(fake_providers_store):
+    from app.providers import resolver as provider_resolver
+
+    provider = provider_resolver.resolve("MiniMax (Global)")
+    assert provider is not None
+    # Resolver should return the custom provider dict, not the built-in one
+    assert provider.get("is_custom") is True
+    assert provider["api_key"] == "sk-custom-key-12345"
+
+
+def test_resolver_has_api_key_uses_custom_store(fake_providers_store):
+    from app.providers import resolver as provider_resolver
+
+    provider = provider_resolver.resolve("MiniMax (Global)")
+    assert provider_resolver._has_api_key(provider) is True

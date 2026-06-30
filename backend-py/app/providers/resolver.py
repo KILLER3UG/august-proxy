@@ -14,7 +14,10 @@ from app.providers.builtin import register_all
 
 
 def _has_api_key(provider: dict[str, Any]) -> bool:
-    """Check if a provider has credentials configured (API key or env var)."""
+    """Check if a provider has credentials configured (custom store or built-in env)."""
+    # Custom store path: the dict already carries its api_key
+    if provider.get("is_custom"):
+        return bool(provider.get("api_key"))
     from app.providers.clients import get_client
 
     client = get_client(provider)
@@ -27,6 +30,7 @@ def resolve(name: str) -> Optional[dict[str, Any]]:
     """Find a provider by name, alias, or model ID.
 
     Resolution order:
+    0. Custom ``providers.json`` store (authoritative for user-added providers)
     1. Normalize via aliases map
     2. Exact name match
     3. Provider aliases list match
@@ -44,6 +48,17 @@ def resolve(name: str) -> Optional[dict[str, Any]]:
         return providers[0] if providers else None
 
     name_str = str(name)
+
+    # 0. Check custom store first (authoritative for user-added providers).
+    # Use the private ``_custom_entry`` lookup directly (not the public
+    # ``provider_credentials.resolve``) because the public function's
+    # registry-fallback path calls back into ``provider_resolver.resolve``
+    # and would cause infinite recursion. The lazy import avoids a circular
+    # dependency at module load time.
+    from app.services import provider_credentials
+    custom_entry = provider_credentials._custom_entry(name_str)
+    if custom_entry and custom_entry.get("enabled") and custom_entry.get("apiKey"):
+        return provider_credentials._custom_provider_dict(custom_entry)
 
     # 1. Normalize via aliases
     canonical = aliases.normalize(name_str)
