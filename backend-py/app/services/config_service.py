@@ -1,58 +1,42 @@
 """
 Config service — read/write config.json and providers.json.
 """
-
 from __future__ import annotations
-
 import json
 import os
 from pathlib import Path
 from typing import Any, Optional
+from app.lib.paths import dataPath
 
-from app.lib.paths import data_path
-
-
-def _read_json(path: Path) -> dict[str, Any]:
+def _readJson(path: Path) -> dict[str, Any]:
     try:
-        return json.loads(path.read_text("utf-8"))
+        return json.loads(path.read_text('utf-8'))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
-
-def _write_json(path: Path, data: dict[str, Any]) -> None:
+def _writeJson(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2), "utf-8")
+    path.write_text(json.dumps(data, indent=2), 'utf-8')
 
+def getConfig() -> dict[str, Any]:
+    return _readJson(dataPath('config.json'))
 
-def get_config() -> dict[str, Any]:
-    return _read_json(data_path("config.json"))
+def saveConfig(config: dict[str, Any]) -> None:
+    _writeJson(dataPath('config.json'), config)
 
+def getProvidersStore() -> dict[str, Any]:
+    return _readJson(dataPath('providers.json'))
 
-def save_config(config: dict[str, Any]) -> None:
-    _write_json(data_path("config.json"), config)
+def saveProvidersStore(data: dict[str, Any]) -> None:
+    _writeJson(dataPath('providers.json'), data)
+    from app.services.provider_credentials import _fireInvalidation
+    _fireInvalidation()
 
-
-def get_providers_store() -> dict[str, Any]:
-    return _read_json(data_path("providers.json"))
-
-
-def save_providers_store(data: dict[str, Any]) -> None:
-    _write_json(data_path("providers.json"), data)
-    # Notify any registered invalidation callbacks (e.g.
-    # provider_credentials) so they can drop their in-memory cache.
-    # Lazy-imported to avoid a circular dependency: config_service is
-    # imported by provider_credentials at module load.
-    from app.services.provider_credentials import _fire_invalidation
-    _fire_invalidation()
-
-
-def get_env(key: str) -> Optional[str]:
+def getEnv(key: str) -> Optional[str]:
     return os.environ.get(key)
 
-
-def set_env(key: str, value: str) -> None:
+def setEnv(key: str, value: str) -> None:
     os.environ[key] = value
 
-
-def delete_env(key: str) -> None:
+def deleteEnv(key: str) -> None:
     os.environ.pop(key, None)
