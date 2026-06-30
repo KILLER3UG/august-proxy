@@ -12,13 +12,13 @@ from typing import Any
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
 
 
-def _snake_to_camel_key(key: str) -> str:
+def _snakeToCamelKey(key: str) -> str:
     """Convert a single snake_case key to camelCase."""
     parts = key.split("_")
     return parts[0] + "".join(p.capitalize() for p in parts[1:])
 
 
-def _camel_to_snake_key(key: str) -> str:
+def _camelToSnakeKey(key: str) -> str:
     """Convert a single camelCase key to snake_case."""
     result = []
     for i, ch in enumerate(key):
@@ -34,7 +34,7 @@ def _camel_to_snake_key(key: str) -> str:
 def snakeToCamel(obj: JsonValue) -> JsonValue:
     """Recursively convert all dict keys from snake_case to camelCase."""
     if isinstance(obj, dict):
-        return {_snake_to_camel_key(k): snakeToCamel(v) for k, v in obj.items()}
+        return {_snakeToCamelKey(k): snakeToCamel(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [snakeToCamel(item) for item in obj]
     return obj
@@ -43,7 +43,7 @@ def snakeToCamel(obj: JsonValue) -> JsonValue:
 def camelToSnake(obj: JsonValue) -> JsonValue:
     """Recursively convert all dict keys from camelCase to snake_case."""
     if isinstance(obj, dict):
-        return {_camel_to_snake_key(k): camelToSnake(v) for k, v in obj.items()}
+        return {_camelToSnakeKey(k): camelToSnake(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [camelToSnake(item) for item in obj]
     return obj
