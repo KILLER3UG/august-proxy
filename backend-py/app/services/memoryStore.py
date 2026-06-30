@@ -173,7 +173,7 @@ def getFact(factKey: str) -> FactDict | None:
         return None
     return dict(row)  # type: ignore[return-value]
 
-def searchFacts(query: str, category: str='') -> list[dict[str, object]]:
+def searchFacts(query: str, category: str='') -> list[FactDict]:
     """Search facts by key or value."""
     conn = _conn()
     like = f'%{query}%'
@@ -181,16 +181,16 @@ def searchFacts(query: str, category: str='') -> list[dict[str, object]]:
         rows = conn.execute('SELECT * FROM facts WHERE (fact_key LIKE ? OR fact_value LIKE ?) AND category = ? ORDER BY updated_at DESC LIMIT 20', (like, like, category)).fetchall()
     else:
         rows = conn.execute('SELECT * FROM facts WHERE fact_key LIKE ? OR fact_value LIKE ? ORDER BY updated_at DESC LIMIT 20', (like, like)).fetchall()
-    return [dict(r) for r in rows]
+    return [dict(r) for r in rows]  # type: ignore[return-value]
 
-def listFacts(category: str='') -> list[dict[str, object]]:
+def listFacts(category: str='') -> list[FactDict]:
     """List facts, optionally filtered by category."""
     conn = _conn()
     if category:
         rows = conn.execute('SELECT * FROM facts WHERE category = ? ORDER BY updated_at DESC', (category,)).fetchall()
     else:
         rows = conn.execute('SELECT * FROM facts ORDER BY updated_at DESC').fetchall()
-    return [dict(r) for r in rows]
+    return [dict(r) for r in rows]  # type: ignore[return-value]
 
 def deleteFact(factKey: str) -> bool:
     """Delete a fact by key."""
@@ -199,27 +199,27 @@ def deleteFact(factKey: str) -> bool:
     conn.commit()
     return cursor.rowcount > 0
 
-def saveProposal(sessionId: str, proposalType: str, content: object) -> int:
+def saveProposal(sessionId: str, proposalType: str, content: JsonValue) -> int:
     """Save a proposal (plan, mutation, etc.)."""
     conn = _conn()
     cursor = conn.execute('INSERT INTO proposals (session_id, proposal_type, content) VALUES (?, ?, ?)', (sessionId, proposalType, _json(content)))
     conn.commit()
     return cursor.lastrowid
 
-def getProposal(proposalId: int) -> dict[str, object] | None:
+def getProposal(proposalId: int) -> ProposalDict | None:
     """Get a proposal by ID."""
     conn = _conn()
     row = conn.execute('SELECT * FROM proposals WHERE id = ?', (proposalId,)).fetchone()
-    return dict(row) if row else None
+    return dict(row) if row else None  # type: ignore[return-value]
 
-def listProposals(sessionId: str, status: str='') -> list[dict[str, object]]:
+def listProposals(sessionId: str, status: str='') -> list[ProposalDict]:
     """List proposals for a session, optionally filtered by status."""
     conn = _conn()
     if status:
         rows = conn.execute('SELECT * FROM proposals WHERE session_id = ? AND status = ? ORDER BY created_at DESC', (sessionId, status)).fetchall()
     else:
         rows = conn.execute('SELECT * FROM proposals WHERE session_id = ? ORDER BY created_at DESC', (sessionId,)).fetchall()
-    return [dict(r) for r in rows]
+    return [dict(r) for r in rows]  # type: ignore[return-value]
 
 def decideProposal(proposalId: int, status: str, decidedBy: str='') -> bool:
     """Decide (approve/reject) a proposal."""
@@ -228,7 +228,7 @@ def decideProposal(proposalId: int, status: str, decidedBy: str='') -> bool:
     conn.commit()
     return cursor.rowcount > 0
 
-def recordLifecycle(sessionId: str, eventType: str, detail: object = None) -> int:
+def recordLifecycle(sessionId: str, eventType: str, detail: JsonValue = None) -> int:
     """Record a lifecycle event."""
     conn = _conn()
     cursor = conn.execute('INSERT INTO lifecycle (session_id, event_type, detail) VALUES (?, ?, ?)', (sessionId, eventType, _json(detail) if detail else None))
@@ -244,7 +244,7 @@ def listLifecycle(sessionId: str, eventType: str='', limit: int=100) -> list[dic
         rows = conn.execute('SELECT * FROM lifecycle WHERE session_id = ? ORDER BY created_at DESC LIMIT ?', (sessionId, limit)).fetchall()
     return [dict(r) for r in rows]
 
-def recordConfigAudit(category: str, action: str, actor: str='', before: object = None, after: object = None) -> int:
+def recordConfigAudit(category: str, action: str, actor: str='', before: JsonValue = None, after: JsonValue = None) -> int:
     """Record a structured config-change audit entry.
 
     Used by alias, fallback, and agent mutation paths so that every
@@ -305,23 +305,23 @@ def searchSessionsByTopic(topic: str) -> list[dict[str, object]]:
     rows = conn.execute('SELECT * FROM session_topics WHERE topic = ? ORDER BY classified_at DESC', (topic,)).fetchall()
     return [dict(r) for r in rows]
 
-def saveSession(session: dict[str, object]) -> None:
+def saveSession(session: SessionRecord) -> None:
     """Persist a session record."""
     conn = _conn()
     conn.execute('INSERT OR REPLACE INTO sessions (id, title, started_at, message_count, provider, model, folder_id, is_archived, workspace_path)\n           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', (session['id'], session.get('title', ''), session.get('startedAt'), session.get('messageCount', 0), session.get('provider', ''), session.get('model', ''), session.get('folderId'), 1 if session.get('isArchived') else 0, session.get('workspacePath')))
     conn.commit()
 
-def listSessions() -> list[dict[str, object]]:
+def listSessions() -> list[SessionRecord]:
     """List all sessions, most recent first."""
     conn = _conn()
     rows = conn.execute('SELECT * FROM sessions ORDER BY started_at DESC').fetchall()
-    return [dict(r) for r in rows]
+    return [dict(r) for r in rows]  # type: ignore[return-value]
 
-def getSession(sessionId: str) -> dict[str, object] | None:
+def getSession(sessionId: str) -> SessionRecord | None:
     """Get a single session by ID."""
     conn = _conn()
     row = conn.execute('SELECT * FROM sessions WHERE id = ?', (sessionId,)).fetchone()
-    return dict(row) if row else None
+    return dict(row) if row else None  # type: ignore[return-value]
 
 def deleteSessionRecord(sessionId: str) -> bool:
     """Delete a session record."""
@@ -330,22 +330,22 @@ def deleteSessionRecord(sessionId: str) -> bool:
     conn.commit()
     return cursor.rowcount > 0
 
-def saveMessage(sessionId: str, role: str, content: object) -> int:
+def saveMessage(sessionId: str, role: str, content: JsonValue) -> int:
     """Save a message to a session."""
     conn = _conn()
     cursor = conn.execute('INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)', (sessionId, role, _json(content)))
     conn.commit()
     return cursor.lastrowid
 
-def getMessages(sessionId: str) -> list[dict[str, object]]:
+def getMessages(sessionId: str) -> list[MessageDict]:
     """Get all messages for a session."""
     conn = _conn()
     rows = conn.execute('SELECT * FROM messages WHERE session_id = ? ORDER BY created_at', (sessionId,)).fetchall()
-    results = []
+    results: list[MessageDict] = []
     for r in rows:
-        msg = dict(r)
+        msg: MessageDict = dict(r)  # type: ignore[assignment]
         try:
-            msg['content'] = json.loads(msg['content']) if isinstance(msg['content'], str) else msg['content']
+            msg['content'] = json.loads(msg['content']) if isinstance(msg['content'], str) else msg['content']  # type: ignore[arg-type]
         except (json.JSONDecodeError, TypeError):
             pass
         results.append(msg)

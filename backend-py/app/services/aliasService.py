@@ -11,8 +11,9 @@ from __future__ import annotations
 from app.config import settings
 from app.lib.paths import dataPath
 from app.services.memoryStore import recordConfigAudit
+from app.types import AliasDict
 
-def listAliases() -> list[dict[str, object]]:
+def listAliases() -> list[AliasDict]:
     """Return all model-alias entries (full records, not just names)."""
     import json
     p = dataPath('config.json')
@@ -25,7 +26,7 @@ def listAliases() -> list[dict[str, object]]:
     aliases = cfg.get('modelAliases', [])
     return aliases if isinstance(aliases, list) else []
 
-def _writeAliases(aliases: list[dict[str, object]]) -> None:
+def _writeAliases(aliases: list[AliasDict]) -> None:
     import json
     p = dataPath('config.json')
     cfg = json.loads(p.read_text('utf-8')) if p.exists() else {}
@@ -38,7 +39,7 @@ def _writeAliases(aliases: list[dict[str, object]]) -> None:
     except Exception:
         pass
 
-def _find(alias: str) -> dict[str, object] | None:
+def _find(alias: str) -> AliasDict | None:
     for a in listAliases():
         if a.get('alias') == alias:
             return a
@@ -86,7 +87,7 @@ def validateTarget(targetProvider: str, targetModel: str) -> tuple[bool, str]:
         return (False, 'target_model is required')
     return (True, '')
 
-def createAlias(alias: str, targetModel: str, targetProvider: str, actor: str='system', displayAlias: str='') -> dict[str, object]:
+def createAlias(alias: str, targetModel: str, targetProvider: str, actor: str='system', displayAlias: str='') -> AliasDict:
     """Create or upsert a model alias. Returns the stored entry."""
     alias = (alias or '').strip()
     if not alias:
@@ -95,7 +96,7 @@ def createAlias(alias: str, targetModel: str, targetProvider: str, actor: str='s
     if not ok:
         raise ValueError(msg)
     aliases = listAliases()
-    entry: dict[str, object] = {'alias': alias, 'targetModel': targetModel, 'targetProvider': targetProvider}
+    entry: AliasDict = {'alias': alias, 'targetModel': targetModel, 'targetProvider': targetProvider}
     if displayAlias:
         entry['displayAlias'] = displayAlias
     before = _find(alias)
@@ -110,7 +111,7 @@ def createAlias(alias: str, targetModel: str, targetProvider: str, actor: str='s
     recordConfigAudit('alias', 'create' if beforeCopy is None else 'upsert', actor, before=beforeCopy, after=entry)
     return entry
 
-def updateAlias(alias: str, targetModel: str | None=None, targetProvider: str | None=None, actor: str='system') -> dict[str, object]:
+def updateAlias(alias: str, targetModel: str | None=None, targetProvider: str | None=None, actor: str='system') -> AliasDict:
     """Update an existing alias. Raises if not found."""
     aliases = listAliases()
     existing = next((a for a in aliases if a.get('alias') == alias), None)
@@ -141,9 +142,9 @@ def deleteAlias(alias: str, actor: str='system') -> bool:
     recordConfigAudit('alias', 'delete', actor, before=before, after=None)
     return True
 
-def replaceAliases(aliases: list[dict[str, object]], actor: str='system') -> list[dict[str, object]]:
+def replaceAliases(aliases: list[AliasDict], actor: str='system') -> list[AliasDict]:
     """Replace the entire alias list. Validates each entry's provider first."""
-    normalised: list[dict[str, object]] = []
+    normalised: list[AliasDict] = []
     for entry in aliases:
         alias = (entry.get('alias') or '').strip()
         if not alias:
@@ -153,7 +154,7 @@ def replaceAliases(aliases: list[dict[str, object]], actor: str='system') -> lis
         ok, msg = validateTarget(targetProvider, targetModel)
         if not ok:
             raise ValueError(f"Alias '{alias}': {msg}")
-        normalised.append({'alias': alias, 'targetModel': targetModel, 'targetProvider': targetProvider, **({'displayAlias': entry['displayAlias']} if entry.get('displayAlias') else {})})
+        normalised.append(AliasDict(alias=alias, targetModel=targetModel, targetProvider=targetProvider, **({'displayAlias': entry['displayAlias']} if entry.get('displayAlias') else {})))
     before = listAliases()
     _writeAliases(normalised)
     recordConfigAudit('alias', 'replace', actor, before=before, after=normalised)

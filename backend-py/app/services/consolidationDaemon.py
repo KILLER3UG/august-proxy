@@ -19,7 +19,7 @@ _RECENTProtectionCount = 20
 _SKILLDraftRateLimit = 1
 _stagingDir = os.path.join('data', 'skills', 'staging')
 _activeSkillsDir = os.path.join('skills')
-_lastRun: dict | None = None
+_lastRun: dict[str, object] | None = None
 
 def _sanitizeSkillName(name: str) -> str:
     """v2 hardening: Convert any name to a valid camelCase identifier.

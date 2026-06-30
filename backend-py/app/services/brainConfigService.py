@@ -38,6 +38,7 @@ from app.services import configService
 from app.services.memory.brainOrchestrator import DEFAULT_FEATURES
 from app.services.memoryStore import recordConfigAudit
 from app.services.workbench import workbench as workbenchSvc
+from app.types import BrainConfigDict, JsonValue
 boolKeys: tuple[str, ...] = ('enabled', 'adaptivePolicy', 'failureLearning', 'graphMemory', 'agentJobs', 'hierarchicalAgents', 'adapterParallelTools', 'parallelReadTools', 'reviewLearnedGuidelines')
 numKeys: tuple[str, ...] = ('maxAgentDepth', 'maxWorkbenchToolLoops')
 allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys)
@@ -48,44 +49,44 @@ snakeToCamel: dict[str, str] = {snake: camel for camel, snake, _d, _k in fieldTa
 camelToSnake: dict[str, str] = {camel: snake for camel, snake, _d, _k in fieldTable}
 fieldKind: dict[str, str] = {camel: kind for camel, _s, _d, kind in fieldTable}
 
-def _defaultsCamel() -> dict[str, object]:
+def _defaultsCamel() -> BrainConfigDict:
     """Return the full defaults dict in camelCase (matches ``BrainConfig``)."""
-    out: dict[str, object] = {}
+    out: BrainConfigDict = {}
     for camel, _snake, default, _kind in fieldTable:
-        out[camel] = default
+        out[camel] = default  # type: ignore[literal-required]
     return out
 
-def getDefaults() -> dict[str, object]:
+def getDefaults() -> BrainConfigDict:
     """Public accessor — returns the camelCase defaults the frontend renders."""
     return _defaultsCamel()
 
-def _loadPersisted() -> dict[str, object]:
+def _loadPersisted() -> dict[str, JsonValue]:
     """Read ``cfg.brain_orchestrator`` (snake_case) from disk. Always fresh."""
     cfg = configService.getConfig()
     val = cfg.get('brain_orchestrator')
     return val if isinstance(val, dict) else {}
 
-def _savePersisted(snakeCfg: dict[str, object]) -> None:
+def _savePersisted(snakeCfg: dict[str, JsonValue]) -> None:
     """Write snake_case ``cfg.brain_orchestrator`` and refresh the in-memory cache."""
     cfg = configService.getConfig()
     cfg['brain_orchestrator'] = snakeCfg
     configService.saveConfig(cfg)
     settings.reload()
 
-def _snakeToCamel(snakeCfg: dict[str, object]) -> dict[str, object]:
+def _snakeToCamel(snakeCfg: dict[str, JsonValue]) -> BrainConfigDict:
     """Translate a snake_case persisted dict into the camelCase response shape."""
     out = _defaultsCamel()
     for snakeKey, value in snakeCfg.items():
         camelKey = snakeToCamel.get(snakeKey)
         if camelKey is None:
             continue
-        out[camelKey] = value
+        out[camelKey] = value  # type: ignore[literal-required]
     return out
 
-def _camelPatchToSnake(patch: dict[str, object]) -> dict[str, object]:
+def _camelPatchToSnake(patch: dict[str, JsonValue]) -> dict[str, JsonValue]:
     """Translate a camelCase patch (from the React form) into the snake_case
     dict we persist. Validation happens in :func:`validatePatch` first."""
-    out: dict[str, object] = {}
+    out: dict[str, JsonValue] = {}
     for camelKey, value in patch.items():
         snakeKey = camelToSnake[camelKey]
         out[snakeKey] = value
@@ -114,7 +115,7 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 return (False, f'{key!r} must be between {lo} and {hi} (got {value})')
     return (True, '')
 
-def _sessionInfo(sessionId: str | None=None) -> dict[str, object] | None:
+def _sessionInfo(sessionId: str | None=None) -> dict[str, JsonValue] | None:
     """Return ``{id, task}`` for the most-recent workbench session, or ``None``
     when none exist. ``task`` is mapped from ``WorkbenchSession.goal`` because
     the dataclass has no ``task`` field (see workbench.py:41-69)."""
@@ -124,7 +125,7 @@ def _sessionInfo(sessionId: str | None=None) -> dict[str, object] | None:
         return None
     if not sessions:
         return None
-    target: dict[str, object] | None = None
+    target: dict[str, JsonValue] | None = None
     if sessionId:
         for s in sessions:
             if s.get('id') == sessionId:
@@ -155,7 +156,7 @@ def _resolveSource(*, forceSession: bool=False) -> str:
         return 'session'
     return 'fallback'
 
-def getBrainConfigForSettings(*, sessionId: str | None=None) -> dict[str, object]:
+def getBrainConfigForSettings(*, sessionId: str | None=None) -> dict[str, JsonValue]:
     """Shape returned to the React ``useQuery(['brain-config'])`` call.
 
     Always includes the full default set so the UI can render a meaningful
@@ -166,7 +167,7 @@ def getBrainConfigForSettings(*, sessionId: str | None=None) -> dict[str, object
     sess = _sessionInfo(sessionId)
     return {'source': source, 'config': _snakeToCamel(persistedSnake), 'defaults': _defaultsCamel(), 'sessionId': sess['id'] if sess else None, 'session': sess}
 
-def saveBrainConfig(patch: dict[str, object]) -> tuple[bool, str, dict[str, object]]:
+def saveBrainConfig(patch: dict[str, JsonValue]) -> tuple[bool, str, BrainConfigDict]:
     """Apply a partial camelCase patch. Returns (ok, error_message, merged)."""
     ok, err = validatePatch(patch)
     if not ok:
@@ -179,7 +180,7 @@ def saveBrainConfig(patch: dict[str, object]) -> tuple[bool, str, dict[str, obje
     recordConfigAudit('brain', 'update', 'user', before=before, after=dict(mergedSnake))
     return (True, '', _snakeToCamel(mergedSnake))
 
-def resetBrainConfig() -> tuple[bool, dict[str, object]]:
+def resetBrainConfig() -> tuple[bool, BrainConfigDict]:
     """Drop the persisted override entirely. Returns (ok, defaults_camel)."""
     before = _loadPersisted()
     cfg = configService.getConfig()
@@ -189,7 +190,7 @@ def resetBrainConfig() -> tuple[bool, dict[str, object]]:
     recordConfigAudit('brain', 'reset', 'user', before=before, after={})
     return (True, _defaultsCamel())
 
-def getBrainConfigFromSession(sessionId: str) -> dict[str, object]:
+def getBrainConfigFromSession(sessionId: str) -> dict[str, JsonValue]:
     """Return the brain config tagged ``source='session'`` for the requested
     session. Falls back to the most-recent session when ``sessionId`` is
     unknown (matches the lenient lookup in :func:`_sessionInfo`)."""
