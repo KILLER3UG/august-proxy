@@ -177,3 +177,35 @@ async def put_background_review(body: BackgroundReviewUpdate):
         auto_memory_model=body.autoMemoryModel,
         actor="ui",
     )
+
+
+# ── Model Fleet (v4.1) — maps cognitive roles to models ──────────────────
+
+
+@router.get("/model-fleet")
+async def get_model_fleet():
+    """v4.1: Return the merged fleet (defaults + user overrides) — see §10."""
+    from app.services import model_fleet_service
+    return model_fleet_service.get_fleet()
+
+
+@router.put("/model-fleet")
+async def put_model_fleet(body: dict[str, Any]):
+    """v4.1: Update model fleet config (partial).
+
+    Body is a JSON object of any subset of {cortex, cerebellum, hippocampus,
+    prefrontal}. Each role must be a string (empty allowed for `cortex`,
+    which means "use the session's primary model"). Unknown roles are
+    rejected with 400.
+
+    We accept `dict` rather than a strict pydantic model so the service
+    layer can return a single 400 with the offending role name (pydantic
+    would 422 with a generic shape error).
+    """
+    from fastapi import HTTPException
+    from app.services import model_fleet_service
+
+    ok, err, fleet = model_fleet_service.update_fleet(body)
+    if not ok:
+        raise HTTPException(status_code=400, detail={"code": "validation", "message": err})
+    return fleet
