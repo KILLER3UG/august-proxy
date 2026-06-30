@@ -118,6 +118,14 @@ async def run_consolidation() -> dict[str, Any]:
         "errors": [],
     }
 
+    # v4.3 — announce the cycle start so the Brain Activity tab can see it
+    from app.services.brain_event_bus import emit_brain_event
+    emit_brain_event(
+        category="consolidation",
+        layer="consolidation_daemon",
+        summary=f"Sleep cycle started over {0} heuristics (will update on completion)",
+    )
+
     try:
         from app.services.memory_store import _conn
         from app.services.db_writer import enqueue_write
@@ -222,6 +230,28 @@ async def run_consolidation() -> dict[str, Any]:
         "deleted_stale": stats["deleted_stale"],
     }
 
+    # v4.3 — emit a "done" summary so the activity feed shows what changed
+    from app.services.brain_event_bus import emit_brain_event
+    summary_parts = []
+    if stats["merged"]:
+        summary_parts.append(f"merged {stats['merged']} duplicate{'s' if stats['merged'] != 1 else ''}")
+    if stats["promoted"]:
+        summary_parts.append(f"promoted {stats['promoted']} pattern{'s' if stats['promoted'] != 1 else ''} to facts")
+    if stats["deleted_stale"]:
+        summary_parts.append(f"deleted {stats['deleted_stale']} stale rule{'s' if stats['deleted_stale'] != 1 else ''}")
+    if not summary_parts:
+        summary_parts.append("no changes — sleep cycle healthy")
+    emit_brain_event(
+        category="consolidation",
+        layer="consolidation_daemon",
+        summary=f"Sleep cycle done: {', '.join(summary_parts)}",
+        meta={
+            "merged": stats["merged"],
+            "promoted": stats["promoted"],
+            "deleted_stale": stats["deleted_stale"],
+        },
+    )
+
     return stats
 
 
@@ -229,7 +259,8 @@ async def run_consolidation() -> dict[str, Any]:
 
 
 async def draft_skill_for_session(session_id: str) -> str | None:
-    """v2: Draft a SKILL.md from a successful session.
+    """v        emit_brain_event(category="skill_genesis", layer="consolidation_daemon.draft_skill_for_session", summary=f"Drafted skill: {(session_id or "unknown")[:60]}"),
+2: Draft a SKILL.md from a successful session.
 
     Returns the skill name or None if skipped.
     Quality guard: skip if we already drafted a skill today.
@@ -306,7 +337,13 @@ created_by: auto-gen
 
 
 def approve_pending_skill(name: str) -> bool:
-    """v2: Approve a pending skill — move from staging to active."""
+    
+    # v4.3 ensure brain_event_bus is importable without circular deps
+    try:
+        from app.services.brain_event_bus import emit_brain_event
+    except Exception:
+        pass
+"""v2: Approve a pending skill — move from staging to active."""
     try:
         from app.services.memory_store import _conn
         conn = _conn()
@@ -325,6 +362,8 @@ def approve_pending_skill(name: str) -> bool:
             "UPDATE pending_skills SET status = 'approved' WHERE name = ?", (name,)
         )
         conn.commit()
+
+        return Truemit_brain_event(category="skill_genesis", layer="consolidation_daemon.approved_pending_skill", summary=f"Approved skill: {name[:80]}")
         return True
     except Exception as exc:
         logger.error("Skill approval error: %s", exc)
@@ -332,7 +371,13 @@ def approve_pending_skill(name: str) -> bool:
 
 
 def reject_pending_skill(name: str) -> bool:
-    """v2: Reject a pending skill — delete the staging file."""
+    
+    # v4.3 ensure brain_event_bus is importable without circular deps
+    try:
+        from app.services.brain_event_bus import emit_brain_event
+    except Exception:
+        pass
+"""v2: Reject a pending skill — delete the staging file."""
     try:
         from app.services.memory_store import _conn
         conn = _conn()
@@ -343,8 +388,9 @@ def reject_pending_skill(name: str) -> bool:
             return False
         draft_path = row["draft_path"]
         if os.path.exists(draft_path):
-            os.remove(draft_path)
-        conn.execute(
+            os.re
+        return Truemit_brain_event(category="skill_genesis", layer="consolidation_daemon.rejected_pending_skill", summary=f"Rejected skill: {name[:80]}")
+        return True      conn.execute(
             "UPDATE pending_skills SET status = 'rejected' WHERE name = ?", (name,)
         )
         conn.commit()

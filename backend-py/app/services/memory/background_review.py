@@ -110,6 +110,17 @@ async def _do_review(
     if llm_client is None:
         return result
 
+    # v4.3 — announce the review so the activity feed shows background_review firing
+    try:
+        from app.services.brain_event_bus import emit_brain_event
+        emit_brain_event(
+            category='review',
+            layer='background_review._do_review',
+            summary=f'Background review started over {len(messages_snapshot)} message(s)',
+        )
+    except Exception:
+        pass
+
     prompt = _build_review_prompt(messages_snapshot)
     try:
         raw = await llm_client(prompt)
@@ -120,6 +131,18 @@ async def _do_review(
 
     recommendations = _parse_recommendations(raw)
     result["reviewed"] = True
+
+    try:
+        from app.services.brain_event_bus import emit_brain_event
+        emit_brain_event(
+            category='review',
+            layer='background_review._do_review',
+            summary=f'Background review done: {len(recommendations.get("skills", []))} skill recs, '
+                    f'{len(recommendations.get("facts", []))} fact recs',
+            meta={'skills': len(recommendations.get('skills', [])), 'facts': len(recommendations.get('facts', []))},
+        )
+    except Exception:
+        pass
 
     for rec in recommendations.get("skills", []):
         try:

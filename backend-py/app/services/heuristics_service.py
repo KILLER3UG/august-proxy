@@ -59,7 +59,21 @@ def add_heuristic(rule: str, source: str = "auto", category: str = "general") ->
         (rule.strip(), source, category),
     )
     conn.commit()
-    return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    row_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    # v4.3 — emit a brain event so the dashboard Activity tab sees new rules
+    try:
+        from app.services.brain_event_bus import emit_brain_event
+        emit_brain_event(
+            category="heuristic",
+            layer="heuristics_service.add_heuristic",
+            summary=f"Added heuristic [{source}]: {rule.strip()[:120]}",
+            meta={"rule_id": row_id, "source": source, "category": category},
+        )
+    except Exception:
+        pass
+
+    return row_id
 
 
 def remove_heuristic(rule_id: int) -> bool:

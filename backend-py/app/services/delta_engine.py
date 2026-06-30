@@ -185,7 +185,24 @@ def flush_queue() -> list[str]:
 
     _diff_queue = []
     _last_flush = time.monotonic()
-    return local_rules + llm_rules
+    total = local_rules + llm_rules
+
+    # v4.3 — emit a batch event so the dashboard sees what the delta engine inferred.
+    # Each individual add_heuristic() call above already publishes a 'heuristic'
+    # event; this is the batch-level summary (delta_engine category).
+    try:
+        from app.services.brain_event_bus import emit_brain_event
+        if total:
+            emit_brain_event(
+                category='delta_engine',
+                layer='delta_engine.flush_queue',
+                summary=f'Delta engine inferred {len(total)} preference(s) from your edits',
+                meta={'local': len(local_rules), 'llm': len(llm_rules)},
+            )
+    except Exception:
+        pass
+
+    return total
 
 
 def should_flush() -> bool:

@@ -134,6 +134,7 @@ from app.routers import gateway as gateway_routes
 from app.routers import curator as curator_routes
 from app.routers import ui_memory as ui_memory_routes
 from app.routers import brain as brain_routes
+from app.routers import brain_activity as brain_activity_routes
 from app.routers import exam as exam_routes
 from app.routers import live as live_routes
 
@@ -162,6 +163,7 @@ app.include_router(august_routes.router)
 app.include_router(gateway_routes.router)
 app.include_router(ui_memory_routes.router)
 app.include_router(brain_routes.router)
+app.include_router(brain_activity_routes.router)
 app.include_router(exam_routes.router)
 app.include_router(live_routes.router)
 
