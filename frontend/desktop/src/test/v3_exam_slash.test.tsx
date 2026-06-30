@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 describe('v3 — /Exam slash command registration', () => {
-  it('ChatThread registers /exam in the COMMANDS list', () => {
-    // The COMMANDS list is module-private, so verify it via the source.
-    const path = resolve(__dirname, '../sections/chat/ChatThread.tsx');
+  it('commands-data registers /exam in the COMMANDS list', () => {
+    // COMMANDS now lives in commands-data.ts (extracted from ChatThread in Task 10).
+    const path = resolve(__dirname, '../sections/chat/commands-data.ts');
     const src = readFileSync(path, 'utf8');
     expect(src).toMatch(/name:\s*'\/exam'/);
   });

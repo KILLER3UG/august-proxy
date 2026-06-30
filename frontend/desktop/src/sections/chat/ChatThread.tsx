@@ -33,6 +33,8 @@ import { useProviderAvailability } from '@/hooks/useProviderAvailability';
 import { useQueryClient } from '@tanstack/react-query';
 import { getAggregatedModels } from '@/api/api-client';
 import { chatRuntime, type ChatTurnRecord } from './chat-runtime';
+import { COMMANDS } from './commands-data';
+import { CommandHelpCard } from './CommandHelpCard';
 import {
   $sessionStreamStates,
   getOrInitSessionStreamState,
@@ -122,6 +124,8 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'tool';
   content: string;
   timestamp: string;
+  /** Optional message kind. Used for special rendering (e.g. 'help' panel). */
+  kind?: 'help';
   attachments?: FileAttachment[];
   tool?: {
     name: string;
@@ -265,21 +269,6 @@ const TOOLS = [
   { name: '@read_file', desc: 'Read a local file contents' },
   { name: '@run_command', desc: 'Propose shell command execution' },
   { name: '@fetch_url', desc: 'Fetch web content' },
-];
-
-const COMMANDS = [
-  { name: '/help', desc: 'Show available commands' },
-  { name: '/btw', desc: 'Ask a by-the-way question: /btw <question>' },
-  { name: '/goal', desc: 'Set a workbench goal: /goal <condition>' },
-  { name: '/clear', desc: 'Clear the chat display' },
-  { name: '/new', desc: 'Start a new chat session' },
-  { name: '/reset', desc: 'Reset conversation history' },
-  { name: '/debug', desc: 'Toggle diagnostics mode' },
-  { name: '/model', desc: 'Switch model: /model <name>' },
-  { name: '/provider', desc: 'Switch provider: /provider <name>' },
-  { name: '/load', desc: 'Load a skill: /load <skill-name>' },
-  { name: '/skills', desc: 'Search skills: /skills [query]' },
-  { name: '/exam', desc: 'Open exam mode: /exam [topic or attached files]' },
 ];
 
 const MESSAGES_STORAGE_PREFIX = 'chat_messages_';
@@ -1190,9 +1179,20 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (slashMatch) {
       const cmd = slashMatch[1].toLowerCase();
       const arg = String(slashMatch[2] || '').trim();
-      if (cmd === 'help') {
-        const helpText = COMMANDS.map(c => `${c.name}  —  ${c.desc}`).join('\n');
-        toast.info(`Available commands:\n\n${helpText}`, { duration: 12000 });
+      if (cmd === 'help' || cmd === 'commands') {
+        const helpMsg: ChatMessage = {
+          id: `m${Date.now()}`,
+          role: 'assistant',
+          content: '',
+          timestamp: new Date().toISOString(),
+        };
+        // Push a help message into the chat — MessageBubble renders the
+        // rich CommandHelpCard when `kind: 'help'` is set.
+        setMessages(prev => [...prev, { ...helpMsg, kind: 'help' }]);
+        persistMessages(sessionId, [...messages, { ...helpMsg, kind: 'help' }]);
+        setInput('');
+        clearComposerDraft(sessionId);
+        setShowCommandsDropdown(false);
         return;
       }
       if (cmd === 'clear') {
@@ -2331,6 +2331,14 @@ function MessageBubble({
         timestamp={message.timestamp}
         progress={toolProgress?.get(toolKey)}
       />
+    );
+  }
+
+  if (message.kind === 'help') {
+    return (
+      <div className="flex justify-start">
+        <CommandHelpCard />
+      </div>
     );
   }
 
