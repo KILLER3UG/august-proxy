@@ -1213,8 +1213,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         );
       }
       finalize(abortController.signal.aborted ? 'aborted' : 'done');
-    } catch (e: any) {
-      if (e?.name === 'AbortError') {
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') {
         clearSessionStatus(sessionId);
         finalize('aborted');
         return;
@@ -1256,8 +1256,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         nextMessages,
         wbSessionId
       );
-    } catch (e: any) {
-      toast.error('Could not send revision', { description: e.message });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error('Could not send revision', { description: message });
     }
   };
 
@@ -1598,7 +1599,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       return;
     }
     setVoiceActive(true);
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return; // redundant runtime guard
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = true;
@@ -2140,8 +2142,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             // renders the model's reply (thinking, text, tool
                             // calls) the same way a normal composer message does.
                             await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
-                          } catch (e: any) {
-                            toast.error('Could not approve Workbench plan', { description: e.message });
+                          } catch (e) {
+                            const message = e instanceof Error ? e.message : String(e);
+                            toast.error('Could not approve Workbench plan', { description: message });
                           }
                         }}
                         onAcceptAndImplement={async () => {
@@ -2161,8 +2164,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             setWorkbenchMode('full');
                             // Tell the model to proceed with implementation at Full access.
                             await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers, signal));
-                          } catch (e: any) {
-                            toast.error('Could not approve Workbench plan', { description: e.message });
+                          } catch (e) {
+                            const message = e instanceof Error ? e.message : String(e);
+                            toast.error('Could not approve Workbench plan', { description: message });
                           }
                         }}
                         onReject={async () => {
@@ -2172,8 +2176,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             setWorkbenchSession(updated);
                             // Notify the model the plan was rejected.
                             await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'reject', handlers, signal));
-                          } catch (e: any) {
-                            toast.error('Could not reject Workbench plan', { description: e.message });
+                          } catch (e) {
+                            const message = e instanceof Error ? e.message : String(e);
+                            toast.error('Could not reject Workbench plan', { description: message });
                           }
                         }}
                         onRevise={handlePlanRevision}
@@ -2289,8 +2294,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             // renders the model's reply (thinking, text, tool
                             // calls) the same way a normal composer message does.
                             await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
-                          } catch (e: any) {
-                            toast.error('Could not approve Workbench plan', { description: e.message });
+                          } catch (e) {
+                            const message = e instanceof Error ? e.message : String(e);
+                            toast.error('Could not approve Workbench plan', { description: message });
                           }
                         }}
                         onAcceptAndImplement={async () => {
@@ -2310,8 +2316,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             setWorkbenchMode('full');
                             // Tell the model to proceed with implementation at Full access.
                             await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers, signal));
-                          } catch (e: any) {
-                            toast.error('Could not approve Workbench plan', { description: e.message });
+                          } catch (e) {
+                            const message = e instanceof Error ? e.message : String(e);
+                            toast.error('Could not approve Workbench plan', { description: message });
                           }
                         }}
                         onReject={async () => {
@@ -2321,8 +2328,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             setWorkbenchSession(updated);
                             // Notify the model the plan was rejected.
                             await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'reject', handlers, signal));
-                          } catch (e: any) {
-                            toast.error('Could not reject Workbench plan', { description: e.message });
+                          } catch (e) {
+                            const message = e instanceof Error ? e.message : String(e);
+                            toast.error('Could not reject Workbench plan', { description: message });
                           }
                         }}
                         onRevise={handlePlanRevision}

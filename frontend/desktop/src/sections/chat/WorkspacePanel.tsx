@@ -54,8 +54,9 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
           sizeBytes: f.sizeBytes,
         }))
       );
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
       setFlatTree([]);
     } finally {
       setLoading(false);
@@ -100,8 +101,9 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
           next.splice(idx + 1, 0, ...subnodes);
           return next;
         });
-      } catch (err: any) {
-        toast.error(`Could not read folder: ${node.name}`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        toast.error(`Could not read folder: ${node.name}: ${message}`);
       }
     }
   };
@@ -159,8 +161,9 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
       if (sessionId) {
         updateSessionWorkspace(sessionId, normalizedPath);
       }
-    } catch (err: any) {
-      toast.error(`Access failed: ${err.message}`, { id: toastId });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(`Access failed: ${message}`, { id: toastId });
     }
   };
 
@@ -179,8 +182,9 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Directory not accessible');
         toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
         if (sessionId) updateSessionWorkspace(sessionId, normalizedPath);
-      } catch (err: any) {
-        toast.error(`Access failed: ${err.message}`, { id: toastId });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        toast.error(`Access failed: ${message}`, { id: toastId });
       }
     })();
     e.target.value = '';
@@ -259,8 +263,9 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
                         updateSessionWorkspace(sessionId, normalized);
                         (e.target as HTMLInputElement).value = '';
                       }
-                    } catch (err: any) {
-                      toast.error(`Access failed: ${err.message}`, { id: toastId });
+                    } catch (err) {
+                      const message = err instanceof Error ? err.message : String(err);
+                      toast.error(`Access failed: ${message}`, { id: toastId });
                     }
                   }
                 }

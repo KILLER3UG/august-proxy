@@ -116,8 +116,9 @@ export function ChatTitlebar({
       if (update) {
         await update.downloadAndInstall();
       }
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to install update");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(message || "Failed to install update");
       setUpdating(false);
     }
   };

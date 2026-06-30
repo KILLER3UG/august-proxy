@@ -33,9 +33,9 @@ export class WebSpeechSTT implements LiveSTT {
   private errorListeners = new Set<(err: Error) => void>();
 
   async start(): Promise<void> {
-    const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const Ctor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!Ctor) throw new Error('Web Speech API not available');
-    const r = new Ctor() as SpeechRecognitionLike;
+    const r = new Ctor() as unknown as SpeechRecognitionLike;
     r.lang = 'en-US';
     r.continuous = true;
     r.interimResults = true;

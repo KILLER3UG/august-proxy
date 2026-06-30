@@ -16,7 +16,7 @@ export interface LiveSTT {
 }
 
 export function liveSTTFactory(): LiveSTT {
-  if (typeof window !== 'undefined' && (window as any).SpeechRecognition) {
+  if (typeof window !== 'undefined' && window.SpeechRecognition) {
     return new WebSpeechSTT();
   }
   return new ProviderSTT();

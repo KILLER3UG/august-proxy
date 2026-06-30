@@ -160,8 +160,9 @@ export function SessionList({
       }
       onNavigate(`/c/${session.id}`);
       window.dispatchEvent(new CustomEvent("august-open-right-sidebar"));
-    } catch (err: any) {
-      toast.error(`Access failed: ${err.message}`, { id: toastId });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(`Access failed: ${message}`, { id: toastId });
     }
   };
 
@@ -187,8 +188,9 @@ export function SessionList({
         }
         onNavigate(`/c/${session.id}`);
         window.dispatchEvent(new CustomEvent('august-open-right-sidebar'));
-      } catch (err: any) {
-        toast.error(`Access failed: ${err.message}`, { id: toastId });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        toast.error(`Access failed: ${message}`, { id: toastId });
       }
     })();
     e.target.value = '';

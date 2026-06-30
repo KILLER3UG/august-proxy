@@ -308,14 +308,18 @@ export async function startChatStream(
     }
 
     finalize(abortController.signal.aborted ? 'aborted' : 'done');
-  } catch (e: any) {
-    if (e?.name === 'AbortError') {
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') {
       clearSessionStatus(sessionId);
       finalize('aborted');
       return;
     }
     console.error('[startChatStream] error:', e);
-    const errorMsg = e?.message || e?.toString() || 'Unknown error';
+    const errorMsg = e instanceof Error
+      ? e.message
+      : typeof e === 'string'
+        ? e
+        : 'Unknown error';
     updateSessionStreamState(sessionId, prev => ({
       messages: prev.messages.map(msg =>
         msg.id === assistantMsgId
@@ -438,8 +442,8 @@ export async function reconnectChatStream(
     const lastSeq = getSessionSubscriberLastSeq(sessionId);
     await streamWorkbenchReconnect(sessionId, handlers, abortController.signal, lastSeq || undefined);
     finalize(abortController.signal.aborted ? 'aborted' : 'done');
-  } catch (e: any) {
-    if (e?.name === 'AbortError') {
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') {
       clearSessionStatus(sessionId);
       finalize('aborted');
       return;

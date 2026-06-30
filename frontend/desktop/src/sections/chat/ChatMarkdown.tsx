@@ -263,9 +263,10 @@ export function Markdown({ content }: { content: string }) {
     if (!el) return;
     // Highlight all code blocks
     const blocks = el.querySelectorAll<HTMLElement>('pre code[class*="language-"]');
-    if (blocks.length > 0 && (window as any).hljs) {
+    const hljs = window.hljs;
+    if (blocks.length > 0 && hljs) {
       blocks.forEach((block) => {
-        try { (window as any).hljs.highlightElement(block); } catch {}
+        try { hljs.highlightElement(block); } catch {}
       });
     }
   }, [html]);
