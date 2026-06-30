@@ -74,3 +74,6 @@ tauri-signing.key.pub
 .hermes/
 
 nul
+
+# Backup files
+*.bak
