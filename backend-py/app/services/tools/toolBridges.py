@@ -10,7 +10,6 @@ Reserved names (registry rejects these):
 """
 from __future__ import annotations
 import json
-from typing import Any
 _RESERVEDNames = frozenset({'tool_search', 'tool_describe', 'tool_call'})
 
 def isReserved(name: str) -> bool:

@@ -7,7 +7,7 @@ Port of the MiniMax-specific portions of backend/adapters/base.js and
 backend/providers/minimax.js / minimax-cn.js.
 """
 from __future__ import annotations
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 from app.providers.clients.anthropic import AnthropicClient
 from app.providers.clients.base import ProviderResponse
 

@@ -16,7 +16,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Callable
 logger = logging.getLogger(__name__)
 MAX_DAEMONS_PER_SESSION = 3
 RESULT_EXPIRY_TURNS = 5
@@ -49,11 +49,11 @@ class DaemonManager:
     """Manages daemon lifecycle for all sessions."""
 
     def __init__(self):
-        self._daemons: dict[str, dict[str, Any]] = {}
+        self._daemons: dict[str, dict[str, object]] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
-    async def spawn(self, spec: DaemonSpec, sessionId: str, context: dict[str, Any] | None=None) -> str:
+    async def spawn(self, spec: DaemonSpec, sessionId: str, context: dict[str, object] | None=None) -> str:
         """Spawn a daemon. Returns daemon_id string or error message."""
         async with self._lock:
             sessionDaemons = [d for d in self._daemons.values() if d.get('session_id') == sessionId and getattr(d.get('result'), 'status', '') != 'errored']
@@ -80,13 +80,13 @@ class DaemonManager:
             logger.info('Daemon killed: %s', daemonId)
             return True
 
-    def listDaemons(self, sessionId: str | None=None) -> list[dict[str, Any]]:
+    def listDaemons(self, sessionId: str | None=None) -> list[dict[str, object]]:
         """List daemons, optionally filtered by session.
 
         Returns compact info (no full results). Expired results are removed.
         """
         now = time.time()
-        results: list[dict[str, Any]] = []
+        results: list[dict[str, object]] = []
         for did, info in list(self._daemons.items()):
             if sessionId and info.get('session_id') != sessionId:
                 continue

@@ -11,7 +11,7 @@ import re
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
 from app.lib.paths import dataPath
 _JOBSFile = dataPath('scheduled-jobs.json')
 
@@ -54,7 +54,7 @@ def _matchesCron(expr: str, dt: datetime | None=None) -> bool:
         dt = datetime.utcnow()
     minutes, hours, days, months, weekdays = _parseCron(expr)
     return dt.minute in minutes and dt.hour in hours and (dt.day in days) and (dt.month in months) and (dt.weekday() in weekdays)
-_jobs: dict[str, dict[str, Any]] = {}
+_jobs: dict[str, dict[str, object]] = {}
 _tasks: dict[str, asyncio.Task] = {}
 _running = False
 
@@ -76,10 +76,10 @@ def _saveJobs() -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(list(_jobs.values()), indent=2, default=str), 'utf-8')
 
-def listJobs() -> list[dict[str, Any]]:
+def listJobs() -> list[dict[str, object]]:
     return list(_jobs.values())
 
-def createJob(name: str, schedule: str, command: str, enabled: bool=True) -> dict[str, Any]:
+def createJob(name: str, schedule: str, command: str, enabled: bool=True) -> dict[str, object]:
     """Create a scheduled job."""
     import uuid
     jobId = f'sch_{uuid.uuid4().hex[:8]}'
@@ -98,14 +98,14 @@ def deleteJob(jobId: str) -> bool:
     _saveJobs()
     return True
 
-def updateJob(jobId: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+def updateJob(jobId: str, updates: dict[str, object]) -> dict[str, object] | None:
     if jobId not in _jobs:
         return None
     _jobs[jobId].update(updates)
     _saveJobs()
     return _jobs[jobId]
 
-async def runJobNow(jobId: str) -> dict[str, Any]:
+async def runJobNow(jobId: str) -> dict[str, object]:
     """Execute a job immediately."""
     job = _jobs.get(jobId)
     if not job:

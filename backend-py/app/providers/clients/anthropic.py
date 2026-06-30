@@ -8,7 +8,7 @@ Handles:
 - Content-block SSE event parsing
 """
 from __future__ import annotations
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 from app.providers.clients.base import BaseProviderClient, ProviderResponse
 
 class AnthropicClient(BaseProviderClient):
@@ -38,7 +38,7 @@ class AnthropicClient(BaseProviderClient):
             base = 'https://api.anthropic.com'
         return base.rstrip('/') + '/v1'
 
-    async def messages(self, body: dict[str, Any], apiKey: str | None=None) -> ProviderResponse:
+    async def messages(self, body: dict[str, object], apiKey: str | None=None) -> ProviderResponse:
         """Non-streaming call to POST /v1/messages."""
         if apiKey is None:
             apiKey = self.resolveApiKey()
@@ -48,7 +48,7 @@ class AnthropicClient(BaseProviderClient):
 
     async def generate(self, prompt: str, system: str | None=None) -> str:
         """v2: Anthropic-specific generate using the messages API."""
-        body: dict[str, Any] = {'model': self.config.get('model', ''), 'max_tokens': 2048, 'messages': [{'role': 'user', 'content': prompt}]}
+        body: dict[str, object] = {'model': self.config.get('model', ''), 'max_tokens': 2048, 'messages': [{'role': 'user', 'content': prompt}]}
         if system:
             body['system'] = system
         try:
@@ -65,7 +65,7 @@ class AnthropicClient(BaseProviderClient):
                 return block.get('text', '')
         return ''
 
-    async def messagesStream(self, body: dict[str, Any], apiKey: str | None=None) -> AsyncIterator[dict[str, Any]]:
+    async def messagesStream(self, body: dict[str, object], apiKey: str | None=None) -> AsyncIterator[dict[str, object]]:
         """Streaming call to POST /v1/messages (``stream: true``).
 
         Yields parsed content-block SSE events as dicts.
@@ -78,7 +78,7 @@ class AnthropicClient(BaseProviderClient):
         async for event in self.streamSse(url, headers, body):
             yield event
 
-    async def countTokens(self, body: dict[str, Any], apiKey: str | None=None) -> ProviderResponse:
+    async def countTokens(self, body: dict[str, object], apiKey: str | None=None) -> ProviderResponse:
         """Call POST /v1/messages/count_tokens (token estimation endpoint)."""
         if apiKey is None:
             apiKey = self.resolveApiKey()

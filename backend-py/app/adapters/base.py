@@ -2,11 +2,11 @@
 Base adapter — shared utilities for upstream API translation.
 """
 from __future__ import annotations
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 import httpx
 import json
 
-async def streamSse(client: httpx.AsyncClient, url: str, headers: dict[str, str], body: dict[str, Any], timeout: float=300.0) -> AsyncIterator[dict[str, Any]]:
+async def streamSse(client: httpx.AsyncClient, url: str, headers: dict[str, str], body: dict[str, object], timeout: float=300.0) -> AsyncIterator[dict[str, object]]:
     """Stream SSE events from an upstream API."""
     async with client.stream('POST', url, headers=headers, json=body, timeout=timeout) as resp:
         async for line in resp.aiter_lines():

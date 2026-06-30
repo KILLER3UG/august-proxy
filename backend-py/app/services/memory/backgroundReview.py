@@ -20,7 +20,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 from app.services import skillService
 log = logging.getLogger(__name__)
 _TURNInterval = 3
@@ -36,9 +36,9 @@ class ReviewGates:
             return False
         turnDelta = sessionTurns - lastReviewedAtTurn
         return turnDelta >= self.turnInterval or toolRounds >= self.toolRoundInterval
-ReviewClient = Optional[Callable[[list[dict[str, Any]]], str]]
+ReviewClient = Optional[Callable[[list[dict[str, object]]], str]]
 
-async def tryBackgroundReview(session: Any, messagesSnapshot: list[dict[str, Any]], *, gates: ReviewGates | None=None, llmClient: ReviewClient=None) -> None:
+async def tryBackgroundReview(session: object, messagesSnapshot: list[dict[str, object]], *, gates: ReviewGates | None=None, llmClient: ReviewClient=None) -> None:
     """Check gates and, if it is time, fire a background review.
 
     Called once per turn from the workbench finalizer. The gate check is
@@ -56,9 +56,9 @@ async def tryBackgroundReview(session: Any, messagesSnapshot: list[dict[str, Any
     session._last_reviewed_at_turn = sessionTurns
     asyncio.create_task(_doReview(messagesSnapshot, llm_client=llmClient))
 
-async def _doReview(messagesSnapshot: list[dict[str, Any]], *, llmClient: ReviewClient=None) -> dict[str, Any]:
+async def _doReview(messagesSnapshot: list[dict[str, object]], *, llmClient: ReviewClient=None) -> dict[str, object]:
     """Run the actual review — call the side LLM, parse recommendations, apply."""
-    result: dict[str, Any] = {'reviewed': False, 'skills_created': [], 'skills_patched': [], 'facts_added': [], 'errors': []}
+    result: dict[str, object] = {'reviewed': False, 'skills_created': [], 'skills_patched': [], 'facts_added': [], 'errors': []}
     if llmClient is None:
         return result
     try:
@@ -117,17 +117,17 @@ async def _doReview(messagesSnapshot: list[dict[str, Any]], *, llmClient: Review
             result['errors'].append(str(exc))
     return result
 
-def _buildReviewPrompt(messagesSnapshot: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _buildReviewPrompt(messagesSnapshot: list[dict[str, object]]) -> list[dict[str, object]]:
     """Build an OpenAI-format message list for the review LLM."""
     systemMsg = {'role': 'system', 'content': 'You are reviewing a conversation between a user and an AI assistant. Identify any lessons, corrections, or recurring patterns that should be saved for future interactions.\n\nRespond with a JSON object only (no markdown, no code fences):\n{\n  "skills": [\n    {\n      "action": "create" | "patch",\n      "name": "lowercase-dotted-name",\n      "description": "≤60 chars, one sentence",\n      "body": "Full SKILL.md body markdown (sections: When to Use, Prerequisites, How to Run, Quick Reference, Procedure, Pitfalls, Verification)",\n      "trigger": "optional trigger phrase",\n      "category": "optional-category"\n    }\n  ],\n  "memory": [\n    {\n      "action": "add" | "replace",\n      "fact": "User prefers short answers."\n    }\n  ]\n}\n\nOnly include skills/memory that are genuinely new or corrective. Do NOT create a skill for every turn — be selective.'}
     return [systemMsg] + _lastRelevantMessages(messagesSnapshot, max_len=60)
 
-def _lastRelevantMessages(messages: list[dict[str, Any]], maxLen: int=60) -> list[dict[str, Any]]:
+def _lastRelevantMessages(messages: list[dict[str, object]], maxLen: int=60) -> list[dict[str, object]]:
     """Take the tail of the conversation — user + assistant turns only."""
     relevant = [m for m in messages if m.get('role') in ('user', 'assistant')]
     return relevant[-maxLen:] if len(relevant) > maxLen else relevant
 
-def _parseRecommendations(raw: str) -> dict[str, Any]:
+def _parseRecommendations(raw: str) -> dict[str, object]:
     """Parse the LLM JSON response, handling common edge cases."""
     text = raw.strip()
     if text.startswith('```'):

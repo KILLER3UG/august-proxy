@@ -27,7 +27,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, Optional
+from typing import Optional
 from app.services.gateway.base import BasePlatformAdapter, MessageEvent, SessionSource
 log = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class SlackAdapter(BasePlatformAdapter):
     """Slack bot adapter — inbound via Socket Mode, outbound via Web API."""
     platform = 'slack'
 
-    def __init__(self, config: dict[str, Any] | None=None, bridge=None):
+    def __init__(self, config: dict[str, object] | None=None, bridge=None):
         super().__init__(config, bridge)
         self._botToken: str = os.environ.get('AUGUST_SLACK_BOT_TOKEN', '')
         self._appToken: str = os.environ.get('AUGUST_SLACK_APP_TOKEN', '')
@@ -110,7 +110,7 @@ class SlackAdapter(BasePlatformAdapter):
             self._listenerTask.cancel()
             self._listenerTask = None
 
-    async def sendMessage(self, chatId: str, text: str, **kwargs: Any) -> None:
+    async def sendMessage(self, chatId: str, text: str, **kwargs: object) -> None:
         if self._client is None:
             log.warning('slack: cannot send, client not connected')
             return
@@ -119,7 +119,7 @@ class SlackAdapter(BasePlatformAdapter):
         except Exception as exc:
             log.warning('slack: send_message failed: %s', exc)
 
-    async def getChatInfo(self, chatId: str) -> dict[str, Any]:
+    async def getChatInfo(self, chatId: str) -> dict[str, object]:
         if self._client is None:
             return {'name': chatId, 'type': 'dm'}
         try:
@@ -129,7 +129,7 @@ class SlackAdapter(BasePlatformAdapter):
         except Exception:
             return {'name': chatId, 'type': 'dm'}
 
-    async def normalize(self, raw: dict[str, Any]) -> Optional[MessageEvent]:
+    async def normalize(self, raw: dict[str, object]) -> Optional[MessageEvent]:
         """Convert a Slack Socket Mode payload into a MessageEvent."""
         event = raw.get('event', {})
         text = event.get('text', '')

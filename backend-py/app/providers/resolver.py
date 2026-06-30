@@ -4,12 +4,12 @@ Resolve a provider by name or model ID, with fallback logic.
 Port of backend/providers/provider-resolver.js + model-resolver.js (enhanced).
 """
 from __future__ import annotations
-from typing import Any, Optional
+from typing import Optional
 from app.config import settings
 from app.providers import registry, aliases
 from app.providers.builtin import registerAll
 
-def _hasApiKey(provider: dict[str, Any]) -> bool:
+def _hasApiKey(provider: dict[str, object]) -> bool:
     """Check if a provider has credentials configured (custom store or built-in env)."""
     if provider.get('is_custom'):
         return bool(provider.get('api_key'))
@@ -19,7 +19,7 @@ def _hasApiKey(provider: dict[str, Any]) -> bool:
         return False
     return client.resolveApiKey() is not None
 
-def resolve(name: str) -> Optional[dict[str, Any]]:
+def resolve(name: str) -> Optional[dict[str, object]]:
     """Find a provider by name, alias, or model ID.
 
     Resolution order:
@@ -88,7 +88,7 @@ def resolve(name: str) -> Optional[dict[str, Any]]:
             return p
     return None
 
-def listAvailable() -> list[dict[str, Any]]:
+def listAvailable() -> list[dict[str, object]]:
     """Return all registered providers."""
     if not registry.names():
         registerAll()

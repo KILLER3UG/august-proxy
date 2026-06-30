@@ -12,7 +12,6 @@ Endpoints:
 - ``POST /api/desktop-automation/action`` — run a desktop action by name
 """
 from __future__ import annotations
-from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from app.services.desktopAutomation import clickMouse, getMousePosition, getScreenSize, listWindows, openUrl, pressKey, takeScreenshot, typeText
@@ -27,12 +26,12 @@ def _isAvailable() -> bool:
         return False
 
 @router.get('/health')
-async def health() -> dict[str, Any]:
+async def health() -> dict[str, object]:
     """Report desktop-automation capability and a live probe.
 
     Returns ``overall`` ∈ ok|error so the settings page can render a status.
     """
-    checks: list[dict[str, Any]] = []
+    checks: list[dict[str, object]] = []
     overall = 'ok'
     if _isAvailable():
         checks.append({'name': 'pyautogui', 'status': 'ok', 'message': 'pyautogui is installed; desktop control is available.', 'details': {'solution': None}})
@@ -52,7 +51,7 @@ async def health() -> dict[str, Any]:
     return {'platform': _platform(), 'overall': overall, 'checks': checks, 'timestamp': _nowIso()}
 
 @router.get('/config')
-async def config() -> dict[str, Any]:
+async def config() -> dict[str, object]:
     """Return the effective desktop-automation configuration.
 
     No persistent config exists yet, so we report static defaults that the
@@ -63,10 +62,10 @@ async def config() -> dict[str, Any]:
 
 class ActionRequest(BaseModel):
     action: str = Field(..., description='screenshot|mouse_position|screen_size|click|type|press|navigate|list_windows')
-    params: dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, object] = Field(default_factory=dict)
 
 @router.post('/action')
-async def runAction(body: ActionRequest) -> Any:
+async def runAction(body: ActionRequest) -> object:
     """Execute a desktop automation action by name.
 
     This is the programmatic counterpart to the ``desktop_*`` tools; it lets

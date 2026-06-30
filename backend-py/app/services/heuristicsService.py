@@ -8,14 +8,13 @@ All writes go through the Phase 0 write queue (db_writer.enqueue_write)
 when called from async contexts, or directly from sync ones.
 """
 from __future__ import annotations
-from typing import Any
 
 def _conn():
     """Get the thread-local brain DB connection."""
     from app.services.memoryStore import _conn as getConn
     return getConn()
 
-def listHeuristics(category: str='') -> list[dict[str, Any]]:
+def listHeuristics(category: str='') -> list[dict[str, object]]:
     """List all learned heuristics, optionally filtered by category."""
     conn = _conn()
     if category:

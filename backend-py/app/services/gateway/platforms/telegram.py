@@ -26,7 +26,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, Optional
+from typing import Optional
 from app.services.gateway.base import BasePlatformAdapter, MessageEvent, SessionSource
 log = logging.getLogger(__name__)
 _TELEGRAMApi = 'https://api.telegram.org/bot'
@@ -36,7 +36,7 @@ class TelegramAdapter(BasePlatformAdapter):
     """Telegram bot adapter — inbound via webhook, outbound via sendMessage."""
     platform = 'telegram'
 
-    def __init__(self, config: dict[str, Any] | None=None, bridge=None):
+    def __init__(self, config: dict[str, object] | None=None, bridge=None):
         super().__init__(config, bridge)
         self._token: str = os.environ.get('AUGUST_TELEGRAM_BOT_TOKEN', '')
         self._client: httpx.AsyncClient | None = None
@@ -45,7 +45,7 @@ class TelegramAdapter(BasePlatformAdapter):
     def _apiUrl(self, method: str) -> str:
         return f'{_TELEGRAMApi}{self._token}/{method}'
 
-    async def _request(self, method: str, **kwargs: Any) -> dict[str, Any]:
+    async def _request(self, method: str, **kwargs: object) -> dict[str, object]:
         """Make a Bot API request and return the JSON result dict."""
         if self._client is None:
             return {'ok': False, 'description': 'Client not connected'}
@@ -122,7 +122,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 break
             await asyncio.sleep(1.0)
 
-    async def sendMessage(self, chatId: str, text: str, **kwargs: Any) -> None:
+    async def sendMessage(self, chatId: str, text: str, **kwargs: object) -> None:
         params = {'chat_id': chatId, 'text': text}
         if kwargs.get('reply_to_message_id'):
             params['reply_to_message_id'] = kwargs['reply_to_message_id']
@@ -132,11 +132,11 @@ class TelegramAdapter(BasePlatformAdapter):
             params['parse_mode'] = kwargs['parse_mode']
         await self._request('sendMessage', **params)
 
-    async def getChatInfo(self, chatId: str) -> dict[str, Any]:
+    async def getChatInfo(self, chatId: str) -> dict[str, object]:
         r = await self._request('getChat', chat_id=chatId)
         return r.get('result', {}) if r.get('ok') else {'name': str(chatId), 'type': 'dm'}
 
-    async def normalize(self, raw: dict[str, Any]) -> Optional[MessageEvent]:
+    async def normalize(self, raw: dict[str, object]) -> Optional[MessageEvent]:
         """Convert a Telegram webhook update dict into a MessageEvent."""
         message = raw.get('message') or raw.get('edited_message')
         if not message:

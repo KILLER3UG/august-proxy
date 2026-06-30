@@ -7,7 +7,6 @@ audit viewer → ``GET /api/august/audit``), so the UI stops 404'ing against
 the Python backend.
 """
 from __future__ import annotations
-from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.services import aliasService
@@ -51,7 +50,7 @@ async def manageAliases(body: AliasManageRequest):
     raise HTTPException(400, detail={'code': 'bad_request', 'message': f"Unknown action '{action}'"})
 
 @router.get('/audit')
-async def auditLog(category: str='', limit: int=200) -> dict[str, Any]:
+async def auditLog(category: str='', limit: int=200) -> dict[str, object]:
     """Return config-change audit entries shaped for the frontend AuditEntry view."""
     limit = max(1, min(limit, 1000))
     rows = listConfigAudit(category=category, limit=limit)
@@ -61,6 +60,6 @@ async def auditLog(category: str='', limit: int=200) -> dict[str, Any]:
     return {'entries': entries, 'count': len(entries)}
 
 @router.get('/rollback')
-async def rollbackList() -> dict[str, Any]:
+async def rollbackList() -> dict[str, object]:
     """Rollback is out of scope for this pass — return an empty list."""
     return {'entries': [], 'count': 0}

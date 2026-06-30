@@ -12,7 +12,7 @@ Anthropic stream events so we can drive the loop deterministically.
 from __future__ import annotations
 import asyncio
 import json
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 import pytest
 from app.services.workbench import workbench as wb
 
@@ -31,7 +31,7 @@ class StubClient:
     def bindCancel(self, event: asyncio.Event) -> None:
         self._cancelEvent = event
 
-    async def messagesStream(self, body) -> AsyncIterator[dict[str, Any]]:
+    async def messagesStream(self, body) -> AsyncIterator[dict[str, object]]:
         self.callCount += 1
         roundN = self.callCount
         await asyncio.sleep(0)
@@ -62,7 +62,7 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setattr(wb, '_resolveModel', lambda p, hint='': 'stub-claude')
     monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session: 'stub system prompt')
     import app.providers.clients as clientsMod
-    stubHolder: dict[str, Any] = {}
+    stubHolder: dict[str, object] = {}
 
     def fakeGetClient(provider):
         return stubHolder['client']
@@ -71,12 +71,12 @@ def _isolate(monkeypatch, tmp_path):
     yield stubHolder
 
 def _capturedEvents():
-    events: list[dict[str, Any]] = []
+    events: list[dict[str, object]] = []
     return events
 
-def _emitTo(events: list[dict[str, Any]]):
+def _emitTo(events: list[dict[str, object]]):
 
-    def emit(ev: dict[str, Any]) -> None:
+    def emit(ev: dict[str, object]) -> None:
         events.append(ev)
     return emit
 

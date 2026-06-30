@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Any
 from app.services.memoryStore import saveMemory, getMemory
 _MAXMemories = 100
 
@@ -18,7 +17,7 @@ def _conn():
     from app.services.memoryStore import _conn as getConn
     return getConn()
 
-def saveAutoMemory(key: str, content: Any, category: str='auto', importance: float=0.5) -> None:
+def saveAutoMemory(key: str, content: object, category: str='auto', importance: float=0.5) -> None:
     """Save an automatically captured memory as an individual FTS-indexed row.
 
     The FTS5 triggers on `auto_memories` (created in Phase 0) automatically
@@ -35,7 +34,7 @@ def saveAutoMemory(key: str, content: Any, category: str='auto', importance: flo
     conn.execute('\n        DELETE FROM auto_memories WHERE id NOT IN (\n            SELECT id FROM auto_memories ORDER BY importance DESC, id DESC LIMIT ?\n        )\n    ', (_MAXMemories,))
     conn.commit()
 
-def getRelevantMemories(query: str, limit: int=5) -> list[dict[str, Any]]:
+def getRelevantMemories(query: str, limit: int=5) -> list[dict[str, object]]:
     """Find memories relevant to a query using FTS5 ranking.
 
     Falls back to LIKE-based search if FTS returns nothing.
@@ -89,7 +88,7 @@ def deleteOrphanedBlob() -> bool:
         return True
     return False
 
-def extractAndSaveTodos(messages: list[dict[str, Any]]) -> list[str]:
+def extractAndSaveTodos(messages: list[dict[str, object]]) -> list[str]:
     """Extract todo items from assistant messages and save them."""
     todos = []
     for msg in messages:
@@ -103,7 +102,7 @@ def extractAndSaveTodos(messages: list[dict[str, Any]]) -> list[str]:
         saveAutoMemory('todos', todos, category='tasks', importance=0.8)
     return todos
 
-def backgroundReview(messages: list[dict[str, Any]]) -> dict[str, Any]:
+def backgroundReview(messages: list[dict[str, object]]) -> dict[str, object]:
     """Run a lightweight background review of the conversation."""
     if not messages:
         return {'reviewed': False, 'reason': 'no_messages'}

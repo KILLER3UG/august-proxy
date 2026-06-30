@@ -7,7 +7,7 @@ skeleton + base/bridge wiring so it is testable without a real platform.
 """
 from __future__ import annotations
 import logging
-from typing import Any, Callable
+from typing import Callable
 from app.services.gateway.base import BasePlatformAdapter
 from app.services.gateway.sessionBridge import SessionBridge
 log = logging.getLogger(__name__)
@@ -19,12 +19,12 @@ def registerAdapter(name: str, factory: Callable[..., BasePlatformAdapter]) -> N
 
 class GatewayRunner:
 
-    def __init__(self, settings: Any) -> None:
+    def __init__(self, settings: object) -> None:
         self.settings = settings
         self.adapters: list[BasePlatformAdapter] = []
         self._bridge: SessionBridge | None = None
 
-    def _gatewayConfig(self) -> dict[str, Any]:
+    def _gatewayConfig(self) -> dict[str, object]:
         try:
             return self.settings.config.get('gateway', {}) or {}
         except Exception:
@@ -61,7 +61,7 @@ class GatewayRunner:
                 log.warning('gateway: error stopping %s: %s', adapter.platform, exc)
         self.adapters.clear()
 
-async def startGateway(settings: Any) -> GatewayRunner:
+async def startGateway(settings: object) -> GatewayRunner:
     """Boot the gateway (call from the app lifespan alongside the scheduler)."""
     runner = GatewayRunner(settings)
     await runner.start()

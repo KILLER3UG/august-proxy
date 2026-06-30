@@ -12,7 +12,6 @@ This is a pure function — trivially testable.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any
 from app.services.tools.retrieval import buildToolCatalog, searchTools, buildQueryFromMessages
 AUGUST_CORE_TOOLS: frozenset[str] = frozenset({'read_file', 'write_file', 'list_directory', 'search_files', 'run_command', 'web_fetch', 'web_search', 'memory_search', 'fact_search', 'context_read', 'brain_query', 'load_skill', 'list_skills', 'skill_manage', 'spawn_subagent', 'diagnose_proxy', 'describe_environment', 'tool_search', 'tool_describe', 'tool_call', 'update_heuristics', 'update_state', 'write_scratchpad', 'spawn_daemon', 'list_daemons', 'kill_daemon', 'write_blackboard', 'read_blackboard', 'clear_blackboard'})
 
@@ -27,7 +26,7 @@ class AssemblyResult:
     deferredCount: int = 0
     deferredTokens: int = 0
     thresholdTokens: int = 0
-_BRIDGEToolDefs: list[dict[str, Any]] = [{'name': 'tool_search', 'description': "Search across ALL available tools using BM25. Use this when you need a tool you don't see listed.", 'input_schema': {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'Search query describing what you need.'}, 'limit': {'type': 'integer', 'description': 'Max results (1-10).', 'default': 5}}, 'required': ['query']}}, {'name': 'tool_describe', 'description': 'Get the full JSON schema for any tool.', 'input_schema': {'type': 'object', 'properties': {'name': {'type': 'string', 'description': 'The tool name to describe.'}}, 'required': ['name']}}, {'name': 'tool_call', 'description': "Call a tool by name with JSON arguments. Use this to invoke a tool that isn't directly visible.", 'input_schema': {'type': 'object', 'properties': {'name': {'type': 'string', 'description': 'The tool name to call.'}, 'arguments': {'type': 'string', 'description': "JSON arguments matching the tool's schema."}}, 'required': ['name', 'arguments']}}]
+_BRIDGEToolDefs: list[dict[str, object]] = [{'name': 'tool_search', 'description': "Search across ALL available tools using BM25. Use this when you need a tool you don't see listed.", 'input_schema': {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'Search query describing what you need.'}, 'limit': {'type': 'integer', 'description': 'Max results (1-10).', 'default': 5}}, 'required': ['query']}}, {'name': 'tool_describe', 'description': 'Get the full JSON schema for any tool.', 'input_schema': {'type': 'object', 'properties': {'name': {'type': 'string', 'description': 'The tool name to describe.'}}, 'required': ['name']}}, {'name': 'tool_call', 'description': "Call a tool by name with JSON arguments. Use this to invoke a tool that isn't directly visible.", 'input_schema': {'type': 'object', 'properties': {'name': {'type': 'string', 'description': 'The tool name to call.'}, 'arguments': {'type': 'string', 'description': "JSON arguments matching the tool's schema."}}, 'required': ['name', 'arguments']}}]
 
 def _estimateToolTokens(toolDef: dict) -> int:
     """Rough estimate of how many tokens a tool schema consumes."""

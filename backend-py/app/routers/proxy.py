@@ -9,7 +9,7 @@ end_request (non-streaming) or a stream-wrapping end_request (streaming).
 """
 from __future__ import annotations
 import time
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from app.adapters import anthropic as anthropicAdapter
@@ -26,13 +26,13 @@ def _clientTypeFor(endpoint: str) -> str:
         return 'openai-responses'
     return 'openai'
 
-def _safeInt(v: Any) -> int:
+def _safeInt(v: object) -> int:
     try:
         return int(v or 0)
     except (TypeError, ValueError):
         return 0
 
-async def _trackRequest(endpoint: str, body: dict[str, Any], request: Request):
+async def _trackRequest(endpoint: str, body: dict[str, object], request: Request):
     """Register a pending request and capture its body for observability.
 
     Returns the request id. The caller MUST call end_request (or wrap the
@@ -45,7 +45,7 @@ async def _trackRequest(endpoint: str, body: dict[str, Any], request: Request):
     trafficLogger.logActivity('request_start', f'{_clientTypeFor(endpoint)} /v1/{endpoint} → {model}')
     return reqId
 
-def _endNonStream(reqId: str, result: dict[str, Any]) -> dict[str, Any]:
+def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
     """Finalize a non-streaming request: capture response/tokens, end it."""
     if 'error' in result:
         trafficLogger.capture_error(reqId, str(result.get('error'))[:500])

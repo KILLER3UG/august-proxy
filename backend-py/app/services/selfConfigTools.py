@@ -11,12 +11,11 @@ audit log via the underlying services.
 """
 from __future__ import annotations
 import json
-from typing import Any
 
-def _ok(**fields: Any) -> str:
+def _ok(**fields: object) -> str:
     return json.dumps({'status': 'success', **fields}, default=str)
 
-def _err(message: str, **fields: Any) -> str:
+def _err(message: str, **fields: object) -> str:
     return json.dumps({'status': 'error', 'error': message, **fields}, default=str)
 
 async def createAlias(alias: str, targetModel: str, targetProvider: str, displayAlias: str='') -> str:

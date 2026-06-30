@@ -11,7 +11,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 from app.services import skillService
 log = logging.getLogger(__name__)
 _STALEAfterDays = 14
@@ -92,7 +92,7 @@ class SkillCurator:
     def getRecord(self, name: str) -> Optional[UsageRecord]:
         return self._usage.get(name)
 
-    def listUsage(self) -> list[dict[str, Any]]:
+    def listUsage(self) -> list[dict[str, object]]:
         return [{'name': v.name, 'use_count': v.useCount, 'view_count': v.view_count, 'patch_count': v.patch_count, 'last_used_at': v.last_used_at, 'state': v.state, 'pinned': v.pinned, 'archived_at': v.archived_at} for v in sorted(self._usage.values(), key=lambda r: r.last_used_at or 0, reverse=True)]
 
     def pin(self, name: str) -> bool:
@@ -153,7 +153,7 @@ class SkillCurator:
             return False
         return sk.get('created_by', '') == _AGENTCreatedTag
 
-    def runCuration(self, dryRun: bool=False) -> dict[str, Any]:
+    def runCuration(self, dryRun: bool=False) -> dict[str, object]:
         """Iterate all agent-authored skills and transition stale / archiveable ones.
 
         Returns a report dict::
@@ -161,7 +161,7 @@ class SkillCurator:
             {"active": N, "staled": [...], "archived": [...], "errors": [...]}
         """
         now = time.time()
-        report: dict[str, Any] = {'active': 0, 'staled': [], 'archived': [], 'errors': []}
+        report: dict[str, object] = {'active': 0, 'staled': [], 'archived': [], 'errors': []}
         for skill in skillService.list_all():
             if skill.get('created_by', '') != _AGENTCreatedTag:
                 continue

@@ -4,13 +4,12 @@ Memory curator — autonomous memory management: eviction, consolidation, archiv
 Port of backend/services/memory/memory-curator.js.
 """
 from __future__ import annotations
-from typing import Any
 from app.services.memoryStore import listMemory, saveMemory, deleteMemory
 from app.services.memory.memoryQuality import scoreQuality, deduplicate
 _MAXMemoryEntries = 500
 _MAXFacts = 200
 
-def curate() -> dict[str, Any]:
+def curate() -> dict[str, object]:
     """Run curation cycle on memory store."""
     stats = {'removed': 0, 'consolidated': 0, 'archived': 0}
     entries = listMemory()

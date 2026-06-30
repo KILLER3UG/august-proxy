@@ -9,11 +9,10 @@ Determines which tools are safe to run in parallel vs. mutating
 from __future__ import annotations
 import json
 import re
-from typing import Any
 MUTATING_NAME_PATTERN = re.compile('^(write|edit|create|delete|install|run|bash|launch|click|type|focus|set|add|remove|rename|copy|move|mkdir|touch|chmod|kill|uninstall|stop|restart|upload|download|patch|apply|commit|push|merge|deploy|start|reboot|shutdown|format|mount|unmount|browser_navigate|browser_click|browser_type|browser_snapshot)', re.IGNORECASE)
 SAFE_NAME_PATTERN = re.compile('^(read|list|search|fetch|get|describe|diagnose|status|recall|view|find|show|check|inspect|lookup|resolve|ping|health|info|memory_search|fact_search|context_read|list_skills)', re.IGNORECASE)
 
-def isManagedToolParallelSafe(toolName: str, args: dict[str, Any] | None=None) -> bool:
+def isManagedToolParallelSafe(toolName: str, args: dict[str, object] | None=None) -> bool:
     """Check if a managed tool is safe to run in parallel.
 
     Returns True for:
@@ -33,7 +32,7 @@ def isManagedToolParallelSafe(toolName: str, args: dict[str, Any] | None=None) -
         return True
     return False
 
-def isOpenaiToolCallParallelSafe(toolCall: dict[str, Any]) -> bool:
+def isOpenaiToolCallParallelSafe(toolCall: dict[str, object]) -> bool:
     """Check if an OpenAI-format tool call is parallel-safe."""
     name = toolCall.get('function', {}).get('name', '')
     argsStr = toolCall.get('function', {}).get('arguments', '{}')
@@ -43,13 +42,13 @@ def isOpenaiToolCallParallelSafe(toolCall: dict[str, Any]) -> bool:
         args = {}
     return isManagedToolParallelSafe(name, args)
 
-def isAnthropicToolUseParallelSafe(toolUse: dict[str, Any]) -> bool:
+def isAnthropicToolUseParallelSafe(toolUse: dict[str, object]) -> bool:
     """Check if an Anthropic-format tool use is parallel-safe."""
     name = toolUse.get('name', '')
     args = toolUse.get('input', {})
     return isManagedToolParallelSafe(name, args)
 
-def parseOpenaiToolArgs(toolCall: dict[str, Any]) -> dict[str, Any]:
+def parseOpenaiToolArgs(toolCall: dict[str, object]) -> dict[str, object]:
     """Parse the function.arguments JSON string from an OpenAI tool call."""
     argsStr = toolCall.get('function', {}).get('arguments', '{}')
     if isinstance(argsStr, str):

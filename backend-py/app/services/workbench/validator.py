@@ -7,9 +7,8 @@ Port of backend/services/workbench/validator.js (136 lines).
 from __future__ import annotations
 import json
 import re
-from typing import Any
 
-def validateToolArguments(toolCall: dict[str, Any], toolDefinitions: list[dict[str, Any]], messages: list[dict[str, Any]] | None=None) -> dict[str, Any]:
+def validateToolArguments(toolCall: dict[str, object], toolDefinitions: list[dict[str, object]], messages: list[dict[str, object]] | None=None) -> dict[str, object]:
     """Validate a tool call against its schema.
 
     Args:
@@ -71,11 +70,11 @@ def validateToolArguments(toolCall: dict[str, Any], toolDefinitions: list[dict[s
             return {'valid': False, 'error': f"Field '{field}' must be an object"}
     return {'valid': True}
 
-def buildValidationErrorToolMessage(toolCallId: str, toolName: str, errorMsg: str) -> dict[str, Any]:
+def buildValidationErrorToolMessage(toolCallId: str, toolName: str, errorMsg: str) -> dict[str, object]:
     """Build a tool result message for a validation error."""
     return {'tool_call_id': toolCallId, 'role': 'tool', 'content': f"[Validation Error] Tool '{toolName}' rejected before execution:\n{errorMsg}\n\n[Proxy Self-Heal]: Fix the tool arguments and retry. Do NOT stop."}
 
-def _findToolDefinition(name: str, definitions: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _findToolDefinition(name: str, definitions: list[dict[str, object]]) -> dict[str, object] | None:
     """Find a tool definition by name, supporting both Anthropic and OpenAI formats."""
     for t in definitions:
         tName = t.get('function', {}).get('name') or t.get('name')
@@ -83,7 +82,7 @@ def _findToolDefinition(name: str, definitions: list[dict[str, Any]]) -> dict[st
             return t
     return None
 
-def _applyCompatibilityShims(toolName: str, args: dict[str, Any]) -> dict[str, Any]:
+def _applyCompatibilityShims(toolName: str, args: dict[str, object]) -> dict[str, object]:
     """Apply compatibility shims for common tool name mappings."""
     if toolName in ('WebFetch', 'web_fetch', 'mcp__workspace__web_fetch'):
         if 'prompt' in args and 'url' not in args:
@@ -96,7 +95,7 @@ def _applyCompatibilityShims(toolName: str, args: dict[str, Any]) -> dict[str, A
     return args
 _MUTATINGToolPatterns = re.compile('^(StrReplaceEditTool|BashTool|MCP.*(?:write|create|move|edit|delete|rename|copy)|mcp__.*(?:write|create|move|edit|delete))', re.IGNORECASE)
 
-def _checkProxyExecutionGate(toolName: str, args: dict[str, Any], messages: list[dict[str, Any]]) -> dict[str, Any]:
+def _checkProxyExecutionGate(toolName: str, args: dict[str, object], messages: list[dict[str, object]]) -> dict[str, object]:
     """Proxy Execution Gate: block mutating tools if no plan.md in context.
 
     This prevents the model from making changes before a plan has been

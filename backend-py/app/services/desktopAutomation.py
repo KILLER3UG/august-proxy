@@ -9,9 +9,8 @@ pyautogui / pygetwindow are imported lazily so the proxy boots even when the
 desktop engine isn't installed; tools then return a clear ``{"error": ...}``.
 """
 from __future__ import annotations
-from typing import Any
 
-async def takeScreenshot() -> dict[str, Any]:
+async def takeScreenshot() -> dict[str, object]:
     """Capture the real desktop as a base64-encoded PNG."""
     try:
         import pyautogui
@@ -24,7 +23,7 @@ async def takeScreenshot() -> dict[str, Any]:
     except ImportError:
         return {'error': 'pyautogui not installed. Run `uv sync --extra desktop`.'}
 
-async def getMousePosition() -> dict[str, Any]:
+async def getMousePosition() -> dict[str, object]:
     """Return the current real cursor position."""
     try:
         import pyautogui
@@ -33,7 +32,7 @@ async def getMousePosition() -> dict[str, Any]:
     except ImportError:
         return {'error': 'pyautogui not installed. Run `uv sync --extra desktop`.'}
 
-async def getScreenSize() -> dict[str, Any]:
+async def getScreenSize() -> dict[str, object]:
     """Return the real screen dimensions in pixels."""
     try:
         import pyautogui
@@ -42,7 +41,7 @@ async def getScreenSize() -> dict[str, Any]:
     except ImportError:
         return {'error': 'pyautogui not installed. Run `uv sync --extra desktop`.'}
 
-async def clickMouse(x: int, y: int, button: str='left') -> dict[str, Any]:
+async def clickMouse(x: int, y: int, button: str='left') -> dict[str, object]:
     """Move the real mouse to (x, y) and click."""
     try:
         import pyautogui
@@ -51,7 +50,7 @@ async def clickMouse(x: int, y: int, button: str='left') -> dict[str, Any]:
     except ImportError:
         return {'error': 'pyautogui not installed. Run `uv sync --extra desktop`.'}
 
-async def typeText(text: str) -> dict[str, Any]:
+async def typeText(text: str) -> dict[str, object]:
     """Type ``text`` on the real keyboard."""
     try:
         import pyautogui
@@ -60,7 +59,7 @@ async def typeText(text: str) -> dict[str, Any]:
     except ImportError:
         return {'error': 'pyautogui not installed. Run `uv sync --extra desktop`.'}
 
-async def pressKey(key: str) -> dict[str, Any]:
+async def pressKey(key: str) -> dict[str, object]:
     """Press a single real keyboard key (e.g. ``enter``, ``escape``)."""
     try:
         import pyautogui
@@ -69,9 +68,9 @@ async def pressKey(key: str) -> dict[str, Any]:
     except ImportError:
         return {'error': 'pyautogui not installed. Run `uv sync --extra desktop`.'}
 
-async def listWindows() -> list[dict[str, Any]]:
+async def listWindows() -> list[dict[str, object]]:
     """List visible desktop windows (title + geometry)."""
-    windows: list[dict[str, Any]] = []
+    windows: list[dict[str, object]] = []
     try:
         import pygetwindow as gw
         for w in gw.getWindowsWithTitle(''):
@@ -80,7 +79,7 @@ async def listWindows() -> list[dict[str, Any]]:
         return [{'note': 'pygetwindow not installed. Run `uv sync --extra desktop`.'}]
     return windows
 
-async def openUrl(url: str) -> dict[str, Any]:
+async def openUrl(url: str) -> dict[str, object]:
     """Open ``url`` in the user's default *visible* browser (not headless).
 
     This launches the OS default browser window — use the headless

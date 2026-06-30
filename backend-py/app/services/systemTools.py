@@ -9,13 +9,12 @@ import os
 import platform
 import shutil
 from pathlib import Path
-from typing import Any
 
-async def getSystemInfo() -> dict[str, Any]:
+async def getSystemInfo() -> dict[str, object]:
     """Get system information."""
     return {'platform': platform.system(), 'release': platform.release(), 'version': platform.version(), 'machine': platform.machine(), 'processor': platform.processor(), 'hostname': platform.node(), 'cwd': os.getcwd(), 'python_version': platform.python_version()}
 
-async def getDiskUsage(path: str='.') -> dict[str, Any]:
+async def getDiskUsage(path: str='.') -> dict[str, object]:
     """Get disk usage information."""
     try:
         usage = shutil.disk_usage(path)
@@ -23,7 +22,7 @@ async def getDiskUsage(path: str='.') -> dict[str, Any]:
     except (FileNotFoundError, PermissionError) as exc:
         return {'error': str(exc)}
 
-async def listProcesses() -> list[dict[str, Any]]:
+async def listProcesses() -> list[dict[str, object]]:
     """List running processes."""
     try:
         import psutil
@@ -42,7 +41,7 @@ async def listProcesses() -> list[dict[str, Any]]:
         except (FileNotFoundError, asyncio.TimeoutError):
             return [{'error': 'ps not available'}]
 
-async def getNetworkInfo() -> dict[str, Any]:
+async def getNetworkInfo() -> dict[str, object]:
     """Get network interface information."""
     try:
         import psutil
@@ -53,7 +52,7 @@ async def getNetworkInfo() -> dict[str, Any]:
     except ImportError:
         return {'note': 'Install psutil for network info'}
 
-async def checkPort(port: int) -> dict[str, Any]:
+async def checkPort(port: int) -> dict[str, object]:
     """Check if a port is in use."""
     import socket
     try:
@@ -70,7 +69,7 @@ async def getEnvironmentVars() -> dict[str, str]:
     safeVars = ['PATH', 'HOME', 'USER', 'SHELL', 'PWD', 'AUGUST_PROXY_PORT', 'AUGUST_DATA_DIR', 'AUGUST_PROXY_ROOT']
     return {var: os.environ.get(var, '') for var in safeVars if os.environ.get(var)}
 
-async def checkFileExists(path: str) -> dict[str, Any]:
+async def checkFileExists(path: str) -> dict[str, object]:
     """Check if a file or directory exists."""
     p = Path(path)
     return {'path': str(p.resolve()), 'exists': p.exists(), 'is_file': p.is_file() if p.exists() else False, 'is_dir': p.is_dir() if p.exists() else False, 'size': p.stat().st_size if p.exists() and p.is_file() else 0}

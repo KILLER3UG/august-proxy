@@ -19,14 +19,13 @@ import os
 import time
 from difflib import unifiedDiff
 from pathlib import Path
-from typing import Any
 from app.services.heuristicsService import addHeuristic
 logger = logging.getLogger(__name__)
 _TRACKWindowSeconds = 86400
 _BATCHFlushCount = 20
 _BATCHFlushSeconds = 86400
 _consentGranted: bool = False
-_diffQueue: list[dict[str, Any]] = []
+_diffQueue: list[dict[str, object]] = []
 _lastFlush: float = time.monotonic()
 
 def isConsentGranted() -> bool:

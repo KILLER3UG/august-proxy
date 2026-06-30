@@ -8,7 +8,6 @@ Tier 3: Dynamic Runtime (volatile, rebuilt every turn)
 Port of backend/services/memory/context-builder.js (224 lines).
 """
 from __future__ import annotations
-from typing import Any
 from app.services.memoryStore import getMemory
 AUGUST_PLATFORM: str = 'Platform: August Proxy.\n- Cross-session memory tools are available: memory_search() to find past conversations, fact_search() for structured facts, context_read() for user profile.\n- Save recurring user corrections/lessons as skills via `skill_manage`; load them via `load_skill`.\n- Note: "August" or "August Proxy" is the name of this proxy platform. You are still yourself — respond as your actual underlying model identity.\n- Address the user neutrally without honorifics.'
 DEFAULT_CONTEXT_MAX_CHARS: int = 24000
@@ -18,7 +17,7 @@ def wrapTag(tag: str, content: str, attrs: str='') -> str:
     suffix = f' {attrs}' if attrs else ''
     return f"<{tag}{suffix}>\n{content or ''}\n</{tag}>"
 
-def _fmtVal(val: Any, maxChars: int=500) -> str:
+def _fmtVal(val: object, maxChars: int=500) -> str:
     """Format a value as a string, truncated to max_chars."""
     if val is None:
         return ''
@@ -27,7 +26,7 @@ def _fmtVal(val: Any, maxChars: int=500) -> str:
         s = s[:maxChars] + '...'
     return s
 
-def buildTier1(session: dict[str, Any] | None=None) -> str:
+def buildTier1(session: dict[str, object] | None=None) -> str:
     """Build Tier 1 — static identity and constraints."""
     blocks: list[str] = []
     constraints = [AUGUST_PLATFORM]
@@ -43,7 +42,7 @@ def buildTier1(session: dict[str, Any] | None=None) -> str:
     blocks.append(wrapTag('user_state', '\n'.join(userParts)))
     return '\n\n'.join((b for b in blocks if b.strip()))
 
-def buildTier2(session: dict[str, Any] | None=None) -> str:
+def buildTier2(session: dict[str, object] | None=None) -> str:
     """Build Tier 2 — workspace, directives, learned heuristics."""
     blocks: list[str] = []
     wsParts: list[str] = []
@@ -77,7 +76,7 @@ def buildTier2(session: dict[str, Any] | None=None) -> str:
             blocks.append(wrapTag('learned_heuristics', '\n'.join(lines)))
     return '\n\n'.join((b for b in blocks if b.strip()))
 
-def buildTier3(session: dict[str, Any] | None=None) -> str:
+def buildTier3(session: dict[str, object] | None=None) -> str:
     """Build Tier 3 — volatile runtime state.
 
     Each block is injected conditionally (only when it contains data).
@@ -177,7 +176,7 @@ def buildTier3(session: dict[str, Any] | None=None) -> str:
         blocks.append(wrapTag('runtime_context', '\n'.join(rcParts)))
     return '\n\n'.join((b for b in blocks if b.strip()))
 
-def buildSystemPrompt(session: dict[str, Any] | None=None, memory: dict[str, Any] | None=None, tools: list[dict[str, Any]] | None=None, agentContext: str | None=None, cachedT12: str | None=None) -> str:
+def buildSystemPrompt(session: dict[str, object] | None=None, memory: dict[str, object] | None=None, tools: list[dict[str, object]] | None=None, agentContext: str | None=None, cachedT12: str | None=None) -> str:
     """Build the full 3-tier system prompt.
 
     This is the Phase 1 rewrite: produces clean faux-XML with 3 tiers,
@@ -229,7 +228,7 @@ def buildSystemPrompt(session: dict[str, Any] | None=None, memory: dict[str, Any
         tiers.append(tier3)
     return '\n\n'.join(tiers)
 
-def buildSlimCoreContext(memory: dict[str, Any] | None=None) -> str:
+def buildSlimCoreContext(memory: dict[str, object] | None=None) -> str:
     """Legacy slim context builder. Delegates to Tier 3 runtime context."""
     if not memory:
         return ''

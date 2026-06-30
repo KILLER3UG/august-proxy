@@ -6,7 +6,6 @@ Keyed by session ID with 5-minute TTL. Max 100 sessions.
 from __future__ import annotations
 import time
 from collections import OrderedDict
-from typing import Any
 
 class PromptCache:
     """LRU cache for system prompt tiers with TTL eviction."""
@@ -42,7 +41,7 @@ class PromptCache:
         """Clear all cached prompts."""
         self._cache.clear()
 
-    def stats(self) -> dict[str, Any]:
+    def stats(self) -> dict[str, object]:
         """Return cache statistics."""
         return {'size': len(self._cache), 'max_sessions': self.maxSessions, 'ttl_seconds': self.ttlSeconds}
 _cache = PromptCache()

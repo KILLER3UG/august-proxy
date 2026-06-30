@@ -8,12 +8,11 @@ settings so resolvers see changes immediately, invalidates the model cache so
 the dropdown refreshes, and records every change to the config audit log.
 """
 from __future__ import annotations
-from typing import Any
 from app.config import settings
 from app.lib.paths import dataPath
 from app.services.memoryStore import recordConfigAudit
 
-def listAliases() -> list[dict[str, Any]]:
+def listAliases() -> list[dict[str, object]]:
     """Return all model-alias entries (full records, not just names)."""
     import json
     p = dataPath('config.json')
@@ -26,7 +25,7 @@ def listAliases() -> list[dict[str, Any]]:
     aliases = cfg.get('modelAliases', [])
     return aliases if isinstance(aliases, list) else []
 
-def _writeAliases(aliases: list[dict[str, Any]]) -> None:
+def _writeAliases(aliases: list[dict[str, object]]) -> None:
     import json
     p = dataPath('config.json')
     cfg = json.loads(p.read_text('utf-8')) if p.exists() else {}
@@ -39,7 +38,7 @@ def _writeAliases(aliases: list[dict[str, Any]]) -> None:
     except Exception:
         pass
 
-def _find(alias: str) -> dict[str, Any] | None:
+def _find(alias: str) -> dict[str, object] | None:
     for a in listAliases():
         if a.get('alias') == alias:
             return a
@@ -87,7 +86,7 @@ def validateTarget(targetProvider: str, targetModel: str) -> tuple[bool, str]:
         return (False, 'target_model is required')
     return (True, '')
 
-def createAlias(alias: str, targetModel: str, targetProvider: str, actor: str='system', displayAlias: str='') -> dict[str, Any]:
+def createAlias(alias: str, targetModel: str, targetProvider: str, actor: str='system', displayAlias: str='') -> dict[str, object]:
     """Create or upsert a model alias. Returns the stored entry."""
     alias = (alias or '').strip()
     if not alias:
@@ -96,7 +95,7 @@ def createAlias(alias: str, targetModel: str, targetProvider: str, actor: str='s
     if not ok:
         raise ValueError(msg)
     aliases = listAliases()
-    entry: dict[str, Any] = {'alias': alias, 'targetModel': targetModel, 'targetProvider': targetProvider}
+    entry: dict[str, object] = {'alias': alias, 'targetModel': targetModel, 'targetProvider': targetProvider}
     if displayAlias:
         entry['displayAlias'] = displayAlias
     before = _find(alias)
@@ -111,7 +110,7 @@ def createAlias(alias: str, targetModel: str, targetProvider: str, actor: str='s
     recordConfigAudit('alias', 'create' if beforeCopy is None else 'upsert', actor, before=beforeCopy, after=entry)
     return entry
 
-def updateAlias(alias: str, targetModel: str | None=None, targetProvider: str | None=None, actor: str='system') -> dict[str, Any]:
+def updateAlias(alias: str, targetModel: str | None=None, targetProvider: str | None=None, actor: str='system') -> dict[str, object]:
     """Update an existing alias. Raises if not found."""
     aliases = listAliases()
     existing = next((a for a in aliases if a.get('alias') == alias), None)
@@ -142,9 +141,9 @@ def deleteAlias(alias: str, actor: str='system') -> bool:
     recordConfigAudit('alias', 'delete', actor, before=before, after=None)
     return True
 
-def replaceAliases(aliases: list[dict[str, Any]], actor: str='system') -> list[dict[str, Any]]:
+def replaceAliases(aliases: list[dict[str, object]], actor: str='system') -> list[dict[str, object]]:
     """Replace the entire alias list. Validates each entry's provider first."""
-    normalised: list[dict[str, Any]] = []
+    normalised: list[dict[str, object]] = []
     for entry in aliases:
         alias = (entry.get('alias') or '').strip()
         if not alias:

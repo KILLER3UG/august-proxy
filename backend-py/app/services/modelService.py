@@ -17,15 +17,14 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any
 import httpx
 from app.config import settings
 from app.providers import resolver as providerResolver
 from app.providers.clients import getClient
-_modelCache: list[dict[str, Any]] | None = None
+_modelCache: list[dict[str, object]] | None = None
 _modelCacheAt: float = 0
 _MODELCacheTtl: float = 300
-_aliasCache: dict[str, Any] | None = None
+_aliasCache: dict[str, object] | None = None
 _aliasCacheAt: float = 0
 _ALIASCacheTtl: float = 60
 _refreshInFlight: asyncio.Task | None = None
@@ -36,7 +35,7 @@ def invalidateCache() -> None:
     _modelCacheAt = 0
     _aliasCache = None
     _aliasCacheAt = 0
-_STATICModelLists: dict[str, list[dict[str, Any]]] = {'Anthropic': [{'id': 'claude-sonnet-4-7', 'contextWindow': 200000}, {'id': 'claude-sonnet-4-6', 'contextWindow': 200000}, {'id': 'claude-opus-4-7', 'contextWindow': 200000}, {'id': 'claude-opus-4-6', 'contextWindow': 200000}, {'id': 'claude-haiku-4-5', 'contextWindow': 200000}], 'OpenAI API': [{'id': 'gpt-4o', 'contextWindow': 128000}, {'id': 'gpt-4o-mini', 'contextWindow': 128000}, {'id': 'o1', 'contextWindow': 200000}, {'id': 'o3', 'contextWindow': 200000}], 'Google AI Studio': [{'id': 'gemini-2.0-flash', 'contextWindow': 1048576}, {'id': 'gemini-2.0-pro', 'contextWindow': 1048576}, {'id': 'gemini-1.5-pro', 'contextWindow': 1048576}], 'DeepSeek': [{'id': 'deepseek-v4', 'contextWindow': 131072}, {'id': 'deepseek-v4-flash', 'contextWindow': 131072}, {'id': 'deepseek-reasoner', 'contextWindow': 131072}]}
+_STATICModelLists: dict[str, list[dict[str, object]]] = {'Anthropic': [{'id': 'claude-sonnet-4-7', 'contextWindow': 200000}, {'id': 'claude-sonnet-4-6', 'contextWindow': 200000}, {'id': 'claude-opus-4-7', 'contextWindow': 200000}, {'id': 'claude-opus-4-6', 'contextWindow': 200000}, {'id': 'claude-haiku-4-5', 'contextWindow': 200000}], 'OpenAI API': [{'id': 'gpt-4o', 'contextWindow': 128000}, {'id': 'gpt-4o-mini', 'contextWindow': 128000}, {'id': 'o1', 'contextWindow': 200000}, {'id': 'o3', 'contextWindow': 200000}], 'Google AI Studio': [{'id': 'gemini-2.0-flash', 'contextWindow': 1048576}, {'id': 'gemini-2.0-pro', 'contextWindow': 1048576}, {'id': 'gemini-1.5-pro', 'contextWindow': 1048576}], 'DeepSeek': [{'id': 'deepseek-v4', 'contextWindow': 131072}, {'id': 'deepseek-v4-flash', 'contextWindow': 131072}, {'id': 'deepseek-reasoner', 'contextWindow': 131072}]}
 
 def _deriveModelsUrl(baseUrl: str) -> str | None:
     """Derive the /models endpoint URL from a provider's base URL."""
@@ -46,7 +45,7 @@ def _deriveModelsUrl(baseUrl: str) -> str | None:
             base = base[:-len(suffix)]
     return f'{base}/models' if base else None
 
-def _getContextWindow(modelId: str, provider: dict[str, Any] | None=None, fallback: int | None=None) -> int:
+def _getContextWindow(modelId: str, provider: dict[str, object] | None=None, fallback: int | None=None) -> int:
     """Resolve context window from provider profile or inference."""
     if provider:
         profiles = provider.get('model_profiles', {})
@@ -79,7 +78,7 @@ def _prettifyModelBase(base: str) -> str:
         return 'DeepSeek ' + re.sub('^deepseek-', '', base, flags=re.IGNORECASE).replace('-', ' ').title()
     return base.replace('-', ' ').title()
 
-def _getModelDisplayAlias(model: dict[str, Any]) -> str:
+def _getModelDisplayAlias(model: dict[str, object]) -> str:
     """Generate a display alias for a model."""
     modelId = model.get('id', '')
     base = modelId.split('/')[-1].split(':')[-1] if '/' in modelId or ':' in modelId else modelId
@@ -92,7 +91,7 @@ def _getModelDisplayAlias(model: dict[str, Any]) -> str:
     display = _prettifyModelBase(base)
     return f"{display}{(f' ({tag})' if tag else '')}"
 
-async def _fetchProviderModels(provider: dict[str, Any], timeoutS: float=5.0) -> list[dict[str, Any]]:
+async def _fetchProviderModels(provider: dict[str, object], timeoutS: float=5.0) -> list[dict[str, object]]:
     """Fetch models from a provider's /models endpoint.
 
     Falls back to static list if the endpoint is unavailable.
@@ -126,9 +125,9 @@ async def _fetchProviderModels(provider: dict[str, Any], timeoutS: float=5.0) ->
                 static.append({'id': fm, 'contextWindow': _getContextWindow(fm, provider)})
     return [{'id': m['id'], 'name': m['id'], 'provider': providerName, 'contextWindow': m.get('contextWindow', 128000)} for m in static]
 
-async def _aggregateModels() -> list[dict[str, Any]]:
+async def _aggregateModels() -> list[dict[str, object]]:
     """Aggregate models from user-configured providers in providers.json only."""
-    allModels: list[dict[str, Any]] = []
+    allModels: list[dict[str, object]] = []
     try:
         store = settings.providers
         for entry in store.get('providers', []):
@@ -141,7 +140,7 @@ async def _aggregateModels() -> list[dict[str, Any]]:
                 allModels.append({'id': mid, 'name': m.get('name', mid), 'provider': entry['name'], 'contextWindow': m.get('contextWindow', 128000), 'supportsReasoning': reasoning, 'supportsThinking': reasoning, 'isFree': m.get('free', False) or _isFreeModelId(m['id'])})
     except Exception:
         pass
-    seen: dict[str, dict[str, Any]] = {}
+    seen: dict[str, dict[str, object]] = {}
     for m in allModels:
         mid = m['id']
         if mid not in seen or (m.get('isFree') and (not seen[mid].get('isFree'))):
@@ -150,7 +149,7 @@ async def _aggregateModels() -> list[dict[str, Any]]:
     result.sort(key=lambda m: (0 if m.get('isFree') else 1, m.get('id', '')))
     return result
 
-async def aggregate(refresh: bool=False) -> list[dict[str, Any]]:
+async def aggregate(refresh: bool=False) -> list[dict[str, object]]:
     """Get the aggregated model list with caching."""
     global _model_cache, _model_cache_at, _refresh_in_flight
     now = time.time()
@@ -188,7 +187,7 @@ async def prewarm() -> None:
     except Exception:
         pass
 
-def getModelDisplayAlias(model: dict[str, Any]) -> str:
+def getModelDisplayAlias(model: dict[str, object]) -> str:
     return _getModelDisplayAlias(model)
 
 def isFreeModelId(modelId: str) -> bool:

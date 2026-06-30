@@ -13,7 +13,6 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
-from typing import Any
 
 class CatalogEntry:
     """A pre-tokenized entry in the BM25 catalog."""

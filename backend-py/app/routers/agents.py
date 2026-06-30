@@ -5,7 +5,6 @@ previous in-memory store is gone, so agents now survive restarts. Adds an
 update route and a rooted-tree query used by the frontend AgentTree.
 """
 from __future__ import annotations
-from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from app.services.tools import agentRegistry

@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from app.services import eventLog

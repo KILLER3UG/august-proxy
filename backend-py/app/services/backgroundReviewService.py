@@ -16,13 +16,12 @@ When empty, the chat session's model is used for that task.
 """
 from __future__ import annotations
 import json
-from typing import Any
 from app.config import settings
 from app.lib.paths import dataPath
 from app.services.memoryStore import recordConfigAudit
-_DEFAULTConfig: dict[str, Any] = {'enabled': False, 'reviewModel': '', 'reflectionModel': '', 'autoMemoryModel': ''}
+_DEFAULTConfig: dict[str, object] = {'enabled': False, 'reviewModel': '', 'reflectionModel': '', 'autoMemoryModel': ''}
 
-def getConfig() -> dict[str, Any]:
+def getConfig() -> dict[str, object]:
     """Return the current background review config (with defaults filled)."""
     aux = settings.config.get('auxiliary', {})
     if not isinstance(aux, dict):
@@ -34,7 +33,7 @@ def getConfig() -> dict[str, Any]:
     merged.update(br)
     return merged
 
-def _writeConfig(data: dict[str, Any]) -> None:
+def _writeConfig(data: dict[str, object]) -> None:
     p = dataPath('config.json')
     cfg = json.loads(p.read_text('utf-8')) if p.exists() else {}
     cfg.setdefault('auxiliary', {})
@@ -42,7 +41,7 @@ def _writeConfig(data: dict[str, Any]) -> None:
     p.write_text(json.dumps(cfg, indent=2), 'utf-8')
     settings.reload()
 
-def saveConfig(enabled: bool | None=None, reviewModel: str | None=None, reflectionModel: str | None=None, autoMemoryModel: str | None=None, actor: str='system') -> dict[str, Any]:
+def saveConfig(enabled: bool | None=None, reviewModel: str | None=None, reflectionModel: str | None=None, autoMemoryModel: str | None=None, actor: str='system') -> dict[str, object]:
     """Update background review config fields (partial merge).
 
     Also performs a one-time migration from the legacy ``provider``/``model``

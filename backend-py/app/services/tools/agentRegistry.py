@@ -7,7 +7,6 @@ from __future__ import annotations
 import asyncio
 import uuid
 from datetime import datetime
-from typing import Any
 from app.services.memoryStore import saveMemory, getMemory, recordConfigAudit
 _AGENTSKey = 'agent_registry'
 _JOBSKey = 'agent_jobs'
@@ -16,17 +15,17 @@ _MAXAgentDepth = 4
 def _now() -> str:
     return datetime.utcnow().isoformat() + 'Z'
 
-def listAgents() -> list[dict[str, Any]]:
+def listAgents() -> list[dict[str, object]]:
     return getMemory(_AGENTSKey) or []
 
-def getAgent(agentId: str) -> dict[str, Any] | None:
+def getAgent(agentId: str) -> dict[str, object] | None:
     agents = listAgents()
     for a in agents:
         if a['id'] == agentId:
             return a
     return None
 
-def createAgent(name: str, parentId: str='', permissions: list[str] | None=None, toolsets: list[str] | None=None, model: str='', provider: str='', description: str='', role: str='', tools: list[str] | None=None, modelAlias: str='', parentAgent: str='', actor: str='system') -> dict[str, Any]:
+def createAgent(name: str, parentId: str='', permissions: list[str] | None=None, toolsets: list[str] | None=None, model: str='', provider: str='', description: str='', role: str='', tools: list[str] | None=None, modelAlias: str='', parentAgent: str='', actor: str='system') -> dict[str, object]:
     """Create a new agent in the hierarchy.
 
     Extended schema fields (description, role, tools, modelAlias) align with
@@ -42,7 +41,7 @@ def createAgent(name: str, parentId: str='', permissions: list[str] | None=None,
     recordConfigAudit('agent', 'create', actor, before=None, after=agent)
     return agent
 
-def updateAgent(agentId: str, updates: dict[str, Any], actor: str='system') -> dict[str, Any] | None:
+def updateAgent(agentId: str, updates: dict[str, object], actor: str='system') -> dict[str, object] | None:
     agents = listAgents()
     for a in agents:
         if a['id'] == agentId:
@@ -63,7 +62,7 @@ def deleteAgent(agentId: str, actor: str='system') -> bool:
     recordConfigAudit('agent', 'delete', actor, before=before, after=None)
     return True
 
-def getAgentTree(agentId: str) -> dict[str, Any] | None:
+def getAgentTree(agentId: str) -> dict[str, object] | None:
     """Get an agent and its children as a tree."""
     agent = getAgent(agentId)
     if not agent:
@@ -72,14 +71,14 @@ def getAgentTree(agentId: str) -> dict[str, Any] | None:
     children = [a for a in allAgents if a.get('parentId') == agentId]
     return {'agent': agent, 'children': children}
 
-def getAgentTreeRooted(root: str='', maxDepth: int=4) -> dict[str, Any]:
+def getAgentTreeRooted(root: str='', maxDepth: int=4) -> dict[str, object]:
     """Build a recursive agent tree from ``root`` (or all roots if empty).
 
     Used by the frontend AgentTree via ``GET /api/agents/tree?root=&maxDepth=``.
     """
     allAgents = listAgents()
 
-    def buildNode(agent: dict[str, Any], depth: int) -> dict[str, Any]:
+    def buildNode(agent: dict[str, object], depth: int) -> dict[str, object]:
         children = []
         if depth < maxDepth:
             for a in allAgents:
@@ -94,7 +93,7 @@ def getAgentTreeRooted(root: str='', maxDepth: int=4) -> dict[str, Any]:
     roots = [a for a in allAgents if not a.get('parentId')]
     return {'agent': None, 'children': [buildNode(a, 0) for a in roots]}
 
-def evaluateAgentTool(agentId: str, toolName: str) -> dict[str, Any]:
+def evaluateAgentTool(agentId: str, toolName: str) -> dict[str, object]:
     """Check if an agent is permitted to use a tool."""
     agent = getAgent(agentId)
     if not agent:
@@ -147,13 +146,13 @@ def deriveChildPermissions(parentId: str, childId: str) -> list[str]:
         return sorted(childEff)
     return sorted(childEff & parentEff)
 
-def listJobs(agentId: str='') -> list[dict[str, Any]]:
+def listJobs(agentId: str='') -> list[dict[str, object]]:
     jobs = getMemory(_JOBSKey) or []
     if agentId:
         return [j for j in jobs if j.get('agentId') == agentId]
     return jobs
 
-def createJob(agentId: str, goal: str, context: str='') -> dict[str, Any]:
+def createJob(agentId: str, goal: str, context: str='') -> dict[str, object]:
     jobs = getMemory(_JOBSKey) or []
     jobId = f'job_{uuid.uuid4().hex[:8]}'
     job = {'id': jobId, 'agentId': agentId, 'goal': goal, 'context': context, 'status': 'pending', 'createdAt': _now()}
@@ -161,7 +160,7 @@ def createJob(agentId: str, goal: str, context: str='') -> dict[str, Any]:
     saveMemory(_JOBSKey, jobs)
     return job
 
-def updateJob(jobId: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+def updateJob(jobId: str, updates: dict[str, object]) -> dict[str, object] | None:
     jobs = getMemory(_JOBSKey) or []
     for j in jobs:
         if j['id'] == jobId:
@@ -170,7 +169,7 @@ def updateJob(jobId: str, updates: dict[str, Any]) -> dict[str, Any] | None:
             return j
     return None
 
-async def executeSubAgent(agentId: str, goal: str, context: str='') -> dict[str, Any]:
+async def executeSubAgent(agentId: str, goal: str, context: str='') -> dict[str, object]:
     """Execute a sub-agent task."""
     job = createJob(agentId, goal, context)
     updateJob(job['id'], {'status': 'running'})
@@ -182,7 +181,7 @@ async def executeSubAgent(agentId: str, goal: str, context: str='') -> dict[str,
         updateJob(job['id'], {'status': 'failed', 'error': str(exc)})
         return {'job': job, 'error': str(exc)}
 
-def _calculateDepth(parentId: str | None, agents: list[dict[str, Any]]) -> int:
+def _calculateDepth(parentId: str | None, agents: list[dict[str, object]]) -> int:
     if not parentId:
         return 0
     for a in agents:

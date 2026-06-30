@@ -5,7 +5,6 @@ Port of backend/services/storage/session-store.js.
 from __future__ import annotations
 import uuid
 from datetime import datetime
-from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.services import memoryStore

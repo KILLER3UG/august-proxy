@@ -13,7 +13,6 @@ import json
 import os
 import uuid
 from pathlib import Path
-from typing import Any
 from app.lib.paths import dataPath
 _mcpCleanupTasks: set[asyncio.Task] = set()
 MCP_CONFIG_FILE = 'mcp-servers.json'
@@ -21,11 +20,11 @@ MCP_TIMEOUT_MS = 30000
 
 def _mcpConfigPath() -> Path:
     return dataPath(MCP_CONFIG_FILE)
-_servers: dict[str, dict[str, Any]] = {}
-_toolsCache: dict[str, list[dict[str, Any]]] = {}
+_servers: dict[str, dict[str, object]] = {}
+_toolsCache: dict[str, list[dict[str, object]]] = {}
 _processes: dict[str, asyncio.subprocess.Process] = {}
 
-def _loadConfig() -> dict[str, Any]:
+def _loadConfig() -> dict[str, object]:
     """Load MCP server config from disk."""
     path = _mcpConfigPath()
     if not path.exists():
@@ -35,17 +34,17 @@ def _loadConfig() -> dict[str, Any]:
     except (json.JSONDecodeError, OSError):
         return {}
 
-def _saveConfig(config: dict[str, Any]) -> None:
+def _saveConfig(config: dict[str, object]) -> None:
     """Save MCP server config to disk."""
     path = _mcpConfigPath()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(config, indent=2), 'utf-8')
 
-def listRegisteredServers() -> list[dict[str, Any]]:
+def listRegisteredServers() -> list[dict[str, object]]:
     """List all registered MCP servers."""
     return list(_servers.values())
 
-def registerServer(name: str, command: str, args: list[str] | None=None, env: dict[str, str] | None=None) -> dict[str, Any]:
+def registerServer(name: str, command: str, args: list[str] | None=None, env: dict[str, str] | None=None) -> dict[str, object]:
     """Register an MCP server."""
     serverId = f'mcp_{uuid.uuid4().hex[:8]}'
     server = {'id': serverId, 'name': name, 'command': command, 'args': args or [], 'env': env or {}, 'status': 'registered'}
@@ -97,7 +96,7 @@ async def _stopServerProcess(serverId: str) -> None:
     if serverId in _servers:
         _servers[serverId]['status'] = 'stopped'
 
-async def discoverTools(serverId: str) -> list[dict[str, Any]]:
+async def discoverTools(serverId: str) -> list[dict[str, object]]:
     """Call the tools/list RPC method on an MCP server."""
     proc = await _startServerProcess(serverId)
     if not proc or not proc.stdin or (not proc.stdout):
@@ -115,7 +114,7 @@ async def discoverTools(serverId: str) -> list[dict[str, Any]]:
         _servers.get(serverId, {})['error'] = str(exc)
         return []
 
-async def executeTool(serverId: str, toolName: str, args: dict[str, Any]) -> str:
+async def executeTool(serverId: str, toolName: str, args: dict[str, object]) -> str:
     """Call a tool on an MCP server via JSON-RPC."""
     proc = await _startServerProcess(serverId)
     if not proc or not proc.stdin or (not proc.stdout):
@@ -138,7 +137,7 @@ async def executeTool(serverId: str, toolName: str, args: dict[str, Any]) -> str
     except Exception as exc:
         return f'Error: {exc}'
 
-def getAllMcpTools() -> list[dict[str, Any]]:
+def getAllMcpTools() -> list[dict[str, object]]:
     """Get all tools from all registered MCP servers."""
     allTools = []
     for sid, tools in _toolsCache.items():
@@ -147,12 +146,12 @@ def getAllMcpTools() -> list[dict[str, Any]]:
             allTools.append(tool)
     return allTools
 
-def getMcpToolDefinitions() -> list[dict[str, Any]]:
+def getMcpToolDefinitions() -> list[dict[str, object]]:
     """Get MCP tools in a format compatible with the tool registry."""
     tools = getAllMcpTools()
     return [{'type': 'function', 'function': {'name': f"mcp__{t.get('_mcp_server_id', 'unknown')}__{t['name']}", 'description': t.get('description', ''), 'parameters': t.get('inputSchema', {'type': 'object', 'properties': {}})}} for t in tools]
 
-def getMcpToolDefinitionsSync() -> list[dict[str, Any]]:
+def getMcpToolDefinitionsSync() -> list[dict[str, object]]:
     """Sync accessor over the lazily-populated MCP tool cache.
 
     Triggers a background ``refresh_mcp_tools()`` when the cache is empty
@@ -186,7 +185,7 @@ def isMcpToolName(name: str) -> bool:
     """Check if a tool name belongs to an MCP server."""
     return isinstance(name, str) and name.startswith('mcp__')
 
-async def executeMcpToolCall(name: str, args: dict[str, Any]) -> str:
+async def executeMcpToolCall(name: str, args: dict[str, object]) -> str:
     """Execute an MCP tool call by routing to the correct server."""
     parts = name.split('__', 2)
     if len(parts) < 3:
@@ -194,7 +193,7 @@ async def executeMcpToolCall(name: str, args: dict[str, Any]) -> str:
     __, serverId, toolName = parts
     return await executeTool(serverId, toolName, args)
 
-def sanitizeToolSchema(schema: Any) -> dict[str, Any]:
+def sanitizeToolSchema(schema: object) -> dict[str, object]:
     """Sanitize a JSON Schema to ensure it has expected structure."""
     if not isinstance(schema, dict):
         return {'type': 'object', 'properties': {}}

@@ -24,7 +24,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable
+from typing import AsyncIterator, Callable
 logger = logging.getLogger('workbench')
 MAX_MANAGED_TOOL_ROUNDS = 10
 WORKBENCH_TOKEN_BUDGET = 2000000
@@ -48,26 +48,26 @@ class WorkbenchSession:
     mutationCount: int = 0
     workspacePath: str = ''
     goal: str = ''
-    plan: dict[str, Any] | None = None
+    plan: dict[str, object] | None = None
     planApproved: bool = False
-    messages: list[dict[str, Any]] = field(default_factory=list)
-    pendingMutations: list[dict[str, Any]] = field(default_factory=list)
-    mutationLog: list[dict[str, Any]] = field(default_factory=list)
+    messages: list[dict[str, object]] = field(default_factory=list)
+    pendingMutations: list[dict[str, object]] = field(default_factory=list)
+    mutationLog: list[dict[str, object]] = field(default_factory=list)
     status: str = 'idle'
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, object] = field(default_factory=dict)
     totalInputTokens: int = 0
     totalOutputTokens: int = 0
     totalCost: float = 0.0
 
-    def toDict(self) -> dict[str, Any]:
+    def toDict(self) -> dict[str, object]:
         return {'id': self.id, 'title': self.title, 'provider': self.provider, 'model': self.model, 'agentId': self.agentId, 'guardMode': self.guardMode, 'createdAt': self.createdAt, 'updatedAt': self.updatedAt, 'startedAt': self.startedAt, 'messageCount': self.messageCount, 'mutationCount': self.mutationCount, 'workspacePath': self.workspacePath, 'goal': self.goal, 'plan': self.plan, 'planApproved': self.planApproved, 'messages': self.messages, 'pendingMutations': self.pendingMutations, 'mutationLog': self.mutationLog, 'status': self.status, 'metadata': self.metadata, 'totalInputTokens': self.totalInputTokens, 'totalOutputTokens': self.totalOutputTokens, 'totalCost': self.totalCost}
 
     @staticmethod
-    def fromDict(d: dict[str, Any]) -> WorkbenchSession:
+    def fromDict(d: dict[str, object]) -> WorkbenchSession:
         return WorkbenchSession(id=d.get('id', ''), title=d.get('title', 'New Session'), provider=d.get('provider', ''), model=d.get('model', ''), agent_id=d.get('agentId', ''), guard_mode=d.get('guardMode', 'full'), created_at=d.get('createdAt', ''), updated_at=d.get('updatedAt', ''), started_at=d.get('startedAt', ''), message_count=d.get('messageCount', 0), mutation_count=d.get('mutationCount', 0), workspace_path=d.get('workspacePath', ''), goal=d.get('goal', ''), plan=d.get('plan'), planApproved=d.get('planApproved', False), messages=d.get('messages', []), pending_mutations=d.get('pendingMutations', []), mutation_log=d.get('mutationLog', []), status=d.get('status', 'idle'), metadata=d.get('metadata', {}), total_input_tokens=d.get('totalInputTokens', 0), total_output_tokens=d.get('totalOutputTokens', 0), total_cost=d.get('totalCost', 0.0))
 _SESSIONFile = 'workbench-sessions.json'
 _sessions: dict[str, WorkbenchSession] = {}
-_statusSubscribers: list[Callable[[dict[str, Any]], None]] = []
+_statusSubscribers: list[Callable[[dict[str, object]], None]] = []
 
 def _sessionsPath() -> Path:
     from app.lib.paths import dataPath
@@ -139,7 +139,7 @@ def setWorkbenchSessionAgent(sessionId: str, agentId: str) -> WorkbenchSession |
     _emitSessionStatus(sessionId)
     return session
 
-def listWorkbenchSessions() -> list[dict[str, Any]]:
+def listWorkbenchSessions() -> list[dict[str, object]]:
     """Return all sessions summarized."""
     if not _sessions:
         _loadSessions()
@@ -159,11 +159,11 @@ def resetWorkbenchSession(sessionId: str, provider: str='', agentId: str='') -> 
     deleteWorkbenchSession(sessionId)
     return createWorkbenchSession(provider=provider, agent_id=agentId)
 
-def summarizeSession(session: WorkbenchSession) -> dict[str, Any]:
+def summarizeSession(session: WorkbenchSession) -> dict[str, object]:
     """Return a lightweight summary of a session."""
     return {'id': session.id, 'title': session.title, 'provider': session.provider, 'model': session.model, 'agentId': session.agentId, 'guardMode': session.guard_mode, 'goal': session.goal, 'plan': session.plan is not None, 'planApproved': session.planApproved, 'messageCount': session.message_count, 'mutationCount': session.mutation_count, 'status': session.status, 'createdAt': session.created_at, 'updatedAt': session.updated_at, 'startedAt': session.started_at, 'workspacePath': session.workspace_path}
 
-def getWorkbenchSessionStatus(sessionId: str) -> dict[str, Any] | None:
+def getWorkbenchSessionStatus(sessionId: str) -> dict[str, object] | None:
     """Return flat status for the UI's approval banner."""
     session = _sessions.get(sessionId)
     if not session:
@@ -171,7 +171,7 @@ def getWorkbenchSessionStatus(sessionId: str) -> dict[str, Any] | None:
     hasPending = len(session.pending_mutations) > 0
     return {'sessionId': sessionId, 'status': session.status, 'guardMode': session.guard_mode, 'pendingMutation': session.pending_mutations[-1] if hasPending else None, 'plan': session.plan, 'planApproved': session.planApproved}
 
-def subscribeSessionStatus(callback: Callable[[dict[str, Any]], None]) -> Callable[[], None]:
+def subscribeSessionStatus(callback: Callable[[dict[str, object]], None]) -> Callable[[], None]:
     """Register a session status subscriber. Returns unsubscribe function."""
     _statusSubscribers.append(callback)
 
@@ -187,7 +187,7 @@ def normalizeGuardMode(mode: str) -> str:
         return lower
     return 'full'
 
-def isPlanModeBlocked(toolName: str, args: dict[str, Any] | None=None) -> bool:
+def isPlanModeBlocked(toolName: str, args: dict[str, object] | None=None) -> bool:
     """In plan mode, only DESTRUCTIVE tools are blocked.
 
     Everything else — read-only file tools, search, web, memory, agent,
@@ -413,7 +413,7 @@ def _xmlEscape(s: str) -> str:
     """Minimal XML attribute/text escape."""
     return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
 
-def resolveEffectiveEffort(incoming: str | None, session: WorkbenchSession, modelEntry: dict[str, Any] | None=None) -> str:
+def resolveEffectiveEffort(incoming: str | None, session: WorkbenchSession, modelEntry: dict[str, object] | None=None) -> str:
     """Resolve the effort level from incoming param, session, or model default."""
     if incoming and incoming in ('low', 'medium', 'high', 'max'):
         return incoming
@@ -436,7 +436,7 @@ def effortToOpenaiReasoningEffort(effort: str) -> str:
     mapping = {'low': 'low', 'medium': 'medium', 'high': 'high', 'max': 'high'}
     return mapping.get(effort, 'medium')
 
-def toolDefinitions(session: WorkbenchSession) -> list[dict[str, Any]]:
+def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     """Return tool definitions in Anthropic format for a session.
 
     The tool registry stores definitions in OpenAI format
@@ -460,7 +460,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, Any]]:
     """
     from app.adapters.proxyTools import sanitizeAnthropicToolDefinition
     from app.services.toolRegistry import listTools
-    tools: list[dict[str, Any]] = []
+    tools: list[dict[str, object]] = []
     seen: set[str] = set()
     for raw in listTools():
         t = sanitizeAnthropicToolDefinition(raw)
@@ -483,7 +483,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, Any]]:
         pass
     return tools
 
-def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, Any]]:
+def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     """Return tool definitions in OpenAI format for a session.
 
     Mirrors ``tool_definitions``: registry tools (which may be in mixed
@@ -492,7 +492,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, Any]]:
     """
     from app.adapters.proxyTools import anthropicToOpenaiToolDefinition
     from app.services.toolRegistry import listTools
-    tools: list[dict[str, Any]] = []
+    tools: list[dict[str, object]] = []
     seen: set[str] = set()
     for raw in listTools():
         if raw.get('type') == 'function' and isinstance(raw.get('function'), dict):
@@ -509,11 +509,11 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, Any]]:
     tools.extend(_mcpToolDefinitionsOpenai(seen))
     return tools
 
-def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, Any]]:
+def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, object]]:
     """Real MCP server tools in Anthropic format, deduped against ``seen``."""
     from app.adapters.proxyTools import openaiToAnthropicToolDefinition
     from app.services.tools.mcpClient import getMcpToolDefinitionsSync
-    out: list[dict[str, Any]] = []
+    out: list[dict[str, object]] = []
     for raw in getMcpToolDefinitionsSync():
         t = openaiToAnthropicToolDefinition(raw)
         name = t.get('name', '')
@@ -522,10 +522,10 @@ def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, Any]]:
             out.append(t)
     return out
 
-def _mcpToolDefinitionsOpenai(seen: set[str]) -> list[dict[str, Any]]:
+def _mcpToolDefinitionsOpenai(seen: set[str]) -> list[dict[str, object]]:
     """Real MCP server tools in OpenAI format, deduped against ``seen``."""
     from app.services.tools.mcpClient import getMcpToolDefinitionsSync
-    out: list[dict[str, Any]] = []
+    out: list[dict[str, object]] = []
     for raw in getMcpToolDefinitionsSync():
         fn = raw.get('function', {}) if raw.get('type') == 'function' else {}
         name = fn.get('name', '')
@@ -534,7 +534,7 @@ def _mcpToolDefinitionsOpenai(seen: set[str]) -> list[dict[str, Any]]:
             out.append(raw)
     return out
 
-async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str='', agentId: str='', effort: str='', model: str='', modelProvider: str='', guardMode: str='', emit: Callable[[dict[str, Any]], None] | None=None, signal: asyncio.Event | None=None) -> None:
+async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str='', agentId: str='', effort: str='', model: str='', modelProvider: str='', guardMode: str='', emit: Callable[[dict[str, object]], None] | None=None, signal: asyncio.Event | None=None) -> None:
     """The primary streaming entry point for workbench chat.
 
     This is the main chat loop that:
@@ -679,7 +679,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
                 logger.warning('workbench model re-call returned empty content after tool round %d (no text, no tools)', toolRound - 1)
             currentMessages.append(assistantMsg)
             break
-        toolResults: list[dict[str, Any]] = []
+        toolResults: list[dict[str, object]] = []
         planSubmittedThisRound = False
         for tu in toolUses:
             if _isCancelled():
@@ -809,7 +809,7 @@ def _backgroundTaskModel(taskKey: str, chatModel: str) -> str:
         pass
     return chatModel
 
-def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, Any]], model: str='') -> None:
+def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]], model: str='') -> None:
     """Auto-memory sync — save conversation summaries and extract todos.
 
     Runs fire-and-forget after each workbench turn so it never delays
@@ -842,7 +842,7 @@ def _lastUserMessageText(session: WorkbenchSession) -> str:
                 return ' '.join(texts)
     return ''
 
-def _makeReviewLlmClient(mainProvider: dict[str, Any] | None, reviewModelHint: str='') -> Callable | None:
+def _makeReviewLlmClient(mainProvider: dict[str, object] | None, reviewModelHint: str='') -> Callable | None:
     """Create an LLM client for background review calls.
 
     Resolves the provider from the ``reviewModel`` config (or the provided
@@ -853,7 +853,7 @@ def _makeReviewLlmClient(mainProvider: dict[str, Any] | None, reviewModelHint: s
     try:
         from app.providers import resolver as providerResolver
         provider = None
-        reviewConfig: dict[str, Any] | None = None
+        reviewConfig: dict[str, object] | None = None
         try:
             from app.services.backgroundReviewService import getConfig
             reviewConfig = getConfig()
@@ -878,7 +878,7 @@ def _makeReviewLlmClient(mainProvider: dict[str, Any] | None, reviewModelHint: s
         _client = client
         _reviewModel = reviewModel or 'claude-sonnet-4-20250514'
 
-        async def reviewLlm(prompt: list[dict[str, Any]]) -> str:
+        async def reviewLlm(prompt: list[dict[str, object]]) -> str:
             """Call a cheap/fast model for background review."""
             try:
                 body = {'model': _reviewModel, 'messages': prompt, 'max_tokens': 1024}
@@ -896,7 +896,7 @@ def _makeReviewLlmClient(mainProvider: dict[str, Any] | None, reviewModelHint: s
     except Exception:
         return None
 
-def _resolveWorkbenchProvider(providerName: str, modelHint: str='') -> dict[str, Any] | None:
+def _resolveWorkbenchProvider(providerName: str, modelHint: str='') -> dict[str, object] | None:
     """Resolve a provider from name or model hint."""
     from app.providers import resolver as providerResolver
     if providerName:
@@ -910,7 +910,7 @@ def _resolveWorkbenchProvider(providerName: str, modelHint: str='') -> dict[str,
     providers = providerResolver.list_available()
     return providers[0] if providers else None
 
-def _resolveModel(provider: dict[str, Any] | None, modelHint: str='') -> str:
+def _resolveModel(provider: dict[str, object] | None, modelHint: str='') -> str:
     """Resolve the model name from hint or provider default."""
     if modelHint:
         return modelHint
@@ -918,13 +918,13 @@ def _resolveModel(provider: dict[str, Any] | None, modelHint: str='') -> str:
         return provider.get('default_model', '')
     return ''
 
-def _isAnthropicProvider(provider: dict[str, Any] | None) -> bool:
+def _isAnthropicProvider(provider: dict[str, object] | None) -> bool:
     return provider and provider.get('api_mode') == 'anthropic_messages'
 
-def _isOpenaiProvider(provider: dict[str, Any] | None) -> bool:
+def _isOpenaiProvider(provider: dict[str, object] | None) -> bool:
     return provider and provider.get('api_mode') in ('openai_chat', 'codex_responses')
 
-def _extractText(contentBlocks: list[dict[str, Any]]) -> str:
+def _extractText(contentBlocks: list[dict[str, object]]) -> str:
     """Extract text from Anthropic content blocks."""
     parts = []
     for block in contentBlocks:
@@ -932,7 +932,7 @@ def _extractText(contentBlocks: list[dict[str, Any]]) -> str:
             parts.append(block.get('text', ''))
     return '\n'.join(parts)
 
-def _extractThinking(contentBlocks: list[dict[str, Any]]) -> str:
+def _extractThinking(contentBlocks: list[dict[str, object]]) -> str:
     """Extract thinking/reasoning from Anthropic content blocks."""
     parts = []
     for block in contentBlocks:
@@ -940,7 +940,7 @@ def _extractThinking(contentBlocks: list[dict[str, Any]]) -> str:
             parts.append(block.get('text', ''))
     return '\n'.join(parts)
 
-async def _callAnthropicWorkbench(messages: list[dict[str, Any]], systemText: str, model: str, tools: list[dict[str, Any]], effort: str, provider: dict[str, Any] | None=None, emit: Callable[[dict[str, Any]], None] | None=None) -> dict[str, Any]:
+async def _callAnthropicWorkbench(messages: list[dict[str, object]], systemText: str, model: str, tools: list[dict[str, object]], effort: str, provider: dict[str, object] | None=None, emit: Callable[[dict[str, object]], None] | None=None) -> dict[str, object]:
     """Call an Anthropic-format model with progressive streaming.
 
     Emits ``thinking``, ``final_output``, and ``tool_use`` events as
@@ -967,11 +967,11 @@ async def _callAnthropicWorkbench(messages: list[dict[str, Any]], systemText: st
     thinkingBudget = effortToThinkingBudget(effort)
     if thinkingBudget > 0 and _supportsThinking(provider, model):
         body['thinking'] = {'type': 'enabled', 'budget_tokens': thinkingBudget}
-    contentBlocks: list[dict[str, Any]] = []
+    contentBlocks: list[dict[str, object]] = []
     accumulatedText = ''
     accumulatedThinking = ''
-    toolUses: list[dict[str, Any]] = []
-    currentToolBlock: dict[str, Any] | None = None
+    toolUses: list[dict[str, object]] = []
+    currentToolBlock: dict[str, object] | None = None
     currentToolInputParts: list[str] = []
     usage: dict[str, int] = {}
     try:
@@ -1039,7 +1039,7 @@ async def _callAnthropicWorkbench(messages: list[dict[str, Any]], systemText: st
     contentBlocks.extend(toolUses)
     return {'content': contentBlocks, 'text': accumulatedText, 'thinking': accumulatedThinking, 'tool_uses': toolUses, 'usage': usage}
 
-async def _callOpenaiWorkbench(messages: list[dict[str, Any]], systemText: str, model: str, tools: list[dict[str, Any]], effort: str, provider: dict[str, Any] | None=None, emit: Callable[[dict[str, Any]], None] | None=None) -> dict[str, Any]:
+async def _callOpenaiWorkbench(messages: list[dict[str, object]], systemText: str, model: str, tools: list[dict[str, object]], effort: str, provider: dict[str, object] | None=None, emit: Callable[[dict[str, object]], None] | None=None) -> dict[str, object]:
     """Call an OpenAI-format model with progressive streaming.
 
     Emits ``thinking`` / ``reasoning`` and ``final_output`` events as
@@ -1060,7 +1060,7 @@ async def _callOpenaiWorkbench(messages: list[dict[str, Any]], systemText: str, 
     from app.adapters.anthropic import translateMessages
     openaiMessages = translateMessages(messages)
     openaiMessages.insert(0, {'role': 'system', 'content': systemText})
-    body: dict[str, Any] = {'model': model, 'messages': openaiMessages, 'max_tokens': 8192}
+    body: dict[str, object] = {'model': model, 'messages': openaiMessages, 'max_tokens': 8192}
     if tools:
         body['tools'] = tools
     reasoning = effortToOpenaiReasoningEffort(effort)
@@ -1068,7 +1068,7 @@ async def _callOpenaiWorkbench(messages: list[dict[str, Any]], systemText: str, 
         body['reasoning_effort'] = reasoning
         contentText = ''
         thinkingText = ''
-        toolCallsAccum: dict[int, dict[str, Any]] = {}
+        toolCallsAccum: dict[int, dict[str, object]] = {}
         finishReason: str | None = None
         usage: dict[str, int] = {}
         try:
@@ -1111,8 +1111,8 @@ async def _callOpenaiWorkbench(messages: list[dict[str, Any]], systemText: str, 
                     finishReason = choice['finish_reason']
         except Exception as exc:
             return {'error': str(exc)}
-    assistantMessage: dict[str, Any] = {'role': 'assistant', 'content': contentText}
-    toolUses: list[dict[str, Any]] = []
+    assistantMessage: dict[str, object] = {'role': 'assistant', 'content': contentText}
+    toolUses: list[dict[str, object]] = []
     if toolCallsAccum:
         tcList = []
         for idx in sorted(toolCallsAccum):
@@ -1127,13 +1127,13 @@ async def _callOpenaiWorkbench(messages: list[dict[str, Any]], systemText: str, 
             assistantMessage['tool_calls'] = tcList
     return {'choices': [{'index': 0, 'message': assistantMessage, 'finish_reason': finishReason or 'stop'}], 'text': contentText, 'thinking': thinkingText, 'tool_uses': toolUses, 'usage': usage}
 
-def _supportsThinking(provider: dict[str, Any], model: str) -> bool:
+def _supportsThinking(provider: dict[str, object], model: str) -> bool:
     """Check if a provider/model supports Anthropic-style thinking."""
     profiles = provider.get('model_profiles', {})
     profile = profiles.get(model) or profiles.get('*') or {}
     return profile.get('supportsThinking', False) or profile.get('supportsReasoning', False)
 
-async def _executeTool(toolName: str, args: dict[str, Any], session: WorkbenchSession) -> str:
+async def _executeTool(toolName: str, args: dict[str, object], session: WorkbenchSession) -> str:
     """Execute a workbench tool by dispatching to the correct handler.
 
     Two dispatch paths:
@@ -1162,7 +1162,7 @@ async def _executeTool(toolName: str, args: dict[str, Any], session: WorkbenchSe
     finally:
         currentSessionId.reset(token)
 
-def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, Any]) -> str | None:
+def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, object]) -> str | None:
     """Check if a tool execution is blocked by guard mode or permissions.
 
     Returns None if allowed, or a string reason if blocked.
@@ -1173,7 +1173,7 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, An
         return f"Tool '{toolName}' requires your approval. Present the intended change to the user and wait for them to approve it before calling this tool again."
     return None
 
-def submitPlan(session: WorkbenchSession, planData: dict[str, Any]) -> None:
+def submitPlan(session: WorkbenchSession, planData: dict[str, object]) -> None:
     """Store a plan on the session. v1.1: drop prior execution state and working memory."""
     session.plan = planData
     session.planApproved = False
@@ -1207,12 +1207,12 @@ def rejectWorkbenchPlan(sessionId: str) -> bool:
     _emitSessionStatus(sessionId)
     return True
 
-def recordMutation(session: WorkbenchSession, toolName: str, args: dict[str, Any], result: str) -> None:
+def recordMutation(session: WorkbenchSession, toolName: str, args: dict[str, object], result: str) -> None:
     """Record a mutation in the session's mutation log."""
     session.mutation_log.append({'toolName': toolName, 'args': args, 'result': str(result)[:500], 'timestamp': _now()})
     session.mutation_count += 1
 
-def createPendingMutation(session: WorkbenchSession, toolName: str, args: dict[str, Any]) -> dict[str, Any] | None:
+def createPendingMutation(session: WorkbenchSession, toolName: str, args: dict[str, object]) -> dict[str, object] | None:
     """Create a pending mutation token requiring approval."""
     token = f'mt_{uuid.uuid4().hex[:16]}'
     mutation = {'token': token, 'toolName': toolName, 'args': args, 'createdAt': _now(), 'ttl': 300}
@@ -1250,14 +1250,14 @@ def clearWorkbenchGoal(session: WorkbenchSession, reason: str='') -> None:
     session.updated_at = _now()
     saveSessions()
 
-def getWorkbenchGoalStatus(sessionId: str) -> dict[str, Any] | None:
+def getWorkbenchGoalStatus(sessionId: str) -> dict[str, object] | None:
     """Return current goal status."""
     session = _sessions.get(sessionId)
     if not session:
         return None
     return {'goal': session.goal, 'active': bool(session.goal)}
 
-def updateWorkbenchGoal(sessionId: str, action: str, condition: str='') -> dict[str, Any] | None:
+def updateWorkbenchGoal(sessionId: str, action: str, condition: str='') -> dict[str, object] | None:
     """Set/clear/status for goals."""
     session = _sessions.get(sessionId)
     if not session:
@@ -1268,11 +1268,11 @@ def updateWorkbenchGoal(sessionId: str, action: str, condition: str='') -> dict[
         clearWorkbenchGoal(session, 'user requested')
     return getWorkbenchGoalStatus(sessionId)
 
-def getWorkbenchActivity(args: dict[str, Any] | None=None) -> dict[str, Any]:
+def getWorkbenchActivity(args: dict[str, object] | None=None) -> dict[str, object]:
     """Return recent workbench activity."""
     return {'sessions': len(_sessions), 'active': sum((1 for s in _sessions.values() if s.status == 'streaming')), 'pending_approvals': sum((1 for s in _sessions.values() if s.status == 'awaiting_approval'))}
 
-def listProxyCapabilities() -> dict[str, Any]:
+def listProxyCapabilities() -> dict[str, object]:
     """List all tools grouped by source with mutation flags and token estimates.
 
     Phase 1 rewrite — port of workbench.js:1540 behavior:
@@ -1284,7 +1284,7 @@ def listProxyCapabilities() -> dict[str, Any]:
     from app.services.toolRegistry import listTools as regListTools
     _MUTATINGTools = frozenset({'write_file', 'edit_file', 'delete_file', 'create_file', 'run_command', 'save_memory', 'save_fact', 'update_heuristics', 'update_state', 'write_scratchpad', 'delete_memory', 'submit_plan', 'approve_plan', 'reject_plan', 'load_skill', 'skill_manage', 'spawn_subagent', 'spawn_daemon', 'kill_daemon', 'write_blackboard', 'clear_blackboard'})
     allTools = regListTools()
-    grouped: dict[str, list[dict[str, Any]]] = {}
+    grouped: dict[str, list[dict[str, object]]] = {}
     for tool in allTools:
         name = tool.get('name', '') if isinstance(tool, dict) else str(tool)
         if not name:

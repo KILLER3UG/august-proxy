@@ -11,7 +11,6 @@ the browser engine isn't installed; browser tools then return a clear error.
 from __future__ import annotations
 import asyncio
 import logging
-from typing import Any
 logger = logging.getLogger(__name__)
 _VIEWPORT = {'width': 1280, 'height': 720}
 _USERAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -22,11 +21,11 @@ class BrowserSession:
 
     def __init__(self, sessionId: str) -> None:
         self.sessionId = sessionId
-        self.playwright: Any = None
-        self.browser: Any = None
-        self.context: Any = None
-        self.page: Any = None
-        self.consoleLogs: list[dict[str, Any]] = []
+        self.playwright: object = None
+        self.browser: object = None
+        self.context: object = None
+        self.page: object = None
+        self.consoleLogs: list[dict[str, object]] = []
 
     @property
     def ready(self) -> bool:
@@ -37,7 +36,7 @@ _lock = asyncio.Lock()
 class BrowserUnavailableError(RuntimeError):
     """Raised when Playwright/chromium is not installed."""
 
-async def _startEngine() -> Any:
+async def _startEngine() -> object:
     try:
         from playwright.async_api import asyncPlaywright
     except ImportError as exc:
@@ -62,7 +61,7 @@ async def getOrCreateSession(sessionId: str) -> BrowserSession:
         session.context = await session.browser.new_context(viewport=_VIEWPORT, user_agent=_USERAgent)
         session.page = await session.context.new_page()
 
-        def _onConsole(msg: Any) -> None:
+        def _onConsole(msg: object) -> None:
             entry = {'type': msg.type, 'text': msg.text}
             session.console_logs.append(entry)
             if len(session.console_logs) > _MAXConsole:

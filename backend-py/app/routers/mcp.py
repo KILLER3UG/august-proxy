@@ -5,11 +5,10 @@ Manages MCP server connections, tool discovery, and OAuth flows.
 """
 from __future__ import annotations
 import json
-from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 router = APIRouter(prefix='/api/mcp')
-_servers: dict[str, dict[str, Any]] = {}
+_servers: dict[str, dict[str, object]] = {}
 
 class MCPServerCreate(BaseModel):
     name: str

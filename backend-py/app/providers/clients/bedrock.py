@@ -6,7 +6,7 @@ Requires the ``boto3`` package (optional dependency). Falls back gracefully
 when boto3 is not installed.
 """
 from __future__ import annotations
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 from app.providers.clients.base import BaseProviderClient, ProviderResponse
 
 class BedrockClient(BaseProviderClient):
@@ -17,12 +17,12 @@ class BedrockClient(BaseProviderClient):
     """
     apiFormat = 'bedrock_converse'
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
         self._bedrockRuntime = None
 
     @property
-    def _br(self) -> Any | None:
+    def _br(self) -> object | None:
         """Lazy-initialized boto3 bedrock-runtime client."""
         if self._bedrockRuntime is not None:
             return self._bedrockRuntime
@@ -51,7 +51,7 @@ class BedrockClient(BaseProviderClient):
         """
         return {'Content-Type': 'application/json', 'Accept': 'application/json'}
 
-    async def converse(self, body: dict[str, Any], apiKey: str | None=None) -> ProviderResponse:
+    async def converse(self, body: dict[str, object], apiKey: str | None=None) -> ProviderResponse:
         """Non-streaming call to Bedrock Converse API."""
         br = self._br
         if br is None:
@@ -67,7 +67,7 @@ class BedrockClient(BaseProviderClient):
         except Exception as exc:
             return ProviderResponse(status=0, body={'error': str(exc)})
 
-    async def converseStream(self, body: dict[str, Any], apiKey: str | None=None) -> AsyncIterator[dict[str, Any]]:
+    async def converseStream(self, body: dict[str, object], apiKey: str | None=None) -> AsyncIterator[dict[str, object]]:
         """Streaming call to Bedrock Converse Stream API."""
         br = self._br
         if br is None:
@@ -90,8 +90,8 @@ class BedrockClient(BaseProviderClient):
         import os
         return os.environ.get(name, default)
 
-    def _extractInferenceConfig(self, body: dict[str, Any]) -> dict[str, Any]:
-        config: dict[str, Any] = {}
+    def _extractInferenceConfig(self, body: dict[str, object]) -> dict[str, object]:
+        config: dict[str, object] = {}
         if 'maxTokens' in body or 'max_tokens' in body:
             config['maxTokens'] = body.get('maxTokens', body.get('max_tokens'))
         if 'temperature' in body:
@@ -102,7 +102,7 @@ class BedrockClient(BaseProviderClient):
             config['stopSequences'] = body['stopSequences']
         return config
 
-    def _buildToolConfig(self, tools: list[dict[str, Any]]) -> dict[str, Any]:
+    def _buildToolConfig(self, tools: list[dict[str, object]]) -> dict[str, object]:
         if not tools:
             return {}
         bedrockTools = []

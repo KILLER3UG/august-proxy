@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, Optional
+from typing import Optional
 from app.services.gateway.base import BasePlatformAdapter, MessageEvent, SessionSource
 log = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class DiscordAdapter(BasePlatformAdapter):
     """Discord bot adapter — inbound via gateway events, outbound via HTTP."""
     platform = 'discord'
 
-    def __init__(self, config: dict[str, Any] | None=None, bridge=None):
+    def __init__(self, config: dict[str, object] | None=None, bridge=None):
         super().__init__(config, bridge)
         self._token: str = os.environ.get('AUGUST_DISCORD_BOT_TOKEN', '')
         self._client = None
@@ -101,7 +101,7 @@ class DiscordAdapter(BasePlatformAdapter):
             self._listenerTask.cancel()
             self._listenerTask = None
 
-    async def sendMessage(self, chatId: str, text: str, **kwargs: Any) -> None:
+    async def sendMessage(self, chatId: str, text: str, **kwargs: object) -> None:
         if self._client is None:
             log.warning('discord: cannot send, client not connected')
             return
@@ -125,14 +125,14 @@ class DiscordAdapter(BasePlatformAdapter):
         except Exception:
             return None
 
-    async def getChatInfo(self, chatId: str) -> dict[str, Any]:
+    async def getChatInfo(self, chatId: str) -> dict[str, object]:
         channel = await self._fetchChannel(chatId)
         if channel is None:
             return {'name': chatId, 'type': 'dm'}
         chatType = 'dm' if isinstance(channel, discord.DMChannel) else 'channel'
         return {'name': getattr(channel, 'name', str(chatId)), 'type': chatType}
 
-    async def normalize(self, raw: dict[str, Any]) -> Optional[MessageEvent]:
+    async def normalize(self, raw: dict[str, object]) -> Optional[MessageEvent]:
         """Convert a Discord on_message event into a MessageEvent."""
         import discord
         message: discord.Message = raw.get('message')

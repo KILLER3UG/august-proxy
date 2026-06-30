@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from typing import Any, AsyncIterator, Callable
+from typing import AsyncIterator, Callable
 from app.adapters.base import streamSse, buildHeaders
 from app.adapters.proxyTools import getProxyOpenaiToolDefinitions, appendMissingOpenaiTools, getCanonicalManagedOpenaiWebTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, isProxyManagedLocalToolName
 from app.adapters.toolClassification import classifyOpenaiToolCalls, getToolNameFromOpenaiTool
@@ -25,7 +25,7 @@ from app.providers.modelResolver import resolve, resolveOrFallback
 from app.providers.clients import getClient
 MAX_MANAGED_TOOL_ROUNDS = 10
 
-def deriveSessionIdFromOpenai(body: dict[str, Any] | None, request: Any | None=None) -> str:
+def deriveSessionIdFromOpenai(body: dict[str, object] | None, request: object | None=None) -> str:
     """Extract a session identifier from an OpenAI Chat Completions body.
 
     Order: explicit sessionId → user field → metadata.sessionId → headers → ''.
@@ -42,7 +42,7 @@ def deriveSessionIdFromOpenai(body: dict[str, Any] | None, request: Any | None=N
                 return str(value)
     return ''
 
-def deriveModelInheritanceSessionId(body: dict[str, Any] | None, request: Any | None=None) -> str:
+def deriveModelInheritanceSessionId(body: dict[str, object] | None, request: object | None=None) -> str:
     """Extract session ID specifically for model inheritance lookups."""
     if body and isinstance(body, dict):
         fromBody = body.get('sessionId') or body.get('session_id') or body.get('metadata', {}).get('sessionId') or body.get('metadata', {}).get('session_id')
@@ -55,7 +55,7 @@ def deriveModelInheritanceSessionId(body: dict[str, Any] | None, request: Any | 
                 return str(value)
     return ''
 
-def extractRequestHeaders(request: Any) -> dict[str, str]:
+def extractRequestHeaders(request: object) -> dict[str, str]:
     """Safely extract relevant request headers into a plain dict."""
     if not request or not hasattr(request, 'headers'):
         return {}
@@ -67,7 +67,7 @@ def extractRequestHeaders(request: Any) -> dict[str, str]:
             out[key] = str(value)
     return out
 
-def getOpenaiCompatibleProfile(providerName: str | None, model: str) -> dict[str, Any] | None:
+def getOpenaiCompatibleProfile(providerName: str | None, model: str) -> dict[str, object] | None:
     """Resolve an OpenAI-compatible provider profile for a model."""
     resolved = providerResolver.resolve(providerName or model)
     if not resolved:
@@ -77,7 +77,7 @@ def getOpenaiCompatibleProfile(providerName: str | None, model: str) -> dict[str
         return resolved
     return None
 
-def mergeOpenaiCompatibleProfile(profile: dict[str, Any], baseUrl: str | None=None, apiKey: str | None=None) -> dict[str, Any]:
+def mergeOpenaiCompatibleProfile(profile: dict[str, object], baseUrl: str | None=None, apiKey: str | None=None) -> dict[str, object]:
     """Merge override values into a provider profile."""
     merged = dict(profile)
     if baseUrl:
@@ -108,7 +108,7 @@ def writeOpenaiSseHeaders() -> dict[str, str]:
     """Return SSE response headers for OpenAI-compatible streaming."""
     return {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no'}
 
-def writeOpenaiSseData(chunk: dict[str, Any]) -> str:
+def writeOpenaiSseData(chunk: dict[str, object]) -> str:
     """Serialize a chunk as SSE data line."""
     return f'data: {json.dumps(chunk)}\n\n'
 
@@ -120,7 +120,7 @@ def writeOpenaiSseDone() -> str:
     """Return the terminal SSE event."""
     return 'data: [DONE]\n\n'
 
-def sendSimulatedOpenaiStream(response: dict[str, Any]) -> list[str]:
+def sendSimulatedOpenaiStream(response: dict[str, object]) -> list[str]:
     """Create SSE events from a full JSON response, simulating a stream."""
     events: list[str] = [writeOpenaiSseHeaders()]
     responseId = response.get('id', f'chatcmpl-{uuid.uuid4().hex[:12]}')
@@ -137,11 +137,11 @@ def sendSimulatedOpenaiStream(response: dict[str, Any]) -> list[str]:
     events.append(writeOpenaiSseDone())
     return events
 
-def createOpenaiStreamAccumulator() -> dict[str, Any]:
+def createOpenaiStreamAccumulator() -> dict[str, object]:
     """Create a state object for accumulating streaming chunks."""
     return {'id': '', 'model': '', 'created': 0, 'content': '', 'reasoning': '', 'tool_calls': [], 'finish_reason': None, 'usage': None}
 
-def accumulateOpenaiChunk(acc: dict[str, Any], chunk: dict[str, Any]) -> None:
+def accumulateOpenaiChunk(acc: dict[str, object], chunk: dict[str, object]) -> None:
     """Accumulate a streaming chunk into the accumulator state."""
     if chunk.get('id'):
         acc['id'] = chunk['id']
@@ -173,17 +173,17 @@ def accumulateOpenaiChunk(acc: dict[str, Any], chunk: dict[str, Any]) -> None:
                 else:
                     acc['tool_calls'].append({'index': tc.get('index', 0), 'id': tc.get('id', ''), 'type': tc.get('type', 'function'), 'function': {'name': tc.get('function', {}).get('name', ''), 'arguments': tc.get('function', {}).get('arguments', '')}})
 
-def buildOpenaiAggregatedFromStream(acc: dict[str, Any]) -> dict[str, Any]:
+def buildOpenaiAggregatedFromStream(acc: dict[str, object]) -> dict[str, object]:
     """Build a complete response dict from accumulated stream data."""
     responseId = acc.get('id') or f'chatcmpl-{uuid.uuid4().hex[:12]}'
-    message: dict[str, Any] = {'role': 'assistant', 'content': acc.get('content', '')}
+    message: dict[str, object] = {'role': 'assistant', 'content': acc.get('content', '')}
     if acc.get('reasoning'):
         message['reasoning'] = acc['reasoning']
     if acc.get('tool_calls'):
         message['tool_calls'] = [{'id': tc.get('id') or f'call_{uuid.uuid4().hex[:8]}', 'type': 'function', 'function': {'name': tc.get('function', {}).get('name', ''), 'arguments': tc.get('function', {}).get('arguments', '')}} for tc in acc['tool_calls']]
     return {'id': responseId, 'object': 'chat.completion', 'created': acc.get('created') or int(time.time()), 'model': acc.get('model') or 'unknown', 'choices': [{'index': 0, 'message': message, 'finish_reason': acc.get('finish_reason') or 'stop'}], 'usage': acc.get('usage') or {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}}
 
-def isOpenaiToolResultError(toolMessage: dict[str, Any]) -> bool:
+def isOpenaiToolResultError(toolMessage: dict[str, object]) -> bool:
     """Check if a tool result contains an error pattern."""
     content = toolMessage.get('content', '')
     if isinstance(content, str):
@@ -191,7 +191,7 @@ def isOpenaiToolResultError(toolMessage: dict[str, Any]) -> bool:
         return 'error:' in lower or 'exit code' in lower or 'command not found' in lower or ('no such file' in lower) or ('permission denied' in lower)
     return False
 
-async def fallbackClientFailedToolsOpenai(messages: list[dict[str, Any]], managedLocalToolNames: set[str]) -> list[dict[str, Any]]:
+async def fallbackClientFailedToolsOpenai(messages: list[dict[str, object]], managedLocalToolNames: set[str]) -> list[dict[str, object]]:
     """Detect and retry client-failed managed tools.
 
     Scans trailing tool messages for error patterns and re-executes
@@ -231,7 +231,7 @@ async def fallbackClientFailedToolsOpenai(messages: list[dict[str, Any]], manage
             break
     return updated if changed else messages
 
-async def resolveManagedOpenaiToolCalls(messages: list[dict[str, Any]], model: str, upstreamUrl: str, upstreamHeaders: dict[str, str], knownTools: list[dict[str, Any]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, Any]], None] | None=None, parentSignal: Any=None, client: Any=None) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+async def resolveManagedOpenaiToolCalls(messages: list[dict[str, object]], model: str, upstreamUrl: str, upstreamHeaders: dict[str, str], knownTools: list[dict[str, object]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, object]], None] | None=None, parentSignal: object = None, client: object = None) -> tuple[list[dict[str, object]], dict[str, object] | None]:
     """Run the multi-round tool resolution loop.
 
     For each round:
@@ -242,7 +242,7 @@ async def resolveManagedOpenaiToolCalls(messages: list[dict[str, Any]], model: s
     5. Repeat until no managed tools remain or max rounds reached
     """
     currentMessages = list(messages)
-    finalUsage: dict[str, Any] | None = None
+    finalUsage: dict[str, object] | None = None
     for _round in range(MAX_MANAGED_TOOL_ROUNDS):
         resp = await client.request_json('POST', upstreamUrl, upstreamHeaders, camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': False}))
         if resp.is_error:
@@ -271,7 +271,7 @@ async def resolveManagedOpenaiToolCalls(messages: list[dict[str, Any]], model: s
             break
     return (currentMessages, finalUsage)
 
-async def streamOpenaiSseToClient(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, Any]) -> AsyncIterator[str]:
+async def streamOpenaiSseToClient(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, object]) -> AsyncIterator[str]:
     """Pipe SSE events directly from upstream to client."""
     yield writeOpenaiSseHeaders()
     body['stream'] = True
@@ -291,7 +291,7 @@ async def streamOpenaiSseToClient(upstreamUrl: str, upstreamHeaders: dict[str, s
             return
     yield writeOpenaiSseDone()
 
-async def streamUpstreamAndResolveToolsOpenai(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, Any], model: str, knownTools: list[dict[str, Any]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, Any]], None] | None=None) -> AsyncIterator[str]:
+async def streamUpstreamAndResolveToolsOpenai(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, object], model: str, knownTools: list[dict[str, object]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, object]], None] | None=None) -> AsyncIterator[str]:
     """Stream from upstream, intercept tool calls, resolve them, and continue.
 
     This is the key function for handling streaming with managed tool execution.
@@ -345,7 +345,7 @@ async def streamUpstreamAndResolveToolsOpenai(upstreamUrl: str, upstreamHeaders:
             return
     yield writeOpenaiSseDone()
 
-async def handleChatCompletions(body: dict[str, Any], request: Any=None) -> tuple[dict[str, Any] | AsyncIterator[str], dict[str, str] | None]:
+async def handleChatCompletions(body: dict[str, object], request: object = None) -> tuple[dict[str, object] | AsyncIterator[str], dict[str, str] | None]:
     """Handle a /v1/chat/completions or /v1/responses request.
 
     Returns a tuple of (response_or_stream, response_headers).
@@ -403,7 +403,7 @@ async def handleChatCompletions(body: dict[str, Any], request: Any=None) -> tupl
             return (snakeToCamel(resp.body) if isinstance(resp.body, (dict, list)) else {'response': str(resp.body)}, None)
 _client = None
 
-def _getClient() -> Any:
+def _getClient() -> object:
     global _client
     if _client is None:
         from app.providers.clients.openai import OpenAIClient

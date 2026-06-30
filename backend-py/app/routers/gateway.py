@@ -6,7 +6,6 @@ POST endpoint.
 """
 from __future__ import annotations
 import logging
-from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from app.services.gateway.base import BasePlatformAdapter
 from app.services.gateway.runner import GatewayRunner, registerAdapter
@@ -41,7 +40,7 @@ def _getAdapter(request: Request, name: str) -> BasePlatformAdapter | None:
     return None
 
 @router.post('/telegram/webhook')
-async def telegramWebhook(request: Request) -> dict[str, Any]:
+async def telegramWebhook(request: Request) -> dict[str, object]:
     """Receive a Telegram update via webhook and dispatch to the adapter."""
     adapter = _getAdapter(request, 'telegram')
     if not adapter:
@@ -51,7 +50,7 @@ async def telegramWebhook(request: Request) -> dict[str, Any]:
     return {'ok': True}
 
 @router.get('/status')
-async def gatewayStatus(request: Request) -> dict[str, Any]:
+async def gatewayStatus(request: Request) -> dict[str, object]:
     """Return a summary of running gateway adapters."""
     runner: GatewayRunner | None = getattr(request.app.state, 'gateway_runner', None)
     if not runner:

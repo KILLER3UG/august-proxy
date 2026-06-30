@@ -11,7 +11,6 @@ Tracks:
 from __future__ import annotations
 import time
 from collections import defaultdict
-from typing import Any
 
 class ToolCallTracker:
     """Tracks tool-call patterns to detect loops and failure spirals.
@@ -32,7 +31,7 @@ class ToolCallTracker:
     WARN_FAILURE = 4
     BLOCK_FAILURE = 8
 
-    def check(self, toolName: str, arguments: dict[str, Any]) -> tuple[str, str]:
+    def check(self, toolName: str, arguments: dict[str, object]) -> tuple[str, str]:
         """Check a tool call against the guardrails.
 
         Returns (status, message):
@@ -76,12 +75,12 @@ class ToolCallTracker:
         self._failureCount.clear()
         self._lastTextResponse = time.monotonic()
 
-    def getStats(self) -> dict[str, Any]:
+    def getStats(self) -> dict[str, object]:
         """Return current tracker stats for debugging."""
         return {'sequence_length': len(self._callSequence), 'failure_counts': dict(self._failureCount), 'last_text_response_ago': time.monotonic() - self._lastTextResponse}
 
     @staticmethod
-    def _hashArgs(args: dict[str, Any]) -> str:
+    def _hashArgs(args: dict[str, object]) -> str:
         """Create a stable hash of tool arguments for comparison."""
         import json
         return json.dumps(args, sort_keys=True, ensure_ascii=False)

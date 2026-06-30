@@ -7,7 +7,6 @@ client-supplied correct_index. Questions are served one at a time as banners.
 from __future__ import annotations
 import json
 import time
-from typing import Any
 from fastapi import APIRouter, HTTPException
 from app.services.memoryStore import _conn
 from app.services import examService
@@ -17,7 +16,7 @@ def _db():
     return _conn()
 
 @router.post('/generate')
-async def generateExam(body: dict[str, Any]):
+async def generateExam(body: dict[str, object]):
     """Generate a new exam via Prefrontal. Topic can be a string or derived from uploaded files."""
     topic = (body.get('topic') or '').strip()
     count = min(int(body.get('count', 5)), 50)
@@ -57,7 +56,7 @@ async def generateExam(body: dict[str, Any]):
     return {'exam_id': examId, 'question': firstQ, 'total_questions': len(questions)}
 
 @router.post('/{exam_id}/questions')
-async def addQuestion(examId: int, body: dict[str, Any]):
+async def addQuestion(examId: int, body: dict[str, object]):
     """Add a user-requested question. The model authors it (origin='user-requested')."""
     requestText = (body.get('request') or '').strip()
     afterPosition = body.get('after_position')
@@ -99,7 +98,7 @@ async def getQuestion(examId: int, position: int):
     return examService.strip_answer({'id': q['id'], 'exam_id': examId, 'position': position, 'stem': q['stem'], 'options': json.loads(q['options'])})
 
 @router.post('/{exam_id}/answer')
-async def answerQuestion(examId: int, body: dict[str, Any]):
+async def answerQuestion(examId: int, body: dict[str, object]):
     """Record an answer for a question. Returns correctness + rationale."""
     questionId = body.get('question_id')
     selectedIndex = body.get('selected_index')
@@ -113,7 +112,7 @@ async def answerQuestion(examId: int, body: dict[str, Any]):
     return {'is_correct': bool(isCorrect), 'correct_index': q['correct_index'], 'rationale': q['rationale']}
 
 @router.post('/{exam_id}/help')
-async def helpQuestion(examId: int, body: dict[str, Any]):
+async def helpQuestion(examId: int, body: dict[str, object]):
     """Explain a question via Prefrontal without revealing the answer in the banner state."""
     questionId = body.get('question_id')
     ask = body.get('ask', '')

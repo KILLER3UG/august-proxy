@@ -13,11 +13,11 @@ Resolution order:
 7. Active provider (first with credentials)
 """
 from __future__ import annotations
-from typing import Any, Optional
+from typing import Optional
 from app.config import settings
 from app.providers import registry, resolver
 
-def _hasCredentials(provider: dict[str, Any]) -> bool:
+def _hasCredentials(provider: dict[str, object]) -> bool:
     """Check if a provider has API credentials configured."""
     from app.providers.clients import getClient
     client = getClient(provider)
@@ -25,7 +25,7 @@ def _hasCredentials(provider: dict[str, Any]) -> bool:
         return False
     return client.resolveApiKey() is not None
 
-def resolveForModel(modelId: str, hint: Optional[str]=None) -> Optional[dict[str, Any]]:
+def resolveForModel(modelId: str, hint: Optional[str]=None) -> Optional[dict[str, object]]:
     """
     Find the best provider for a model ID.
 

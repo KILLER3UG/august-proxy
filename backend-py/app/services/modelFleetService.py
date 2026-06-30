@@ -11,7 +11,6 @@ inline. This service adds a write path + a thin read path that returns the
 merged fleet for the UI.
 """
 from __future__ import annotations
-from typing import Any
 from app.services import configService
 ROLES = ('cortex', 'cerebellum', 'hippocampus', 'prefrontal')
 DEFAULTS: dict[str, str] = {'cortex': '', 'cerebellum': 'claude-3-haiku-20240307', 'hippocampus': 'claude-3-haiku-20240307', 'prefrontal': 'claude-3-5-sonnet-20240620'}
@@ -26,7 +25,7 @@ def getFleet() -> dict[str, str]:
             out[role] = user[role]
     return out
 
-def validateRoles(patch: dict[str, Any]) -> tuple[bool, str]:
+def validateRoles(patch: dict[str, object]) -> tuple[bool, str]:
     """Validate the patch: each key must be a known role and value must be a string.
 
     Returns (ok, error_message). On error, error_message names the offender.
@@ -38,7 +37,7 @@ def validateRoles(patch: dict[str, Any]) -> tuple[bool, str]:
             return (False, f'{role!r} must be a string (got {type(value).__name__})')
     return (True, '')
 
-def updateFleet(patch: dict[str, Any]) -> tuple[bool, str, dict[str, str]]:
+def updateFleet(patch: dict[str, object]) -> tuple[bool, str, dict[str, str]]:
     """Validate, persist, and return the new merged fleet."""
     ok, err = validateRoles(patch)
     if not ok:

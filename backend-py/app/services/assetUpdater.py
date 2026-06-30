@@ -1,7 +1,6 @@
 """Desktop asset updater — manages web-dist and other bundled assets."""
 from __future__ import annotations
 from pathlib import Path
-from typing import Any
 
 def getWebDistPath() -> Path | None:
     """Get the web-dist directory path."""
@@ -9,7 +8,7 @@ def getWebDistPath() -> Path | None:
     p = settings.webDist
     return p if p.is_dir() else None
 
-def getAssetInfo() -> dict[str, Any]:
+def getAssetInfo() -> dict[str, object]:
     """Get information about bundled assets."""
     web = getWebDistPath()
     assets = {}

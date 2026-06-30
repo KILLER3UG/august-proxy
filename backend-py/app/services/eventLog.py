@@ -10,7 +10,7 @@ import json
 import time
 from collections import deque
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 from app.lib.paths import dataPath
 MAX_IN_MEMORY = 2000
 
@@ -20,7 +20,7 @@ class EventLog:
     def __init__(self) -> None:
         self._sessions: dict[str, _SessionLog] = {}
 
-    def append(self, sessionId: str, eventType: str, payload: dict[str, Any] | None=None) -> int:
+    def append(self, sessionId: str, eventType: str, payload: dict[str, object] | None=None) -> int:
         entry = self._getOrCreate(sessionId)
         seq = entry.nextSeq
         entry.nextSeq += 1
@@ -38,7 +38,7 @@ class EventLog:
             entry.subscribers.remove(q)
         return seq
 
-    async def subscribe(self, sessionId: str, sinceSeq: int=0) -> AsyncIterator[dict[str, Any]]:
+    async def subscribe(self, sessionId: str, sinceSeq: int=0) -> AsyncIterator[dict[str, object]]:
         """Yield events for a session, starting from since_seq."""
         entry = self._getOrCreate(sessionId)
         q: asyncio.Queue = asyncio.Queue()

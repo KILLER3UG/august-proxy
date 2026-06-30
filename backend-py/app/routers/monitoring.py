@@ -25,7 +25,6 @@ An earlier @router.get("/health") here collided with it (first-match-wins
 dropped the `python` field); it was removed.
 """
 from __future__ import annotations
-from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from app.services.logger import getActivityLog, getPendingRequests, getFilteredRequests, getStats as getUsageStats, getRequestDetails, getRequestDetail as getReqDetail, getRecentLogEvents
 from app.services.loggerConversations import getConversations
@@ -42,7 +41,7 @@ async def getActivity():
     has the { time, type, detail } fields the UI reads.
     """
     entries = getActivityLog() or []
-    out: list[dict[str, Any]] = []
+    out: list[dict[str, object]] = []
     for e in entries:
         if not isinstance(e, dict):
             continue
@@ -116,7 +115,7 @@ async def hostAgentHealth():
     """Return host agent availability and health status."""
     return await getHostInfo()
 
-def _normRequests(entries: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+def _normRequests(entries: list[dict[str, object]] | None) -> list[dict[str, object]]:
     """Normalize a request-log entry list to the frontend's RequestEntry shape.
 
     The Python tracker stores fields under different names than Node
@@ -125,7 +124,7 @@ def _normRequests(entries: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     """
     if not entries:
         return []
-    out: list[dict[str, Any]] = []
+    out: list[dict[str, object]] = []
     for e in entries:
         if not isinstance(e, dict):
             continue
@@ -133,7 +132,7 @@ def _normRequests(entries: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
         out.append({'reqId': e.get('reqId') or e.get('id') or '', 'clientType': e.get('clientType') or e.get('provider') or 'unknown', 'endpoint': e.get('endpoint') or e.get('path') or '', 'model': e.get('model') or 'unknown', 'status': e.get('status') or 'unknown', 'durationMs': e.get('durationMs') or e.get('duration') or 0, 'inputTokens': e.get('inputTokens') or 0, 'outputTokens': e.get('outputTokens') or 0, 'totalCost': e.get('totalCost') or e.get('estimatedCost') or 0.0, 'timestamp': started or '', 'time': started or '', 'date': started or '', 'error': e.get('error'), **{k: v for k, v in e.items() if k not in {'id', 'reqId', 'clientType', 'provider', 'endpoint', 'path', 'model', 'status', 'durationMs', 'duration', 'inputTokens', 'outputTokens', 'totalCost', 'estimatedCost', 'startedAt', 'time', 'timestamp', 'date', 'error'}}})
     return out
 
-def _stats(raw: dict[str, Any], pendingCount: int) -> dict[str, Any]:
+def _stats(raw: dict[str, object], pendingCount: int) -> dict[str, object]:
     """Coerce the logger's partial stats into the full StatsResponse shape."""
     total = raw.get('totalRequests', 0)
     completed = raw.get('completed', raw.get('completedRequests', 0))

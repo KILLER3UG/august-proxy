@@ -11,7 +11,7 @@ import asyncio
 import json
 import random
 import time
-from typing import Any, AsyncIterator, Callable
+from typing import AsyncIterator, Callable
 import httpx
 
 class SseStreamParser:
@@ -120,7 +120,7 @@ def buildRateLimitMessage(status: int, body: str, attempts: int) -> str:
 class ProviderResponse:
     """Normalized response from an upstream provider API call."""
 
-    def __init__(self, status: int, headers: dict[str, str] | None=None, body: dict[str, Any] | str | None=None) -> None:
+    def __init__(self, status: int, headers: dict[str, str] | None=None, body: dict[str, object] | str | None=None) -> None:
         self.status = status
         self.headers = headers or {}
         self.body = body
@@ -134,7 +134,7 @@ class ProviderResponse:
         return self.status >= 400 or self.status == 0
 
     @property
-    def bodyJson(self) -> dict[str, Any] | None:
+    def bodyJson(self) -> dict[str, object] | None:
         """Return body as a dict if it's JSON, None otherwise."""
         if isinstance(self.body, dict):
             return self.body
@@ -167,7 +167,7 @@ def estimateStringTokens(s: str | None) -> int:
             tokens += 0.25
     return max(1, int(tokens + 0.999))
 
-def estimateMessageTokens(msg: dict[str, Any]) -> int:
+def estimateMessageTokens(msg: dict[str, object]) -> int:
     """Estimate tokens for a single message."""
     tokens = 4
     content = msg.get('content')
@@ -182,7 +182,7 @@ def estimateMessageTokens(msg: dict[str, Any]) -> int:
         tokens += 4 + estimateStringTokens(msg['tool_call_id'])
     return tokens
 
-def estimateToolTokens(tools: list[dict[str, Any]] | None) -> int:
+def estimateToolTokens(tools: list[dict[str, object]] | None) -> int:
     """Estimate tokens for tool definitions."""
     if not tools:
         return 0
@@ -196,7 +196,7 @@ def estimateToolTokens(tools: list[dict[str, Any]] | None) -> int:
         total += estimateStringTokens(json.dumps(params))
     return total
 
-def estimateTokens(messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None=None) -> int:
+def estimateTokens(messages: list[dict[str, object]], tools: list[dict[str, object]] | None=None) -> int:
     """Estimate total tokens for a conversation."""
     total = 3
     for msg in messages:
@@ -213,7 +213,7 @@ def formatTokenCount(n: int) -> str:
         return f'{n / 1024:.1f}K'
     return str(n)
 
-def _estimateContentTokens(content: Any) -> int:
+def _estimateContentTokens(content: object) -> int:
     """Estimate tokens for various content formats."""
     if not content:
         return 0
@@ -256,7 +256,7 @@ class BaseProviderClient:
     """
     apiFormat: str = ''
 
-    def __init__(self, providerConfig: dict[str, Any], *, timeout: float=300.0, maxRetries: int=3) -> None:
+    def __init__(self, providerConfig: dict[str, object], *, timeout: float=300.0, maxRetries: int=3) -> None:
         self.config = providerConfig
         self.timeout = timeout
         self.maxRetries = maxRetries
@@ -339,7 +339,7 @@ class BaseProviderClient:
         baseUrl = cfg.get('baseUrl') or self.config.get('base_url', '')
         return baseUrl.rstrip('/') if baseUrl else ''
 
-    async def requestJson(self, method: str, url: str, headers: dict[str, str], body: dict[str, Any] | None=None) -> ProviderResponse:
+    async def requestJson(self, method: str, url: str, headers: dict[str, str], body: dict[str, object] | None=None) -> ProviderResponse:
         """Make a non-streaming JSON request with retry logic."""
         for attempt in range(self.maxRetries + 1):
             try:
@@ -349,7 +349,7 @@ class BaseProviderClient:
                     await asyncio.sleep(delay)
                     continue
                 try:
-                    data: dict[str, Any] | str = resp.json()
+                    data: dict[str, object] | str = resp.json()
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     data = resp.text
                 return ProviderResponse(status=resp.status_code, headers=dict(resp.headers), body=data)
@@ -389,7 +389,7 @@ class BaseProviderClient:
             return ''
         return ''
 
-    async def streamSse(self, url: str, headers: dict[str, str], body: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+    async def streamSse(self, url: str, headers: dict[str, str], body: dict[str, object]) -> AsyncIterator[dict[str, object]]:
         """Stream SSE events from an upstream API.
 
         Yields parsed JSON dicts for each ``data:`` line as they arrive
@@ -408,7 +408,7 @@ class BaseProviderClient:
                         errorBody = await resp.aread()
                         yield {'type': 'error', 'status': resp.status_code, 'body': errorBody.decode('utf-8', errors='replace')}
                         return
-                    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+                    queue: asyncio.Queue[dict[str, object] | None] = asyncio.Queue()
 
                     def collector(event: str, data: str) -> None:
                         if data == '[DONE]':
@@ -455,7 +455,7 @@ class BaseProviderClient:
                 return
 
     @staticmethod
-    def estimateTokens(messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None=None) -> int:
+    def estimateTokens(messages: list[dict[str, object]], tools: list[dict[str, object]] | None=None) -> int:
         return estimateTokens(messages, tools)
 
     @staticmethod

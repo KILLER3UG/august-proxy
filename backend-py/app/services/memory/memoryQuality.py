@@ -5,9 +5,8 @@ Port of backend/services/memory/memory-quality.js.
 """
 from __future__ import annotations
 import re
-from typing import Any
 
-def scoreQuality(text: str) -> dict[str, Any]:
+def scoreQuality(text: str) -> dict[str, object]:
     """Score the quality of a memory text entry."""
     if not text:
         return {'score': 0, 'reasons': ['empty']}
@@ -38,7 +37,7 @@ def scoreQuality(text: str) -> dict[str, Any]:
         reasons.append('repetitive')
     return {'score': round(max(0, min(score, 2.0)), 2), 'reasons': reasons}
 
-def filterHighQuality(entries: list[dict[str, Any]], minScore: float=0.5) -> list[dict[str, Any]]:
+def filterHighQuality(entries: list[dict[str, object]], minScore: float=0.5) -> list[dict[str, object]]:
     """Filter memory entries by quality score."""
     scored = []
     for e in entries:
@@ -48,7 +47,7 @@ def filterHighQuality(entries: list[dict[str, Any]], minScore: float=0.5) -> lis
             scored.append({**e, '_quality': q})
     return scored
 
-def deduplicate(entries: list[dict[str, Any]], threshold: float=0.85) -> list[dict[str, Any]]:
+def deduplicate(entries: list[dict[str, object]], threshold: float=0.85) -> list[dict[str, object]]:
     """Remove near-duplicate entries."""
     if not entries:
         return []

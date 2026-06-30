@@ -17,7 +17,7 @@ active provider's model on any miss.
 """
 from __future__ import annotations
 import logging
-from typing import Any, Optional
+from typing import Optional
 from app.config import settings
 from app.providers import registry, resolver as providerResolver
 from app.providers.routeResolver import resolveForModel
@@ -33,14 +33,14 @@ class ModelResolutionError(Exception):
         self.input = input
         self.reason = reason
 
-def _normalize(input: Any) -> str | None:
+def _normalize(input: object) -> str | None:
     """Normalize input to a trimmed string or None."""
     if input is None:
         return None
     s = str(input).strip()
     return s or None
 
-def _findUserDefinedAlias(input: str) -> dict[str, Any] | None:
+def _findUserDefinedAlias(input: str) -> dict[str, object] | None:
     """Find a user-defined alias in config.json modelAliases."""
     if not input:
         return None
@@ -54,7 +54,7 @@ def _findUserDefinedAlias(input: str) -> dict[str, Any] | None:
         pass
     return None
 
-def _hasCredentials(provider: dict[str, Any]) -> bool:
+def _hasCredentials(provider: dict[str, object]) -> bool:
     """Check if a provider has API credentials configured."""
     from app.providers.clients import getClient
     client = getClient(provider)
@@ -62,7 +62,7 @@ def _hasCredentials(provider: dict[str, Any]) -> bool:
         return False
     return client.resolveApiKey() is not None
 
-def resolve(input: str | None, providerHint: str | None=None, defaultAlias: str | None=None) -> dict[str, Any]:
+def resolve(input: str | None, providerHint: str | None=None, defaultAlias: str | None=None) -> dict[str, object]:
     """Resolve an alias or model ID to a ``{ alias, provider, model, is_fallback }`` tuple.
 
     Args:
@@ -92,7 +92,7 @@ def resolve(input: str | None, providerHint: str | None=None, defaultAlias: str 
         return {'alias': normalized, 'provider': routed.get('name', 'unknown'), 'model': normalized, 'is_fallback': False}
     raise ModelResolutionError(f"Alias '{normalized}' not found.", input=normalized, reason='no_matching_provider')
 
-def resolveOrFallback(input: str | None, providerHint: str | None=None, defaultAlias: str | None=None) -> dict[str, Any] | None:
+def resolveOrFallback(input: str | None, providerHint: str | None=None, defaultAlias: str | None=None) -> dict[str, object] | None:
     """Resolve with graceful fallback to the active provider. Never raises.
 
     Args:
@@ -122,7 +122,7 @@ def resolveOrFallback(input: str | None, providerHint: str | None=None, defaultA
     logger.warning(f"[ModelResolver] no active provider available; cannot resolve '{normalized}'")
     return None
 
-def _resolveActiveProvider() -> dict[str, Any] | None:
+def _resolveActiveProvider() -> dict[str, object] | None:
     """Get the currently active provider (first available with credentials)."""
     for p in providerResolver.listAvailable():
         if _hasCredentials(p):

@@ -7,9 +7,7 @@ internal camelCase code and external snake_case wire formats.
 
 from __future__ import annotations
 
-from typing import Any
-
-type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
+from app.types import JsonValue
 
 
 def _snakeToCamelKey(key: str) -> str:

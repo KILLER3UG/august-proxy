@@ -26,7 +26,6 @@ Endpoints (all GET):
 """
 from __future__ import annotations
 import time
-from typing import Any
 from fastapi import APIRouter, Query
 from app.services import memoryStore
 from app.services.memory import contextBuilder
@@ -34,7 +33,7 @@ from app.services.memory import vectorDb
 router = APIRouter(prefix='/api/brain')
 
 @router.get('/status')
-async def brainStatus() -> dict[str, Any]:
+async def brainStatus() -> dict[str, object]:
     """Return brain store health — { count, driver, path, available }.
 
     Maps memory_store.get_stats() + the brain SQLite path into the StoreStatus
@@ -49,7 +48,7 @@ async def brainStatus() -> dict[str, Any]:
         return {'count': 0, 'driver': 'sqlite', 'path': '', 'available': False, 'error': str(exc)}
 
 @router.get('/items')
-async def brainItems() -> dict[str, Any]:
+async def brainItems() -> dict[str, object]:
     """Return stored memory items — { items: MemoryItem[] }.
 
     Maps memory_store.list_memory() rows (key, value) into the MemoryItem
@@ -59,7 +58,7 @@ async def brainItems() -> dict[str, Any]:
         rows = memoryStore.list_memory('%') or []
     except Exception:
         rows = []
-    items: list[dict[str, Any]] = []
+    items: list[dict[str, object]] = []
     for r in rows:
         if not isinstance(r, dict):
             continue
@@ -78,7 +77,7 @@ async def brainItems() -> dict[str, Any]:
     return {'items': items}
 
 @router.get('/vectors')
-async def brainVectors() -> dict[str, Any]:
+async def brainVectors() -> dict[str, object]:
     """Return vector DB entries — { entries: VectorEntry[] }.
 
     Projects each vector entry into { id, topic, summary, timestamp, tags }.
@@ -88,7 +87,7 @@ async def brainVectors() -> dict[str, Any]:
         entries = db.get('entries', []) or db.get('vectors', []) or []
     except Exception:
         entries = []
-    out: list[dict[str, Any]] = []
+    out: list[dict[str, object]] = []
     for e in entries:
         if not isinstance(e, dict):
             continue
@@ -97,7 +96,7 @@ async def brainVectors() -> dict[str, Any]:
     return {'entries': out}
 
 @router.get('/learning')
-async def brainLearning() -> dict[str, Any]:
+async def brainLearning() -> dict[str, object]:
     """v3: Return the rich Brain dashboard learning aggregation.
 
     Includes heuristics, core facts, user profile, auto-memories,
@@ -116,17 +115,17 @@ async def brainLearning() -> dict[str, Any]:
     except Exception:
         deltaQueueSize = 0
     lastFlushAt = getattr(_de, '_last_flush', None)
-    autoMemories: list[dict[str, Any]] = []
+    autoMemories: list[dict[str, object]] = []
     try:
         rows = memoryStore._conn().execute('SELECT id, key, content, importance, created_at FROM auto_memories ORDER BY importance DESC, id DESC LIMIT 20').fetchall()
         autoMemories = [dict(r) for r in rows]
     except Exception:
         pass
-    sleepCycle: dict[str, Any] = {'last_run_at': None, 'last_merged': 0, 'last_promoted': 0, 'last_deleted': 0}
+    sleepCycle: dict[str, object] = {'last_run_at': None, 'last_merged': 0, 'last_promoted': 0, 'last_deleted': 0}
     last = getattr(_cd, '_last_run', None)
     if last:
         sleepCycle.update({'last_run_at': last.get('at'), 'last_merged': last.get('merged', 0), 'last_promoted': last.get('promoted', 0), 'last_deleted': last.get('deleted_stale', 0)})
-    pendingSkills: list[dict[str, Any]] = []
+    pendingSkills: list[dict[str, object]] = []
     try:
         rows = memoryStore._conn().execute("SELECT id, name, description, trigger_text, draft_path, source_session_id, created_at, status, use_count FROM pending_skills WHERE status = 'pending' ORDER BY created_at DESC").fetchall()
         pendingSkills = [dict(r) for r in rows]
@@ -142,19 +141,19 @@ async def brainLearning() -> dict[str, Any]:
     return {'status': 'idle', 'heuristics': heuristics, 'heuristic_count': len(heuristics), 'core_facts': coreFacts, 'user_profile': userProfile, 'auto_memories': autoMemories, 'sleep_cycle': sleepCycle, 'delta_engine': {'consent_granted': False, 'queue_size': deltaQueueSize, 'last_flush_at': lastFlushAt}, 'pending_skills': pendingSkills, 'background_review': backgroundReview}
 
 @router.get('/prompt')
-async def brainPrompt() -> dict[str, Any]:
+async def brainPrompt() -> dict[str, object]:
     """Return the built system prompt — { prompt, length }."""
     prompt = contextBuilder.buildSystemPrompt()
     return {'prompt': prompt, 'length': len(prompt)}
 
 @router.get('/search')
-async def brainSearch(q: str=Query(default='')) -> dict[str, Any]:
+async def brainSearch(q: str=Query(default='')) -> dict[str, object]:
     """Search the brain across store + facts + vectors — { results: SearchResult[] }.
 
     Merges memory_store.search_memory, search_facts, and vector_db.search into
     the SearchResult shape ({ provider, type, title, text, score, ... }).
     """
-    results: list[dict[str, Any]] = []
+    results: list[dict[str, object]] = []
     query = (q or '').strip()
     if not query:
         return {'results': []}
@@ -183,7 +182,7 @@ async def brainSearch(q: str=Query(default='')) -> dict[str, Any]:
     return {'results': results}
 
 @router.get('/guidelines')
-async def brainGuidelines() -> dict[str, Any]:
+async def brainGuidelines() -> dict[str, object]:
     """Return guidelines — { guidelines: Guideline[] }.
 
     Guidelines are stored as facts in the 'guideline' category; each is mapped
@@ -193,7 +192,7 @@ async def brainGuidelines() -> dict[str, Any]:
         facts = memoryStore.list_facts('guideline') or []
     except Exception:
         facts = []
-    out: list[dict[str, Any]] = []
+    out: list[dict[str, object]] = []
     for f in facts:
         if not isinstance(f, dict):
             continue
@@ -213,7 +212,7 @@ async def brainGuidelines() -> dict[str, Any]:
     return {'guidelines': out}
 
 @router.get('/graph')
-async def brainGraph() -> dict[str, Any]:
+async def brainGraph() -> dict[str, object]:
     """Return knowledge graph stats — GraphStats.
 
     Aggregates counts from memory items, facts, and vector entries into
@@ -239,7 +238,7 @@ async def brainGraph() -> dict[str, Any]:
     return {'stats': {'counts': counts, 'entityTypes': entityTypes, 'updatedAt': str(int(time.time()))}}
 
 @router.get('/diagnostics')
-async def brainDiagnostics() -> dict[str, Any]:
+async def brainDiagnostics() -> dict[str, object]:
     """Return brain diagnostics — BrainDiagnostics.
 
     Shape: { error?, injectedChars, maxChars, compacted, guidelines,

@@ -20,9 +20,9 @@ Custom-store entry filtering:
   stability, matching ``provider_resolver.resolve``.
 """
 from __future__ import annotations
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 from app.services import configService
-_storeCache: Optional[dict[str, Any]] = None
+_storeCache: Optional[dict[str, object]] = None
 _invalidationCallbacks: list[Callable[[], None]] = []
 
 def registerInvalidationCallback(callback: Callable[[], None]) -> Callable[[], None]:
@@ -50,13 +50,13 @@ def invalidate() -> None:
     global _store_cache
     _storeCache = None
 
-def _loadStore() -> dict[str, Any]:
+def _loadStore() -> dict[str, object]:
     """Reload the providers.json cache from disk."""
     global _store_cache
     _storeCache = configService.getProvidersStore()
     return _storeCache
 
-def _customEntry(nameOrId: str) -> Optional[dict[str, Any]]:
+def _customEntry(nameOrId: str) -> Optional[dict[str, object]]:
     """Find a custom-store provider entry by id (preferred) or name.
 
     Lookup is case-insensitive. ``id`` matches are preferred over ``name``
@@ -66,8 +66,8 @@ def _customEntry(nameOrId: str) -> Optional[dict[str, Any]]:
         _loadStore()
     store = _storeCache or {}
     target = nameOrId.lower()
-    idMatch: Optional[dict[str, Any]] = None
-    nameMatch: Optional[dict[str, Any]] = None
+    idMatch: Optional[dict[str, object]] = None
+    nameMatch: Optional[dict[str, object]] = None
     for entry in store.get('providers', []):
         if entry.get('id', '').lower() == target and idMatch is None:
             idMatch = entry
@@ -75,7 +75,7 @@ def _customEntry(nameOrId: str) -> Optional[dict[str, Any]]:
             nameMatch = entry
     return idMatch or nameMatch
 
-def _customProviderDict(entry: dict[str, Any]) -> dict[str, Any]:
+def _customProviderDict(entry: dict[str, object]) -> dict[str, object]:
     """Build a provider-dict shaped like the registry returns, from a custom store entry.
 
     All optional fields use safe defaults via ``entry.get(...)`` so downstream
@@ -84,7 +84,7 @@ def _customProviderDict(entry: dict[str, Any]) -> dict[str, Any]:
     """
     return {'name': entry.get('name', ''), 'id': entry.get('id', ''), 'display_name': entry.get('display_name', entry.get('name', '')), 'description': entry.get('description', ''), 'aliases': [], 'base_url': entry.get('baseUrl', ''), 'api_mode': entry.get('apiFormat', 'openai-chat'), 'api_key': entry.get('apiKey', ''), 'is_custom': True, 'env_vars': [], 'auth_type': 'api_key', 'model_profiles': {}, 'default_model': entry.get('default_model', ''), 'fallback_models': entry.get('fallback_models', []), 'signup_url': entry.get('signup_url', ''), 'supports_health_check': entry.get('supports_health_check', False), 'default_max_tokens': entry.get('default_max_tokens', 4096), 'default_headers': entry.get('default_headers', {})}
 
-def resolve(nameOrId: str) -> Optional[dict[str, Any]]:
+def resolve(nameOrId: str) -> Optional[dict[str, object]]:
     """Return ``{"provider": ..., "api_key": ..., "base_url": ..., "api_mode": ...}`` or ``None``.
 
     Resolution order:

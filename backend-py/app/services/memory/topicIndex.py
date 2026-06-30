@@ -4,7 +4,6 @@ Topic index — topic classification + grouping for sessions.
 Port of backend/services/memory/topic-index.js (213 lines).
 """
 from __future__ import annotations
-from typing import Any
 from app.services.memory.brainOrchestrator import classifyTask
 from app.services.memoryStore import indexSessionTopic as _index
 VALID_TOPICS = {'debug', 'code_edit', 'research', 'memory_question', 'planning', 'system_control', 'chat'}
@@ -22,7 +21,7 @@ def classifyTopic(text: str) -> str:
         return category
     return 'chat'
 
-def indexSession(sessionId: str, taskText: str, parentTopic: str | None=None, confidence: float=0.75) -> dict[str, Any] | None:
+def indexSession(sessionId: str, taskText: str, parentTopic: str | None=None, confidence: float=0.75) -> dict[str, object] | None:
     """Record the topic for a session.
 
     Idempotent — calling twice with the same session id overwrites.
@@ -36,17 +35,17 @@ def indexSession(sessionId: str, taskText: str, parentTopic: str | None=None, co
         return None
     return {'session_id': sessionId, 'topic': topic, 'parent_topic': parentTopic, 'confidence': confidence}
 
-def getSessionTopic(sessionId: str) -> dict[str, Any] | None:
+def getSessionTopic(sessionId: str) -> dict[str, object] | None:
     """Get the classified topic for a session."""
     from app.services.memoryStore import getSessionTopic as _get
     return _get(sessionId)
 
-def listTopics(limit: int=50) -> list[dict[str, Any]]:
+def listTopics(limit: int=50) -> list[dict[str, object]]:
     """List all classified session topics."""
     from app.services.memoryStore import listTopics as _list
     return _list(limit)
 
-def searchSessionsByTopic(topic: str) -> list[dict[str, Any]]:
+def searchSessionsByTopic(topic: str) -> list[dict[str, object]]:
     """Find sessions with a given topic classification."""
     from app.services.memoryStore import searchSessionsByTopic as _search
     return _search(topic)

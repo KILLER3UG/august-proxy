@@ -14,7 +14,6 @@ by ``background_review.py`` which runs interval-gated.
 from __future__ import annotations
 import re
 import time
-from typing import Any
 from app.services.memoryStore import saveMemory, getMemory
 from app.services.memory.autoMemory import saveAutoMemory
 _REFLECTIONKey = 'self_evolution_log'
@@ -22,7 +21,7 @@ _MAXReflections = 50
 _CORRECTIONPatterns: list[tuple[re.Pattern, str]] = [(re.compile("\\bdon'?t\\s+(\\w+)"), 'behavior'), (re.compile('\\bnever\\s+(\\w+)'), 'behavior'), (re.compile('\\balways\\s+(\\w+)'), 'behavior'), (re.compile('\\bprefer\\b'), 'preference'), (re.compile('\\b(actually|instead|rather)\\b'), 'correction'), (re.compile('\\bstop\\s+\\w+ing\\b'), 'behavior')]
 _PREFERENCEPatterns: list[tuple[re.Pattern, str]] = [(re.compile('my\\s+(?:name|username)\\s+is\\s+(\\w+)'), 'user_name'), (re.compile("(?:i|i'm)\\s+(?:a|an)\\s+(\\w[\\w\\s]*)"), 'user_identity'), (re.compile('i\\s+(?:work|work\\s+as)\\s+(?:a|an|at)\\s+(.+?)(?:\\.|$)'), 'user_occupation'), (re.compile('i\\s+(?:like|love|prefer)\\s+(\\w[\\w\\s]*)'), 'user_preference')]
 
-def reflectOnTurn(messages: list[dict[str, Any]], model: str='') -> dict[str, Any]:
+def reflectOnTurn(messages: list[dict[str, object]], model: str='') -> dict[str, object]:
     """Run lightweight rule-based self-reflection on a completed turn.
 
     This runs on every turn (unlike background_review which is interval-gated).

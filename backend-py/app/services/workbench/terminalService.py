@@ -11,7 +11,6 @@ import platform
 import uuid
 from collections import deque
 from datetime import datetime
-from typing import Any
 BUFFER_LIMIT = 256 * 1024
 COMMAND_OUTPUT_LIMIT = 1024 * 1024
 MAX_SESSIONS = 50
@@ -30,20 +29,20 @@ def _getShell() -> str:
     if platform.system() == 'Windows':
         return os.environ.get('COMSPEC', 'cmd.exe')
     return os.environ.get('SHELL', '/bin/bash')
-_sessions: dict[str, dict[str, Any]] = {}
-_pendingApprovals: dict[str, dict[str, Any]] = {}
-_wsSockets: dict[str, set[Any]] = {}
+_sessions: dict[str, dict[str, object]] = {}
+_pendingApprovals: dict[str, dict[str, object]] = {}
+_wsSockets: dict[str, set[object]] = {}
 
-def _summarize(session: dict[str, Any]) -> dict[str, Any]:
+def _summarize(session: dict[str, object]) -> dict[str, object]:
     return {'id': session['id'], 'title': session.get('title', 'Terminal'), 'cwd': session.get('cwd', ''), 'command': session.get('command', ''), 'status': session.get('status', 'created'), 'createdAt': session.get('createdAt', ''), 'updatedAt': session.get('updatedAt', ''), 'bufferLength': len(session.get('buffer', '')), 'approvedInteractive': session.get('approvedInteractive', False), 'cols': session.get('cols', 80), 'rows': session.get('rows', 24), 'pty': session.get('pty', False)}
 
-def listTerminalSessions() -> list[dict[str, Any]]:
+def listTerminalSessions() -> list[dict[str, object]]:
     return [_summarize(s) for s in _sessions.values()][:MAX_SESSIONS]
 
-def listTerminalApprovals() -> list[dict[str, Any]]:
+def listTerminalApprovals() -> list[dict[str, object]]:
     return list(_pendingApprovals.values())
 
-async def createTerminalSession(params: dict[str, Any] | None=None) -> dict[str, Any]:
+async def createTerminalSession(params: dict[str, object] | None=None) -> dict[str, object]:
     """Create a terminal session with a running shell process."""
     params = params or {}
     sessionId = f'term_{uuid.uuid4().hex[:8]}'
@@ -92,14 +91,14 @@ async def _pipeStdout(sessionId: str) -> None:
             if s.get('status') == 'running':
                 s['status'] = 'exited'
 
-def readTerminalBuffer(sessionId: str) -> dict[str, Any]:
+def readTerminalBuffer(sessionId: str) -> dict[str, object]:
     """Get the terminal buffer for a session."""
     session = _sessions.get(sessionId)
     if not session:
         raise KeyError(f'Terminal session not found: {sessionId}')
     return {**_summarize(session), 'buffer': session.get('buffer', '')}
 
-async def writeTerminalInput(sessionId: str, inputText: str, approved: bool=False) -> dict[str, Any]:
+async def writeTerminalInput(sessionId: str, inputText: str, approved: bool=False) -> dict[str, object]:
     """Write input to a terminal session."""
     session = _sessions.get(sessionId)
     if not session:
@@ -118,7 +117,7 @@ async def writeTerminalInput(sessionId: str, inputText: str, approved: bool=Fals
     except (BrokenPipeError, OSError) as exc:
         return {'error': str(exc)}
 
-async def resizeTerminalSession(sessionId: str, cols: int=80, rows: int=24) -> dict[str, Any]:
+async def resizeTerminalSession(sessionId: str, cols: int=80, rows: int=24) -> dict[str, object]:
     """Resize a terminal session."""
     cols = max(20, min(cols, 240))
     rows = max(5, min(rows, 120))
@@ -128,7 +127,7 @@ async def resizeTerminalSession(sessionId: str, cols: int=80, rows: int=24) -> d
         session['rows'] = rows
     return _summarize(session) if session else {'error': 'Session not found'}
 
-async def submitTerminalCommand(params: dict[str, Any]) -> dict[str, Any]:
+async def submitTerminalCommand(params: dict[str, object]) -> dict[str, object]:
     """Run a one-shot command and return output."""
     command = params.get('command', '')
     cwd = params.get('cwd') or os.getcwd()
@@ -155,7 +154,7 @@ async def submitTerminalCommand(params: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         return {'status': 'error', 'command': command, 'error': str(exc)}
 
-async def approveTerminalRequest(requestId: str, approve: bool=True) -> dict[str, Any]:
+async def approveTerminalRequest(requestId: str, approve: bool=True) -> dict[str, object]:
     """Approve or reject a pending terminal request."""
     request = _pendingApprovals.pop(requestId, None)
     if not request:
@@ -194,7 +193,7 @@ def closeTerminalSession(sessionId: str) -> bool:
             pass
     return True
 
-async def handleTerminalConnection(websocket: Any, terminalId: str) -> None:
+async def handleTerminalConnection(websocket: object, terminalId: str) -> None:
     """Handle a WebSocket connection for live terminal I/O.
 
     ``websocket`` must have ``send_text``, ``receive_text``, ``close`` methods

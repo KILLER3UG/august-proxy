@@ -4,11 +4,10 @@ Port of backend/services/scheduler/index.js + missing/cron-tools.js.
 Manages scheduled/recurring job execution.
 """
 from __future__ import annotations
-from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 router = APIRouter(prefix='/api/cron')
-_jobs: dict[str, dict[str, Any]] = {}
+_jobs: dict[str, dict[str, object]] = {}
 
 class CronJobCreate(BaseModel):
     name: str

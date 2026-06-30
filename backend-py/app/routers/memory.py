@@ -3,7 +3,6 @@
 Port of the memory-related Express routes from the JS backend.
 """
 from __future__ import annotations
-from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.services import memoryStore
@@ -11,13 +10,13 @@ router = APIRouter(prefix='/api/memory')
 
 class MemorySave(BaseModel):
     key: str
-    value: Any
+    value: object
     category: str = 'general'
     source: str = ''
 
 class FactSave(BaseModel):
     factKey: str
-    factValue: Any
+    factValue: object
     category: str = 'general'
     source: str = ''
     confidence: float = 1.0
@@ -29,8 +28,7 @@ class FactSearch(BaseModel):
 class ProposalCreate(BaseModel):
     sessionId: str
     proposalType: str
-    content: Any
-
+    content: object
 class ProposalDecide(BaseModel):
     status: str
     decidedBy: str = ''
@@ -124,7 +122,7 @@ async def decideProposalRoute(proposalId: int, body: ProposalDecide):
     return {'status': body.status}
 
 @router.post('/lifecycle')
-async def recordLifecycleRoute(sessionId: str, eventType: str, detail: Any=None):
+async def recordLifecycleRoute(sessionId: str, eventType: str, detail: object = None):
     """Record a lifecycle event."""
     lid = memoryStore.record_lifecycle(sessionId, eventType, detail)
     return {'id': lid}

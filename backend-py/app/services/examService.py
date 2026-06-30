@@ -8,7 +8,6 @@ correct_index, non-empty rationale) before being persisted.
 from __future__ import annotations
 import json
 import logging
-from typing import Any
 logger = logging.getLogger(__name__)
 
 async def _callPrefrontal(prompt: str) -> str:
@@ -25,7 +24,7 @@ async def _callPrefrontal(prompt: str) -> str:
         logger.warning('_call_prefrontal failed: %s', exc)
     return ''
 
-def _validateQuestion(q: Any) -> bool:
+def _validateQuestion(q: object) -> bool:
     """A valid question has stem, 4 options, valid correct_index, non-empty rationale."""
     if not isinstance(q, dict):
         return False

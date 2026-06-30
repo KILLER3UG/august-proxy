@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Callable
+from typing import Callable
 logger = logging.getLogger(__name__)
 _HIGHDrainTimeout = 5.0
 _LOWDropAfter = 2.0
@@ -31,7 +31,7 @@ _workerTask: asyncio.Task | None = None
 class QueueItem:
     """A queued write operation."""
 
-    def __init__(self, fn: Callable[[], Any], priority: str='low'):
+    def __init__(self, fn: Callable[[], object], priority: str='low'):
         self.fn = fn
         self.priority = priority
         self.enqueuedAt = time.monotonic()
@@ -56,7 +56,7 @@ async def shutdown():
             pass
         _workerTask = None
 
-async def enqueueWrite(fn: Callable[[], Any], priority: str='low') -> bool:
+async def enqueueWrite(fn: Callable[[], object], priority: str='low') -> bool:
     """Enqueue a write operation.
 
     Returns True if the write was enqueued, False if it was dropped
@@ -79,7 +79,7 @@ async def enqueueWrite(fn: Callable[[], Any], priority: str='low') -> bool:
         logger.error('Write queue timed out on high-priority write')
         return False
 
-async def enqueueWriteSync(fn: Callable[[], Any], priority: str='low') -> bool:
+async def enqueueWriteSync(fn: Callable[[], object], priority: str='low') -> bool:
     """Synchronous version for use from non-async contexts.
 
     Creates a new event loop if needed (safe for sync callers in

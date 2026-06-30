@@ -11,7 +11,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Callable
 logger = logging.getLogger(__name__)
 _POLLInterval = 5
 _RATELimit = 2.0
@@ -69,9 +69,9 @@ def _pollingWatch(workspacePath: str, sessionId: str) -> None:
     except Exception:
         pass
 
-def checkForChanges(workspacePath: str, sessionId: str) -> list[dict[str, Any]]:
+def checkForChanges(workspacePath: str, sessionId: str) -> list[dict[str, object]]:
     """v2: Poll for recent file/git changes. Returns list of change events."""
-    events: list[dict[str, Any]] = []
+    events: list[dict[str, object]] = []
     now = time.time()
     if not workspacePath or not os.path.isdir(workspacePath):
         return events
@@ -94,7 +94,7 @@ class EnvironmentWatcher:
         self._lastEmit = 0.0
         self._changeBuffer: list[ChangeEvent] = []
         self._subscribers: list[Callable[[ChangeEvent], None]] = []
-        self._observer: Any = None
+        self._observer: object = None
 
     def subscribe(self, callback: Callable[[ChangeEvent], None]) -> None:
         """v2: Register a subscriber to receive change events."""

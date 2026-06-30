@@ -6,7 +6,7 @@ Port of backend/services/memory/context-compressor.js (177 lines).
 """
 from __future__ import annotations
 import os
-from typing import Any, Callable
+from typing import Callable
 from app.providers.clients.base import estimateTokens
 DEFAULT_HEAD_COUNT = 4
 DEFAULT_TAIL_COUNT = 6
@@ -24,7 +24,7 @@ def isFeatureEnabled() -> bool:
         return val == '1'
     return True
 
-def localSummarize(messages: list[dict[str, Any]], maxSummaryChars: int=DEFAULT_MAX_SUMMARY_CHARS) -> str:
+def localSummarize(messages: list[dict[str, object]], maxSummaryChars: int=DEFAULT_MAX_SUMMARY_CHARS) -> str:
     """Default local summarizer.
 
     Joins text content from each message, truncates to max_summary_chars,
@@ -59,13 +59,13 @@ def localSummarize(messages: list[dict[str, Any]], maxSummaryChars: int=DEFAULT_
         summary = summary[:maxSummaryChars] + '…'
     return summary
 
-def buildSummaryMessage(middleMessages: list[dict[str, Any]], summaryText: str, summaryMarker: str=DEFAULT_SUMMARY_MARKER) -> dict[str, Any]:
+def buildSummaryMessage(middleMessages: list[dict[str, object]], summaryText: str, summaryMarker: str=DEFAULT_SUMMARY_MARKER) -> dict[str, object]:
     """Build a fenced summary message from the middle messages."""
     import json
     meta = json.dumps({'marker': 'august.summary', 'compressed_count': len(middleMessages)})
     return {'role': 'system', 'content': f"{summaryMarker}\n{meta}\n{summaryText}\n{summaryMarker.replace('<', '</')}>>"}
 
-def _isSummaryMessage(msg: dict[str, Any], summaryMarker: str=DEFAULT_SUMMARY_MARKER) -> bool:
+def _isSummaryMessage(msg: dict[str, object], summaryMarker: str=DEFAULT_SUMMARY_MARKER) -> bool:
     """True if msg is a prior compressed-summary system block.
 
     Detected by the opening marker (`<<compressed_summary`) in a system
@@ -80,7 +80,7 @@ def _isSummaryMessage(msg: dict[str, Any], summaryMarker: str=DEFAULT_SUMMARY_MA
         return False
     return content.startswith(summaryMarker)
 
-def _extractSummaryText(msg: dict[str, Any], summaryMarker: str=DEFAULT_SUMMARY_MARKER) -> str:
+def _extractSummaryText(msg: dict[str, object], summaryMarker: str=DEFAULT_SUMMARY_MARKER) -> str:
     """Recover the human summary text from a fenced summary message.
 
     build_summary_message emits
@@ -99,7 +99,7 @@ def _extractSummaryText(msg: dict[str, Any], summaryMarker: str=DEFAULT_SUMMARY_
         return ''
     return '\n'.join(lines[2:-1])
 
-def compressMessages(messages: list[dict[str, Any]], threshold: int, headCount: int=DEFAULT_HEAD_COUNT, tailCount: int=DEFAULT_TAIL_COUNT, summarizer: Callable | None=None) -> list[dict[str, Any]]:
+def compressMessages(messages: list[dict[str, object]], threshold: int, headCount: int=DEFAULT_HEAD_COUNT, tailCount: int=DEFAULT_TAIL_COUNT, summarizer: Callable | None=None) -> list[dict[str, object]]:
     """Compress messages to fit within a token threshold by summarizing the middle.
 
     Preserves the first ``head_count`` and last ``tail_count`` messages,

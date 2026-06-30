@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timedelta
-from typing import Any
 
 def _conn():
     from app.services.memoryStore import _conn as getConn
@@ -27,7 +26,7 @@ def computeTtl(pollInterval: int) -> str:
     expires = datetime.utcnow() + timedelta(seconds=ttlSeconds)
     return expires.strftime('%Y-%m-%d %H:%M:%S')
 
-def writeNote(sessionId: str, agent: str, key: str, value: Any, priority: int=0, ttlSeconds: int | None=None, pollInterval: int | None=None) -> None:
+def writeNote(sessionId: str, agent: str, key: str, value: object, priority: int=0, ttlSeconds: int | None=None, pollInterval: int | None=None) -> None:
     """Write a note to the blackboard.
 
     v2: If `poll_interval` is provided, the TTL is computed adaptively
@@ -42,7 +41,7 @@ def writeNote(sessionId: str, agent: str, key: str, value: Any, priority: int=0,
     conn.execute('INSERT INTO blackboard (session_id, agent, key, value, priority, expires_at) VALUES (?, ?, ?, ?, ?, ?)', (sessionId, agent, key, json.dumps(value) if not isinstance(value, str) else value, priority, expires))
     conn.commit()
 
-def readNotes(sessionId: str, agent: str='', key: str='', ack: bool=False) -> list[dict[str, Any]]:
+def readNotes(sessionId: str, agent: str='', key: str='', ack: bool=False) -> list[dict[str, object]]:
     """Read notes from the blackboard, with optional agent/key filters.
 
     v2: If `ack=True`, the read notes are deleted on read (acknowledged
@@ -51,7 +50,7 @@ def readNotes(sessionId: str, agent: str='', key: str='', ack: bool=False) -> li
     conn = _conn()
     _cleanupExpired(conn)
     query = 'SELECT * FROM blackboard WHERE session_id = ?'
-    params: list[Any] = [sessionId]
+    params: list[object] = [sessionId]
     if agent:
         query += ' AND agent = ?'
         params.append(agent)

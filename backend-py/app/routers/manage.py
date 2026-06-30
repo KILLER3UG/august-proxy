@@ -6,7 +6,6 @@ Replaces the legacy /ui/august/* action-dispatch pattern.
 """
 from __future__ import annotations
 import json
-from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.config import settings
@@ -25,9 +24,9 @@ class AliasUpdate(BaseModel):
     targetProvider: str | None = None
 
 class SettingsUpdate(BaseModel):
-    updates: dict[str, Any]
+    updates: dict[str, object]
 
-def _readAliases() -> list[dict[str, Any]]:
+def _readAliases() -> list[dict[str, object]]:
     from app.lib.paths import dataPath
     p = dataPath('config.json')
     if not p.exists():
@@ -35,7 +34,7 @@ def _readAliases() -> list[dict[str, Any]]:
     cfg = json.loads(p.read_text('utf-8'))
     return cfg.get('modelAliases', [])
 
-def _writeAliases(aliases: list[dict[str, Any]]) -> None:
+def _writeAliases(aliases: list[dict[str, object]]) -> None:
     from app.lib.paths import dataPath
     p = dataPath('config.json')
     cfg = json.loads(p.read_text('utf-8')) if p.exists() else {}
@@ -102,7 +101,7 @@ async def updateSettings(body: SettingsUpdate):
     p = dataPath('config.json')
     cfg = json.loads(p.read_text('utf-8')) if p.exists() else {}
 
-    def deepSet(target: dict, keys: list[str], value: Any) -> None:
+    def deepSet(target: dict, keys: list[str], value: object) -> None:
         for key in keys[:-1]:
             target = target.setdefault(key, {})
         target[keys[-1]] = value

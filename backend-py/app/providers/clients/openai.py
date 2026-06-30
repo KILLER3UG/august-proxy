@@ -7,7 +7,7 @@ DeepSeek, OpenRouter, Novita, Nvidia, xAI, Together, OpenCode, and more.
 Port of the HTTP transport portions of backend/adapters/openai.js.
 """
 from __future__ import annotations
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 from app.providers.clients.base import BaseProviderClient, ProviderResponse
 
 class OpenAIClient(BaseProviderClient):
@@ -36,7 +36,7 @@ class OpenAIClient(BaseProviderClient):
             base = 'https://api.openai.com/v1'
         return base.rstrip('/')
 
-    async def chatCompletions(self, body: dict[str, Any], apiKey: str | None=None) -> ProviderResponse:
+    async def chatCompletions(self, body: dict[str, object], apiKey: str | None=None) -> ProviderResponse:
         """Non-streaming call to POST /chat/completions."""
         if apiKey is None:
             apiKey = self.resolveApiKey()
@@ -45,7 +45,7 @@ class OpenAIClient(BaseProviderClient):
         body['stream'] = False
         return await self.requestJson('POST', url, headers, body)
 
-    async def chatCompletionsStream(self, body: dict[str, Any], apiKey: str | None=None) -> AsyncIterator[dict[str, Any]]:
+    async def chatCompletionsStream(self, body: dict[str, object], apiKey: str | None=None) -> AsyncIterator[dict[str, object]]:
         """Streaming call to POST /chat/completions (``stream: true``).
 
         Yields raw SSE ``data:`` chunks as parsed dicts.
@@ -58,7 +58,7 @@ class OpenAIClient(BaseProviderClient):
         async for event in self.streamSse(url, headers, body):
             yield event
 
-    async def responses(self, body: dict[str, Any], apiKey: str | None=None) -> ProviderResponse:
+    async def responses(self, body: dict[str, object], apiKey: str | None=None) -> ProviderResponse:
         """Call to POST /v1/responses (OpenAI Responses API).
 
         OpenAI's newer Responses API is a non-streaming endpoint.

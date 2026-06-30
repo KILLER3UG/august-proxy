@@ -5,11 +5,10 @@ Port of backend/services/memory/tool-failure-memory.js.
 """
 from __future__ import annotations
 import json
-from typing import Any
 from app.services.memoryStore import saveMemory, getMemory
 _FAILURESKey = 'tool_failures'
 
-def recordToolFailure(info: dict[str, Any]) -> None:
+def recordToolFailure(info: dict[str, object]) -> None:
     """Record a tool failure in memory."""
     failures = getMemory(_FAILURESKey) or []
     if not isinstance(failures, list):
@@ -18,7 +17,7 @@ def recordToolFailure(info: dict[str, Any]) -> None:
     failures = failures[-50:]
     saveMemory(_FAILURESKey, failures)
 
-def recallToolFailures(toolName: str, limit: int=5) -> list[dict[str, Any]]:
+def recallToolFailures(toolName: str, limit: int=5) -> list[dict[str, object]]:
     """Get recent failures for a specific tool."""
     failures = getMemory(_FAILURESKey) or []
     if not isinstance(failures, list):

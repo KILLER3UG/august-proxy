@@ -10,7 +10,6 @@ Result shape: ``{ "status": "success" | "error", ... }``.
 from __future__ import annotations
 import json
 import time
-from typing import Any
 from urllib.parse import urlparse
 from app.config import settings
 from app.lib.paths import dataPath
@@ -21,14 +20,14 @@ from app.services.workbench.context import currentSessionId
 _NAVTimeoutMs = 30000
 _MAXContentChars = 50000
 
-def _ok(**fields: Any) -> str:
+def _ok(**fields: object) -> str:
     payload = {'status': 'success', **fields}
     return json.dumps(payload, default=str)
 
-def _err(message: str, **fields: Any) -> str:
+def _err(message: str, **fields: object) -> str:
     return json.dumps({'status': 'error', 'error': message, **fields}, default=str)
 
-async def _captureScreenshot(page: Any) -> dict[str, Any] | None:
+async def _captureScreenshot(page: object) -> dict[str, object] | None:
     """Save a screenshot to disk and return metadata for the frontend drawer.
 
     Returns ``{path, width, height}`` or ``None`` if capture fails (the tool
@@ -46,7 +45,7 @@ async def _captureScreenshot(page: Any) -> dict[str, Any] | None:
     except Exception:
         return None
 
-async def _locatorBbox(page: Any, ref: str | None, selector: str | None, text: str | None) -> dict[str, Any] | None:
+async def _locatorBbox(page: object, ref: str | None, selector: str | None, text: str | None) -> dict[str, object] | None:
     """Return the bounding box {x, y, width, height} of the target element.
 
     Used so the frontend can render a cursor/highlight over the element a
@@ -61,7 +60,7 @@ async def _locatorBbox(page: Any, ref: str | None, selector: str | None, text: s
     except Exception:
         return None
 
-async def _page() -> tuple[Any, str | None]:
+async def _page() -> tuple[object, str | None]:
     """Return ``(page, error_json)``. error_json is set if unavailable."""
     sid = currentSessionId.get()
     try:
@@ -74,7 +73,7 @@ async def _page() -> tuple[Any, str | None]:
         return (None, _err('Browser session not ready'))
     return (session.page, None)
 
-async def _elementsSnapshot(page: Any) -> str:
+async def _elementsSnapshot(page: object) -> str:
     elements = await runSnapshot(page)
     return buildCompactSnapshot(elements)
 

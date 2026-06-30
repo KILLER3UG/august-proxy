@@ -12,7 +12,6 @@ instead of the default 90% to provide a safety buffer.
 """
 from __future__ import annotations
 import logging
-from typing import Any
 logger = logging.getLogger(__name__)
 _CHARSPerTokenHeuristic = 3.5
 _CRITICALThresholdHeuristic = 0.85
@@ -47,7 +46,7 @@ def getCriticalThreshold(model: str | None=None, provider: str | None=None) -> f
         return _CRITICALThresholdDefault
     return _CRITICALThresholdHeuristic
 
-def computeBudget(messages: list[dict[str, Any]] | str, model: str | None=None, provider: str | None=None, maxContext: int=200000) -> dict[str, Any]:
+def computeBudget(messages: list[dict[str, object]] | str, model: str | None=None, provider: str | None=None, maxContext: int=200000) -> dict[str, object]:
     """Compute a full cognitive budget dict for a conversation or text.
 
     Returns:
@@ -148,7 +147,7 @@ def _getTiktokenEncoding(model: str) -> str:
         return 'o200k_base'
     return 'cl100k_base'
 
-def _flattenMessages(messages: list[dict[str, Any]]) -> str:
+def _flattenMessages(messages: list[dict[str, object]]) -> str:
     """Flatten a list of chat messages into a single text string."""
     parts: list[str] = []
     for msg in messages:

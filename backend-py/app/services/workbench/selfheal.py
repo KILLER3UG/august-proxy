@@ -6,7 +6,6 @@ Port of backend/services/workbench/selfheal.js (214 lines).
 """
 from __future__ import annotations
 import re
-from typing import Any
 ERROR_PATTERNS = ['error:', 'exit code', 'command not found', 'not recognized as', 'cannot find path', 'no such file or directory', 'permission denied', 'access is denied', 'syntax error', 'browser.use.*(?:not found|not installed|missing)']
 BASH_IN_POWERSHELL_COMMANDS = ['grep', 'ls', 'cat', 'rm', 'chmod', 'chown', 'sudo', 'apt', 'apt-get', 'yum', 'dnf', 'brew', 'curl', 'wget', 'sed', 'awk', 'sort', 'uniq', 'wc', 'head', 'tail', 'cut', 'tr', 'diff', 'find', 'xargs', 'which', 'make', 'gcc', 'g++', 'python3', 'pip3', 'rsync', 'scp', 'ssh']
 POWERSHELL_CMD_PATTERN = re.compile('\\b(Get-ChildItem|Select-Object|Where-Object|ForEach-Object|Write-Output|Write-Host|Out-File|Set-Content|Add-Content|Get-Content|Remove-Item|New-Item|Copy-Item|Move-Item|Test-Path|Join-Path|Split-Path|Resolve-Path)\\b')
@@ -47,7 +46,7 @@ def enhanceToolResult(content: str) -> str:
     hints = buildHints(content)
     return content + hints
 
-def applySelfHealToMessages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def applySelfHealToMessages(messages: list[dict[str, object]]) -> list[dict[str, object]]:
     """Apply self-healing to all tool result messages in a conversation."""
     if not messages:
         return messages

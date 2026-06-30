@@ -14,10 +14,10 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional
+from typing import Awaitable, Callable, Optional
 log = logging.getLogger(__name__)
 WorkbenchRunner = Callable[..., Awaitable[None]]
-SessionFactory = Callable[..., Any]
+SessionFactory = Callable[..., object]
 DeleteSession = Callable[[str], bool]
 
 @dataclass
@@ -80,14 +80,14 @@ class SessionBridge:
         """Return the mapped workbench session id, or None if never mapped."""
         return self._map.get(sessionKey)
 
-    async def invokeAgent(self, sessionKey: str, text: str, *, onEvent: Callable[[dict[str, Any]], None] | None=None) -> TurnResult:
+    async def invokeAgent(self, sessionKey: str, text: str, *, onEvent: Callable[[dict[str, object]], None] | None=None) -> TurnResult:
         """Run one agent turn for the session; return accumulated reply text."""
         sessionId = self.sessionIdFor(sessionKey)
         cancel = asyncio.Event()
         self._cancels[sessionKey] = cancel
         parts: list[str] = []
 
-        def emit(event: dict[str, Any]) -> None:
+        def emit(event: dict[str, object]) -> None:
             if event.get('type') == 'final_output' and event.get('content'):
                 parts.append(event['content'])
             if onEvent:

@@ -5,29 +5,29 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 from app.lib.paths import dataPath
 
-def _readJson(path: Path) -> dict[str, Any]:
+def _readJson(path: Path) -> dict[str, object]:
     try:
         return json.loads(path.read_text('utf-8'))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
-def _writeJson(path: Path, data: dict[str, Any]) -> None:
+def _writeJson(path: Path, data: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2), 'utf-8')
 
-def getConfig() -> dict[str, Any]:
+def getConfig() -> dict[str, object]:
     return _readJson(dataPath('config.json'))
 
-def saveConfig(config: dict[str, Any]) -> None:
+def saveConfig(config: dict[str, object]) -> None:
     _writeJson(dataPath('config.json'), config)
 
-def getProvidersStore() -> dict[str, Any]:
+def getProvidersStore() -> dict[str, object]:
     return _readJson(dataPath('providers.json'))
 
-def saveProvidersStore(data: dict[str, Any]) -> None:
+def saveProvidersStore(data: dict[str, object]) -> None:
     _writeJson(dataPath('providers.json'), data)
     from app.services.providerCredentials import _fireInvalidation
     _fireInvalidation()

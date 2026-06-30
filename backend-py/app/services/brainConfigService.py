@@ -33,7 +33,6 @@ Response shapes (match the frontend types):
 ``source`` is one of ``"persisted" | "session" | "fallback"``.
 """
 from __future__ import annotations
-from typing import Any
 from app.config import settings
 from app.services import configService
 from app.services.memory.brainOrchestrator import DEFAULT_FEATURES
@@ -44,36 +43,36 @@ numKeys: tuple[str, ...] = ('maxAgentDepth', 'maxWorkbenchToolLoops')
 allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys)
 maxAgentDepthRange = (1, 5)
 maxWorkbenchLoopsRange = (1, 500)
-fieldTable: tuple[tuple[str, str, Any, str], ...] = (('enabled', 'enabled', DEFAULT_FEATURES.get('enabled', True), 'bool'), ('adaptivePolicy', 'adaptive_policy', DEFAULT_FEATURES.get('adaptive_policy', True), 'bool'), ('failureLearning', 'failure_learning', DEFAULT_FEATURES.get('failure_learning', True), 'bool'), ('graphMemory', 'graph_memory', DEFAULT_FEATURES.get('graph_memory', True), 'bool'), ('agentJobs', 'agent_jobs', DEFAULT_FEATURES.get('agent_jobs', True), 'bool'), ('hierarchicalAgents', 'hierarchical_agents', DEFAULT_FEATURES.get('hierarchical_agents', True), 'bool'), ('adapterParallelTools', 'adapter_parallel_tools', DEFAULT_FEATURES.get('adapter_parallel_tools', True), 'bool'), ('parallelReadTools', 'parallel_read_tools', DEFAULT_FEATURES.get('parallel_read_tools', True), 'bool'), ('reviewLearnedGuidelines', 'review_learned_guidelines', True, 'bool'), ('maxAgentDepth', 'max_agent_depth', DEFAULT_FEATURES.get('max_agent_depth', 4), 'num'), ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', DEFAULT_FEATURES.get('max_workbench_tool_loops', 100), 'num'))
+fieldTable: tuple[tuple[str, str, object, str], ...] = (('enabled', 'enabled', DEFAULT_FEATURES.get('enabled', True), 'bool'), ('adaptivePolicy', 'adaptive_policy', DEFAULT_FEATURES.get('adaptive_policy', True), 'bool'), ('failureLearning', 'failure_learning', DEFAULT_FEATURES.get('failure_learning', True), 'bool'), ('graphMemory', 'graph_memory', DEFAULT_FEATURES.get('graph_memory', True), 'bool'), ('agentJobs', 'agent_jobs', DEFAULT_FEATURES.get('agent_jobs', True), 'bool'), ('hierarchicalAgents', 'hierarchical_agents', DEFAULT_FEATURES.get('hierarchical_agents', True), 'bool'), ('adapterParallelTools', 'adapter_parallel_tools', DEFAULT_FEATURES.get('adapter_parallel_tools', True), 'bool'), ('parallelReadTools', 'parallel_read_tools', DEFAULT_FEATURES.get('parallel_read_tools', True), 'bool'), ('reviewLearnedGuidelines', 'review_learned_guidelines', True, 'bool'), ('maxAgentDepth', 'max_agent_depth', DEFAULT_FEATURES.get('max_agent_depth', 4), 'num'), ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', DEFAULT_FEATURES.get('max_workbench_tool_loops', 100), 'num'))
 snakeToCamel: dict[str, str] = {snake: camel for camel, snake, _d, _k in fieldTable}
 camelToSnake: dict[str, str] = {camel: snake for camel, snake, _d, _k in fieldTable}
 fieldKind: dict[str, str] = {camel: kind for camel, _s, _d, kind in fieldTable}
 
-def _defaultsCamel() -> dict[str, Any]:
+def _defaultsCamel() -> dict[str, object]:
     """Return the full defaults dict in camelCase (matches ``BrainConfig``)."""
-    out: dict[str, Any] = {}
+    out: dict[str, object] = {}
     for camel, _snake, default, _kind in fieldTable:
         out[camel] = default
     return out
 
-def getDefaults() -> dict[str, Any]:
+def getDefaults() -> dict[str, object]:
     """Public accessor — returns the camelCase defaults the frontend renders."""
     return _defaultsCamel()
 
-def _loadPersisted() -> dict[str, Any]:
+def _loadPersisted() -> dict[str, object]:
     """Read ``cfg.brain_orchestrator`` (snake_case) from disk. Always fresh."""
     cfg = configService.getConfig()
     val = cfg.get('brain_orchestrator')
     return val if isinstance(val, dict) else {}
 
-def _savePersisted(snakeCfg: dict[str, Any]) -> None:
+def _savePersisted(snakeCfg: dict[str, object]) -> None:
     """Write snake_case ``cfg.brain_orchestrator`` and refresh the in-memory cache."""
     cfg = configService.getConfig()
     cfg['brain_orchestrator'] = snakeCfg
     configService.saveConfig(cfg)
     settings.reload()
 
-def _snakeToCamel(snakeCfg: dict[str, Any]) -> dict[str, Any]:
+def _snakeToCamel(snakeCfg: dict[str, object]) -> dict[str, object]:
     """Translate a snake_case persisted dict into the camelCase response shape."""
     out = _defaultsCamel()
     for snakeKey, value in snakeCfg.items():
@@ -83,16 +82,16 @@ def _snakeToCamel(snakeCfg: dict[str, Any]) -> dict[str, Any]:
         out[camelKey] = value
     return out
 
-def _camelPatchToSnake(patch: dict[str, Any]) -> dict[str, Any]:
+def _camelPatchToSnake(patch: dict[str, object]) -> dict[str, object]:
     """Translate a camelCase patch (from the React form) into the snake_case
     dict we persist. Validation happens in :func:`validatePatch` first."""
-    out: dict[str, Any] = {}
+    out: dict[str, object] = {}
     for camelKey, value in patch.items():
         snakeKey = camelToSnake[camelKey]
         out[snakeKey] = value
     return out
 
-def validatePatch(patch: Any) -> tuple[bool, str]:
+def validatePatch(patch: object) -> tuple[bool, str]:
     """Return (ok, error_message). Reject non-dicts, unknown keys, wrong types
     or out-of-range numeric values."""
     if not isinstance(patch, dict):
@@ -115,7 +114,7 @@ def validatePatch(patch: Any) -> tuple[bool, str]:
                 return (False, f'{key!r} must be between {lo} and {hi} (got {value})')
     return (True, '')
 
-def _sessionInfo(sessionId: str | None=None) -> dict[str, Any] | None:
+def _sessionInfo(sessionId: str | None=None) -> dict[str, object] | None:
     """Return ``{id, task}`` for the most-recent workbench session, or ``None``
     when none exist. ``task`` is mapped from ``WorkbenchSession.goal`` because
     the dataclass has no ``task`` field (see workbench.py:41-69)."""
@@ -125,7 +124,7 @@ def _sessionInfo(sessionId: str | None=None) -> dict[str, Any] | None:
         return None
     if not sessions:
         return None
-    target: dict[str, Any] | None = None
+    target: dict[str, object] | None = None
     if sessionId:
         for s in sessions:
             if s.get('id') == sessionId:
@@ -156,7 +155,7 @@ def _resolveSource(*, forceSession: bool=False) -> str:
         return 'session'
     return 'fallback'
 
-def getBrainConfigForSettings(*, sessionId: str | None=None) -> dict[str, Any]:
+def getBrainConfigForSettings(*, sessionId: str | None=None) -> dict[str, object]:
     """Shape returned to the React ``useQuery(['brain-config'])`` call.
 
     Always includes the full default set so the UI can render a meaningful
@@ -167,7 +166,7 @@ def getBrainConfigForSettings(*, sessionId: str | None=None) -> dict[str, Any]:
     sess = _sessionInfo(sessionId)
     return {'source': source, 'config': _snakeToCamel(persistedSnake), 'defaults': _defaultsCamel(), 'sessionId': sess['id'] if sess else None, 'session': sess}
 
-def saveBrainConfig(patch: dict[str, Any]) -> tuple[bool, str, dict[str, Any]]:
+def saveBrainConfig(patch: dict[str, object]) -> tuple[bool, str, dict[str, object]]:
     """Apply a partial camelCase patch. Returns (ok, error_message, merged)."""
     ok, err = validatePatch(patch)
     if not ok:
@@ -180,7 +179,7 @@ def saveBrainConfig(patch: dict[str, Any]) -> tuple[bool, str, dict[str, Any]]:
     recordConfigAudit('brain', 'update', 'user', before=before, after=dict(mergedSnake))
     return (True, '', _snakeToCamel(mergedSnake))
 
-def resetBrainConfig() -> tuple[bool, dict[str, Any]]:
+def resetBrainConfig() -> tuple[bool, dict[str, object]]:
     """Drop the persisted override entirely. Returns (ok, defaults_camel)."""
     before = _loadPersisted()
     cfg = configService.getConfig()
@@ -190,7 +189,7 @@ def resetBrainConfig() -> tuple[bool, dict[str, Any]]:
     recordConfigAudit('brain', 'reset', 'user', before=before, after={})
     return (True, _defaultsCamel())
 
-def getBrainConfigFromSession(sessionId: str) -> dict[str, Any]:
+def getBrainConfigFromSession(sessionId: str) -> dict[str, object]:
     """Return the brain config tagged ``source='session'`` for the requested
     session. Falls back to the most-recent session when ``sessionId`` is
     unknown (matches the lenient lookup in :func:`_sessionInfo`)."""

@@ -20,7 +20,6 @@ Port of the deleted Node.js ``backend/index.js`` brain-config block
 (commit 6d61910, 2026-06-21).
 """
 from __future__ import annotations
-from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from app.services import brainConfigService
 router = APIRouter(prefix='/api/brain', tags=['brain-config'])
@@ -32,7 +31,7 @@ async def getBrainConfig():
     return brainConfigService.getBrainConfigForSettings()
 
 @router.put('/config')
-async def putBrainConfig(body: dict[str, Any]):
+async def putBrainConfig(body: dict[str, object]):
     """Apply a partial patch to ``cfg.brain_orchestrator``.
 
     Body must be a JSON object whose keys are a subset of the 11 known

@@ -6,20 +6,19 @@ finishReason, error) to each entry. Mirrors the Node contract consumed by
 the frontend's ConversationsResponse type.
 """
 from __future__ import annotations
-from typing import Any
 from app.services.logger import getFilteredRequests, getRequestDetail
 
-def getConversations(period: str='all') -> dict[str, list[dict[str, Any]]]:
+def getConversations(period: str='all') -> dict[str, list[dict[str, object]]]:
     """Group request log entries by clientType, with attached details."""
     entries = getFilteredRequests(period)
-    grouped: dict[str, list[dict[str, Any]]] = {}
+    grouped: dict[str, list[dict[str, object]]] = {}
     for entry in entries:
         client = entry.get('clientType') or entry.get('provider') or 'unknown'
         grouped.setdefault(client, [])
         reqId = entry.get('reqId') or entry.get('id') or ''
         detail = getRequestDetail(reqId) if reqId else None
-        messages: Any = None
-        response: Any = None
+        messages: object = None
+        response: object = None
         if detail:
             reqBody = detail.get('request') or detail.get('requestBody')
             if isinstance(reqBody, str):

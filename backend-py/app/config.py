@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 def _findProjectRoot() -> Path:
@@ -13,7 +13,7 @@ def _findProjectRoot() -> Path:
     here = Path(__file__).resolve().parent.parent.parent
     return here
 
-def _loadJson(path: Path) -> Dict[str, Any]:
+def _loadJson(path: Path) -> Dict[str, object]:
     try:
         return json.loads(path.read_text('utf-8'))
     except (FileNotFoundError, json.JSONDecodeError):
@@ -25,8 +25,8 @@ class Settings(BaseSettings):
     projectRoot: Path = _findProjectRoot()
     dataDir: Path = Path(os.environ.get('AUGUST_DATA_DIR', str(_findProjectRoot() / 'data')))
     webDist: Path = _findProjectRoot() / 'web-dist'
-    _config: Dict[str, Any] = {}
-    _providers: Dict[str, Any] = {}
+    _config: Dict[str, object] = {}
+    _providers: Dict[str, object] = {}
 
     def reload(self) -> None:
         """Re-read config.json and providers.json from disk."""
@@ -36,13 +36,13 @@ class Settings(BaseSettings):
         self._providers = _loadJson(providersPath)
 
     @property
-    def config(self) -> Dict[str, Any]:
+    def config(self) -> Dict[str, object]:
         if not self._config:
             self.reload()
         return self._config
 
     @property
-    def providers(self) -> Dict[str, Any]:
+    def providers(self) -> Dict[str, object]:
         if not self._providers:
             self.reload()
         return self._providers

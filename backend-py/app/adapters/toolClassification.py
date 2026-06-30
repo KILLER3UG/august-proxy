@@ -7,16 +7,15 @@ This module classifies tool call/use arrays so the adapters know which
 tools to execute locally vs. forward to the client.
 """
 from __future__ import annotations
-from typing import Any
 from app.adapters.proxyTools import isProxyManagedLocalToolName
 
-def getToolNameFromOpenaiTool(tool: dict[str, Any] | None) -> str | None:
+def getToolNameFromOpenaiTool(tool: dict[str, object] | None) -> str | None:
     """Extract the tool name from an OpenAI-format tool call."""
     if not tool:
         return None
     return tool.get('name') or tool.get('function', {}).get('name')
 
-def getToolNameFromAnthropicTool(tool: dict[str, Any] | None) -> str | None:
+def getToolNameFromAnthropicTool(tool: dict[str, object] | None) -> str | None:
     """Extract the tool name from an Anthropic-format tool use."""
     if not tool:
         return None
@@ -45,15 +44,15 @@ def _isClientOwnedToolName(name: str | None, clientToolNames: set[str] | None=No
         return False
     return name in clientToolNames
 
-def classifyOpenaiToolCalls(toolCalls: list[dict[str, Any]] | None, managedLocalToolNames: set[str] | None=None, clientToolNames: set[str] | None=None) -> dict[str, Any]:
+def classifyOpenaiToolCalls(toolCalls: list[dict[str, object]] | None, managedLocalToolNames: set[str] | None=None, clientToolNames: set[str] | None=None) -> dict[str, object]:
     """Classify OpenAI-format tool calls into managed and client/unknown groups."""
     if managedLocalToolNames is None:
         managedLocalToolNames = set()
     if clientToolNames is None:
         clientToolNames = set()
     calls = [tc for tc in toolCalls or [] if tc]
-    managed: list[dict[str, Any]] = []
-    clientOrUnknown: list[dict[str, Any]] = []
+    managed: list[dict[str, object]] = []
+    clientOrUnknown: list[dict[str, object]] = []
     for tc in calls:
         name = getToolNameFromOpenaiTool(tc)
         if _isManagedProxyToolName(name, managedLocalToolNames) and (not _isClientOwnedToolName(name, clientToolNames)):
@@ -62,15 +61,15 @@ def classifyOpenaiToolCalls(toolCalls: list[dict[str, Any]] | None, managedLocal
             clientOrUnknown.append(tc)
     return {'tool_calls': calls, 'managed_tool_calls': managed, 'client_or_unknown_tool_calls': clientOrUnknown, 'has_managed': len(managed) > 0, 'has_client_or_unknown': len(clientOrUnknown) > 0, 'can_execute_managed': len(managed) > 0 and len(clientOrUnknown) == 0}
 
-def classifyAnthropicToolUses(toolUses: list[dict[str, Any]] | None, managedLocalToolNames: set[str] | None=None, clientToolNames: set[str] | None=None) -> dict[str, Any]:
+def classifyAnthropicToolUses(toolUses: list[dict[str, object]] | None, managedLocalToolNames: set[str] | None=None, clientToolNames: set[str] | None=None) -> dict[str, object]:
     """Classify Anthropic-format tool uses into managed and client/unknown groups."""
     if managedLocalToolNames is None:
         managedLocalToolNames = set()
     if clientToolNames is None:
         clientToolNames = set()
     uses = [tu for tu in toolUses or [] if tu]
-    managed: list[dict[str, Any]] = []
-    clientOrUnknown: list[dict[str, Any]] = []
+    managed: list[dict[str, object]] = []
+    clientOrUnknown: list[dict[str, object]] = []
     for tu in uses:
         name = getToolNameFromAnthropicTool(tu)
         if _isManagedProxyToolName(name, managedLocalToolNames) and (not _isClientOwnedToolName(name, clientToolNames)):

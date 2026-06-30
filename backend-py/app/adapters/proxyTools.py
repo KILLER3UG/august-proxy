@@ -12,7 +12,7 @@ This module provides:
 """
 from __future__ import annotations
 import json
-from typing import Any, Callable
+from typing import Callable
 MANAGED_WEB_TOOL_NAMES: set[str] = {'WebSearch', 'WebFetch', 'web_search', 'web_fetch', 'mcp__workspace__web_search', 'mcp__workspace__web_fetch'}
 MANAGED_BASH_TOOL_NAMES: set[str] = {'bash', 'mcp__workspace__bash'}
 
@@ -37,40 +37,40 @@ def getManagedWebLocalToolName(toolName: str) -> str:
         return 'web_search'
     return 'web_fetch'
 
-def _stubToolDefinitions() -> list[dict[str, Any]]:
+def _stubToolDefinitions() -> list[dict[str, object]]:
     """Placeholder — returns empty list until MCP/Cowork/August tools are implemented."""
     return []
 
 def _stubIsToolName(name: str) -> bool:
     return False
 
-def _stubExecuteTool(name: str, args: dict[str, Any]) -> str:
+def _stubExecuteTool(name: str, args: dict[str, object]) -> str:
     return f'Stub: {name} not yet implemented'
 
 def _stubLogActivity(category: str, detail: str) -> None:
     pass
 
-def _getBrainConfig() -> dict[str, Any]:
+def _getBrainConfig() -> dict[str, object]:
     """Placeholder — returns defaults until brain-orchestrator is ported."""
     return {'adapter_parallel_tools': False}
 
-def _recordToolFailure(info: dict[str, Any]) -> None:
+def _recordToolFailure(info: dict[str, object]) -> None:
     """Placeholder — no-op until tool-failure-memory is ported."""
     pass
 
-def _validateToolArguments(toolCall: dict[str, Any], toolDefinitions: list[dict[str, Any]], messages: list[dict[str, Any]]) -> dict[str, Any]:
+def _validateToolArguments(toolCall: dict[str, object], toolDefinitions: list[dict[str, object]], messages: list[dict[str, object]]) -> dict[str, object]:
     """Placeholder — returns valid until validator is ported."""
     return {'valid': True}
 
-def _executeToolBatch(toolCalls: list[dict[str, Any]], executeOne: Callable, options: dict[str, Any] | None=None) -> list[Any]:
+def _executeToolBatch(toolCalls: list[dict[str, object]], executeOne: Callable, options: dict[str, object] | None=None) -> list[object]:
     """Placeholder — returns empty list until tool-executor is ported."""
     return []
 
-def _isToolParallelSafe(toolName: str, args: dict[str, Any] | None=None) -> bool:
+def _isToolParallelSafe(toolName: str, args: dict[str, object] | None=None) -> bool:
     """Placeholder — returns False until managed-tool-policy is ported."""
     return False
 
-def sanitizeToolSchema(schema: Any) -> dict[str, Any]:
+def sanitizeToolSchema(schema: object) -> dict[str, object]:
     """Sanitize a JSON Schema to ensure it has the expected structure."""
     if not isinstance(schema, dict):
         return {'type': 'object', 'properties': {}}
@@ -81,11 +81,11 @@ def sanitizeToolSchema(schema: Any) -> dict[str, Any]:
         result['properties'] = {}
     return result
 
-def getManagedAnthropicWebToolDefinitions() -> list[dict[str, Any]]:
+def getManagedAnthropicWebToolDefinitions() -> list[dict[str, object]]:
     """Return Anthropic-format tool definitions for managed web/bash tools."""
     return [{'name': 'WebSearch', 'description': 'Search the public web for relevant pages. Supports DuckDuckGo (default), Brave Search, and SearXNG backends. Use only for external/public information. Do not combine this tool with any other tool in the same turn.', 'input_schema': {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'The web search query.'}, 'prompt': {'type': 'string', 'description': 'Compatibility alias for query when a stale client schema still sends prompt.'}, 'max_results': {'type': 'integer', 'description': 'Maximum number of results to return (max 20).'}}, 'required': ['query']}}, {'name': 'WebFetch', 'description': 'Fetch a public webpage by URL and convert it to clean Markdown. Private/local network addresses are blocked. Do not combine this tool with any other tool in the same turn.', 'input_schema': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'The public HTTP or HTTPS URL to fetch.'}, 'prompt': {'type': 'string', 'description': 'Compatibility alias for url when a stale client schema still sends prompt containing the URL.'}}, 'required': ['url']}}, {'name': 'mcp__workspace__web_search', 'description': 'Search the public web for relevant pages. Supports DuckDuckGo (default), Brave Search, and SearXNG backends. Workspace-compatible alias for third-party Claude clients. Do not combine this tool with any other tool in the same turn.', 'input_schema': {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'The web search query.'}, 'prompt': {'type': 'string', 'description': 'Compatibility alias for query when a stale client schema still sends prompt.'}, 'max_results': {'type': 'integer', 'description': 'Maximum number of results to return (max 20).'}}, 'required': ['query']}}, {'name': 'mcp__workspace__web_fetch', 'description': 'Fetch a public webpage by URL and convert it to clean Markdown. Workspace-compatible alias for third-party Claude clients. Private/local network addresses are blocked. Do not combine this tool with any other tool in the same turn.', 'input_schema': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'The public HTTP or HTTPS URL to fetch.'}, 'prompt': {'type': 'string', 'description': 'Compatibility alias for url when a stale client schema still sends prompt containing the URL.'}}, 'required': ['url']}}, {'name': 'mcp__workspace__bash', 'description': 'Execute a bash command in the proxy workspace container. Returns stdout, stderr, and exit code. Use for file operations, code analysis, git commands, and scripting.', 'input_schema': {'type': 'object', 'properties': {'command': {'type': 'string', 'description': 'The bash command to execute.'}, 'timeout_ms': {'type': 'integer', 'description': 'Timeout in milliseconds (default 60000).'}}, 'required': ['command']}}]
 
-def sanitizeAnthropicToolDefinition(tool: dict[str, Any] | None) -> dict[str, Any] | None:
+def sanitizeAnthropicToolDefinition(tool: dict[str, object] | None) -> dict[str, object] | None:
     """Normalize an Anthropic-format tool definition."""
     if not tool or not isinstance(tool, dict):
         return None
@@ -97,13 +97,13 @@ def sanitizeAnthropicToolDefinition(tool: dict[str, Any] | None) -> dict[str, An
         return None
     return {'name': name, 'description': str(normalized.get('description', '')), 'input_schema': sanitizeToolSchema(normalized.get('input_schema', {}))}
 
-def dedupeAndCanonicalizeAnthropicTools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def dedupeAndCanonicalizeAnthropicTools(tools: list[dict[str, object]]) -> list[dict[str, object]]:
     """Deduplicate and canonicalize Anthropic-format tool definitions.
 
     Replaces managed web tool variants with canonical versions, and
     strips browser automation tools.
     """
-    sanitized: list[dict[str, Any]] = []
+    sanitized: list[dict[str, object]] = []
     includeManagedSearch = False
     includeManagedFetch = False
     seenNames: set[str] = set()
@@ -137,45 +137,45 @@ def dedupeAndCanonicalizeAnthropicTools(tools: list[dict[str, Any]]) -> list[dic
             sanitized.append(bd)
     return sanitized
 
-def getCanonicalManagedAnthropicWebTools() -> list[dict[str, Any]]:
+def getCanonicalManagedAnthropicWebTools() -> list[dict[str, object]]:
     """Return only the canonical web tool definitions."""
     return [t for t in getManagedAnthropicWebToolDefinitions() if t['name'] in ('WebSearch', 'WebFetch', 'mcp__workspace__bash')]
 
-def openaiToAnthropicToolDefinition(tool: dict[str, Any]) -> dict[str, Any]:
+def openaiToAnthropicToolDefinition(tool: dict[str, object]) -> dict[str, object]:
     """Convert an OpenAI-format tool definition to Anthropic format."""
     if tool and tool.get('type') == 'function':
         return {'name': tool['function']['name'], 'description': tool['function'].get('description', ''), 'input_schema': sanitizeToolSchema(tool['function'].get('parameters', {}))}
     return tool
 
-def anthropicToOpenaiToolDefinition(tool: dict[str, Any]) -> dict[str, Any]:
+def anthropicToOpenaiToolDefinition(tool: dict[str, object]) -> dict[str, object]:
     """Convert an Anthropic-format tool definition to OpenAI format."""
     return {'type': 'function', 'function': {'name': tool.get('name', ''), 'description': tool.get('description', ''), 'parameters': sanitizeToolSchema(tool.get('input_schema', {})), 'strict': tool.get('strict')}}
 
-def getCanonicalCoworkAnthropicTools() -> list[dict[str, Any]]:
+def getCanonicalCoworkAnthropicTools() -> list[dict[str, object]]:
     """Return Cowork tools in Anthropic format."""
     return [openaiToAnthropicToolDefinition(t) for t in _stubToolDefinitions()]
 
-def getCanonicalManagedOpenaiWebTools() -> list[dict[str, Any]]:
+def getCanonicalManagedOpenaiWebTools() -> list[dict[str, object]]:
     """Return OpenAI-format managed web tool definitions."""
     return [{'type': 'function', 'function': {'name': 'WebSearch', 'description': 'Search the public web for relevant pages.', 'parameters': {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'The web search query.'}, 'prompt': {'type': 'string', 'description': 'Compatibility alias for query.'}, 'max_results': {'type': 'integer', 'description': 'Maximum number of results (max 20).'}}, 'required': ['query']}}}, {'type': 'function', 'function': {'name': 'WebFetch', 'description': 'Fetch a public webpage by URL and convert it to clean Markdown.', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'The public HTTP or HTTPS URL to fetch.'}, 'prompt': {'type': 'string', 'description': 'Compatibility alias for url.'}}, 'required': ['url']}}}, {'type': 'function', 'function': {'name': 'mcp__workspace__web_search', 'description': 'Search the public web. Workspace-compatible alias.', 'parameters': {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'The web search query.'}, 'prompt': {'type': 'string', 'description': 'Compatibility alias for query.'}, 'max_results': {'type': 'integer', 'description': 'Maximum number of results (max 20).'}}, 'required': ['query']}}}, {'type': 'function', 'function': {'name': 'mcp__workspace__web_fetch', 'description': 'Fetch a webpage by URL. Workspace-compatible alias.', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'The public HTTP or HTTPS URL to fetch.'}, 'prompt': {'type': 'string', 'description': 'Compatibility alias for url.'}}, 'required': ['url']}}}]
 
-def getCanonicalManagedAnthropicOpenaiWebTools() -> list[dict[str, Any]]:
+def getCanonicalManagedAnthropicOpenaiWebTools() -> list[dict[str, object]]:
     """Return managed web tools in OpenAI format (Anthropic-mapped)."""
     return [anthropicToOpenaiToolDefinition(t) for t in getCanonicalManagedAnthropicWebTools()]
 
-def getProxyOpenaiToolDefinitions() -> list[dict[str, Any]]:
+def getProxyOpenaiToolDefinitions() -> list[dict[str, object]]:
     """Return all proxy tool definitions in OpenAI format."""
     return [*_stubToolDefinitions(), *_stubToolDefinitions(), *_stubToolDefinitions(), *getCanonicalManagedOpenaiWebTools()]
 
-def getProxyOpenaiToolDefinitionsForAnthropic() -> list[dict[str, Any]]:
+def getProxyOpenaiToolDefinitionsForAnthropic() -> list[dict[str, object]]:
     """Return all proxy tool definitions in Anthropic format."""
     return [*_stubToolDefinitions(), *_stubToolDefinitions(), *_stubToolDefinitions(), *getCanonicalManagedAnthropicOpenaiWebTools()]
 
-def getToolDefinitionName(tool: dict[str, Any]) -> str:
+def getToolDefinitionName(tool: dict[str, object]) -> str:
     """Extract the name from a tool definition (Anthropic or OpenAI format)."""
     return tool.get('function', {}).get('name') or tool.get('name') or ''
 
-def appendMissingTools(targetTools: list[dict[str, Any]], extraTools: list[dict[str, Any]]) -> list[str]:
+def appendMissingTools(targetTools: list[dict[str, object]], extraTools: list[dict[str, object]]) -> list[str]:
     """Append tools from extra_tools that are not already in target_tools."""
     seen = {getToolDefinitionName(t) for t in targetTools or [] if getToolDefinitionName(t)}
     appended: list[str] = []
@@ -194,7 +194,7 @@ def isProxyManagedLocalToolName(name: str) -> bool:
     """Check if a tool name is proxy-managed."""
     return isManagedWebToolName(name) or isManagedBashToolName(name) or _stubIsToolName(name) or _stubIsToolName(name) or _stubIsToolName(name)
 
-def rememberManagedLocalToolDefinitions(tools: list[dict[str, Any]], ctx: dict[str, Any] | None=None) -> list[str]:
+def rememberManagedLocalToolDefinitions(tools: list[dict[str, object]], ctx: dict[str, object] | None=None) -> list[str]:
     """Remember which tool definitions are proxy-managed."""
     if not ctx or 'managed_local_tool_names' not in ctx:
         return []
@@ -207,7 +207,7 @@ def rememberManagedLocalToolDefinitions(tools: list[dict[str, Any]], ctx: dict[s
         names.append(name)
     return names
 
-def buildClientToolGuidance(clientTools: list[dict[str, Any]] | None) -> str:
+def buildClientToolGuidance(clientTools: list[dict[str, object]] | None) -> str:
     """Build system prompt guidance for client-side tools."""
     if not clientTools:
         return ''
@@ -231,7 +231,7 @@ def isBrowserAutomationToolName(name: str) -> bool:
     browserKeywords = ['list_connected_browsers', 'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_type', 'browser_wait', 'browser', 'chrome']
     return any((kw in lower for kw in browserKeywords))
 
-def formatManagedWebResult(result: Any) -> str:
+def formatManagedWebResult(result: object) -> str:
     """Format web search/fetch results as readable text."""
     if not result or not isinstance(result, dict):
         return str(result or '')
@@ -253,7 +253,7 @@ def formatManagedWebResult(result: Any) -> str:
         return '\n'.join((p for p in parts if p))
     return json.dumps(result)
 
-def formatManagedToolResult(toolName: str, result: Any) -> str:
+def formatManagedToolResult(toolName: str, result: object) -> str:
     """Format a managed tool execution result."""
     if isManagedWebToolName(toolName):
         return formatManagedWebResult(result)
@@ -274,7 +274,7 @@ def formatManagedToolResult(toolName: str, result: Any) -> str:
         return ''
     return json.dumps(result)
 
-async def executeManagedProxyTool(toolName: str, args: dict[str, Any], workspacePath: str | None=None, onProgress: Callable[[str], None] | None=None, parentSignal: Any=None) -> Any:
+async def executeManagedProxyTool(toolName: str, args: dict[str, object], workspacePath: str | None=None, onProgress: Callable[[str], None] | None=None, parentSignal: object = None) -> object:
     """Execute a managed proxy tool by dispatching to the correct backend.
 
     Currently stubs all external service calls. Real implementations come
@@ -292,12 +292,12 @@ async def executeManagedProxyTool(toolName: str, args: dict[str, Any], workspace
         return _stubExecuteTool(toolName, args or {})
     raise ValueError(f'Unsupported managed proxy tool: {toolName}')
 
-async def executeManagedOpenaiToolCalls(toolCalls: list[dict[str, Any]], knownTools: list[dict[str, Any]], messages: list[dict[str, Any]], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, Any]], None] | None=None, parentSignal: Any=None) -> list[dict[str, Any]]:
+async def executeManagedOpenaiToolCalls(toolCalls: list[dict[str, object]], knownTools: list[dict[str, object]], messages: list[dict[str, object]], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, object]], None] | None=None, parentSignal: object = None) -> list[dict[str, object]]:
     """Execute OpenAI-format managed tool calls.
 
     Currently uses stubs for validation and brain config.
     """
-    results: list[dict[str, Any]] = []
+    results: list[dict[str, object]] = []
     for tc in toolCalls:
         toolName = tc.get('function', {}).get('name')
         if not toolName:

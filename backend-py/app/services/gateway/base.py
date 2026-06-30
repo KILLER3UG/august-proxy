@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from app.services.gateway.sessionBridge import SessionBridge
 BYPASS_COMMANDS = {'stop', 'new', 'reset', 'approve', 'deny', 'status'}
@@ -36,7 +36,7 @@ class MessageEvent:
     source: SessionSource
     text: str
     timestamp: str = ''
-    raw: Any = None
+    raw: object = None
 
     def getCommand(self) -> str:
         """Return the canonical slash-command name (without leading /), or ''."""
@@ -67,7 +67,7 @@ class BasePlatformAdapter(ABC):
     """Abstract base for platform adapters."""
     platform: str = 'base'
 
-    def __init__(self, config: dict[str, Any] | None=None, bridge: 'SessionBridge | None'=None):
+    def __init__(self, config: dict[str, object] | None=None, bridge: 'SessionBridge | None'=None):
         self.config = config or {}
         self._bridge = bridge
         self._activeSessions: dict[str, asyncio.Task] = {}
@@ -82,15 +82,15 @@ class BasePlatformAdapter(ABC):
         ...
 
     @abstractmethod
-    async def sendMessage(self, chatId: str, text: str, **kwargs: Any) -> None:
+    async def sendMessage(self, chatId: str, text: str, **kwargs: object) -> None:
         ...
 
     @abstractmethod
-    async def getChatInfo(self, chatId: str) -> dict[str, Any]:
+    async def getChatInfo(self, chatId: str) -> dict[str, object]:
         ...
 
     @abstractmethod
-    async def normalize(self, raw: Any) -> Optional[MessageEvent]:
+    async def normalize(self, raw: object) -> Optional[MessageEvent]:
         ...
 
     async def start(self) -> None:
@@ -99,7 +99,7 @@ class BasePlatformAdapter(ABC):
     async def stop(self) -> None:
         ...
 
-    async def handleIncoming(self, raw: Any) -> None:
+    async def handleIncoming(self, raw: object) -> None:
         """Entry point for an inbound platform payload."""
         event = await self.normalize(raw)
         if event is None:

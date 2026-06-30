@@ -10,21 +10,21 @@ emitted to the parent session's SSE stream as ``subagent_*`` events.
 """
 from __future__ import annotations
 import uuid
-from typing import Any, Callable
+from typing import Callable
 from app.services.tools.agentRegistry import _MAXAgentDepth, createJob, deriveChildPermissions, evaluateAgentTool, getAgent, renderAgentContext, updateJob
 from app.services.workbench.context import currentSessionId
 
-def _toolName(t: dict[str, Any]) -> str:
+def _toolName(t: dict[str, object]) -> str:
     return t.get('name') or (t.get('function') or {}).get('name', '')
 
-def _agentOrGeneral(agentId: str, parentAlias: str) -> dict[str, Any]:
+def _agentOrGeneral(agentId: str, parentAlias: str) -> dict[str, object]:
     """Return the persisted agent, or a synthetic 'general' fallback."""
     agent = getAgent(agentId)
     if agent:
         return agent
     return {'id': 'general', 'name': 'General', 'role': 'General', 'description': 'General-purpose fallback sub-agent.', 'permissions': ['all'], 'modelAlias': parentAlias, 'depth': 0, '_synthetic': True}
 
-def _toolAllowed(agent: dict[str, Any], name: str) -> bool:
+def _toolAllowed(agent: dict[str, object], name: str) -> bool:
     if 'all' in (agent.get('permissions') or []):
         return True
     aid = agent.get('id')
@@ -32,7 +32,7 @@ def _toolAllowed(agent: dict[str, Any], name: str) -> bool:
         return bool(evaluateAgentTool(aid, name).get('allowed'))
     return True
 
-async def executeSubAgent(session: Any, agentId: str, goal: str, context: str='', emit: Callable[[dict[str, Any]], None] | None=None) -> dict[str, Any]:
+async def executeSubAgent(session: object, agentId: str, goal: str, context: str='', emit: Callable[[dict[str, object]], None] | None=None) -> dict[str, object]:
     """Execute a sub-agent task and return ``{jobId, agentId, status, result}``."""
     from app.providers.modelResolver import resolveOrFallback
     from app.providers.routeResolver import resolveForModel
@@ -96,12 +96,12 @@ async def executeSubAgent(session: Any, agentId: str, goal: str, context: str=''
     isAnthropic = _isAnthropicProvider(provider)
     isOpenai = _isOpenaiProvider(provider)
 
-    def _subEmit(ev: dict[str, Any]) -> None:
+    def _subEmit(ev: dict[str, object]) -> None:
         if not emit:
             return
         if ev.get('type') == 'final_output':
             emit({'type': 'subagent_text', 'agentId': resolvedAgentId, 'jobId': jobId, 'content': ev.get('content', '')})
-    messages: list[dict[str, Any]] = [{'role': 'user', 'content': f'Goal: {goal}\n\nContext: {context}' if context else f'Goal: {goal}'}]
+    messages: list[dict[str, object]] = [{'role': 'user', 'content': f'Goal: {goal}\n\nContext: {context}' if context else f'Goal: {goal}'}]
     finalText = ''
     token = currentSessionId.set(getattr(session, 'id', 'default'))
     try:
@@ -133,7 +133,7 @@ async def executeSubAgent(session: Any, agentId: str, goal: str, context: str=''
             if not toolUses:
                 break
             messages.append(assistantMsg)
-            toolResults: list[dict[str, Any]] = []
+            toolResults: list[dict[str, object]] = []
             for tu in toolUses:
                 tName = tu.get('name', '')
                 tInput = tu.get('input', {}) or {}

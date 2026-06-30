@@ -7,14 +7,13 @@ it). The sub-agent executor now consumes it (see ``subagent.py``) so the
 config is finally live.
 """
 from __future__ import annotations
-from typing import Any
 from app.config import settings
 from app.lib.paths import dataPath
 from app.services.memoryStore import recordConfigAudit
-_DEFAULTFallback: dict[str, Any] = {'enabled': False, 'mode': 'off', 'provider': '', 'model': ''}
+_DEFAULTFallback: dict[str, object] = {'enabled': False, 'mode': 'off', 'provider': '', 'model': ''}
 _VALIDModes = {'off', 'session_only', 'marked_subagent_only', 'always'}
 
-def getFallback() -> dict[str, Any]:
+def getFallback() -> dict[str, object]:
     """Return the current sub-agent fallback config (with defaults filled)."""
     fb = settings.config.get('subAgentFallback')
     if not isinstance(fb, dict):
@@ -23,7 +22,7 @@ def getFallback() -> dict[str, Any]:
     merged.update(fb)
     return merged
 
-def _writeFallback(fb: dict[str, Any]) -> None:
+def _writeFallback(fb: dict[str, object]) -> None:
     import json
     p = dataPath('config.json')
     cfg = json.loads(p.read_text('utf-8')) if p.exists() else {}
@@ -31,7 +30,7 @@ def _writeFallback(fb: dict[str, Any]) -> None:
     p.write_text(json.dumps(cfg, indent=2), 'utf-8')
     settings.reload()
 
-def configureFallback(enabled: bool | None=None, mode: str | None=None, provider: str | None=None, model: str | None=None, actor: str='system') -> dict[str, Any]:
+def configureFallback(enabled: bool | None=None, mode: str | None=None, provider: str | None=None, model: str | None=None, actor: str='system') -> dict[str, object]:
     """Update fallback fields (partial). Validates provider+model when active."""
     before = getFallback()
     after = dict(before)
@@ -57,7 +56,7 @@ def configureFallback(enabled: bool | None=None, mode: str | None=None, provider
     recordConfigAudit('fallback', 'configure', actor, before=before, after=after)
     return after
 
-def testFallback(model: str) -> dict[str, Any]:
+def testFallback(model: str) -> dict[str, object]:
     """Probe resolution of a model id without saving anything."""
     from app.providers.modelResolver import resolveOrFallback
     try:

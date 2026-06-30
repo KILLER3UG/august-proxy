@@ -2,7 +2,6 @@
 Configuration API routes.
 """
 from __future__ import annotations
-from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 from app.providers import resolver as providerResolver
@@ -60,7 +59,7 @@ async def getModelAliases():
     return {'aliases': aliasService.list_aliases()}
 
 class ModelAliasesBulk(BaseModel):
-    aliases: list[dict[str, Any]]
+    aliases: list[dict[str, object]]
 
 @router.put('/model-aliases')
 async def putModelAliases(body: ModelAliasesBulk):
@@ -128,7 +127,7 @@ async def getModelFleet():
     return modelFleetService.get_fleet()
 
 @router.put('/model-fleet')
-async def putModelFleet(body: dict[str, Any]):
+async def putModelFleet(body: dict[str, object]):
     """v4.1: Update model fleet config (partial).
 
     Body is a JSON object of any subset of {cortex, cerebellum, hippocampus,
@@ -158,7 +157,7 @@ async def getLiveConfig():
     return liveConfigService.get_live_config()
 
 @router.put('/live')
-async def putLiveConfig(body: dict[str, Any]):
+async def putLiveConfig(body: dict[str, object]):
     """v4.2: Update Live config (partial).
 
     Body may contain any subset of {sttProvider, sttModel, ttsProvider,

@@ -6,7 +6,7 @@ Uses the OpenAI-compatible endpoint at
 Auth is via the ``x-goog-api-key`` header (not Bearer token).
 """
 from __future__ import annotations
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 from app.providers.clients.base import BaseProviderClient, ProviderResponse
 
 class GeminiClient(BaseProviderClient):
@@ -29,7 +29,7 @@ class GeminiClient(BaseProviderClient):
             base = 'https://generativelanguage.googleapis.com/v1beta/openai'
         return base.rstrip('/')
 
-    async def chatCompletions(self, body: dict[str, Any], apiKey: str | None=None) -> ProviderResponse:
+    async def chatCompletions(self, body: dict[str, object], apiKey: str | None=None) -> ProviderResponse:
         """Non-streaming call to POST /chat/completions."""
         if apiKey is None:
             apiKey = self.resolveApiKey()
@@ -38,7 +38,7 @@ class GeminiClient(BaseProviderClient):
         body['stream'] = False
         return await self.requestJson('POST', url, headers, body)
 
-    async def chatCompletionsStream(self, body: dict[str, Any], apiKey: str | None=None) -> AsyncIterator[dict[str, Any]]:
+    async def chatCompletionsStream(self, body: dict[str, object], apiKey: str | None=None) -> AsyncIterator[dict[str, object]]:
         """Streaming call to POST /chat/completions."""
         if apiKey is None:
             apiKey = self.resolveApiKey()

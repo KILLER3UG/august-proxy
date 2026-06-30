@@ -8,9 +8,9 @@ are parallel-safe.
 """
 from __future__ import annotations
 import asyncio
-from typing import Any, Callable
+from typing import Callable
 
-async def executeToolBatch(toolUses: list[Any], executeOne: Callable[[Any], Any], options: dict[str, Any] | None=None) -> list[Any]:
+async def executeToolBatch(toolUses: list[object], executeOne: Callable[[object], object], options: dict[str, object] | None=None) -> list[object]:
     """Execute a batch of tool uses.
 
     Args:
@@ -34,7 +34,7 @@ async def executeToolBatch(toolUses: list[Any], executeOne: Callable[[Any], Any]
         if allSafe:
             tasks = [executeOne(tu) for tu in toolUses]
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            final: list[Any] = []
+            final: list[object] = []
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     final.append({'tool_call_id': getattr(toolUses[i], 'get', lambda k, d=None: d)('id', ''), 'role': 'tool', 'content': f'Error: {result}'})

@@ -13,8 +13,8 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 from app.lib.paths import dataPath
+from app.types import JsonValue, MemoryEntryDict, FactDict, ProposalDict, SessionRecord, UsageEventDict, MessageDict
 _BRAINFileEnv = 'AUGUST_BRAIN_SQLITE_FILE'
 _DEFAULTBrainFile = 'august_brain.sqlite'
 _TIMEOUTMs = 10000
@@ -50,13 +50,13 @@ def close() -> None:
             pass
         _local.conn = None
 
-def _q(value: Any) -> str:
+def _q(value: object) -> str:
     """Quote a value for SQL (sync helper)."""
     if value is None:
         return 'NULL'
     return f"'{str(value).replace(chr(39), chr(39) + chr(39))}'"
 
-def _json(value: Any) -> str:
+def _json(value: object) -> str:
     """Serialize a value to JSON for storage."""
     return json.dumps(value)
 
@@ -92,13 +92,13 @@ def _ensureColumn(conn: sqlite3.Connection, table: str, column: str, decl: str) 
         conn.execute(f'ALTER TABLE {table} ADD COLUMN {column} {decl}')
         conn.commit()
 
-def saveMemory(key: str, value: Any) -> None:
+def saveMemory(key: str, value: JsonValue) -> None:
     """Save a key-value pair to memory."""
     conn = _conn()
     conn.execute("INSERT OR REPLACE INTO memory_store (key, value, updated_at) VALUES (?, ?, datetime('now'))", (key, _json(value)))
     conn.commit()
 
-def getMemory(key: str) -> Any | None:
+def getMemory(key: str) -> JsonValue | None:
     """Get a value from memory by key."""
     conn = _conn()
     row = conn.execute('SELECT value FROM memory_store WHERE key = ?', (key,)).fetchone()
@@ -116,11 +116,11 @@ def deleteMemory(key: str) -> bool:
     conn.commit()
     return cursor.rowcount > 0
 
-def listMemory(pattern: str='%') -> list[dict[str, Any]]:
+def listMemory(pattern: str='%') -> list[MemoryEntryDict]:
     """List memory entries with optional key pattern matching."""
     conn = _conn()
     rows = conn.execute('SELECT key, value, updated_at FROM memory_store WHERE key LIKE ? ORDER BY updated_at DESC', (pattern,)).fetchall()
-    results = []
+    results: list[MemoryEntryDict] = []
     for r in rows:
         try:
             val = json.loads(r['value'])
@@ -129,7 +129,7 @@ def listMemory(pattern: str='%') -> list[dict[str, Any]]:
         results.append({'key': r['key'], 'value': val, 'updated_at': r['updated_at']})
     return results
 
-def searchMemory(query: str) -> list[dict[str, Any]]:
+def searchMemory(query: str) -> list[MemoryEntryDict]:
     """Full-text search across memory keys and values."""
     if not query or not query.strip():
         return []
@@ -139,7 +139,7 @@ def searchMemory(query: str) -> list[dict[str, Any]]:
         if not ftsQuery:
             return []
         rows = conn.execute('SELECT key, value FROM memory_store_fts WHERE content MATCH ?\n               ORDER BY rank LIMIT 20', (ftsQuery,)).fetchall()
-        results = []
+        results: list[MemoryEntryDict] = []
         for r in rows:
             try:
                 val = json.loads(r['value'])
@@ -150,7 +150,7 @@ def searchMemory(query: str) -> list[dict[str, Any]]:
     except sqlite3.OperationalError:
         likeQuery = f'%{query.strip()}%'
         rows = conn.execute('SELECT key, value FROM memory_store WHERE key LIKE ? OR value LIKE ? LIMIT 20', (likeQuery, likeQuery)).fetchall()
-        results = []
+        results: list[MemoryEntryDict] = []
         for r in rows:
             try:
                 val = json.loads(r['value'])
@@ -159,21 +159,21 @@ def searchMemory(query: str) -> list[dict[str, Any]]:
             results.append({'key': r['key'], 'value': val})
         return results
 
-def saveFact(factKey: str, factValue: Any, category: str='general', source: str='', confidence: float=1.0) -> None:
+def saveFact(factKey: str, factValue: JsonValue, category: str='general', source: str='', confidence: float=1.0) -> None:
     """Save a structured fact."""
     conn = _conn()
     conn.execute("INSERT OR REPLACE INTO facts (fact_key, fact_value, category, source, confidence, updated_at)\n           VALUES (?, ?, ?, ?, ?, datetime('now'))", (factKey, _json(factValue), category, source, confidence))
     conn.commit()
 
-def getFact(factKey: str) -> dict[str, Any] | None:
+def getFact(factKey: str) -> FactDict | None:
     """Get a fact by key."""
     conn = _conn()
     row = conn.execute('SELECT * FROM facts WHERE fact_key = ?', (factKey,)).fetchone()
     if not row:
         return None
-    return dict(row)
+    return dict(row)  # type: ignore[return-value]
 
-def searchFacts(query: str, category: str='') -> list[dict[str, Any]]:
+def searchFacts(query: str, category: str='') -> list[dict[str, object]]:
     """Search facts by key or value."""
     conn = _conn()
     like = f'%{query}%'
@@ -183,7 +183,7 @@ def searchFacts(query: str, category: str='') -> list[dict[str, Any]]:
         rows = conn.execute('SELECT * FROM facts WHERE fact_key LIKE ? OR fact_value LIKE ? ORDER BY updated_at DESC LIMIT 20', (like, like)).fetchall()
     return [dict(r) for r in rows]
 
-def listFacts(category: str='') -> list[dict[str, Any]]:
+def listFacts(category: str='') -> list[dict[str, object]]:
     """List facts, optionally filtered by category."""
     conn = _conn()
     if category:
@@ -199,20 +199,20 @@ def deleteFact(factKey: str) -> bool:
     conn.commit()
     return cursor.rowcount > 0
 
-def saveProposal(sessionId: str, proposalType: str, content: Any) -> int:
+def saveProposal(sessionId: str, proposalType: str, content: object) -> int:
     """Save a proposal (plan, mutation, etc.)."""
     conn = _conn()
     cursor = conn.execute('INSERT INTO proposals (session_id, proposal_type, content) VALUES (?, ?, ?)', (sessionId, proposalType, _json(content)))
     conn.commit()
     return cursor.lastrowid
 
-def getProposal(proposalId: int) -> dict[str, Any] | None:
+def getProposal(proposalId: int) -> dict[str, object] | None:
     """Get a proposal by ID."""
     conn = _conn()
     row = conn.execute('SELECT * FROM proposals WHERE id = ?', (proposalId,)).fetchone()
     return dict(row) if row else None
 
-def listProposals(sessionId: str, status: str='') -> list[dict[str, Any]]:
+def listProposals(sessionId: str, status: str='') -> list[dict[str, object]]:
     """List proposals for a session, optionally filtered by status."""
     conn = _conn()
     if status:
@@ -228,14 +228,14 @@ def decideProposal(proposalId: int, status: str, decidedBy: str='') -> bool:
     conn.commit()
     return cursor.rowcount > 0
 
-def recordLifecycle(sessionId: str, eventType: str, detail: Any=None) -> int:
+def recordLifecycle(sessionId: str, eventType: str, detail: object = None) -> int:
     """Record a lifecycle event."""
     conn = _conn()
     cursor = conn.execute('INSERT INTO lifecycle (session_id, event_type, detail) VALUES (?, ?, ?)', (sessionId, eventType, _json(detail) if detail else None))
     conn.commit()
     return cursor.lastrowid
 
-def listLifecycle(sessionId: str, eventType: str='', limit: int=100) -> list[dict[str, Any]]:
+def listLifecycle(sessionId: str, eventType: str='', limit: int=100) -> list[dict[str, object]]:
     """List lifecycle events for a session."""
     conn = _conn()
     if eventType:
@@ -244,7 +244,7 @@ def listLifecycle(sessionId: str, eventType: str='', limit: int=100) -> list[dic
         rows = conn.execute('SELECT * FROM lifecycle WHERE session_id = ? ORDER BY created_at DESC LIMIT ?', (sessionId, limit)).fetchall()
     return [dict(r) for r in rows]
 
-def recordConfigAudit(category: str, action: str, actor: str='', before: Any=None, after: Any=None) -> int:
+def recordConfigAudit(category: str, action: str, actor: str='', before: object = None, after: object = None) -> int:
     """Record a structured config-change audit entry.
 
     Used by alias, fallback, and agent mutation paths so that every
@@ -255,7 +255,7 @@ def recordConfigAudit(category: str, action: str, actor: str='', before: Any=Non
     conn.commit()
     return cursor.lastrowid
 
-def listConfigAudit(category: str='', limit: int=200) -> list[dict[str, Any]]:
+def listConfigAudit(category: str='', limit: int=200) -> list[dict[str, object]]:
     """List config-change audit entries, newest first."""
     conn = _conn()
     if category:
@@ -287,37 +287,37 @@ def indexSessionTopic(sessionId: str, topic: str, parentTopic: str | None=None, 
     except Exception:
         return False
 
-def getSessionTopic(sessionId: str) -> dict[str, Any] | None:
+def getSessionTopic(sessionId: str) -> dict[str, object] | None:
     """Get the classified topic for a session."""
     conn = _conn()
     row = conn.execute('SELECT * FROM session_topics WHERE session_id = ?', (sessionId,)).fetchone()
     return dict(row) if row else None
 
-def listTopics(limit: int=50) -> list[dict[str, Any]]:
+def listTopics(limit: int=50) -> list[dict[str, object]]:
     """List all classified session topics, most recent first."""
     conn = _conn()
     rows = conn.execute('SELECT * FROM session_topics ORDER BY classified_at DESC LIMIT ?', (limit,)).fetchall()
     return [dict(r) for r in rows]
 
-def searchSessionsByTopic(topic: str) -> list[dict[str, Any]]:
+def searchSessionsByTopic(topic: str) -> list[dict[str, object]]:
     """Find sessions with a given topic classification."""
     conn = _conn()
     rows = conn.execute('SELECT * FROM session_topics WHERE topic = ? ORDER BY classified_at DESC', (topic,)).fetchall()
     return [dict(r) for r in rows]
 
-def saveSession(session: dict[str, Any]) -> None:
+def saveSession(session: dict[str, object]) -> None:
     """Persist a session record."""
     conn = _conn()
     conn.execute('INSERT OR REPLACE INTO sessions (id, title, started_at, message_count, provider, model, folder_id, is_archived, workspace_path)\n           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', (session['id'], session.get('title', ''), session.get('startedAt'), session.get('messageCount', 0), session.get('provider', ''), session.get('model', ''), session.get('folderId'), 1 if session.get('isArchived') else 0, session.get('workspacePath')))
     conn.commit()
 
-def listSessions() -> list[dict[str, Any]]:
+def listSessions() -> list[dict[str, object]]:
     """List all sessions, most recent first."""
     conn = _conn()
     rows = conn.execute('SELECT * FROM sessions ORDER BY started_at DESC').fetchall()
     return [dict(r) for r in rows]
 
-def getSession(sessionId: str) -> dict[str, Any] | None:
+def getSession(sessionId: str) -> dict[str, object] | None:
     """Get a single session by ID."""
     conn = _conn()
     row = conn.execute('SELECT * FROM sessions WHERE id = ?', (sessionId,)).fetchone()
@@ -330,14 +330,14 @@ def deleteSessionRecord(sessionId: str) -> bool:
     conn.commit()
     return cursor.rowcount > 0
 
-def saveMessage(sessionId: str, role: str, content: Any) -> int:
+def saveMessage(sessionId: str, role: str, content: object) -> int:
     """Save a message to a session."""
     conn = _conn()
     cursor = conn.execute('INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)', (sessionId, role, _json(content)))
     conn.commit()
     return cursor.lastrowid
 
-def getMessages(sessionId: str) -> list[dict[str, Any]]:
+def getMessages(sessionId: str) -> list[dict[str, object]]:
     """Get all messages for a session."""
     conn = _conn()
     rows = conn.execute('SELECT * FROM messages WHERE session_id = ? ORDER BY created_at', (sessionId,)).fetchall()
@@ -371,7 +371,7 @@ def recordUsage(sessionId: str, model: str, inputTokens: int=0, outputTokens: in
     conn.commit()
     return cursor.lastrowid
 
-def getUsage(sessionId: str) -> dict[str, Any]:
+def getUsage(sessionId: str) -> dict[str, object]:
     """Get aggregated usage for a session.
 
     Returns cumulative totals (for the Usage page) plus ``latest_context_tokens``
@@ -397,7 +397,7 @@ def vacuum() -> None:
     conn.execute('VACUUM')
     conn.commit()
 
-def getStats() -> dict[str, Any]:
+def getStats() -> dict[str, object]:
     """Get database statistics."""
     conn = _conn()
     stats = {}
@@ -409,7 +409,7 @@ def getStats() -> dict[str, Any]:
             stats[table] = 0
     stats['db_size_bytes'] = _dbPath().stat().st_size if _dbPath().exists() else 0
     return stats
-_BRAINStores: dict[str, dict[str, Any]] = {'memory': {'table': 'memory_store', 'fts': 'memory_store_fts', 'columns': 'key, value, updated_at', 'search_cols': ['key', 'value'], 'label': 'key-value memory store'}, 'auto_memories': {'table': 'auto_memories', 'fts': 'auto_memories_fts', 'columns': 'id, key, content, category, importance, created_at', 'search_cols': ['key', 'content'], 'label': 'auto-captured memories'}, 'heuristics': {'table': 'learned_heuristics', 'fts': None, 'columns': 'id, rule, source, category, created_at, updated_at', 'search_cols': ['rule', 'source'], 'label': 'learned behavioral rules'}, 'facts': {'table': 'facts', 'fts': None, 'columns': 'id, fact_key, fact_value, category, source, confidence, created_at, updated_at', 'search_cols': ['fact_key', 'fact_value'], 'label': 'structured semantic facts'}, 'sessions': {'table': 'sessions', 'fts': None, 'columns': 'id, title, started_at, message_count, provider, model, workspace_path', 'search_cols': ['title', 'id'], 'label': 'conversation sessions'}, 'messages': {'table': 'messages', 'fts': None, 'columns': 'id, session_id, role, content, created_at', 'search_cols': ['content'], 'label': 'chat messages'}, 'timeline': {'table': 'episodic_timeline', 'fts': None, 'columns': 'id, timestamp, session_id, event_summary, category', 'search_cols': ['event_summary', 'category', 'session_id'], 'label': 'episodic timeline entries'}, 'blackboard': {'table': 'blackboard', 'fts': None, 'columns': 'id, session_id, agent, key, value, priority, created_at, expires_at', 'search_cols': ['agent', 'key', 'value'], 'label': 'inter-agent blackboard notes'}, 'exams': {'table': 'exams', 'fts': None, 'columns': 'id, title, topic, created_at, source, source_files', 'search_cols': ['title', 'topic'], 'label': 'exam sessions'}, 'exam_attempts': {'table': 'exam_attempts', 'fts': None, 'columns': 'id, exam_id, question_id, selected_index, is_correct, asked_for_help, answered_at', 'search_cols': ['exam_id'], 'label': 'exam attempt history'}}
+_BRAINStores: dict[str, dict[str, object]] = {'memory': {'table': 'memory_store', 'fts': 'memory_store_fts', 'columns': 'key, value, updated_at', 'search_cols': ['key', 'value'], 'label': 'key-value memory store'}, 'auto_memories': {'table': 'auto_memories', 'fts': 'auto_memories_fts', 'columns': 'id, key, content, category, importance, created_at', 'search_cols': ['key', 'content'], 'label': 'auto-captured memories'}, 'heuristics': {'table': 'learned_heuristics', 'fts': None, 'columns': 'id, rule, source, category, created_at, updated_at', 'search_cols': ['rule', 'source'], 'label': 'learned behavioral rules'}, 'facts': {'table': 'facts', 'fts': None, 'columns': 'id, fact_key, fact_value, category, source, confidence, created_at, updated_at', 'search_cols': ['fact_key', 'fact_value'], 'label': 'structured semantic facts'}, 'sessions': {'table': 'sessions', 'fts': None, 'columns': 'id, title, started_at, message_count, provider, model, workspace_path', 'search_cols': ['title', 'id'], 'label': 'conversation sessions'}, 'messages': {'table': 'messages', 'fts': None, 'columns': 'id, session_id, role, content, created_at', 'search_cols': ['content'], 'label': 'chat messages'}, 'timeline': {'table': 'episodic_timeline', 'fts': None, 'columns': 'id, timestamp, session_id, event_summary, category', 'search_cols': ['event_summary', 'category', 'session_id'], 'label': 'episodic timeline entries'}, 'blackboard': {'table': 'blackboard', 'fts': None, 'columns': 'id, session_id, agent, key, value, priority, created_at, expires_at', 'search_cols': ['agent', 'key', 'value'], 'label': 'inter-agent blackboard notes'}, 'exams': {'table': 'exams', 'fts': None, 'columns': 'id, title, topic, created_at, source, source_files', 'search_cols': ['title', 'topic'], 'label': 'exam sessions'}, 'exam_attempts': {'table': 'exam_attempts', 'fts': None, 'columns': 'id, exam_id, question_id, selected_index, is_correct, asked_for_help, answered_at', 'search_cols': ['exam_id'], 'label': 'exam attempt history'}}
 
 def _brainQueryGraph(query: str, filters: dict | None, limit: int) -> str:
     """v1.1: Read graph entities/relations from august_graph_memory.json.
@@ -516,7 +516,7 @@ def brainQuery(store: str, query: str='', filters: dict | None=None, limit: int=
             return json.dumps({'error': f"store '{store}' table not yet created"})
         cols = info['columns']
         sql = f"SELECT {cols} FROM {info['table']}"
-        params: list[Any] = []
+        params: list[object] = []
         whereClauses: list[str] = []
         if query:
             fts = info.get('fts')

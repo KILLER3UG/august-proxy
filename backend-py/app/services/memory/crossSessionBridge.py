@@ -4,7 +4,6 @@ Cross-session bridge — links related sessions and provides continuity.
 Port of backend/services/memory/cross-session-bridge.js.
 """
 from __future__ import annotations
-from typing import Any
 from app.services.memoryStore import saveMemory, getMemory, searchMemory, indexSessionTopic
 _BRIDGEKey = 'session_bridges'
 
@@ -18,14 +17,14 @@ def bridgeSessions(sourceId: str, targetId: str, reason: str='related') -> None:
     bridges[sourceId].append({'targetId': targetId, 'reason': reason, 'createdAt': __import__('datetime').datetime.utcnow().isoformat() + 'Z'})
     saveMemory(_BRIDGEKey, bridges)
 
-def getSessionBridges(sessionId: str) -> list[dict[str, Any]]:
+def getSessionBridges(sessionId: str) -> list[dict[str, object]]:
     """Get all bridges for a session."""
     bridges = getMemory(_BRIDGEKey) or {}
     if not isinstance(bridges, dict):
         return []
     return bridges.get(sessionId, [])
 
-def findRelatedSessions(sessionId: str, topic: str='') -> list[dict[str, Any]]:
+def findRelatedSessions(sessionId: str, topic: str='') -> list[dict[str, object]]:
     """Find sessions related to the given one."""
     related = []
     for b in getSessionBridges(sessionId):

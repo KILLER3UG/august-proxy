@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
 import pytest
 from app.services import skillService
 from app.services.memory.backgroundReview import ReviewGates, _doReview, _parseRecommendations, _saveFact, _lastRelevantMessages, tryBackgroundReview
@@ -36,7 +35,7 @@ class TestReviewGates:
         gates = ReviewGates()
         assert gates.should_review(session_turns=0) is False
 
-def mkSession(**kw) -> Any:
+def mkSession(**kw) -> object:
 
     class _Session:
         pass

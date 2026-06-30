@@ -13,7 +13,6 @@ import re
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 from app.lib.paths import dataPath
 _DBFile = dataPath('august_vector_memory.json')
 _MAXEntries = 2000
@@ -26,10 +25,10 @@ def _dbPath() -> Path:
 def _now() -> str:
     return datetime.utcnow().isoformat() + 'Z'
 
-def _defaultDb() -> dict[str, Any]:
+def _defaultDb() -> dict[str, object]:
     return {'version': 1, 'entries': []}
 
-def _read() -> dict[str, Any]:
+def _read() -> dict[str, object]:
     p = _dbPath()
     if not p.exists():
         return _defaultDb()
@@ -38,7 +37,7 @@ def _read() -> dict[str, Any]:
     except (json.JSONDecodeError, OSError):
         return _defaultDb()
 
-def _write(db: dict[str, Any]) -> None:
+def _write(db: dict[str, object]) -> None:
     db['entries'] = db['entries'][-_MAXEntries:]
     p = _dbPath()
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -82,7 +81,7 @@ def _cosineSimilarity(a: list[float], b: list[float]) -> float:
         return 0.0
     return dot / (normA * normB)
 
-def insert(text: str, metadata: dict[str, Any] | None=None, namespace: str='default') -> dict[str, Any]:
+def insert(text: str, metadata: dict[str, object] | None=None, namespace: str='default') -> dict[str, object]:
     """Insert a text entry with its embedding."""
     db = _read()
     import uuid
@@ -91,7 +90,7 @@ def insert(text: str, metadata: dict[str, Any] | None=None, namespace: str='defa
     _write(db)
     return entry
 
-def search(query: str, namespace: str='default', topK: int=10) -> list[dict[str, Any]]:
+def search(query: str, namespace: str='default', topK: int=10) -> list[dict[str, object]]:
     """Search for similar texts by embedding similarity."""
     db = _read()
     queryVec = _embed(query)
@@ -130,15 +129,15 @@ def listNamespaces() -> list[str]:
     return sorted(set((e.get('namespace', 'default') for e in db['entries'])))
 _COLLECTIONSKey = 'semantic_collections'
 
-def _readCollections() -> dict[str, Any]:
+def _readCollections() -> dict[str, object]:
     from app.services.memoryStore import getMemory
     return getMemory(_COLLECTIONSKey) or {}
 
-def _writeCollections(data: dict[str, Any]) -> None:
+def _writeCollections(data: dict[str, object]) -> None:
     from app.services.memoryStore import saveMemory
     saveMemory(_COLLECTIONSKey, data)
 
-def createCollection(name: str, description: str='') -> dict[str, Any]:
+def createCollection(name: str, description: str='') -> dict[str, object]:
     """Create a semantic collection (group of related memories)."""
     cols = _readCollections()
     import uuid
@@ -147,15 +146,15 @@ def createCollection(name: str, description: str='') -> dict[str, Any]:
     _writeCollections(cols)
     return col
 
-def getCollection(name: str) -> dict[str, Any] | None:
+def getCollection(name: str) -> dict[str, object] | None:
     cols = _readCollections()
     return cols.get(name)
 
-def listCollections() -> list[dict[str, Any]]:
+def listCollections() -> list[dict[str, object]]:
     cols = _readCollections()
     return list(cols.values())
 
-def addToCollection(collectionName: str, text: str, metadata: dict[str, Any] | None=None) -> dict[str, Any] | None:
+def addToCollection(collectionName: str, text: str, metadata: dict[str, object] | None=None) -> dict[str, object] | None:
     """Add text to a semantic collection (also stored in vector DB)."""
     col = getCollection(collectionName)
     if not col:
@@ -163,7 +162,7 @@ def addToCollection(collectionName: str, text: str, metadata: dict[str, Any] | N
     entry = insert(text, {**(metadata or {}), 'collection': collectionName}, namespace='semantic')
     return entry
 
-def searchCollection(collectionName: str, query: str, topK: int=5) -> list[dict[str, Any]]:
+def searchCollection(collectionName: str, query: str, topK: int=5) -> list[dict[str, object]]:
     """Search within a semantic collection."""
     results = search(query, namespace='semantic', top_k=topK)
     return [r for r in results if r.get('metadata', {}).get('collection') == collectionName]

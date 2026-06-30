@@ -15,7 +15,6 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any
 from app.services import toolRegistry
 _MAXFileSize = 10 * 1024 * 1024
 _MAXSearchResults = 100
