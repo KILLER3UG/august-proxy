@@ -9,6 +9,7 @@ import type {
   WorkbenchEventHandlers,
   WorkbenchGuardMode,
 } from '@/types/workbench';
+import { WorkbenchEventSchema } from './schemas/workbench';
 
 export interface CreateWorkbenchSessionParams {
   provider?: 'claude' | 'codex';
@@ -371,11 +372,29 @@ export async function stopWorkbenchChat(sessionId: string): Promise<void> {
   if (!res.ok) throw new Error(`stopWorkbenchChat failed: ${res.status}`);
 }
 
+/** Validate an incoming SSE frame against the WorkbenchEvent Zod schema.
+ *  Logs a console warning on mismatch (instead of throwing) so the stream
+ *  stays resilient to minor backend drift. A mismatch here is a signal
+ *  to update the schema or the corresponding TypeScript type. */
+function validateWorkbenchEvent(
+  event: string,
+  payload: Record<string, unknown>,
+): void {
+  const result = WorkbenchEventSchema.safeParse({ type: event, ...payload });
+  if (!result.success) {
+    console.warn(
+      `[workbench] SSE event '${event}' failed schema validation:`,
+      result.error.issues.slice(0, 3),
+    );
+  }
+}
+
 function dispatchWorkbenchEvent(
   event: string,
   payload: Record<string, unknown>,
   handlers: WorkbenchEventHandlers
 ): void {
+  validateWorkbenchEvent(event, payload);
   const p = payload;
   switch (event) {
     case 'thinking':
