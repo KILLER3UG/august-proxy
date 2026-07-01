@@ -34,7 +34,7 @@ class GatewayRunner:
         cfg = self._gatewayConfig()
         if not cfg.get('enabled', False):
             return
-        self._bridge = SessionBridge(provider=cfg.get('provider', ''), model=cfg.get('model', ''), agent_id=cfg.get('agent_id', ''), model_provider=cfg.get('model_provider', ''), guard_mode=cfg.get('guard_mode', 'full'))
+        self._bridge = SessionBridge(provider=cfg.get('provider', ''), model=cfg.get('model', ''), agentId=cfg.get('agentId', ''), modelProvider=cfg.get('modelProvider', ''), guardMode=cfg.get('guardMode', 'full'))
         platforms = cfg.get('platforms', {}) or {}
         for name, pcfg in platforms.items():
             if not (pcfg or {}).get('enabled', False):

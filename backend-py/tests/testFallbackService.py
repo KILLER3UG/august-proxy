@@ -20,5 +20,5 @@ def testActiveFallbackValidatesProvider(isolatedData):
         fallbackService.configureFallback(enabled=True, mode='always', provider='ZZZ_NoProvider', model='m', actor='test')
 
 def testTestFallbackResolves(isolatedData):
-    result = fallbackService.test_fallback('claude-sonnet-4-7')
+    result = fallbackService.testFallback('claude-sonnet-4-7')
     assert 'ok' in result

@@ -40,7 +40,7 @@ async def brainStatus() -> dict[str, object]:
     shape the dashboard reads.
     """
     try:
-        stats = memoryStore.get_stats() or {}
+        stats = memoryStore.getStats() or {}
         dbPath = memoryStore._db_path()
         count = int(stats.get('memory_store', 0) or 0)
         return {'count': count, 'driver': 'sqlite', 'path': str(dbPath), 'available': True}
@@ -55,7 +55,7 @@ async def brainItems() -> dict[str, object]:
     shape the dashboard renders (id, type, key, title, summary, ...).
     """
     try:
-        rows = memoryStore.list_memory('%') or []
+        rows = memoryStore.listMemory('%') or []
     except Exception:
         rows = []
     items: list[dict[str, object]] = []
@@ -108,8 +108,8 @@ async def brainLearning() -> dict[str, object]:
     from app.services import consolidationDaemon as _cd
     from app.services import deltaEngine as _de
     heuristics = listHeuristics()
-    coreFacts = memoryStore.get_memory('core_memory')
-    userProfile = memoryStore.get_memory('user_profile')
+    coreFacts = memoryStore.getMemory('core_memory')
+    userProfile = memoryStore.getMemory('user_profile')
     try:
         deltaQueueSize = len(getattr(_de, '_diff_queue', []) or [])
     except Exception:
@@ -132,7 +132,7 @@ async def brainLearning() -> dict[str, object]:
     except Exception:
         pass
     try:
-        topics = memoryStore.list_topics(limit=1) or []
+        topics = memoryStore.listTopics(limit=1) or []
     except Exception:
         topics = []
     lastTopic = topics[0].get('topic') if topics else None
@@ -158,14 +158,14 @@ async def brainSearch(q: str=Query(default='')) -> dict[str, object]:
     if not query:
         return {'results': []}
     try:
-        for r in memoryStore.search_memory(query) or []:
+        for r in memoryStore.searchMemory(query) or []:
             if not isinstance(r, dict):
                 continue
             results.append({'provider': 'memory_store', 'type': 'memory', 'title': str(r.get('key', '')), 'text': str(r.get('value', ''))[:500], 'score': float(r.get('score', 1.0) or 1.0), 'key': str(r.get('key', ''))})
     except Exception:
         pass
     try:
-        for f in memoryStore.search_facts(query) or []:
+        for f in memoryStore.searchFacts(query) or []:
             if not isinstance(f, dict):
                 continue
             results.append({'provider': 'facts', 'type': 'fact', 'title': str(f.get('key', f.get('fact_key', ''))), 'text': str(f.get('value') or f.get('fact_value', ''))[:500], 'score': float(f.get('confidence', 1.0) or 1.0), 'key': str(f.get('key', f.get('fact_key', ''))), 'quality': {'score': float(f.get('confidence', 1.0) or 1.0), 'confidence': float(f.get('confidence', 1.0) or 1.0), 'label': 'high' if float(f.get('confidence', 1.0) or 1.0) >= 0.8 else 'medium'}})
@@ -189,7 +189,7 @@ async def brainGuidelines() -> dict[str, object]:
     into the Guideline shape ({ id, text, source, confidence, status, ... }).
     """
     try:
-        facts = memoryStore.list_facts('guideline') or []
+        facts = memoryStore.listFacts('guideline') or []
     except Exception:
         facts = []
     out: list[dict[str, object]] = []
@@ -221,7 +221,7 @@ async def brainGraph() -> dict[str, object]:
     counts = {'entities': 0, 'relations': 0, 'observations': 0}
     entityTypes: dict[str, int] = {}
     try:
-        stats = memoryStore.get_stats() or {}
+        stats = memoryStore.getStats() or {}
         counts['entities'] = int(stats.get('memory_store', 0) or 0)
         counts['observations'] = int(stats.get('facts', 0) or 0)
         entityTypes['memory'] = counts['entities']
@@ -245,13 +245,13 @@ async def brainDiagnostics() -> dict[str, object]:
     semanticFacts, vectorEntries }.
     """
     try:
-        stats = memoryStore.get_stats() or {}
+        stats = memoryStore.getStats() or {}
         try:
             vcount = int(vectorDb.count() or 0)
         except Exception:
             vcount = 0
         try:
-            guidelines = len(memoryStore.list_facts('guideline') or [])
+            guidelines = len(memoryStore.listFacts('guideline') or [])
         except Exception:
             guidelines = 0
         try:

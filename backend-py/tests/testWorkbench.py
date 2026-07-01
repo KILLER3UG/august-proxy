@@ -9,10 +9,10 @@ from app.services.workbench.validator import validateToolArguments, buildValidat
 class TestSessionManagement:
 
     def testCreateSession(self):
-        session = createWorkbenchSession(provider='anthropic', guard_mode='full')
+        session = createWorkbenchSession(provider='anthropic', guardMode='full')
         assert session.id.startswith('wb_')
         assert session.provider == 'anthropic'
-        assert session.guard_mode == 'full'
+        assert session.guardMode == 'full'
 
     def testGetSession(self):
         session = createWorkbenchSession()
@@ -98,8 +98,8 @@ class TestEffort:
 
     def testThinkingBudget(self):
         assert effortToThinkingBudget('low') <= 8192
-        assert effortToThinkingBudget('high', max_tokens=32000) == 16000
-        assert effortToThinkingBudget('max', model_max=64000, max_tokens=32000) >= 32000
+        assert effortToThinkingBudget('high', maxTokens=32000) == 16000
+        assert effortToThinkingBudget('max', modelMax=64000, maxTokens=32000) >= 32000
 
     def testOpenaiReasoning(self):
         assert effortToOpenaiReasoningEffort('high') == 'high'
@@ -108,7 +108,7 @@ class TestEffort:
 class TestSystemPrompt:
 
     def testBuildPrompt(self):
-        session = createWorkbenchSession(guard_mode='full')
+        session = createWorkbenchSession(guardMode='full')
         prompt = buildSystemPrompt(session)
         assert 'August Proxy' in prompt
         assert len(prompt) > 50
@@ -128,7 +128,7 @@ class TestSystemPrompt:
         assert 'approved' in prompt
 
     def testPlanModeNotInjectedIntoPrompt(self):
-        session = createWorkbenchSession(guard_mode='plan')
+        session = createWorkbenchSession(guardMode='plan')
         prompt = buildSystemPrompt(session)
         assert '## Plan Mode' not in prompt
         assert 'You are in plan mode' not in prompt
@@ -138,7 +138,7 @@ class TestPlanModeGuard:
     """Regression: plan mode must not abort the chat after a tool round.
 
     The old behaviour broke the tool loop after *every* round in plan mode
-    (workbench.py `if guard_mode == 'plan': break`), so the model never got
+    (workbench.py `if guardMode == 'plan': break`), so the model never got
     a re-call to produce its plan/final answer — the 'tools abort the chat'
     symptom. The fix: plan mode allows research re-calls, only pausing when
     the model actually submits a plan; and an approved plan unblocks
@@ -150,14 +150,14 @@ class TestPlanModeGuard:
         assert isPlanModeBlocked('submitPlan') is False
 
     def testReadonlyToolsAllowedInPlanMode(self):
-        session = createWorkbenchSession(guard_mode='plan')
+        session = createWorkbenchSession(guardMode='plan')
         from app.services.workbench.workbench import _checkToolGuard
         assert _checkToolGuard(session, 'read_file', {'path': '/x'}) is None
         assert _checkToolGuard(session, 'list_directory', {'path': '/x'}) is None
 
     def testMutationsBlockedUntilPlanApproved(self):
         from app.services.workbench.workbench import _checkToolGuard
-        session = createWorkbenchSession(guard_mode='plan')
+        session = createWorkbenchSession(guardMode='plan')
         assert _checkToolGuard(session, 'write_file', {'path': '/x', 'content': 'y'}) is not None
         assert _checkToolGuard(session, 'run_command', {'command': 'ls'}) is not None
         submitPlan(session, {'plan': '1. write the file'})
@@ -183,7 +183,7 @@ class TestPlanModeGuard:
         message must tell it to submit_plan and ask the user — this is the
         tool result the model receives on the next re-call."""
         from app.services.workbench.workbench import _checkToolGuard
-        session = createWorkbenchSession(guard_mode='plan')
+        session = createWorkbenchSession(guardMode='plan')
         reason = _checkToolGuard(session, 'write_file', {'path': '/x', 'content': 'y'})
         assert reason is not None
         assert 'submit_plan' in reason
@@ -298,7 +298,7 @@ class TestAnthropicWorkbenchStreaming:
                 yield {'_event_type': 'content_block_stop'}
                 yield {'_event_type': 'message_delta', 'usage': {'input_tokens': 10, 'output_tokens': 5}}
         import app.providers.clients as clients
-        monkeypatch.setattr(clients, 'get_client', lambda provider: _FakeClient())
+        monkeypatch.setattr(clients, 'getClient', lambda provider: _FakeClient())
         emitted: list[dict] = []
         provider = {'name': 'test', 'model_profiles': {'*': {}}, 'api_mode': 'anthropic_messages'}
         result = await _callAnthropicWorkbench([{'role': 'user', 'content': 'hi'}], 'You are helpful.', 'claude-3-5-sonnet-20241022', [], 'medium', provider=provider, emit=emitted.append)
@@ -319,7 +319,7 @@ class TestAnthropicWorkbenchStreaming:
         the turn (the true current context fill), not the cumulative sum."""
         from app.services.workbench import workbench as wb
         from app.services.workbench.workbench import sendWorkbenchMessageStream, createWorkbenchSession
-        session = createWorkbenchSession(provider='anthropic', guard_mode='full')
+        session = createWorkbenchSession(provider='anthropic', guardMode='full')
 
         class _FakeClient:
 
@@ -332,18 +332,18 @@ class TestAnthropicWorkbenchStreaming:
                 yield {'_event_type': 'content_block_stop'}
                 yield {'_event_type': 'message_delta', 'usage': {'input_tokens': 4823, 'output_tokens': 40}}
         import app.providers.clients as clients
-        monkeypatch.setattr(clients, 'get_client', lambda provider: _FakeClient())
+        monkeypatch.setattr(clients, 'getClient', lambda provider: _FakeClient())
         recorded: list[dict] = []
 
         def fakeRecordUsage(sessionId, model, inputTokens=0, outputTokens=0, contextTokens=0):
             recorded.append({'session_id': sessionId, 'model': model, 'input_tokens': inputTokens, 'output_tokens': outputTokens, 'context_tokens': contextTokens})
             return 1
         import app.services.memoryStore as memoryStore
-        monkeypatch.setattr(memoryStore, 'record_usage', fakeRecordUsage)
+        monkeypatch.setattr(memoryStore, 'recordUsage', fakeRecordUsage)
         providerConfig = {'name': 'anthropic', 'model_profiles': {'*': {}}, 'api_mode': 'anthropic_messages'}
         monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **k: providerConfig)
         monkeypatch.setattr(wb, '_resolveModel', lambda *a, **k: 'claude-3-5-sonnet-20241022')
-        await sendWorkbenchMessageStream(session_id=session.id, message='hi', provider='anthropic', emit=lambda e: None)
+        await sendWorkbenchMessageStream(sessionId=session.id, message='hi', provider='anthropic', emit=lambda e: None)
         assert len(recorded) == 1
         rec = recorded[0]
         assert rec['context_tokens'] == 4823

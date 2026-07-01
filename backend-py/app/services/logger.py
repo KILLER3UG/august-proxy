@@ -265,49 +265,49 @@ def captureRequest(reqId: str, body: object, metadata: dict[str, object] | None=
     _tracker.captureRequest(reqId, body, metadata)
 
 def captureResponse(reqId: str, responseData: dict[str, object]) -> None:
-    _tracker.capture_response(reqId, responseData)
+    _tracker.captureResponse(reqId, responseData)
 
 def captureTokens(reqId: str, inputTokens: int, outputTokens: int) -> None:
-    _tracker.capture_tokens(reqId, inputTokens, outputTokens)
+    _tracker.captureTokens(reqId, inputTokens, outputTokens)
 
 def captureError(reqId: str, error: str) -> None:
-    _tracker.capture_error(reqId, error)
+    _tracker.captureError(reqId, error)
 
 def getPendingRequests() -> list[dict[str, object]]:
-    return _tracker.get_pending()
+    return _tracker.getPending()
 
 def getRequestLog() -> list[dict[str, object]]:
-    return _tracker.get_log()
+    return _tracker.getLog()
 
 def getFilteredRequests(period: str='all') -> list[dict[str, object]]:
-    return _tracker.get_filtered(period)
+    return _tracker.getFiltered(period)
 
 def getStats(period: str='all') -> dict[str, object]:
-    return _tracker.get_stats(period)
+    return _tracker.getStats(period)
 
 def getRequestDetails(period: str='all') -> list[dict[str, object]]:
-    return _tracker.get_request_details(period)
+    return _tracker.getRequestDetails(period)
 
 def getRequestDetail(reqId: str) -> dict[str, object] | None:
-    return _tracker.get_request_detail(reqId)
+    return _tracker.getRequestDetail(reqId)
 
 def addSseClient(client: object) -> None:
-    _tracker.add_sse_client(client)
+    _tracker.addSseClient(client)
 
 def removeSseClient(client: object) -> None:
-    _tracker.remove_sse_client(client)
+    _tracker.removeSseClient(client)
 
 def addLogWsClient(ws: object) -> None:
-    _tracker.add_ws_client(ws)
+    _tracker.addWsClient(ws)
 
 def removeLogWsClient(ws: object) -> None:
-    _tracker.remove_ws_client(ws)
+    _tracker.removeWsClient(ws)
 
 def emitLogEvent(event: dict[str, object]) -> None:
-    _tracker.emit_log_event(event)
+    _tracker.emitLogEvent(event)
 
 def getRecentLogEvents(limit: int=100) -> list[dict[str, object]]:
-    return _tracker.get_recent_log_events(limit)
+    return _tracker.getRecentLogEvents(limit)
 
 def extractSessionId(body: dict[str, object]) -> str:
     """Extract a session ID from a request body."""

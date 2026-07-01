@@ -19,7 +19,7 @@ from app.services.workbench.workbench import WorkbenchSession, _executeTool, ope
 def _isolateMcpState(monkeypatch):
     """Start each test with empty MCP server + cache state."""
     monkeypatch.setattr(mcpClient, '_servers', {})
-    monkeypatch.setattr(mcpClient, '_tools_cache', {})
+    monkeypatch.setattr(mcpClient, '_toolsCache', {})
     yield
 
 @pytest.fixture(scope='module', autouse=True)
@@ -36,7 +36,7 @@ MCP_TOOL_NAME = 'mcp__mcp_test1234__summarize'
 
 def _seedMcpCache():
     """Populate the MCP tool cache as if discovery ran."""
-    mcpClient._tools_cache[MCP_SERVER_ID] = [{'name': 'summarize', 'description': 'Summarize a document.', 'inputSchema': {'type': 'object', 'properties': {'text': {'type': 'string'}}}}]
+    mcpClient._toolsCache[MCP_SERVER_ID] = [{'name': 'summarize', 'description': 'Summarize a document.', 'inputSchema': {'type': 'object', 'properties': {'text': {'type': 'string'}}}}]
 
 class TestMcpToolsPresented:
 
@@ -73,7 +73,9 @@ class TestMcpToolDispatch:
             called['name'] = name
             called['args'] = args
             return 'MCP_RESULT'
-        monkeypatch.setattr('app.services.workbench.workbench.execute_mcp_tool_call' if False else 'app.services.tools.mcp_client.execute_mcp_tool_call', fakeExecuteMcpToolCall)
+        # workbench._executeTool does a local import of mcpClient.executeMcpToolCall,
+        # so monkeypatch the source module instead.
+        monkeypatch.setattr(mcpClient, 'executeMcpToolCall', fakeExecuteMcpToolCall)
         result = await _executeTool(MCP_TOOL_NAME, {'text': 'hi'}, session)
         assert result == 'MCP_RESULT'
         assert called.get('name') == MCP_TOOL_NAME
@@ -87,7 +89,7 @@ class TestMcpToolDispatch:
         async def fakeExecuteMcpToolCall(name, args):
             mcpCalls.append(name)
             return 'SHOULD_NOT_HAPPEN'
-        monkeypatch.setattr('app.services.tools.mcp_client.execute_mcp_tool_call', fakeExecuteMcpToolCall)
+        monkeypatch.setattr(mcpClient, 'executeMcpToolCall', fakeExecuteMcpToolCall)
         result = await _executeTool('read_file', {'path': '/nonexistent-test'}, session)
         assert mcpCalls == []
         assert 'Error:' in result or 'not found' in result.lower() or result.startswith('Error') or ('File not found' in result)
@@ -96,25 +98,25 @@ class TestRefreshMcpTools:
 
     @pytest.mark.asyncio
     async def testRefreshPopulatesCache(self, monkeypatch):
-        srv = mcpClient.register_server('fake', 'echo', [])
+        srv = mcpClient.registerServer('fake', 'echo', [])
 
         async def fakeDiscover(sid):
-            mcpClient._tools_cache[sid] = [{'name': 'ping', 'description': 'Pong.', 'inputSchema': {'type': 'object', 'properties': {}}}]
-            return mcpClient._tools_cache[sid]
-        monkeypatch.setattr(mcpClient, 'discover_tools', fakeDiscover)
-        await mcpClient.refresh_mcp_tools()
-        defs = mcpClient.get_mcp_tool_definitions_sync()
+            mcpClient._toolsCache[sid] = [{'name': 'ping', 'description': 'Pong.', 'inputSchema': {'type': 'object', 'properties': {}}}]
+            return mcpClient._toolsCache[sid]
+        monkeypatch.setattr(mcpClient, 'discoverTools', fakeDiscover)
+        await mcpClient.refreshMcpTools()
+        defs = mcpClient.getMcpToolDefinitionsSync()
         names = [d['function']['name'] for d in defs]
         assert any((n == f"mcp__{srv['id']}__ping" for n in names))
 
     @pytest.mark.asyncio
     async def testRefreshSwallowsPerServerErrors(self, monkeypatch):
-        srv = mcpClient.register_server('bad', 'echo', [])
+        srv = mcpClient.registerServer('bad', 'echo', [])
 
         async def fakeDiscover(sid):
             raise RuntimeError('boom')
-        monkeypatch.setattr(mcpClient, 'discover_tools', fakeDiscover)
-        await mcpClient.refresh_mcp_tools()
+        monkeypatch.setattr(mcpClient, 'discoverTools', fakeDiscover)
+        await mcpClient.refreshMcpTools()
         assert srv['status'] in ('error', 'registered') or 'error' in srv
 
 def testAssembleToolDefsKeepsMcpToolsAsCore():
@@ -123,7 +125,7 @@ def testAssembleToolDefsKeepsMcpToolsAsCore():
     bigDeferrable = [{'name': f'big_tool_{i}', 'description': 'x' * 200, 'input_schema': {'type': 'object'}} for i in range(300)]
     mcpTools = [{'name': 'mcp__github__list_prs', 'description': 'List PRs', 'input_schema': {'type': 'object'}}, {'name': 'mcp__workspace__create_doc', 'description': 'Create doc', 'input_schema': {'type': 'object'}}]
     allTools = bigDeferrable + mcpTools
-    result = assembleToolDefs(allTools, context_messages=None, context_length=200000)
+    result = assembleToolDefs(allTools, contextMessages=None, contextLength=200000)
     assert result.activated
     toolNames = {t.get('name') for t in result.tool_defs}
     assert 'mcp__github__list_prs' in toolNames
@@ -134,15 +136,15 @@ def testGetMcpToolDefinitionsSyncTriggersLazyRefresh(monkeypatch):
     from app.services.tools import mcpClient
     import asyncio
     monkeypatch.setattr(mcpClient, '_servers', {'mcp_xyz': {'id': 'mcp_xyz', 'name': 'x'}})
-    monkeypatch.setattr(mcpClient, '_tools_cache', {})
+    monkeypatch.setattr(mcpClient, '_toolsCache', {})
     refreshCalled = {'v': False}
 
     async def fakeRefresh():
         refreshCalled['v'] = True
-        mcpClient._tools_cache['mcp_xyz'] = [{'name': 'demo', 'description': 'demo', 'inputSchema': {}}]
-    monkeypatch.setattr(mcpClient, 'refresh_mcp_tools', fakeRefresh)
+        mcpClient._toolsCache['mcp_xyz'] = [{'name': 'demo', 'description': 'demo', 'inputSchema': {}}]
+    monkeypatch.setattr(mcpClient, 'refreshMcpTools', fakeRefresh)
 
     async def runner():
-        return mcpClient.get_mcp_tool_definitions_sync()
+        return mcpClient.getMcpToolDefinitionsSync()
     asyncio.run(runner())
     assert refreshCalled['v'] is True

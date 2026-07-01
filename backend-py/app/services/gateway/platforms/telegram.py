@@ -146,4 +146,4 @@ class TelegramAdapter(BasePlatformAdapter):
             return None
         chat = message.get('chat', {})
         _from = message.get('from', {})
-        return MessageEvent(source=SessionSource(platform='telegram', chat_id=str(chat.get('id', '')), user_id=str(_from.get('id', '')), thread_id=str(message.get('message_thread_id', '')), message_id=str(message.get('message_id', '')), chat_type=chat.get('type', 'dm')), text=text, raw=raw)
+        return MessageEvent(source=SessionSource(platform='telegram', chatId=str(chat.get('id', '')), userId=str(_from.get('id', '')), threadId=str(message.get('message_thread_id', '')), messageId=str(message.get('message_id', '')), chatType=chat.get('type', 'dm')), text=text, raw=raw)

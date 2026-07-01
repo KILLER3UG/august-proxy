@@ -108,7 +108,7 @@ async def testApiUsageSessionRecordsAndReturnsContextTokens(client, isolatedData
     contextTokens = the recorded context_tokens (true current context fill)."""
     from app.services import memoryStore
     sid = 'test-ctx-session'
-    memoryStore.recordUsage(session_id=sid, model='claude-sonnet', input_tokens=12000, output_tokens=900, context_tokens=4823)
+    memoryStore.recordUsage(sessionId=sid, model='claude-sonnet', inputTokens=12000, outputTokens=900, contextTokens=4823)
     resp = await client.get(f'/api/usage/session?id={sid}')
     assert resp.status_code == 200
     data = resp.json()
@@ -138,7 +138,7 @@ async def testApiUsageSessionContextTokensFallsBackToInputTokens(client, isolate
     the endpoint falls back to input_tokens so the gauge still has a value."""
     from app.services import memoryStore
     sid = 'test-fallback-session'
-    memoryStore.recordUsage(session_id=sid, model='claude-sonnet', input_tokens=7777, output_tokens=100, context_tokens=0)
+    memoryStore.recordUsage(sessionId=sid, model='claude-sonnet', inputTokens=7777, outputTokens=100, contextTokens=0)
     resp = await client.get(f'/api/usage/session?id={sid}')
     data = resp.json()
     assert resp.status_code == 200
@@ -178,7 +178,7 @@ async def testApiMemoryKv(client):
 @pytest.mark.asyncio
 async def testApiMemoryFacts(client):
     """Test memory facts endpoint lifecycle."""
-    resp = await client.post('/api/memory/facts', json={'fact_key': 'route_fact', 'fact_value': 'fact_value', 'category': 'test'})
+    resp = await client.post('/api/memory/facts', json={'factKey': 'route_fact', 'factValue': 'fact_value', 'category': 'test'})
     assert resp.status_code == 200
     resp = await client.get('/api/memory/facts')
     assert resp.status_code == 200
@@ -191,13 +191,13 @@ async def testApiMemoryFacts(client):
 @pytest.mark.asyncio
 async def testApiMemoryProposals(client):
     """Test proposals endpoint lifecycle."""
-    resp = await client.post('/api/memory/proposals', json={'session_id': 'route_s1', 'proposal_type': 'plan', 'content': {'x': 1}})
+    resp = await client.post('/api/memory/proposals', json={'sessionId': 'route_s1', 'proposalType': 'plan', 'content': {'x': 1}})
     assert resp.status_code == 200
     pid = resp.json()['id']
     resp = await client.get(f'/api/memory/proposals/{pid}')
     assert resp.status_code == 200
     assert resp.json()['status'] == 'pending'
-    resp = await client.post(f'/api/memory/proposals/{pid}/decide', json={'status': 'approved', 'decided_by': 'test'})
+    resp = await client.post(f'/api/memory/proposals/{pid}/decide', json={'status': 'approved', 'decidedBy': 'test'})
     assert resp.status_code == 200
 
 @pytest.mark.asyncio

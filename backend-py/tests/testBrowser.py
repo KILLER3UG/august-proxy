@@ -4,20 +4,20 @@ from app.services.browser import elementResolver, snapshot
 from app.services.browser.sessionManager import BrowserUnavailableError
 
 def testRefToSelector():
-    assert elementResolver._ref_to_selector('@e3') == '[data-august-ref="3"]'
-    assert elementResolver._ref_to_selector('7') == '[data-august-ref="7"]'
-    assert elementResolver._ref_to_selector('bogus') is None
-    assert elementResolver._ref_to_selector('') is None
+    assert elementResolver._refToSelector('@e3') == '[data-august-ref="3"]'
+    assert elementResolver._refToSelector('7') == '[data-august-ref="7"]'
+    assert elementResolver._refToSelector('bogus') is None
+    assert elementResolver._refToSelector('') is None
 
 def testIsXpath():
-    assert elementResolver._is_xpath('//div')
-    assert elementResolver._is_xpath('  //div')
-    assert elementResolver._is_xpath('(//div)[1]')
-    assert not elementResolver._is_xpath('div.foo')
+    assert elementResolver._isXpath('//div')
+    assert elementResolver._isXpath('  //div')
+    assert elementResolver._isXpath('(//div)[1]')
+    assert not elementResolver._isXpath('div.foo')
 
 def testCompactSnapshotFormat():
     elements = [{'ref': '@e1', 'role': 'button', 'name': 'Search', 'value': '', 'description': ''}, {'ref': '@e2', 'role': 'textbox', 'name': 'Query', 'value': 'hello', 'description': ''}, {'ref': '@e3', 'role': 'img', 'name': '', 'value': '', 'description': ''}]
-    out = snapshot.build_compact_snapshot(elements)
+    out = snapshot.buildCompactSnapshot(elements)
     lines = out.split('\n')
     assert any(('[@e1] button "Search"' in l for l in lines))
     assert any(("value='hello'" in l for l in lines))
@@ -31,7 +31,7 @@ def testBrowserOpenWithoutEngineReturnsError(monkeypatch):
 
     async def _boom():
         raise BrowserUnavailableError('no playwright')
-    monkeypatch.setattr('app.services.browser.session_manager._start_engine', _boom)
+    monkeypatch.setattr('app.services.browser.sessionManager._startEngine', _boom)
     result = json.loads(asyncio.run(handlers.browserOpen('https://example.com')))
     assert result['status'] == 'error'
     assert 'Playwright' in result['error'] or 'playwright' in result['error'].lower()

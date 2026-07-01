@@ -45,7 +45,7 @@ class ApproveBody(BaseModel):
 @router.get('/sessions')
 async def getSessions():
     """List all terminal sessions and pending approvals."""
-    return {'sessions': terminalService.list_terminal_sessions(), 'approvals': terminalService.list_terminal_approvals()}
+    return {'sessions': terminalService.listTerminalSessions(), 'approvals': terminalService.listTerminalApprovals()}
 
 @router.post('/sessions')
 async def createSession(body: CreateSessionBody | None=None):

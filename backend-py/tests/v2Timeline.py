@@ -11,7 +11,7 @@ def testWriteTimelineEvent():
     """write_timeline_event inserts a row."""
     import uuid
     sid = f'v2-timeline-{uuid.uuid4().hex[:8]}'
-    memoryStore.write_timeline_event(session_id=sid, event_summary='Implemented v2 timeline writer', category='implementation')
+    memoryStore.writeTimeline_event(session_id=sid, event_summary='Implemented v2 timeline writer', category='implementation')
     conn = memoryStore._conn()
     rows = conn.execute('SELECT * FROM episodic_timeline WHERE session_id = ?', (sid,)).fetchall()
     assert len(rows) == 1
@@ -31,7 +31,7 @@ def testTimelineBrainQueryReturnsRecentEntries():
     import json
     import uuid
     sid = f'v2-bq-{uuid.uuid4().hex[:8]}'
-    memoryStore.write_timeline_event(session_id=sid, event_summary='v2brainquery check', category='general')
+    memoryStore.writeTimeline_event(session_id=sid, event_summary='v2brainquery check', category='general')
     result = memoryStore.brain_query(store='timeline', query='brainquery', limit=10)
     parsed = json.loads(result)
     if isinstance(parsed, list):

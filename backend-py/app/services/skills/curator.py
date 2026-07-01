@@ -59,7 +59,7 @@ class SkillCurator:
     def _save(self) -> None:
         try:
             self._usagePath.parent.mkdir(parents=True, exist_ok=True)
-            raw = {k: {'name': v.name, 'use_count': v.useCount, 'view_count': v.view_count, 'patch_count': v.patch_count, 'last_used_at': v.last_used_at, 'last_viewed_at': v.last_viewed_at, 'last_patched_at': v.last_patched_at, 'state': v.state, 'pinned': v.pinned, 'archived_at': v.archived_at} for k, v in self._usage.items()}
+            raw = {k: {'name': v.name, 'use_count': v.useCount, 'viewCount': v.viewCount, 'patch_count': v.patchCount, 'last_used_at': v.lastUsedAt, 'last_viewed_at': v.lastViewedAt, 'last_patched_at': v.lastPatchedAt, 'state': v.state, 'pinned': v.pinned, 'archived_at': v.archivedAt} for k, v in self._usage.items()}
             tmp = self._usagePath.with_suffix('.tmp')
             tmp.write_text(json.dumps(raw, indent=2), 'utf-8')
             tmp.replace(self._usagePath)
@@ -69,19 +69,19 @@ class SkillCurator:
     def bumpUse(self, name: str) -> None:
         rec = self._ensure(name)
         rec.useCount += 1
-        rec.last_used_at = time.time()
+        rec.lastUsedAt = time.time()
         self._save()
 
     def bumpView(self, name: str) -> None:
         rec = self._ensure(name)
-        rec.view_count += 1
-        rec.last_viewed_at = time.time()
+        rec.viewCount += 1
+        rec.lastViewedAt = time.time()
         self._save()
 
     def bumpPatch(self, name: str) -> None:
         rec = self._ensure(name)
-        rec.patch_count += 1
-        rec.last_patched_at = time.time()
+        rec.patchCount += 1
+        rec.lastPatchedAt = time.time()
         self._save()
 
     def _ensure(self, name: str) -> UsageRecord:
@@ -93,7 +93,7 @@ class SkillCurator:
         return self._usage.get(name)
 
     def listUsage(self) -> list[dict[str, object]]:
-        return [{'name': v.name, 'use_count': v.useCount, 'view_count': v.view_count, 'patch_count': v.patch_count, 'last_used_at': v.last_used_at, 'state': v.state, 'pinned': v.pinned, 'archived_at': v.archived_at} for v in sorted(self._usage.values(), key=lambda r: r.last_used_at or 0, reverse=True)]
+        return [{'name': v.name, 'useCount': v.useCount, 'viewCount': v.viewCount, 'patchCount': v.patchCount, 'lastUsedAt': v.lastUsedAt, 'state': v.state, 'pinned': v.pinned, 'archivedAt': v.archivedAt} for v in sorted(self._usage.values(), key=lambda r: r.lastUsedAt or 0, reverse=True)]
 
     def pin(self, name: str) -> bool:
         """Pin a skill (exempt from auto-transitions).  Only agent-authored."""
@@ -119,7 +119,7 @@ class SkillCurator:
         rec = self._ensure(name)
         if rec.pinned:
             return False
-        agentSkillsBase = skillService._agent_skills_dir()
+        agentSkillsBase = skillService._agentSkillsDir()
         skillDir = agentSkillsBase / name
         archiveBase = agentSkillsBase / '.archive'
         if skillDir.exists():
@@ -128,13 +128,13 @@ class SkillCurator:
             target = archiveBase / name
             shutil.move(str(skillDir), str(target))
         rec.state = 'archived'
-        rec.archived_at = time.time()
+        rec.archivedAt = time.time()
         self._save()
         return True
 
     def restore(self, name: str) -> bool:
         """Restore an archived skill back to the agent root."""
-        agentSkillsBase = skillService._agent_skills_dir()
+        agentSkillsBase = skillService._agentSkillsDir()
         archiveDir = agentSkillsBase / '.archive' / name
         if not archiveDir.exists():
             return False
@@ -143,7 +143,7 @@ class SkillCurator:
         shutil.move(str(archiveDir), str(target))
         rec = self._ensure(name)
         rec.state = 'active'
-        rec.archived_at = None
+        rec.archivedAt = None
         self._save()
         return True
 
@@ -162,7 +162,7 @@ class SkillCurator:
         """
         now = time.time()
         report: dict[str, object] = {'active': 0, 'staled': [], 'archived': [], 'errors': []}
-        for skill in skillService.list_all():
+        for skill in skillService.listAll():
             if skill.get('created_by', '') != _AGENTCreatedTag:
                 continue
             name = skill['name']
@@ -170,7 +170,7 @@ class SkillCurator:
             if rec.pinned:
                 report['active'] += 1
                 continue
-            lastActivity = max(rec.last_used_at or 0, rec.last_viewed_at or 0, rec.last_patched_at or 0)
+            lastActivity = max(rec.lastUsedAt or 0, rec.lastViewedAt or 0, rec.lastPatchedAt or 0)
             if not lastActivity:
                 lastActivity = skill.get('updatedAt', now)
             daysIdle = (now - lastActivity) / 86400
@@ -192,12 +192,12 @@ def makeBackgroundCurator(dataDir: Path | None=None) -> tuple[SkillCurator, asyn
 
     Returns (curator, task) — caller should cancel the task on shutdown.
     """
-    curator = SkillCurator(data_dir=dataDir)
+    curator = SkillCurator(dataDir=dataDir)
 
     async def _loop() -> None:
         while True:
             try:
-                report = curator.run_curation()
+                report = curator.runCuration()
                 if report.get('staled') or report.get('archived'):
                     log.info('curator ran: %s', {k: v for k, v in report.items() if v})
             except Exception as exc:

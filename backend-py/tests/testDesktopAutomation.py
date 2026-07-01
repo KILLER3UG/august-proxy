@@ -53,7 +53,7 @@ async def testActionDispatchesToAutomationLayer(client, monkeypatch):
         seen['action'] = action
         seen['params'] = params or {}
         return {'ok': True, 'echo': action}
-    monkeypatch.setattr('app.routers.desktop_automation.automate_action', fakeAutomateAction)
+    monkeypatch.setattr('app.routers.desktopAutomation.automateAction', fakeAutomateAction)
     resp = await client.post('/api/desktop-automation/action', json={'action': 'screenshot', 'params': {'x': 1}})
     assert resp.status_code == 200
     assert resp.json() == {'ok': True, 'echo': 'screenshot'}
@@ -73,6 +73,6 @@ async def testGracefulDegradationWhenPyautoguiMissing(monkeypatch):
         return realImport(name, *args, **kwargs)
     monkeypatch.setattr(builtins, '__import__', blockingImport)
     from app.services import desktopAutomation as da
-    assert (await da.get_screen_size())['error'].startswith('pyautogui not installed')
-    assert (await da.take_screenshot())['error'].startswith('pyautogui not installed')
-    assert await da.list_windows() == [{'note': 'pygetwindow not installed. Run `uv sync --extra desktop`.'}]
+    assert (await da.getScreenSize())['error'].startswith('pyautogui not installed')
+    assert (await da.takeScreenshot())['error'].startswith('pyautogui not installed')
+    assert await da.listWindows() == [{'note': 'pygetwindow not installed. Run `uv sync --extra desktop`.'}]

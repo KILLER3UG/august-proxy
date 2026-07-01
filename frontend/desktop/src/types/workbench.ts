@@ -257,6 +257,27 @@ export interface WorkbenchEventHandlers {
     message?: string;
     extras?: Record<string, unknown>;
   }) => void;
+  /** A user message was queued for mid-response delivery. The chat
+   *  thread updates its local queue pill and (when the queue holds
+   *  nothing yet) adds the entry optimistically. */
+  onUserMessageQueued?: (data: {
+    sessionId: string;
+    messageId: string;
+    text: string;
+    queuedAt: string;
+  }) => void;
+  /** A queued user message was removed by the user (or otherwise
+   *  cancelled before being delivered to the model). */
+  onUserMessageDequeued?: (data: { sessionId: string; messageId: string }) => void;
+  /** A queued user message was just drained and appended to the model's
+   *  in-flight conversation. The chat thread renders it as an inline
+   *  user message with a "Queued" badge. */
+  onUserMessageInjected?: (data: {
+    sessionId: string;
+    messageId: string;
+    text: string;
+    queuedAt: string;
+  }) => void;
   onDone?: () => void;
   onError?: (data: { message: string }) => void;
 }

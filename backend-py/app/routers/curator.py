@@ -13,7 +13,7 @@ async def listUsage(request: Request):
     c = _curator(request)
     if not c:
         raise HTTPException(status_code=503, detail='Curator not running')
-    return {'usage': c.list_usage()}
+    return {'usage': c.listUsage()}
 
 @router.post('/pin/{name}')
 async def pinSkill(name: str, request: Request):
@@ -57,5 +57,5 @@ async def runCuration(request: Request, dryRun: bool=False):
     c = _curator(request)
     if not c:
         raise HTTPException(status_code=503, detail='Curator not running')
-    report = c.run_curation(dry_run=dryRun)
+    report = c.runCuration(dryRun=dryRun)
     return {'report': report}

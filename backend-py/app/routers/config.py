@@ -56,7 +56,7 @@ async def configSafe():
 async def getModelAliases():
     """Return all model-alias entries for the UI's Aliases tab."""
     from app.services import aliasService
-    return {'aliases': aliasService.list_aliases()}
+    return {'aliases': aliasService.listAliases()}
 
 class ModelAliasesBulk(BaseModel):
     aliases: list[dict[str, object]]
@@ -124,7 +124,7 @@ async def putBackgroundReview(body: BackgroundReviewUpdate):
 async def getModelFleet():
     """v4.1: Return the merged fleet (defaults + user overrides) — see §10."""
     from app.services import modelFleetService
-    return modelFleetService.get_fleet()
+    return modelFleetService.getFleet()
 
 @router.put('/model-fleet')
 async def putModelFleet(body: dict[str, object]):
@@ -154,7 +154,7 @@ async def getLiveConfig():
     (Web Speech API). Setting a provider upgrades to a paid service.
     """
     from app.services import liveConfigService
-    return liveConfigService.get_live_config()
+    return liveConfigService.getLiveConfig()
 
 @router.put('/live')
 async def putLiveConfig(body: dict[str, object]):

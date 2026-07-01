@@ -14,18 +14,18 @@ def testExecuteSubAgentRunsAndEmits(monkeypatch, isolatedData):
             emit({'type': 'final_output', 'content': 'done'})
         return {'content': [{'type': 'text', 'text': 'done'}], 'text': 'done', 'tool_uses': []}
     import app.services.workbench.workbench as wb
-    monkeypatch.setattr(wb, '_is_anthropic_provider', lambda p: True)
-    monkeypatch.setattr(wb, '_is_openai_provider', lambda p: False)
-    monkeypatch.setattr(wb, '_call_anthropic_workbench', fakeCaller)
-    monkeypatch.setattr(wb, '_call_openai_workbench', fakeCaller)
+    monkeypatch.setattr(wb, '_isAnthropicProvider', lambda p: True)
+    monkeypatch.setattr(wb, '_isOpenaiProvider', lambda p: False)
+    monkeypatch.setattr(wb, '_callAnthropicWorkbench', fakeCaller)
+    monkeypatch.setattr(wb, '_callOpenaiWorkbench', fakeCaller)
     monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **k: {'name': 'Test', 'api_mode': 'anthropic_messages'})
     monkeypatch.setattr(wb, '_resolveModel', lambda p, m='': 'test-model')
-    monkeypatch.setattr(wb, 'tool_definitions', lambda s: [])
-    monkeypatch.setattr(wb, 'openai_tool_definitions', lambda s: [])
+    monkeypatch.setattr(wb, 'toolDefinitions', lambda s: [])
+    monkeypatch.setattr(wb, 'openaiToolDefinitions', lambda s: [])
     import app.providers.modelResolver as mr
-    monkeypatch.setattr(mr, 'resolve_or_fallback', lambda *a, **k: {'model': 'm', 'provider': 'Test', 'is_fallback': False})
+    monkeypatch.setattr(mr, 'resolveOrFallback', lambda *a, **k: {'model': 'm', 'provider': 'Test', 'is_fallback': False})
     import app.services.fallbackService as fs
-    monkeypatch.setattr(fs, 'get_fallback', lambda: {'enabled': False, 'mode': 'off', 'provider': '', 'model': ''})
+    monkeypatch.setattr(fs, 'getFallback', lambda: {'enabled': False, 'mode': 'off', 'provider': '', 'model': ''})
     session = types.SimpleNamespace(id='sess1', model='m', agent_id='', provider='')
     result = asyncio.run(executeSubAgent(session, 'general', 'do the thing', 'ctx', emit=emit))
     assert result['status'] == 'completed'

@@ -10,7 +10,7 @@ async def testSubscribeReplaysPastThenDeliversLive():
     log = EventLog()
     log.append('s1', 'msg', {'n': 1})
     log.append('s1', 'msg', {'n': 2})
-    gen = log.subscribe('s1', since_seq=0)
+    gen = log.subscribe('s1', sinceSeq=0)
     assert (await gen.__anext__())['payload'] == {'n': 1}
     assert (await gen.__anext__())['payload'] == {'n': 2}
     log.append('s1', 'msg', {'n': 3})
@@ -29,7 +29,7 @@ async def testSubscribeDeliversEventsAppendedDuringReplay():
     the UI stuck (e.g. a tool stuck 'running')."""
     log = EventLog()
     log.append('s1', 'msg', {'n': 1})
-    gen = log.subscribe('s1', since_seq=0)
+    gen = log.subscribe('s1', sinceSeq=0)
     first = await gen.__anext__()
     assert first['seq'] == 1
     log.append('s1', 'msg', {'n': 2})

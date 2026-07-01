@@ -12,13 +12,13 @@ router = APIRouter(prefix='/api/audit')
 async def listAuditLog(sessionId: str='', eventType: str='', limit: int=100):
     """List audit log entries."""
     if sessionId:
-        events = memoryStore.list_lifecycle(sessionId, eventType, limit)
+        events = memoryStore.listLifecycle(sessionId, eventType, limit)
     else:
-        events = memoryStore.list_lifecycle('', eventType, limit)
+        events = memoryStore.listLifecycle('', eventType, limit)
     return {'events': events}
 
 @router.get('/stats')
 async def auditStats():
     """Get audit statistics."""
-    stats = memoryStore.get_stats()
+    stats = memoryStore.getStats()
     return {'total_events': stats.get('lifecycle', 0), 'total_sessions': stats.get('sessions', 0)}

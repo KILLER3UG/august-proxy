@@ -8,6 +8,7 @@ import { makeStreamHandlers } from './makeStreamHandlers';
 import { gitApi } from '@/api/git';
 import { chatRuntime } from './chat-runtime';
 import { pushBrowserAction } from '@/lib/browser-store';
+import { upsertQueuedMessage, removeQueuedMessage, setQueuedMessages } from './queue-store';
 
 export interface SessionStreamState {
   messages: ChatMessage[];
@@ -594,6 +595,41 @@ export function ensureSessionSubscriber(sessionId: string): void {
           status: data.status,
           ts: Date.now(),
         });
+      },
+      onUserMessageQueued: (data) => {
+        // A follow-up was queued (possibly from another tab or via the
+        // optimistic local API call). Add it to the per-session queue
+        // store so the UI pills update in real time.
+        if (!data?.messageId || !data?.sessionId) return;
+        upsertQueuedMessage(data.sessionId, {
+          id: data.messageId,
+          text: data.text ?? '',
+          queuedAt: data.queuedAt ?? new Date().toISOString(),
+        });
+      },
+      onUserMessageDequeued: (data) => {
+        if (!data?.messageId || !data?.sessionId) return;
+        removeQueuedMessage(data.sessionId, data.messageId);
+      },
+      onUserMessageInjected: (data) => {
+        // The backend drained this message and appended it to the model's
+        // in-flight conversation. Clear it from the local queue (it now
+        // lives as an inline user bubble in the chat thread) and append
+        // a synthetic user message to the session's message log so the
+        // thread renders it in the right place.
+        if (!data?.messageId || !data?.sessionId) return;
+        removeQueuedMessage(data.sessionId, data.messageId);
+        const entry = {
+          id: `qm-${data.messageId}`,
+          role: 'user' as const,
+          content: data.text ?? '',
+          timestamp: data.queuedAt ?? new Date().toISOString(),
+          queued: true,
+        };
+        updateSessionStreamState(data.sessionId, (prev) => ({
+          ...prev,
+          messages: [...(prev.messages ?? []), entry],
+        }));
       },
     };
 

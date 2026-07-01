@@ -36,7 +36,7 @@ class ProposalDecide(BaseModel):
 @router.get('/kv')
 async def listMemoryKv():
     """List all memory entries."""
-    return {'entries': memoryStore.list_memory()}
+    return {'entries': memoryStore.listMemory()}
 
 @router.post('/kv')
 async def saveMemoryKv(body: MemorySave):
@@ -47,7 +47,7 @@ async def saveMemoryKv(body: MemorySave):
 @router.get('/kv/{key}')
 async def getMemoryKv(key: str):
     """Get a value from memory."""
-    value = memoryStore.get_memory(key)
+    value = memoryStore.getMemory(key)
     if value is None:
         raise HTTPException(status_code=404, detail='Key not found')
     return {'key': key, 'value': value}
@@ -55,7 +55,7 @@ async def getMemoryKv(key: str):
 @router.delete('/kv/{key}')
 async def deleteMemoryKv(key: str):
     """Delete a memory key."""
-    if not memoryStore.delete_memory(key):
+    if not memoryStore.deleteMemory(key):
         raise HTTPException(status_code=404, detail='Key not found')
     return {'status': 'ok'}
 
@@ -64,31 +64,31 @@ async def searchMemoryRoute(query: str=''):
     """Full-text search across memory."""
     if not query:
         return {'results': []}
-    results = memoryStore.search_memory(query)
+    results = memoryStore.searchMemory(query)
     return {'results': results, 'query': query, 'count': len(results)}
 
 @router.get('/facts')
 async def listFacts(category: str=''):
     """List facts, optionally filtered by category."""
-    facts = memoryStore.list_facts(category)
+    facts = memoryStore.listFacts(category)
     return {'facts': facts}
 
 @router.post('/facts')
 async def saveFactRoute(body: FactSave):
     """Save a structured fact."""
-    memoryStore.save_fact(body.fact_key, body.fact_value, body.category, body.source, body.confidence)
+    memoryStore.saveFact(body.factKey, body.factValue, body.category, body.source, body.confidence)
     return {'status': 'ok'}
 
 @router.post('/facts/search')
 async def searchFactsRoute(body: FactSearch):
     """Search facts by key or value."""
-    results = memoryStore.search_facts(body.query, body.category)
+    results = memoryStore.searchFacts(body.query, body.category)
     return {'results': results, 'count': len(results)}
 
 @router.get('/facts/{key}')
 async def getFactRoute(key: str):
     """Get a fact by key."""
-    fact = memoryStore.get_fact(key)
+    fact = memoryStore.getFact(key)
     if not fact:
         raise HTTPException(status_code=404, detail='Fact not found')
     return fact
@@ -96,44 +96,44 @@ async def getFactRoute(key: str):
 @router.delete('/facts/{key}')
 async def deleteFactRoute(key: str):
     """Delete a fact."""
-    if not memoryStore.delete_fact(key):
+    if not memoryStore.deleteFact(key):
         raise HTTPException(status_code=404, detail='Fact not found')
     return {'status': 'ok'}
 
 @router.post('/proposals')
 async def createProposal(body: ProposalCreate):
     """Create a proposal (plan, mutation)."""
-    pid = memoryStore.save_proposal(body.sessionId, body.proposalType, body.content)
+    pid = memoryStore.saveProposal(body.sessionId, body.proposalType, body.content)
     return {'id': pid, 'status': 'pending'}
 
-@router.get('/proposals/{proposal_id}')
+@router.get('/proposals/{proposalId}')
 async def getProposalRoute(proposalId: int):
     """Get a proposal by ID."""
-    proposal = memoryStore.get_proposal(proposalId)
+    proposal = memoryStore.getProposal(proposalId)
     if not proposal:
         raise HTTPException(status_code=404, detail='Proposal not found')
     return proposal
 
-@router.post('/proposals/{proposal_id}/decide')
+@router.post('/proposals/{proposalId}/decide')
 async def decideProposalRoute(proposalId: int, body: ProposalDecide):
     """Decide (approve/reject) a proposal."""
-    if not memoryStore.decide_proposal(proposalId, body.status, body.decided_by):
+    if not memoryStore.decideProposal(proposalId, body.status, body.decidedBy):
         raise HTTPException(status_code=404, detail='Proposal not found')
     return {'status': body.status}
 
 @router.post('/lifecycle')
 async def recordLifecycleRoute(sessionId: str, eventType: str, detail: object = None):
     """Record a lifecycle event."""
-    lid = memoryStore.record_lifecycle(sessionId, eventType, detail)
+    lid = memoryStore.recordLifecycle(sessionId, eventType, detail)
     return {'id': lid}
 
 @router.get('/lifecycle/{session_id}')
 async def listLifecycleRoute(sessionId: str, eventType: str=''):
     """List lifecycle events for a session."""
-    events = memoryStore.list_lifecycle(sessionId, eventType)
+    events = memoryStore.listLifecycle(sessionId, eventType)
     return {'events': events}
 
 @router.get('/stats')
 async def memoryStats():
     """Get database statistics."""
-    return memoryStore.get_stats()
+    return memoryStore.getStats()

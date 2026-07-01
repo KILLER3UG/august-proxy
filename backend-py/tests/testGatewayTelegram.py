@@ -31,20 +31,20 @@ async def testNormalizeTextMessage(adapter):
     assert event is not None
     assert event.text == 'Hello, bot!'
     assert event.source.platform == 'telegram'
-    assert event.source.chat_id == '-456'
-    assert event.source.user_id == '123'
-    assert event.source.chat_type == 'group'
-    assert event.source.thread_id == '7'
-    assert event.source.message_id == '42'
+    assert event.source.chatId == '-456'
+    assert event.source.userId == '123'
+    assert event.source.chatType == 'group'
+    assert event.source.threadId == '7'
+    assert event.source.messageId == '42'
 
 @pytest.mark.asyncio
 async def testNormalizeDmChat(adapter):
     update = {'update_id': 2, 'message': {'message_id': 1, 'from': {'id': 789}, 'chat': {'id': 789, 'type': 'private'}, 'text': 'DM test'}}
     event = await adapter.normalize(update)
     assert event is not None
-    assert event.source.chat_type == 'private'
-    assert event.source.chat_id == '789'
-    assert event.source.user_id == '789'
+    assert event.source.chatType == 'private'
+    assert event.source.chatId == '789'
+    assert event.source.userId == '789'
 
 @pytest.mark.asyncio
 async def testNormalizeIgnoresNonMessage(adapter):

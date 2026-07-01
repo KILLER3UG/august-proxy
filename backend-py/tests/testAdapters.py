@@ -14,18 +14,18 @@ class TestToolClassification:
         assert getToolNameFromOpenaiTool(None) is None
 
     def testClassifyOpenai(self):
-        result = classifyOpenaiToolCalls([{'function': {'name': 'WebSearch'}, 'id': '1'}], managed_local_tool_names={'WebSearch'})
+        result = classifyOpenaiToolCalls([{'function': {'name': 'WebSearch'}, 'id': '1'}], managedLocalToolNames={'WebSearch'})
         assert result['has_managed'] is True
         assert result['can_execute_managed'] is True
 
     def testClassifyOpenaiMixed(self):
-        result = classifyOpenaiToolCalls([{'function': {'name': 'WebSearch'}, 'id': '1'}, {'function': {'name': 'client_tool'}, 'id': '2'}], managed_local_tool_names={'WebSearch'})
+        result = classifyOpenaiToolCalls([{'function': {'name': 'WebSearch'}, 'id': '1'}, {'function': {'name': 'client_tool'}, 'id': '2'}], managedLocalToolNames={'WebSearch'})
         assert result['has_managed'] is True
         assert result['has_client_or_unknown'] is True
         assert result['can_execute_managed'] is False
 
     def testClassifyAnthropic(self):
-        result = classifyAnthropicToolUses([{'name': 'bash', 'input': {'command': 'ls'}}], managed_local_tool_names={'bash'})
+        result = classifyAnthropicToolUses([{'name': 'bash', 'input': {'command': 'ls'}}], managedLocalToolNames={'bash'})
         assert result['has_managed'] is True
 
 class TestProxyTools:

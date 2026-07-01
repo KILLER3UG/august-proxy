@@ -110,6 +110,12 @@ export interface ChatMessage {
   }>;
   thinking?: string;
   thinkingDuration?: number;
+  /** True when this user message was delivered mid-response as a queued
+   *  follow-up (the user kept typing while the model was working). The
+   *  UI renders a small "Queued" badge so the conversation flow makes
+   *  it clear that the message arrived without interrupting the prior
+   *  turn. */
+  queued?: boolean;
   /** Hoisted todo panel */
   todos?: ChatMessageTodo[];
   /** Inline Workbench mutation summary shown after the final response. */

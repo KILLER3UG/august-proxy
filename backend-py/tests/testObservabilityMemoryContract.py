@@ -147,7 +147,7 @@ async def testApiBrainLearning(client):
 @pytest.mark.asyncio
 async def testApiBrainGuidelines(client, isolatedData):
     from app.services import memoryStore
-    memoryStore.save_fact('g1', {'text': 'Be concise'}, category='guideline')
+    memoryStore.saveFact('g1', {'text': 'Be concise'}, category='guideline')
     r = await client.get('/api/brain/guidelines')
     assert r.status_code == 200
     guidelines = r.json().get('guidelines', [])

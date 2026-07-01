@@ -30,7 +30,7 @@ _ALIASCacheTtl: float = 60
 _refreshInFlight: asyncio.Task | None = None
 
 def invalidateCache() -> None:
-    global _model_cache, _model_cache_at, _alias_cache, _alias_cache_at
+    global _modelCache, _modelCacheAt, _aliasCache, _aliasCacheAt
     _modelCache = None
     _modelCacheAt = 0
     _aliasCache = None
@@ -151,7 +151,7 @@ async def _aggregateModels() -> list[dict[str, object]]:
 
 async def aggregate(refresh: bool=False) -> list[dict[str, object]]:
     """Get the aggregated model list with caching."""
-    global _model_cache, _model_cache_at, _refresh_in_flight
+    global _modelCache, _modelCacheAt, _refreshInFlight
     now = time.time()
     if refresh:
         _modelCache = None
@@ -169,7 +169,7 @@ async def aggregate(refresh: bool=False) -> list[dict[str, object]]:
 
 async def _refreshBackground() -> None:
     """Background cache refresh."""
-    global _model_cache, _model_cache_at
+    global _modelCache, _modelCacheAt
     try:
         fresh = await _aggregateModels()
         _modelCache = fresh
@@ -181,7 +181,7 @@ async def prewarm() -> None:
     """Pre-warm the model cache on startup."""
     try:
         models = await _aggregateModels()
-        global _model_cache, _model_cache_at
+        global _modelCache, _modelCacheAt
         _modelCache = models
         _modelCacheAt = time.time()
     except Exception:

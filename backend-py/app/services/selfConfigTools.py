@@ -50,7 +50,7 @@ async def deleteAlias(alias: str) -> str:
 
 async def listAliases() -> str:
     from app.services import aliasService
-    return _ok(aliases=aliasService.list_aliases())
+    return _ok(aliases=aliasService.listAliases())
 
 async def configureFallback(enabled: bool | None=None, mode: str | None=None, provider: str | None=None, model: str | None=None) -> str:
     from app.services import fallbackService
@@ -88,7 +88,7 @@ async def updateAgent(agentId: str, name: str | None=None, description: str | No
 async def deleteAgent(agentId: str) -> str:
     from app.services.tools import agentRegistry
     try:
-        removed = agentRegistry.delete_agent(agentId, actor='agent')
+        removed = agentRegistry.deleteAgent(agentId, actor='agent')
         if not removed:
             return _err(f"Agent '{agentId}' not found")
         return _ok(deleted=True, agentId=agentId)

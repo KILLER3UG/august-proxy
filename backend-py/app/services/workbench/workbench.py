@@ -58,13 +58,20 @@ class WorkbenchSession:
     totalInputTokens: int = 0
     totalOutputTokens: int = 0
     totalCost: float = 0.0
+    # Queued user messages — appended to the in-flight chat loop without
+    # interrupting the model's current response. Drained at the next
+    # iteration boundary (after tool_results are appended, before the
+    # next model call), wrapped as a fresh user-role turn tagged with
+    # <queued_message> markers so the model can decide whether to act
+    # on them, defer them, or acknowledge for later.
+    queuedUserMessages: list[dict[str, object]] = field(default_factory=list)
 
     def toDict(self) -> dict[str, object]:
-        return {'id': self.id, 'title': self.title, 'provider': self.provider, 'model': self.model, 'agentId': self.agentId, 'guardMode': self.guardMode, 'createdAt': self.createdAt, 'updatedAt': self.updatedAt, 'startedAt': self.startedAt, 'messageCount': self.messageCount, 'mutationCount': self.mutationCount, 'workspacePath': self.workspacePath, 'goal': self.goal, 'plan': self.plan, 'planApproved': self.planApproved, 'messages': self.messages, 'pendingMutations': self.pendingMutations, 'mutationLog': self.mutationLog, 'status': self.status, 'metadata': self.metadata, 'totalInputTokens': self.totalInputTokens, 'totalOutputTokens': self.totalOutputTokens, 'totalCost': self.totalCost}
+        return {'id': self.id, 'title': self.title, 'provider': self.provider, 'model': self.model, 'agentId': self.agentId, 'guardMode': self.guardMode, 'createdAt': self.createdAt, 'updatedAt': self.updatedAt, 'startedAt': self.startedAt, 'messageCount': self.messageCount, 'mutationCount': self.mutationCount, 'workspacePath': self.workspacePath, 'goal': self.goal, 'plan': self.plan, 'planApproved': self.planApproved, 'messages': self.messages, 'pendingMutations': self.pendingMutations, 'mutationLog': self.mutationLog, 'status': self.status, 'metadata': self.metadata, 'totalInputTokens': self.totalInputTokens, 'totalOutputTokens': self.totalOutputTokens, 'totalCost': self.totalCost, 'queuedUserMessages': self.queuedUserMessages}
 
     @staticmethod
     def fromDict(d: dict[str, object]) -> WorkbenchSession:
-        return WorkbenchSession(id=d.get('id', ''), title=d.get('title', 'New Session'), provider=d.get('provider', ''), model=d.get('model', ''), agent_id=d.get('agentId', ''), guard_mode=d.get('guardMode', 'full'), created_at=d.get('createdAt', ''), updated_at=d.get('updatedAt', ''), started_at=d.get('startedAt', ''), message_count=d.get('messageCount', 0), mutation_count=d.get('mutationCount', 0), workspace_path=d.get('workspacePath', ''), goal=d.get('goal', ''), plan=d.get('plan'), planApproved=d.get('planApproved', False), messages=d.get('messages', []), pending_mutations=d.get('pendingMutations', []), mutation_log=d.get('mutationLog', []), status=d.get('status', 'idle'), metadata=d.get('metadata', {}), total_input_tokens=d.get('totalInputTokens', 0), total_output_tokens=d.get('totalOutputTokens', 0), total_cost=d.get('totalCost', 0.0))
+        return WorkbenchSession(id=d.get('id', ''), title=d.get('title', 'New Session'), provider=d.get('provider', ''), model=d.get('model', ''), agentId=d.get('agentId', ''), guardMode=d.get('guardMode', 'full'), createdAt=d.get('createdAt', ''), updatedAt=d.get('updatedAt', ''), startedAt=d.get('startedAt', ''), messageCount=d.get('messageCount', 0), mutationCount=d.get('mutationCount', 0), workspacePath=d.get('workspacePath', ''), goal=d.get('goal', ''), plan=d.get('plan'), planApproved=d.get('planApproved', False), messages=d.get('messages', []), pendingMutations=d.get('pendingMutations', []), mutationLog=d.get('mutationLog', []), status=d.get('status', 'idle'), metadata=d.get('metadata', {}), totalInputTokens=d.get('totalInputTokens', 0), totalOutputTokens=d.get('totalOutputTokens', 0), totalCost=d.get('totalCost', 0.0), queuedUserMessages=d.get('queuedUserMessages', []))
 _SESSIONFile = 'workbench-sessions.json'
 _sessions: dict[str, WorkbenchSession] = {}
 _statusSubscribers: list[Callable[[dict[str, object]], None]] = []
@@ -84,24 +91,24 @@ def _loadSessions() -> None:
     try:
         data = json.loads(path.read_text('utf-8'))
         for item in data:
-            session = WorkbenchSession.from_dict(item)
+            session = WorkbenchSession.fromDict(item)
             _sessions[session.id] = session
     except (json.JSONDecodeError, OSError):
         pass
 
 def saveSessions() -> None:
     """Persist all sessions to disk (keeps last 50)."""
-    sortedSessions = sorted(_sessions.values(), key=lambda s: s.updated_at, reverse=True)[:50]
+    sortedSessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
     path = _sessionsPath()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps([s.to_dict() for s in sortedSessions], indent=2), 'utf-8')
+    path.write_text(json.dumps([s.toDict() for s in sortedSessions], indent=2), 'utf-8')
 
 def _emitSessionStatus(sessionId: str) -> None:
     """Notify status subscribers of a session status change."""
     session = _sessions.get(sessionId)
     if not session:
         return
-    event = {'type': 'session_status', 'sessionId': sessionId, 'status': session.status, 'guardMode': session.guard_mode, 'pendingMutations': len(session.pending_mutations) > 0}
+    event = {'type': 'session_status', 'sessionId': sessionId, 'status': session.status, 'guardMode': session.guardMode, 'pendingMutations': len(session.pendingMutations) > 0}
     for cb in _statusSubscribers:
         try:
             cb(event)
@@ -112,7 +119,7 @@ def createWorkbenchSession(provider: str='', agentId: str='', guardMode: str='',
     """Create a new workbench session."""
     sessionId = f'wb_{uuid.uuid4().hex[:12]}'
     now = _now()
-    session = WorkbenchSession(id=sessionId, provider=provider, agent_id=agentId, guard_mode=normalizeGuardMode(guardMode or 'full'), goal=goal, created_at=now, updated_at=now, started_at=now)
+    session = WorkbenchSession(id=sessionId, provider=provider, agentId=agentId, guardMode=normalizeGuardMode(guardMode or 'full'), goal=goal, createdAt=now, updatedAt=now, startedAt=now)
     if goal:
         session.goal = goal
     _sessions[sessionId] = session
@@ -134,7 +141,7 @@ def setWorkbenchSessionAgent(sessionId: str, agentId: str) -> WorkbenchSession |
     if not session:
         return None
     session.agentId = agentId or ''
-    session.updated_at = _now()
+    session.updatedAt = _now()
     saveSessions()
     _emitSessionStatus(sessionId)
     return session
@@ -143,7 +150,7 @@ def listWorkbenchSessions() -> list[dict[str, object]]:
     """Return all sessions summarized."""
     if not _sessions:
         _loadSessions()
-    sortedSessions = sorted(_sessions.values(), key=lambda s: s.updated_at, reverse=True)
+    sortedSessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)
     return [summarizeSession(s) for s in sortedSessions]
 
 def deleteWorkbenchSession(sessionId: str) -> bool:
@@ -157,19 +164,19 @@ def deleteWorkbenchSession(sessionId: str) -> bool:
 def resetWorkbenchSession(sessionId: str, provider: str='', agentId: str='') -> WorkbenchSession | None:
     """Delete and recreate a session."""
     deleteWorkbenchSession(sessionId)
-    return createWorkbenchSession(provider=provider, agent_id=agentId)
+    return createWorkbenchSession(provider=provider, agentId=agentId)
 
 def summarizeSession(session: WorkbenchSession) -> dict[str, object]:
     """Return a lightweight summary of a session."""
-    return {'id': session.id, 'title': session.title, 'provider': session.provider, 'model': session.model, 'agentId': session.agentId, 'guardMode': session.guard_mode, 'goal': session.goal, 'plan': session.plan is not None, 'planApproved': session.planApproved, 'messageCount': session.message_count, 'mutationCount': session.mutation_count, 'status': session.status, 'createdAt': session.created_at, 'updatedAt': session.updated_at, 'startedAt': session.started_at, 'workspacePath': session.workspace_path}
+    return {'id': session.id, 'title': session.title, 'provider': session.provider, 'model': session.model, 'agentId': session.agentId, 'guardMode': session.guardMode, 'goal': session.goal, 'plan': session.plan is not None, 'planApproved': session.planApproved, 'messageCount': session.messageCount, 'mutationCount': session.mutationCount, 'status': session.status, 'createdAt': session.createdAt, 'updatedAt': session.updatedAt, 'startedAt': session.startedAt, 'workspacePath': session.workspacePath}
 
 def getWorkbenchSessionStatus(sessionId: str) -> dict[str, object] | None:
     """Return flat status for the UI's approval banner."""
     session = _sessions.get(sessionId)
     if not session:
         return None
-    hasPending = len(session.pending_mutations) > 0
-    return {'sessionId': sessionId, 'status': session.status, 'guardMode': session.guard_mode, 'pendingMutation': session.pending_mutations[-1] if hasPending else None, 'plan': session.plan, 'planApproved': session.planApproved}
+    hasPending = len(session.pendingMutations) > 0
+    return {'sessionId': sessionId, 'status': session.status, 'guardMode': session.guardMode, 'pendingMutation': session.pendingMutations[-1] if hasPending else None, 'plan': session.plan, 'planApproved': session.planApproved}
 
 def subscribeSessionStatus(callback: Callable[[dict[str, object]], None]) -> Callable[[], None]:
     """Register a session status subscriber. Returns unsubscribe function."""
@@ -270,7 +277,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
         brainPolicy = policyForTask(taskType)
     except Exception:
         pass
-    workspacePath = str(session.workspace_path) if hasattr(session, 'workspace_path') and session.workspace_path else ''
+    workspacePath = str(session.workspacePath) if hasattr(session, 'workspacePath') and session.workspacePath else ''
     vcsInfo = ''
     if workspacePath:
         try:
@@ -334,7 +341,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     promptCache = getCache()
     cacheKey = getattr(session, 'id', '') or ''
     cachedT12 = promptCache.get(cacheKey)
-    base = ctxBuild(session=sessionDict, memory=memory, tools=tools, agent_context=agentContext, cached_t12=cachedT12)
+    base = ctxBuild(session=sessionDict, memory=memory, tools=tools, agentContext=agentContext, cachedT12=cachedT12)
     if cachedT12 is None:
         try:
             from app.services.memory.contextBuilder import buildTier1, buildTier2
@@ -534,6 +541,140 @@ def _mcpToolDefinitionsOpenai(seen: set[str]) -> list[dict[str, object]]:
             out.append(raw)
     return out
 
+def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[str, object]:
+    """Build a single user-role message that wraps one or more queued entries.
+
+    The wrapping is explicit so the model can distinguish a queued
+    follow-up from a fresh top-of-conversation prompt: each entry is
+    enclosed in <queued_message> tags with the original timestamp, and
+    a brief preamble tells the model what these messages are and how to
+    treat them (continue, redirect, or acknowledge-and-defer).
+    """
+    if not entries:
+        return {'role': 'user', 'content': ''}
+    parts: list[str] = []
+    parts.append(
+        '[The following message(s) were queued by the user while you were responding. '
+        'They did NOT interrupt your current work — they were added as follow-up(s). '
+        'Consider whether each one changes your current approach, supersedes the '
+        'original request, or should simply be acknowledged for later. Continue with '
+        'whatever is most helpful given this new context.]'
+    )
+    parts.append('')
+    for entry in entries:
+        queuedAt = entry.get('queuedAt') or ''
+        text = entry.get('text') or ''
+        attachmentCount = len(entry.get('attachments') or [])
+        attr_parts = []
+        if queuedAt:
+            attr_parts.append(f'timestamp="{queuedAt}"')
+        if attachmentCount:
+            attr_parts.append(f'attachments="{attachmentCount}"')
+        attr_str = (' ' + ' '.join(attr_parts)) if attr_parts else ''
+        parts.append(f'<queued_message{attr_str}>')
+        parts.append(text)
+        parts.append('</queued_message>')
+        parts.append('')
+    return {'role': 'user', 'content': '\n'.join(parts).strip()}
+
+def enqueueUserMessage(sessionId: str, text: str, attachments: list[dict[str, object]] | None=None) -> dict[str, object] | None:
+    """Append a user message to the session's pending queue.
+
+    Returns the queued entry on success, or None if the session does not
+    exist. Emits a ``user_message_queued`` SSE event so open tabs can
+    update their local view in real time.
+    """
+    session = _sessions.get(sessionId)
+    if not session:
+        return None
+    if not hasattr(session, 'queuedUserMessages') or session.queuedUserMessages is None:
+        session.queuedUserMessages = []
+    entry: dict[str, object] = {
+        'id': f'qm_{uuid.uuid4().hex[:12]}',
+        'text': text,
+        'attachments': list(attachments or []),
+        'queuedAt': _now(),
+    }
+    session.queuedUserMessages.append(entry)
+    session.updatedAt = _now()
+    saveSessions()
+    try:
+        from app.services import eventLog
+        eventLog.eventLog.append(sessionId, 'user_message_queued', {
+            'sessionId': sessionId,
+            'messageId': entry['id'],
+            'text': text,
+            'queuedAt': entry['queuedAt'],
+        })
+    except Exception:
+        pass
+    return entry
+
+def dequeueUserMessage(sessionId: str, messageId: str) -> bool:
+    """Remove a single queued message by id. Emits ``user_message_dequeued``."""
+    session = _sessions.get(sessionId)
+    if not session:
+        return False
+    entries = getattr(session, 'queuedUserMessages', None) or []
+    removed: dict[str, object] | None = None
+    kept: list[dict[str, object]] = []
+    for entry in entries:
+        if entry.get('id') == messageId and removed is None:
+            removed = entry
+        else:
+            kept.append(entry)
+    if removed is None:
+        return False
+    session.queuedUserMessages = kept
+    session.updatedAt = _now()
+    saveSessions()
+    try:
+        from app.services import eventLog
+        eventLog.eventLog.append(sessionId, 'user_message_dequeued', {
+            'sessionId': sessionId,
+            'messageId': messageId,
+        })
+    except Exception:
+        pass
+    return True
+
+def listQueuedMessages(sessionId: str) -> list[dict[str, object]]:
+    """Return the current queued messages for a session."""
+    session = _sessions.get(sessionId)
+    if not session:
+        return []
+    return list(getattr(session, 'queuedUserMessages', None) or [])
+
+def drainQueuedMessages(sessionId: str, emit: Callable[[dict[str, object]], None] | None=None) -> list[dict[str, object]]:
+    """Pop all queued messages and return them in FIFO order.
+
+    Also emits a ``user_message_injected`` event per entry so the
+    frontend can render each queued message as an inline user bubble
+    in the conversation thread.
+    """
+    session = _sessions.get(sessionId)
+    if not session:
+        return []
+    entries = list(getattr(session, 'queuedUserMessages', None) or [])
+    if not entries:
+        return []
+    session.queuedUserMessages = []
+    session.updatedAt = _now()
+    saveSessions()
+    if emit is not None:
+        try:
+            from app.services import eventLog
+            for entry in entries:
+                eventLog.eventLog.append(sessionId, 'user_message_injected', {
+                    'sessionId': sessionId,
+                    'messageId': entry.get('id', ''),
+                    'text': entry.get('text', ''),
+                    'queuedAt': entry.get('queuedAt', ''),
+                })
+        except Exception:
+            pass
+    return entries
+
 async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str='', agentId: str='', effort: str='', model: str='', modelProvider: str='', guardMode: str='', emit: Callable[[dict[str, object]], None] | None=None, signal: asyncio.Event | None=None) -> None:
     """The primary streaming entry point for workbench chat.
 
@@ -547,19 +688,19 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
     """
     session = getWorkbenchSession(sessionId)
     if not session:
-        session = createWorkbenchSession(provider=provider, agent_id=agentId, guard_mode=guardMode or 'full')
+        session = createWorkbenchSession(provider=provider, agentId=agentId, guardMode=guardMode or 'full')
         sessionId = session.id
     if provider:
         session.provider = provider
     if agentId:
         session.agentId = agentId
     if guardMode:
-        session.guard_mode = normalizeGuardMode(guardMode)
+        session.guardMode = normalizeGuardMode(guardMode)
     session.status = 'streaming'
-    session.updated_at = _now()
+    session.updatedAt = _now()
     _emitSessionStatus(sessionId)
     session.messages.append({'role': 'user', 'content': message})
-    session.message_count += 1
+    session.messageCount += 1
     effectiveEffort = resolveEffectiveEffort(effort or session.metadata.get('effort', ''), session)
     resolvedProvider = None
     if modelProvider:
@@ -637,6 +778,18 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
         toolRound += 1
         if _isCancelled():
             break
+        # Drain queued user messages at the iteration boundary. The
+        # initial user prompt was already appended at the top of this
+        # function (above the loop), so we only drain on subsequent
+        # rounds — never round 1. The prior iteration already appended
+        # its assistant_msg + tool_results pair to currentMessages, so
+        # inserting a fresh user turn here preserves the Anthropic
+        # tool_use / tool_result pairing invariant.
+        if toolRound > 1:
+            queued = drainQueuedMessages(sessionId, emit=emit)
+            if queued:
+                logger.debug('workbench round %d: injecting %d queued user message(s)', toolRound, len(queued))
+                currentMessages.append(_formatQueuedMessagesAsUserTurn(queued))
         logger.debug('workbench round %d start (model=%s, in=%d, out=%d)', toolRound, resolvedModel, totalInputTokens, totalOutputTokens)
         if toolRound == 1:
             toolNames = [t.get('name') for t in tools] if isAnthropic else [t.get('function', {}).get('name') for t in openaiTools]
@@ -678,6 +831,14 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
             if toolRound > 1 and (not textContent) and (not thinkingContent):
                 logger.warning('workbench model re-call returned empty content after tool round %d (no text, no tools)', toolRound - 1)
             currentMessages.append(assistantMsg)
+            # If the user queued messages during this text response, deliver
+            # them mid-response (without interrupting the just-streamed
+            # text) and run another iteration so the model can address them.
+            queued = drainQueuedMessages(sessionId, emit=emit)
+            if queued:
+                logger.debug('workbench mid-response: injecting %d queued user message(s) after text turn', len(queued))
+                currentMessages.append(_formatQueuedMessagesAsUserTurn(queued))
+                continue
             break
         toolResults: list[dict[str, object]] = []
         planSubmittedThisRound = False
@@ -758,7 +919,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
         logger.debug('workbench turn complete: %d rounds, in=%d out=%d', toolRound, totalInputTokens, totalOutputTokens)
         session.messages = list(currentMessages)
         session.status = 'idle'
-        session.updated_at = _now()
+        session.updatedAt = _now()
         try:
             saveSessions()
         except Exception:
@@ -767,11 +928,11 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
         if totalInputTokens > 0 or totalOutputTokens > 0:
             try:
                 from app.services.memoryStore import recordUsage
-                recordUsage(session_id=session.id, model=resolvedModel, input_tokens=totalInputTokens, output_tokens=totalOutputTokens, context_tokens=finalContextTokens)
-                session.total_input_tokens += totalInputTokens
-                session.total_output_tokens += totalOutputTokens
+                recordUsage(sessionId=session.id, model=resolvedModel, inputTokens=totalInputTokens, outputTokens=totalOutputTokens, contextTokens=finalContextTokens)
+                session.totalInputTokens += totalInputTokens
+                session.totalOutputTokens += totalOutputTokens
             except Exception:
-                logger.exception('workbench record_usage failed')
+                logger.exception('workbench recordUsage failed')
     finally:
         if emit:
             emit({'type': 'done', 'sessionId': sessionId})
@@ -975,7 +1136,7 @@ async def _callAnthropicWorkbench(messages: list[dict[str, object]], systemText:
     currentToolInputParts: list[str] = []
     usage: dict[str, int] = {}
     try:
-        async for event in client.messages_stream(body):
+        async for event in client.messagesStream(body):
             eventType = event.get('_event_type', '')
             if eventType == 'content_block_start':
                 block = event.get('content_block', {})
@@ -1072,7 +1233,7 @@ async def _callOpenaiWorkbench(messages: list[dict[str, object]], systemText: st
         finishReason: str | None = None
         usage: dict[str, int] = {}
         try:
-            async for event in client.chat_completions_stream(body):
+            async for event in client.chatCompletionsStream(body):
                 eventType = event.get('_event_type', '')
                 if eventType not in ('chat.completion.chunk', ''):
                     pass
@@ -1167,9 +1328,9 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
 
     Returns None if allowed, or a string reason if blocked.
     """
-    if session.guard_mode == 'plan' and (not session.planApproved) and isPlanModeBlocked(toolName, args):
+    if session.guardMode == 'plan' and (not session.planApproved) and isPlanModeBlocked(toolName, args):
         return f"Tool '{toolName}' is destructive and cannot run in plan mode. You cannot execute destructive tools here. Finish investigating with the non-destructive tools, then call `submit_plan` with your proposed steps and ask the user to approve it before executing."
-    if session.guard_mode == 'ask' and isPlanModeBlocked(toolName, args):
+    if session.guardMode == 'ask' and isPlanModeBlocked(toolName, args):
         return f"Tool '{toolName}' requires your approval. Present the intended change to the user and wait for them to approve it before calling this tool again."
     return None
 
@@ -1179,7 +1340,7 @@ def submitPlan(session: WorkbenchSession, planData: dict[str, object]) -> None:
     session.planApproved = False
     session._execution_state = None
     session._working_memory = None
-    session.updated_at = _now()
+    session.updatedAt = _now()
     _emitSessionStatus(session.id)
 
 def approveWorkbenchPlan(sessionId: str) -> bool:
@@ -1188,7 +1349,7 @@ def approveWorkbenchPlan(sessionId: str) -> bool:
     if not session or not session.plan:
         return False
     session.planApproved = True
-    session.updated_at = _now()
+    session.updatedAt = _now()
     saveSessions()
     _emitSessionStatus(sessionId)
     return True
@@ -1202,21 +1363,21 @@ def rejectWorkbenchPlan(sessionId: str) -> bool:
     session.planApproved = False
     session._execution_state = None
     session._working_memory = None
-    session.updated_at = _now()
+    session.updatedAt = _now()
     saveSessions()
     _emitSessionStatus(sessionId)
     return True
 
 def recordMutation(session: WorkbenchSession, toolName: str, args: dict[str, object], result: str) -> None:
     """Record a mutation in the session's mutation log."""
-    session.mutation_log.append({'toolName': toolName, 'args': args, 'result': str(result)[:500], 'timestamp': _now()})
-    session.mutation_count += 1
+    session.mutationLog.append({'toolName': toolName, 'args': args, 'result': str(result)[:500], 'timestamp': _now()})
+    session.mutationCount += 1
 
 def createPendingMutation(session: WorkbenchSession, toolName: str, args: dict[str, object]) -> dict[str, object] | None:
     """Create a pending mutation token requiring approval."""
     token = f'mt_{uuid.uuid4().hex[:16]}'
     mutation = {'token': token, 'toolName': toolName, 'args': args, 'createdAt': _now(), 'ttl': 300}
-    session.pending_mutations.append(mutation)
+    session.pendingMutations.append(mutation)
     session.status = 'awaiting_approval'
     saveSessions()
     _emitSessionStatus(session.id)
@@ -1225,14 +1386,14 @@ def createPendingMutation(session: WorkbenchSession, toolName: str, args: dict[s
 def consumePendingMutation(token: str, reject: bool=False) -> bool:
     """Approve or reject a pending mutation."""
     for session in _sessions.values():
-        for i, pm in enumerate(session.pending_mutations):
+        for i, pm in enumerate(session.pendingMutations):
             if pm.get('token') == token:
                 if reject:
-                    session.pending_mutations.pop(i)
+                    session.pendingMutations.pop(i)
                     session.status = 'idle'
                     saveSessions()
                     return True
-                session.pending_mutations.pop(i)
+                session.pendingMutations.pop(i)
                 session.status = 'idle'
                 saveSessions()
                 return True
@@ -1241,13 +1402,13 @@ def consumePendingMutation(token: str, reject: bool=False) -> bool:
 def setWorkbenchGoal(session: WorkbenchSession, condition: str) -> None:
     """Set an active goal on the session."""
     session.goal = condition
-    session.updated_at = _now()
+    session.updatedAt = _now()
     saveSessions()
 
 def clearWorkbenchGoal(session: WorkbenchSession, reason: str='') -> None:
     """Clear the active goal."""
     session.goal = ''
-    session.updated_at = _now()
+    session.updatedAt = _now()
     saveSessions()
 
 def getWorkbenchGoalStatus(sessionId: str) -> dict[str, object] | None:

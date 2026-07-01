@@ -48,13 +48,13 @@ async def tryBackgroundReview(session: object, messagesSnapshot: list[dict[str, 
     if not messagesSnapshot:
         return
     lastTurn = getattr(session, '_last_reviewed_at_turn', 0)
-    sessionTurns = getattr(session, 'message_count', 0) // 2
+    sessionTurns = getattr(session, 'messageCount', 0) // 2
     toolRounds = len([m for m in messagesSnapshot if m.get('role') == 'tool'])
     gates = gates or ReviewGates()
-    if not gates.should_review(session_turns=sessionTurns, tool_rounds=toolRounds, last_reviewed_at_turn=lastTurn):
+    if not gates.shouldReview(sessionTurns=sessionTurns, toolRounds=toolRounds, lastReviewedAtTurn=lastTurn):
         return
     session._last_reviewed_at_turn = sessionTurns
-    asyncio.create_task(_doReview(messagesSnapshot, llm_client=llmClient))
+    asyncio.create_task(_doReview(messagesSnapshot, llmClient=llmClient))
 
 async def _doReview(messagesSnapshot: list[dict[str, object]], *, llmClient: ReviewClient=None) -> dict[str, object]:
     """Run the actual review — call the side LLM, parse recommendations, apply."""
@@ -120,7 +120,7 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llmClient: Rev
 def _buildReviewPrompt(messagesSnapshot: list[dict[str, object]]) -> list[dict[str, object]]:
     """Build an OpenAI-format message list for the review LLM."""
     systemMsg = {'role': 'system', 'content': 'You are reviewing a conversation between a user and an AI assistant. Identify any lessons, corrections, or recurring patterns that should be saved for future interactions.\n\nRespond with a JSON object only (no markdown, no code fences):\n{\n  "skills": [\n    {\n      "action": "create" | "patch",\n      "name": "lowercase-dotted-name",\n      "description": "≤60 chars, one sentence",\n      "body": "Full SKILL.md body markdown (sections: When to Use, Prerequisites, How to Run, Quick Reference, Procedure, Pitfalls, Verification)",\n      "trigger": "optional trigger phrase",\n      "category": "optional-category"\n    }\n  ],\n  "memory": [\n    {\n      "action": "add" | "replace",\n      "fact": "User prefers short answers."\n    }\n  ]\n}\n\nOnly include skills/memory that are genuinely new or corrective. Do NOT create a skill for every turn — be selective.'}
-    return [systemMsg] + _lastRelevantMessages(messagesSnapshot, max_len=60)
+    return [systemMsg] + _lastRelevantMessages(messagesSnapshot, maxLen=60)
 
 def _lastRelevantMessages(messages: list[dict[str, object]], maxLen: int=60) -> list[dict[str, object]]:
     """Take the tail of the conversation — user + assistant turns only."""

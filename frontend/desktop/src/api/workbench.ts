@@ -9,6 +9,7 @@ import type {
   WorkbenchEventHandlers,
   WorkbenchGuardMode,
 } from '@/types/workbench';
+import type { FileAttachment } from '@/types/chat';
 import { WorkbenchEventSchema } from './schemas/workbench';
 
 export interface CreateWorkbenchSessionParams {
@@ -372,6 +373,63 @@ export async function stopWorkbenchChat(sessionId: string): Promise<void> {
   if (!res.ok) throw new Error(`stopWorkbenchChat failed: ${res.status}`);
 }
 
+/* ── Mid-response queued messages ─────────────────────────────────────── */
+
+/** A user message that was queued while the model was streaming. The
+ *  chat loop drains the queue at the next iteration boundary and wraps
+ *  each entry with <queued_message> tags so the model can distinguish
+ *  the queued text from a fresh top-of-conversation prompt. */
+export interface QueuedUserMessage {
+  id: string;
+  text: string;
+  attachments?: FileAttachment[];
+  queuedAt: string;
+}
+
+/** Submit a follow-up message that will be delivered to the model mid-
+ *  response. The next time the chat loop's iteration boundary fires
+ *  (after tool_results or after the model emits a text-only turn), the
+ *  queued entries are drained and the model decides whether to act on
+ *  them. */
+export async function queueWorkbenchMessage(
+  sessionId: string,
+  text: string,
+  attachments?: FileAttachment[],
+): Promise<QueuedUserMessage> {
+  const res = await fetch('/api/workbench/chat/queue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, text, attachments: attachments ?? [] }),
+  });
+  if (!res.ok) throw new Error(`queueWorkbenchMessage failed: ${res.status}`);
+  return res.json();
+}
+
+/** Cancel a single queued message before the model receives it. */
+export async function dequeueWorkbenchMessage(
+  sessionId: string,
+  messageId: string,
+): Promise<void> {
+  const res = await fetch(
+    `/api/workbench/chat/queue/${encodeURIComponent(messageId)}?sessionId=${encodeURIComponent(sessionId)}`,
+    { method: 'DELETE' },
+  );
+  if (!res.ok) throw new Error(`dequeueWorkbenchMessage failed: ${res.status}`);
+}
+
+/** Hydrate the local queue state from the server (used on mount and
+ *  after session switch). */
+export async function getQueuedWorkbenchMessages(
+  sessionId: string,
+): Promise<QueuedUserMessage[]> {
+  const res = await fetch(
+    `/api/workbench/chat/queue?sessionId=${encodeURIComponent(sessionId)}`,
+  );
+  if (!res.ok) throw new Error(`getQueuedWorkbenchMessages failed: ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data?.messages) ? data.messages : [];
+}
+
 /** Validate an incoming SSE frame against the WorkbenchEvent Zod schema.
  *  Logs a console warning on mismatch (instead of throwing) so the stream
  *  stays resilient to minor backend drift. A mismatch here is a signal
@@ -475,6 +533,28 @@ function dispatchWorkbenchEvent(
       break;
     case 'started':
       handlers.onStarted?.({ sinceSeq: p?.sinceSeq as number | undefined });
+      break;
+    case 'user_message_queued':
+      handlers.onUserMessageQueued?.({
+        sessionId: String(p?.sessionId ?? ''),
+        messageId: String(p?.messageId ?? ''),
+        text: String(p?.text ?? ''),
+        queuedAt: typeof p?.queuedAt === 'string' ? p.queuedAt : new Date().toISOString(),
+      });
+      break;
+    case 'user_message_dequeued':
+      handlers.onUserMessageDequeued?.({
+        sessionId: String(p?.sessionId ?? ''),
+        messageId: String(p?.messageId ?? ''),
+      });
+      break;
+    case 'user_message_injected':
+      handlers.onUserMessageInjected?.({
+        sessionId: String(p?.sessionId ?? ''),
+        messageId: String(p?.messageId ?? ''),
+        text: String(p?.text ?? ''),
+        queuedAt: typeof p?.queuedAt === 'string' ? p.queuedAt : new Date().toISOString(),
+      });
       break;
     case 'subagent_start':
       handlers.onSubagentStart?.({

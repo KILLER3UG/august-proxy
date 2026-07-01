@@ -46,7 +46,7 @@ async def telegramWebhook(request: Request) -> dict[str, object]:
     if not adapter:
         raise HTTPException(status_code=503, detail='Telegram adapter not running')
     body = await request.json()
-    await adapter.handle_incoming(body)
+    await adapter.handleIncoming(body)
     return {'ok': True}
 
 @router.get('/status')

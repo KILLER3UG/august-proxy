@@ -1,7 +1,7 @@
 """Bridge gateway sessions to the workbench agent loop.
 
 Maps a gateway ``session_key`` (e.g. ``telegram:12345``) to a workbench
-session id, invokes ``send_workbench_message_stream`` (the same entry the
+session id, invokes ``sendWorkbenchMessageStream`` (the same entry the
 REST ``POST /api/workbench/chat`` uses — ``routers/workbench.py:127``), and
 accumulates the assistant reply from ``final_output`` events.
 
@@ -54,9 +54,9 @@ class SessionBridge:
 
     def __init__(self, *, runner: WorkbenchRunner | None=None, sessionFactory: SessionFactory | None=None, deleteSession: DeleteSession | None=None, provider: str='', model: str='', agentId: str='', modelProvider: str='', guardMode: str='full', mapPath: Path | None=None) -> None:
         from app.services.workbench import workbench as wb
-        self._runner = runner or wb.send_workbench_message_stream
-        self._sessionFactory = sessionFactory or wb.create_workbench_session
-        self._deleteSession = deleteSession or wb.delete_workbench_session
+        self._runner = runner or wb.sendWorkbenchMessageStream
+        self._sessionFactory = sessionFactory or wb.createWorkbenchSession
+        self._deleteSession = deleteSession or wb.deleteWorkbenchSession
         self._provider = provider
         self._model = model
         self._agentId = agentId
@@ -70,7 +70,7 @@ class SessionBridge:
         """Resolve (creating on first contact) the workbench session id."""
         sid = self._map.get(sessionKey)
         if not sid:
-            session = self._sessionFactory(provider=self._provider, agent_id=self._agentId, guard_mode=self._guardMode)
+            session = self._sessionFactory(provider=self._provider, agentId=self._agentId, guardMode=self._guardMode)
             sid = getattr(session, 'id', None) or str(session)
             self._map[sessionKey] = sid
             _saveMap(self._mapPath, self._map)
@@ -96,7 +96,7 @@ class SessionBridge:
                 except Exception:
                     pass
         try:
-            await self._runner(session_id=sessionId, message=text, provider=self._provider, agent_id=self._agentId, model=self._model, model_provider=self._modelProvider, guard_mode=self._guardMode, emit=emit, signal=cancel)
+            await self._runner(sessionId=sessionId, message=text, provider=self._provider, agentId=self._agentId, model=self._model, modelProvider=self._modelProvider, guardMode=self._guardMode, emit=emit, signal=cancel)
         finally:
             self._cancels.pop(sessionKey, None)
         return TurnResult(text=''.join(parts), cancelled=cancel.is_set())

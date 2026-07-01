@@ -48,16 +48,16 @@ async def listAgents():
 @router.post('')
 async def createAgent(body: AgentCreate):
     """Register a new agent (persisted)."""
-    return agentRegistry.createAgent(name=body.name, parent_id=body.parentId, parent_agent=body.parentAgent, permissions=body.permissions, toolsets=body.toolsets, tools=body.tools, model=body.model, provider=body.provider, model_alias=body.model_alias, role=body.role, description=body.description, actor='ui')
+    return agentRegistry.createAgent(name=body.name, parentId=body.parentId, parentAgent=body.parentAgent, permissions=body.permissions, toolsets=body.toolsets, tools=body.tools, model=body.model, provider=body.provider, modelAlias=body.modelAlias, role=body.role, description=body.description, actor='ui')
 
 @router.get('/tree')
 async def getTree(root: str='', maxDepth: int=Query(4)):
     """Return a recursive agent tree (frontend AgentTree)."""
-    return agentRegistry.get_agent_tree_rooted(root=root, max_depth=maxDepth)
+    return agentRegistry.getAgentTreeRooted(root=root, maxDepth=maxDepth)
 
 @router.get('/{agent_id}')
 async def getAgent(agentId: str):
-    agent = agentRegistry.get_agent(agentId)
+    agent = agentRegistry.getAgent(agentId)
     if not agent:
         raise HTTPException(status_code=404, detail='Agent not found')
     return agent
@@ -73,14 +73,14 @@ async def updateAgent(agentId: str, body: AgentUpdate):
 
 @router.delete('/{agent_id}')
 async def deleteAgent(agentId: str):
-    if not agentRegistry.delete_agent(agentId, actor='ui'):
+    if not agentRegistry.deleteAgent(agentId, actor='ui'):
         raise HTTPException(status_code=404, detail='Agent not found')
     return {'status': 'ok', 'deleted': agentId}
 
 @router.get('/{agent_id}/tree')
 async def getAgentTree(agentId: str):
     """Get an agent and its direct children."""
-    tree = agentRegistry.get_agent_tree(agentId)
+    tree = agentRegistry.getAgent_tree(agentId)
     if not tree:
         raise HTTPException(status_code=404, detail='Agent not found')
     return tree
@@ -91,11 +91,11 @@ async def createJob(body: AgentJob):
 
 @router.get('/jobs')
 async def listJobs(agentId: str=''):
-    return {'jobs': agentRegistry.list_jobs(agentId)}
+    return {'jobs': agentRegistry.listJobs(agentId)}
 
 @router.get('/jobs/{job_id}')
 async def getJob(jobId: str):
-    for job in agentRegistry.list_jobs():
+    for job in agentRegistry.listJobs():
         if job.get('id') == jobId:
             return job
     raise HTTPException(status_code=404, detail='Job not found')

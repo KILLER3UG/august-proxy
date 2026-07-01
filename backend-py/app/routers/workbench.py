@@ -20,43 +20,43 @@ _cancelled: dict[str, asyncio.Event] = {}
 async def createSession(request: Request):
     """Create a new workbench session."""
     body = await request.json() if request.headers.get('content-type') else {}
-    session = wb.create_workbench_session(provider=body.get('provider', ''), agent_id=body.get('agentId', ''), guard_mode=body.get('guardMode', ''), task=body.get('task', ''), goal=body.get('goal', ''))
-    return session.to_dict()
+    session = wb.createWorkbenchSession(provider=body.get('provider', ''), agentId=body.get('agentId', ''), guardMode=body.get('guardMode', ''), task=body.get('task', ''), goal=body.get('goal', ''))
+    return session.toDict()
 
 @router.get('/sessions')
 async def listSessions():
     """List all workbench sessions."""
-    return wb.list_workbench_sessions()
+    return wb.listWorkbenchSessions()
 
 @router.get('/sessions/{session_id}')
 async def getSession(sessionId: str):
     """Get a session by ID."""
-    session = wb.get_workbench_session(sessionId)
+    session = wb.getWorkbenchSession(sessionId)
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
-    return session.to_dict()
+    return session.toDict()
 
 @router.get('/session')
 async def getSessionByQuery(sessionId: str=''):
     """Get a session by ID from query parameter."""
     if not sessionId:
         raise HTTPException(status_code=400, detail='sessionId required')
-    session = wb.get_workbench_session(sessionId)
+    session = wb.getWorkbenchSession(sessionId)
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
-    return session.to_dict()
+    return session.toDict()
 
 @router.post('/session')
 async def createSessionDirect(request: Request):
     """Create a new workbench session."""
     body = await request.json() if request.headers.get('content-type') else {}
-    session = wb.create_workbench_session(provider=body.get('provider', ''), agent_id=body.get('agentId', ''), guard_mode=body.get('guardMode', ''))
-    return session.to_dict()
+    session = wb.createWorkbenchSession(provider=body.get('provider', ''), agentId=body.get('agentId', ''), guardMode=body.get('guardMode', ''))
+    return session.toDict()
 
 @router.delete('/sessions/{session_id}')
 async def deleteSession(sessionId: str):
     """Delete a session."""
-    if not wb.delete_workbench_session(sessionId):
+    if not wb.deleteWorkbenchSession(sessionId):
         raise HTTPException(status_code=404, detail='Session not found')
     return {'status': 'ok'}
 
@@ -64,15 +64,15 @@ async def deleteSession(sessionId: str):
 async def resetSession(sessionId: str, request: Request):
     """Reset a session (delete and recreate)."""
     body = await request.json() if request.headers.get('content-type') else {}
-    session = wb.reset_workbench_session(sessionId, provider=body.get('provider', ''), agent_id=body.get('agentId', ''))
+    session = wb.resetWorkbenchSession(sessionId, provider=body.get('provider', ''), agentId=body.get('agentId', ''))
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
-    return session.to_dict()
+    return session.toDict()
 
 @router.get('/sessions/{session_id}/status')
 async def sessionStatus(sessionId: str):
     """Get session status (for approval banner)."""
-    status = wb.get_workbench_session_status(sessionId)
+    status = wb.getWorkbenchSessionStatus(sessionId)
     if not status:
         raise HTTPException(status_code=404, detail='Session not found')
     return status
@@ -98,43 +98,43 @@ async def startChat(request: Request):
     model = body.get('model', '')
     modelProvider = body.get('modelProvider', '')
     guardMode = body.get('guardMode', '')
-    seq = eventLog.event_log.append(sessionId, 'started', {'sinceSeq': 0})
+    seq = eventLog.eventLog.append(sessionId, 'started', {'sinceSeq': 0})
     cancelEvent = asyncio.Event()
     _cancelled[sessionId] = cancelEvent
 
     async def safeStream():
         try:
-            await wb.send_workbench_message_stream(session_id=sessionId, message=message, provider=provider, agent_id=agentId, effort=effort, model=model, model_provider=modelProvider, guard_mode=guardMode, emit=lambda event: eventLog.event_log.append(sessionId, event.get('type', 'message'), event), signal=cancelEvent)
+            await wb.sendWorkbenchMessageStream(sessionId=sessionId, message=message, provider=provider, agentId=agentId, effort=effort, model=model, modelProvider=modelProvider, guardMode=guardMode, emit=lambda event: eventLog.eventLog.append(sessionId, event.get('type', 'message'), event), signal=cancelEvent)
         except asyncio.CancelledError:
             try:
-                session = wb.get_workbench_session(sessionId)
+                session = wb.getWorkbenchSession(sessionId)
                 if session:
                     session.status = 'idle'
-                    session.updated_at = wb._now()
+                    session.updatedAt = wb._now()
                     wb.saveSessions()
-                    wb._emit_session_status(sessionId)
+                    wb._emitSessionStatus(sessionId)
             except Exception:
                 pass
             try:
-                eventLog.event_log.append(sessionId, 'aborted', {})
-                eventLog.event_log.append(sessionId, 'done', {'type': 'done', 'sessionId': sessionId})
+                eventLog.eventLog.append(sessionId, 'aborted', {})
+                eventLog.eventLog.append(sessionId, 'done', {'type': 'done', 'sessionId': sessionId})
             except Exception:
                 pass
         except Exception as exc:
             import traceback
             traceback.print_exc()
             try:
-                session = wb.get_workbench_session(sessionId)
+                session = wb.getWorkbenchSession(sessionId)
                 if session:
                     session.status = 'idle'
-                    session.updated_at = wb._now()
+                    session.updatedAt = wb._now()
                     wb.saveSessions()
-                    wb._emit_session_status(sessionId)
+                    wb._emitSessionStatus(sessionId)
             except Exception:
                 pass
             try:
-                eventLog.event_log.append(sessionId, 'error', {'type': 'error', 'message': f'Fatal background error: {exc}'})
-                eventLog.event_log.append(sessionId, 'done', {'type': 'done', 'sessionId': sessionId})
+                eventLog.eventLog.append(sessionId, 'error', {'type': 'error', 'message': f'Fatal background error: {exc}'})
+                eventLog.eventLog.append(sessionId, 'done', {'type': 'done', 'sessionId': sessionId})
             except Exception:
                 pass
         finally:
@@ -153,7 +153,7 @@ async def streamChat(sessionId: str=Query(default='', alias='sessionId'), sinceS
     sinceSeq = int(sinceSeqRaw) if sinceSeqRaw and sinceSeqRaw.isdigit() else 0
 
     async def generate():
-        async for event in eventLog.event_log.subscribe(sessionId, sinceSeq):
+        async for event in eventLog.eventLog.subscribe(sessionId, sinceSeq):
             if event['type'] == 'keepalive':
                 yield ': keepalive\n\n'
                 continue
@@ -170,14 +170,52 @@ async def stopChat(request: Request):
     cancelEvent = _cancelled.get(sessionId)
     if cancelEvent and (not cancelEvent.is_set()):
         cancelEvent.set()
-    eventLog.event_log.append(sessionId, 'aborted', {})
+    eventLog.eventLog.append(sessionId, 'aborted', {})
     return {'status': 'ok'}
 
 @router.get('/chat/active')
 async def activeChats():
     """List active status for all sessions."""
-    activity = wb.get_workbench_activity()
+    activity = wb.getWorkbenchActivity()
     return activity
+
+@router.post('/chat/queue')
+async def queueMessage(request: Request):
+    """Enqueue a user message for delivery to the model mid-response.
+
+    The message is stored on the session and surfaced to the model's
+    chat loop at the next iteration boundary. If no turn is running,
+    the next turn will pick the message up automatically.
+    """
+    body = await request.json()
+    sessionId = body.get('sessionId', '')
+    text = body.get('text', '')
+    attachments = body.get('attachments') or []
+    if not sessionId:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    if not text and not attachments:
+        raise HTTPException(status_code=400, detail='text or attachments required')
+    entry = wb.enqueueUserMessage(sessionId=sessionId, text=text, attachments=attachments)
+    if entry is None:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return entry
+
+@router.delete('/chat/queue/{message_id}')
+async def dequeueMessage(messageId: str, sessionId: str=Query(default='', alias='sessionId')):
+    """Remove a queued message by id before it's delivered to the model."""
+    if not sessionId:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    removed = wb.dequeueUserMessage(sessionId=sessionId, messageId=messageId)
+    if not removed:
+        raise HTTPException(status_code=404, detail='Queued message not found')
+    return {'status': 'ok', 'messageId': messageId}
+
+@router.get('/chat/queue')
+async def listQueue(sessionId: str=Query(default='', alias='sessionId')):
+    """List current queued messages for a session (for initial sync)."""
+    if not sessionId:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    return {'sessionId': sessionId, 'messages': wb.listQueuedMessages(sessionId)}
 
 @router.post('/plan')
 async def submitPlanRoute(request: Request):
@@ -185,7 +223,7 @@ async def submitPlanRoute(request: Request):
     body = await request.json()
     sessionId = body.get('sessionId', '')
     planData = body.get('plan', {})
-    session = wb.get_workbench_session(sessionId)
+    session = wb.getWorkbenchSession(sessionId)
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
     wb.submit_plan(session, planData)
@@ -230,12 +268,12 @@ async def updateGoal(request: Request):
 @router.get('/activity')
 async def workbenchActivity():
     """Return recent workbench activity."""
-    return wb.get_workbench_activity()
+    return wb.getWorkbenchActivity()
 
 @router.get('/capabilities')
 async def proxyCapabilities():
     """List all tools grouped by source."""
-    return wb.list_proxy_capabilities()
+    return wb.listProxyCapabilities()
 
 @router.get('/agents')
 async def workbenchAgents(active: str=''):

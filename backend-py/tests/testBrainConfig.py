@@ -118,7 +118,7 @@ async def testResetClearsPersistedAndAudits(client, isolatedData):
 async def testFromSessionReturnsSessionSource(client, isolatedData):
     """When a workbench session exists, source='session' + session fields populated."""
     from app.services.workbench import workbench as wb
-    sess = wb.create_workbench_session(provider='anthropic', goal='draft release notes')
+    sess = wb.createWorkbenchSession(provider='anthropic', goal='draft release notes')
     resp = await client.get('/api/brain/config/from-session', params={'sessionId': sess.id})
     assert resp.status_code == 200
     body = resp.json()

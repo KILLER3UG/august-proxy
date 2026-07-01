@@ -120,7 +120,7 @@ def _sessionInfo(sessionId: str | None=None) -> dict[str, JsonValue] | None:
     when none exist. ``task`` is mapped from ``WorkbenchSession.goal`` because
     the dataclass has no ``task`` field (see workbench.py:41-69)."""
     try:
-        sessions = workbenchSvc.list_workbench_sessions() or []
+        sessions = workbenchSvc.listWorkbenchSessions() or []
     except Exception:
         return None
     if not sessions:

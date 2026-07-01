@@ -147,9 +147,9 @@ class TestUsage:
         recordUsage('session_u1', 'gpt-4', 100, 50)
         recordUsage('session_u1', 'gpt-4', 200, 30)
         usage = getUsage('session_u1')
-        assert usage['total_input'] >= 300
-        assert usage['total_output'] >= 80
-        assert usage['request_count'] >= 2
+        assert usage['totalInputTokens'] >= 300
+        assert usage['totalOutputTokens'] >= 80
+        assert usage['totalEvents'] >= 2
 
 class TestBrainOrchestrator:
 
@@ -188,7 +188,7 @@ class TestContextBuilder:
         assert 'World' in text
 
     def testSlimCoreContext(self):
-        ctx = buildSlimCoreContext({'user_profile': 'Test User', 'global_context': 'Working on X'})
+        ctx = buildSlimCoreContext({'core_memory': {'name': 'Test User'}, 'global_context': 'Working on X'})
         assert 'Test User' in ctx
         assert 'Working on X' in ctx
 
@@ -202,7 +202,7 @@ class TestContextCompressor:
 
     def testCompress(self):
         msgs = [{'role': 'user', 'content': 'A'}, {'role': 'assistant', 'content': 'B'}, {'role': 'user', 'content': 'C'}, {'role': 'assistant', 'content': 'D'}]
-        compressed = compressMessages(msgs, threshold=1, head_count=1, tail_count=1)
+        compressed = compressMessages(msgs, threshold=1, headCount=1, tailCount=1)
         assert len(compressed) <= len(msgs)
 
     def testSummaryHelpersDetectAndExtract(self):
@@ -223,7 +223,7 @@ class TestContextCompressor:
         no information is lost."""
         priorSummary = buildSummaryMessage([{'role': 'user', 'content': 'old'}], 'PRIOR SUMMARY BODY')
         msgs = [{'role': 'system', 'content': 'You are helpful.'}, priorSummary] + [{'role': 'user', 'content': f'turn {i}'} for i in range(20)] + [{'role': 'assistant', 'content': f'reply {i}'} for i in range(20)]
-        out = compressMessages(msgs, threshold=1, head_count=2, tail_count=2)
+        out = compressMessages(msgs, threshold=1, headCount=2, tailCount=2)
         summaries = [m for m in out if _isSummaryMessage(m)]
         assert len(summaries) == 1, f're-compaction must not accumulate summary blocks (s4); got {len(summaries)}'
         assert 'PRIOR SUMMARY BODY' in summaries[0]['content']

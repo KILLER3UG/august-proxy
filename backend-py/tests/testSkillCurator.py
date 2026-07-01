@@ -24,11 +24,11 @@ def curator(isolatedData, isolatedSkills, monkeypatch):
 def seededSkills(curator, isolatedSkills):
     """Create fixture skills for lifecycle tests."""
     agentRoot, __ = isolatedSkills
-    skillService.createSkill('active-skill', 'Recently used.', 'body.', created_by='agent', category='test')
-    skillService.createSkill('old-skill', 'No activity.', 'body.', created_by='agent', category='test')
-    skillService.createSkill('bundled-ish', 'Should not appear.', 'body.', created_by='', category='test')
+    skillService.createSkill('active-skill', 'Recently used.', 'body.', createdBy='agent', category='test')
+    skillService.createSkill('old-skill', 'No activity.', 'body.', createdBy='agent', category='test')
+    skillService.createSkill('bundled-ish', 'Should not appear.', 'body.', createdBy='', category='test')
     rec = curator._ensure('old-skill')
-    rec.last_used_at = time.time() - 15 * 86400
+    rec.lastUsedAt = time.time() - 15 * 86400
     curator._save()
     curator.bumpUse('active-skill')
     curator.bumpUse('bundled-ish')
@@ -39,74 +39,74 @@ class TestCurator:
 
     def testBumpCreatesAndIncrements(self, curator):
         curator.bumpUse('my-skill')
-        rec = curator.get_record('my-skill')
+        rec = curator.getRecord('my-skill')
         assert rec is not None
         assert rec.useCount == 1
-        assert rec.last_used_at is not None
+        assert rec.lastUsedAt is not None
         curator.bumpUse('my-skill')
-        assert curator.get_record('my-skill').useCount == 2
+        assert curator.getRecord('my-skill').useCount == 2
 
     def testBumpViewAndPatch(self, curator):
-        curator.bump_view('a')
-        curator.bump_patch('a')
-        rec = curator.get_record('a')
-        assert rec.view_count == 1
-        assert rec.patch_count == 1
+        curator.bumpView('a')
+        curator.bumpPatch('a')
+        rec = curator.getRecord('a')
+        assert rec.viewCount == 1
+        assert rec.patchCount == 1
 
     def testListUsage(self, curator):
         curator.bumpUse('x')
-        lst = curator.list_usage()
+        lst = curator.listUsage()
         names = [e['name'] for e in lst]
         assert 'x' in names
 
     def testPinAndUnpin(self, curator, isolatedSkills, seededSkills):
-        skillService.createSkill('pin-me', 'Desc.', 'body.', created_by='agent')
+        skillService.createSkill('pin-me', 'Desc.', 'body.', createdBy='agent')
         assert curator.pin('pin-me') is True
-        assert curator.get_record('pin-me').pinned is True
+        assert curator.getRecord('pin-me').pinned is True
         assert curator.unpin('pin-me') is True
-        assert curator.get_record('pin-me').pinned is False
+        assert curator.getRecord('pin-me').pinned is False
 
     def testPinRefusesBundled(self, curator, isolatedSkills, seededSkills):
-        skillService.createSkill('not-agent', 'Desc.', 'body.', created_by='user')
+        skillService.createSkill('not-agent', 'Desc.', 'body.', createdBy='user')
         assert curator.pin('not-agent') is False
 
     def testArchiveAndRestore(self, curator, isolatedSkills, seededSkills):
-        skillService.createSkill('arch-me', 'Desc.', 'body.', created_by='agent')
+        skillService.createSkill('arch-me', 'Desc.', 'body.', createdBy='agent')
         assert curator.archive('arch-me') is True
-        rec = curator.get_record('arch-me')
+        rec = curator.getRecord('arch-me')
         assert rec is not None
         assert rec.state == 'archived'
-        assert rec.archived_at is not None
+        assert rec.archivedAt is not None
         agentRoot = skillService._agentSkillsDir()
         assert (agentRoot / '.archive' / 'arch-me').exists()
         assert not (agentRoot / 'arch-me').exists()
         assert curator.restore('arch-me') is True
-        assert curator.get_record('arch-me').state == 'active'
+        assert curator.getRecord('arch-me').state == 'active'
         assert (agentRoot / 'arch-me').exists()
 
     def testArchiveRefusesPinned(self, curator, isolatedSkills):
-        skillService.createSkill('pinned-s', 'Desc.', 'body.', created_by='agent')
+        skillService.createSkill('pinned-s', 'Desc.', 'body.', createdBy='agent')
         curator.pin('pinned-s')
         assert curator.archive('pinned-s') is False
 
     def testArchiveRefusesBundled(self, curator, isolatedSkills):
-        skillService.createSkill('bundled', 'Desc.', 'body.', created_by='')
+        skillService.createSkill('bundled', 'Desc.', 'body.', createdBy='')
         assert curator.archive('bundled') is False
 
     def testArchiveRefusesNonexistent(self, curator):
         assert curator.archive('no-such') is False
 
     def testRunCurationTransitionsStale(self, curator, seededSkills):
-        report = curator.run_curation()
+        report = curator.runCuration()
         assert 'old-skill' in report['staled']
-        rec = curator.get_record('old-skill')
+        rec = curator.getRecord('old-skill')
         assert rec is not None
         assert rec.state == 'stale'
 
     def testRunCurationDryRun(self, curator, seededSkills):
-        report = curator.run_curation(dry_run=True)
+        report = curator.runCuration(dryRun=True)
         assert 'old-skill' in report['staled']
-        rec = curator.get_record('old-skill')
+        rec = curator.getRecord('old-skill')
         assert rec is not None
         assert rec.state != 'stale'
 
@@ -136,25 +136,25 @@ def testListUsageViaApi(curator, seededSkills):
     assert 'active-skill' in names
 
 def testPinViaApi(curator, seededSkills):
-    skillService.createSkill('api-pin', 'Desc.', 'body.', created_by='agent')
+    skillService.createSkill('api-pin', 'Desc.', 'body.', createdBy='agent')
     client = TestClient(_app(curator))
     r = client.post('/api/curator/pin/api-pin')
     assert r.status_code == 200
-    assert curator.get_record('api-pin').pinned is True
+    assert curator.getRecord('api-pin').pinned is True
 
 def testArchiveAndRestoreViaApi(curator, seededSkills):
-    skillService.createSkill('api-arch', 'Desc.', 'body.', created_by='agent')
+    skillService.createSkill('api-arch', 'Desc.', 'body.', createdBy='agent')
     client = TestClient(_app(curator))
     r = client.post('/api/curator/archive/api-arch')
     assert r.status_code == 200
-    assert curator.get_record('api-arch').state == 'archived'
+    assert curator.getRecord('api-arch').state == 'archived'
     r = client.post('/api/curator/restore/api-arch')
     assert r.status_code == 200
-    assert curator.get_record('api-arch').state == 'active'
+    assert curator.getRecord('api-arch').state == 'active'
 
 def testRunCurationViaApi(curator, seededSkills):
     client = TestClient(_app(curator))
-    r = client.post('/api/curator/run?dry_run=true')
+    r = client.post('/api/curator/run?dryRun=true')
     assert r.status_code == 200
     report = r.json()['report']
     assert 'old-skill' in report['staled']

@@ -28,7 +28,7 @@ class StubRunner:
         self._gate.set()
 
     async def run(self, sessionId, message, *, provider='', agentId='', model='', modelProvider='', guardMode='', emit=None, signal=None):
-        self.calls.append({'session_id': sessionId, 'message': message, 'provider': provider, 'agent_id': agentId, 'model': model, 'model_provider': modelProvider, 'guard_mode': guardMode})
+        self.calls.append({'sessionId': sessionId, 'message': message, 'provider': provider, 'agentId': agentId, 'model': model, 'modelProvider': modelProvider, 'guardMode': guardMode})
         while not self._gate.is_set():
             if signal and signal.is_set():
                 break
@@ -61,7 +61,7 @@ class MockAdapter(BasePlatformAdapter):
         return {'name': chatId, 'type': 'dm'}
 
     async def normalize(self, raw: dict) -> MessageEvent | None:
-        return MessageEvent(source=SessionSource(platform='mock', chat_id=raw['chat_id'], user_id=raw.get('user_id', ''), chat_type=raw.get('chat_type', 'dm'), message_id=raw.get('message_id', '')), text=raw.get('text', ''), timestamp=raw.get('timestamp', ''), raw=raw)
+        return MessageEvent(source=SessionSource(platform='mock', chatId=raw['chatId'], userId=raw.get('userId', ''), chatType=raw.get('chatType', 'dm'), messageId=raw.get('messageId', '')), text=raw.get('text', ''), timestamp=raw.get('timestamp', ''), raw=raw)
 
     async def feed(self, raw: dict) -> None:
         """Test helper — simulate an incoming platform message."""
@@ -76,20 +76,20 @@ def makeSessionFake(**fields) -> MagicMock:
 class TestBuildSessionKey:
 
     def testDmChat(self):
-        source = SessionSource(platform='telegram', chat_id='123', chat_type='dm')
+        source = SessionSource(platform='telegram', chatId='123', chatType='dm')
         assert buildSessionKey(source) == 'telegram:123'
 
     def testGroupWithUser(self):
-        source = SessionSource(platform='telegram', chat_id='g1', user_id='u1', chat_type='group')
+        source = SessionSource(platform='telegram', chatId='g1', userId='u1', chatType='group')
         assert buildSessionKey(source) == 'telegram:g1:u1'
 
     def testGroupNoUserFallsBackToChat(self):
-        source = SessionSource(platform='slack', chat_id='c1', user_id='', chat_type='channel')
+        source = SessionSource(platform='slack', chatId='c1', userId='', chatType='channel')
         assert buildSessionKey(source) == 'slack:c1'
 
     def testGroupPerUserOff(self):
-        src = SessionSource(platform='telegram', chat_id='g1', user_id='u1', chat_type='group')
-        assert buildSessionKey(src, group_per_user=False) == 'telegram:g1'
+        src = SessionSource(platform='telegram', chatId='g1', userId='u1', chatType='group')
+        assert buildSessionKey(src, groupPerUser=False) == 'telegram:g1'
 
 class TestGetCommand:
 
@@ -132,35 +132,35 @@ class TestSessionBridge:
     def testSessionIdForCreatesAndPersists(self, tmpMap: Path, monkeypatch):
         fakeSession = makeSessionFake(id='wb_abc123')
         sf = lambda **kw: fakeSession
-        bridge = SessionBridge(map_path=tmpMap, session_factory=sf)
-        sid = bridge.session_id_for('telegram:1')
+        bridge = SessionBridge(mapPath=tmpMap, sessionFactory=sf)
+        sid = bridge.sessionIdFor('telegram:1')
         assert sid == 'wb_abc123'
         data = json.loads(tmpMap.read_text('utf-8'))
         assert data['telegram:1'] == 'wb_abc123'
-        sid2 = bridge.session_id_for('telegram:1')
+        sid2 = bridge.sessionIdFor('telegram:1')
         assert sid2 == 'wb_abc123'
 
     @pytest.mark.asyncio
     async def testInvokeAgentCallsRunnerAndAccumulates(self, tmpMap: Path):
         runner = StubRunner()
         fakeSession = makeSessionFake(id='wb_test')
-        bridge = SessionBridge(runner=runner.run, session_factory=lambda **kw: fakeSession, map_path=tmpMap, provider='p', model='m', agent_id='a')
-        result = await bridge.invoke_agent('telegram:1', 'hello')
+        bridge = SessionBridge(runner=runner.run, sessionFactory=lambda **kw: fakeSession, mapPath=tmpMap, provider='p', model='m', agentId='a')
+        result = await bridge.invokeAgent('telegram:1', 'hello')
         assert result.text == 'Reply: hello'
         assert not result.cancelled
         assert len(runner.calls) == 1
         assert runner.calls[0]['message'] == 'hello'
-        assert runner.calls[0]['session_id'] == 'wb_test'
+        assert runner.calls[0]['sessionId'] == 'wb_test'
 
     @pytest.mark.asyncio
     async def testRunnerReceivesConfigArgs(self, tmpMap: Path):
         runner = StubRunner()
         fakeSession = makeSessionFake(id='wb_cfg')
-        bridge = SessionBridge(runner=runner.run, session_factory=lambda **kw: fakeSession, map_path=tmpMap, provider='my-provider', agent_id='my-agent')
-        await bridge.invoke_agent('k', 'hi')
+        bridge = SessionBridge(runner=runner.run, sessionFactory=lambda **kw: fakeSession, mapPath=tmpMap, provider='my-provider', agentId='my-agent')
+        await bridge.invokeAgent('k', 'hi')
         call = runner.calls[0]
         assert call['provider'] == 'my-provider'
-        assert call['agent_id'] == 'my-agent'
+        assert call['agentId'] == 'my-agent'
 
     @pytest.mark.asyncio
     async def testCancelRunningSetsEvent(self, tmpMap: Path):
@@ -168,13 +168,13 @@ class TestSessionBridge:
         runner = StubRunner()
         runner.hold()
         fakeSession = makeSessionFake(id='wb_cancel')
-        bridge = SessionBridge(runner=runner.run, session_factory=lambda **kw: fakeSession, map_path=tmpMap)
-        task = asyncio.create_task(bridge.invoke_agent('telegram:1', 'hello'))
+        bridge = SessionBridge(runner=runner.run, sessionFactory=lambda **kw: fakeSession, mapPath=tmpMap)
+        task = asyncio.create_task(bridge.invokeAgent('telegram:1', 'hello'))
         await asyncio.sleep(0.02)
         assert 'telegram:1' in bridge._cancels
         ev = bridge._cancels['telegram:1']
         assert not ev.is_set()
-        await bridge.cancel_running('telegram:1')
+        await bridge.cancelRunning('telegram:1')
         assert ev.is_set()
         runner.release()
         await task
@@ -184,11 +184,11 @@ class TestSessionBridge:
         fakeSession = makeSessionFake(id='wb_rst')
         sf = MagicMock(return_value=fakeSession)
         ds = MagicMock(return_value=True)
-        bridge = SessionBridge(session_factory=sf, delete_session=ds, map_path=tmpMap)
-        __ = bridge.session_id_for('tg:1')
+        bridge = SessionBridge(sessionFactory=sf, deleteSession=ds, mapPath=tmpMap)
+        __ = bridge.sessionIdFor('tg:1')
         assert bridge._map['tg:1'] == 'wb_rst'
         assert tmpMap.read_text('utf-8') != '{}'
-        await bridge.reset_session('tg:1')
+        await bridge.resetSession('tg:1')
         assert 'tg:1' not in bridge._map
         ds.assert_called_with('wb_rst')
 
@@ -198,13 +198,13 @@ async def testFirstGuardQueuesSecondMessage():
     runner = StubRunner()
     runner.hold()
     fakeSession = makeSessionFake(id='wb_q')
-    b = SessionBridge(runner=runner.run, session_factory=lambda **kw: fakeSession, map_path=Path('/tmp/_notused_q.json'))
+    b = SessionBridge(runner=runner.run, sessionFactory=lambda **kw: fakeSession, mapPath=Path('/tmp/_notused_q.json'))
     ad = MockAdapter(bridge=b)
     await ad.connect()
-    await ad.feed({'text': 'first', 'chat_id': '1', 'chat_type': 'dm'})
+    await ad.feed({'text': 'first', 'chatId': '1', 'chatType': 'dm'})
     await asyncio.sleep(0.02)
-    assert 'mock:1' in ad._active_sessions
-    await ad.feed({'text': 'second', 'chat_id': '1', 'chat_type': 'dm'})
+    assert 'mock:1' in ad._activeSessions
+    await ad.feed({'text': 'second', 'chatId': '1', 'chatType': 'dm'})
     assert len(runner.calls) == 1
     assert runner.calls[0]['message'] == 'first'
     runner.release()
@@ -218,13 +218,13 @@ async def testStopBypassCancelsRunningTurn():
     runner = StubRunner()
     runner.hold()
     fakeSession = makeSessionFake(id='wb_stop')
-    b = SessionBridge(runner=runner.run, session_factory=lambda **kw: fakeSession, map_path=Path('/tmp/_notused_stop.json'))
+    b = SessionBridge(runner=runner.run, sessionFactory=lambda **kw: fakeSession, mapPath=Path('/tmp/_notused_stop.json'))
     ad = MockAdapter(bridge=b)
     await ad.connect()
-    await ad.feed({'text': 'hello', 'chat_id': '1', 'chat_type': 'dm'})
+    await ad.feed({'text': 'hello', 'chatId': '1', 'chatType': 'dm'})
     await asyncio.sleep(0.02)
-    assert 'mock:1' in ad._active_sessions
-    await ad.feed({'text': '/stop', 'chat_id': '1', 'chat_type': 'dm'})
+    assert 'mock:1' in ad._activeSessions
+    await ad.feed({'text': '/stop', 'chatId': '1', 'chatType': 'dm'})
     assert ('1', 'Stopped.') in ad.sent
     runner.release()
     await asyncio.sleep(0.1)
@@ -235,12 +235,12 @@ async def testNewBypassResetsSession():
     runner = StubRunner()
     runner.hold()
     fakeSession = makeSessionFake(id='wb_new')
-    b = SessionBridge(runner=runner.run, session_factory=lambda **kw: fakeSession, map_path=Path('/tmp/_notused_new.json'))
+    b = SessionBridge(runner=runner.run, sessionFactory=lambda **kw: fakeSession, mapPath=Path('/tmp/_notused_new.json'))
     ad = MockAdapter(bridge=b)
     await ad.connect()
-    __ = b.session_id_for('mock:1')
+    __ = b.sessionIdFor('mock:1')
     assert 'mock:1' in b._map
-    await ad.feed({'text': '/new', 'chat_id': '1', 'chat_type': 'dm'})
+    await ad.feed({'text': '/new', 'chatId': '1', 'chatType': 'dm'})
     assert 'mock:1' not in b._map
     assert ('1', 'New session started.') in ad.sent
     runner.release()
@@ -251,17 +251,17 @@ async def testStaleLockHeal():
     """If a task entry remains in _active_sessions after completion, it is healed."""
     runner = StubRunner()
     fakeSession = makeSessionFake(id='wb_heal')
-    b = SessionBridge(runner=runner.run, session_factory=lambda **kw: fakeSession, map_path=Path('/tmp/_notused_heal.json'))
+    b = SessionBridge(runner=runner.run, sessionFactory=lambda **kw: fakeSession, mapPath=Path('/tmp/_notused_heal.json'))
     ad = MockAdapter(bridge=b)
     await ad.connect()
-    await ad.feed({'text': 'hello', 'chat_id': '1', 'chat_type': 'dm'})
+    await ad.feed({'text': 'hello', 'chatId': '1', 'chatType': 'dm'})
     await asyncio.sleep(0.05)
     doneTask = asyncio.create_task(asyncio.sleep(0))
     await doneTask
-    ad._active_sessions['mock:1'] = doneTask
-    await ad.feed({'text': 'second', 'chat_id': '1', 'chat_type': 'dm'})
+    ad._activeSessions['mock:1'] = doneTask
+    await ad.feed({'text': 'second', 'chatId': '1', 'chatType': 'dm'})
     await asyncio.sleep(0.05)
-    assert 'mock:1' not in ad._active_sessions or ad._active_sessions.get('mock:1') is not doneTask
+    assert 'mock:1' not in ad._activeSessions or ad._activeSessions.get('mock:1') is not doneTask
     assert len(runner.calls) >= 2
 
 @pytest.mark.asyncio
@@ -269,11 +269,11 @@ async def testDiffChatIdsAreIndependent():
     """Messages from different chat_ids get different session keys and don't interfere."""
     runner = StubRunner()
     fakeSession = makeSessionFake(id='wb_i')
-    b = SessionBridge(runner=runner.run, session_factory=lambda **kw: makeSessionFake(id='wb_indep'), map_path=Path('/tmp/_notused_ind.json'))
+    b = SessionBridge(runner=runner.run, sessionFactory=lambda **kw: makeSessionFake(id='wb_indep'), mapPath=Path('/tmp/_notused_ind.json'))
     ad = MockAdapter(bridge=b)
     await ad.connect()
     ad.feed_nowait = lambda raw: asyncio.create_task(ad.handle_incoming(raw))
-    await asyncio.gather(ad.feed({'text': 'a', 'chat_id': '1', 'chat_type': 'dm'}), ad.feed({'text': 'b', 'chat_id': '2', 'chat_type': 'dm'}))
+    await asyncio.gather(ad.feed({'text': 'a', 'chatId': '1', 'chatType': 'dm'}), ad.feed({'text': 'b', 'chatId': '2', 'chatType': 'dm'}))
     await asyncio.sleep(0.05)
     assert len(runner.calls) == 2
 
@@ -283,12 +283,12 @@ async def testNonBypassSlashCommandsAreQueued():
     runner = StubRunner()
     runner.hold()
     fakeSession = makeSessionFake(id='wb_nb')
-    b = SessionBridge(runner=runner.run, session_factory=lambda **kw: fakeSession, map_path=Path('/tmp/_notused_nb.json'))
+    b = SessionBridge(runner=runner.run, sessionFactory=lambda **kw: fakeSession, mapPath=Path('/tmp/_notused_nb.json'))
     ad = MockAdapter(bridge=b)
     await ad.connect()
-    await ad.feed({'text': 'first', 'chat_id': '1', 'chat_type': 'dm'})
+    await ad.feed({'text': 'first', 'chatId': '1', 'chatType': 'dm'})
     await asyncio.sleep(0.02)
-    await ad.feed({'text': '/help', 'chat_id': '1', 'chat_type': 'dm'})
+    await ad.feed({'text': '/help', 'chatId': '1', 'chatType': 'dm'})
     runner.release()
     await asyncio.sleep(0.1)
     assert len(runner.calls) == 2

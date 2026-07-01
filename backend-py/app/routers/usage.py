@@ -43,7 +43,7 @@ async def getSessionUsage(id: str=Query(..., description='Session id')):
     """
     if not id:
         raise HTTPException(status_code=400, detail='Missing session id')
-    return memoryStore.get_usage(id)
+    return memoryStore.getUsage(id)
 
 @router.get('')
 async def listUsage():

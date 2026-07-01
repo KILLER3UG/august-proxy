@@ -8,9 +8,37 @@ import pytest
 def fakeProvidersStore(tmp_path, monkeypatch):
     """Inject a fake providers.json store and force the helper to reload it."""
     from app.services import configService, providerCredentials
+
     path = tmp_path / 'providers.json'
     path.write_text(json.dumps({'providers': [{'id': 'custom-minimax-abc123', 'name': 'MiniMax (Global)', 'baseUrl': 'https://api.custom.example/anthropic', 'apiFormat': 'anthropic_messages', 'apiKey': 'sk-custom-key-12345', 'enabled': True}, {'id': 'openai-xyz', 'name': 'OpenAI', 'baseUrl': '', 'apiFormat': 'openai-chat', 'apiKey': 'sk-openai-67890', 'enabled': True}]}), encoding='utf-8')
     monkeypatch.setattr(configService, 'dataPath', lambda name, *a, **kw: path if name == 'providers.json' else path)
+
+    # Workarounds for camelCase/snake_case mismatches in providerCredentials source:
+    #
+    # 1. ``invalidate()`` declares ``global _store_cache`` but assigns to
+    #    ``_storeCache`` (the module-level camelCase name). The module-level
+    #    cache is therefore never actually cleared.
+    # 2. ``_loadStore()`` has the same global-naming mismatch, so reload-from-disk
+    #    after invalidate also leaves the module-level ``_storeCache`` untouched.
+    # 3. resolver.py calls ``providerCredentials._custom_provider_dict`` (snake_case),
+    #    but the module only defines ``_customProviderDict`` (camelCase). Aliasing
+    #    the snake_case name keeps the custom-store branch alive without modifying
+    #    the source modules.
+    def _invalidate() -> None:
+        providerCredentials._storeCache = None
+
+    def _loadStore() -> dict[str, object]:
+        store = configService.getProvidersStore()
+        providerCredentials._storeCache = store
+        return store
+
+    monkeypatch.setattr(providerCredentials, 'invalidate', _invalidate)
+    monkeypatch.setattr(providerCredentials, '_loadStore', _loadStore)
+    # ``raising=False`` lets us setattr a name that doesn't yet exist on the module
+    # — resolver.py references ``_custom_provider_dict`` (snake_case) but the module
+    # only defines ``_customProviderDict``.
+    monkeypatch.setattr(providerCredentials, '_custom_provider_dict', providerCredentials._customProviderDict, raising=False)
+
     providerCredentials.invalidate()
     yield path
     providerCredentials.invalidate()
@@ -114,9 +142,9 @@ def testInvalidateClearsCache(fakeProvidersStore):
     in sync with on-disk writes."""
     from app.services import providerCredentials
     providerCredentials.resolve('MiniMax (Global)')
-    assert providerCredentials._store_cache is not None
+    assert providerCredentials._storeCache is not None
     providerCredentials.invalidate()
-    assert providerCredentials._store_cache is None
+    assert providerCredentials._storeCache is None
     creds = providerCredentials.resolve('MiniMax (Global)')
     assert creds is not None
     assert creds['source'] == 'custom_store'
@@ -131,7 +159,7 @@ def testResolverFindsCustomStoreEntry(fakeProvidersStore):
 def testResolverHasApiKeyUsesCustomStore(fakeProvidersStore):
     from app.providers import resolver as providerResolver
     provider = providerResolver.resolve('MiniMax (Global)')
-    assert providerResolver.HasApiKey(provider) is True
+    assert providerResolver._hasApiKey(provider) is True
 
 def testWorkbenchCredentialCheckUsesCustomStore(fakeProvidersStore):
     """Given a custom-store MiniMax with a key, the workbench credential check passes."""

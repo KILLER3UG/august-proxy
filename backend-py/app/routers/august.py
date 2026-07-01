@@ -32,7 +32,7 @@ async def manageAliases(body: AliasManageRequest):
     """Unified alias action endpoint used by the frontend's AliasesTab."""
     action = (body.action or '').lower()
     if action == 'list':
-        return {'aliases': aliasService.list_aliases()}
+        return {'aliases': aliasService.listAliases()}
     if action == 'upsert':
         alias = (body.alias or '').strip()
         if not alias:

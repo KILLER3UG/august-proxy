@@ -7,7 +7,7 @@ class TestBaseClient:
 
     def testSseParser(self):
         events = []
-        parser = SseStreamParser(on_event=lambda e, d: events.append((e, d)))
+        parser = SseStreamParser(onEvent=lambda e, d: events.append((e, d)))
         parser.feed('event: message_start\ndata: {"type":"message_start"}\n\n')
         parser.flush()
         assert len(events) == 1
@@ -15,7 +15,7 @@ class TestBaseClient:
 
     def testSseParserMultiple(self):
         events = []
-        parser = SseStreamParser(on_event=lambda e, d: events.append((e, d)))
+        parser = SseStreamParser(onEvent=lambda e, d: events.append((e, d)))
         parser.feed('event: a\ndata: {"i":1}\n\nevent: b\ndata: {"i":2}\n\n')
         parser.flush()
         assert len(events) == 2
@@ -41,12 +41,12 @@ class TestBaseClient:
 
     def testProviderResponse(self):
         resp = ProviderResponse(status=200, body={'ok': True})
-        assert resp.is_success is True
-        assert resp.is_error is False
-        assert resp.body_json == {'ok': True}
+        assert resp.isSuccess is True
+        assert resp.isError is False
+        assert resp.bodyJson == {'ok': True}
         resp2 = ProviderResponse(status=429, body='rate limited')
-        assert resp2.is_success is False
-        assert resp2.is_error is True
+        assert resp2.isSuccess is False
+        assert resp2.isError is True
 
 class TestAnthropicClient:
 

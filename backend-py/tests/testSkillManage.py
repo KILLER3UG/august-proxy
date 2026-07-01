@@ -66,14 +66,14 @@ def testPatchSkillAgent(isolatedSkills):
 
 def testWriteAndRemoveSkillFile(isolatedSkills):
     skillService.createSkill('files', 'Has support files.', 'body.')
-    skillService.write_skill_file('files', 'scripts/run.py', "print('hi')")
+    skillService.writeSkillFile('files', 'scripts/run.py', "print('hi')")
     with pytest.raises(SkillValidationError):
-        skillService.write_skill_file('files', '../escape.txt', 'x')
-    skillService.remove_skill_file('files', 'scripts/run.py')
+        skillService.writeSkillFile('files', '../escape.txt', 'x')
+    skillService.removeSkillFile('files', 'scripts/run.py')
     with pytest.raises(SkillValidationError):
-        skillService.remove_skill_file('files', 'scripts/run.py')
+        skillService.removeSkillFile('files', 'scripts/run.py')
     with pytest.raises(SkillValidationError):
-        skillService.remove_skill_file('files', 'SKILL.md')
+        skillService.removeSkillFile('files', 'SKILL.md')
 
 def testDeleteSkillAgentOnly(isolatedSkills):
     __, bundledRoot = isolatedSkills

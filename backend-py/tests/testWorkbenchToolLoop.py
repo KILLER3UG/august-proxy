@@ -62,12 +62,14 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setattr(wb, '_resolveModel', lambda p, hint='': 'stub-claude')
     monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session: 'stub system prompt')
     import app.providers.clients as clientsMod
+    from app.services import providerCredentials as providerCredsMod
+    monkeypatch.setattr(providerCredsMod, 'resolve', lambda name: {'api_key': 'stub-key'})
     stubHolder: dict[str, object] = {}
 
     def fakeGetClient(provider):
         return stubHolder['client']
-    monkeypatch.setattr(clientsMod, 'get_client', fakeGetClient)
-    monkeypatch.setattr('app.providers.clients.get_client', fakeGetClient)
+    monkeypatch.setattr(clientsMod, 'getClient', fakeGetClient)
+    monkeypatch.setattr('app.providers.clients.getClient', fakeGetClient)
     yield stubHolder
 
 def _capturedEvents():
@@ -85,12 +87,12 @@ class TestNoRoundCap:
     @pytest.mark.asyncio
     async def testLoopExceedsTenRoundsAndStopsOnCancel(self, _isolate):
         cancel = asyncio.Event()
-        stub = StubClient(mode='tool_forever', cancel_after=12)
-        stub.bind_cancel(cancel)
+        stub = StubClient(mode='tool_forever', cancelAfter=12)
+        stub.bindCancel(cancel)
         _isolate['client'] = stub
         events = _capturedEvents()
-        await wb.send_workbench_message_stream(session_id='wb_test_loop', message='loop test', model='stub-claude', emit=_emitTo(events), signal=cancel)
-        assert stub.call_count >= 11, f'loop stopped too early: {stub.call_count} rounds'
+        await wb.sendWorkbenchMessageStream(sessionId='wb_test_loop', message='loop test', model='stub-claude', emit=_emitTo(events), signal=cancel)
+        assert stub.callCount >= 11, f'loop stopped too early: {stub.callCount} rounds'
         types = [e['type'] for e in events]
         assert 'done' in types, "terminal 'done' event not emitted"
 
@@ -99,10 +101,10 @@ class TestNoRoundCap:
         stub = StubClient(mode='text_once')
         _isolate['client'] = stub
         events = _capturedEvents()
-        await wb.send_workbench_message_stream(session_id='wb_test_done', message='hi', model='stub-claude', emit=_emitTo(events))
+        await wb.sendWorkbenchMessageStream(sessionId='wb_test_done', message='hi', model='stub-claude', emit=_emitTo(events))
         types = [e['type'] for e in events]
         assert 'done' in types
-        assert stub.call_count == 1
+        assert stub.callCount == 1
 
 class TestTerminalEventGuaranteed:
 
@@ -111,7 +113,7 @@ class TestTerminalEventGuaranteed:
         stub = StubClient(mode='error')
         _isolate['client'] = stub
         events = _capturedEvents()
-        await wb.send_workbench_message_stream(session_id='wb_test_err', message='hi', model='stub-claude', emit=_emitTo(events))
+        await wb.sendWorkbenchMessageStream(sessionId='wb_test_err', message='hi', model='stub-claude', emit=_emitTo(events))
         types = [e['type'] for e in events]
         assert 'error' in types
         assert 'done' in types, 'done must be emitted even after a model error'
@@ -123,20 +125,20 @@ class TestTerminalEventGuaranteed:
         cancel = asyncio.Event()
         cancel.set()
         events = _capturedEvents()
-        await wb.send_workbench_message_stream(session_id='wb_test_cancel', message='hi', model='stub-claude', emit=_emitTo(events), signal=cancel)
+        await wb.sendWorkbenchMessageStream(sessionId='wb_test_cancel', message='hi', model='stub-claude', emit=_emitTo(events), signal=cancel)
         types = [e['type'] for e in events]
         assert 'done' in types, 'done must be emitted on cancellation'
-        assert stub.call_count == 0
+        assert stub.callCount == 0
 
     @pytest.mark.asyncio
     async def testDoneEmittedEvenIfSaveSessionsRaises(self, _isolate, monkeypatch):
         """The try/finally guarantees done even when persistence fails."""
-        session = wb.create_workbench_session(provider='stub-anthropic')
+        session = wb.createWorkbenchSession(provider='stub-anthropic')
         sid = session.id
         stub = StubClient(mode='text_once')
         _isolate['client'] = stub
         callCount = {'n': 0}
-        realSave = wb.save_sessions
+        realSave = wb.saveSessions
 
         def boom():
             callCount['n'] += 1
@@ -145,6 +147,6 @@ class TestTerminalEventGuaranteed:
             realSave()
         monkeypatch.setattr(wb, 'saveSessions', boom)
         events = _capturedEvents()
-        await wb.send_workbench_message_stream(session_id=sid, message='hi', model='stub-claude', emit=_emitTo(events))
+        await wb.sendWorkbenchMessageStream(sessionId=sid, message='hi', model='stub-claude', emit=_emitTo(events))
         types = [e['type'] for e in events]
-        assert 'done' in types, 'done must be emitted even if save_sessions raises'
+        assert 'done' in types, 'done must be emitted even if saveSessions raises'

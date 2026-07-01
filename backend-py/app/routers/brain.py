@@ -105,7 +105,7 @@ def _runSelfcheck(flagKey: str) -> dict:
         elif flagKey == 'prompt_caching':
             from app.services import promptCache
             try:
-                stats = promptCache.get_stats() if hasattr(promptCache, 'get_stats') else {}
+                stats = promptCache.getStats() if hasattr(promptCache, 'get_stats') else {}
                 hits = int(stats.get('hits', 0)) if isinstance(stats, dict) else 0
             except Exception:
                 hits = 0
@@ -117,7 +117,7 @@ def _runSelfcheck(flagKey: str) -> dict:
         elif flagKey == 'daemons':
             from app.services.daemonManager import getManager
             mgr = getManager()
-            d = mgr.list_daemons() or []
+            d = mgr.listDaemons() or []
             running = sum((1 for x in d if x.get('status') in ('running', 'idle')))
             return {'status': 'on & healthy' if d is not None else 'on & failing', 'detail': f"{len(d)} daemon{('s' if len(d) != 1 else '')} registered, {running} active"}
         elif flagKey == 'blackboard':

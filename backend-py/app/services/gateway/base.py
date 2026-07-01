@@ -56,9 +56,9 @@ def buildSessionKey(source: SessionSource, *, groupPerUser: bool=True) -> str:
     DMs → ``platform:chat_id``; groups → ``platform:chat_id:user_id`` so each
     user in a shared chat gets their own agent session.
     """
-    if source.chat_type == 'dm' or not groupPerUser or (not source.user_id):
-        return f'{source.platform}:{source.chat_id}'
-    return f'{source.platform}:{source.chat_id}:{source.user_id}'
+    if source.chatType == 'dm' or not groupPerUser or (not source.userId):
+        return f'{source.platform}:{source.chatId}'
+    return f'{source.platform}:{source.chatId}:{source.userId}'
 
 def shouldBypassActiveSession(cmd: str) -> bool:
     return cmd in BYPASS_COMMANDS
@@ -107,7 +107,7 @@ class BasePlatformAdapter(ABC):
         await self.dispatch(event)
 
     async def dispatch(self, event: MessageEvent) -> None:
-        sessionKey = buildSessionKey(event.source, group_per_user=self.config.get('group_per_user', True))
+        sessionKey = buildSessionKey(event.source, groupPerUser=self.config.get('groupPerUser', True))
         cmd = event.getCommand()
         if shouldBypassActiveSession(cmd):
             await self._handleBypassCommand(sessionKey, event, cmd)
@@ -147,12 +147,12 @@ class BasePlatformAdapter(ABC):
         if self._bridge is None:
             return
         try:
-            result = await self._bridge.invoke_agent(sessionKey, event.text)
+            result = await self._bridge.invokeAgent(sessionKey, event.text)
             if result.text and (not result.cancelled):
-                await self.sendMessage(event.source.chat_id, result.text)
+                await self.sendMessage(event.source.chatId, result.text)
         except Exception as exc:
             try:
-                await self.sendMessage(event.source.chat_id, f'[error] {exc}')
+                await self.sendMessage(event.source.chatId, f'[error] {exc}')
             except Exception:
                 pass
 
@@ -160,28 +160,28 @@ class BasePlatformAdapter(ABC):
         if self._bridge is None:
             return
         if cmd in {'stop', 'reset'}:
-            await self._bridge.cancel_running(sessionKey)
-            await self.sendMessage(event.source.chat_id, 'Stopped.')
+            await self._bridge.cancelRunning(sessionKey)
+            await self.sendMessage(event.source.chatId, 'Stopped.')
         elif cmd == 'new':
-            await self._bridge.cancel_running(sessionKey)
-            await self._bridge.reset_session(sessionKey)
-            await self.sendMessage(event.source.chat_id, 'New session started.')
+            await self._bridge.cancelRunning(sessionKey)
+            await self._bridge.resetSession(sessionKey)
+            await self.sendMessage(event.source.chatId, 'New session started.')
         elif cmd == 'status':
             active = sessionKey in self._activeSessions and (not self._activeSessions[sessionKey].done())
-            await self.sendMessage(event.source.chat_id, 'active' if active else 'idle')
+            await self.sendMessage(event.source.chatId, 'active' if active else 'idle')
         elif cmd == 'approve':
             from app.services.workbench import workbench as wb
-            sid = self._bridge.get_session_id(sessionKey) if self._bridge else None
-            if sid and wb.approve_workbench_plan(sid):
-                await self.sendMessage(event.source.chat_id, 'Plan approved.')
+            sid = self._bridge.getSessionId(sessionKey) if self._bridge else None
+            if sid and wb.approveWorkbenchPlan(sid):
+                await self.sendMessage(event.source.chatId, 'Plan approved.')
             else:
-                await self.sendMessage(event.source.chat_id, 'No pending plan to approve.')
+                await self.sendMessage(event.source.chatId, 'No pending plan to approve.')
         elif cmd == 'deny':
             from app.services.workbench import workbench as wb
-            sid = self._bridge.get_session_id(sessionKey) if self._bridge else None
-            if sid and wb.reject_workbench_plan(sid):
-                await self.sendMessage(event.source.chat_id, 'Plan rejected.')
+            sid = self._bridge.getSessionId(sessionKey) if self._bridge else None
+            if sid and wb.rejectWorkbenchPlan(sid):
+                await self.sendMessage(event.source.chatId, 'Plan rejected.')
             else:
-                await self.sendMessage(event.source.chat_id, 'No pending plan to reject.')
+                await self.sendMessage(event.source.chatId, 'No pending plan to reject.')
         else:
-            await self.sendMessage(event.source.chat_id, f'(command /{cmd} not yet wired)')
+            await self.sendMessage(event.source.chatId, f'(command /{cmd} not yet wired)')

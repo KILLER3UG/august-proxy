@@ -25,7 +25,7 @@ async def createTerminal(body: TerminalCreate):
 @router.get('')
 async def listTerminals():
     """List all terminal sessions."""
-    return {'sessions': terminalService.list_terminal_sessions()}
+    return {'sessions': terminalService.listTerminalSessions()}
 
 @router.get('/{session_id}')
 async def getTerminal(sessionId: str):

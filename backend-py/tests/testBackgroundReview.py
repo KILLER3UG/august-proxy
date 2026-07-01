@@ -17,23 +17,23 @@ from app.services.memoryStore import getMemory
 class TestReviewGates:
 
     def testFiresWhenTurnIntervalExceeded(self):
-        gates = ReviewGates(turn_interval=3, tool_round_interval=10)
-        assert gates.should_review(session_turns=5, tool_rounds=0, last_reviewed_at_turn=0) is True
-        assert gates.should_review(session_turns=2, tool_rounds=0) is False
+        gates = ReviewGates(turnInterval=3, toolRoundInterval=10)
+        assert gates.shouldReview(sessionTurns=5, toolRounds=0, lastReviewedAtTurn=0) is True
+        assert gates.shouldReview(sessionTurns=2, toolRounds=0) is False
 
     def testFiresWhenToolRoundIntervalExceeded(self):
-        gates = ReviewGates(turn_interval=10, tool_round_interval=5)
-        assert gates.should_review(session_turns=1, tool_rounds=6) is True
-        assert gates.should_review(session_turns=1, tool_rounds=3) is False
+        gates = ReviewGates(turnInterval=10, toolRoundInterval=5)
+        assert gates.shouldReview(sessionTurns=1, toolRounds=6) is True
+        assert gates.shouldReview(sessionTurns=1, toolRounds=3) is False
 
     def testRespectsLastReviewedAtTurn(self):
-        gates = ReviewGates(turn_interval=3, tool_round_interval=10)
-        assert gates.should_review(session_turns=5, last_reviewed_at_turn=3) is False
-        assert gates.should_review(session_turns=6, last_reviewed_at_turn=3) is True
+        gates = ReviewGates(turnInterval=3, toolRoundInterval=10)
+        assert gates.shouldReview(sessionTurns=5, lastReviewedAtTurn=3) is False
+        assert gates.shouldReview(sessionTurns=6, lastReviewedAtTurn=3) is True
 
     def testZeroTurnsNeverReview(self):
         gates = ReviewGates()
-        assert gates.should_review(session_turns=0) is False
+        assert gates.shouldReview(sessionTurns=0) is False
 
 def mkSession(**kw) -> object:
 
@@ -52,9 +52,9 @@ async def testTryBackgroundReviewSkipsWhenGateClosed():
     async def dummyLlm(__):
         called.append(True)
         return '{}'
-    session = mkSession(message_count=2)
+    session = mkSession(messageCount=2)
     messages = [{'role': 'user'}, {'role': 'assistant'}]
-    await tryBackgroundReview(session, messages, llm_client=dummyLlm)
+    await tryBackgroundReview(session, messages, llmClient=dummyLlm)
     assert called == []
 
 @pytest.mark.asyncio
@@ -64,10 +64,10 @@ async def testTryBackgroundReviewSpawnsWhenDue(isolatedSkills):
 
     async def stubLlm(_prompt):
         return json.dumps({'skills': [{'action': 'create', 'name': 'review-skill', 'description': 'Learned from review.', 'body': '## When to Use\n\nBody.\n'}], 'memory': []})
-    session = mkSession(message_count=8)
+    session = mkSession(messageCount=8)
     session._last_reviewed_at_turn = 0
     messages = [{'role': 'user', 'content': 'fix this'}, {'role': 'assistant', 'content': 'done'}]
-    await tryBackgroundReview(session, messages, llm_client=stubLlm)
+    await tryBackgroundReview(session, messages, llmClient=stubLlm)
     await asyncio.sleep(0.1)
     fetched = skillService.get('review-skill')
     assert fetched is not None, 'background review should have created the skill'
@@ -76,9 +76,9 @@ async def testTryBackgroundReviewSpawnsWhenDue(isolatedSkills):
 @pytest.mark.asyncio
 async def testTryBackgroundReviewNoLlmMeansNoop():
     """Without an LLM client, review is a no-op."""
-    session = mkSession(message_count=8)
+    session = mkSession(messageCount=8)
     messages = [{'role': 'user'}, {'role': 'assistant'}]
-    await tryBackgroundReview(session, messages, llm_client=None)
+    await tryBackgroundReview(session, messages, llmClient=None)
     assert True
 
 @pytest.mark.asyncio
@@ -87,7 +87,7 @@ async def testDoReviewCreatesSkillFromRecommendation(isolatedSkills):
 
     async def stubLlm(_prompt):
         return json.dumps({'skills': [{'action': 'create', 'name': 'stub-skill', 'description': 'Stub.', 'body': '## When to Use\n\nStub body.\n'}], 'memory': []})
-    result = await _doReview([{'role': 'user'}], llm_client=stubLlm)
+    result = await _doReview([{'role': 'user'}], llmClient=stubLlm)
     assert result['reviewed'] is True
     assert 'stub-skill' in result['skills_created']
     assert skillService.get('stub-skill') is not None
@@ -98,7 +98,7 @@ async def testDoReviewPatchesExistingSkill(isolatedSkills):
 
     async def stubLlm(_prompt):
         return json.dumps({'skills': [{'action': 'patch', 'name': 'patch-skill', 'body': '## When to Use\n\nPatched body.\n'}], 'memory': []})
-    result = await _doReview([{'role': 'user'}], llm_client=stubLlm)
+    result = await _doReview([{'role': 'user'}], llmClient=stubLlm)
     assert 'patch-skill' in result['skills_patched']
     fetched = skillService.get('patch-skill')
     assert 'Patched body.' in fetched['instructions']
@@ -108,7 +108,7 @@ async def testDoReviewSavesMemoryFacts(isolatedData):
 
     async def stubLlm(_prompt):
         return json.dumps({'skills': [], 'memory': [{'action': 'add', 'fact': 'User likes python.'}, {'action': 'add', 'fact': 'User prefers async code.'}]})
-    result = await _doReview([{'role': 'user'}], llm_client=stubLlm)
+    result = await _doReview([{'role': 'user'}], llmClient=stubLlm)
     assert len(result['facts_added']) == 2
     facts = getMemory('core_memory') or []
     assert len(facts) == 2
@@ -116,7 +116,7 @@ async def testDoReviewSavesMemoryFacts(isolatedData):
 
 @pytest.mark.asyncio
 async def testDoReviewNoClientIsNoop():
-    result = await _doReview([{'role': 'user'}], llm_client=None)
+    result = await _doReview([{'role': 'user'}], llmClient=None)
     assert result['reviewed'] is False
     assert result['skills_created'] == []
     assert result['facts_added'] == []
@@ -177,5 +177,5 @@ class TestLastRelevantMessages:
 
     def testRespectsMaxLen(self):
         messages = [{'role': 'user'} for __ in range(100)]
-        filtered = _lastRelevantMessages(messages, max_len=10)
+        filtered = _lastRelevantMessages(messages, maxLen=10)
         assert len(filtered) == 10

@@ -52,6 +52,12 @@ import {
   applySubagentEvent,
   activeStreamControllers,
 } from './chat-stream-manager';
+import {
+  $queuedMessagesBySession,
+  type QueuedUserMessage,
+  setQueuedMessages,
+  clearQueuedMessages,
+} from './queue-store';
 import { Markdown } from './ChatMarkdown';
 import { readFileContent, type FileReadResult } from '@/lib/file-reader';
 import { getFileIcon } from '@/lib/file-icon';
@@ -69,6 +75,9 @@ import {
   answerWorkbenchBtw,
   getWorkbenchSession,
   listWorkbenchCapabilities,
+  queueWorkbenchMessage,
+  dequeueWorkbenchMessage,
+  getQueuedWorkbenchMessages,
 } from '@/api/workbench';
 import type { WorkbenchBtwResult, WorkbenchSession } from '@/types/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
@@ -425,7 +434,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
   const [showCommandsDropdown, setShowCommandsDropdown] = useState(false);
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
-  const [queuedMessage, setQueuedMessage] = useState<{ text: string; attachments: FileAttachment[] } | null>(null);
+  // Mid-response queued messages live in the queue-store (per-session
+  // atom). ChatThread mirrors a local copy for quick synchronous access;
+  // the SSE subscriber writes back into the store when messages are
+  // added / removed / injected, and useStore on queuedMessages keeps
+  // this view in sync.
+  const queuedMessages = useStore($queuedMessagesBySession)[sessionId ?? ''] ?? [];
 
   // v3: /Exam slash command — overlay the ExamBanner with the given seed.
   const [examActive, setExamActive] = useState(false);
@@ -821,7 +835,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     setInput(loadComposerDraft(sessionId));
     setLoadedSessionId(sessionId);
-    setQueuedMessage(null); // Clear any queued message when switching sessions
+    // Hydrate the per-session queue from the backend so a queued message
+    // survives tab switches / page reloads. Clear local state first so
+    // we don't briefly show stale entries from another session.
+    if (sessionId) {
+      clearQueuedMessages(sessionId);
+      getQueuedWorkbenchMessages(sessionId)
+        .then((entries) => setQueuedMessages(sessionId, entries))
+        .catch((err) => {
+          // eslint-disable-next-line no-console
+          console.warn('[ChatThread] failed to hydrate queue', err);
+        });
+    }
   }, [sessionId]);
 
   // Persist messages to localStorage on every change
@@ -1219,33 +1244,42 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     });
   };
 
-  // Drain the message queue: if the user queued a follow-up while this
-  // turn was streaming, send it as soon as streaming finishes.
+  // Fallback drain: if the model never picked up the queued messages
+  // (e.g. the user cancelled the response mid-stream), the queue still
+  // holds entries when streaming ends. In that case we synthesize a
+  // fresh user message from the queued text and start a new turn. The
+  // backend already removes the entries when it drains them in-loop, so
+  // the queue store should be empty in the normal flow.
   useEffect(() => {
-    if (!streaming && queuedMessage && sessionId) {
-      const next = queuedMessage;
-      setQueuedMessage(null);
-
+    if (!sessionId || streaming) return;
+    const leftover = queuedMessages;
+    if (leftover.length === 0) return;
+    // Defer so we don't race with the finalize() of the just-ended turn.
+    const timer = setTimeout(() => {
+      const stillQueued = ($queuedMessagesBySession.get()[sessionId] ?? []);
+      if (stillQueued.length === 0) return;
+      const first = stillQueued[0];
+      const rest = stillQueued.slice(1);
       const userMsg: ChatMessage = {
         id: `m${Date.now()}`,
         role: 'user',
-        content: next.text,
+        content: first.text,
         timestamp: new Date().toISOString(),
-        attachments: next.attachments,
+        attachments: first.attachments,
+        queued: true,
       };
-
-      setMessages(prev => {
-        const nextMessages = [...prev, userMsg];
-        persistMessages(sessionId, nextMessages);
-        // Defer AI response to avoid nested updateSessionStreamState calls.
-        // The outer setMessages → updateSessionStreamState call would overwrite
-        // the placeholder that makeStreamHandlers adds synchronously inside
-        // generateAIResponse, leaving the assistant message ID orphaned.
-        setTimeout(() => generateAIResponse(nextMessages), 0);
-        return nextMessages;
-      });
-    }
-  }, [streaming, queuedMessage, sessionId]);
+      const remaining = rest.length > 0
+        ? [...(messagesRef.current), userMsg]
+        : [...(messagesRef.current), userMsg];
+      setMessages(remaining);
+      persistMessages(sessionId, remaining);
+      // Drop the entry we just consumed locally; the backend will see an
+      // empty queue when we POST the next /chat call.
+      setQueuedMessages(sessionId, rest);
+      setTimeout(() => generateAIResponse(remaining), 0);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [streaming, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const send = async () => {
     if (!sessionId || loadedSessionId !== sessionId) return;
@@ -1317,14 +1351,29 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       // Unrecognized slash command — let the backend handle it (or no-op).
     }
 
-    // Queue when streaming instead of dropping the message. The next turn
-    // starts automatically from `finalize()` once the current turn ends.
-    if (streaming) {
-      setQueuedMessage({ text, attachments: [...attachments] });
-      setInput('');
-      setAttachments([]);
-      setShowToolsDropdown(false);
-      setShowCommandsDropdown(false);
+    // Queue when streaming instead of dropping the message. The model will
+    // pick the queued message up at the next iteration boundary (between
+    // tool_results or after a text-only response) without interrupting
+    // the current response — the model then decides whether to act on
+    // it, defer it, or acknowledge it.
+    if (streaming && sessionId) {
+      try {
+        const savedAttachments = attachments.length > 0 ? [...attachments] : undefined;
+        const entry = await queueWorkbenchMessage(sessionId, text, savedAttachments);
+        // Optimistic local update: the SSE event will also arrive and
+        // upsert the same entry (idempotent), but write immediately so
+        // the pill is visible without a round-trip.
+        setQueuedMessages(sessionId, [...(queuedMessages), entry]);
+        setInput('');
+        setAttachments([]);
+        setShowToolsDropdown(false);
+        setShowCommandsDropdown(false);
+        clearComposerDraft(sessionId);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[send] queueWorkbenchMessage failed', err);
+        toast.error('Could not queue message');
+      }
       return;
     }
 
@@ -1740,23 +1789,47 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           document.body,
         )}
 
-        {/* Queued message pill — shown above the composer when a follow-up
-            message is waiting for the current turn to finish. */}
-        {queuedMessage && (
-          <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-xl border border-warning/30 bg-warning/5 text-[11px] animate-in fade-in slide-in-from-bottom-1 duration-150">
-            <span className="text-warning font-semibold uppercase tracking-wider">Queued</span>
-            <span className="truncate text-muted-foreground flex-1 min-w-0">
-              {queuedMessage.text.length > 120 ? queuedMessage.text.slice(0, 120).trim() + '…' : queuedMessage.text}
-            </span>
-            <button
-              type="button"
-              onClick={() => setQueuedMessage(null)}
-              className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition shrink-0"
-              title="Cancel queued message"
-              aria-label="Cancel queued message"
-            >
-              <X className="size-3" />
-            </button>
+        {/* Queued message pills — shown above the composer when one or
+            more follow-up messages are waiting to be delivered to the
+            model mid-response. Each pill has its own cancel button. */}
+        {queuedMessages.length > 0 && (
+          <div className="flex flex-col gap-1.5 mb-2 animate-in fade-in slide-in-from-bottom-1 duration-150">
+            {queuedMessages.map((q, i) => (
+              <div
+                key={q.id}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-warning/30 bg-warning/5 text-[11px]"
+              >
+                <span className="text-warning font-semibold uppercase tracking-wider">
+                  Queued {queuedMessages.length > 1 ? `(${i + 1}/${queuedMessages.length})` : ''}
+                </span>
+                <span className="truncate text-muted-foreground flex-1 min-w-0">
+                  {q.text.length > 120 ? q.text.slice(0, 120).trim() + '…' : q.text}
+                </span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!sessionId) return;
+                    try {
+                      await dequeueWorkbenchMessage(sessionId, q.id);
+                    } catch (err) {
+                      // eslint-disable-next-line no-console
+                      console.error('[dequeue] failed', err);
+                      toast.error('Could not cancel queued message');
+                    }
+                    // The SSE event will also remove the entry from the
+                    // store; optimistically drop it locally so the pill
+                    // disappears immediately.
+                    const remaining = queuedMessages.filter(e => e.id !== q.id);
+                    setQueuedMessages(sessionId, remaining);
+                  }}
+                  className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition shrink-0"
+                  title="Cancel queued message"
+                  aria-label="Cancel queued message"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            ))}
           </div>
         )}
 
@@ -2585,6 +2658,16 @@ function MessageBubble({
 	      {isUser ? (
 	        <>
 	          <div className="group rounded-xl border border-border/60 bg-card px-3.5 py-2 max-w-[80%] ml-auto shadow-xs hover:border-border/90 hover:shadow-soft transition-[border-color,box-shadow] duration-150">
+	            {/* Mid-response queued messages get a small "Queued" badge
+	                so the conversation flow makes it clear that the
+	                message arrived while the model was already working
+	                and was injected without interrupting. */}
+	            {message.queued && (
+	              <div className="flex items-center gap-1 mb-1 text-[10px] uppercase tracking-wider text-warning font-semibold">
+	                <span className="size-1.5 rounded-full bg-warning" />
+	                Queued
+	              </div>
+	            )}
 	            {editing ? (
 	              <div className="flex flex-col gap-2">
 	                <textarea
