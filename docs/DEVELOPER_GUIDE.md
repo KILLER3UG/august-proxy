@@ -160,6 +160,41 @@ report):
 `workbench._now`, `scheduler._now`). Note: `utcnow()` is deprecated in Python
 3.12+; new code should prefer `datetime.now(timezone.utc)`.
 
+### Type safety
+
+- **Python — no `Any` in new code.** Use `TypedDict` from
+  `app/typeAliases.py` for JSON row shapes, `JsonValue` for genuinely
+  heterogeneous JSON, and concrete primitives / `datetime` /
+  Pydantic models where they apply. The repo runs `mypy` in CI;
+  warnings block merge.
+- **TypeScript — no `any` in new code.** ESLint
+  (`@typescript-eslint/no-explicit-any: error`) blocks new `any`
+  in CI. Use `unknown` + narrowing for runtime data, concrete
+  interfaces from `@/types/*`, and Zod schemas at the API boundary.
+- **`catch (e: any)` is forbidden.** Always `catch (e)` (which is
+  `unknown` under strict mode) and narrow with `instanceof Error`:
+  ```ts
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    toast.error('...', { description: message });
+  }
+  ```
+- **AbortError detection** uses `e instanceof Error && e.name === 'AbortError'`.
+- **Vendor globals** (`SpeechRecognition`, `__TAURI_INTERNALS__`,
+  `hljs`) live in `src/types/dom.d.ts` as `Window` augmentations.
+  Never use `(window as any).X` — import the augmentation.
+- **Shared domain types** live in `src/types/chat.ts`,
+  `src/types/workbench.ts`, and `src/api/schemas/*.ts`. Don't
+  duplicate definitions — import and (if needed) re-export.
+- **Zod schemas at the API boundary.** When you write a new fetcher
+  in `src/api/*`, add a Zod schema in `src/api/schemas/*` and call
+  `safeParse` to log drift warnings. Drift warnings are the signal
+  to update either the schema or the TS interface.
+- **Workbench SSE events** must round-trip through
+  `WorkbenchEventSchema` (see `src/api/schemas/workbench.ts`). The
+  schema and the `WorkbenchEvent` type are kept in sync by hand;
+  adding a new variant requires updating both.
+
 ---
 
 ## Adding a new provider
