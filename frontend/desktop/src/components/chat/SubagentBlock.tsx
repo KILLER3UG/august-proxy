@@ -27,7 +27,7 @@
 import { useState, useEffect, useMemo, type ReactNode, type ReactElement } from 'react';
 import { ChevronDown, ChevronRight, Loader2, CheckCircle2, AlertCircle, StopCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { MessageBlock } from '@/sections/chat/ChatThread';
+import type { MessageBlock } from '@/types/chat';
 import type { SubagentBlockState } from '@/sections/chat/chat-stream-manager';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { ToolCallItem } from '@/components/chat/ToolCallItem';

@@ -82,106 +82,34 @@ import { usageApi } from '@/api/usage';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import { addWorkspace } from '@/store/workspaces';
 import { ModelPickerCard } from './ModelPickerCard';
+// Chat domain types live in `@/types/chat` (Phase 2 refactor). Re-export
+// from the canonical location so existing `from './ChatThread'` imports
+// keep working without churn, and import for local use in this file.
+import type {
+  ChatMessage,
+  MessageBlock,
+  FileAttachment,
+} from '@/types/chat';
+export type {
+  ChatMessage,
+  MessageBlock,
+  FileAttachment,
+  WorkbenchBtwState,
+  WorkbenchMode,
+  EffortLevel,
+  ChatMessageTodo,
+  ChatMessageClarify,
+} from '@/types/chat';
 
 let visibleSessionId: string | null = null;
 let visibleGeneration = 0;
 
 const STREAM_UPDATE_INTERVAL_MS = 24;
 
-export interface MessageBlock {
-  id: string;
-  type: 'thinking' | 'tool_call' | 'command' | 'final_output';
-  content?: string;
-  tool?: {
-    id: string;
-    name: string;
-    context?: string;
-    args?: string;
-    preview?: string;
-    summary?: string;
-    error?: string;
-    status: 'running' | 'done' | 'error';
-    duration?: number;
-    startedAt?: number;
-    pendingApproval?: {
-      message?: string;
-      detail?: string;
-      confirmationToken?: string;
-    };
-  };
-  isRevisedPlan?: boolean;
-}
-
-export interface FileAttachment {
-  name: string;
-  size: string;
-  /** Extracted text content for text-type files (PDF, DOCX, code, etc.) */
-  content?: string;
-  /** Base64 data URL for images. */
-  dataUrl?: string;
-  /** Whether the file content was successfully extracted. */
-  type: 'text' | 'image' | 'unsupported';
-  /** True if content was truncated due to size limits. */
-  truncated?: boolean;
-}
-
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'tool';
-  content: string;
-  timestamp: string;
-  /** Optional message kind. Used for special rendering (e.g. 'help' panel,
-   * registry-driven inline cards, subagent approval cards). */
-  kind?: 'help' | 'voice-command-card' | 'subagent-approval';
-  /** When kind === 'voice-command-card', the registry id of the command. */
-  commandId?: string;
-  /** Optional context payload for inline cards and approvals. */
-  context?: Record<string, unknown>;
-  /** Work breakdown items for kind === 'subagent-approval'. */
-  breakdown?: Array<{ goal: string; restrictedTools?: string[] }>;
-  attachments?: FileAttachment[];
-  tool?: {
-    name: string;
-    args?: string;
-    status: 'running' | 'done' | 'error';
-    duration?: number;
-    result?: string;
-  };
-  tools?: Array<{
-    name: string;
-    context?: string;
-    id: string;
-    status: 'running' | 'done' | 'error';
-    summary?: string;
-    error?: string;
-    preview?: string;
-    duration?: number;
-    startedAt?: number;
-  }>;
-  thinking?: string;
-  thinkingDuration?: number;
-  /** Hoisted todo panel */
-  todos?: Array<{
-    id: string;
-    content: string;
-    status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
-  }>;
-  /** Inline Workbench mutation summary shown after the final response. */
-  changedFiles?: GitDiffResult;
-  /** Inline clarify/question */
-  clarify?: {
-    question?: string;
-    choices?: string[];
-    /** Multi-question flow; wins over the legacy `question`/`choices` when present. */
-    questions?: Array<{ question: string; choices?: string[] }>;
-    /** 0-indexed; managed by the popup. */
-    currentIndex?: number;
-    /** Header line above the question (e.g. "Synthesized user context to craft …"). */
-    contextSummary?: string;
-    answer?: string;
-  };
-  blocks?: MessageBlock[];
-}
+// NOTE: ChatMessage / MessageBlock / FileAttachment were historically
+// defined here. After the Phase 2 type-centralisation refactor they live
+// in `@/types/chat`; see the re-export block above. The local
+// definitions were removed on 2026-06-30.
 
 interface ModelItem {
   id: string;

@@ -1,5 +1,6 @@
 import { atom } from 'nanostores';
-import type { ChatMessage, MessageBlock } from './ChatThread';
+import type { ChatMessage, MessageBlock } from '@/types/chat';
+import type { WorkbenchMode, EffortLevel } from '@/types/chat';
 import type { WorkbenchSession } from '@/types/workbench';
 import { streamWorkbenchChat, streamWorkbenchReconnect, stopWorkbenchChat } from '@/api/workbench';
 import { setSessionStatus, clearSessionStatus, $sessions } from '@/store/sessions';
@@ -23,26 +24,25 @@ export interface SessionStreamState {
    *  events for the sub-agent are rendered nested under the parent
    *  `august__spawn_subagent` / `august__run_team` tool call. */
   subagentBlocks: Map<string, SubagentBlockState>;
-  toolProgress: Map<string, ReadonlyArray<{ path: string; status: 'reading' | 'read' }>>;
-  workbenchBtw: any;
+  toolProgress: Map<string, ReadonlyArray<ToolProgressEntry>>;
+  workbenchBtw: WorkbenchBtwState | null;
   workbenchSession: WorkbenchSession | null;
 }
 
-export interface SubagentBlockState {
-  id: string;
-  jobId: string;
-  parentToolId: string;
-  agentId: string;
-  scope?: string;
-  task?: string;
-  depth?: number;
-  status: 'running' | 'completed' | 'failed' | 'cancelled';
-  startedAt: number;
-  finishedAt?: number;
-  /** Inner blocks (thinking/text/tool_call/tool_result) — same shape as
-   *  the parent message's blocks. */
-  blocks: MessageBlock[];
-  error?: string;
+export type {
+  ChatMessage,
+  MessageBlock,
+  SubagentBlockState,
+  ToolProgressEntry,
+  WorkbenchBtwState,
+} from '@/types/chat';
+import type { SubagentBlockState, ToolProgressEntry, WorkbenchBtwState, AppendBlockEvent } from '@/types/chat';
+
+/** Apply a React-style SetStateAction updater to a previous value. Mirrors
+ *  the semantics of `React.Dispatch<React.SetStateAction<T>>` so the chat
+ *  store layer can use the same calling convention. */
+function applyUpdater<T>(updater: T | ((prev: T) => T), prev: T): T {
+  return typeof updater === 'function' ? (updater as (prev: T) => T)(prev) : updater;
 }
 
 // Global store for the stream states of all sessions
@@ -120,7 +120,7 @@ export function getOrInitSessionStreamState(sessionId: string | null): SessionSt
   if (activeSession?.workbenchSessionId) {
     workbenchSession = {
       id: activeSession.workbenchSessionId,
-      provider: (activeSession.workbenchProvider || 'claude') as any,
+      provider: (activeSession.workbenchProvider || 'claude'),
       agentId: activeSession.workbenchAgentId || 'build',
       agentRole: activeSession.workbenchAgentId || 'build',
       agentMode: 'assistant',
@@ -185,12 +185,12 @@ export async function startChatStream(
   params: {
     message: string;
     chatHistory: ChatMessage[];
-    workbenchMode: any;
-    effort: any;
+    workbenchMode: WorkbenchMode;
+    effort: EffortLevel;
     model: string | undefined;
     modelProvider: string | undefined;
     getWorkbenchProvider: () => 'claude' | 'codex';
-    ensureWorkbenchSession: () => Promise<any>;
+    ensureWorkbenchSession: () => Promise<WorkbenchSession | null>;
   }
 ) {
   if (activeStreamControllers.has(sessionId)) {
@@ -218,7 +218,7 @@ export async function startChatStream(
     initialMessages: params.chatHistory,
     setMessages: (updater) => {
       updateSessionStreamState(sessionId, prev => {
-        const nextMsgs = typeof updater === 'function' ? (updater as any)(prev.messages) : updater;
+        const nextMsgs = applyUpdater(updater, prev.messages);
         persistMessages(sessionId, nextMsgs);
         return { messages: nextMsgs };
       });
@@ -230,13 +230,13 @@ export async function startChatStream(
     },
     setSubagentPrompts: (updater) => {
       updateSessionStreamState(sessionId, prev => {
-        const nextPrompts = typeof updater === 'function' ? (updater as any)(prev.subagentPrompts) : updater;
+        const nextPrompts = applyUpdater(updater, prev.subagentPrompts);
         return { subagentPrompts: nextPrompts };
       });
     },
     setToolProgress: (updater) => {
       updateSessionStreamState(sessionId, prev => {
-        const nextProgress = typeof updater === 'function' ? (updater as any)(prev.toolProgress) : updater;
+        const nextProgress = applyUpdater(updater, prev.toolProgress);
         return { toolProgress: nextProgress };
       });
     },
@@ -365,7 +365,7 @@ export async function stopChatStream(sessionId: string) {
 // Reconnect/sync stream with the backend
 export async function reconnectChatStream(
   sessionId: string,
-  ensureWorkbenchSession: () => Promise<any>
+  ensureWorkbenchSession: () => Promise<WorkbenchSession | null>
 ) {
   if (activeStreamControllers.has(sessionId)) {
     // Already active
@@ -400,7 +400,7 @@ export async function reconnectChatStream(
     initialMessages,
     setMessages: (updater) => {
       updateSessionStreamState(sessionId, prev => {
-        const nextMsgs = typeof updater === 'function' ? (updater as any)(prev.messages) : updater;
+        const nextMsgs = applyUpdater(updater, prev.messages);
         persistMessages(sessionId, nextMsgs);
         return { messages: nextMsgs };
       });
@@ -412,13 +412,13 @@ export async function reconnectChatStream(
     },
     setSubagentPrompts: (updater) => {
       updateSessionStreamState(sessionId, prev => {
-        const nextPrompts = typeof updater === 'function' ? (updater as any)(prev.subagentPrompts) : updater;
+        const nextPrompts = applyUpdater(updater, prev.subagentPrompts);
         return { subagentPrompts: nextPrompts };
       });
     },
     setToolProgress: (updater) => {
       updateSessionStreamState(sessionId, prev => {
-        const nextProgress = typeof updater === 'function' ? (updater as any)(prev.toolProgress) : updater;
+        const nextProgress = applyUpdater(updater, prev.toolProgress);
         return { toolProgress: nextProgress };
       });
     },
@@ -456,7 +456,7 @@ export async function reconnectChatStream(
 }
 
 // Sync all active streams with the backend
-export async function syncActiveStreams(ensureWorkbenchSession: () => Promise<any>) {
+export async function syncActiveStreams(ensureWorkbenchSession: () => Promise<WorkbenchSession | null>) {
   try {
     const res = await fetch('/api/workbench/chat/active');
     if (!res.ok) return;
@@ -638,19 +638,7 @@ export function getSessionSubscriberLastSeq(sessionId: string): number {
 
 export function appendBlockEvent(
   prevBlocks: MessageBlock[],
-  event: {
-	    type: 'thinking' | 'text' | 'content' | 'final_output' | 'tool_call' | 'command' | 'tool_progress' | 'tool_result';
-    content?: string;
-    name?: string;
-    id?: string;
-    context?: string;
-    preview?: string;
-    summary?: string;
-    error?: string;
-    status?: 'running' | 'done' | 'error';
-    duration?: number;
-    isRevisedPlan?: boolean;
-  }
+  event: AppendBlockEvent
 ): MessageBlock[] {
   const blocks = [...prevBlocks];
   const lastBlock = blocks[blocks.length - 1];
@@ -751,8 +739,8 @@ export function applySubagentEvent(
     | { type: 'subagent_start'; jobId: string; agentId: string; parentToolUseId?: string; scope?: string; task?: string; depth?: number }
     | { type: 'subagent_thinking'; jobId: string; content?: string }
     | { type: 'subagent_text'; jobId: string; content?: string }
-    | { type: 'subagent_tool_call'; jobId: string; id: string; name: string; input?: any; context?: string; status?: 'running' | 'done' | 'error' }
-    | { type: 'subagent_tool_result'; jobId: string; id: string; content?: any; is_error?: boolean; status?: 'done' | 'error' | 'running'; summary?: string; error?: string; duration?: number }
+    | { type: 'subagent_tool_call'; jobId: string; id: string; name: string; input?: Record<string, unknown>; context?: string; status?: 'running' | 'done' | 'error' }
+    | { type: 'subagent_tool_result'; jobId: string; id: string; content?: unknown; is_error?: boolean; status?: 'done' | 'error' | 'running'; summary?: string; error?: string; duration?: number }
     | { type: 'subagent_done'; jobId: string; status?: 'completed' | 'failed' | 'cancelled'; message?: string; result?: string }
 ): boolean {
   if (!sessionId || !event?.jobId) return false;
@@ -861,14 +849,14 @@ export function applySubagentEvent(
 // in addition to the existing poller. This is the frontend half of issue #2:
 // long tool→think cycles stay live across interruptions.
 
-let _registeredEnsureSession: ((sessionId: string) => Promise<any>) | null = null;
+let _registeredEnsureSession: ((sessionId: string) => Promise<WorkbenchSession | null>) | null = null;
 let _resyncListenersAttached = false;
 
 /** Register the ensureWorkbenchSession callback used by the auto-resync
  *  listeners, and attach the window listeners (idempotently). Called once
  *  at app init with the real session-ensure function. */
 export function registerStreamResync(
-  ensureWorkbenchSession: (sessionId: string) => Promise<any>,
+  ensureWorkbenchSession: (sessionId: string) => Promise<WorkbenchSession | null>,
 ): void {
   _registeredEnsureSession = ensureWorkbenchSession;
   if (_resyncListenersAttached || typeof window === 'undefined') return;

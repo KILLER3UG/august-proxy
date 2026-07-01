@@ -26,7 +26,8 @@
  * the stream and then calls `finalize` exactly once.
  */
 
-import type { ChatMessage, MessageBlock } from './ChatThread';
+import type { ChatMessage, MessageBlock, WorkbenchBtwState, AppendBlockEvent } from '@/types/chat';
+import type { ChatTurnRecord } from './chat-runtime';
 import type { WorkbenchEventHandlers, WorkbenchSession } from '@/types/workbench';
 import type { GitDiffResult } from '@/api/git';
 import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
@@ -58,11 +59,11 @@ export interface MakeStreamHandlersOptions {
     jobId?: string;
   }>>>;
   setToolProgress: React.Dispatch<React.SetStateAction<ToolProgressMap>>;
-  setWorkbenchBtw: (result: any) => void;
+  setWorkbenchBtw: (result: WorkbenchBtwState | null) => void;
 
   isTurnVisible: (sessionId: string) => boolean;
-  finishTurn: (turn: any, status: 'done' | 'error' | 'aborted') => void;
-  turn: any;
+  finishTurn: (turn: ChatTurnRecord, status: 'done' | 'error' | 'aborted') => void;
+  turn: ChatTurnRecord;
 
 
 
@@ -73,7 +74,7 @@ export interface MakeStreamHandlersOptions {
   /** Pure reducer that merges a new SSE event into the streamBlocks
    *  array. Lives in ChatThread.tsx so the composer and the factory
    *  share the exact same merging behavior. */
-  appendBlockEvent: (prev: MessageBlock[], event: any) => MessageBlock[];
+  appendBlockEvent: (prev: MessageBlock[], event: AppendBlockEvent) => MessageBlock[];
 }
 
 export interface StreamHandlers {
@@ -119,7 +120,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   let changedFiles: GitDiffResult | null = null;
   let beforeMutationCount = initialMutationCount ?? 0;
   let latestMutationCount = 0;
-  let latestWorkbenchTodos: any[] = [];
+  let latestWorkbenchTodos: NonNullable<ChatMessage['todos']> = [];
   const thinkingStart = Date.now();
   let thinkingEnd: number | null = null;
   let finished = false;
