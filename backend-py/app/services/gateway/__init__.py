@@ -1,0 +1,1 @@
+"""Gateway package — ingest-side messaging adapters."""

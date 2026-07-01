@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
 import { StatusPill, variantForRollbackStatus } from '@/components/workspace/StatusPill';
-import { getRollbackList, getRollbackSummary, undoAugustRollback, type RollbackEntry } from '@/api/backend-ui';
+import { getRollbackList, getRollbackSummary, undoAugustRollback, type RollbackEntry } from '@/api/api-client';
 import { formatTimeAgo } from '@/lib/utils';
 import { toast } from 'sonner';
 

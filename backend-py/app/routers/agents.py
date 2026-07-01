@@ -1,0 +1,101 @@
+"""Agent system API routes.
+
+Backed by the persistent ``agent_registry`` service (SQLite KV) — the
+previous in-memory store is gone, so agents now survive restarts. Adds an
+update route and a rooted-tree query used by the frontend AgentTree.
+"""
+from __future__ import annotations
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+from app.services.tools import agentRegistry
+router = APIRouter(prefix='/api/agents')
+
+class AgentCreate(BaseModel):
+    name: str
+    parentId: str = ''
+    parentAgent: str = ''
+    permissions: list[str] = []
+    toolsets: list[str] = []
+    tools: list[str] = []
+    model: str = ''
+    provider: str = ''
+    modelAlias: str = ''
+    role: str = ''
+    description: str = ''
+
+class AgentUpdate(BaseModel):
+    name: str | None = None
+    parentId: str | None = None
+    permissions: list[str] | None = None
+    toolsets: list[str] | None = None
+    tools: list[str] | None = None
+    model: str | None = None
+    provider: str | None = None
+    modelAlias: str | None = None
+    role: str | None = None
+    description: str | None = None
+
+class AgentJob(BaseModel):
+    agentId: str
+    goal: str
+    context: str = ''
+
+@router.get('')
+async def listAgents():
+    """List all registered agents."""
+    return {'agents': agentRegistry.listAgents()}
+
+@router.post('')
+async def createAgent(body: AgentCreate):
+    """Register a new agent (persisted)."""
+    return agentRegistry.createAgent(name=body.name, parentId=body.parentId, parentAgent=body.parentAgent, permissions=body.permissions, toolsets=body.toolsets, tools=body.tools, model=body.model, provider=body.provider, modelAlias=body.modelAlias, role=body.role, description=body.description, actor='ui')
+
+@router.get('/tree')
+async def getTree(root: str='', maxDepth: int=Query(4)):
+    """Return a recursive agent tree (frontend AgentTree)."""
+    return agentRegistry.getAgentTreeRooted(root=root, maxDepth=maxDepth)
+
+@router.get('/{agent_id}')
+async def getAgent(agentId: str):
+    agent = agentRegistry.getAgent(agentId)
+    if not agent:
+        raise HTTPException(status_code=404, detail='Agent not found')
+    return agent
+
+@router.put('/{agent_id}')
+async def updateAgent(agentId: str, body: AgentUpdate):
+    """Update an existing agent's configuration."""
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    agent = agentRegistry.updateAgent(agentId, updates, actor='ui')
+    if not agent:
+        raise HTTPException(status_code=404, detail='Agent not found')
+    return agent
+
+@router.delete('/{agent_id}')
+async def deleteAgent(agentId: str):
+    if not agentRegistry.deleteAgent(agentId, actor='ui'):
+        raise HTTPException(status_code=404, detail='Agent not found')
+    return {'status': 'ok', 'deleted': agentId}
+
+@router.get('/{agent_id}/tree')
+async def getAgentTree(agentId: str):
+    """Get an agent and its direct children."""
+    tree = agentRegistry.getAgent_tree(agentId)
+    if not tree:
+        raise HTTPException(status_code=404, detail='Agent not found')
+    return tree
+
+@router.post('/jobs')
+async def createJob(body: AgentJob):
+    return agentRegistry.create_job(body.agentId, body.goal, body.context)
+
+@router.get('/jobs')
+async def listJobs(agentId: str=''):
+    return {'jobs': agentRegistry.listJobs(agentId)}
+
+@router.get('/jobs/{job_id}')
+async def getJob(jobId: str):
+    for job in agentRegistry.listJobs():
+        if job.get('id') == jobId:
+            return job
+    raise HTTPException(status_code=404, detail='Job not found')

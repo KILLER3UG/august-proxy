@@ -7,8 +7,13 @@ import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { hydrateTheme } from './lib/theme';
+// Phase 1A: import built-in voice commands. Side-effect: registers the
+// 10 default commands on the singleton VoiceCommandRegistry at app boot.
+// Plugins can call voiceCommandRegistry.register(...) at runtime.
+import './api/voice/builtins';
 import App from './App';
 import './styles.css';
+import 'katex/dist/katex.min.css'; // KaTeX math typesetting (v4 §16.1)
 
 // Apply persisted theme + text-size synchronously before React mounts
 // to prevent FOUC where the wrong theme flashes on first paint.

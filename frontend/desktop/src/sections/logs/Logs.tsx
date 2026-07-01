@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { StatusPill } from '@/components/StatusPill';
 import { Search, Copy, Check } from 'lucide-react';
 import { formatTimeAgo } from '@/lib/utils';
-import { getRequests, getActivity, type ActivityEntry, type Period } from '@/api/backend-ui';
+import { getRequests, getActivity, type ActivityEntry, type Period } from '@/api/api-client';
 
 /**
  * Logs view. There is no dedicated /ui/logs endpoint, so we compose the log

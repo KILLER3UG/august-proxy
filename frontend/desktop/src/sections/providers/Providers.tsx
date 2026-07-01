@@ -106,8 +106,9 @@ export function Providers() {
     try {
       await api.put('/api/config/activeProvider', { provider: providerId });
       queryClient.invalidateQueries({ queryKey: ['providers'] });
-    } catch (e: any) {
-      setSaveMsg({ id: providerId, type: 'err', text: e.message || 'Failed to activate' });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setSaveMsg({ id: providerId, type: 'err', text: message || 'Failed to activate' });
     } finally {
       setSaving(null);
     }
@@ -124,8 +125,9 @@ export function Providers() {
       setSaveMsg({ id: providerId, type: 'ok', text: 'Saved' });
       queryClient.invalidateQueries({ queryKey: ['providers'] });
       queryClient.invalidateQueries({ queryKey: ['model-options'] });
-    } catch (e: any) {
-      setSaveMsg({ id: providerId, type: 'err', text: e.message || 'Save failed' });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setSaveMsg({ id: providerId, type: 'err', text: message || 'Save failed' });
     } finally {
       setSaving(null);
     }

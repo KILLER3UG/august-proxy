@@ -8,110 +8,110 @@
 
 @layer base {
   :root {
-    /* Surface palette */
-    --dt-background: #f8faff;
-    --dt-foreground: #17171a;
+    /* Surface palette — warmer, quieter neutrals (off the blue tint) */
+    --dt-background: #fbfbfa;
+    --dt-foreground: #1c1c1e;
     --dt-card: #ffffff;
-    --dt-card-foreground: #17171a;
-    --dt-muted: #f1f5f9;
-    --dt-muted-foreground: #64748b;
+    --dt-card-foreground: #1c1c1e;
+    --dt-muted: #f4f4f3;
+    --dt-muted-foreground: #6b6b70;
     --dt-popover: #ffffff;
-    --dt-popover-foreground: #17171a;
+    --dt-popover-foreground: #1c1c1e;
     --dt-elevated: #ffffff;
     --dt-overlay: rgba(15, 23, 42, 0.55);
 
-    /* Brand */
-    --dt-primary: #0053fd;
+    /* Brand — desaturated, reserved for action/focus */
+    --dt-primary: #2f6df6;
     --dt-primary-foreground: #ffffff;
-    --dt-secondary: #eff6ff;
+    --dt-secondary: #eef3ff;
     --dt-secondary-foreground: #1e293b;
-    --dt-accent: #dbeafe;
+    --dt-accent: #eef3ff;
     --dt-accent-foreground: #1e3a8a;
-    --dt-border: #e2e8f0;
-    --dt-input: #cbd5e1;
-    --dt-ring: #0053fd;
+    --dt-border: #ececea;
+    --dt-input: #dededa;
+    --dt-ring: #2f6df6;
 
-    /* Status */
-    --dt-destructive: #cf2d56;
+    /* Status — muted, not neon */
+    --dt-destructive: #d2503f;
     --dt-destructive-foreground: #ffffff;
-    --dt-success: #10b981;
+    --dt-success: #2e9e6b;
     --dt-success-fg: #047857;
-    --dt-warning: #f59e0b;
+    --dt-warning: #c98a14;
     --dt-warning-fg: #b45309;
     --dt-info: #3b82f6;
     --dt-info-fg: #1d4ed8;
-    --dt-danger: #ef4444;
+    --dt-danger: #d2503f;
     --dt-danger-fg: #b91c1c;
 
     /* Code surfaces */
-    --dt-code-inline: #4338ca;
-    --dt-code-block-bg: #0f172a;
-    --dt-code-block-fg: #e2e8f0;
+    --dt-code-inline: #b3215f;
+    --dt-code-block-bg: #f6f6f5;
+    --dt-code-block-fg: #1c1c1e;
 
     /* Sidebar */
-    --dt-sidebar: #f3f7ff;
-    --dt-sidebar-foreground: #17171a;
-    --dt-sidebar-primary: #0053fd;
+    --dt-sidebar: #f8f8f7;
+    --dt-sidebar-foreground: #1c1c1e;
+    --dt-sidebar-primary: #2f6df6;
     --dt-sidebar-primary-foreground: #ffffff;
-    --dt-sidebar-accent: #dbeafe;
+    --dt-sidebar-accent: #eef3ff;
     --dt-sidebar-accent-foreground: #1e3a8a;
-    --dt-sidebar-border: #e2e8f0;
-    --dt-sidebar-ring: #0053fd;
+    --dt-sidebar-border: #ececea;
+    --dt-sidebar-ring: #2f6df6;
 
-	    /* Base font-size — overridden by data-text-size for scaling */
-	    font-size: 16px;
+    /* Base font-size — overridden by data-text-size for scaling */
+    font-size: 16px;
   }
 
   .dark {
-    /* Surface palette (tuned: warmer, more separation between tiers) */
-    --dt-background: #0c0d10;
-    --dt-foreground: #f1f5f9;
-    --dt-card: #15171b;
-    --dt-card-foreground: #f1f5f9;
-    --dt-muted: #1f2128;
-    --dt-muted-foreground: #94a3b8;
-    --dt-popover: #1f2128;
-    --dt-popover-foreground: #f1f5f9;
+    /* Surface palette — true-neutral charcoal, three clear tiers */
+    --dt-background: #0e0e10;
+    --dt-foreground: #ececee;
+    --dt-card: #161618;
+    --dt-card-foreground: #ececee;
+    --dt-muted: #1d1d20;
+    --dt-muted-foreground: #9a9aa2;
+    --dt-popover: #1d1d20;
+    --dt-popover-foreground: #ececee;
     --dt-elevated: #1a1c22;
     --dt-overlay: rgba(0, 0, 0, 0.65);
 
-    /* Brand (slightly brighter primary for AAA contrast on near-black) */
-    --dt-primary: #6b9aff;
-    --dt-primary-foreground: #0c0d10;
-    --dt-secondary: #1e3a8a;
+    /* Brand — bright enough for AAA on charcoal, still restrained */
+    --dt-primary: #6f9bff;
+    --dt-primary-foreground: #0e0e10;
+    --dt-secondary: #1a2238;
     --dt-secondary-foreground: #dbeafe;
-    --dt-accent: #1e3a8a;
+    --dt-accent: #1a2238;
     --dt-accent-foreground: #dbeafe;
-    --dt-border: #23262d;
+    --dt-border: #262629;
     --dt-input: #2a2a2e;
-    --dt-ring: #6b9aff;
+    --dt-ring: #6f9bff;
 
     /* Status */
-    --dt-destructive: #f87171;
+    --dt-destructive: #f0766a;
     --dt-destructive-foreground: #ffffff;
-    --dt-success: #34d399;
+    --dt-success: #45c08a;
     --dt-success-fg: #6ee7b7;
-    --dt-warning: #fbbf24;
+    --dt-warning: #e0b341;
     --dt-warning-fg: #fcd34d;
     --dt-info: #60a5fa;
     --dt-info-fg: #93c5fd;
-    --dt-danger: #f87171;
+    --dt-danger: #f0766a;
     --dt-danger-fg: #fca5a5;
 
     /* Code surfaces */
-    --dt-code-inline: #a8c4ff;
-    --dt-code-block-bg: #0a0b0e;
-    --dt-code-block-fg: #e2e8f0;
+    --dt-code-inline: #9ec1ff;
+    --dt-code-block-bg: #0a0a0c;
+    --dt-code-block-fg: #e3e3e6;
 
     /* Sidebar */
-    --dt-sidebar: #0c0d10;
-    --dt-sidebar-foreground: #f1f5f9;
-    --dt-sidebar-primary: #6b9aff;
-    --dt-sidebar-primary-foreground: #0c0d10;
-    --dt-sidebar-accent: #1e3a8a;
+    --dt-sidebar: #0e0e10;
+    --dt-sidebar-foreground: #ececee;
+    --dt-sidebar-primary: #6f9bff;
+    --dt-sidebar-primary-foreground: #0e0e10;
+    --dt-sidebar-accent: #1a2238;
     --dt-sidebar-accent-foreground: #dbeafe;
-    --dt-sidebar-border: #23262d;
-    --dt-sidebar-ring: #6b9aff;
+    --dt-sidebar-border: #262629;
+    --dt-sidebar-ring: #6f9bff;
   }
 
 	  /* Text-size selector overrides the root font-size (scales all rems) */
@@ -126,17 +126,17 @@
     color: var(--dt-foreground);
     font-family: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     font-size: 0.9375rem;
-    line-height: 1.55;
+    line-height: 1.6;
     letter-spacing: -0.011em;
     font-feature-settings: 'cv11', 'ss01', 'ss03';
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
 
-  h1 { font-size: 2.25rem;  line-height: 1.15; letter-spacing: -0.022em; font-weight: 600; }
-  h2 { font-size: 1.5rem;   line-height: 1.25; letter-spacing: -0.018em; font-weight: 600; }
-  h3 { font-size: 1.25rem;  line-height: 1.3;  letter-spacing: -0.014em; font-weight: 600; }
-  h4 { font-size: 1.0625rem; line-height: 1.35; letter-spacing: -0.012em; font-weight: 600; }
+  h1 { font-size: 1.375rem;  line-height: 1.25; letter-spacing: -0.022em; font-weight: 600; }
+  h2 { font-size: 1.125rem;  line-height: 1.3;  letter-spacing: -0.018em; font-weight: 600; }
+  h3 { font-size: 1rem;      line-height: 1.35; letter-spacing: -0.014em; font-weight: 600; }
+  h4 { font-size: 0.9375rem; line-height: 1.4;  letter-spacing: -0.012em; font-weight: 600; }
 
   kbd {
     font-family: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
@@ -237,6 +237,36 @@
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent !important;
 }
 
+/* ── v4 §16.3: Chat transcript draggable scrollbar ── */
+.chat-scroll { scrollbar-width: thin; scrollbar-color: var(--dt-muted-foreground) transparent; }
+.chat-scroll::-webkit-scrollbar { width: 10px; }
+.chat-scroll::-webkit-scrollbar-track { background: transparent; }
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--dt-muted-foreground) 35%, transparent);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 40px;
+}
+.chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--dt-muted-foreground) 55%, transparent);
+  background-clip: padding-box;
+}
+
+/* ── v4 §16.1: KaTeX math sizing ── */
+.markdown-content .katex { font-size: 1.05em; }
+.markdown-content .katex-display { margin: 0.6em 0; overflow-x: auto; overflow-y: hidden; }
+
+/* v1.1: don't show failed LaTeX in red — show the source in normal body color */
+.markdown-content .katex-error,
+.markdown-content .katex .katex-error,
+.markdown-content .math-fallback {
+  color: inherit !important;
+  background: transparent !important;
+  font-family: var(--dt-font-mono, ui-monospace, SFMono-Regular, monospace) !important;
+  font-size: 0.95em;
+}
+
 .model-dropdown-list::-webkit-scrollbar {
   width: 4px !important;
 }
@@ -288,6 +318,7 @@ input::placeholder {
 
 .thinking-label {
   display: inline-flex;
+  white-space: pre;
 }
 
 .thinking-char {
@@ -295,29 +326,9 @@ input::placeholder {
   transition: opacity 0.3s ease;
 }
 
-.thinking-text.animating .thinking-char {
-  animation: charGlow 1.6s infinite ease-in-out;
-}
-
 .thinking-cap {
   font-size: 1em;
   font-weight: inherit;
-}
-
-.thinking-char:nth-child(1) { animation-delay: 0.0s; }
-.thinking-char:nth-child(2) { animation-delay: 0.1s; }
-.thinking-char:nth-child(3) { animation-delay: 0.2s; }
-.thinking-char:nth-child(4) { animation-delay: 0.3s; }
-.thinking-char:nth-child(5) { animation-delay: 0.4s; }
-.thinking-char:nth-child(6) { animation-delay: 0.5s; }
-.thinking-char:nth-child(7) { animation-delay: 0.6s; }
-.thinking-char:nth-child(8) { animation-delay: 0.7s; }
-
-@keyframes charGlow {
-  0%, 100% { opacity: 0.35; }
-  10%      { opacity: 1; transform: scale(1.05); }
-  20%      { opacity: 0.7; }
-  30%      { opacity: 0.35; }
 }
 
 .thinking-dots {
@@ -705,27 +716,48 @@ input::placeholder {
   word-break: break-word;
 }
 
-/* Shimmer text for pending/streaming state (ThinkingDisclosure) */
+/* Shimmer text for pending/streaming state (ThinkingDisclosure)
+ *
+ * Note: -webkit-text-fill-color + background-clip:text can make text
+ * invisible in some environments (Electron/Chromium GPU compositing).
+ * We always set a visible base color + animation, then layer the
+ * gradient shimmer on top only when background-clip is supported.
+ */
 .shimmer {
-  background: linear-gradient(
-    90deg,
-    var(--dt-muted-foreground) 0%,
-    var(--dt-foreground) 50%,
-    var(--dt-muted-foreground) 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--dt-foreground);
   animation: shimmerMove 1.5s ease-in-out infinite;
+}
+
+/* When background-clip:text is supported, use a gradient shimmer instead
+ * of the simple color fade-in above.
+ * The @supports query ensures text is NEVER invisible — on environments
+ * where background-clip fails the user sees the color animation instead.
+ */
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--dt-muted-foreground) 0%,
+      var(--dt-foreground) 50%,
+      var(--dt-muted-foreground) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
 }
 
 @keyframes shimmerMove {
   0% {
     background-position: 200% 0;
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
   }
   100% {
     background-position: -200% 0;
+    opacity: 0.6;
   }
 }
 

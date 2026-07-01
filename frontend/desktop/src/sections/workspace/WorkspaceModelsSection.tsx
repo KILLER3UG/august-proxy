@@ -39,6 +39,7 @@ import {
   Bot,
   ShieldCheck,
   Plug,
+  Brain,
   CheckCircle2,
   AlertCircle,
   type LucideIcon,
@@ -56,10 +57,13 @@ import {
   restartBackend,
   getSubAgentFallback,
   updateSubAgentFallback,
+  getReviewBackgroundConfig,
+  updateReviewBackgroundConfig,
   type UserModelAlias,
   type AggregatedModel,
   type SubAgentFallbackConfig,
-} from '@/api/backend-ui';
+  type ReviewBackgroundConfig,
+} from '@/api/api-client';
 import { WorkspaceField } from '@/components/workspace/WorkspaceField';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
 import { WorkspaceToggle } from '@/components/workspace/WorkspaceToggle';
@@ -71,6 +75,8 @@ import { Badge } from '@/components/ui/badge';
 import { QuotasPanel } from '@/sections/settings/QuotasPanel';
 import { cn } from '@/lib/utils';
 import { ModelPickerDropdown } from '@/components/overlays/ModelPickerDropdown';
+import { ModelFleetTab } from '@/sections/workspace/ModelFleetTab';
+import { LiveSettingsTab } from '@/sections/workspace/LiveSettingsTab';
 
 /* ── API format dropdown options — match the screenshot EXACTLY ──────── */
 const API_FORMATS: { value: ApiFormat; label: string }[] = [
@@ -81,11 +87,14 @@ const API_FORMATS: { value: ApiFormat; label: string }[] = [
 
 const DEFAULT_API_FORMAT: ApiFormat = 'anthropic';
 
-const SUBTABS: { key: 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback'; label: string; icon: LucideIcon }[] = [
+const SUBTABS: { key: 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection' | 'fleet' | 'live'; label: string; icon: LucideIcon }[] = [
   { key: 'providers', label: 'Providers', icon: Server },
   { key: 'all-models', label: 'All models', icon: Boxes },
   { key: 'aliases',   label: 'Aliases',   icon: ArrowRightLeft },
   { key: 'fallback',  label: 'Fallback',  icon: ShieldCheck },
+  { key: 'reflection', label: 'Background & Reflection', icon: Brain },
+  { key: 'fleet',     label: 'Model Fleet', icon: Brain },
+  { key: 'live',      label: 'Live (STT/TTS)', icon: Brain },
   { key: 'quotas',    label: 'Quotas',    icon: Gauge },
 ];
 
@@ -97,7 +106,7 @@ function fmtContextWindow(n?: number) {
 }
 
 export function WorkspaceModelsSection() {
-  const [subtab, setSubtab] = useState<'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback'>('providers');
+  const [subtab, setSubtab] = useState<'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection' | 'fleet'>('providers');
 
   return (
     <div className="px-8 py-6 space-y-4 h-full flex flex-col">
@@ -114,7 +123,7 @@ export function WorkspaceModelsSection() {
       <div className="shrink-0">
         <WorkspaceTabs
           value={subtab}
-          onChange={(k) => setSubtab(k as 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback')}
+          onChange={(k) => setSubtab(k as 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection' | 'fleet')}
           items={SUBTABS}
           label="Model settings subtabs"
         />
@@ -125,6 +134,9 @@ export function WorkspaceModelsSection() {
         {subtab === 'all-models' && <AllModelsTab />}
         {subtab === 'aliases'   && <AliasesTab />}
         {subtab === 'fallback'  && <FallbackTab />}
+        {subtab === 'reflection' && <BackgroundReflectionTab />}
+        {subtab === 'fleet'     && <ModelFleetTab />}
+        {subtab === 'live'      && <LiveSettingsTab />}
         {subtab === 'quotas'    && <QuotasTab />}
       </div>
     </div>
@@ -168,6 +180,8 @@ function ProvidersTab() {
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['ws-providers'] });
+    qc.invalidateQueries({ queryKey: ['aggregated-models'] });
+    qc.invalidateQueries({ queryKey: ['mp-aggregated-models'] });
   };
 
   function selectProvider(id: string) {
@@ -379,6 +393,7 @@ function AllModelsTab() {
         toast.error(`Failed for ${fail.length} provider${fail.length === 1 ? '' : 's'}: ${fail.map((f) => f.provider).join(', ')}`);
       }
       qc.invalidateQueries({ queryKey: ['ws-providers'] });
+      qc.invalidateQueries({ queryKey: ['aggregated-models'] });
       setDiscovering(false);
     },
     onError: () => {
@@ -777,7 +792,7 @@ function FallbackTab() {
 
   useEffect(() => {
     if (fallbackQ.data && fallbackEdits === null) {
-      setFallbackConfig(fallbackQ.data.config);
+      setFallbackConfig(fallbackQ.data);
     }
   }, [fallbackQ.data, fallbackEdits]);
 
@@ -931,6 +946,160 @@ function FallbackTab() {
   );
 }
 
+/* ── Background & Reflection subtab ────────────────────────────────── */
+
+const DEFAULT_BG_CONFIG: ReviewBackgroundConfig = {
+  enabled: false,
+  reviewModel: '',
+  reflectionModel: '',
+  autoMemoryModel: '',
+};
+
+function BackgroundReflectionTab() {
+  const qc = useQueryClient();
+
+  const bgQ = useQuery({
+    queryKey: ['review-background-config'],
+    queryFn: () => getReviewBackgroundConfig(),
+  });
+  const modelsQ = useQuery({
+    queryKey: ['aggregated-models'],
+    queryFn: () => getAggregatedModels(),
+  });
+
+  const config: ReviewBackgroundConfig = bgQ.data ?? DEFAULT_BG_CONFIG;
+  const [editConfig, setEditConfig] = useState<ReviewBackgroundConfig | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const activeConfig = editConfig ?? config;
+  const dirty = editConfig !== null && JSON.stringify(editConfig) !== JSON.stringify(config);
+
+  // Show ALL models from ALL providers — the ModelPickerDropdown groups them
+  // by provider automatically. No provider pre-filter needed.
+  const models: AggregatedModel[] = (modelsQ.data?.models ?? []).map((m) => ({
+    ...m,
+    isFree: m.isFree ?? false,
+  }));
+  const seen = new Set<string>();
+  const availableModels = models.filter((m) => {
+    if (seen.has(m.id)) return false;
+    seen.add(m.id);
+    return true;
+  });
+
+  const handleSave = async () => {
+    if (!editConfig) return;
+    setSaving(true);
+    try {
+      await updateReviewBackgroundConfig(editConfig);
+      setEditConfig(null);
+      qc.invalidateQueries({ queryKey: ['review-background-config'] });
+      toast.success('Saved background review settings');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (bgQ.isLoading || modelsQ.isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const noModels = availableModels.length === 0;
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-4">
+        <div>
+          <p className="text-sm font-semibold">Background review & reflection</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Configure separate models for background review, reflection, and auto‑memory extraction.
+            When a task has no model selected (or background tasks are disabled), the chat session model is used automatically.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between p-3 rounded-lg border border-white/[0.06] bg-black/10">
+          <div>
+            <p className="text-xs font-semibold">Enable background tasks</p>
+            <p className="text-[10px] text-muted-foreground">Route background tasks to the models configured below.</p>
+          </div>
+          <WorkspaceToggle
+            enabled={activeConfig.enabled}
+            onToggle={(checked) => setEditConfig({ ...activeConfig, enabled: checked })}
+            disabled={bgQ.isFetching}
+          />
+        </div>
+
+        {noModels ? (
+          <div className="p-3 rounded-lg border border-white/[0.06] bg-black/10 text-xs text-muted-foreground">
+            No models available. Please add a provider first.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <WorkspaceField
+              label="Review model"
+              hint="Used for reviewing and summarising conversations."
+            >
+              <ModelPickerDropdown
+                models={availableModels}
+                value={activeConfig.reviewModel}
+                onChange={(modelId) => setEditConfig({ ...activeConfig, reviewModel: modelId })}
+                disabled={!activeConfig.enabled}
+              />
+            </WorkspaceField>
+
+            <WorkspaceField
+              label="Reflection model"
+              hint="Used for the agent's self‑evaluation and learning loop."
+            >
+              <ModelPickerDropdown
+                models={availableModels}
+                value={activeConfig.reflectionModel}
+                onChange={(modelId) => setEditConfig({ ...activeConfig, reflectionModel: modelId })}
+                disabled={!activeConfig.enabled}
+              />
+            </WorkspaceField>
+
+            <WorkspaceField
+              label="Auto‑memory extraction model"
+              hint="Used for extracting facts and storing them in memory."
+            >
+              <ModelPickerDropdown
+                models={availableModels}
+                value={activeConfig.autoMemoryModel}
+                onChange={(modelId) => setEditConfig({ ...activeConfig, autoMemoryModel: modelId })}
+                disabled={!activeConfig.enabled}
+              />
+            </WorkspaceField>
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          If no model is selected for a task, the system will automatically use the chat session's model.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {dirty && (
+          <>
+            <Button size="sm" onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving...' : 'Save'}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setEditConfig(null)}>
+              Cancel
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Add provider form (matches the screenshot "Add model provider") ──── */
 
 function AddProviderForm({
@@ -1061,6 +1230,7 @@ function ProviderEditor({
   const [showKey, setShowKey] = useState(false);
   const [confirmClearKey, setConfirmClearKey] = useState(false);
   const [autoFetch, setAutoFetch] = useState(!!provider.autoFetch);
+  const [editingName, setEditingName] = useState(false);
 
   // Re-sync local state when the selected provider changes.
   useEffect(() => {
@@ -1136,8 +1306,28 @@ function ProviderEditor({
       {/* Provider header */}
       <div className="px-5 pt-4 pb-3 border-b border-white/[0.06] flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <span className="text-base font-semibold">{name || provider.name}</span>
-          <Pencil className="size-3.5 text-muted-foreground" />
+          {editingName ? (
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => { setEditingName(false); flushField('name', name); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { setEditingName(false); flushField('name', name); } }}
+              className="h-7 text-base font-semibold w-48"
+              autoFocus
+            />
+          ) : (
+            <>
+              <span className="text-base font-semibold">{name || provider.name}</span>
+              <button
+                onClick={() => setEditingName(true)}
+                aria-label="Edit provider name"
+                title="Edit provider name"
+                className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition"
+              >
+                <Pencil className="size-3.5" />
+              </button>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <WorkspaceToggle

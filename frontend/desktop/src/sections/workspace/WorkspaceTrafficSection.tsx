@@ -18,7 +18,7 @@ import { StatusPill } from '@/components/StatusPill';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { formatDuration, formatTimeAgo, cn } from '@/lib/utils';
-import { type Period } from '@/api/backend-ui';
+import { type Period } from '@/api/api-client';
 
 const PERIODS: { key: Period; label: string }[] = [
   { key: 'today', label: 'Today' },

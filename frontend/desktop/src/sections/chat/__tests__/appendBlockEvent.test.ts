@@ -51,6 +51,22 @@ describe('appendBlockEvent — basic event merging', () => {
     expect(blocks[0].type).toBe('final_output');
   });
 
+  it('handles final_output event type (same as text)', () => {
+    let blocks = appendBlockEvent([], { type: 'final_output', content: 'hello' });
+    blocks = appendBlockEvent(blocks, { type: 'final_output', content: ' world' });
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].content).toBe('hello world');
+    expect(blocks[0].type).toBe('final_output');
+  });
+
+  it('merges final_output into an existing final_output block', () => {
+    let blocks = appendBlockEvent([], { type: 'text', content: 'part 1' });
+    blocks = appendBlockEvent(blocks, { type: 'final_output', content: ' part 2' });
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].content).toBe('part 1 part 2');
+    expect(blocks[0].type).toBe('final_output');
+  });
+
   it('updates tool status on a tool_result event', () => {
     let blocks = appendBlockEvent([], {
       type: 'tool_call',

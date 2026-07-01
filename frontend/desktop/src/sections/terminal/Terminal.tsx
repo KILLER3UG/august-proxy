@@ -12,7 +12,7 @@ import {
   approveTerminalRequest,
   type TerminalSession,
   type TerminalApproval,
-} from '@/api/backend-ui';
+} from '@/api/api-client';
 import { api } from '@/api/client';
 
 /**

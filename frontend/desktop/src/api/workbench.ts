@@ -1,4 +1,4 @@
-/* Workbench API client — talks to backend /ui/workbench/* endpoints */
+/* Workbench API client — talks to backend /api/workbench/* endpoints */
 /* Uses named SSE events (event: text, event: tool_use, etc.) per backend. */
 
 import type {
@@ -9,6 +9,8 @@ import type {
   WorkbenchEventHandlers,
   WorkbenchGuardMode,
 } from '@/types/workbench';
+import type { FileAttachment } from '@/types/chat';
+import { WorkbenchEventSchema } from './schemas/workbench';
 
 export interface CreateWorkbenchSessionParams {
   provider?: 'claude' | 'codex';
@@ -20,7 +22,7 @@ export async function setWorkbenchGuardMode(
   sessionId: string,
   guardMode: WorkbenchGuardMode
 ): Promise<WorkbenchSession> {
-  const res = await fetch('/ui/workbench/guard-mode', {
+  const res = await fetch('/api/workbench/guard-mode', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId, guardMode }),
@@ -33,7 +35,7 @@ export async function confirmWorkbenchMutation(
   token: string,
   handlers: WorkbenchEventHandlers
 ): Promise<void> {
-  const res = await fetch('/ui/workbench/confirm-mutation', {
+  const res = await fetch('/api/workbench/mutations/respond', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token }),
@@ -57,7 +59,7 @@ export async function confirmWorkbenchMutation(
 export async function createWorkbenchSession(
   params: CreateWorkbenchSessionParams = {}
 ): Promise<WorkbenchSession> {
-  const res = await fetch('/ui/workbench/session', {
+  const res = await fetch('/api/workbench/session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -71,14 +73,14 @@ export async function createWorkbenchSession(
 }
 
 export async function getWorkbenchSessions(): Promise<WorkbenchSession[]> {
-  const res = await fetch('/ui/workbench/sessions');
+  const res = await fetch('/api/workbench/sessions');
   if (!res.ok) throw new Error(`getWorkbenchSessions failed: ${res.status}`);
   const data = await res.json();
   return data.sessions || data || [];
 }
 
 export async function getWorkbenchSession(sessionId: string): Promise<WorkbenchSession> {
-  const res = await fetch(`/ui/workbench/session?sessionId=${encodeURIComponent(sessionId)}`);
+  const res = await fetch(`/api/workbench/session?sessionId=${encodeURIComponent(sessionId)}`);
   if (!res.ok) throw new Error(`getWorkbenchSession failed: ${res.status}`);
   return res.json();
 }
@@ -102,11 +104,11 @@ export interface StreamWorkbenchChatParams {
 
 /**
  * Stream a Workbench chat turn. Kicks off a new generation via POST
- * /ui/workbench/chat and returns the starting `sinceSeq` so the caller
+ * /api/workbench/chat and returns the starting `sinceSeq` so the caller
  * can attach an SSE subscriber that won't replay events already seen.
  * The function awaits the response body for backwards compatibility —
  * older callers consume events from the POST stream itself, newer
- * callers open /ui/workbench/chat/stream with `sinceSeq` and ignore
+ * callers open /api/workbench/chat/stream with `sinceSeq` and ignore
  * whatever this function returns from the body.
  */
 export async function streamWorkbenchChat(
@@ -114,7 +116,7 @@ export async function streamWorkbenchChat(
   handlers: WorkbenchEventHandlers,
   signal?: AbortSignal
 ): Promise<{ sinceSeq?: number; consumedViaPost?: boolean }> {
-  const res = await fetch('/ui/workbench/chat', {
+  const res = await fetch('/api/workbench/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -164,7 +166,15 @@ export async function streamWorkbenchChat(
     return {};
   }
 
-  await readSseStream(reader, handlers, signal);
+  try {
+    const receivedTerminalEvent = await readSseStream(reader, handlers, signal);
+    if (!receivedTerminalEvent) {
+      handlers.onError?.({ message: 'Stream ended without completion event — response may be incomplete' });
+    }
+  } catch (e: unknown) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+    handlers.onError?.({ message: e instanceof Error ? e.message : 'Stream read error' });
+  }
   // Events were consumed from the POST response body (legacy SSE path).
   // Tell the caller not to reconnect — events are already delivered.
   return { consumedViaPost: true };
@@ -174,97 +184,188 @@ async function readSseStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   handlers: WorkbenchEventHandlers,
   signal?: AbortSignal
-): Promise<void> {
+): Promise<boolean> {
   const decoder = new TextDecoder();
   let buffer = '';
   let currentEvent = '';
   let receivedTerminalEvent = false;
 
-  try {
-    while (true) {
-      throwIfAborted(signal);
-      const { done, value } = await reader.read();
-      throwIfAborted(signal);
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+  while (true) {
+    throwIfAborted(signal);
+    const { done, value } = await reader.read();
+    throwIfAborted(signal);
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
 
-      let lineStart = 0;
-      let newlineIdx: number;
-      while ((newlineIdx = buffer.indexOf('\n', lineStart)) >= 0) {
-        const line = buffer.slice(lineStart, newlineIdx).trim();
-        lineStart = newlineIdx + 1;
-        if (!line) {
-          currentEvent = '';
-          continue;
-        }
-        if (line.startsWith(':')) continue; // SSE comment
+    let lineStart = 0;
+    let newlineIdx: number;
+    while ((newlineIdx = buffer.indexOf('\n', lineStart)) >= 0) {
+      const line = buffer.slice(lineStart, newlineIdx).trim();
+      lineStart = newlineIdx + 1;
+      if (!line) {
+        currentEvent = '';
+        continue;
+      }
+      if (line.startsWith(':')) continue; // SSE comment
 
-        if (line.startsWith('event:')) {
-          currentEvent = line.slice(6).trim();
-        } else if (line.startsWith('id:')) {
-          const idStr = line.slice(3).trim();
-          const n = Number(idStr);
-          if (Number.isFinite(n) && handlers.onSeq) handlers.onSeq(n);
-        } else if (line.startsWith('data:')) {
-          const dataStr = line.slice(5).trim();
-          if (!dataStr) continue;
-          try {
-            throwIfAborted(signal);
-            const payload = JSON.parse(dataStr);
-            // Track terminal events — if the stream closes without one,
-            // the response is likely incomplete (SSE connection dropped).
-            if (currentEvent === 'done' || currentEvent === 'error' || currentEvent === 'aborted') {
-              receivedTerminalEvent = true;
-            }
-            dispatchWorkbenchEvent(currentEvent, payload, handlers);
-          } catch (e: any) {
-            if (e?.name === 'AbortError') throw e;
-            // Ignore non-JSON data lines
+      if (line.startsWith('event:')) {
+        currentEvent = line.slice(6).trim();
+      } else if (line.startsWith('id:')) {
+        const idStr = line.slice(3).trim();
+        const n = Number(idStr);
+        if (Number.isFinite(n) && handlers.onSeq) handlers.onSeq(n);
+      } else if (line.startsWith('data:')) {
+        const dataStr = line.slice(5).trim();
+        if (!dataStr) continue;
+        try {
+          throwIfAborted(signal);
+          const payload = JSON.parse(dataStr);
+          // Track terminal events — if the stream closes without one,
+          // the response is likely incomplete (SSE connection dropped).
+          if (currentEvent === 'done' || currentEvent === 'error' || currentEvent === 'aborted') {
+            receivedTerminalEvent = true;
           }
+          dispatchWorkbenchEvent(currentEvent, payload, handlers);
+        } catch (e: unknown) {
+          if (e instanceof DOMException && e.name === 'AbortError') throw e;
+          // Ignore non-JSON data lines
         }
       }
-      buffer = buffer.slice(lineStart);
     }
-
-    // Stream ended but we never saw a terminal event — the connection likely
-    // dropped before the backend could signal completion. Report an error so
-    // the assistant bubble doesn't stay silently empty or incomplete.
-    if (!receivedTerminalEvent) {
-      handlers.onError?.({ message: 'Stream ended without completion event — response may be incomplete' });
-    }
-  } catch (e: any) {
-    if (e?.name === 'AbortError') throw e;
-    handlers.onError?.({ message: e?.message || 'Stream read error' });
+    buffer = buffer.slice(lineStart);
   }
+
+  return receivedTerminalEvent;
 }
 
 export async function streamWorkbenchReconnect(
   sessionId: string,
   handlers: WorkbenchEventHandlers,
   signal?: AbortSignal,
-  sinceSeq?: number
+  sinceSeq?: number,
+  options?: { maxRetries?: number }
 ): Promise<void> {
-  const qs = new URLSearchParams({ sessionId });
-  if (Number.isFinite(sinceSeq)) qs.set('sinceSeq', String(sinceSeq));
-  const res = await fetch(`/ui/workbench/chat/stream?${qs.toString()}`, { signal });
+  let currentSeq = sinceSeq;
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    handlers.onError?.({ message: `Reconnect stream failed: ${res.status} ${errText}` });
-    return;
+  // Wrap onSeq to capture the latest sequence number as events flow
+  const originalOnSeq = handlers.onSeq;
+  const wrappedHandlers = {
+    ...handlers,
+    onSeq: (seq: number) => {
+      currentSeq = seq;
+      originalOnSeq?.(seq);
+    }
+  };
+
+  // Retry budget. The durable per-session subscriber (which exists only to
+  // keep the SSE stream bound to the session across tab switches / drops)
+  // is given an effectively-unbounded budget with capped backoff: the
+  // backend ALWAYS emits a terminal event (done/error/aborted) when the
+  // turn ends, so retries converge and never spin forever against a dead
+  // backend (the POST /chat that started the turn fails fast first).
+  // Per-turn callers keep the default bounded budget so a transient user
+  // error surfaces instead of silently retrying.
+  const maxRetries = options?.maxRetries ?? 10;
+  // Backoff is capped so even unbounded retry doesn't stall for minutes.
+  const maxBackoffMs = 15000;
+  let retryCount = 0;
+  const baseDelayMs = 1000;
+
+  while (true) {
+    if (signal?.aborted) {
+      throw new DOMException('Request aborted', 'AbortError');
+    }
+
+    try {
+      const qs = new URLSearchParams({ sessionId });
+      if (Number.isFinite(currentSeq)) {
+        qs.set('sinceSeq', String(currentSeq));
+      }
+      
+      const res = await fetch(`/api/workbench/chat/stream?${qs.toString()}`, { signal });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Reconnect stream failed: ${res.status} ${errText}`);
+      }
+
+      // Guard against non-SSE responses (e.g. HTML error page from a 404 SPA
+      // fallback). If we get HTML instead of SSE, bail early with a clear error
+      // rather than trying to parse HTML line-by-line as SSE events.
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) {
+        throw new Error('Stream endpoint returned HTML (expected SSE). The backend may be unavailable — try refreshing.');
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        throw new Error('ReadableStream reader not available');
+      }
+
+      // Reset retry count on successful connection establishment
+      retryCount = 0;
+
+      // Wrap readSseStream. It will return when the stream ends.
+      // We want to know if it ended with a terminal event.
+      // We can intercept terminal events to stop retrying.
+      let terminalSeen = false;
+      const streamHandlers = {
+        ...wrappedHandlers,
+        onDone: () => {
+          terminalSeen = true;
+          wrappedHandlers.onDone?.();
+        },
+        onError: (err: unknown) => {
+          // If we see a terminal error from the backend, we don't auto-retry.
+          terminalSeen = true;
+          wrappedHandlers.onError?.({ message: err instanceof Error ? err.message : String(err) });
+        }
+      };
+
+      const receivedTerminalEvent = await readSseStream(reader, streamHandlers, signal);
+
+      // If we saw a terminal event (either returned true from readSseStream or flag was set),
+      // we stop retrying and return.
+      if (receivedTerminalEvent || terminalSeen || signal?.aborted) {
+        break;
+      }
+
+      // Otherwise, the connection dropped prematurely without a terminal event.
+      throw new Error('Stream ended prematurely without a completion event');
+
+    } catch (e: unknown) {
+      if ((e instanceof DOMException && e.name === 'AbortError') || signal?.aborted) {
+        throw new DOMException('Request aborted', 'AbortError');
+      }
+
+      retryCount++;
+      // Unbounded retry (subscriber path) never hits this ceiling, so
+      // the turn stays alive across transient drops. Bounded callers
+      // surface the error once exhausted.
+      if (maxRetries > 0 && retryCount > maxRetries) {
+        const errMsg = e instanceof Error ? e.message : String(e);
+        console.error(`[streamWorkbenchReconnect] Max retries reached (${maxRetries}). Connection failed:`, e);
+        handlers.onError?.({ message: errMsg });
+        break;
+      }
+
+      const delay = Math.min(maxBackoffMs, baseDelayMs * Math.pow(2, retryCount - 1) + Math.random() * 1000);
+      const budgetLabel = maxRetries > 0 ? `attempt ${retryCount}/${maxRetries}` : `attempt ${retryCount} (unbounded)`;
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.warn(`[streamWorkbenchReconnect] Connection lost. Retrying in ${Math.round(delay)}ms (${budgetLabel}). Error:`, errMsg);
+      
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(resolve, delay);
+        signal?.addEventListener('abort', () => {
+          clearTimeout(timeout);
+          reject(new DOMException('Request aborted', 'AbortError'));
+        });
+      });
+    }
   }
-
-  const reader = res.body?.getReader();
-  if (!reader) {
-    handlers.onDone?.();
-    return;
-  }
-
-  await readSseStream(reader, handlers, signal);
 }
 
 export async function stopWorkbenchChat(sessionId: string): Promise<void> {
-  const res = await fetch('/ui/workbench/chat/stop', {
+  const res = await fetch('/api/workbench/chat/stop', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
@@ -272,165 +373,276 @@ export async function stopWorkbenchChat(sessionId: string): Promise<void> {
   if (!res.ok) throw new Error(`stopWorkbenchChat failed: ${res.status}`);
 }
 
+/* ── Mid-response queued messages ─────────────────────────────────────── */
+
+/** A user message that was queued while the model was streaming. The
+ *  chat loop drains the queue at the next iteration boundary and wraps
+ *  each entry with <queued_message> tags so the model can distinguish
+ *  the queued text from a fresh top-of-conversation prompt. */
+export interface QueuedUserMessage {
+  id: string;
+  text: string;
+  attachments?: FileAttachment[];
+  queuedAt: string;
+}
+
+/** Submit a follow-up message that will be delivered to the model mid-
+ *  response. The next time the chat loop's iteration boundary fires
+ *  (after tool_results or after the model emits a text-only turn), the
+ *  queued entries are drained and the model decides whether to act on
+ *  them. */
+export async function queueWorkbenchMessage(
+  sessionId: string,
+  text: string,
+  attachments?: FileAttachment[],
+): Promise<QueuedUserMessage> {
+  const res = await fetch('/api/workbench/chat/queue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, text, attachments: attachments ?? [] }),
+  });
+  if (!res.ok) throw new Error(`queueWorkbenchMessage failed: ${res.status}`);
+  return res.json();
+}
+
+/** Cancel a single queued message before the model receives it. */
+export async function dequeueWorkbenchMessage(
+  sessionId: string,
+  messageId: string,
+): Promise<void> {
+  const res = await fetch(
+    `/api/workbench/chat/queue/${encodeURIComponent(messageId)}?sessionId=${encodeURIComponent(sessionId)}`,
+    { method: 'DELETE' },
+  );
+  if (!res.ok) throw new Error(`dequeueWorkbenchMessage failed: ${res.status}`);
+}
+
+/** Hydrate the local queue state from the server (used on mount and
+ *  after session switch). */
+export async function getQueuedWorkbenchMessages(
+  sessionId: string,
+): Promise<QueuedUserMessage[]> {
+  const res = await fetch(
+    `/api/workbench/chat/queue?sessionId=${encodeURIComponent(sessionId)}`,
+  );
+  if (!res.ok) throw new Error(`getQueuedWorkbenchMessages failed: ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data?.messages) ? data.messages : [];
+}
+
+/** Validate an incoming SSE frame against the WorkbenchEvent Zod schema.
+ *  Logs a console warning on mismatch (instead of throwing) so the stream
+ *  stays resilient to minor backend drift. A mismatch here is a signal
+ *  to update the schema or the corresponding TypeScript type. */
+function validateWorkbenchEvent(
+  event: string,
+  payload: Record<string, unknown>,
+): void {
+  const result = WorkbenchEventSchema.safeParse({ type: event, ...payload });
+  if (!result.success) {
+    console.warn(
+      `[workbench] SSE event '${event}' failed schema validation:`,
+      result.error.issues.slice(0, 3),
+    );
+  }
+}
+
 function dispatchWorkbenchEvent(
   event: string,
-  payload: any,
+  payload: Record<string, unknown>,
   handlers: WorkbenchEventHandlers
 ): void {
+  validateWorkbenchEvent(event, payload);
+  const p = payload;
   switch (event) {
     case 'thinking':
-      handlers.onThinking?.({ content: payload?.content || '' });
+      handlers.onThinking?.({ content: String(p?.content ?? '') });
       break;
     case 'text':
     case 'content':
-      handlers.onText?.({ content: payload?.content || '' });
+    case 'final_output':
+      handlers.onText?.({ content: String(p?.content ?? '') });
       break;
     case 'tool_use':
       handlers.onToolUse?.({
-        id: payload?.id || '',
-        name: payload?.name || '',
-        input: payload?.input || {},
+        id: String(p?.id ?? ''),
+        name: String(p?.name ?? ''),
+        input: (p?.input as Record<string, unknown>) ?? {},
       });
       break;
     case 'tool_call': {
-      let input: Record<string, any> = {};
+      let input: Record<string, unknown> = {};
       try {
-        input = typeof payload?.input === 'string' ? JSON.parse(payload.input) : (payload?.input || {});
+        input = typeof p?.input === 'string' ? JSON.parse(p.input) : ((p?.input as Record<string, unknown>) ?? {});
       } catch {
         input = {};
       }
       handlers.onToolUse?.({
-        id: payload?.id || '',
-        name: payload?.name || '',
+        id: String(p?.id ?? ''),
+        name: String(p?.name ?? ''),
         input,
       });
       break;
     }
     case 'tool_result':
       handlers.onToolResult?.({
-        id: payload?.id || '',
-        content: payload?.content,
-        is_error: payload?.is_error,
+        id: String(p?.id ?? ''),
+        content: p?.content,
+        is_error: p?.is_error as boolean | undefined,
       });
       break;
     case 'tool_progress': {
-      const phase = (payload?.phase || 'done') as
-        'reading' | 'read' | 'running' | 'done' | 'error';
+      const phase = (String(p?.phase ?? 'done') as 'reading' | 'read' | 'running' | 'done' | 'error');
       handlers.onToolProgress?.({
-        id: payload?.id || '',
-        name: payload?.name || '',
+        id: String(p?.id ?? ''),
+        name: String(p?.name ?? ''),
         phase,
-        paths: Array.isArray(payload?.paths) ? payload.paths : undefined,
-        path: typeof payload?.path === 'string' ? payload.path : undefined,
-        message: typeof payload?.message === 'string' ? payload.message : undefined,
+        paths: Array.isArray(p?.paths) ? (p.paths as string[]) : undefined,
+        path: typeof p?.path === 'string' ? p.path : undefined,
+        message: typeof p?.message === 'string' ? p.message : undefined,
       });
       break;
     }
     case 'session':
-      handlers.onSession?.(payload as WorkbenchSession);
+      handlers.onSession?.(p as unknown as WorkbenchSession);
       break;
     case 'btw':
-      handlers.onBtw?.(payload as WorkbenchBtwResult);
+      handlers.onBtw?.(p as unknown as WorkbenchBtwResult);
       break;
     case 'compaction':
       handlers.onCompaction?.({
-        headCount: Number(payload?.headCount) || 0,
-        tailCount: Number(payload?.tailCount) || 0,
-        compressedCount: Number(payload?.compressedCount) || 0,
-        originalTokens: Number(payload?.originalTokens) || 0,
-        compressedTokens: Number(payload?.compressedTokens) || 0,
-        underThreshold: payload?.underThreshold === true,
-        threshold: Number(payload?.threshold) || undefined,
+        headCount: Number(p?.headCount) || 0,
+        tailCount: Number(p?.tailCount) || 0,
+        compressedCount: Number(p?.compressedCount) || 0,
+        originalTokens: Number(p?.originalTokens) || 0,
+        compressedTokens: Number(p?.compressedTokens) || 0,
+        underThreshold: p?.underThreshold === true,
+        threshold: Number(p?.threshold) || undefined,
       });
       break;
     case 'prompt':
       handlers.onPrompt?.({
-        content: payload?.content || '',
-        systemPrompt: payload?.systemPrompt,
-        userMessage: payload?.userMessage,
-        tokens: payload?.tokens,
-        toolUseId: payload?.toolUseId,
-        subagentId: payload?.subagentId,
-        jobId: payload?.jobId,
+        content: String(p?.content ?? ''),
+        systemPrompt: p?.systemPrompt as string | undefined,
+        userMessage: p?.userMessage as string | undefined,
+        tokens: p?.tokens as number | undefined,
+        toolUseId: p?.toolUseId as string | undefined,
+        subagentId: p?.subagentId as string | undefined,
+        jobId: p?.jobId as string | undefined,
       });
       break;
     case 'started':
-      handlers.onStarted?.({ sinceSeq: payload?.sinceSeq });
+      handlers.onStarted?.({ sinceSeq: p?.sinceSeq as number | undefined });
+      break;
+    case 'user_message_queued':
+      handlers.onUserMessageQueued?.({
+        sessionId: String(p?.sessionId ?? ''),
+        messageId: String(p?.messageId ?? ''),
+        text: String(p?.text ?? ''),
+        queuedAt: typeof p?.queuedAt === 'string' ? p.queuedAt : new Date().toISOString(),
+      });
+      break;
+    case 'user_message_dequeued':
+      handlers.onUserMessageDequeued?.({
+        sessionId: String(p?.sessionId ?? ''),
+        messageId: String(p?.messageId ?? ''),
+      });
+      break;
+    case 'user_message_injected':
+      handlers.onUserMessageInjected?.({
+        sessionId: String(p?.sessionId ?? ''),
+        messageId: String(p?.messageId ?? ''),
+        text: String(p?.text ?? ''),
+        queuedAt: typeof p?.queuedAt === 'string' ? p.queuedAt : new Date().toISOString(),
+      });
       break;
     case 'subagent_start':
       handlers.onSubagentStart?.({
-        jobId: String(payload?.jobId || ''),
-        agentId: String(payload?.agentId || ''),
-        parentJobId: payload?.parentJobId ?? null,
-        parentToolUseId: payload?.parentToolUseId,
-        scope: payload?.scope,
-        depth: Number.isFinite(payload?.depth) ? Number(payload.depth) : undefined,
-        task: payload?.task,
+        jobId: String(p?.jobId ?? ''),
+        agentId: String(p?.agentId ?? ''),
+        parentJobId: p?.parentJobId !== undefined ? String(p.parentJobId) : null,
+        parentToolUseId: p?.parentToolUseId as string | undefined,
+        scope: p?.scope as string | undefined,
+        depth: Number.isFinite(Number(p?.depth)) ? Number(p.depth) : undefined,
+        task: p?.task as string | undefined,
       });
       break;
     case 'subagent_done':
       handlers.onSubagentDone?.({
-        jobId: String(payload?.jobId || ''),
-        agentId: String(payload?.agentId || ''),
-        status: (['completed', 'failed', 'cancelled'].includes(payload?.status)
-          ? payload.status
-          : 'completed') as 'completed' | 'failed' | 'cancelled',
-        message: payload?.message,
-        result: payload?.result,
+        jobId: String(p?.jobId ?? ''),
+        agentId: String(p?.agentId ?? ''),
+        status: (['completed', 'failed', 'cancelled'].includes(p?.status as string)
+          ? (p.status as 'completed' | 'failed' | 'cancelled')
+          : 'completed'),
+        message: p?.message as string | undefined,
+        result: p?.result as string | undefined,
       });
       break;
     case 'warning':
       handlers.onWarning?.({
-        kind: payload?.kind,
-        message: payload?.message,
-        jobId: payload?.jobId,
-        toolUseId: payload?.toolUseId,
-        ...payload,
+        kind: p?.kind as string | undefined,
+        message: p?.message as string | undefined,
+        jobId: p?.jobId as string | undefined,
+        toolUseId: p?.toolUseId as string | undefined,
+        ...p,
       });
       break;
     case 'subagent_text':
       handlers.onSubagentText?.({
-        jobId: String(payload?.jobId || ''),
-        agentId: String(payload?.agentId || ''),
-        content: String(payload?.content || ''),
+        jobId: String(p?.jobId ?? ''),
+        agentId: String(p?.agentId ?? ''),
+        content: String(p?.content ?? ''),
       });
       break;
     case 'subagent_tool_call':
       handlers.onSubagentToolCall?.({
-        jobId: String(payload?.jobId || ''),
-        agentId: String(payload?.agentId || ''),
-        id: String(payload?.id || ''),
-        name: String(payload?.name || ''),
-        input: payload?.input || {},
-        status: payload?.status,
+        jobId: String(p?.jobId ?? ''),
+        agentId: String(p?.agentId ?? ''),
+        id: String(p?.id ?? ''),
+        name: String(p?.name ?? ''),
+        input: (p?.input as Record<string, unknown>) ?? {},
+        status: p?.status as 'running' | 'done' | 'error' | undefined,
       });
       break;
     case 'subagent_tool_result':
       handlers.onSubagentToolResult?.({
-        jobId: String(payload?.jobId || ''),
-        agentId: String(payload?.agentId || ''),
-        id: String(payload?.id || ''),
-        content: payload?.content,
-        is_error: payload?.is_error,
-        status: payload?.is_error ? 'error' : 'done',
+        jobId: String(p?.jobId ?? ''),
+        agentId: String(p?.agentId ?? ''),
+        id: String(p?.id ?? ''),
+        content: p?.content,
+        is_error: p?.is_error as boolean | undefined,
+        status: p?.is_error ? 'error' : 'done',
       });
       break;
     case 'aborted':
-      // Aborted is terminal; the runtime treats it like `done`. The
-      // explicit `aborted` event lets the runtime distinguish if it wants.
       handlers.onDone?.();
+      break;
+    case 'browser_action':
+      handlers.onBrowserAction?.({
+        id: String(p?.id ?? ''),
+        name: String(p?.name ?? ''),
+        input: (p?.input as Record<string, unknown>) ?? {},
+        url: p?.url as string | undefined,
+        title: p?.title as string | undefined,
+        target: (p?.target as { x: number; y: number; width: number; height: number } | null) ?? null,
+        screenshot: (p?.screenshot as { path: string; width: number; height: number } | null) ?? null,
+        typed: p?.typed as string | undefined,
+        selected: p?.selected as string | undefined,
+        scrolled: p?.scrolled as string | undefined,
+        status: p?.status === 'error' ? 'error' : 'success',
+      });
       break;
     case 'done':
       handlers.onDone?.();
       break;
     case 'error':
-      handlers.onError?.({ message: payload?.message || 'Unknown error' });
+      handlers.onError?.({ message: String(p?.message ?? 'Unknown error') });
       break;
   }
 }
 
 export async function approveWorkbenchPlan(sessionId: string): Promise<WorkbenchSession> {
-  const res = await fetch('/ui/workbench/approve', {
+  const res = await fetch('/api/workbench/plan/approve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
@@ -440,7 +652,7 @@ export async function approveWorkbenchPlan(sessionId: string): Promise<Workbench
 }
 
 export async function rejectWorkbenchPlan(sessionId: string): Promise<WorkbenchSession> {
-  const res = await fetch('/ui/workbench/reject', {
+  const res = await fetch('/api/workbench/plan/reject', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
@@ -528,7 +740,8 @@ export interface ResetWorkbenchSessionParams {
 export async function resetWorkbenchSession(
   params: ResetWorkbenchSessionParams = {}
 ): Promise<WorkbenchSession> {
-  const res = await fetch('/ui/workbench/reset', {
+  const sid = params.sessionId ? encodeURIComponent(params.sessionId) : '';
+  const res = await fetch(`/api/workbench/sessions/${sid}/reset`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -542,13 +755,13 @@ export async function resetWorkbenchSession(
 }
 
 export async function listWorkbenchAgents(activeAgentId = 'build'): Promise<WorkbenchAgentRegistry> {
-  const res = await fetch(`/ui/workbench/agents?active=${encodeURIComponent(activeAgentId)}`);
+  const res = await fetch(`/api/workbench/agents?active=${encodeURIComponent(activeAgentId)}`);
   if (!res.ok) throw new Error(`listWorkbenchAgents failed: ${res.status}`);
   return res.json();
 }
 
 export async function listWorkbenchCapabilities(): Promise<WorkbenchCapabilities> {
-  const res = await fetch('/ui/workbench/capabilities');
+  const res = await fetch('/api/workbench/capabilities');
   if (!res.ok) throw new Error(`listWorkbenchCapabilities failed: ${res.status}`);
   return res.json();
 }
@@ -563,7 +776,7 @@ export interface AnswerWorkbenchBtwParams {
 export async function answerWorkbenchBtw(
   params: AnswerWorkbenchBtwParams
 ): Promise<WorkbenchBtwResult> {
-  const res = await fetch('/ui/workbench/btw', {
+  const res = await fetch('/api/workbench/btw', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -604,13 +817,13 @@ export interface BrainConfigResponse {
 }
 
 export async function getBrainConfig(): Promise<BrainConfigResponse> {
-  const res = await fetch('/ui/brain/config');
+  const res = await fetch('/api/brain/config');
   if (!res.ok) throw new Error(`getBrainConfig failed: ${res.status}`);
   return res.json();
 }
 
 export async function saveBrainConfig(updates: Partial<BrainConfig>): Promise<{ ok: boolean; config: BrainConfig; defaults: BrainConfig }> {
-  const res = await fetch('/ui/brain/config', {
+  const res = await fetch('/api/brain/config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates || {}),
@@ -623,13 +836,13 @@ export async function saveBrainConfig(updates: Partial<BrainConfig>): Promise<{ 
 }
 
 export async function resetBrainConfig(): Promise<{ ok: boolean; config: BrainConfig; defaults: BrainConfig }> {
-  const res = await fetch('/ui/brain/config/reset', { method: 'POST' });
+  const res = await fetch('/api/brain/config/reset', { method: 'POST' });
   if (!res.ok) throw new Error(`resetBrainConfig failed: ${res.status}`);
   return res.json();
 }
 
 export async function getBrainConfigFromSession(sessionId: string): Promise<BrainConfigResponse> {
-  const res = await fetch(`/ui/brain/config/from-session?sessionId=${encodeURIComponent(sessionId)}`);
+  const res = await fetch(`/api/brain/config/from-session?sessionId=${encodeURIComponent(sessionId)}`);
   if (!res.ok) throw new Error(`getBrainConfigFromSession failed: ${res.status}`);
   return res.json();
 }

@@ -182,8 +182,9 @@ export function ChatLayout() {
       const updated = await approveWorkbenchPlan(active.workbenchSessionId);
       queryClient.setQueryData(['workbench-session', active.workbenchSessionId], updated);
       toast.success('Workbench plan approved');
-    } catch (e: any) {
-      toast.error('Could not approve Workbench plan', { description: e.message });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error('Could not approve Workbench plan', { description: message });
     }
   };
 
@@ -193,8 +194,9 @@ export function ChatLayout() {
       const updated = await rejectWorkbenchPlan(active.workbenchSessionId);
       queryClient.setQueryData(['workbench-session', active.workbenchSessionId], updated);
       toast.success('Workbench plan rejected');
-    } catch (e: any) {
-      toast.error('Could not reject Workbench plan', { description: e.message });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error('Could not reject Workbench plan', { description: message });
     }
   };
 
@@ -205,8 +207,9 @@ export function ChatLayout() {
         onError: (data) => toast.error('Could not send plan revision', { description: data.message }),
         onSession: () => queryClient.invalidateQueries({ queryKey: ['workbench-session', active.workbenchSessionId] }),
       });
-    } catch (e: any) {
-      toast.error('Could not send plan revision', { description: e.message });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error('Could not send plan revision', { description: message });
     }
   };
 
@@ -274,24 +277,23 @@ export function ChatLayout() {
               </div>
             ) : (
               <>
-                {/* Center the chat within the remaining width after any open sidebar(s).
-                    The chat thread itself owns its own scrollbar (at the full
-                    width of the chat area, not inside this max-w-3xl box). */}
-                <div className="flex-1 flex min-w-0 justify-center">
-                  <div className="flex h-full w-full max-w-3xl flex-col min-w-0">
-                    <AnimatePresence mode="wait" initial={false}>
-                      <motion.div
-                        key={location.pathname}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                        className="h-full min-w-0 flex-1"
-                      >
-                        <Outlet />
-                      </motion.div>
-                    </AnimatePresence>
-                  </div>
+                {/* Full-width chat column — scroll container spans the full
+                    chat-area width so the thumb sits at the chat-area edge.
+                    Internal content max-width is applied inside ChatThread
+                    for message readability. */}
+                <div className="flex-1 flex min-w-0 h-full">
+                  <AnimatePresence mode="wait" initial={false}>
+                    <motion.div
+                      key={location.pathname}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                      className="h-full min-w-0 flex-1"
+                    >
+                      <Outlet />
+                    </motion.div>
+                  </AnimatePresence>
                 </div>
 
                 {!isSettings && active && (

@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { isTauri } from "@/lib/tauri-detect";
 import { toast } from "sonner";
 import { RightDrawerDropdown } from "./RightDrawerLauncher";
+import { BrainIndicator } from "./BrainIndicator";
 import type { Session } from "@/store/sessions";
 import type { RightDrawerSectionId } from "./RightDrawerState";
 
@@ -115,8 +116,9 @@ export function ChatTitlebar({
       if (update) {
         await update.downloadAndInstall();
       }
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to install update");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(message || "Failed to install update");
       setUpdating(false);
     }
   };
@@ -191,6 +193,8 @@ export function ChatTitlebar({
           >
             <Settings className="size-4" />
           </button>
+          {/* v4.4.1 — BrainIndicator (self-contained: icon + pulse dot + floating popup) */}
+          <BrainIndicator />
         </div>
       </div>
 

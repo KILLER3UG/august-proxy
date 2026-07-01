@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState, useLayoutEffect, useCallback, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { Paperclip, AtSign, Mic, Send, StopCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -131,6 +132,20 @@ export function ChatComposer({
     };
   }, [taRef, onInsertText]);
 
+  // v4 §16.2: Auto-grow textarea — value-driven, not event-driven
+  const MIN_H = 64;
+  const MAX_H = 360;
+  const resizeTextarea = useCallback(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const next = Math.min(el.scrollHeight, MAX_H);
+    el.style.height = next + 'px';
+    el.style.overflowY = el.scrollHeight > MAX_H ? 'auto' : 'hidden';
+  }, [taRef]);
+
+  useLayoutEffect(() => { resizeTextarea(); }, [input, resizeTextarea]);
+
   return (
     <>
       {showToolsDropdown && (
@@ -210,11 +225,7 @@ export function ChatComposer({
             <textarea
               ref={taRef}
               value={input}
-              onChange={(e) => {
-                onInputChange(e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = Math.min(e.target.scrollHeight, 360) + 'px';
-              }}
+              onChange={(e) => onInputChange(e.target.value)}
               onKeyDown={onKey}
               placeholder={streaming ? 'Type to queue your next message…' : (currentModel ? `Message ${currentModel.name}…` : 'Message August…')}
               rows={1}
@@ -439,6 +450,20 @@ export interface ContextBreakdown {
  * ChatThread has on hand. Returns a number-of-tokens value for each
  * category. The total should approximately equal `estTokens` (the
  * visible donut's numerator).
+ *
+ * Accuracy model: once a provider request has completed, the *true* current
+ * context fill is the provider-reported `input_tokens` (captured by the
+ * backend as `contextTokens` and surfaced to the gauge). The category
+ * breakdown here is informational only — it is NOT the source of truth for
+ * the ring percentage. Previously this function double-counted by adding
+ * `thinking = messages * 0.15` on top of message content that already
+ * includes thinking text, and by adding a flat `systemPrompt = 3000`
+ * regardless of real size. Both are removed.
+ *
+ * Pass `scaleToTotal` (the server ground-truth total) when available: the
+ * category estimates are proportionally scaled so `sum(categories) ===
+ * scaleToTotal`, keeping the tooltip breakdown perfectly consistent with
+ * the ring's numerator.
  */
 export function estimateContextBreakdown(args: {
   messages: Array<{ content: string; role: string }>;
@@ -451,22 +476,55 @@ export function estimateContextBreakdown(args: {
   toolTokenEstimate?: number;
   /** Optional: bytes of core memory / skills injected into the prompt. */
   coreMemoryBytes?: number;
+  /** Optional ground-truth total to anchor the breakdown to. When provided,
+   *  the category estimates are scaled so they sum exactly to this value
+   *  (used when the backend reports the real current context fill). */
+  scaleToTotal?: number;
 }): ContextBreakdown {
   const messagesChars = args.messages.reduce((sum, m) => sum + m.content.length, 0) + args.input.length;
   const messages = Math.ceil(messagesChars / 4);
-  // Estimate thinking/reasoning tokens as ~15% of message tokens (heuristic;
-  // real values depend on model and extended-thinking settings).
-  const thinking = Math.ceil(messages * 0.15);
+  // Thinking tokens are NOT added on top: assistant thinking text is already
+  // part of the conversation content (and of the provider-reported
+  // input_tokens when a ground truth exists). Adding 15% of message tokens
+  // was a double-count and a major source of gauge inflation. Keep the slot
+  // in the breakdown so the tooltip can still show it as ~0 when unknown.
+  const thinking = 0;
   // Use the backend's actual serialized tool token estimate when available;
   // fall back to ~180 tokens per tool definition (name + description + JSON schema).
   const systemTools = args.toolTokenEstimate ?? Math.ceil(args.toolCount * 180);
-  // Base system prompt + agent registry + core context (rough estimate; matches
-  // the typical prompt overhead the backend ships — platform description, agent
-  // registry entries, capabilities, learned guidelines, etc.).
-  const systemPrompt = 3000;
+  // System prompt is part of the provider-reported input_tokens when a ground
+  // truth exists, so we do not add a separate flat constant that would inflate
+  // the pre-request heuristic. Keep a small constant only for the fallback so
+  // the tooltip has a non-zero row to display; it is scaled away when
+  // `scaleToTotal` is provided.
+  const systemPrompt = args.scaleToTotal != null ? 0 : 1200;
   const skills = Math.ceil((args.coreMemoryBytes ?? 0) / 4);
   const meta = 100; // session metadata, attachments index, etc.
-  return { messages, thinking, systemTools, systemPrompt, skills, meta };
+
+  const raw = { messages, thinking, systemTools, systemPrompt, skills, meta };
+  const scaleToTotal = args.scaleToTotal;
+  if (scaleToTotal == null) return raw;
+
+  // Scale categories to sum exactly to the server ground-truth total.
+  const rawTotal =
+    raw.messages + raw.thinking + raw.systemTools + raw.systemPrompt + raw.skills + raw.meta;
+  if (rawTotal <= 0) {
+    // No heuristic signal at all — attribute everything to messages.
+    return { messages: scaleToTotal, thinking: 0, systemTools: 0, systemPrompt: 0, skills: 0, meta: 0 };
+  }
+  const factor = scaleToTotal / rawTotal;
+  const scaled = {
+    messages: Math.round(raw.messages * factor),
+    thinking: Math.round(raw.thinking * factor),
+    systemTools: Math.round(raw.systemTools * factor),
+    systemPrompt: Math.round(raw.systemPrompt * factor),
+    skills: Math.round(raw.skills * factor),
+    meta: 0, // fold rounding remainder into messages so the sum is exact
+  };
+  const scaledTotal =
+    scaled.messages + scaled.thinking + scaled.systemTools + scaled.systemPrompt + scaled.skills + scaled.meta;
+  scaled.messages += scaleToTotal - scaledTotal; // exact-sum correction
+  return scaled;
 }
 
 export function ContextRing({
@@ -497,6 +555,45 @@ export function ContextRing({
   const tone = clamped > 90 ? '#ef4444' : clamped > 70 ? '#eab308' : '#22c55e';
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
+
+  // Recompute tooltip position when opening or when viewport changes.
+  // Position is computed synchronously (not via requestAnimationFrame) so the
+  // portal renders in the same commit as `open` — rAF is not reliably flushed
+  // in jsdom and left the tooltip absent.
+  useEffect(() => {
+    if (!open) {
+      setTooltipPos(null);
+      return;
+    }
+    const compute = () => {
+      if (!rootRef.current) return;
+      const r = rootRef.current.getBoundingClientRect();
+      const TOOLTIP_W = 288; // w-72
+      const TOOLTIP_H = 180; // approximate popover height for clamping
+      const margin = 8;
+      // Position the tooltip above and right-aligned with the trigger,
+      // clamped so it never spills outside the viewport (negative coords
+      // + position:fixed produced the black-rectangle regression).
+      let left = r.right - TOOLTIP_W;
+      let top = r.top - TOOLTIP_H - margin;
+      left = Math.max(margin, Math.min(left, window.innerWidth - TOOLTIP_W - margin));
+      if (top < margin) {
+        // Not enough room above — show below the trigger instead.
+        top = r.bottom + margin;
+        top = Math.min(top, window.innerHeight - TOOLTIP_H - margin);
+      }
+      top = Math.max(margin, top);
+      setTooltipPos({ top, left });
+    };
+    compute();
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => {
+      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('resize', compute);
+    };
+  }, [open]);
 
   // Close on click outside + Escape
   useEffect(() => {
@@ -523,7 +620,7 @@ export function ContextRing({
         const items: Array<{ label: string; tokens: number; pct: number; opacity: number }> = [
           { label: 'Messages',       tokens: breakdown.messages,     pct: (breakdown.messages / total) * 100,     opacity: 1    },
           { label: 'Thinking',       tokens: breakdown.thinking,     pct: (breakdown.thinking / total) * 100,     opacity: 0.80 },
-          { label: 'System tools',   tokens: breakdown.systemTools,  pct: (breakdown.systemTools / total) * 100,  opacity: 0.65 },
+          { label: 'Tool definitions', tokens: breakdown.systemTools,  pct: (breakdown.systemTools / total) * 100,  opacity: 0.65 },
           { label: 'System prompt',  tokens: breakdown.systemPrompt, pct: (breakdown.systemPrompt / total) * 100, opacity: 0.45 },
           { label: 'Skills',         tokens: breakdown.skills,       pct: (breakdown.skills / total) * 100,       opacity: 0.30 },
           { label: 'Meta context',   tokens: breakdown.meta,         pct: (breakdown.meta / total) * 100,         opacity: 0    },
@@ -561,10 +658,16 @@ export function ContextRing({
         </svg>
       </button>
 
-      {open && (
+      {tooltipPos && createPortal(
         <div
-          className="absolute right-0 bottom-full mb-2 z-30 w-72 rounded-lg shadow-2xl p-3 text-left animate-in fade-in slide-in-from-bottom-1 duration-100"
-          style={{ backgroundColor: '#1c1c1c', border: '0.5px solid rgba(255,255,255,0.12)' }}
+          className="fixed z-50 w-72 rounded-lg shadow-2xl p-3 text-left animate-in fade-in slide-in-from-bottom-1 duration-100"
+          style={{
+            top: tooltipPos.top,
+            left: tooltipPos.left,
+            backgroundColor: '#1c1c1c',
+            border: '0.5px solid rgba(255,255,255,0.12)',
+          }}
+          data-composer-popover=""
         >
           <div className="flex items-center justify-between text-[12.5px] mb-1.5">
             <span className="font-medium text-[#e0e0e0]">Session Context</span>
@@ -620,13 +723,15 @@ export function ContextRing({
               </div>
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
 }
 
-function formatTokens(n: number): string {
+function formatTokens(n: number | undefined | null): string {
+  if (n == null || typeof n !== 'number' || !Number.isFinite(n)) return '0';
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
   return n.toLocaleString();

@@ -6,12 +6,16 @@ import {
   LayoutDashboard,
   MessageSquare,
   Settings,
+  Brain,
+  Mic,
   type LucideIcon,
 } from 'lucide-react';
 import { ChatThread } from '@/sections/chat/ChatThread';
 import { SettingsPage } from '@/sections/settings/SettingsPage';
 import { SETTINGS_SECTIONS } from '@/settings/settings-registry';
 import { DesignRoute } from '@/pages/DesignRoute';
+import { BrainDashboard } from '@/sections/brain/BrainDashboard';
+import { LiveSurface } from '@/sections/live/LiveSurface';
 
 export interface SectionRoute {
   path: string;
@@ -43,6 +47,8 @@ function ChatThreadWithParams() {
 export const SECTION_ROUTES: readonly SectionRoute[] = [
   { path: '/', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThread, { sessionId: 'demo' }), nav: true },
   { path: '/c/:sessionId', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThreadWithParams) },
+  { path: '/brain', label: 'Brain', Icon: Brain, element: React.createElement(BrainDashboard), nav: true },
+  { path: '/live', label: 'Live', Icon: Mic, element: React.createElement(LiveSurface, { onSwitchToChat: () => { window.location.href = '/'; } }), nav: true },
   { path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, element: React.createElement(Navigate, { to: '/settings/traffic-activity', replace: true }), nav: false },
 ] as const;
 

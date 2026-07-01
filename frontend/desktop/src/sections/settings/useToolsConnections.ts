@@ -9,7 +9,7 @@
  * own internal polling for MCP server configs. */
 
 import { useQuery } from '@tanstack/react-query';
-import { getHostAgentStatus, type HostAgentStatus } from '@/api/backend-ui';
+import { getHostAgentStatus, type HostAgentStatus } from '@/api/api-client';
 import { api } from '@/api/client';
 
 export type ServiceName = 'google' | 'github' | 'slack';

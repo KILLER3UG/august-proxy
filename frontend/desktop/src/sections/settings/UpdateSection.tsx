@@ -37,8 +37,9 @@ export function UpdateSection() {
         setUpdate(null);
         setState({ status: 'up-to-date', version: '' });
       }
-    } catch (err: any) {
-      setState({ status: 'error', message: err?.message || 'Failed to check for updates' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setState({ status: 'error', message: message || 'Failed to check for updates' });
     }
   }, [isTauri]);
 
@@ -50,8 +51,9 @@ export function UpdateSection() {
       await update.downloadAndInstall();
       // The app will restart automatically after install completes,
       // so we never reach here in practice.
-    } catch (err: any) {
-      setState({ status: 'error', message: err?.message || 'Failed to install update' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setState({ status: 'error', message: message || 'Failed to install update' });
     }
   }, [isTauri, update]);
 

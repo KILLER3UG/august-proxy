@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Search, MessageSquare, Inbox } from 'lucide-react';
 import { formatTimeAgo, cn } from '@/lib/utils';
-import { getConversations, type ConversationsResponse, type RequestEntry } from '@/api/backend-ui';
+import { getConversations, type ConversationsResponse, type RequestEntry } from '@/api/api-client';
 
 interface ConversationItem {
   reqId: string;

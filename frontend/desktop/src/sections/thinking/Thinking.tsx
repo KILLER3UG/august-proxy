@@ -4,7 +4,7 @@ import { SectionHeader } from '@/components/SectionHeader';
 import { Card, CardContent } from '@/components/ui/card';
 import { Check, Loader2, Brain, Inbox } from 'lucide-react';
 import { formatTimeAgo } from '@/lib/utils';
-import { getRequestDetails, type RequestDetailEntry, type Period } from '@/api/backend-ui';
+import { getRequestDetails, type RequestDetailEntry, type Period } from '@/api/api-client';
 
 /**
  * Thinking traces are not a standalone endpoint — they ride along on each

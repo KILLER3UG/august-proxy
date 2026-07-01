@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/StatusPill';
 import { Play, Trash2, ShieldAlert, Clock, Inbox, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getAutomations, runAutomation, deleteAutomation, type AutomationJob } from '@/api/backend-ui';
+import { getAutomations, runAutomation, deleteAutomation, type AutomationJob } from '@/api/api-client';
 
 export function Automations() {
   const qc = useQueryClient();

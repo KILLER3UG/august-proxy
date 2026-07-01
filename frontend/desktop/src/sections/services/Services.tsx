@@ -307,7 +307,7 @@ export function MergedMcpSkills() {
   const { data: skillsData } = useQuery({
     queryKey: ["skills"],
     queryFn: async () => {
-      const res = await api.get<{ skills: Skill[] }>("/ui/skills");
+      const res = await api.get<{ skills: Skill[] }>("/api/skills");
       return (res.skills ?? []).map((skill) => ({
         ...skill,
         category: skill.category || (skill.trigger ? "automation" : "general"),

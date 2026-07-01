@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { StatusPill } from '@/components/StatusPill';
 import { Button } from '@/components/ui/button';
 import { Server, Plug, ArrowRight, RefreshCw, Wifi, WifiOff } from 'lucide-react';
-import { getHostAgentStatus } from '@/api/backend-ui';
+import { getHostAgentStatus } from '@/api/api-client';
 import { api } from '@/api/client';
 
 /* ── Service connection read shape (mirrors Services.tsx, narrowed) ── */

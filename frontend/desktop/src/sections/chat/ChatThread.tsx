@@ -25,9 +25,21 @@ import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { SubagentBlock } from '@/components/chat/SubagentBlock';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
+import { ExamHost } from '@/sections/exam/ExamHost';
 import { Statusbar } from '@/components/shell/Statusbar';
 import { dispatchFocusComposer, dispatchInsertComposerText } from '@/api/ui-events';
+import { useModels } from '@/hooks/useModels';
+import { useProviderAvailability } from '@/hooks/useProviderAvailability';
+import { useQueryClient } from '@tanstack/react-query';
+import { getAggregatedModels } from '@/api/api-client';
 import { chatRuntime, type ChatTurnRecord } from './chat-runtime';
+import { CommandHelpCard } from './CommandHelpCard';
+import {
+  voiceCommandRegistry,
+  getDisplayCommands,
+  type VoiceCommandCardProps,
+} from '@/api/voice/registry';
+import { voiceCommandEvents, type VoiceCommandEvent } from '@/api/voice/registry-events';
 import {
   $sessionStreamStates,
   getOrInitSessionStreamState,
@@ -40,6 +52,12 @@ import {
   applySubagentEvent,
   activeStreamControllers,
 } from './chat-stream-manager';
+import {
+  $queuedMessagesBySession,
+  type QueuedUserMessage,
+  setQueuedMessages,
+  clearQueuedMessages,
+} from './queue-store';
 import { Markdown } from './ChatMarkdown';
 import { readFileContent, type FileReadResult } from '@/lib/file-reader';
 import { getFileIcon } from '@/lib/file-icon';
@@ -57,6 +75,9 @@ import {
   answerWorkbenchBtw,
   getWorkbenchSession,
   listWorkbenchCapabilities,
+  queueWorkbenchMessage,
+  dequeueWorkbenchMessage,
+  getQueuedWorkbenchMessages,
 } from '@/api/workbench';
 import type { WorkbenchBtwResult, WorkbenchSession } from '@/types/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
@@ -69,97 +90,35 @@ import { gitApi, type GitDiffResult } from '@/api/git';
 import { usageApi } from '@/api/usage';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import { addWorkspace } from '@/store/workspaces';
+import { ModelPickerCard } from './ModelPickerCard';
+// Chat domain types live in `@/types/chat` (Phase 2 refactor). Re-export
+// from the canonical location so existing `from './ChatThread'` imports
+// keep working without churn, and import for local use in this file.
+import type {
+  ChatMessage,
+  MessageBlock,
+  FileAttachment,
+} from '@/types/chat';
+export type {
+  ChatMessage,
+  MessageBlock,
+  FileAttachment,
+  WorkbenchBtwState,
+  WorkbenchMode,
+  EffortLevel,
+  ChatMessageTodo,
+  ChatMessageClarify,
+} from '@/types/chat';
 
 let visibleSessionId: string | null = null;
 let visibleGeneration = 0;
 
 const STREAM_UPDATE_INTERVAL_MS = 24;
 
-export interface MessageBlock {
-  id: string;
-  type: 'thinking' | 'tool_call' | 'command' | 'final_output';
-  content?: string;
-  tool?: {
-    id: string;
-    name: string;
-    context?: string;
-    args?: string;
-    preview?: string;
-    summary?: string;
-    error?: string;
-    status: 'running' | 'done' | 'error';
-    duration?: number;
-    startedAt?: number;
-    pendingApproval?: {
-      message?: string;
-      detail?: string;
-      confirmationToken?: string;
-    };
-  };
-  isRevisedPlan?: boolean;
-}
-
-export interface FileAttachment {
-  name: string;
-  size: string;
-  /** Extracted text content for text-type files (PDF, DOCX, code, etc.) */
-  content?: string;
-  /** Base64 data URL for images. */
-  dataUrl?: string;
-  /** Whether the file content was successfully extracted. */
-  type: 'text' | 'image' | 'unsupported';
-  /** True if content was truncated due to size limits. */
-  truncated?: boolean;
-}
-
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'tool';
-  content: string;
-  timestamp: string;
-  attachments?: FileAttachment[];
-  tool?: {
-    name: string;
-    args?: string;
-    status: 'running' | 'done' | 'error';
-    duration?: number;
-    result?: string;
-  };
-  tools?: Array<{
-    name: string;
-    context?: string;
-    id: string;
-    status: 'running' | 'done' | 'error';
-    summary?: string;
-    error?: string;
-    preview?: string;
-    duration?: number;
-    startedAt?: number;
-  }>;
-  thinking?: string;
-  thinkingDuration?: number;
-  /** Hoisted todo panel */
-  todos?: Array<{
-    id: string;
-    content: string;
-    status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
-  }>;
-  /** Inline Workbench mutation summary shown after the final response. */
-  changedFiles?: GitDiffResult;
-  /** Inline clarify/question */
-  clarify?: {
-    question?: string;
-    choices?: string[];
-    /** Multi-question flow; wins over the legacy `question`/`choices` when present. */
-    questions?: Array<{ question: string; choices?: string[] }>;
-    /** 0-indexed; managed by the popup. */
-    currentIndex?: number;
-    /** Header line above the question (e.g. "Synthesized user context to craft …"). */
-    contextSummary?: string;
-    answer?: string;
-  };
-  blocks?: MessageBlock[];
-}
+// NOTE: ChatMessage / MessageBlock / FileAttachment were historically
+// defined here. After the Phase 2 type-centralisation refactor they live
+// in `@/types/chat`; see the re-export block above. The local
+// definitions were removed on 2026-06-30.
 
 interface ModelItem {
   id: string;
@@ -260,20 +219,6 @@ const TOOLS = [
   { name: '@read_file', desc: 'Read a local file contents' },
   { name: '@run_command', desc: 'Propose shell command execution' },
   { name: '@fetch_url', desc: 'Fetch web content' },
-];
-
-const COMMANDS = [
-  { name: '/help', desc: 'Show available commands' },
-  { name: '/btw', desc: 'Ask a by-the-way question: /btw <question>' },
-  { name: '/goal', desc: 'Set a workbench goal: /goal <condition>' },
-  { name: '/clear', desc: 'Clear the chat display' },
-  { name: '/new', desc: 'Start a new chat session' },
-  { name: '/reset', desc: 'Reset conversation history' },
-  { name: '/debug', desc: 'Toggle diagnostics mode' },
-  { name: '/model', desc: 'Switch model: /model <name>' },
-  { name: '/provider', desc: 'Switch provider: /provider <name>' },
-  { name: '/load', desc: 'Load a skill: /load <skill-name>' },
-  { name: '/skills', desc: 'Search skills: /skills [query]' },
 ];
 
 const MESSAGES_STORAGE_PREFIX = 'chat_messages_';
@@ -395,8 +340,41 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       return { toolProgress: next };
     });
   };
-  const [models, setModels] = useState<ModelItem[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(false);
+  // Shared react-query-backed model list — auto-refetches when models are
+  // added/removed in Settings (via query key invalidation) and polls every 60s.
+  const { models: aggregatedModels, isLoading: modelsLoading, refetch: refetchModels } = useModels();
+
+  // Query client used to invalidate caches when the user explicitly refreshes.
+  const queryClient = useQueryClient();
+
+  // Providers that have API keys set, used to filter the model list.
+  // Driven by the useProviderAvailability react-query hook so newly-added
+  // providers appear without remounting the chat.
+  const { providers: availableProvidersList } = useProviderAvailability();
+  const availableProviders = useMemo(
+    () => new Set(availableProvidersList.filter(p => p.isAvailable).map(p => p.id)),
+    [availableProvidersList]
+  );
+
+  // Filter to only show models from providers with keys, but always include
+  // user-defined alias models (provider === 'Alias'). Normalise optional
+  // fields to match the required ModelItem shape.
+  const models = useMemo(() => {
+    if (aggregatedModels.length === 0) return [];
+    const list = availableProviders.size === 0
+      ? aggregatedModels
+      : aggregatedModels.filter(m => availableProviders.has(m.provider) || m.provider === 'Alias');
+    return list.map(m => ({
+      id: m.id,
+      name: m.name || m.id,
+      provider: m.provider,
+      contextWindow: m.contextWindow || 128000,
+      isFree: m.isFree,
+      supportsReasoning: m.supportsReasoning,
+      supportsThinking: m.supportsThinking,
+    }));
+  }, [aggregatedModels, availableProviders]);
+
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(loadHiddenModels);
   const [showModelVisibility, setShowModelVisibility] = useState(false);
   const workbenchSession = streamState.workbenchSession;
@@ -411,10 +389,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const planPending = !!workbenchSession?.plan && !workbenchSession?.approved && !workbenchSession?.approvedAt;
   const [workbenchToolCount, setWorkbenchToolCount] = useState<number | null>(null);
   const [workbenchToolTokens, setWorkbenchToolTokens] = useState<number | null>(null);
-  const [sessionUsage, setSessionUsage] = useState<{ total: number; input: number; output: number } | null>(null);
+  const [sessionUsage, setSessionUsage] = useState<{ total: number; input: number; output: number; contextTokens: number } | null>(null);
   const [workbenchMode, setWorkbenchMode] = useState<WorkbenchGuardMode>(() => {
     const saved = localStorage.getItem('august_last_workbench_guard_mode') as WorkbenchGuardMode | null;
-    return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'plan';
+    return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'full';
   });
   const workbenchBtw = streamState.workbenchBtw;
   const setWorkbenchBtw = (btw: any) => {
@@ -455,7 +433,20 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [showComposerActionsDropdown, setShowComposerActionsDropdown] = useState(false);
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
   const [showCommandsDropdown, setShowCommandsDropdown] = useState(false);
-  const [queuedMessage, setQueuedMessage] = useState<{ text: string; attachments: FileAttachment[] } | null>(null);
+  const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  // Mid-response queued messages live in the queue-store (per-session
+  // atom). ChatThread mirrors a local copy for quick synchronous access;
+  // the SSE subscriber writes back into the store when messages are
+  // added / removed / injected, and useStore on queuedMessages keeps
+  // this view in sync.
+  const queuedMessages = useStore($queuedMessagesBySession)[sessionId ?? ''] ?? [];
+
+  // v3: /Exam slash command — overlay the ExamBanner with the given seed.
+  const [examActive, setExamActive] = useState(false);
+  const [examSeed, setExamSeed] = useState<{ topic?: string; files?: string[] }>({});
+
+  // v4: Voice command UI — inline model picker card
+  const [modelPickerActive, setModelPickerActive] = useState(false);
 
   // Refs for each popover trigger — used to compute the portaled panel's
   // viewport position. We portal the panels to document.body (see
@@ -657,6 +648,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           total: data.totalTokens,
           input: data.totalInputTokens,
           output: data.totalOutputTokens,
+          // True current context fill: the provider-reported input_tokens of
+          // the most recent provider request (system prompt + tools +
+          // messages, counted once). Drives the gauge percentage.
+          contextTokens: data.contextTokens ?? 0,
         });
       })
       .catch(() => {
@@ -674,6 +669,160 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     visibleSessionId = sessionId;
   }, [sessionId]);
 
+  // ── Voice command registry event subscription ─────────────────────────
+  // Phase 1A: handlers in `api/voice/builtins.ts` emit events; this
+  // effect wires them to local state mutations.
+  const messagesRef = useRef<ChatMessage[]>(messages);
+  messagesRef.current = messages;
+
+  useEffect(() => {
+    const unsubscribe = voiceCommandEvents.subscribe((event: VoiceCommandEvent) => {
+      switch (event.type) {
+        case 'push-card': {
+          const cardMsg: ChatMessage = {
+            id: `card-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            role: 'assistant',
+            content: '',
+            timestamp: new Date().toISOString(),
+            kind: 'voice-command-card',
+            commandId: event.commandId,
+            context: event.context,
+          };
+          setMessages(prev => [...prev, cardMsg]);
+          persistMessages(sessionId, [...messagesRef.current, cardMsg]);
+          setInput('');
+          clearComposerDraft(sessionId);
+          break;
+        }
+        case 'push-message': {
+          setMessages(prev => [...prev, event.message as ChatMessage]);
+          persistMessages(
+            sessionId,
+            [...messagesRef.current, event.message as ChatMessage],
+          );
+          break;
+        }
+        case 'clear-chat': {
+          setMessages([]);
+          persistMessages(sessionId, []);
+          setInput('');
+          setAttachments([]);
+          clearComposerDraft(sessionId);
+          break;
+        }
+        case 'new-session': {
+          window.dispatchEvent(new CustomEvent('august:new-session'));
+          break;
+        }
+        case 'insert-text': {
+          setInput(prev => prev + event.text);
+          break;
+        }
+        case 'send-message': {
+          send(event.text);
+          break;
+        }
+        case 'toast': {
+          if (event.level === 'error') toast.error(event.message);
+          else if (event.level === 'success') toast.success(event.message);
+          else toast.info(event.message);
+          break;
+        }
+        case 'open-skills': {
+          setInput('/skills ');
+          break;
+        }
+        case 'load-skill': {
+          fetch(`/api/skills?q=${encodeURIComponent(event.skillName)}`)
+            .then(r => r.json())
+            .then(data => {
+              if (data.total === 0) {
+                toast.error(
+                  'No skill found matching "' +
+                    event.skillName +
+                    '". Try /skills to list available skills.',
+                );
+                return;
+              }
+              const skill = data.skills[0];
+              const lines = [
+                '[Loaded skill: **' + skill.name + '**]',
+                '',
+                '> **' + skill.description + '**',
+                '> *Trigger: ' + (skill.trigger || '—') + '*',
+                '> *Category: ' + skill.category + '*',
+                '',
+                'Use august__load_skill { name: "' + skill.name + '" } to load the full instructions.',
+              ];
+              setInput(lines.join('\n'));
+              toast.success('Loaded skill: ' + skill.name);
+            })
+            .catch(() => toast.error('Failed to fetch skills.'));
+          break;
+        }
+        case 'fetch-skills': {
+          const url =
+            '/api/skills' + (event.query ? '?q=' + encodeURIComponent(event.query) : '');
+          fetch(url)
+            .then(r => r.json())
+            .then(data => {
+              if (data.total === 0) {
+                toast.info(
+                  'No skills found' +
+                    (event.query ? ' matching "' + event.query + '"' : '') +
+                    '.',
+                );
+                return;
+              }
+              const items = data.skills
+                .slice(0, 20)
+                .map((s: { name: string; category: string; enabled: boolean; description: string }) =>
+                  '• **' +
+                  s.name +
+                  '** [' +
+                  s.category +
+                  ']' +
+                  (s.enabled ? '' : ' ⚠️ inactive') +
+                  '\n  ' +
+                  s.description,
+                );
+              setInput(
+                '**Skills (' +
+                  data.total +
+                  ' found)**\n\n' +
+                  items.join('\n\n') +
+                  '\n\nUse /load <skill-name> to inject a skill into your message.',
+              );
+              toast.success('Found ' + data.total + ' skill' + (data.total > 1 ? 's' : ''));
+            })
+            .catch(() => toast.error('Failed to fetch skills.'));
+          break;
+        }
+        case 'open-exam': {
+          const seed = event.topic;
+          if (attachments.length > 0) {
+            const filePaths = attachments
+              .map(a => a.path || a.name)
+              .filter(Boolean) as string[];
+            setExamSeed({ topic: seed, files: filePaths });
+          } else {
+            setExamSeed({ topic: seed, files: [] });
+          }
+          setExamActive(true);
+          setInput('');
+          clearComposerDraft(sessionId);
+          break;
+        }
+        case 'reset-session': {
+          setInput('/reset');
+          setTimeout(() => send(), 0);
+          break;
+        }
+      }
+    });
+    return unsubscribe;
+  }, [sessionId, attachments, send]);
+
   useLayoutEffect(() => {
     if (!sessionId || loadedSessionId !== sessionId) return;
     // The chat thread no longer owns its own scrollbar — the scroll thumb
@@ -686,7 +835,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     setInput(loadComposerDraft(sessionId));
     setLoadedSessionId(sessionId);
-    setQueuedMessage(null); // Clear any queued message when switching sessions
+    // Hydrate the per-session queue from the backend so a queued message
+    // survives tab switches / page reloads. Clear local state first so
+    // we don't briefly show stale entries from another session.
+    if (sessionId) {
+      clearQueuedMessages(sessionId);
+      getQueuedWorkbenchMessages(sessionId)
+        .then((entries) => setQueuedMessages(sessionId, entries))
+        .catch((err) => {
+          // eslint-disable-next-line no-console
+          console.warn('[ChatThread] failed to hydrate queue', err);
+        });
+    }
   }, [sessionId]);
 
   // Persist messages to localStorage on every change
@@ -722,19 +882,25 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     });
   }, [sessionId, activeSession?.model, activeSession?.provider]);
 
-  // ── Two-phase model loading ───────────────────────────────────────
+  // ── Model loading ──────────────────────────────────────────────────
   // Phase 1 (instant): read config only — fast, small payload.
   //   Sets selectedModel immediately so the button renders with the right label.
-  // Phase 2 (background): fetch full model list — may be slow (5s per provider).
-  //   Merges the list into state; only updates selectedModel if the user hasn't
-  //   manually picked something in the meantime.
-  const handleRefreshModels = useCallback(async (isRefresh = false) => {
-    setModelsLoading(true);
+  // Phase 2 (background): the useModels hook above provides the aggregated
+  //   model list via react-query, auto-refetching on invalidation and every 60s.
+  //   The `models` computed value above filters it by provider availability.
+  //
+  // Provider availability is fetched separately via the useProviderAvailability
+  // hook (declared above alongside useModels) so we can filter the model list
+  // to only show models from providers that have API keys set. The hook polls
+  // every 30s and refetches on invalidation, so newly-added providers appear
+  // without remounting the chat.
 
-    // ── Phase 1: quick config fetch ──
-    if (!isRefresh) {
+  // On mount: fetch active config for initial model selection.
+  useEffect(() => {
+    (async () => {
+      // Phase 1: quick config fetch for initial model selection
       try {
-        const configRes = await fetch('/ui/config/safe');
+        const configRes = await fetch('/api/config/safe');
         if (configRes.ok) {
           const config = await configRes.json();
           const activeProvider = config?.activeProvider || '';
@@ -758,52 +924,42 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       } catch (e) {
         console.warn('[Models] Config fetch failed, using localStorage fallback:', e);
       }
-    }
-
-    // ── Phase 2: full model list (background) ──
-    try {
-      // Fetch providers to know which ones have keys
-      const providersRes = await fetch('/api/config/activeProvider');
-      const availableProviders = new Set<string>();
-      if (providersRes.ok) {
-        const provData = await providersRes.json();
-        (provData.providers || []).forEach((p: any) => {
-          if (p.isAvailable) availableProviders.add(p.id);
-        });
-      }
-
-      const modelsRes = await fetch('/api/models');
-      if (modelsRes.ok) {
-        const data = await modelsRes.json();
-        const allModels: ModelItem[] = data?.models || [];
-        // Filter to only show models from providers with keys set,
-        // but always include user-defined alias models.
-        const loadedModels = availableProviders.size > 0
-          ? allModels.filter(m => availableProviders.has(m.provider) || m.provider === 'Alias')
-          : allModels;
-        if (loadedModels.length > 0) {
-          setModels(loadedModels);
-          // Only update selected model if the user hasn't manually chosen one
-          setSelectedModel(prev => {
-            const targetId = userSelectedRef.current || prev?.id || null;
-            if (!targetId) return loadedModels[0];
-            const matched = loadedModels.find(
-              m => m.id === targetId || m.id.toLowerCase() === targetId.toLowerCase()
-            );
-            return matched || prev || loadedModels[0];
-          });
-        }
-      }
-    } catch (e) {
-      console.error('[Models] Full list fetch failed:', e);
-    } finally {
-      setModelsLoading(false);
-    }
+    })();
   }, []);
 
+  // Re-fetch models when session changes (provider availability is handled by
+  // the useProviderAvailability hook above).
   useEffect(() => {
-    handleRefreshModels();
-  }, [handleRefreshModels]);
+    refetchModels();
+  }, [sessionId, refetchModels]);
+
+  // Force a full refresh: bypass any backend cache, invalidate both the
+  // aggregated-models and provider-availability react-query caches so every
+  // subscriber refetches, then refetch this component's own models list.
+  const handleRefreshModels = useCallback(async () => {
+    await Promise.all([
+      getAggregatedModels({ refresh: true }),
+      queryClient.invalidateQueries({ queryKey: ['aggregated-models'] }),
+      queryClient.invalidateQueries({ queryKey: ['provider-availability'] }),
+    ]);
+    refetchModels();
+  }, [queryClient, refetchModels]);
+
+  // Reconcile selectedModel when the filtered model list changes (models were
+  // refetched or provider availability changed). Preserve user's manual choice.
+  const prevModelsRef = useRef<ModelItem[]>(models);
+  useEffect(() => {
+    if (models.length === 0 || models === prevModelsRef.current) return;
+    prevModelsRef.current = models;
+    setSelectedModel(prev => {
+      const targetId = userSelectedRef.current || prev?.id || null;
+      if (!targetId) return models[0];
+      const matched = models.find(
+        m => m.id === targetId || m.id.toLowerCase() === targetId.toLowerCase()
+      );
+      return matched || prev || models[0];
+    });
+  }, [models]);
 
   // Remove hardcoded fallback — rely on API only
   const currentModel = selectedModel || null;
@@ -848,27 +1004,50 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // from the backend capability endpoint; 30 is only a startup fallback.
   const toolCountForBreakdown = workbenchToolCount ?? 30;
   const toolTokenEstimate = workbenchToolTokens;
+
+  // Ground-truth total: once at least one provider request has completed,
+  // the backend reports the true current context fill as `contextTokens`
+  // (the input_tokens of the most recent request — system prompt + tools +
+  // messages, counted exactly once by the provider's tokenizer). Before the
+  // first request we fall back to a minimal, non-inflated heuristic over the
+  // composer input + active tools only (no flat 3000, no +15% thinking
+  // double-count — those previously caused >50% inflation).
+  const serverContextTokens = sessionUsage?.contextTokens ?? 0;
+  const hasServerTruth = serverContextTokens > 0;
+  // Tool definitions are a real context cost — but only once something is
+  // actually being sent. On a fresh, empty session (no input, no messages, no
+  // completed request) nothing is "used" yet, so the gauge reads ~0% instead
+  // of pre-counting the tool-definition overhead. Once the user types input
+  // or a request has run, the tool overhead is included (it's part of the
+  // next/actual request's context).
+  const hasContentToSend = input.length > 0 || messages.length > 0;
+  const toolOverhead = (hasServerTruth || hasContentToSend)
+    ? (toolTokenEstimate ?? Math.ceil(toolCountForBreakdown * 180))
+    : 0;
+  const fallbackEstimate =
+    Math.ceil((input.length + messages.reduce((s, m) => s + m.content.length, 0)) / 4)
+    + toolOverhead;
+  const estTokens = hasServerTruth ? serverContextTokens : fallbackEstimate;
+  const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
+
+  // The per-category breakdown is informational. When we have a server ground
+  // truth we scale the category estimates to sum exactly to `estTokens` so the
+  // tooltip's breakdown rows always agree with the ring's numerator.
   const contextBreakdown: ContextBreakdown = useMemo(
     () => estimateContextBreakdown({
       messages,
       input,
       toolCount: toolCountForBreakdown,
       toolTokenEstimate: toolTokenEstimate ?? undefined,
+      // Scale to the server ground truth when available. On a fresh empty
+      // session (nothing to send, no request yet) anchor to 0 so the tooltip
+      // breakdown matches the 0% ring instead of pre-counting tool overhead.
+      // When the user has typed input, leave undefined (raw estimate includes
+      // tool definitions — they're a real cost on the next request).
+      scaleToTotal: hasServerTruth ? serverContextTokens : (hasContentToSend ? undefined : 0),
     }),
-    [messages, input, toolCountForBreakdown, toolTokenEstimate]
+    [messages, input, toolCountForBreakdown, toolTokenEstimate, hasServerTruth, serverContextTokens, hasContentToSend]
   );
-
-  // The gauge total and percentage use the breakdown sum so the donut arc
-  // and the per‑category percentages are consistent — previously estTokens
-  // was calculated separately (messages × 4 + flat 120) while the breakdown
-  // included systemTools + systemPrompt + meta, making them disagree.
-  const estTokens = contextBreakdown.messages
-    + contextBreakdown.thinking
-    + contextBreakdown.systemTools
-    + contextBreakdown.systemPrompt
-    + contextBreakdown.skills
-    + contextBreakdown.meta;
-  const pct = Math.min(100, Math.round((estTokens / maxContext) * 100));
 
   // ── Workbench chat client ─────────────────────────────────────────
   // Workbench only accepts claude/codex engine ids. The normal provider/model
@@ -987,8 +1166,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         );
       }
       finalize(abortController.signal.aborted ? 'aborted' : 'done');
-    } catch (e: any) {
-      if (e?.name === 'AbortError') {
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') {
         clearSessionStatus(sessionId);
         finalize('aborted');
         return;
@@ -1030,8 +1209,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         nextMessages,
         wbSessionId
       );
-    } catch (e: any) {
-      toast.error('Could not send revision', { description: e.message });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error('Could not send revision', { description: message });
     }
   };
 
@@ -1064,33 +1244,42 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     });
   };
 
-  // Drain the message queue: if the user queued a follow-up while this
-  // turn was streaming, send it as soon as streaming finishes.
+  // Fallback drain: if the model never picked up the queued messages
+  // (e.g. the user cancelled the response mid-stream), the queue still
+  // holds entries when streaming ends. In that case we synthesize a
+  // fresh user message from the queued text and start a new turn. The
+  // backend already removes the entries when it drains them in-loop, so
+  // the queue store should be empty in the normal flow.
   useEffect(() => {
-    if (!streaming && queuedMessage && sessionId) {
-      const next = queuedMessage;
-      setQueuedMessage(null);
-
+    if (!sessionId || streaming) return;
+    const leftover = queuedMessages;
+    if (leftover.length === 0) return;
+    // Defer so we don't race with the finalize() of the just-ended turn.
+    const timer = setTimeout(() => {
+      const stillQueued = ($queuedMessagesBySession.get()[sessionId] ?? []);
+      if (stillQueued.length === 0) return;
+      const first = stillQueued[0];
+      const rest = stillQueued.slice(1);
       const userMsg: ChatMessage = {
         id: `m${Date.now()}`,
         role: 'user',
-        content: next.text,
+        content: first.text,
         timestamp: new Date().toISOString(),
-        attachments: next.attachments,
+        attachments: first.attachments,
+        queued: true,
       };
-
-      setMessages(prev => {
-        const nextMessages = [...prev, userMsg];
-        persistMessages(sessionId, nextMessages);
-        // Defer AI response to avoid nested updateSessionStreamState calls.
-        // The outer setMessages → updateSessionStreamState call would overwrite
-        // the placeholder that makeStreamHandlers adds synchronously inside
-        // generateAIResponse, leaving the assistant message ID orphaned.
-        setTimeout(() => generateAIResponse(nextMessages), 0);
-        return nextMessages;
-      });
-    }
-  }, [streaming, queuedMessage, sessionId]);
+      const remaining = rest.length > 0
+        ? [...(messagesRef.current), userMsg]
+        : [...(messagesRef.current), userMsg];
+      setMessages(remaining);
+      persistMessages(sessionId, remaining);
+      // Drop the entry we just consumed locally; the backend will see an
+      // empty queue when we POST the next /chat call.
+      setQueuedMessages(sessionId, rest);
+      setTimeout(() => generateAIResponse(remaining), 0);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [streaming, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const send = async () => {
     if (!sessionId || loadedSessionId !== sessionId) return;
@@ -1119,92 +1308,72 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     // /btw and /goal at workbench.js:2334-2347 and answers them without
     // pushing a user message into the session, so we let those fall
     // through to the normal send path.
+    //
+    // Phase 1A: registry-driven dispatch. The handler is responsible for
+    // mutating state (via the registry event bus) and for clearing the
+    // composer / draft. Handlers that need data from the backend (e.g.
+    // /load, /skills fetching /api/skills) emit a 'load-skill' / 'fetch-skills'
+    // event that this component subscribes to.
     const slashMatch = text.match(/^\/([a-zA-Z][\w-]*)(?:\s+([\s\S]*))?$/);
     if (slashMatch) {
       const cmd = slashMatch[1].toLowerCase();
       const arg = String(slashMatch[2] || '').trim();
-      if (cmd === 'help') {
-        const helpText = COMMANDS.map(c => `${c.name}  —  ${c.desc}`).join('\n');
-        toast.info(`Available commands:\n\n${helpText}`, { duration: 12000 });
-        return;
+
+      const voiceCmd = voiceCommandRegistry.getBySlashCommand('/' + cmd);
+      if (voiceCmd) {
+        try {
+          const handlerResult = voiceCmd.handler({
+            sessionId: sessionId ?? '',
+            transcript: text,
+            args: arg,
+            messages,
+            setMessages,
+          });
+          void Promise.resolve(handlerResult).catch(err => {
+            // eslint-disable-next-line no-console
+            console.error('[slash] handler threw', err);
+            toast.error('Command failed');
+          });
+          setShowCommandsDropdown(false);
+          setShowToolsDropdown(false);
+          // Most handlers clear the composer themselves; the registry
+          // contract is that they do so for client-only commands.
+          // For commands that should fall through to the backend (e.g.
+          // /btw with an arg), the handler should NOT clear the composer.
+          return;
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error('[slash] handler threw synchronously', err);
+          toast.error('Command failed');
+          return;
+        }
       }
-      if (cmd === 'clear') {
-        setMessages([]);
-        persistMessages(sessionId, []);
+      // Unrecognized slash command — let the backend handle it (or no-op).
+    }
+
+    // Queue when streaming instead of dropping the message. The model will
+    // pick the queued message up at the next iteration boundary (between
+    // tool_results or after a text-only response) without interrupting
+    // the current response — the model then decides whether to act on
+    // it, defer it, or acknowledge it.
+    if (streaming && sessionId) {
+      try {
+        const savedAttachments = attachments.length > 0 ? [...attachments] : undefined;
+        const entry = await queueWorkbenchMessage(sessionId, text, savedAttachments);
+        // Optimistic local update: the SSE event will also arrive and
+        // upsert the same entry (idempotent), but write immediately so
+        // the pill is visible without a round-trip.
+        setQueuedMessages(sessionId, [...(queuedMessages), entry]);
         setInput('');
         setAttachments([]);
         setShowToolsDropdown(false);
         setShowCommandsDropdown(false);
         clearComposerDraft(sessionId);
-        return;
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[send] queueWorkbenchMessage failed', err);
+        toast.error('Could not queue message');
       }
-      if (cmd === 'new') {
-        // Defer to the parent (App) to create a fresh chat session.
-        // No listener wires this up yet, so just tell the user how.
-        toast.info('Use the sidebar to start a new session.');
-        return;
-      }
-      if (cmd === 'load') {
-        if (!arg) {
-          toast.error('/load needs a skill name. Try: /load brainstorming');
-          return;
-        }
-        fetch(`/ui/skills?q=${encodeURIComponent(arg)}`)
-          .then(r => r.json())
-          .then(data => {
-            if (data.total === 0) {
-              toast.error('No skill found matching "' + arg + '". Try /skills to list available skills.');
-              return;
-            }
-            const skill = data.skills[0];
-            const lines = [
-              '[Loaded skill: **' + skill.name + '**]',
-              '',
-              '> **' + skill.description + '**',
-              '> *Trigger: ' + (skill.trigger || '—') + '*',
-              '> *Category: ' + skill.category + '*',
-              '',
-              'Use august__load_skill { name: "' + skill.name + '" } to load the full instructions.'
-            ];
-            setInput(lines.join('\n'));
-            toast.success('Loaded skill: ' + skill.name);
-          })
-          .catch(function () { toast.error('Failed to fetch skills.'); });
-        return;
-      }
-      if (cmd === 'skills') {
-        fetch('/ui/skills' + (arg ? '?q=' + encodeURIComponent(arg) : ''))
-          .then(r => r.json())
-          .then(data => {
-            if (data.total === 0) {
-              toast.info('No skills found' + (arg ? ' matching "' + arg + '"' : '') + '.');
-              return;
-            }
-            const items = data.skills.slice(0, 20).map(function (s) {
-              return '• **' + s.name + '** [' + s.category + ']' + (s.enabled ? '' : ' ⚠️ inactive') + '\n  ' + s.description;
-            });
-            setInput('**Skills (' + data.total + ' found)**\n\n' + items.join('\n\n') + '\n\nUse /load <skill-name> to inject a skill into your message.');
-            toast.success('Found ' + data.total + ' skill' + (data.total > 1 ? 's' : ''));
-          })
-          .catch(function () { toast.error('Failed to fetch skills.'); });
-        return;
-      }
-      if (cmd === 'btw' && !arg) {
-        toast.error('/btw needs a question. Try: /btw What does this codebase do?');
-        return;
-      }
-      // /btw, /goal, /reset, /debug, /model, /provider, /unknown — fall
-      // through and let the backend (or the workbench parser) handle it.
-    }
-
-    // Queue when streaming instead of dropping the message. The next turn
-    // starts automatically from `finalize()` once the current turn ends.
-    if (streaming) {
-      setQueuedMessage({ text, attachments: [...attachments] });
-      setInput('');
-      setAttachments([]);
-      setShowToolsDropdown(false);
-      setShowCommandsDropdown(false);
       return;
     }
 
@@ -1339,12 +1508,26 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showCommandsDropdown) {
+      const allCommands = getDisplayCommands();
+      const visible = allCommands.filter(c => {
+        const q = input.trim().toLowerCase();
+        if (!q) return true;
+        return c.name.toLowerCase().startsWith(q);
+      });
+      // highlightedCommandIndex = (i ± 1) % visible.length
+      if (e.key === 'ArrowDown') { e.preventDefault(); /* highlightedCommandIndex = (i + 1) % visible.length */ setHighlightedCommandIndex(i => (i + 1) % Math.max(1, visible.length)); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); /* highlightedCommandIndex = (i - 1 + visible.length) % visible.length */ setHighlightedCommandIndex(i => (i - 1 + Math.max(1, visible.length)) % Math.max(1, visible.length)); return; }
+      if (e.key === 'Enter' && !e.shiftKey && visible.length > 0) { e.preventDefault(); const cmd = visible[highlightedCommandIndex] ?? visible[0]; insertCommand(cmd.name); setShowCommandsDropdown(false); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setShowCommandsDropdown(false); return; }
+    }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
   // Detect slash commands as user types
   const handleInputChange = (value: string) => {
     setInput(value);
+    setHighlightedCommandIndex(0);
     // Show commands dropdown when text starts with /
     if (value.startsWith('/')) {
       setShowCommandsDropdown(true);
@@ -1393,7 +1576,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       return;
     }
     setVoiceActive(true);
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return; // redundant runtime guard
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = true;
@@ -1422,7 +1606,39 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       setVoiceActive(false);
       if (!finalTranscript) {
         toast.info('No speech detected');
+        return;
       }
+
+      // Voice Command Registry (Phase 1A): unified match → handler.
+      // The handler either mutates state via the registry-event bus
+      // (subscribed in a useEffect above) or runs no-op. We treat
+      // any match above the registry threshold as "handled" and
+      // clear the appended transcript from the input.
+      const matched = voiceCommandRegistry.matchCommand(finalTranscript);
+      if (matched) {
+        try {
+          const handlerResult = matched.handler({
+            sessionId: sessionId ?? '',
+            transcript: finalTranscript,
+            messages,
+            setMessages,
+          });
+          // Fire-and-forget async handlers.
+          void Promise.resolve(handlerResult).catch(err => {
+            // eslint-disable-next-line no-console
+            console.error('[voice] handler threw', err);
+            toast.error('Voice command failed');
+          });
+          toast.success(`Command: ${matched.description || matched.id}`);
+          setInput(prev => prev.replace(finalTranscript, '').trim());
+          return;
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error('[voice] handler threw synchronously', err);
+          toast.error('Voice command failed');
+        }
+      }
+      // No match (or below threshold): transcript stays as dictation.
     };
 
     recognition.onerror = (event: any) => {
@@ -1451,6 +1667,32 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }, 50);
   };
 
+  const insertCommand = (name: string) => {
+    // Replace the leading /token (if any) so the typed `/` doesn't double up.
+    const fullCmd = name + ' ';
+    const ta = taRef.current;
+    if (!ta) {
+      setInput(prev => {
+        const replaced = prev.replace(/^\s*\/[\w-]*/, '');
+        const trimmed = replaced.trimStart();
+        return '/' + name + ' ';
+      });
+      return;
+    }
+    const cursor = ta.selectionStart ?? ta.value.length;
+    const before = ta.value.slice(0, cursor);
+    const match = before.match(/\/[\w-]*$/);
+    const tokenStart = match ? cursor - match[0].length : cursor;
+    const after = ta.value.slice(cursor);
+    const nextText = ta.value.slice(0, tokenStart) + fullCmd + after;
+    setInput(nextText);
+    setTimeout(() => {
+      ta.focus();
+      const newCursor = tokenStart + fullCmd.length;
+      ta.selectionStart = ta.selectionEnd = newCursor;
+    }, 50);
+  };
+
   useEffect(() => {
     const handleInsertText = (e: Event) => {
       const customEvent = e as CustomEvent;
@@ -1459,8 +1701,27 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       }
     };
     window.addEventListener('august-insert-composer-text', handleInsertText);
-    return () => window.removeEventListener('august-insert-composer-text', handleInsertText);
-  }, []);
+
+    // Handle model selection from ModelPickerCard (Phase 1C).
+    const handleModelSelected = (e: Event) => {
+      const { modelId, provider } = (e as CustomEvent).detail ?? {};
+      if (!modelId || !provider) return;
+      const model = models.find(m => m.id === modelId);
+      if (model) {
+        setSelectedModel(model);
+        userSelectedRef.current = model.id;
+        try { localStorage.setItem('august_last_model', JSON.stringify(model)); } catch {}
+        if (sessionId) updateSessionModel(sessionId, modelId, provider);
+        toast.success(`Switched to ${model.name}`);
+      }
+    };
+    window.addEventListener('august:model-selected', handleModelSelected);
+
+    return () => {
+      window.removeEventListener('august-insert-composer-text', handleInsertText);
+      window.removeEventListener('august:model-selected', handleModelSelected);
+    };
+  }, [models, sessionId]);
   const renderComposerContent = () => {
     return (
       <div className="relative" ref={composerRootRef}>
@@ -1501,14 +1762,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               const q = input.trim().toLowerCase();
               if (!q) return true;
               return c.name.toLowerCase().startsWith(q);
-            }).map((c) => (
+            }).map((c, idx) => (
               <button
                 key={c.name}
                 onClick={() => {
-                  insertText(c.name + ' ');
+                  insertCommand(c.name);
                   setShowCommandsDropdown(false);
                 }}
-                className="w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between gap-2"
+                className={cn(
+                  "w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between gap-2",
+                  idx === highlightedCommandIndex && "bg-muted"
+                )}
               >
                 <span className="font-mono font-medium text-warning shrink-0">{c.name}</span>
                 <span className="text-[10px] text-muted-foreground truncate">{c.desc}</span>
@@ -1525,23 +1789,47 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           document.body,
         )}
 
-        {/* Queued message pill — shown above the composer when a follow-up
-            message is waiting for the current turn to finish. */}
-        {queuedMessage && (
-          <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-xl border border-warning/30 bg-warning/5 text-[11px] animate-in fade-in slide-in-from-bottom-1 duration-150">
-            <span className="text-warning font-semibold uppercase tracking-wider">Queued</span>
-            <span className="truncate text-muted-foreground flex-1 min-w-0">
-              {queuedMessage.text.length > 120 ? queuedMessage.text.slice(0, 120).trim() + '…' : queuedMessage.text}
-            </span>
-            <button
-              type="button"
-              onClick={() => setQueuedMessage(null)}
-              className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition shrink-0"
-              title="Cancel queued message"
-              aria-label="Cancel queued message"
-            >
-              <X className="size-3" />
-            </button>
+        {/* Queued message pills — shown above the composer when one or
+            more follow-up messages are waiting to be delivered to the
+            model mid-response. Each pill has its own cancel button. */}
+        {queuedMessages.length > 0 && (
+          <div className="flex flex-col gap-1.5 mb-2 animate-in fade-in slide-in-from-bottom-1 duration-150">
+            {queuedMessages.map((q, i) => (
+              <div
+                key={q.id}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-warning/30 bg-warning/5 text-[11px]"
+              >
+                <span className="text-warning font-semibold uppercase tracking-wider">
+                  Queued {queuedMessages.length > 1 ? `(${i + 1}/${queuedMessages.length})` : ''}
+                </span>
+                <span className="truncate text-muted-foreground flex-1 min-w-0">
+                  {q.text.length > 120 ? q.text.slice(0, 120).trim() + '…' : q.text}
+                </span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!sessionId) return;
+                    try {
+                      await dequeueWorkbenchMessage(sessionId, q.id);
+                    } catch (err) {
+                      // eslint-disable-next-line no-console
+                      console.error('[dequeue] failed', err);
+                      toast.error('Could not cancel queued message');
+                    }
+                    // The SSE event will also remove the entry from the
+                    // store; optimistically drop it locally so the pill
+                    // disappears immediately.
+                    const remaining = queuedMessages.filter(e => e.id !== q.id);
+                    setQueuedMessages(sessionId, remaining);
+                  }}
+                  className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition shrink-0"
+                  title="Cancel queued message"
+                  aria-label="Cancel queued message"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            ))}
           </div>
         )}
 
@@ -1714,7 +2002,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 visibleModels={visibleModels}
                 loading={modelsLoading}
                 selected={selectedModel}
-                onRefresh={() => handleRefreshModels(true)}
+                onRefresh={handleRefreshModels}
                 onEditModels={() => setShowModelVisibility(true)}
                 onSelect={async (m) => {
                   if (!m) return;
@@ -1728,12 +2016,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   if (sessionId) updateSessionModel(sessionId, m.id, m.provider);
                 }}
               />
-              {selectedModel?.supportsReasoning && (
-                <EffortDropdown
-                  value={effort}
-                  onChange={setEffort}
-                />
-              )}
+              <EffortDropdown
+                value={effort}
+                onChange={setEffort}
+              />
 
               {streaming ? (
                 <Button onClick={stop} size="sm" variant="outline">
@@ -1762,6 +2048,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       />
       <div className="flex-1 flex flex-col min-w-0 bg-background h-full overflow-hidden relative">
         <ApprovalBanner sessionId={workbenchSession?.id ?? null} />
+        {examActive && (
+          <ExamHost
+            topic={examSeed.topic}
+            files={examSeed.files}
+            onDismiss={() => {
+              setExamActive(false);
+              setExamSeed({});
+            }}
+          />
+        )}
         {workbenchBtw && (
           <WorkbenchBtwDrawer
             result={workbenchBtw}
@@ -1847,8 +2143,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             // renders the model's reply (thinking, text, tool
                             // calls) the same way a normal composer message does.
                             await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
-                          } catch (e: any) {
-                            toast.error('Could not approve Workbench plan', { description: e.message });
+                          } catch (e) {
+                            const message = e instanceof Error ? e.message : String(e);
+                            toast.error('Could not approve Workbench plan', { description: message });
                           }
                         }}
                         onAcceptAndImplement={async () => {
@@ -1868,8 +2165,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             setWorkbenchMode('full');
                             // Tell the model to proceed with implementation at Full access.
                             await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers, signal));
-                          } catch (e: any) {
-                            toast.error('Could not approve Workbench plan', { description: e.message });
+                          } catch (e) {
+                            const message = e instanceof Error ? e.message : String(e);
+                            toast.error('Could not approve Workbench plan', { description: message });
                           }
                         }}
                         onReject={async () => {
@@ -1879,8 +2177,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             setWorkbenchSession(updated);
                             // Notify the model the plan was rejected.
                             await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'reject', handlers, signal));
-                          } catch (e: any) {
-                            toast.error('Could not reject Workbench plan', { description: e.message });
+                          } catch (e) {
+                            const message = e instanceof Error ? e.message : String(e);
+                            toast.error('Could not reject Workbench plan', { description: message });
                           }
                         }}
                         onRevise={handlePlanRevision}
@@ -1902,7 +2201,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               >
                 <div
                   ref={scrollRef}
-                  className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]"
+                  className="flex-1 overflow-y-auto chat-scroll"
                   style={{ overflowAnchor: 'none' }}
                 >
                   <div className="mx-auto w-full max-w-3xl px-4 py-8 space-y-5 relative">
@@ -1920,6 +2219,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             message={m}
                             isLast={i === messages.length - 1}
                             streaming={streaming}
+                            sessionId={sessionId ?? undefined}
                             onRevert={() => handleRevert(i)}
                             onEdit={(text) => handleEdit(i, text)}
                             onRegenerate={() => handleRegenerate(i)}
@@ -1930,6 +2230,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         </div>
                       );
                     })}
+
+                    {/* v4 Voice Command UI / Phase 1C: Inline model picker (registry-driven) */}
+                    {modelPickerActive && (
+                      <ModelPickerCard
+                        sessionId={sessionId ?? ''}
+                        onDismiss={() => setModelPickerActive(false)}
+                        context={{ currentModelId: selectedModel?.id }}
+                      />
+                    )}
                   </div>
 
                   {/* Scroll-to-bottom chevron at the right edge */}
@@ -1986,8 +2295,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             // renders the model's reply (thinking, text, tool
                             // calls) the same way a normal composer message does.
                             await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
-                          } catch (e: any) {
-                            toast.error('Could not approve Workbench plan', { description: e.message });
+                          } catch (e) {
+                            const message = e instanceof Error ? e.message : String(e);
+                            toast.error('Could not approve Workbench plan', { description: message });
                           }
                         }}
                         onAcceptAndImplement={async () => {
@@ -2007,8 +2317,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             setWorkbenchMode('full');
                             // Tell the model to proceed with implementation at Full access.
                             await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers, signal));
-                          } catch (e: any) {
-                            toast.error('Could not approve Workbench plan', { description: e.message });
+                          } catch (e) {
+                            const message = e instanceof Error ? e.message : String(e);
+                            toast.error('Could not approve Workbench plan', { description: message });
                           }
                         }}
                         onReject={async () => {
@@ -2018,8 +2329,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             setWorkbenchSession(updated);
                             // Notify the model the plan was rejected.
                             await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'reject', handlers, signal));
-                          } catch (e: any) {
-                            toast.error('Could not reject Workbench plan', { description: e.message });
+                          } catch (e) {
+                            const message = e instanceof Error ? e.message : String(e);
+                            toast.error('Could not reject Workbench plan', { description: message });
                           }
                         }}
                         onRevise={handlePlanRevision}
@@ -2033,6 +2345,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     className="shrink-0 z-10 w-full bg-background py-3"
                   >
                     <div className="mx-auto w-full max-w-3xl px-4">
+                      {streaming && <div className="px-4 pb-2 text-xs text-muted-foreground"><WorkingIndicator /></div>}
                       {renderComposerContent()}
                     </div>
                   </motion.div>
@@ -2063,7 +2376,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           onNavigate={(p) => {
             window.location.href = p;
           }}
-          onRefreshModels={() => handleRefreshModels(true)}
+          onRefreshModels={handleRefreshModels}
         />
       </div>
     </div>
@@ -2129,6 +2442,7 @@ function MessageBubble({
   message,
   isLast,
   streaming,
+  sessionId,
   onRevert,
   onEdit,
   onRegenerate,
@@ -2140,6 +2454,7 @@ function MessageBubble({
   message: ChatMessage;
   isLast?: boolean;
   streaming?: boolean;
+  sessionId?: string;
   onRevert?: () => void;
   onEdit?: (text: string) => void;
   onRegenerate?: () => void;
@@ -2197,6 +2512,55 @@ function MessageBubble({
         timestamp={message.timestamp}
         progress={toolProgress?.get(toolKey)}
       />
+    );
+  }
+
+  if (message.kind === 'help') {
+    return (
+      <div className="flex justify-start">
+        <CommandHelpCard />
+      </div>
+    );
+  }
+
+  if (message.kind === 'voice-command-card' && message.commandId) {
+    const cmd = voiceCommandRegistry.getById(message.commandId);
+    const Card = cmd?.uiCard;
+    if (Card) {
+      const dismiss = () => {
+        // Bubble unmount: parent will re-render without this message.
+        // We can't reach setMessages from here without a callback; the
+        // message is removed when the user dismisses it via the card's
+        // own UI. If the card doesn't call onDismiss, the message stays.
+      };
+      const props: VoiceCommandCardProps = {
+        sessionId,
+        onDismiss: dismiss,
+        context: message.context,
+      };
+      return (
+        <div className="flex justify-start" data-command-id={message.commandId}>
+          <Card {...props} />
+        </div>
+      );
+    }
+    // Card component not found — fall through to a small toast-style hint.
+    return (
+      <div className="flex justify-start text-xs text-muted-foreground">
+        Unknown card: {message.commandId}
+      </div>
+    );
+  }
+
+  if (message.kind === 'subagent-approval') {
+    return (
+      <div className="flex justify-start">
+        <SubagentApprovalInline
+          breakdown={message.breakdown ?? []}
+          onApprove={() => toast.success('Subagent plan approved')}
+          onCancel={() => toast.info('Subagent plan cancelled')}
+        />
+      </div>
     );
   }
 
@@ -2294,6 +2658,16 @@ function MessageBubble({
 	      {isUser ? (
 	        <>
 	          <div className="group rounded-xl border border-border/60 bg-card px-3.5 py-2 max-w-[80%] ml-auto shadow-xs hover:border-border/90 hover:shadow-soft transition-[border-color,box-shadow] duration-150">
+	            {/* Mid-response queued messages get a small "Queued" badge
+	                so the conversation flow makes it clear that the
+	                message arrived while the model was already working
+	                and was injected without interrupting. */}
+	            {message.queued && (
+	              <div className="flex items-center gap-1 mb-1 text-[10px] uppercase tracking-wider text-warning font-semibold">
+	                <span className="size-1.5 rounded-full bg-warning" />
+	                Queued
+	              </div>
+	            )}
 	            {editing ? (
 	              <div className="flex flex-col gap-2">
 	                <textarea
@@ -2419,7 +2793,7 @@ function MessageBubble({
                 {JSON.stringify(message, null, 2)}
               </div>
             ) : (
-              <AnimatePresence initial={false} mode="wait">
+              <AnimatePresence initial={false}>
                 {showPendingThinking && (
                   <motion.div
                     key="pending-thinking"
@@ -2577,7 +2951,6 @@ function MessageBubble({
             {!isUser && message.changedFiles && message.changedFiles.files.length > 0 && (
               <ChangedFilesCard changes={message.changedFiles} />
             )}
-            {isLast && streaming && !showRaw && <WorkingIndicator className="mt-1" />}
           </div>
           {/* Action buttons below assistant message */}
           <div className={cn(
@@ -2637,6 +3010,64 @@ function MessageBubble({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * Inline sub-agent approval card. Phase 3 will replace this with the full
+ * SubagentApprovalCard once the orchestrator's `propose-breakdown` endpoint
+ * is wired. For now this is a no-op stub that surfaces the breakdown items.
+ */
+function SubagentApprovalInline({
+  breakdown,
+  onApprove,
+  onCancel,
+}: {
+  breakdown: Array<{ goal: string; restrictedTools?: string[] }>;
+  onApprove: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      data-slot="subagent-approval-inline"
+      className="rounded-lg border border-border bg-card p-4 space-y-3 max-w-2xl"
+    >
+      <div className="text-sm font-semibold text-foreground">
+        Subagent plan ({breakdown.length} item{breakdown.length === 1 ? '' : 's'})
+      </div>
+      {breakdown.length === 0 ? (
+        <div className="text-xs text-muted-foreground">No items proposed.</div>
+      ) : (
+        <ul className="space-y-2">
+          {breakdown.map((item, idx) => (
+            <li key={idx} className="text-xs space-y-0.5">
+              <div className="text-foreground/90">{item.goal}</div>
+              {item.restrictedTools && item.restrictedTools.length > 0 && (
+                <div className="text-[11px] text-muted-foreground">
+                  Tools: {item.restrictedTools.join(', ')}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onApprove}
+          className="px-3 py-1 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90"
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-3 py-1 rounded-md border border-border text-xs font-medium hover:bg-muted"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
@@ -3417,9 +3848,12 @@ export function getDisplayBlocks(
 ): MessageBlock[] {
   try {
     const result: MessageBlock[] = [];
+    let hasFinalContent = false;
+
     if (blocks && blocks.length > 0) {
       for (const block of blocks) {
         if (block.type === 'final_output' && block.content) {
+          hasFinalContent = true;
           const parsed = parseSequentialText(block.content);
           for (const [subIndex, sub] of parsed.entries()) {
             result.push({
@@ -3432,6 +3866,20 @@ export function getDisplayBlocks(
           result.push(block);
         }
       }
+
+      // Safety net: if blocks exist but none carried final text content,
+      // inject the raw message content so it's never silently lost.
+      if (!hasFinalContent && content && content.trim()) {
+        const parsed = parseSequentialText(content);
+        for (const [subIndex, sub] of parsed.entries()) {
+          result.push({
+            id: `safety_content_sub_${subIndex}_${sub.type}`,
+            type: sub.type,
+            content: sub.content
+          });
+        }
+      }
+
       if (result.length > 0) return result;
     }
 

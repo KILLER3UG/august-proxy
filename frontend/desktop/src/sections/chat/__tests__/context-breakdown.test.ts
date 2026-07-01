@@ -31,19 +31,27 @@ describe('estimateContextBreakdown — messages', () => {
   });
 });
 
-describe('estimateContextBreakdown — thinking', () => {
-  it('returns 0 thinking for no messages', () => {
-    const r = estimateContextBreakdown({ messages: [], input: '', toolCount: 0 });
-    expect(r.thinking).toBe(0);
-  });
-
-  it('estimates thinking at ~15% of message tokens', () => {
+describe('estimateContextBreakdown — thinking (no double-count)', () => {
+  it('returns 0 thinking always — thinking text is already inside message content', () => {
     const r = estimateContextBreakdown({
       messages: [{ role: 'user', content: 'a'.repeat(400) }],
       input: '',
       toolCount: 0,
     });
-    expect(r.thinking).toBe(15); // ceil(100 * 0.15)
+    // Previously this returned ceil(messages*0.15)=15, double-counting the
+    // thinking text that is already part of message content (and of the
+    // provider-reported input_tokens when a ground truth exists).
+    expect(r.thinking).toBe(0);
+  });
+
+  it('returns 0 thinking even with scaleToTotal (scaled 0 stays 0)', () => {
+    const r = estimateContextBreakdown({
+      messages: [{ role: 'user', content: 'a'.repeat(400) }],
+      input: '',
+      toolCount: 5,
+      scaleToTotal: 10000,
+    });
+    expect(r.thinking).toBe(0);
   });
 });
 
@@ -62,14 +70,39 @@ describe('estimateContextBreakdown — system tools', () => {
     const r = estimateContextBreakdown({ messages: [], input: '', toolCount: 1 });
     expect(r.systemTools).toBe(180);
   });
+
+  it('uses toolTokenEstimate when provided instead of the heuristic', () => {
+    const r = estimateContextBreakdown({
+      messages: [],
+      input: '',
+      toolCount: 10,
+      toolTokenEstimate: 5432,
+    });
+    expect(r.systemTools).toBe(5432);
+  });
+});
+
+describe('estimateContextBreakdown — system prompt (de-inflated)', () => {
+  it('uses 1200 (not 3000) for the fallback system prompt — no more inflation', () => {
+    const r = estimateContextBreakdown({ messages: [], input: '', toolCount: 0 });
+    // Previously a flat 3000 was added regardless of real size, inflating the
+    // gauge by >50% for short conversations. Now a smaller constant is used
+    // only for the pre-request fallback.
+    expect(r.systemPrompt).toBe(1200);
+  });
+
+  it('uses 0 system prompt when scaleToTotal is provided (ground truth owns it)', () => {
+    const r = estimateContextBreakdown({
+      messages: [{ role: 'user', content: 'hi' }],
+      input: '',
+      toolCount: 5,
+      scaleToTotal: 8000,
+    });
+    expect(r.systemPrompt).toBe(0);
+  });
 });
 
 describe('estimateContextBreakdown — fixed estimates', () => {
-  it('uses 3000 tokens for the base system prompt', () => {
-    const r = estimateContextBreakdown({ messages: [], input: '', toolCount: 0 });
-    expect(r.systemPrompt).toBe(3000);
-  });
-
   it('uses 100 tokens for meta context', () => {
     const r = estimateContextBreakdown({ messages: [], input: '', toolCount: 0 });
     expect(r.meta).toBe(100);
@@ -91,8 +124,60 @@ describe('estimateContextBreakdown — fixed estimates', () => {
   });
 });
 
-describe('estimateContextBreakdown — combined', () => {
-  it('returns a complete breakdown that sums roughly to the visible total', () => {
+describe('estimateContextBreakdown — scaleToTotal (server ground truth)', () => {
+  it('scales categories to sum exactly to scaleToTotal', () => {
+    const r = estimateContextBreakdown({
+      messages: [{ role: 'user', content: 'a'.repeat(400) }],
+      input: 'a'.repeat(100),
+      toolCount: 10, // 1800 tokens
+      scaleToTotal: 10000,
+    });
+    const sum =
+      r.messages + r.thinking + r.systemTools + r.systemPrompt + r.skills + r.meta;
+    expect(sum).toBe(10000);
+  });
+
+  it('scales even when raw total exceeds scaleToTotal', () => {
+    const r = estimateContextBreakdown({
+      messages: [{ role: 'user', content: 'a'.repeat(10000) }], // 2500 tokens
+      input: '',
+      toolCount: 50, // 9000 tokens
+      scaleToTotal: 5000, // much smaller than raw 11600
+    });
+    const sum =
+      r.messages + r.thinking + r.systemTools + r.systemPrompt + r.skills + r.meta;
+    expect(sum).toBe(5000);
+  });
+
+  it('attributes everything to messages when raw total is 0', () => {
+    const r = estimateContextBreakdown({
+      messages: [],
+      input: '',
+      toolCount: 0,
+      scaleToTotal: 8000,
+    });
+    expect(r.messages).toBe(8000);
+    expect(r.thinking).toBe(0);
+    expect(r.systemTools).toBe(0);
+    expect(r.systemPrompt).toBe(0);
+    expect(r.skills).toBe(0);
+    expect(r.meta).toBe(0);
+  });
+
+  it('does not scale when scaleToTotal is undefined (preserves raw estimates)', () => {
+    const r = estimateContextBreakdown({
+      messages: [{ role: 'user', content: 'a'.repeat(400) }],
+      input: '',
+      toolCount: 10,
+    });
+    // Raw: messages(100) + thinking(0) + systemTools(1800) + systemPrompt(1200) + skills(0) + meta(100)
+    expect(r.messages).toBe(100);
+    expect(r.systemTools).toBe(1800);
+    expect(r.systemPrompt).toBe(1200);
+    expect(r.meta).toBe(100);
+  });
+
+  it('all categories are non-negative and finite after scaling', () => {
     const r = estimateContextBreakdown({
       messages: [
         { role: 'user', content: 'Hello there, this is a test message with some content.' },
@@ -101,21 +186,11 @@ describe('estimateContextBreakdown — combined', () => {
       input: 'A new question',
       toolCount: 30,
       coreMemoryBytes: 500,
+      scaleToTotal: 45000,
     });
-    // Every category is non-negative and finite
     for (const v of Object.values(r)) {
       expect(v).toBeGreaterThanOrEqual(0);
       expect(Number.isFinite(v)).toBe(true);
     }
-    // All expected keys present
-    expect(r).toHaveProperty('messages');
-    expect(r).toHaveProperty('thinking');
-    expect(r).toHaveProperty('systemTools');
-    expect(r).toHaveProperty('systemPrompt');
-    expect(r).toHaveProperty('skills');
-    expect(r).toHaveProperty('meta');
-    // Sanity: tools + base ≥ messages for this size
-    expect(r.systemTools).toBeGreaterThan(0);
-    expect(r.systemPrompt).toBe(3000);
   });
 });

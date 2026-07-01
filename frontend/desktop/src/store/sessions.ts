@@ -35,6 +35,10 @@ export interface Folder {
   id: string;
   name: string;
   isCollapsed?: boolean;
+  /** Filesystem path this folder represents (for workspace folders created via
+   *  the folder picker). Manual sidebar folders have `null`/`undefined` here and
+   *  are never auto-matched to a path. */
+  workspacePath?: string | null;
 }
 
 const LOCAL_SESSIONS_KEY = 'august-sessions-list-v1';
@@ -182,11 +186,12 @@ export function clearAllSessions(includeArchived: boolean = true) {
   return newSess;
 }
 
-export function createFolder(name: string): Folder {
+export function createFolder(name: string, workspacePath?: string | null): Folder {
   const newFolder: Folder = {
     id: 'folder_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5),
     name,
     isCollapsed: false,
+    workspacePath: workspacePath ?? null,
   };
   const updated = [...$folders.get(), newFolder];
   $folders.set(updated);
@@ -254,13 +259,34 @@ export function findOrCreateSessionForPath(
   const normalized = normalizePath(path);
   const name = folderName ?? folderNameFromPath(path);
 
-  // Check if a session already exists for this folder path
+  // Find an existing folder representing this filesystem path. Manual folders
+  // (created via the sidebar "New folder" button) have `workspacePath == null`
+  // and are intentionally never matched here.
+  let folder = $folders.get().find(f => f.workspacePath === normalized);
+  if (!folder) {
+    folder = createFolder(name, normalized);
+  }
+
+  // Re-parent any pre-existing sessions that share this workspace path into
+  // the folder so they appear grouped (satisfies the "group existing sessions"
+  // requirement). moveSessionToFolder persists the change.
+  for (const s of $sessions.get()) {
+    if (s.workspacePath === normalized && s.folderId !== folder!.id) {
+      moveSessionToFolder(s.id, folder!.id);
+    }
+  }
+
+  // Check if a session already exists for this folder path.
   const existing = $sessions.get().find(s => s.workspacePath === normalized);
   if (existing) {
+    // Ensure the existing session is associated with the folder.
+    if (existing.folderId !== folder!.id) {
+      moveSessionToFolder(existing.id, folder!.id);
+    }
     return { session: existing, created: false };
   }
 
-  // Create a new session tied to this folder path
-  const session = createSession(null, `Project: ${name}`, normalized);
+  // Create a new session tied to this folder path, under the folder.
+  const session = createSession(folder!.id, `Project: ${name}`, normalized);
   return { session, created: true };
 }

@@ -1,11 +1,14 @@
 import { atom } from 'nanostores';
-import type { ChatMessage, MessageBlock } from './ChatThread';
+import type { ChatMessage, MessageBlock } from '@/types/chat';
+import type { WorkbenchMode, EffortLevel } from '@/types/chat';
 import type { WorkbenchSession } from '@/types/workbench';
 import { streamWorkbenchChat, streamWorkbenchReconnect, stopWorkbenchChat } from '@/api/workbench';
 import { setSessionStatus, clearSessionStatus, $sessions } from '@/store/sessions';
 import { makeStreamHandlers } from './makeStreamHandlers';
 import { gitApi } from '@/api/git';
 import { chatRuntime } from './chat-runtime';
+import { pushBrowserAction } from '@/lib/browser-store';
+import { upsertQueuedMessage, removeQueuedMessage, setQueuedMessages } from './queue-store';
 
 export interface SessionStreamState {
   messages: ChatMessage[];
@@ -22,26 +25,25 @@ export interface SessionStreamState {
    *  events for the sub-agent are rendered nested under the parent
    *  `august__spawn_subagent` / `august__run_team` tool call. */
   subagentBlocks: Map<string, SubagentBlockState>;
-  toolProgress: Map<string, ReadonlyArray<{ path: string; status: 'reading' | 'read' }>>;
-  workbenchBtw: any;
+  toolProgress: Map<string, ReadonlyArray<ToolProgressEntry>>;
+  workbenchBtw: WorkbenchBtwState | null;
   workbenchSession: WorkbenchSession | null;
 }
 
-export interface SubagentBlockState {
-  id: string;
-  jobId: string;
-  parentToolId: string;
-  agentId: string;
-  scope?: string;
-  task?: string;
-  depth?: number;
-  status: 'running' | 'completed' | 'failed' | 'cancelled';
-  startedAt: number;
-  finishedAt?: number;
-  /** Inner blocks (thinking/text/tool_call/tool_result) — same shape as
-   *  the parent message's blocks. */
-  blocks: MessageBlock[];
-  error?: string;
+export type {
+  ChatMessage,
+  MessageBlock,
+  SubagentBlockState,
+  ToolProgressEntry,
+  WorkbenchBtwState,
+} from '@/types/chat';
+import type { SubagentBlockState, ToolProgressEntry, WorkbenchBtwState, AppendBlockEvent } from '@/types/chat';
+
+/** Apply a React-style SetStateAction updater to a previous value. Mirrors
+ *  the semantics of `React.Dispatch<React.SetStateAction<T>>` so the chat
+ *  store layer can use the same calling convention. */
+function applyUpdater<T>(updater: T | ((prev: T) => T), prev: T): T {
+  return typeof updater === 'function' ? (updater as (prev: T) => T)(prev) : updater;
 }
 
 // Global store for the stream states of all sessions
@@ -51,7 +53,7 @@ export const $sessionStreamStates = atom<Record<string, SessionStreamState>>({})
 export const activeStreamControllers = new Map<string, AbortController>();
 
 /**
- * Per-session SSE subscriber that holds the live GET /ui/workbench/chat/stream
+ * Per-session SSE subscriber that holds the live GET /api/workbench/chat/stream
  * connection. Independent of the per-turn AbortController above — detaching
  * this subscriber (e.g. when the user switches sessions) does NOT stop the
  * backend generation; the connection is just closed client-side. Other
@@ -119,7 +121,7 @@ export function getOrInitSessionStreamState(sessionId: string | null): SessionSt
   if (activeSession?.workbenchSessionId) {
     workbenchSession = {
       id: activeSession.workbenchSessionId,
-      provider: (activeSession.workbenchProvider || 'claude') as any,
+      provider: (activeSession.workbenchProvider || 'claude'),
       agentId: activeSession.workbenchAgentId || 'build',
       agentRole: activeSession.workbenchAgentId || 'build',
       agentMode: 'assistant',
@@ -133,7 +135,7 @@ export function getOrInitSessionStreamState(sessionId: string | null): SessionSt
       lastMutationAt: null,
       updatedAt: new Date().toISOString(),
       todos: [],
-      guardMode: 'plan',
+      guardMode: 'full',
     };
   }
 
@@ -184,12 +186,12 @@ export async function startChatStream(
   params: {
     message: string;
     chatHistory: ChatMessage[];
-    workbenchMode: any;
-    effort: any;
+    workbenchMode: WorkbenchMode;
+    effort: EffortLevel;
     model: string | undefined;
     modelProvider: string | undefined;
     getWorkbenchProvider: () => 'claude' | 'codex';
-    ensureWorkbenchSession: () => Promise<any>;
+    ensureWorkbenchSession: () => Promise<WorkbenchSession | null>;
   }
 ) {
   if (activeStreamControllers.has(sessionId)) {
@@ -217,7 +219,7 @@ export async function startChatStream(
     initialMessages: params.chatHistory,
     setMessages: (updater) => {
       updateSessionStreamState(sessionId, prev => {
-        const nextMsgs = typeof updater === 'function' ? (updater as any)(prev.messages) : updater;
+        const nextMsgs = applyUpdater(updater, prev.messages);
         persistMessages(sessionId, nextMsgs);
         return { messages: nextMsgs };
       });
@@ -229,13 +231,13 @@ export async function startChatStream(
     },
     setSubagentPrompts: (updater) => {
       updateSessionStreamState(sessionId, prev => {
-        const nextPrompts = typeof updater === 'function' ? (updater as any)(prev.subagentPrompts) : updater;
+        const nextPrompts = applyUpdater(updater, prev.subagentPrompts);
         return { subagentPrompts: nextPrompts };
       });
     },
     setToolProgress: (updater) => {
       updateSessionStreamState(sessionId, prev => {
-        const nextProgress = typeof updater === 'function' ? (updater as any)(prev.toolProgress) : updater;
+        const nextProgress = applyUpdater(updater, prev.toolProgress);
         return { toolProgress: nextProgress };
       });
     },
@@ -279,7 +281,7 @@ export async function startChatStream(
 
     // The POST handler returns { sinceSeq } JSON immediately and runs the
     // generation in the background. Live events are delivered via the
-    // separate /ui/workbench/chat/stream SSE channel — attach it now using
+    // separate /api/workbench/chat/stream SSE channel — attach it now using
     // the same per-turn handlers so streamed text / thinking / tool_use /
     // tool_result events reach the chat UI. Without this, events accumulate
     // in the chat-event-log unread and the assistant bubble stays empty.
@@ -307,18 +309,28 @@ export async function startChatStream(
     }
 
     finalize(abortController.signal.aborted ? 'aborted' : 'done');
-  } catch (e: any) {
-    if (e?.name === 'AbortError') {
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') {
       clearSessionStatus(sessionId);
       finalize('aborted');
       return;
     }
-    console.error(e);
+    console.error('[startChatStream] error:', e);
+    const errorMsg = e instanceof Error
+      ? e.message
+      : typeof e === 'string'
+        ? e
+        : 'Unknown error';
     updateSessionStreamState(sessionId, prev => ({
       messages: prev.messages.map(msg =>
-        msg.id === assistantMsgId ? { ...msg, content: (msg.content || '') + `\n\n⚠️ Connection error: ${e.message}` } : msg
+        msg.id === assistantMsgId
+          ? { ...msg, content: (msg.content || '') + `\n\n⚠️ Could not generate a response: ${errorMsg}` }
+          : msg
       )
     }));
+    // Also emit an error event through the handler so the onError path
+    // in makeStreamHandlers can write the ⚠️ block into streamBlocks.
+    try { handlers.onError?.({ message: errorMsg }); } catch {}
     finalize('error');
   } finally {
     activeStreamControllers.delete(sessionId);
@@ -354,7 +366,7 @@ export async function stopChatStream(sessionId: string) {
 // Reconnect/sync stream with the backend
 export async function reconnectChatStream(
   sessionId: string,
-  ensureWorkbenchSession: () => Promise<any>
+  ensureWorkbenchSession: () => Promise<WorkbenchSession | null>
 ) {
   if (activeStreamControllers.has(sessionId)) {
     // Already active
@@ -389,7 +401,7 @@ export async function reconnectChatStream(
     initialMessages,
     setMessages: (updater) => {
       updateSessionStreamState(sessionId, prev => {
-        const nextMsgs = typeof updater === 'function' ? (updater as any)(prev.messages) : updater;
+        const nextMsgs = applyUpdater(updater, prev.messages);
         persistMessages(sessionId, nextMsgs);
         return { messages: nextMsgs };
       });
@@ -401,13 +413,13 @@ export async function reconnectChatStream(
     },
     setSubagentPrompts: (updater) => {
       updateSessionStreamState(sessionId, prev => {
-        const nextPrompts = typeof updater === 'function' ? (updater as any)(prev.subagentPrompts) : updater;
+        const nextPrompts = applyUpdater(updater, prev.subagentPrompts);
         return { subagentPrompts: nextPrompts };
       });
     },
     setToolProgress: (updater) => {
       updateSessionStreamState(sessionId, prev => {
-        const nextProgress = typeof updater === 'function' ? (updater as any)(prev.toolProgress) : updater;
+        const nextProgress = applyUpdater(updater, prev.toolProgress);
         return { toolProgress: nextProgress };
       });
     },
@@ -431,8 +443,8 @@ export async function reconnectChatStream(
     const lastSeq = getSessionSubscriberLastSeq(sessionId);
     await streamWorkbenchReconnect(sessionId, handlers, abortController.signal, lastSeq || undefined);
     finalize(abortController.signal.aborted ? 'aborted' : 'done');
-  } catch (e: any) {
-    if (e?.name === 'AbortError') {
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') {
       clearSessionStatus(sessionId);
       finalize('aborted');
       return;
@@ -445,9 +457,9 @@ export async function reconnectChatStream(
 }
 
 // Sync all active streams with the backend
-export async function syncActiveStreams(ensureWorkbenchSession: () => Promise<any>) {
+export async function syncActiveStreams(ensureWorkbenchSession: () => Promise<WorkbenchSession | null>) {
   try {
-    const res = await fetch('/ui/workbench/chat/active');
+    const res = await fetch('/api/workbench/chat/active');
     if (!res.ok) return;
     const active: Record<string, string> = await res.json();
     for (const sessionId of Object.keys(active)) {
@@ -466,7 +478,7 @@ export async function syncActiveStreams(ensureWorkbenchSession: () => Promise<an
 
 /**
  * Attach (or re-attach) the per-session SSE subscriber that pulls events
- * from GET /ui/workbench/chat/stream. The subscriber is idempotent: if
+ * from GET /api/workbench/chat/stream. The subscriber is idempotent: if
  * one is already attached for `sessionId` it is left alone. The reducer
  * updates `subagentBlocks` (so background sub-agents appear in the chat
  * thread even when no per-turn handler is active) and bumps the stored
@@ -554,12 +566,81 @@ export function ensureSessionSubscriber(sessionId: string): void {
         id: data.id,
         content: data.content,
         is_error: data.is_error,
-        status: data.status || (data.is_error ? 'error' : 'done'),
-      });
-    },
-  };
+      status: data.status || (data.is_error ? 'error' : 'done'),
+        });
+      },
+      onCompaction: (_data) => {
+        // Compaction events are handled by the per-turn handler
+        // (makeStreamHandlers); the background subscriber acknowledges
+        // them so the SSE stream stays healthy.
+      },
+      onWarning: (data) => {
+        console.warn('[chat-stream-manager] warning:', data?.message || data);
+      },
+      onInfo: (data) => {
+        console.info('[chat-stream-manager] info:', data?.message || data);
+      },
+      onBrowserAction: (data) => {
+        pushBrowserAction({
+          id: data.id,
+          name: data.name,
+          input: data.input,
+          url: data.url,
+          title: data.title,
+          target: data.target ?? null,
+          screenshot: data.screenshot ?? null,
+          typed: data.typed,
+          selected: data.selected,
+          scrolled: data.scrolled,
+          status: data.status,
+          ts: Date.now(),
+        });
+      },
+      onUserMessageQueued: (data) => {
+        // A follow-up was queued (possibly from another tab or via the
+        // optimistic local API call). Add it to the per-session queue
+        // store so the UI pills update in real time.
+        if (!data?.messageId || !data?.sessionId) return;
+        upsertQueuedMessage(data.sessionId, {
+          id: data.messageId,
+          text: data.text ?? '',
+          queuedAt: data.queuedAt ?? new Date().toISOString(),
+        });
+      },
+      onUserMessageDequeued: (data) => {
+        if (!data?.messageId || !data?.sessionId) return;
+        removeQueuedMessage(data.sessionId, data.messageId);
+      },
+      onUserMessageInjected: (data) => {
+        // The backend drained this message and appended it to the model's
+        // in-flight conversation. Clear it from the local queue (it now
+        // lives as an inline user bubble in the chat thread) and append
+        // a synthetic user message to the session's message log so the
+        // thread renders it in the right place.
+        if (!data?.messageId || !data?.sessionId) return;
+        removeQueuedMessage(data.sessionId, data.messageId);
+        const entry = {
+          id: `qm-${data.messageId}`,
+          role: 'user' as const,
+          content: data.text ?? '',
+          timestamp: data.queuedAt ?? new Date().toISOString(),
+          queued: true,
+        };
+        updateSessionStreamState(data.sessionId, (prev) => ({
+          ...prev,
+          messages: [...(prev.messages ?? []), entry],
+        }));
+      },
+    };
 
-  streamWorkbenchReconnect(sessionId, handlers, controller.signal, sinceSeq)
+  streamWorkbenchReconnect(sessionId, handlers, controller.signal, sinceSeq, {
+    // Durable subscriber: effectively-unbounded retry with capped backoff.
+    // The backend always emits a terminal event (done/error/aborted) when
+    // the turn ends, so retries converge; a dead backend fails fast at the
+    // POST /chat that started the turn. This keeps the stream bound to the
+    // session across transient drops / tab switches (issue #2).
+    maxRetries: Infinity,
+  })
     .catch((err) => {
       if (err?.name !== 'AbortError') {
         console.warn('[chat-stream-manager] subscriber error:', err?.message || err);
@@ -593,19 +674,7 @@ export function getSessionSubscriberLastSeq(sessionId: string): number {
 
 export function appendBlockEvent(
   prevBlocks: MessageBlock[],
-  event: {
-    type: 'thinking' | 'text' | 'content' | 'tool_call' | 'command' | 'tool_progress' | 'tool_result';
-    content?: string;
-    name?: string;
-    id?: string;
-    context?: string;
-    preview?: string;
-    summary?: string;
-    error?: string;
-    status?: 'running' | 'done' | 'error';
-    duration?: number;
-    isRevisedPlan?: boolean;
-  }
+  event: AppendBlockEvent
 ): MessageBlock[] {
   const blocks = [...prevBlocks];
   const lastBlock = blocks[blocks.length - 1];
@@ -621,7 +690,7 @@ export function appendBlockEvent(
         content: text
       });
     }
-  } else if (event.type === 'text' || event.type === 'content') {
+    } else if (event.type === 'text' || event.type === 'content' || event.type === 'final_output') {
     const text = event.content || '';
     if (lastBlock && lastBlock.type === 'final_output') {
       lastBlock.content = (lastBlock.content || '') + text;
@@ -706,8 +775,8 @@ export function applySubagentEvent(
     | { type: 'subagent_start'; jobId: string; agentId: string; parentToolUseId?: string; scope?: string; task?: string; depth?: number }
     | { type: 'subagent_thinking'; jobId: string; content?: string }
     | { type: 'subagent_text'; jobId: string; content?: string }
-    | { type: 'subagent_tool_call'; jobId: string; id: string; name: string; input?: any; context?: string; status?: 'running' | 'done' | 'error' }
-    | { type: 'subagent_tool_result'; jobId: string; id: string; content?: any; is_error?: boolean; status?: 'done' | 'error' | 'running'; summary?: string; error?: string; duration?: number }
+    | { type: 'subagent_tool_call'; jobId: string; id: string; name: string; input?: Record<string, unknown>; context?: string; status?: 'running' | 'done' | 'error' }
+    | { type: 'subagent_tool_result'; jobId: string; id: string; content?: unknown; is_error?: boolean; status?: 'done' | 'error' | 'running'; summary?: string; error?: string; duration?: number }
     | { type: 'subagent_done'; jobId: string; status?: 'completed' | 'failed' | 'cancelled'; message?: string; result?: string }
 ): boolean {
   if (!sessionId || !event?.jobId) return false;
@@ -802,4 +871,41 @@ export function applySubagentEvent(
     return { subagentBlocks: blocks };
   });
   return mutated;
+}
+
+// ── Resilience: re-attach SSE subscribers on tab refocus / network recovery ──
+//
+// A dropped per-turn stream (tab switch, throttling, brief network blip) used
+// to finalize the turn as errored even though the backend kept generating.
+// The durable per-session subscriber (ensureSessionSubscriber, unbounded
+// retries) keeps the stream bound to the session, but it only gets re-attached
+// if something calls syncActiveStreams. We trigger that here on:
+//   * visibilitychange (document refocus / tab switch back)
+//   * online (network recovered after going offline)
+// in addition to the existing poller. This is the frontend half of issue #2:
+// long tool→think cycles stay live across interruptions.
+
+let _registeredEnsureSession: ((sessionId: string) => Promise<WorkbenchSession | null>) | null = null;
+let _resyncListenersAttached = false;
+
+/** Register the ensureWorkbenchSession callback used by the auto-resync
+ *  listeners, and attach the window listeners (idempotently). Called once
+ *  at app init with the real session-ensure function. */
+export function registerStreamResync(
+  ensureWorkbenchSession: (sessionId: string) => Promise<WorkbenchSession | null>,
+): void {
+  _registeredEnsureSession = ensureWorkbenchSession;
+  if (_resyncListenersAttached || typeof window === 'undefined') return;
+  _resyncListenersAttached = true;
+
+  const resync = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    // syncActiveStreams accepts a no-arg ensureWorkbenchSession; wrap ours.
+    syncActiveStreams(() => _registeredEnsureSession
+      ? _registeredEnsureSession('')
+      : Promise.resolve(null));
+  };
+
+  window.addEventListener('visibilitychange', resync);
+  window.addEventListener('online', resync);
 }

@@ -11,7 +11,7 @@ import {
   getAggregatedModels,
   isFreeModelId,
   type AggregatedModel,
-} from '@/api/backend-ui';
+} from '@/api/api-client';
 
 export interface Provider {
   id: string;

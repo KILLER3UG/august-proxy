@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { atom, onMount } from 'nanostores';
 import { useStore } from '@nanostores/react';
-import { getRecentLogs, type LogEvent } from '@/api/backend-ui';
+import { getRecentLogs, type LogEvent } from '@/api/api-client';
 
 const MAX_EVENTS = 10_000;
 const BACKFILL_LIMIT = 500;

@@ -70,9 +70,9 @@ export interface WorkbenchAgent {
   canCrossLoadTeamSkills: boolean;
   allowDelegation: boolean;
   tools: string[];
-  permissions: Record<string, any>;
+  permissions: Record<string, unknown>;
   inheritedFrom: string | null;
-  effectivePermissions: Record<string, any>;
+  effectivePermissions: Record<string, unknown>;
 }
 
 export interface WorkbenchAgentRegistry {
@@ -97,7 +97,10 @@ export interface WorkbenchCapabilities {
   /** Estimated token count of all serialized tool definitions (name + description + input_schema). */
   toolTokenEstimate?: number;
   groups: Record<string, WorkbenchCapability[]>;
-  agents: any;
+  /** Map of agent id → agent definition. Backend serialises the agent
+   *  registry here; consumers should narrow with `as WorkbenchAgent` or
+   *  validate via Zod when crossing the API boundary. */
+  agents: Record<string, WorkbenchAgent>;
   approvalGate: {
     readSearchInspectAllowed: boolean;
     mutationsRequireApprovedPlan: boolean;
@@ -105,17 +108,23 @@ export interface WorkbenchCapabilities {
 }
 
 export interface WorkbenchBtwResult {
+  /** Stable id of the btw query this answer corresponds to. Used by the
+   *  drawer to reset its question input when the active result changes. */
+  id?: string;
   answer: string;
-  [key: string]: any;
+  /** Optional citations surfaced with the answer. */
+  citations?: string[];
+  /** Confidence score in [0, 1] when the backend reports one. */
+  confidence?: number;
 }
 
 export type WorkbenchEvent =
   | { type: 'thinking'; data: { content: string } }
   | { type: 'text'; data: { content: string } }
   | { type: 'content'; data: { content: string } }
-  | { type: 'tool_use'; data: { id: string; name: string; input: Record<string, any> } }
-  | { type: 'tool_call'; data: { id: string; name: string; input?: Record<string, any> } }
-  | { type: 'tool_result'; data: { id: string; content: any; is_error?: boolean } }
+  | { type: 'tool_use'; data: { id: string; name: string; input: Record<string, unknown> } }
+  | { type: 'tool_call'; data: { id: string; name: string; input?: Record<string, unknown> } }
+  | { type: 'tool_result'; data: { id: string; content: unknown; is_error?: boolean } }
   | { type: 'session'; data: WorkbenchSession }
   | { type: 'btw'; data: WorkbenchBtwResult }
   | { type: 'compaction'; data: { headCount: number; tailCount: number; compressedCount: number; originalTokens: number; compressedTokens: number; underThreshold?: boolean; threshold?: number } }
@@ -125,8 +134,8 @@ export type WorkbenchEvent =
 export interface WorkbenchEventHandlers {
   onThinking?: (data: { content: string }) => void;
   onText?: (data: { content: string }) => void;
-  onToolUse?: (data: { id: string; name: string; input: Record<string, any> }) => void;
-  onToolResult?: (data: { id: string; content: any; is_error?: boolean }) => void;
+  onToolUse?: (data: { id: string; name: string; input: Record<string, unknown> }) => void;
+  onToolResult?: (data: { id: string; content: unknown; is_error?: boolean }) => void;
   onToolProgress?: (data: {
     id: string;
     name: string;
@@ -145,6 +154,19 @@ export interface WorkbenchEventHandlers {
     compressedTokens: number;
     underThreshold?: boolean;
     threshold?: number;
+  }) => void;
+  onBrowserAction?: (data: {
+    id: string;
+    name: string;
+    input?: Record<string, unknown>;
+    url?: string;
+    title?: string;
+    target?: { x: number; y: number; width: number; height: number } | null;
+    screenshot?: { path: string; width: number; height: number } | null;
+    typed?: string;
+    selected?: string;
+    scrolled?: string;
+    status: 'success' | 'error';
   }) => void;
   onPrompt?: (data: {
     content: string;
@@ -206,7 +228,7 @@ export interface WorkbenchEventHandlers {
     agentId: string;
     id: string;
     name: string;
-    input: Record<string, any>;
+    input: Record<string, unknown>;
     status?: 'running' | 'done' | 'error';
   }) => void;
   /** Tool result for a sub-agent tool call. Collapses the matching
@@ -215,18 +237,46 @@ export interface WorkbenchEventHandlers {
     jobId: string;
     agentId: string;
     id: string;
-    content: any;
+    content: unknown;
     is_error?: boolean;
     status?: 'done' | 'error';
   }) => void;
   /** Generic warnings (e.g. model fallback when a sub-agent alias couldn't
-   *  be resolved). */
+   *  be resolved). Unknown fields are surfaced via `extras` so callers
+   *  can log/inspect them without losing type safety on the known fields. */
   onWarning?: (data: {
     kind?: string;
     message?: string;
     jobId?: string;
     toolUseId?: string;
-    [k: string]: any;
+    extras?: Record<string, unknown>;
+  }) => void;
+  /** Informational messages (auto-memory sync, guideline updates, etc.).
+   *  Unknown fields go into `extras` for the same reason as onWarning. */
+  onInfo?: (data: {
+    message?: string;
+    extras?: Record<string, unknown>;
+  }) => void;
+  /** A user message was queued for mid-response delivery. The chat
+   *  thread updates its local queue pill and (when the queue holds
+   *  nothing yet) adds the entry optimistically. */
+  onUserMessageQueued?: (data: {
+    sessionId: string;
+    messageId: string;
+    text: string;
+    queuedAt: string;
+  }) => void;
+  /** A queued user message was removed by the user (or otherwise
+   *  cancelled before being delivered to the model). */
+  onUserMessageDequeued?: (data: { sessionId: string; messageId: string }) => void;
+  /** A queued user message was just drained and appended to the model's
+   *  in-flight conversation. The chat thread renders it as an inline
+   *  user message with a "Queued" badge. */
+  onUserMessageInjected?: (data: {
+    sessionId: string;
+    messageId: string;
+    text: string;
+    queuedAt: string;
   }) => void;
   onDone?: () => void;
   onError?: (data: { message: string }) => void;

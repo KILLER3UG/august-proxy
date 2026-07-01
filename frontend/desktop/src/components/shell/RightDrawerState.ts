@@ -4,7 +4,7 @@ import { atom } from 'nanostores';
 import { useStore } from '@nanostores/react';
 import type { GitDiffResult } from '@/api/git';
 
-export type RightDrawerSectionId = 'preview' | 'diff' | 'terminal' | 'tasks' | 'plan';
+export type RightDrawerSectionId = 'preview' | 'diff' | 'terminal' | 'tasks' | 'plan' | 'browser';
 
 export interface RightDrawerState {
   open: boolean;
@@ -15,7 +15,7 @@ export interface RightDrawerState {
 }
 
 const MAX_SECTIONS = 4;
-const SECTION_ORDER: RightDrawerSectionId[] = ['preview', 'diff', 'terminal', 'tasks', 'plan'];
+const SECTION_ORDER: RightDrawerSectionId[] = ['preview', 'diff', 'terminal', 'tasks', 'plan', 'browser'];
 
 export const $rightDrawer = atom<RightDrawerState>({
   open: false,

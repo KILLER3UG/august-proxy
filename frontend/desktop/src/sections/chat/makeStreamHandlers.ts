@@ -26,11 +26,13 @@
  * the stream and then calls `finalize` exactly once.
  */
 
-import type { ChatMessage, MessageBlock } from './ChatThread';
+import type { ChatMessage, MessageBlock, WorkbenchBtwState, AppendBlockEvent } from '@/types/chat';
+import type { ChatTurnRecord } from './chat-runtime';
 import type { WorkbenchEventHandlers, WorkbenchSession } from '@/types/workbench';
 import type { GitDiffResult } from '@/api/git';
 import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
 import { applyToolProgress } from '@/lib/tool-progress';
+import { pushBrowserAction } from '@/lib/browser-store';
 import { applySubagentEvent } from './chat-stream-manager';
 
 export interface MakeStreamHandlersOptions {
@@ -57,11 +59,11 @@ export interface MakeStreamHandlersOptions {
     jobId?: string;
   }>>>;
   setToolProgress: React.Dispatch<React.SetStateAction<ToolProgressMap>>;
-  setWorkbenchBtw: (result: any) => void;
+  setWorkbenchBtw: (result: WorkbenchBtwState | null) => void;
 
   isTurnVisible: (sessionId: string) => boolean;
-  finishTurn: (turn: any, status: 'done' | 'error' | 'aborted') => void;
-  turn: any;
+  finishTurn: (turn: ChatTurnRecord, status: 'done' | 'error' | 'aborted') => void;
+  turn: ChatTurnRecord;
 
 
 
@@ -72,7 +74,7 @@ export interface MakeStreamHandlersOptions {
   /** Pure reducer that merges a new SSE event into the streamBlocks
    *  array. Lives in ChatThread.tsx so the composer and the factory
    *  share the exact same merging behavior. */
-  appendBlockEvent: (prev: MessageBlock[], event: any) => MessageBlock[];
+  appendBlockEvent: (prev: MessageBlock[], event: AppendBlockEvent) => MessageBlock[];
 }
 
 export interface StreamHandlers {
@@ -118,7 +120,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   let changedFiles: GitDiffResult | null = null;
   let beforeMutationCount = initialMutationCount ?? 0;
   let latestMutationCount = 0;
-  let latestWorkbenchTodos: any[] = [];
+  let latestWorkbenchTodos: NonNullable<ChatMessage['todos']> = [];
   const thinkingStart = Date.now();
   let thinkingEnd: number | null = null;
   let finished = false;
@@ -303,7 +305,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         thinkingEnd = Date.now();
       }
       assistantContent += content;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content });
       scheduleUpdate();
     },
     onToolUse: ({ id, name, input }) => {
@@ -350,7 +352,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         pendingConfirmations.delete(id);
       }
 
-      const resultText = typeof content === 'string' ? content : JSON.stringify(content);
+      const resultText = typeof content === 'string' ? content : content != null ? JSON.stringify(content) : '';
       toolResults = toolResults.map(t => t.id === id ? {
         ...t,
         pendingApproval: parsedResult?.type === 'mutation_pending_confirmation' ? {
@@ -379,6 +381,22 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       setWorkbenchSession(sessionState);
       scheduleUpdate();
     },
+    onBrowserAction: (data) => {
+      pushBrowserAction({
+        id: data.id,
+        name: data.name,
+        input: data.input,
+        url: data.url,
+        title: data.title,
+        target: data.target ?? null,
+        screenshot: data.screenshot ?? null,
+        typed: data.typed,
+        selected: data.selected,
+        scrolled: data.scrolled,
+        status: data.status,
+        ts: Date.now(),
+      });
+    },
     onToolProgress: (event) => {
       const e: ToolProgressEvent = {
         id: event.id,
@@ -398,7 +416,19 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // disappears if the turn is rolled back.
       const notice = `\n\n📦 Context compacted — kept the first ${info.headCount} and last ${info.tailCount} messages; summarized ${info.compressedCount} middle messages (~${info.originalTokens} → ~${info.compressedTokens} tokens).`;
       assistantContent += notice;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: notice });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content: notice });
+      scheduleUpdate();
+    },
+    onWarning: ({ message }) => {
+      const warning = `\n\n⚠️ ${message || 'Warning'}`;
+      assistantContent += warning;
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content: warning });
+      scheduleUpdate();
+    },
+    onInfo: ({ message }) => {
+      const info = `\n\nℹ️ ${message || ''}`;
+      assistantContent += info;
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content: info });
       scheduleUpdate();
     },
     onDone: async () => {
@@ -414,7 +444,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     },
     onError: ({ message }) => {
       assistantContent += `\n\n⚠️ Workbench error: ${message}`;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'text', content: `\n\n⚠️ Workbench error: ${message}` });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content: `\n\n⚠️ Workbench error: ${message}` });
       scheduleUpdate();
       finalize('error');
     },

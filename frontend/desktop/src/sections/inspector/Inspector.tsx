@@ -12,7 +12,7 @@ import {
   getRequestDetail,
   type RequestDetailEntry,
   type Period,
-} from '@/api/backend-ui';
+} from '@/api/api-client';
 
 const PERIODS: { key: Period; label: string }[] = [
   { key: 'today', label: 'Today' },

@@ -22,7 +22,7 @@ import {
   type ModelCostEstimate,
   type AggregatedModel,
   type UserModelAlias,
-} from '@/api/backend-ui';
+} from '@/api/api-client';
 
 type Tab = 'catalog' | 'capabilities' | 'aliases' | 'user-aliases' | 'cost' | 'quotas';
 

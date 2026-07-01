@@ -204,6 +204,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     category: 'tools',
     keywords: ['skill', 'curator', 'lifecycle', 'stale', 'archive', 'consolidate', 'usage'],
   },
+  {
+    id: 'skills-authoring',
+    label: 'Skill Authoring',
+    description: 'Create, edit, and manage agent-authored skills.',
+    icon: BookOpen,
+    category: 'tools',
+    keywords: ['skill', 'create', 'edit', 'delete', 'author', 'manage'],
+  },
 
   /* ── Computer Use ────────────────────────────────────────────────── */
   {

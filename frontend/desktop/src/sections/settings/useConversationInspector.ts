@@ -20,7 +20,7 @@ import {
   type ConversationsResponse,
   type Period,
   type RequestEntry,
-} from '@/api/backend-ui';
+} from '@/api/api-client';
 
 export interface MessageItem {
   role: string;

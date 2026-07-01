@@ -1,0 +1,10 @@
+# ESLint 9 ignores (kept for tools that still read this file; flat config in
+# eslint.config.js is the source of truth.)
+node_modules
+dist
+web-dist
+src-tauri
+coverage
+vite.config.js
+vite.config.d.ts
+vite.config.js.timestamp-*

@@ -1,0 +1,207 @@
+"""Skill curator — lifecycle management for agent-authored skills.
+
+Modeled on Hermes ``agent/curator.py`` (skill maintenance) + ``tools/skill_usage.py``
+(usage telemetry).  Only touches skills with ``created_by: "agent"`` provenance;
+never deletes (archives only); pinned skills are exempt from every auto-transition.
+"""
+from __future__ import annotations
+import asyncio
+import json
+import logging
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+from app.services import skillService
+log = logging.getLogger(__name__)
+_STALEAfterDays = 14
+_ARCHIVEAfterDays = 60
+_CURATIONIntervalSeconds = 3600
+_USAGEFilename = '.usage.json'
+_AGENTCreatedTag = 'agent'
+
+@dataclass
+class UsageRecord:
+    name: str
+    useCount: int = 0
+    viewCount: int = 0
+    patchCount: int = 0
+    lastUsedAt: Optional[float] = None
+    lastViewedAt: Optional[float] = None
+    lastPatchedAt: Optional[float] = None
+    state: str = 'active'
+    pinned: bool = False
+    archivedAt: Optional[float] = None
+
+class SkillCurator:
+    """Manages the sidecar usage file and lifecycle transitions."""
+
+    def __init__(self, dataDir: Path | str | None=None) -> None:
+        if dataDir is None:
+            try:
+                from app.config import settings
+                dataDir = Path(settings.dataDir)
+            except Exception:
+                dataDir = Path.cwd()
+        self._usagePath = Path(dataDir) / 'skills' / _USAGEFilename
+        self._usage: dict[str, UsageRecord] = {}
+        self._load()
+
+    def _load(self) -> None:
+        try:
+            if self._usagePath.exists():
+                raw = json.loads(self._usagePath.read_text('utf-8'))
+                if isinstance(raw, dict):
+                    self._usage = {k: UsageRecord(**v) for k, v in raw.items()}
+        except Exception as exc:
+            log.warning('curator: could not load usage: %s', exc)
+
+    def _save(self) -> None:
+        try:
+            self._usagePath.parent.mkdir(parents=True, exist_ok=True)
+            raw = {k: {'name': v.name, 'use_count': v.useCount, 'viewCount': v.viewCount, 'patch_count': v.patchCount, 'last_used_at': v.lastUsedAt, 'last_viewed_at': v.lastViewedAt, 'last_patched_at': v.lastPatchedAt, 'state': v.state, 'pinned': v.pinned, 'archived_at': v.archivedAt} for k, v in self._usage.items()}
+            tmp = self._usagePath.with_suffix('.tmp')
+            tmp.write_text(json.dumps(raw, indent=2), 'utf-8')
+            tmp.replace(self._usagePath)
+        except Exception as exc:
+            log.warning('curator: could not save usage: %s', exc)
+
+    def bumpUse(self, name: str) -> None:
+        rec = self._ensure(name)
+        rec.useCount += 1
+        rec.lastUsedAt = time.time()
+        self._save()
+
+    def bumpView(self, name: str) -> None:
+        rec = self._ensure(name)
+        rec.viewCount += 1
+        rec.lastViewedAt = time.time()
+        self._save()
+
+    def bumpPatch(self, name: str) -> None:
+        rec = self._ensure(name)
+        rec.patchCount += 1
+        rec.lastPatchedAt = time.time()
+        self._save()
+
+    def _ensure(self, name: str) -> UsageRecord:
+        if name not in self._usage:
+            self._usage[name] = UsageRecord(name=name)
+        return self._usage[name]
+
+    def getRecord(self, name: str) -> Optional[UsageRecord]:
+        return self._usage.get(name)
+
+    def listUsage(self) -> list[dict[str, object]]:
+        return [{'name': v.name, 'useCount': v.useCount, 'viewCount': v.viewCount, 'patchCount': v.patchCount, 'lastUsedAt': v.lastUsedAt, 'state': v.state, 'pinned': v.pinned, 'archivedAt': v.archivedAt} for v in sorted(self._usage.values(), key=lambda r: r.lastUsedAt or 0, reverse=True)]
+
+    def pin(self, name: str) -> bool:
+        """Pin a skill (exempt from auto-transitions).  Only agent-authored."""
+        if not self._isAgentSkill(name):
+            return False
+        rec = self._ensure(name)
+        rec.pinned = True
+        self._save()
+        return True
+
+    def unpin(self, name: str) -> bool:
+        rec = self._usage.get(name)
+        if not rec:
+            return False
+        rec.pinned = False
+        self._save()
+        return True
+
+    def archive(self, name: str) -> bool:
+        """Move to the archive dir (never deletes).  Only agent-authored."""
+        if not self._isAgentSkill(name):
+            return False
+        rec = self._ensure(name)
+        if rec.pinned:
+            return False
+        agentSkillsBase = skillService._agentSkillsDir()
+        skillDir = agentSkillsBase / name
+        archiveBase = agentSkillsBase / '.archive'
+        if skillDir.exists():
+            import shutil
+            archiveBase.mkdir(parents=True, exist_ok=True)
+            target = archiveBase / name
+            shutil.move(str(skillDir), str(target))
+        rec.state = 'archived'
+        rec.archivedAt = time.time()
+        self._save()
+        return True
+
+    def restore(self, name: str) -> bool:
+        """Restore an archived skill back to the agent root."""
+        agentSkillsBase = skillService._agentSkillsDir()
+        archiveDir = agentSkillsBase / '.archive' / name
+        if not archiveDir.exists():
+            return False
+        import shutil
+        target = agentSkillsBase / name
+        shutil.move(str(archiveDir), str(target))
+        rec = self._ensure(name)
+        rec.state = 'active'
+        rec.archivedAt = None
+        self._save()
+        return True
+
+    def _isAgentSkill(self, name: str) -> bool:
+        sk = skillService.get(name)
+        if not sk:
+            return False
+        return sk.get('created_by', '') == _AGENTCreatedTag
+
+    def runCuration(self, dryRun: bool=False) -> dict[str, object]:
+        """Iterate all agent-authored skills and transition stale / archiveable ones.
+
+        Returns a report dict::
+
+            {"active": N, "staled": [...], "archived": [...], "errors": [...]}
+        """
+        now = time.time()
+        report: dict[str, object] = {'active': 0, 'staled': [], 'archived': [], 'errors': []}
+        for skill in skillService.listAll():
+            if skill.get('created_by', '') != _AGENTCreatedTag:
+                continue
+            name = skill['name']
+            rec = self._ensure(name)
+            if rec.pinned:
+                report['active'] += 1
+                continue
+            lastActivity = max(rec.lastUsedAt or 0, rec.lastViewedAt or 0, rec.lastPatchedAt or 0)
+            if not lastActivity:
+                lastActivity = skill.get('updatedAt', now)
+            daysIdle = (now - lastActivity) / 86400
+            if rec.state == 'active' and daysIdle >= _STALEAfterDays:
+                if not dryRun:
+                    rec.state = 'stale'
+                    self._save()
+                report['staled'].append(name)
+            elif rec.state == 'stale' and daysIdle >= _ARCHIVEAfterDays:
+                if not dryRun:
+                    self.archive(name)
+                report['archived'].append(name)
+            else:
+                report['active'] += 1
+        return report
+
+def makeBackgroundCurator(dataDir: Path | None=None) -> tuple[SkillCurator, asyncio.Task]:
+    """Create a curator and start its background curation loop.
+
+    Returns (curator, task) — caller should cancel the task on shutdown.
+    """
+    curator = SkillCurator(dataDir=dataDir)
+
+    async def _loop() -> None:
+        while True:
+            try:
+                report = curator.runCuration()
+                if report.get('staled') or report.get('archived'):
+                    log.info('curator ran: %s', {k: v for k, v in report.items() if v})
+            except Exception as exc:
+                log.warning('curator: curation run failed: %s', exc)
+            await asyncio.sleep(_CURATIONIntervalSeconds)
+    task = asyncio.create_task(_loop())
+    return (curator, task)
