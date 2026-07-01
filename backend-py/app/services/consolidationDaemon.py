@@ -13,6 +13,8 @@ import json
 import logging
 import os
 import time
+from app.typeAliases import ConsolidationSummaryDict
+
 logger = logging.getLogger(__name__)
 _CONSOLIDATIONInterval = 86400
 _RECENTProtectionCount = 20
@@ -81,7 +83,7 @@ def _getSessionSummary(sessionId: str) -> str:
     """v2: Get a brief summary of a session's activity. Default impl returns empty."""
     return ''
 
-async def runConsolidation() -> dict[str, object]:
+async def runConsolidation() -> ConsolidationSummaryDict:
     """Run one Hippocampus-driven consolidation cycle.
 
     1. Collect recent auto_memories and all learned_heuristics
@@ -92,7 +94,7 @@ async def runConsolidation() -> dict[str, object]:
 
     Returns stats about what was done.
     """
-    stats: dict[str, object] = {'merged': 0, 'promoted': 0, 'deleted_stale': 0, 'errors': []}
+    stats: ConsolidationSummaryDict = {'merged': 0, 'promoted': 0, 'deleted_stale': 0, 'errors': []}
     from app.services.brainEventBus import emitBrainEvent
     emitBrainEvent(category='consolidation', layer='consolidation_daemon', summary=f'Sleep cycle started over {0} heuristics (will update on completion)')
     try:

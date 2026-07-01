@@ -15,17 +15,19 @@ import time
 import uuid
 from collections import deque
 from typing import AsyncIterator
+from app.typeAliases import JsonValue
+
 _MAXEvents = 200
 
 class BrainEventBus:
     """In-memory ring buffer of brain events with SSE fan-out."""
 
     def __init__(self) -> None:
-        self._events: deque[dict[str, object]] = deque(maxlen=_MAXEvents)
+        self._events: deque[dict[str, JsonValue]] = deque(maxlen=_MAXEvents)
         self._subscribers: list[asyncio.Queue] = []
 
-    def emit(self, *, category: str, layer: str, summary: str, meta: dict[str, object] | None=None) -> dict[str, object]:
-        entry = {'id': uuid.uuid4().hex, 'category': category, 'layer': layer, 'summary': summary, 'meta': dict(meta) if meta else {}, 'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+    def emit(self, *, category: str, layer: str, summary: str, meta: dict[str, JsonValue] | None=None) -> dict[str, JsonValue]:
+        entry: dict[str, JsonValue] = {'id': uuid.uuid4().hex, 'category': category, 'layer': layer, 'summary': summary, 'meta': dict(meta) if meta else {}, 'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
         self._events.appendleft(entry)
         dead: list[asyncio.Queue] = []
         for q in list(self._subscribers):
@@ -37,7 +39,7 @@ class BrainEventBus:
             self._unsubscribe(q)
         return entry
 
-    def recent(self, limit: int=100, category: str | None=None) -> list[dict[str, object]]:
+    def recent(self, limit: int=100, category: str | None=None) -> list[dict[str, JsonValue]]:
         items = list(self._events)
         if category:
             items = [e for e in items if e['category'] == category]
@@ -54,7 +56,7 @@ class BrainEventBus:
         except ValueError:
             pass
 
-    async def stream(self) -> AsyncIterator[dict[str, object]]:
+    async def stream(self) -> AsyncIterator[dict[str, JsonValue]]:
         """Async generator that yields events as they're emitted."""
         q = self._subscribe()
         try:
@@ -65,7 +67,7 @@ class BrainEventBus:
             self._unsubscribe(q)
 brainBus = BrainEventBus()
 
-def emitBrainEvent(*, category: str, layer: str, summary: str, meta: dict[str, object] | None=None) -> dict[str, object]:
+def emitBrainEvent(*, category: str, layer: str, summary: str, meta: dict[str, JsonValue] | None=None) -> dict[str, JsonValue]:
     """Publish a brain event. Safe to call from any subsystem — failures are logged not raised."""
     try:
         return brainBus.emit(category=category, layer=layer, summary=summary, meta=meta)

@@ -12,6 +12,8 @@ import json
 import time
 from datetime import datetime, timedelta
 
+from app.typeAliases import BlackboardNoteDict
+
 def _conn():
     from app.services.memoryStore import _conn as getConn
     return getConn()
@@ -41,7 +43,7 @@ def writeNote(sessionId: str, agent: str, key: str, value: object, priority: int
     conn.execute('INSERT INTO blackboard (session_id, agent, key, value, priority, expires_at) VALUES (?, ?, ?, ?, ?, ?)', (sessionId, agent, key, json.dumps(value) if not isinstance(value, str) else value, priority, expires))
     conn.commit()
 
-def readNotes(sessionId: str, agent: str='', key: str='', ack: bool=False) -> list[dict[str, object]]:
+def readNotes(sessionId: str, agent: str='', key: str='', ack: bool=False) -> list[BlackboardNoteDict]:
     """Read notes from the blackboard, with optional agent/key filters.
 
     v2: If `ack=True`, the read notes are deleted on read (acknowledged
@@ -59,13 +61,16 @@ def readNotes(sessionId: str, agent: str='', key: str='', ack: bool=False) -> li
         params.append(key)
     query += ' ORDER BY priority DESC, created_at DESC'
     rows = conn.execute(query, params).fetchall()
-    notes = [dict(r) for r in rows]
+    # SQLite rows are dicts that match BlackboardNoteDict structurally;
+    # mypy can't narrow the inferred List[dict[Any, Any]] to the TypedDict.
+    rawNotes: list[dict[str, object]] = [dict(r) for r in rows]
+    notes = rawNotes
     if ack and notes:
         for n in notes:
             if n.get('id'):
                 conn.execute('DELETE FROM blackboard WHERE id = ?', (n['id'],))
         conn.commit()
-    return notes
+    return notes  # type: ignore[return-value]
 
 def clearNotes(sessionId: str, agent: str='') -> int:
     """Clear blackboard notes, optionally for a specific agent."""

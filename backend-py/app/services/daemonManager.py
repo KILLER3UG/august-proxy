@@ -17,6 +17,8 @@ import logging
 import time
 from dataclasses import dataclass, field
 from typing import Callable
+
+from app.typeAliases import DaemonStatusDict
 logger = logging.getLogger(__name__)
 MAX_DAEMONS_PER_SESSION = 3
 RESULT_EXPIRY_TURNS = 5
@@ -80,13 +82,13 @@ class DaemonManager:
             logger.info('Daemon killed: %s', daemonId)
             return True
 
-    def listDaemons(self, sessionId: str | None=None) -> list[dict[str, object]]:
+    def listDaemons(self, sessionId: str | None=None) -> list[DaemonStatusDict]:
         """List daemons, optionally filtered by session.
 
         Returns compact info (no full results). Expired results are removed.
         """
         now = time.time()
-        results: list[dict[str, object]] = []
+        results: list[DaemonStatusDict] = []
         for did, info in list(self._daemons.items()):
             if sessionId and info.get('session_id') != sessionId:
                 continue

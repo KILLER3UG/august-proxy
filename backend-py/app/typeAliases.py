@@ -132,3 +132,49 @@ class BrowserSessionDict(TypedDict, total=False):
     title: str
     state: str
     createdAt: str
+
+
+class BlackboardNoteDict(TypedDict, total=False):
+    id: int
+    sessionId: str
+    agent: str
+    key: str
+    value: str
+    priority: int
+    createdAt: str
+    expiresAt: str | None
+
+
+class BrainEventMetaDict(TypedDict, total=False):
+    """Free-form metadata attached to brain events. Most call sites
+    attach a small JSON-friendly summary (counts, ids) but the shape
+    is heterogeneous across subsystems, so consumers should narrow via
+    `as` or runtime validation."""
+    ruleId: int
+    source: str
+    category: str
+    merged: int
+    promoted: int
+    deletedStale: int
+    local: int
+    llm: int
+    skills: int
+    facts: int
+
+
+class ConsolidationSummaryDict(TypedDict, total=False):
+    merged: int
+    promoted: int
+    deleted_stale: int
+    heuristics: int
+    durationMs: int
+    errors: list[str]
+
+
+class DaemonStatusDict(TypedDict, total=False):
+    id: str
+    name: str
+    status: str
+    startedAt: str
+    lastHeartbeat: str | None
+    extras: JsonValue
