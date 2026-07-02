@@ -62,7 +62,9 @@ async def testWorkbenchCapabilities(client):
     resp = await client.get('/api/workbench/capabilities')
     assert resp.status_code == 200
     data = resp.json()
-    assert 'workbench_tools' in data
+    assert 'tools_by_group' in data
+    assert 'total_tools' in data
+    assert 'mutating_tools' in data
 
 @pytest.mark.asyncio
 async def testApiSessionsList(client):

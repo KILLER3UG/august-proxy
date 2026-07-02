@@ -17,7 +17,7 @@ import json
 import logging
 import os
 import time
-from difflib import unifiedDiff
+from difflib import unified_diff as unifiedDiff
 from pathlib import Path
 from app.services.heuristicsService import addHeuristic
 logger = logging.getLogger(__name__)

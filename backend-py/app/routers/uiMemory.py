@@ -40,8 +40,9 @@ async def brainStatus() -> dict[str, object]:
     shape the dashboard reads.
     """
     try:
+        from app.lib.paths import dataPath
         stats = memoryStore.getStats() or {}
-        dbPath = memoryStore._db_path()
+        dbPath = dataPath("august_brain.sqlite")
         count = int(stats.get('memory_store', 0) or 0)
         return {'count': count, 'driver': 'sqlite', 'path': str(dbPath), 'available': True}
     except Exception as exc:
