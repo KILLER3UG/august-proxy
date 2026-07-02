@@ -15,7 +15,7 @@ Resolution order:
 from __future__ import annotations
 from typing import Optional
 from app.config import settings
-from app.providers import registry, resolver
+from app.providers import resolver
 
 def _hasCredentials(provider: dict[str, object]) -> bool:
     """Check if a provider has API credentials configured."""

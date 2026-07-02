@@ -15,6 +15,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::default().build())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // 1) Try to start (or reuse) the Node backend at :8085
             backend::ensure_running(app.handle());

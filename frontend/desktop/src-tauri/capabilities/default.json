@@ -17,6 +17,8 @@
     "process:default",
     "shell:default",
     "updater:default",
+    "dialog:default",
+    "dialog:allow-open",
     "core:audio:default",
     "core:audio:allow-capture"
   ]

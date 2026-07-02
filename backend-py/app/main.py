@@ -57,7 +57,23 @@ async def lifespan(app: FastAPI):
         app.state.curator = _curator
     except Exception:
         pass
+    _orchestrator = None
+    try:
+        from app.services.agent_message_bus import AgentMessageBus
+        from app.services.subagent_orchestrator import SubagentOrchestrator
+        _bus = AgentMessageBus()
+        _orchestrator = SubagentOrchestrator(_bus, max_workers=5)
+        app.state.subagent_bus = _bus
+        app.state.subagent_orchestrator = _orchestrator
+        logger.info("Subagent orchestrator initialized (max_workers=5)")
+    except Exception:
+        logger.warning("Subagent orchestrator initialization skipped")
     yield
+    if _orchestrator is not None:
+        try:
+            await _orchestrator.close()
+        except Exception:
+            pass
     if _curatorTask is not None:
         _curatorTask.cancel()
     if _gateway is not None:
@@ -107,6 +123,7 @@ from app.routers import brainConfig as brainConfigRoutes
 from app.routers import exam as examRoutes
 from app.routers import live as liveRoutes
 from app.routers import calendar as calendarRoutes
+from app.routers import subagent as subagentRoutes
 app.include_router(configRoutes.router)
 app.include_router(providersRoutes.router)
 app.include_router(skillsRoutes.router)
@@ -137,6 +154,7 @@ app.include_router(brainActivityRoutes.router)
 app.include_router(examRoutes.router)
 app.include_router(liveRoutes.router)
 app.include_router(calendarRoutes.router)
+app.include_router(subagentRoutes.router)
 _WEBDist = settings.webDist
 if _WEBDist.is_dir():
     app.mount('/assets', StaticFiles(directory=str(_WEBDist / 'assets')), name='assets')

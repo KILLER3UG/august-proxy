@@ -36,6 +36,9 @@ desktop = [
     "pyautogui>=0.9.54",
     "pygetwindow>=0.0.9; sys_platform == 'win32'",
 ]
+pty = [
+    "pywinpty>=2.0.0; sys_platform == 'win32'",
+]
 
 [tool.setuptools.packages.find]
 where = ["app"]

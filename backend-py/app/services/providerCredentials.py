@@ -78,11 +78,44 @@ def _customEntry(nameOrId: str) -> Optional[dict[str, object]]:
 def _customProviderDict(entry: dict[str, object]) -> dict[str, object]:
     """Build a provider-dict shaped like the registry returns, from a custom store entry.
 
+    Merges template metadata (``model_profiles``, ``default_headers``, ``env_vars``)
+    from the matching template when the user entry does not provide its own value.
+
     All optional fields use safe defaults via ``entry.get(...)`` so downstream
     consumers can read display_name, description, default_model, etc. without
     KeyError on minimal custom entries.
     """
-    return {'name': entry.get('name', ''), 'id': entry.get('id', ''), 'display_name': entry.get('display_name', entry.get('name', '')), 'description': entry.get('description', ''), 'aliases': [], 'base_url': entry.get('baseUrl', ''), 'api_mode': entry.get('apiFormat', 'openai-chat'), 'api_key': entry.get('apiKey', ''), 'is_custom': True, 'env_vars': [], 'auth_type': 'api_key', 'model_profiles': {}, 'default_model': entry.get('default_model', ''), 'fallback_models': entry.get('fallback_models', []), 'signup_url': entry.get('signup_url', ''), 'supports_health_check': entry.get('supports_health_check', False), 'default_max_tokens': entry.get('default_max_tokens', 4096), 'default_headers': entry.get('default_headers', {})}
+    # Try to find a matching template for merging metadata
+    from app.providers.template_loader import get_template
+    tmpl = get_template(str(entry.get('id') or '') or str(entry.get('name') or ''))
+    tmpl_profiles = {}
+    tmpl_headers = {}
+    tmpl_env = []
+    if tmpl:
+        tmpl_profiles = tmpl.get('modelProfiles', {}) or {}
+        tmpl_headers = tmpl.get('defaultHeaders', {}) or {}
+        tmpl_env = tmpl.get('envVars', []) or []
+
+    return {
+        'name': entry.get('name', ''),
+        'id': entry.get('id', ''),
+        'display_name': entry.get('display_name', entry.get('name', '')),
+        'description': entry.get('description', tmpl.get('description', '') if tmpl else ''),
+        'aliases': tmpl.get('aliases', []) if tmpl else [],
+        'base_url': entry.get('baseUrl', ''),
+        'api_mode': entry.get('apiFormat', 'openai-chat'),
+        'api_key': entry.get('apiKey', ''),
+        'is_custom': True,
+        'env_vars': entry.get('env_vars', tmpl_env),
+        'auth_type': entry.get('auth_type', tmpl.get('authType', 'api_key') if tmpl else 'api_key'),
+        'model_profiles': entry.get('model_profiles', tmpl_profiles),
+        'default_model': entry.get('default_model', tmpl.get('defaultModel', '') if tmpl else ''),
+        'fallback_models': entry.get('fallback_models', tmpl.get('fallbackModels', []) if tmpl else []),
+        'signup_url': entry.get('signup_url', tmpl.get('signupUrl', '') if tmpl else ''),
+        'supports_health_check': entry.get('supports_health_check', tmpl.get('supportsHealthCheck', False) if tmpl else False),
+        'default_max_tokens': entry.get('default_max_tokens', tmpl.get('defaultMaxTokens', 4096) if tmpl else 4096),
+        'default_headers': entry.get('default_headers', tmpl_headers),
+    }
 
 def resolve(nameOrId: str) -> Optional[dict[str, object]]:
     """Return ``{"provider": ..., "api_key": ..., "base_url": ..., "api_mode": ...}`` or ``None``.
@@ -90,8 +123,8 @@ def resolve(nameOrId: str) -> Optional[dict[str, object]]:
     Resolution order:
     1. Custom ``providers.json`` entry by id or name (authoritative for the key),
        but only if the entry is enabled AND has a non-empty ``apiKey``. Disabled
-       or unkeyed custom entries fall through to the built-in registry.
-    2. Built-in registry via ``provider_resolver.resolve`` (uses env vars / config.json).
+       or unkeyed custom entries fall through to template resolution.
+    2. Template via ``provider_resolver.resolve`` (uses provider_templates.json).
     """
     if not nameOrId:
         return None

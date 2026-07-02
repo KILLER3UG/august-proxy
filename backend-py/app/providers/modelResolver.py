@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 from app.config import settings
-from app.providers import registry, resolver as providerResolver
+from app.providers import resolver as providerResolver
 from app.providers.routeResolver import resolveForModel
 logger = logging.getLogger(__name__)
 DEFAULT_ALIAS = 'default'

@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { ChatLayout } from '@/components/shell/ChatLayout';
 import { ALL_ROUTES, SECTION_ROUTES, SETTINGS_ROUTES } from '@/routes';
 import { CommandPalette } from '@/components/overlays/CommandPalette';
+import { ProviderOnboardingModal } from '@/components/overlays/ProviderOnboardingModal';
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
         </Route>
       </Routes>
       <CommandPalette />
+      <ProviderOnboardingModal />
     </>
   );
 }

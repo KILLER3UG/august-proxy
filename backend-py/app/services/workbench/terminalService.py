@@ -27,6 +27,11 @@ def _now() -> str:
 
 def _getShell() -> str:
     if platform.system() == 'Windows':
+        # Probe PowerShell Core first, then Windows PowerShell, then Git Bash, then cmd
+        import shutil
+        for candidate in ['pwsh.exe', 'powershell.exe', 'bash.exe', 'cmd.exe']:
+            if shutil.which(candidate):
+                return candidate
         return os.environ.get('COMSPEC', 'cmd.exe')
     return os.environ.get('SHELL', '/bin/bash')
 _sessions: dict[str, dict[str, object]] = {}
@@ -43,25 +48,32 @@ def listTerminalApprovals() -> list[dict[str, object]]:
     return list(_pendingApprovals.values())
 
 async def createTerminalSession(params: dict[str, object] | None=None) -> dict[str, object]:
-    """Create a terminal session with a running shell process."""
+    """Create a terminal session with a running shell process (PTY)."""
     params = params or {}
     sessionId = f'term_{uuid.uuid4().hex[:8]}'
     shell = _getShell()
-    session = {'id': sessionId, 'title': params.get('title', 'Terminal'), 'cwd': params.get('cwd') or os.getcwd(), 'command': params.get('command', shell), 'status': 'starting', 'createdAt': _now(), 'updatedAt': _now(), 'buffer': '', 'approvedInteractive': params.get('approvedInteractive', False), 'cols': params.get('cols', 80), 'rows': params.get('rows', 24), 'pty': False, 'process': None, 'stdin': None, 'stdout': None}
+    from app.services.workbench.pty_io import PtyIO
+    pty = PtyIO()
+    session = {'id': sessionId, 'title': params.get('title', 'Terminal'), 'cwd': params.get('cwd') or os.getcwd(), 'command': params.get('command', shell), 'status': 'starting', 'createdAt': _now(), 'updatedAt': _now(), 'buffer': '', 'approvedInteractive': params.get('approvedInteractive', False), 'cols': params.get('cols', 80), 'rows': params.get('rows', 24), 'pty': True, 'pty_io': pty, 'process': None, 'stdin': None, 'stdout': None}
     try:
-        args = params.get('args') or (['-i'] if platform.system() != 'Windows' else [])
-        proc = await asyncio.create_subprocess_exec(shell, *args, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, cwd=session['cwd'], env={**os.environ, 'TERM': 'xterm-256color'})
-        session['process'] = proc
-        session['stdin'] = proc.stdin
-        session['stdout'] = proc.stdout
+        args = params.get('args') or ['-i']
+        await pty.spawn(
+            shell=shell,
+            args=args,
+            cwd=str(session['cwd']),
+            env={**os.environ, 'TERM': 'xterm-256color'},
+            cols=session['cols'],
+            rows=session['rows'],
+        )
         session['status'] = 'running'
         _sessions[sessionId] = session
         _wsSockets[sessionId] = set()
-        task = asyncio.create_task(_pipeStdout(sessionId))
+        task = asyncio.create_task(_pipePtyStdout(sessionId))
         session['reader_task'] = task
-    except (FileNotFoundError, PermissionError) as exc:
+    except (FileNotFoundError, PermissionError, ImportError) as exc:
         session['status'] = 'error'
         session['error'] = str(exc)
+        session['pty'] = False
         _sessions[sessionId] = session
     return _summarize(session)
 
@@ -91,6 +103,35 @@ async def _pipeStdout(sessionId: str) -> None:
             if s.get('status') == 'running':
                 s['status'] = 'exited'
 
+async def _pipePtyStdout(sessionId: str) -> None:
+    """Read PTY output into the session buffer and broadcast to WS."""
+    session = _sessions.get(sessionId)
+    if not session:
+        return
+    pty = session.get('pty_io')
+    if not pty:
+        return
+    try:
+        while pty.is_open:
+            chunk = await pty.read(4096)
+            if not chunk:
+                break
+            text = chunk.decode('utf-8', errors='replace')
+            session['buffer'] = (session.get('buffer', '') + text)[-BUFFER_LIMIT:]
+            session['updatedAt'] = _now()
+            for ws in list(_wsSockets.get(sessionId, set())):
+                try:
+                    ws(text)
+                except Exception:
+                    _wsSockets.get(sessionId, set()).discard(ws)
+    except Exception:
+        pass
+    finally:
+        if sessionId in _sessions:
+            s = _sessions[sessionId]
+            if s.get('status') == 'running':
+                s['status'] = 'exited'
+
 def readTerminalBuffer(sessionId: str) -> dict[str, object]:
     """Get the terminal buffer for a session."""
     session = _sessions.get(sessionId)
@@ -107,6 +148,16 @@ async def writeTerminalInput(sessionId: str, inputText: str, approved: bool=Fals
         reqId = f'apr_{uuid.uuid4().hex[:8]}'
         _pendingApprovals[reqId] = {'requestId': reqId, 'type': 'terminal_interactive_input', 'terminalId': sessionId, 'createdAt': _now()}
         return {'status': 'approval_required', 'requestId': reqId}
+
+    # Prefer PTY I/O, fall back to subprocess stdin
+    pty = session.get('pty_io')
+    if pty and session.get('pty'):
+        try:
+            await pty.write(inputText)
+            return {'status': 'written'}
+        except Exception as exc:
+            return {'error': str(exc)}
+
     stdin = session.get('stdin')
     if not stdin:
         return {'error': 'Process stdin not available'}
@@ -125,6 +176,13 @@ async def resizeTerminalSession(sessionId: str, cols: int=80, rows: int=24) -> d
     if session:
         session['cols'] = cols
         session['rows'] = rows
+        # Resize PTY if available
+        pty = session.get('pty_io')
+        if pty:
+            try:
+                pty.resize(cols, rows)
+            except Exception:
+                pass
     return _summarize(session) if session else {'error': 'Session not found'}
 
 async def submitTerminalCommand(params: dict[str, object]) -> dict[str, object]:
@@ -185,6 +243,14 @@ def closeTerminalSession(sessionId: str) -> bool:
     readerTask = session.get('reader_task')
     if readerTask:
         readerTask.cancel()
+    # Close PTY if available
+    pty = session.get('pty_io')
+    if pty:
+        try:
+            import asyncio
+            asyncio.create_task(pty.close())
+        except Exception:
+            pass
     proc = session.get('process')
     if proc:
         try:

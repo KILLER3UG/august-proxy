@@ -1,7 +1,9 @@
 /* v4.2 — Live settings tab: pick STT/TTS provider/model/voice.
-   Empty values mean "use browser default" (Web Speech API / speechSynthesis).
+   Empty values mean "use provider default". Providers and models are
+   sourced from the aggregated model list and provider availability,
+   replacing the old text-input approach with <select> dropdowns.
    See spec §14. */
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -11,43 +13,51 @@ import {
   updateLiveConfig,
   type LiveConfig,
 } from '@/api/api-client';
+import { useProviderAvailability } from '@/hooks/useProviderAvailability';
+import { useModels, type ModelItem } from '@/hooks/useModels';
 
-interface Field {
+interface Field<T = string> {
   key: keyof LiveConfig;
   label: string;
   hint: string;
-  inputType: 'text';
+  inputType: 'select' | 'text';
   testid: string;
+  /** For 'select' fields: provide options. For provider fields, use
+   *  the provider-availability hook; for model fields, filter by
+   *  the selected provider. */
+  dependsOn?: 'provider' | 'model';
 }
 
 const FIELDS: Field[] = [
   {
     key: 'sttProvider',
     label: 'STT provider',
-    hint: 'Speech-to-text provider id (e.g. "openai", "deepgram"). Empty = browser Web Speech API.',
-    inputType: 'text',
+    hint: 'Speech-to-text provider. Empty = browser Web Speech API.',
+    inputType: 'select',
     testid: 'live-stt-provider',
   },
   {
     key: 'sttModel',
     label: 'STT model',
-    hint: 'Provider-specific model id (e.g. "whisper-1", "gpt-4o-transcribe"). Empty = provider default.',
-    inputType: 'text',
+    hint: 'Provider-specific model id. Empty = provider default.',
+    inputType: 'select',
     testid: 'live-stt-model',
+    dependsOn: 'provider',
   },
   {
     key: 'ttsProvider',
     label: 'TTS provider',
-    hint: 'Text-to-speech provider id (e.g. "openai", "elevenlabs", "piper"). Empty = browser speechSynthesis.',
-    inputType: 'text',
+    hint: 'Text-to-speech provider. Empty = browser speechSynthesis.',
+    inputType: 'select',
     testid: 'live-tts-provider',
   },
   {
     key: 'ttsModel',
     label: 'TTS model',
-    hint: 'Provider-specific model id (e.g. "tts-1", "eleven_multilingual_v2").',
-    inputType: 'text',
+    hint: 'Provider-specific model id. Empty = provider default.',
+    inputType: 'select',
     testid: 'live-tts-model',
+    dependsOn: 'provider',
   },
   {
     key: 'ttsVoice',
@@ -66,6 +76,9 @@ export function LiveSettingsTab() {
     queryFn: () => getLiveConfig(),
   });
 
+  const { providers: availableProviders } = useProviderAvailability();
+  const { models } = useModels();
+
   const initial: LiveConfig = liveQ.data ?? {
     sttProvider: '',
     sttModel: '',
@@ -79,6 +92,35 @@ export function LiveSettingsTab() {
   const active = editCfg ?? initial;
   const dirty =
     editCfg !== null && JSON.stringify(editCfg) !== JSON.stringify(initial);
+
+  /** All unique provider names from the availability list. */
+  const providerOptions = useMemo(
+    () => [
+      { value: '', label: '(use browser default)' },
+      ...availableProviders.map((p) => ({
+        value: p.id,
+        label: p.name,
+      })),
+    ],
+    [availableProviders],
+  );
+
+  /** Models filtered by the currently-selected provider for a given group. */
+  const getModelOptions = (providerKey: keyof LiveConfig) => {
+    const selectedProvider = active[providerKey === 'sttModel' ? 'sttProvider' : 'ttsProvider'] as string;
+    if (!selectedProvider) return [{ value: '', label: '(use provider default)' }];
+
+    const filtered = models.filter(
+      (m: ModelItem) => m.provider.toLowerCase() === selectedProvider.toLowerCase(),
+    );
+    return [
+      { value: '', label: '(use provider default)' },
+      ...filtered.map((m: ModelItem) => ({
+        value: m.id,
+        label: `${m.name} (${m.contextWindow?.toLocaleString() ?? '?'} ctx)`,
+      })),
+    ];
+  };
 
   const handleSave = async () => {
     if (!editCfg) return;
@@ -105,6 +147,14 @@ export function LiveSettingsTab() {
     });
   };
 
+  const handleFieldChange = (key: keyof LiveConfig, value: string) => {
+    const next = { ...active, [key]: value } as LiveConfig;
+    // If provider changed, clear the model selection
+    if (key === 'sttProvider') next.sttModel = '';
+    if (key === 'ttsProvider') next.ttsModel = '';
+    setEditCfg(next);
+  };
+
   if (liveQ.isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -120,26 +170,51 @@ export function LiveSettingsTab() {
           <p className="text-sm font-semibold">Live (STT/TTS) settings</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             Choose speech-to-text and text-to-speech providers for August Live.
-            Leave any field empty to use the browser default (Web Speech API
-            on Chromium browsers). Setting a provider upgrades transcription
-            and voice quality.
+            Leave any field empty to use the default. Selecting a provider
+            upgrades transcription and voice quality.
           </p>
         </div>
 
         <div className="space-y-4">
-          {FIELDS.map(({ key, label, hint, testid }) => (
+          {FIELDS.map(({ key, label, hint, inputType, testid, dependsOn }) => (
             <div key={key} data-testid={`${testid}-field`}>
               <WorkspaceField label={label} hint={hint}>
-                <input
-                  type="text"
-                  value={active[key] ?? ''}
-                  onChange={(e) =>
-                    setEditCfg({ ...active, [key]: e.target.value })
-                  }
-                  placeholder="(use browser default)"
-                  data-testid={`${testid}-input`}
-                  className="w-full bg-black/20 border border-white/[0.06] rounded px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-primary outline-none"
-                />
+                {inputType === 'select' ? (
+                  <select
+                    value={active[key] ?? ''}
+                    onChange={(e) =>
+                      handleFieldChange(key, e.target.value)
+                    }
+                    data-testid={`${testid}-input`}
+                    className="w-full bg-black/20 border border-white/[0.06] rounded px-3 py-1.5 text-sm text-foreground focus:border-primary outline-none"
+                  >
+                    {dependsOn === 'provider'
+                      ? (key === 'sttModel' || key === 'ttsModel'
+                          ? getModelOptions(key)
+                          : providerOptions
+                        ).map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))
+                      : providerOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={active[key] ?? ''}
+                    onChange={(e) =>
+                      setEditCfg({ ...active, [key]: e.target.value } as LiveConfig)
+                    }
+                    placeholder="(use browser default)"
+                    data-testid={`${testid}-input`}
+                    className="w-full bg-black/20 border border-white/[0.06] rounded px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-primary outline-none"
+                  />
+                )}
               </WorkspaceField>
             </div>
           ))}

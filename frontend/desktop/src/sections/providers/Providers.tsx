@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { useProviderHealth } from '@/api/provider-health';
+import { providersApi, type ProviderTemplate } from '@/api/providers';
+import { useProviderTemplates } from '@/hooks/useProviderTemplates';
 import { SectionHeader } from '@/components/SectionHeader';
 import { PageLoader } from '@/components/PageLoader';
-import { Eye, EyeOff, ChevronDown, ChevronRight, Save, Check, Key, ArrowUpRight, PlugZap, ShieldCheck, Globe, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, ChevronDown, ChevronRight, Save, Check, Key, ArrowUpRight, PlugZap, ShieldCheck, Globe, Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -57,7 +59,13 @@ export function Providers() {
     queryFn: () => api.get<ActiveProviderData>('/api/config/activeProvider'),
   });
   const { byProvider: healthByProvider, loaded: healthLoaded, refresh: refreshHealth } = useProviderHealth(60_000);
+  const { templates } = useProviderTemplates();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+  const [newProviderName, setNewProviderName] = useState('');
+  const [newProviderKey, setNewProviderKey] = useState('');
+  const [adding, setAdding] = useState(false);
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [baseUrls, setBaseUrls] = useState<Record<string, string>>({});
   const [showKeyFor, setShowKeyFor] = useState<Record<string, boolean>>({});
@@ -133,16 +141,116 @@ export function Providers() {
     }
   };
 
+  const handleAddProvider = async () => {
+    if (!newProviderName.trim()) return;
+    setAdding(true);
+    try {
+      await providersApi.create({
+        name: newProviderName,
+        template: selectedTemplate || undefined,
+        apiKey: newProviderKey,
+        apiFormat: 'openai-chat',
+        baseUrl: '',
+        enabled: true,
+      });
+      setShowAddForm(false);
+      setSelectedTemplate('');
+      setNewProviderName('');
+      setNewProviderKey('');
+      queryClient.invalidateQueries({ queryKey: ['providers'] });
+      queryClient.invalidateQueries({ queryKey: ['aggregated-models'] });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setSaveMsg({ id: 'add', type: 'err', text: message || 'Failed to add provider' });
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleTemplateSelect = (templateId: string) => {
+    setSelectedTemplate(templateId);
+    const tmpl = templates.find((t) => t.id === templateId);
+    if (tmpl) {
+      setNewProviderName(tmpl.name);
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       <SectionHeader
         title="Providers"
         actions={
-          <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setShowAddForm(!showAddForm)}>
+              <Plus className="size-3 mr-1" />
+              Add Provider
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+              Refresh
+            </Button>
+          </div>
         }
       />
+
+      {showAddForm && (
+        <div className="rounded-2xl border border-white/[0.06] bg-card/80 p-4 space-y-3">
+          <p className="text-sm font-semibold">Add a Provider</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] text-muted-foreground mb-1 font-medium">Template</label>
+              <select
+                value={selectedTemplate}
+                onChange={(e) => handleTemplateSelect(e.target.value)}
+                className="w-full rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2 text-sm text-foreground focus:border-primary outline-none"
+              >
+                <option value="">Custom (manual setup)</option>
+                {templates.map((t: ProviderTemplate) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] text-muted-foreground mb-1 font-medium">Provider Name</label>
+              <input
+                type="text"
+                value={newProviderName}
+                onChange={(e) => setNewProviderName(e.target.value)}
+                placeholder="My Provider"
+                className="w-full rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-primary outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-muted-foreground mb-1 font-medium">API Key</label>
+              <input
+                type="password"
+                value={newProviderKey}
+                onChange={(e) => setNewProviderKey(e.target.value)}
+                placeholder="sk-..."
+                className="w-full rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-primary outline-none"
+              />
+            </div>
+          </div>
+          {selectedTemplate && (
+            <div className="rounded-lg border border-white/[0.06] bg-black/10 p-2.5 text-xs text-muted-foreground">
+              Using <span className="font-medium text-foreground">{templates.find(t => t.id === selectedTemplate)?.name}</span> template.
+              Base URL and API format will be pre-filled from the template.
+            </div>
+          )}
+          {saveMsg && saveMsg.id === 'add' && (
+            <p className="text-xs text-destructive">{saveMsg.text}</p>
+          )}
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <Button type="button" variant="outline" size="sm" onClick={() => { setShowAddForm(false); setSaveMsg(null); }}>
+              Cancel
+            </Button>
+            <Button type="button" size="sm" onClick={handleAddProvider} disabled={!newProviderName.trim() || adding}>
+              {adding ? 'Adding…' : 'Add Provider'}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-3">
         <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold px-1">Available providers</p>
