@@ -6,6 +6,7 @@ Port of backend/services/memory/sqlite-memory-store.js (1,431 lines).
 Uses aiosqlite for async access and a sync sqlite3 fallback.
 """
 from __future__ import annotations
+import asyncio
 import json
 import os
 import sqlite3
@@ -832,7 +833,11 @@ def timelineSweep() -> int:
             if client and hasattr(client, 'generate'):
                 transcript = '\n'.join((f"{m['role']}: {m['content'][:200]}" for m in msgs))
                 prompt = f'Summarize this session in one line (under 100 words):\n\n{transcript}'
-                summary = await client.generate(prompt)
+                try:
+                    loop = asyncio.get_event_loop()
+                    summary = loop.run_until_complete(client.generate(prompt))
+                except Exception:
+                    summary = None
             else:
                 summary = None
         except Exception:
