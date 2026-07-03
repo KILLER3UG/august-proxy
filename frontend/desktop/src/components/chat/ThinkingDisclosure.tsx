@@ -108,7 +108,7 @@ export function ThinkingDisclosure({
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             className={cn(
-              'mt-0.5 w-full min-w-0 max-w-full overflow-y-auto wrap-anywhere pb-1 max-h-40'
+              'mt-0.5 w-full min-w-0 max-w-full overflow-y-auto wrap-anywhere pb-1 max-h-40 thinking-scroll'
             )}
             ref={scrollRef}
           >
