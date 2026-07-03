@@ -821,7 +821,7 @@ def timelineSweep() -> int:
         try:
             from app.services.workbench import modelFleet
             from app.providers.clients import getClient
-            model = modelFleet.get_model_for_role('hippocampus')
+            model = modelFleet.getModelForRole('hippocampus')
             client = getClient({'model': model})
             if client and hasattr(client, 'generate'):
                 transcript = '\n'.join((f"{m['role']}: {m['content'][:200]}" for m in msgs))

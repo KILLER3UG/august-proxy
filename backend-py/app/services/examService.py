@@ -15,7 +15,7 @@ async def _callPrefrontal(prompt: str) -> str:
     try:
         from app.services.workbench import modelFleet
         from app.providers.clients import getClient
-        model = modelFleet.get_model_for_role('prefrontal')
+        model = modelFleet.getModelForRole('prefrontal')
         client = getClient({'model': model})
         if client and hasattr(client, 'generate'):
             response = await client.generate(prompt)

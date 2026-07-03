@@ -5,7 +5,7 @@ The fleet maps four cognitive roles (cortex / cerebellum / hippocampus / prefron
 to model ids. Empty `cortex` means "use the session's primary model" (the
 caller's responsibility — this module just returns the empty string).
 
-The actual `get_model_for_role()` lookup still lives in
+The actual `getModelForRole()` lookup still lives in
 `app/services/workbench/model_fleet.py` — that module reads config.json
 inline. This service adds a write path + a thin read path that returns the
 merged fleet for the UI.

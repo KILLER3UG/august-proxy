@@ -15,7 +15,7 @@ def _cleanupDaemonContext():
 def testDaemonManagerUsesCerebellumRole():
     """The daemon's model role is 'cerebellum' (verified by inspecting the code path)."""
     from app.services.workbench import modelFleet
-    model = modelFleet.get_model_for_role('cerebellum')
+    model = modelFleet.getModelForRole('cerebellum')
     assert model == 'claude-3-haiku-20240307'
 
 def testCallCerebellumInvokesProviderOrFallsBack():

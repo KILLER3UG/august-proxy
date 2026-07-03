@@ -38,10 +38,10 @@ def testChatWithDaemonBlackboardAndVerifier():
     blackboardService.clear_notes(sid)
 
 def testModelFleetResolution():
-    """get_model_for_role returns proper models for each cognitive role."""
-    assert modelFleet.get_model_for_role('cerebellum') == 'claude-3-haiku-20240307'
-    assert modelFleet.get_model_for_role('hippocampus') == 'claude-3-haiku-20240307'
-    assert modelFleet.get_model_for_role('prefrontal') == 'claude-3-5-sonnet-20240620'
+    """getModelForRole returns proper models for each cognitive role."""
+    assert modelFleet.getModelForRole('cerebellum') == 'claude-3-haiku-20240307'
+    assert modelFleet.getModelForRole('hippocampus') == 'claude-3-haiku-20240307'
+    assert modelFleet.getModelForRole('prefrontal') == 'claude-3-5-sonnet-20240620'
 
 @pytest.mark.asyncio
 async def testConsolidationRunsEndToEnd(monkeypatch):
