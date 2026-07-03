@@ -427,7 +427,7 @@ class BaseProviderClient:
                             queue.put_nowait(parsed)
                         except json.JSONDecodeError:
                             pass
-                    parser = SseStreamParser(on_event=collector)
+                    parser = SseStreamParser(onEvent=collector)
 
                     async def _feed() -> None:
                         """Background task: feed incoming lines into the SSE parser."""
