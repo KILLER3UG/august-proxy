@@ -820,13 +820,19 @@ def timelineSweep() -> int:
             continue
         try:
             from app.services.workbench import modelFleet
+            from app.providers import resolver as providerResolver
             from app.providers.clients import getClient
             model = modelFleet.getModelForRole('hippocampus')
-            client = getClient({'model': model})
+            if not model:
+                continue
+            provider = providerResolver.resolve(model)
+            if not provider:
+                continue
+            client = getClient(provider)
             if client and hasattr(client, 'generate'):
                 transcript = '\n'.join((f"{m['role']}: {m['content'][:200]}" for m in msgs))
                 prompt = f'Summarize this session in one line (under 100 words):\n\n{transcript}'
-                summary = client.generate(prompt)
+                summary = await client.generate(prompt)
             else:
                 summary = None
         except Exception:

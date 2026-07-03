@@ -197,8 +197,14 @@ class DaemonManager:
         returns a placeholder that simulates the daemon running.
         """
         try:
+            from app.providers import resolver as providerResolver
             from app.providers.clients import getClient
-            client = getClient({'model': model})
+            if not model:
+                return f'[daemon: no model configured]'
+            provider = providerResolver.resolve(model)
+            if not provider:
+                return f'[daemon: no provider for {model}]'
+            client = getClient(provider)
             if client and hasattr(client, 'generate'):
                 response = await client.generate(prompt)
                 return response

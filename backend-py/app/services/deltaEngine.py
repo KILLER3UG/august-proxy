@@ -205,9 +205,15 @@ def _callHippocampus(diffText: str) -> str | None:
     """
     try:
         from app.services.workbench import modelFleet
+        from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
         model = modelFleet.getModelForRole('hippocampus')
-        client = getClient({'model': model})
+        if not model:
+            return None
+        provider = providerResolver.resolve(model)
+        if not provider:
+            return None
+        client = getClient(provider)
         if client and hasattr(client, 'generate'):
             prompt = f"Review these diffs between the assistant's output and the user's edits. Infer up to 3 behavioral rules. Return JSON: {{'rules': [{{'rule': str, 'category': str}}]}} or {{'rules': []}}.\n\nDiffs:\n{diffText}\n"
             response = client.generate(prompt)

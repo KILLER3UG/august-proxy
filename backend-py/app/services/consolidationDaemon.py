@@ -55,9 +55,15 @@ async def _callHippocampus(prompt: str) -> str:
     """
     try:
         from app.services.workbench import modelFleet
+        from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
         model = modelFleet.getModelForRole('hippocampus')
-        client = getClient({'model': model})
+        if not model:
+            return ''
+        provider = providerResolver.resolve(model)
+        if not provider:
+            return ''
+        client = getClient(provider)
         if client and hasattr(client, 'generate'):
             response = await client.generate(prompt)
             return response or ''
@@ -69,9 +75,15 @@ async def _callPrefrontal(prompt: str) -> str:
     """v2: Call the Prefrontal model. Returns raw text response."""
     try:
         from app.services.workbench import modelFleet
+        from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
         model = modelFleet.getModelForRole('prefrontal')
-        client = getClient({'model': model})
+        if not model:
+            return ''
+        provider = providerResolver.resolve(model)
+        if not provider:
+            return ''
+        client = getClient(provider)
         if client and hasattr(client, 'generate'):
             response = await client.generate(prompt)
             return response or ''

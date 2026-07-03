@@ -14,9 +14,17 @@ async def _callPrefrontal(prompt: str) -> str:
     """v3: Call the Prefrontal model. Returns raw text response (may include code fences)."""
     try:
         from app.services.workbench import modelFleet
+        from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
         model = modelFleet.getModelForRole('prefrontal')
-        client = getClient({'model': model})
+        if not model:
+            logger.warning('_call_prefrontal: no prefrontal model configured')
+            return ''
+        provider = providerResolver.resolve(model)
+        if not provider:
+            logger.warning('_call_prefrontal: no provider found for model %s', model)
+            return ''
+        client = getClient(provider)
         if client and hasattr(client, 'generate'):
             response = await client.generate(prompt)
             return response or ''
