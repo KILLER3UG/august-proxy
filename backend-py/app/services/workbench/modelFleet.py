@@ -1,19 +1,19 @@
 """v2: Model fleet for the cognitive layers.
 
 Maps each cognitive role to a model identifier. Users can override via
-data/config.json → auxiliary.model_fleet. The 'cortex' role is special:
-empty string means "use the session's primary model".
+data/config.json → auxiliary.model_fleet. All roles default to empty
+string, meaning "use the session's primary model".
 
 Four roles:
-  - cortex:      main session model (Cortex tier — Sonnet 4, GPT-4o)
-  - cerebellum:  fast, cheap — for daemons and watchers (Haiku, GPT-4o-mini)
+  - cortex:      main session model (default: session model)
+  - cerebellum:  fast, cheap — for daemons and watchers (default: session model)
   - hippocampus: moderate reasoning — for consolidation, delta engine,
-                 context compaction (Haiku)
-  - prefrontal:  highest reasoning — for skill genesis (Sonnet 4, Opus)
+                 context compaction (default: session model)
+  - prefrontal:  highest reasoning — for skill genesis (default: session model)
 """
 import json
 import os
-DEFAULT_FLEET: dict[str, str] = {'cortex': '', 'cerebellum': 'claude-3-haiku-20240307', 'hippocampus': 'claude-3-haiku-20240307', 'prefrontal': 'claude-3-5-sonnet-20240620'}
+DEFAULT_FLEET: dict[str, str] = {'cortex': '', 'cerebellum': '', 'hippocampus': '', 'prefrontal': ''}
 _configCache: dict[str, object] | None = None
 _configPath = os.path.join('data', 'config.json')
 
