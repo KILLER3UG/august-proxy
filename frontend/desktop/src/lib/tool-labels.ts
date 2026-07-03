@@ -118,6 +118,42 @@ const TOOL_LABEL_MAP: Record<string, string> = {
   // Skills
   'august__load_skill': 'Loading skill',
   'august__learn_subagent': 'Learning patterns',
+  'load_skill': 'Loading skill',
+  'list_skills': 'Listing skills',
+  'skill_manage': 'Managing skill',
+
+  // Self-config tools
+  'create_alias': 'Creating alias',
+  'update_alias': 'Updating alias',
+  'delete_alias': 'Deleting alias',
+  'list_aliases': 'Listing aliases',
+  'configure_fallback': 'Configuring fallback',
+  'get_fallback': 'Reading fallback config',
+  'create_agent': 'Creating agent',
+  'update_agent': 'Updating agent',
+  'delete_agent': 'Deleting agent',
+  'list_agents': 'Listing agents',
+
+  // Diagnostics & environment
+  'describe_environment': 'Describing environment',
+  'diagnose_proxy': 'Diagnosing proxy',
+
+  // Brain / knowledge
+  'brain_query': 'Querying brain',
+  'fact_search': 'Searching facts',
+  'update_heuristics': 'Updating heuristics',
+  'update_state': 'Updating state',
+  'write_scratchpad': 'Writing scratchpad',
+
+  // Blackboard
+  'write_blackboard': 'Writing blackboard',
+  'read_blackboard': 'Reading blackboard',
+  'clear_blackboard': 'Clearing blackboard',
+
+  // Daemons
+  'spawn_daemon': 'Spawning daemon',
+  'list_daemons': 'Listing daemons',
+  'kill_daemon': 'Killing daemon',
 };
 
 /**
@@ -232,6 +268,42 @@ const TOOL_VERB_DONE: Record<string, string> = {
   // Skills
   'august__load_skill': 'Loaded skill',
   'august__learn_subagent': 'Learned patterns',
+  'load_skill': 'Loaded skill',
+  'list_skills': 'Listed skills',
+  'skill_manage': 'Managed skill',
+
+  // Self-config tools
+  'create_alias': 'Created alias',
+  'update_alias': 'Updated alias',
+  'delete_alias': 'Deleted alias',
+  'list_aliases': 'Listed aliases',
+  'configure_fallback': 'Configured fallback',
+  'get_fallback': 'Read fallback config',
+  'create_agent': 'Created agent',
+  'update_agent': 'Updated agent',
+  'delete_agent': 'Deleted agent',
+  'list_agents': 'Listed agents',
+
+  // Diagnostics & environment
+  'describe_environment': 'Described environment',
+  'diagnose_proxy': 'Diagnosed proxy',
+
+  // Brain / knowledge
+  'brain_query': 'Queried brain',
+  'fact_search': 'Searched facts',
+  'update_heuristics': 'Updated heuristics',
+  'update_state': 'Updated state',
+  'write_scratchpad': 'Wrote scratchpad',
+
+  // Blackboard
+  'write_blackboard': 'Wrote blackboard',
+  'read_blackboard': 'Read blackboard',
+  'clear_blackboard': 'Cleared blackboard',
+
+  // Daemons
+  'spawn_daemon': 'Spawned daemon',
+  'list_daemons': 'Listed daemons',
+  'kill_daemon': 'Killed daemon',
 };
 
 const AGENT_ROLE_LABELS: Record<string, string> = {

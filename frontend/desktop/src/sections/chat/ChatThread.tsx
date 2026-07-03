@@ -1758,7 +1758,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             className="z-50 w-72 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
           >
             <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-semibold">Commands & Tools</div>
-            {COMMANDS.filter(c => {
+            {getDisplayCommands().filter(c => {
               const q = input.trim().toLowerCase();
               if (!q) return true;
               return c.name.toLowerCase().startsWith(q);
@@ -1778,7 +1778,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 <span className="text-[10px] text-muted-foreground truncate">{c.desc}</span>
               </button>
             ))}
-            {COMMANDS.filter(c => {
+            {getDisplayCommands().filter(c => {
               const q = input.trim().toLowerCase();
               if (!q) return false;
               return c.name.toLowerCase().startsWith(q);
