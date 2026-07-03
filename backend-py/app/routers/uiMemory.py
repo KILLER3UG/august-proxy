@@ -43,7 +43,7 @@ async def brainStatus() -> dict[str, object]:
         from app.lib.paths import dataPath
         stats = memoryStore.getStats() or {}
         dbPath = dataPath("august_brain.sqlite")
-        count = int(stats.get('memory_store', 0) or 0)
+        count = int(stats.get('memoryStore', 0) or 0)
         return {'count': count, 'driver': 'sqlite', 'path': str(dbPath), 'available': True}
     except Exception as exc:
         return {'count': 0, 'driver': 'sqlite', 'path': '', 'available': False, 'error': str(exc)}
@@ -74,7 +74,7 @@ async def brainItems() -> dict[str, object]:
         summary = ''
         if isinstance(value, dict):
             summary = str(value.get('summary') or value.get('text') or value.get('content') or value)[:300]
-        items.append({'id': str(r.get('id') or key), 'type': 'memory', 'key': key, 'title': key, 'summary': summary or str(value)[:300] if value is not None else '', 'status': 'active', 'pinned': False, 'confidence': 1.0, 'source': 'memory_store', 'updatedAt': r.get('updated_at') or r.get('updatedAt') or ''})
+        items.append({'id': str(r.get('id') or key), 'type': 'memory', 'key': key, 'title': key, 'summary': summary or str(value)[:300] if value is not None else '', 'status': 'active', 'pinned': False, 'confidence': 1.0, 'source': 'memoryStore', 'updatedAt': r.get('updatedAt') or ''})
     return {'items': items}
 
 @router.get('/vectors')
@@ -118,17 +118,17 @@ async def brainLearning() -> dict[str, object]:
     lastFlushAt = getattr(_de, '_last_flush', None)
     autoMemories: list[dict[str, object]] = []
     try:
-        rows = memoryStore._conn().execute('SELECT id, key, content, importance, created_at FROM auto_memories ORDER BY importance DESC, id DESC LIMIT 20').fetchall()
+        rows = memoryStore._conn().execute('SELECT id, key, content, importance, createdAt FROM autoMemories ORDER BY importance DESC, id DESC LIMIT 20').fetchall()
         autoMemories = [dict(r) for r in rows]
     except Exception:
         pass
-    sleepCycle: dict[str, object] = {'last_run_at': None, 'last_merged': 0, 'last_promoted': 0, 'last_deleted': 0}
+    sleepCycle: dict[str, object] = {'lastRunAt': None, 'lastMerged': 0, 'lastPromoted': 0, 'lastDeleted': 0}
     last = getattr(_cd, '_last_run', None)
     if last:
-        sleepCycle.update({'last_run_at': last.get('at'), 'last_merged': last.get('merged', 0), 'last_promoted': last.get('promoted', 0), 'last_deleted': last.get('deleted_stale', 0)})
+        sleepCycle.update({'lastRunAt': last.get('at'), 'lastMerged': last.get('merged', 0), 'lastPromoted': last.get('promoted', 0), 'lastDeleted': last.get('deletedStale', 0)})
     pendingSkills: list[dict[str, object]] = []
     try:
-        rows = memoryStore._conn().execute("SELECT id, name, description, trigger_text, draft_path, source_session_id, created_at, status, use_count FROM pending_skills WHERE status = 'pending' ORDER BY created_at DESC").fetchall()
+        rows = memoryStore._conn().execute("SELECT id, name, description, triggerText, draftPath, sourceSessionId, createdAt, status, useCount FROM pendingSkills WHERE status = 'pending' ORDER BY createdAt DESC").fetchall()
         pendingSkills = [dict(r) for r in rows]
     except Exception:
         pass
@@ -209,7 +209,7 @@ async def brainGuidelines() -> dict[str, object]:
             text = str(value.get('text') or value.get('content') or value.get('summary') or '')
         elif value is not None:
             text = str(value)
-        out.append({'id': str(f.get('key', f.get('fact_key', ''))), 'text': text, 'source': str(f.get('source') or 'memory_store'), 'confidence': float(f.get('confidence', 1.0) or 1.0), 'status': 'active', 'count': 1, 'createdAt': f.get('created_at') or f.get('createdAt') or '', 'lastSeenAt': f.get('updated_at') or f.get('updatedAt') or '', 'lastUsedAt': None})
+        out.append({'id': str(f.get('key') or f.get('factKey') or ''), 'text': text, 'source': str(f.get('source') or 'memoryStore'), 'confidence': float(f.get('confidence', 1.0) or 1.0), 'status': 'active', 'count': 1, 'createdAt': f.get('createdAt') or '', 'lastSeenAt': f.get('updatedAt') or '', 'lastUsedAt': None})
     return {'guidelines': out}
 
 @router.get('/graph')
@@ -223,7 +223,7 @@ async def brainGraph() -> dict[str, object]:
     entityTypes: dict[str, int] = {}
     try:
         stats = memoryStore.getStats() or {}
-        counts['entities'] = int(stats.get('memory_store', 0) or 0)
+        counts['entities'] = int(stats.get('memoryStore', 0) or 0)
         counts['observations'] = int(stats.get('facts', 0) or 0)
         entityTypes['memory'] = counts['entities']
         entityTypes['fact'] = counts['observations']

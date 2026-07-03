@@ -122,9 +122,9 @@ export type WorkbenchEvent =
   | { type: 'thinking'; data: { content: string } }
   | { type: 'text'; data: { content: string } }
   | { type: 'content'; data: { content: string } }
-  | { type: 'tool_use'; data: { id: string; name: string; input: Record<string, unknown> } }
-  | { type: 'tool_call'; data: { id: string; name: string; input?: Record<string, unknown> } }
-  | { type: 'tool_result'; data: { id: string; content: unknown; is_error?: boolean } }
+  | { type: 'toolUse'; data: { id: string; name: string; input: Record<string, unknown> } }
+  | { type: 'toolCall'; data: { id: string; name: string; input?: Record<string, unknown> } }
+  | { type: 'toolResult'; data: { id: string; content: unknown; isError?: boolean } }
   | { type: 'session'; data: WorkbenchSession }
   | { type: 'btw'; data: WorkbenchBtwResult }
   | { type: 'compaction'; data: { headCount: number; tailCount: number; compressedCount: number; originalTokens: number; compressedTokens: number; underThreshold?: boolean; threshold?: number } }
@@ -135,7 +135,7 @@ export interface WorkbenchEventHandlers {
   onThinking?: (data: { content: string }) => void;
   onText?: (data: { content: string }) => void;
   onToolUse?: (data: { id: string; name: string; input: Record<string, unknown> }) => void;
-  onToolResult?: (data: { id: string; content: unknown; is_error?: boolean }) => void;
+  onToolResult?: (data: { id: string; content: unknown; isError?: boolean }) => void;
   onToolProgress?: (data: {
     id: string;
     name: string;
@@ -173,7 +173,7 @@ export interface WorkbenchEventHandlers {
     systemPrompt?: string;
     userMessage?: string;
     tokens?: number;
-    /** ID of the parent tool_use block (august__spawn_subagent / august__run_team)
+    /** ID of the parent toolUse block (august__spawn_subagent / august__run_team)
      *  that triggered the sub-agent whose prompt is being disclosed. Used by
      *  the chat thread to attach the disclosure to the right tool call card. */
     toolUseId?: string;
@@ -195,7 +195,7 @@ export interface WorkbenchEventHandlers {
   onSeq?: (seq: number) => void;
   /** Emitted when a sub-agent (`august__spawn_subagent` / `august__run_team`)
    *  begins. The chat thread renders a nested sub-agent block under the
-   *  matching parent `tool_call`, keyed by `parentToolUseId`. */
+   *  matching parent `toolCall`, keyed by `parentToolUseId`. */
   onSubagentStart?: (data: {
     jobId: string;
     agentId: string;
@@ -215,13 +215,13 @@ export interface WorkbenchEventHandlers {
     result?: string;
   }) => void;
   /** Text block emitted from inside a running sub-agent. Rendered as a
-   *  `final_output` block inside the matching nested sub-agent block. */
+   *  `finalOutput` block inside the matching nested sub-agent block. */
   onSubagentText?: (data: {
     jobId: string;
     agentId: string;
     content: string;
   }) => void;
-  /** Tool call inside a running sub-agent. Rendered as a `tool_call`
+  /** Tool call inside a running sub-agent. Rendered as a `toolCall`
    *  block inside the matching nested sub-agent block. */
   onSubagentToolCall?: (data: {
     jobId: string;
@@ -232,13 +232,13 @@ export interface WorkbenchEventHandlers {
     status?: 'running' | 'done' | 'error';
   }) => void;
   /** Tool result for a sub-agent tool call. Collapses the matching
-   *  `tool_call` to its final state. */
+   *  `toolCall` to its final state. */
   onSubagentToolResult?: (data: {
     jobId: string;
     agentId: string;
     id: string;
     content: unknown;
-    is_error?: boolean;
+    isError?: boolean;
     status?: 'done' | 'error';
   }) => void;
   /** Generic warnings (e.g. model fallback when a sub-agent alias couldn't

@@ -29,7 +29,7 @@ async def createSession():
     memoryStore.saveSession(session)
     return session
 
-@router.get('/{session_id}')
+@router.get('/{sessionId}')
 async def getSession(sessionId: str):
     """Get a session by ID."""
     session = memoryStore.getSession(sessionId)
@@ -37,7 +37,7 @@ async def getSession(sessionId: str):
         raise HTTPException(status_code=404, detail='Session not found')
     return session
 
-@router.delete('/{session_id}')
+@router.delete('/{sessionId}')
 async def deleteSession(sessionId: str):
     """Delete a session and its messages."""
     if not memoryStore.deleteSessionRecord(sessionId):
@@ -45,13 +45,13 @@ async def deleteSession(sessionId: str):
     memoryStore.deleteSessionMessages(sessionId)
     return {'status': 'ok'}
 
-@router.get('/{session_id}/messages')
+@router.get('/{sessionId}/messages')
 async def getSessionMessages(sessionId: str):
     """Get messages for a session."""
     messages = memoryStore.getMessages(sessionId)
     return {'messages': messages}
 
-@router.post('/{session_id}/messages')
+@router.post('/{sessionId}/messages')
 async def addMessage(sessionId: str, body: MessageCreate):
     """Add a message to a session."""
     msgId = memoryStore.saveMessage(sessionId, body.role, body.content)

@@ -9,8 +9,8 @@ interface Question {
 
 interface AnswerResult {
   correct?: boolean;
-  is_correct?: boolean;
-  correct_index: number;
+  isCorrect?: boolean;
+  correctIndex: number;
   rationale: string;
 }
 
@@ -33,7 +33,7 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isCorrect = answerResult
-    ? (answerResult.is_correct ?? answerResult.correct ?? false)
+    ? (answerResult.isCorrect ?? answerResult.correct ?? false)
     : false;
 
   const handleSelect = useCallback(async (index: number) => {
@@ -44,7 +44,7 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
       const result = await onAnswer(question.id, index);
       setAnswerResult(result);
     } catch {
-      setAnswerResult({ is_correct: false, correct_index: 0, rationale: 'Error checking answer.' });
+      setAnswerResult({ isCorrect: false, correctIndex: 0, rationale: 'Error checking answer.' });
     }
     setIsSubmitting(false);
   }, [question.id, answerResult, onAnswer]);
@@ -56,7 +56,7 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
       const res = await fetch(`/api/exam/${examId}/help`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question_id: question.id, ask: helpText }),
+        body: JSON.stringify({ questionId: question.id, ask: helpText }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -107,7 +107,7 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
               let className = 'w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors ';
               if (answerResult === null) {
                 className += 'border-border hover:border-primary hover:bg-accent/30 cursor-pointer';
-              } else if (i === answerResult.correct_index) {
+              } else if (i === answerResult.correctIndex) {
                 className += 'border-success bg-success/10 text-success';
               } else if (i === selected && !isCorrect) {
                 className += 'border-danger bg-danger/10 text-danger';
@@ -117,7 +117,7 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
               return (
                 <button key={i} onClick={() => handleSelect(i)} className={className} disabled={answerResult !== null || isSubmitting}>
                   <span className="flex items-center gap-2">
-                    {answerResult !== null && i === answerResult.correct_index && <CheckCircle2 className="size-3.5 shrink-0" />}
+                    {answerResult !== null && i === answerResult.correctIndex && <CheckCircle2 className="size-3.5 shrink-0" />}
                     {answerResult !== null && i === selected && !isCorrect && <XCircle className="size-3.5 shrink-0" />}
                     <span className="text-xs font-medium text-muted-foreground w-5">{String.fromCharCode(65 + i)}.</span>
                     {opt}

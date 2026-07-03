@@ -18,9 +18,9 @@ def listHeuristics(category: str='') -> list[dict[str, object]]:
     """List all learned heuristics, optionally filtered by category."""
     conn = _conn()
     if category:
-        rows = conn.execute('SELECT id, rule, source, category, created_at, updated_at FROM learned_heuristics WHERE category = ? ORDER BY updated_at DESC', (category,)).fetchall()
+        rows = conn.execute('SELECT id, rule, source, category, createdAt, updatedAt FROM learnedHeuristics WHERE category = ? ORDER BY updatedAt DESC', (category,)).fetchall()
     else:
-        rows = conn.execute('SELECT id, rule, source, category, created_at, updated_at FROM learned_heuristics ORDER BY updated_at DESC').fetchall()
+        rows = conn.execute('SELECT id, rule, source, category, createdAt, updatedAt FROM learnedHeuristics ORDER BY updatedAt DESC').fetchall()
     return [dict(r) for r in rows]
 
 def addHeuristic(rule: str, source: str='auto', category: str='general') -> int | None:
@@ -31,10 +31,10 @@ def addHeuristic(rule: str, source: str='auto', category: str='general') -> int 
     if not rule or not rule.strip():
         return None
     conn = _conn()
-    existing = conn.execute('SELECT id FROM learned_heuristics WHERE rule = ?', (rule.strip(),)).fetchone()
+    existing = conn.execute('SELECT id FROM learnedHeuristics WHERE rule = ?', (rule.strip(),)).fetchone()
     if existing:
         return None
-    conn.execute("INSERT INTO learned_heuristics (rule, source, category, updated_at) VALUES (?, ?, ?, datetime('now'))", (rule.strip(), source, category))
+    conn.execute("INSERT INTO learnedHeuristics (rule, source, category, updatedAt) VALUES (?, ?, ?, datetime('now'))", (rule.strip(), source, category))
     conn.commit()
     rowId = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
     try:
@@ -47,14 +47,14 @@ def addHeuristic(rule: str, source: str='auto', category: str='general') -> int 
 def removeHeuristic(ruleId: int) -> bool:
     """Remove a heuristic by id. Returns True if it existed."""
     conn = _conn()
-    cursor = conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (ruleId,))
+    cursor = conn.execute('DELETE FROM learnedHeuristics WHERE id = ?', (ruleId,))
     conn.commit()
     return cursor.rowcount > 0
 
 def removeByRule(rule: str) -> bool:
     """Remove a heuristic by exact rule text. Returns True if it existed."""
     conn = _conn()
-    cursor = conn.execute('DELETE FROM learned_heuristics WHERE rule = ?', (rule.strip(),))
+    cursor = conn.execute('DELETE FROM learnedHeuristics WHERE rule = ?', (rule.strip(),))
     conn.commit()
     return cursor.rowcount > 0
 
@@ -62,9 +62,9 @@ def clearHeuristics(category: str='') -> int:
     """Clear all heuristics, optionally filtered by category. Returns count removed."""
     conn = _conn()
     if category:
-        cursor = conn.execute('DELETE FROM learned_heuristics WHERE category = ?', (category,))
+        cursor = conn.execute('DELETE FROM learnedHeuristics WHERE category = ?', (category,))
     else:
-        cursor = conn.execute('DELETE FROM learned_heuristics')
+        cursor = conn.execute('DELETE FROM learnedHeuristics')
     conn.commit()
     return cursor.rowcount
 
@@ -72,21 +72,21 @@ def countHeuristics(category: str='') -> int:
     """Count heuristics, optionally filtered by category."""
     conn = _conn()
     if category:
-        row = conn.execute('SELECT COUNT(*) FROM learned_heuristics WHERE category = ?', (category,)).fetchone()
+        row = conn.execute('SELECT COUNT(*) FROM learnedHeuristics WHERE category = ?', (category,)).fetchone()
     else:
-        row = conn.execute('SELECT COUNT(*) FROM learned_heuristics').fetchone()
+        row = conn.execute('SELECT COUNT(*) FROM learnedHeuristics').fetchone()
     return row[0] if row else 0
 
 def removeHeuristicById(heuristicId: int) -> bool:
     """v3: Remove a heuristic by id. Returns True if found and deleted."""
     conn = _conn()
-    cur = conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (heuristicId,))
+    cur = conn.execute('DELETE FROM learnedHeuristics WHERE id = ?', (heuristicId,))
     conn.commit()
     return cur.rowcount > 0
 
 def updateHeuristic(heuristicId: int, newRule: str) -> bool:
     """v3: Update a heuristic's rule text. Returns True if found and updated."""
     conn = _conn()
-    cur = conn.execute("UPDATE learned_heuristics SET rule = ?, updated_at = datetime('now') WHERE id = ?", (newRule, heuristicId))
+    cur = conn.execute("UPDATE learnedHeuristics SET rule = ?, updatedAt = datetime('now') WHERE id = ?", (newRule, heuristicId))
     conn.commit()
     return cur.rowcount > 0

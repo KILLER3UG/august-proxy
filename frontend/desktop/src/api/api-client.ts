@@ -111,10 +111,10 @@ export type ConversationsResponse = Record<string, Array<RequestEntry & {
 export interface StoredSession {
   id: string;
   status?: string;
-  agent_type?: string;
+  agentType?: string;
   title?: string;
-  created_at?: string;
-  updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
   [key: string]: unknown;
 }
 
@@ -277,10 +277,10 @@ export function getConversations(period: Period = 'all'): Promise<ConversationsR
   return api.get<ConversationsResponse>(`/api/conversations?period=${period}`);
 }
 
-export function getSessions(params?: { status?: string; agent_type?: string; limit?: number; order?: 'newest' | 'oldest' }): Promise<SessionsResponse> {
+export function getSessions(params?: { status?: string; agentType?: string; limit?: number; order?: 'newest' | 'oldest' }): Promise<SessionsResponse> {
   const qs = new URLSearchParams();
   if (params?.status) qs.set('status', params.status);
-  if (params?.agent_type) qs.set('agent_type', params.agent_type);
+  if (params?.agentType) qs.set('agentType', params.agentType);
   qs.set('limit', String(params?.limit ?? 50));
   qs.set('order', params?.order ?? 'newest');
   return api.get<SessionsResponse>(`/api/sessions?${qs.toString()}`);

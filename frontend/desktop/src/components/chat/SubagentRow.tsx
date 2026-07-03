@@ -44,17 +44,17 @@ export function SubagentRow({ agent }: SubagentRowProps) {
   useEffect(() => {
     if (agent.status === 'running') {
       const interval = setInterval(() => {
-        setElapsed((Date.now() - agent.started_at) / 1000);
+        setElapsed((Date.now() - agent.startedAt) / 1000);
       }, 200);
       return () => clearInterval(interval);
     }
     setElapsed(agent.elapsed);
-  }, [agent.status, agent.started_at, agent.elapsed]);
+  }, [agent.status, agent.startedAt, agent.elapsed]);
 
   return (
     <div
       className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-card/40 px-3 py-2 text-sm"
-      data-testid={`subagent-row-${agent.task_id}`}
+      data-testid={`subagent-row-${agent.taskId}`}
     >
       <Icon
         className={cn(
@@ -70,7 +70,7 @@ export function SubagentRow({ agent }: SubagentRowProps) {
           {agent.goal}
         </p>
         <p className="text-[10px] text-muted-foreground font-mono">
-          {agent.agent_id}
+          {agent.agentId}
         </p>
       </div>
 

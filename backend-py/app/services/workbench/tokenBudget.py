@@ -161,7 +161,7 @@ def _flattenMessages(messages: list[dict[str, object]]) -> str:
                     btype = block.get('type', '')
                     if btype == 'text':
                         parts.append(f"{role}: {block.get('text', '')}")
-                    elif btype == 'tool_result':
+                    elif btype == 'toolResult':
                         parts.append(str(block.get('content', '')))
                     elif btype == 'tool_use':
                         parts.append(f"{role}: {block.get('name', '')}")

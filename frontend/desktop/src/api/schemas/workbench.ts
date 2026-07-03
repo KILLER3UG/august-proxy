@@ -7,15 +7,18 @@
  * The schema uses Zod's discriminated union on the `type` field, so a
  * schema mismatch from the backend produces a focused error message
  * pointing at the offending variant.
+ *
+ * NOTE: The backend sends events as flat key-value JSON (no `data`
+ * wrapper). Each schema below defines its fields at the top level.
  */
 
 import { z } from 'zod';
 
 /** A free-form JSON object; matches the structural type used by
- *  tool_use.input / tool_call.input. */
+ *  toolUse.input / toolCall.input. */
 const UnknownDictSchema = z.record(z.unknown());
 
-/** Generic content for tool_result events; the backend sends arbitrary
+/** Generic content for toolResult events; the backend sends arbitrary
  *  JSON for these and we narrow at the consumer. */
 const ToolResultContentSchema = z.unknown();
 
@@ -24,46 +27,52 @@ const WorkbenchBaseSchema = z.object({
   id: z.string().optional(),
 });
 
+export const WorkbenchStartedEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('started'),
+  sessionId: z.string(),
+  model: z.string(),
+});
+
 export const WorkbenchThinkingEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('thinking'),
-  data: z.object({ content: z.string() }),
+  content: z.string(),
 });
 
 export const WorkbenchTextEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('text'),
-  data: z.object({ content: z.string() }),
+  content: z.string(),
 });
 
 export const WorkbenchContentEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('content'),
-  data: z.object({ content: z.string() }),
+  content: z.string(),
 });
 
 export const WorkbenchToolUseEventSchema = WorkbenchBaseSchema.extend({
-  type: z.literal('tool_use'),
-  data: z.object({
-    id: z.string(),
-    name: z.string(),
-    input: UnknownDictSchema,
-  }),
+  type: z.literal('toolUse'),
+  id: z.string(),
+  name: z.string(),
+  input: UnknownDictSchema,
 });
 
 export const WorkbenchToolCallEventSchema = WorkbenchBaseSchema.extend({
-  type: z.literal('tool_call'),
-  data: z.object({
-    id: z.string(),
-    name: z.string(),
-    input: UnknownDictSchema.optional(),
-  }),
+  type: z.literal('toolCall'),
+  id: z.string(),
+  name: z.string(),
+  input: UnknownDictSchema.optional(),
+  status: z.string().optional(),
 });
 
 export const WorkbenchToolResultEventSchema = WorkbenchBaseSchema.extend({
-  type: z.literal('tool_result'),
-  data: z.object({
-    id: z.string(),
-    content: ToolResultContentSchema,
-    is_error: z.boolean().optional(),
-  }),
+  type: z.literal('toolResult'),
+  id: z.string(),
+  name: z.string(),
+  content: ToolResultContentSchema,
+  contentTruncated: z.boolean().optional(),
+  contentFullLength: z.number().optional(),
+  summary: z.string().optional(),
+  status: z.string().optional(),
+  error: z.string().optional(),
 });
 
 const WorkbenchSessionSchema = z.object({
@@ -105,28 +114,117 @@ export const WorkbenchBtwEventSchema = WorkbenchBaseSchema.extend({
 
 export const WorkbenchCompactionEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('compaction'),
-  data: z.object({
-    headCount: z.number(),
-    tailCount: z.number(),
-    compressedCount: z.number(),
-    originalTokens: z.number(),
-    compressedTokens: z.number(),
-    underThreshold: z.boolean().optional(),
-    threshold: z.number().optional(),
-  }),
+  headCount: z.number(),
+  tailCount: z.number(),
+  compressedCount: z.number(),
+  originalTokens: z.number(),
+  compressedTokens: z.number(),
+  underThreshold: z.boolean().optional(),
+  threshold: z.number().optional(),
 });
 
 export const WorkbenchDoneEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('done'),
-  data: z.record(z.never()),
+  sessionId: z.string().optional(),
+  data: z.record(z.never()).optional(),
 });
 
 export const WorkbenchErrorEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('error'),
-  data: z.object({ message: z.string() }),
+  message: z.string(),
+});
+
+/** Event emitted when the backend sends a plan proposal. */
+export const WorkbenchPlanProposedEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('planProposed'),
+  plan: z.unknown(),
+});
+
+/** Event emitted for browser automation actions. */
+export const WorkbenchBrowserActionEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('browserAction'),
+  id: z.string().optional(),
+  name: z.string().optional(),
+  input: UnknownDictSchema.optional(),
+  url: z.string().optional(),
+  title: z.string().optional(),
+  target: z.string().optional(),
+  screenshot: z.string().optional(),
+  typed: z.string().optional(),
+  selected: z.string().optional(),
+  scrolled: z.string().optional(),
+  status: z.string().optional(),
+});
+
+/** Event emitted for final output content. */
+export const WorkbenchFinalOutputEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('finalOutput'),
+  content: z.string(),
+});
+
+/** Sub-agent events */
+export const WorkbenchSubagentStartEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('subagentStart'),
+  agentId: z.string(),
+  jobId: z.string(),
+  name: z.string(),
+  role: z.string(),
+  goal: z.string(),
+});
+
+export const WorkbenchSubagentTextEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('subagentText'),
+  agentId: z.string(),
+  jobId: z.string(),
+  content: z.string(),
+});
+
+export const WorkbenchSubagentToolCallEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('subagentToolCall'),
+  agentId: z.string(),
+  jobId: z.string(),
+  id: z.string(),
+  name: z.string(),
+  input: UnknownDictSchema,
+});
+
+export const WorkbenchSubagentToolResultEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('subagentToolResult'),
+  agentId: z.string(),
+  jobId: z.string(),
+  id: z.string(),
+  name: z.string(),
+  content: z.string(),
+  status: z.string().optional(),
+});
+
+export const WorkbenchSubagentDoneEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('subagentDone'),
+  agentId: z.string(),
+  jobId: z.string().optional(),
+  status: z.string(),
+  error: z.string().optional(),
+  result: z.string().optional(),
+  isFallback: z.boolean().optional(),
+});
+
+/** Warning events (e.g. model fallback notices) */
+export const WorkbenchWarningEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('warning'),
+  kind: z.string(),
+  agentId: z.string().optional(),
+  message: z.string(),
+});
+
+/** User-message-injected event (from queued messages) */
+export const WorkbenchUserMessageInjectedEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('userMessageInjected'),
+  content: z.string().optional(),
+  text: z.string().optional(),
 });
 
 export const WorkbenchEventSchema = z.discriminatedUnion('type', [
+  WorkbenchStartedEventSchema,
   WorkbenchThinkingEventSchema,
   WorkbenchTextEventSchema,
   WorkbenchContentEventSchema,
@@ -138,6 +236,16 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchCompactionEventSchema,
   WorkbenchDoneEventSchema,
   WorkbenchErrorEventSchema,
+  WorkbenchPlanProposedEventSchema,
+  WorkbenchBrowserActionEventSchema,
+  WorkbenchFinalOutputEventSchema,
+  WorkbenchSubagentStartEventSchema,
+  WorkbenchSubagentTextEventSchema,
+  WorkbenchSubagentToolCallEventSchema,
+  WorkbenchSubagentToolResultEventSchema,
+  WorkbenchSubagentDoneEventSchema,
+  WorkbenchWarningEventSchema,
+  WorkbenchUserMessageInjectedEventSchema,
 ]);
 
 /** Inferred TypeScript type — should match `WorkbenchEvent` from

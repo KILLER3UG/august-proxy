@@ -46,13 +46,13 @@ async def executeSubAgent(session: object, agentId: str, goal: str, context: str
     if depth >= _MAXAgentDepth:
         msg = f'Sub-agent depth cap reached ({depth} >= {_MAXAgentDepth}).'
         if emit:
-            emit({'type': 'subagent_done', 'agentId': resolvedAgentId, 'status': 'blocked', 'error': msg})
+            emit({'type': 'subagentDone', 'agentId': resolvedAgentId, 'status': 'blocked', 'error': msg})
         return {'agentId': resolvedAgentId, 'status': 'blocked', 'error': msg}
     job = createJob(resolvedAgentId, goal, context)
     updateJob(job['id'], {'status': 'running'})
     jobId = job['id']
     if emit:
-        emit({'type': 'subagent_start', 'agentId': resolvedAgentId, 'jobId': jobId, 'name': agent.get('name', 'General'), 'role': agent.get('role', ''), 'goal': goal})
+        emit({'type': 'subagentStart', 'agentId': resolvedAgentId, 'jobId': jobId, 'name': agent.get('name', 'General'), 'role': agent.get('role', ''), 'goal': goal})
     aliasHint = agent.get('modelAlias') or parentAlias or ''
     resolution = resolveOrFallback(aliasHint, provider_hint=getattr(session, 'provider', '') or '')
     model = (resolution or {}).get('model') or aliasHint or ''
@@ -74,7 +74,7 @@ async def executeSubAgent(session: object, agentId: str, goal: str, context: str
     if not provider:
         err = 'No provider available for sub-agent.'
         if emit:
-            emit({'type': 'subagent_done', 'agentId': resolvedAgentId, 'jobId': jobId, 'status': 'error', 'error': err})
+            emit({'type': 'subagentDone', 'agentId': resolvedAgentId, 'jobId': jobId, 'status': 'error', 'error': err})
         updateJob(jobId, {'status': 'failed', 'error': err})
         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
     resolvedModel = _resolveModel(provider, model)
@@ -99,8 +99,8 @@ async def executeSubAgent(session: object, agentId: str, goal: str, context: str
     def _subEmit(ev: dict[str, object]) -> None:
         if not emit:
             return
-        if ev.get('type') == 'final_output':
-            emit({'type': 'subagent_text', 'agentId': resolvedAgentId, 'jobId': jobId, 'content': ev.get('content', '')})
+        if ev.get('type') == 'finalOutput':
+            emit({'type': 'subagentText', 'agentId': resolvedAgentId, 'jobId': jobId, 'content': ev.get('content', '')})
     messages: list[dict[str, object]] = [{'role': 'user', 'content': f'Goal: {goal}\n\nContext: {context}' if context else f'Goal: {goal}'}]
     finalText = ''
     token = currentSessionId.set(getattr(session, 'id', 'default'))
@@ -114,7 +114,7 @@ async def executeSubAgent(session: object, agentId: str, goal: str, context: str
                 break
             if response.get('error'):
                 if emit:
-                    emit({'type': 'subagent_text', 'agentId': resolvedAgentId, 'jobId': jobId, 'content': f"[error] {response['error']}"})
+                    emit({'type': 'subagentText', 'agentId': resolvedAgentId, 'jobId': jobId, 'content': f"[error] {response['error']}"})
                 break
             if isAnthropic:
                 contentBlocks = response.get('content', [])
@@ -143,7 +143,7 @@ async def executeSubAgent(session: object, agentId: str, goal: str, context: str
                     status = 'blocked'
                 else:
                     if emit:
-                        emit({'type': 'subagent_tool_call', 'agentId': resolvedAgentId, 'jobId': jobId, 'id': tId, 'name': tName, 'input': tInput})
+                        emit({'type': 'subagentToolCall', 'agentId': resolvedAgentId, 'jobId': jobId, 'id': tId, 'name': tName, 'input': tInput})
                     try:
                         result = await dispatchTool(tName, tInput)
                     except Exception as exc:
@@ -151,17 +151,17 @@ async def executeSubAgent(session: object, agentId: str, goal: str, context: str
                     status = 'done'
                 resultStr = str(result)
                 if emit:
-                    emit({'type': 'subagent_tool_result', 'agentId': resolvedAgentId, 'jobId': jobId, 'id': tId, 'name': tName, 'content': resultStr[:2000], 'status': status})
+                    emit({'type': 'subagentToolResult', 'agentId': resolvedAgentId, 'jobId': jobId, 'id': tId, 'name': tName, 'content': resultStr[:2000], 'status': status})
                 toolResults.append({'tool_use_id': tId, 'role': 'tool', 'content': resultStr})
             messages.extend(toolResults)
         updateJob(jobId, {'status': 'completed', 'result': finalText[:2000]})
         if emit:
-            emit({'type': 'subagent_done', 'agentId': resolvedAgentId, 'jobId': jobId, 'status': 'completed', 'result': finalText[:4000], 'isFallback': isFallback})
+            emit({'type': 'subagentDone', 'agentId': resolvedAgentId, 'jobId': jobId, 'status': 'completed', 'result': finalText[:4000], 'isFallback': isFallback})
         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'completed', 'result': finalText}
     except Exception as exc:
         updateJob(jobId, {'status': 'failed', 'error': str(exc)})
         if emit:
-            emit({'type': 'subagent_done', 'agentId': resolvedAgentId, 'jobId': jobId, 'status': 'error', 'error': str(exc)})
+            emit({'type': 'subagentDone', 'agentId': resolvedAgentId, 'jobId': jobId, 'status': 'error', 'error': str(exc)})
         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': str(exc)}
     finally:
         currentSessionId.reset(token)

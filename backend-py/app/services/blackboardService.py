@@ -40,7 +40,7 @@ def writeNote(sessionId: str, agent: str, key: str, value: object, priority: int
         expires = computeTtl(pollInterval)
     elif ttlSeconds and ttlSeconds > 0:
         expires = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(time.time() + ttlSeconds))
-    conn.execute('INSERT INTO blackboard (session_id, agent, key, value, priority, expires_at) VALUES (?, ?, ?, ?, ?, ?)', (sessionId, agent, key, json.dumps(value) if not isinstance(value, str) else value, priority, expires))
+    conn.execute('INSERT INTO blackboard (sessionId, agent, key, value, priority, expiresAt) VALUES (?, ?, ?, ?, ?, ?)', (sessionId, agent, key, json.dumps(value) if not isinstance(value, str) else value, priority, expires))
     conn.commit()
 
 def readNotes(sessionId: str, agent: str='', key: str='', ack: bool=False) -> list[BlackboardNoteDict]:
@@ -51,7 +51,7 @@ def readNotes(sessionId: str, agent: str='', key: str='', ack: bool=False) -> li
     """
     conn = _conn()
     _cleanupExpired(conn)
-    query = 'SELECT * FROM blackboard WHERE session_id = ?'
+    query = 'SELECT * FROM blackboard WHERE sessionId = ?'
     params: list[object] = [sessionId]
     if agent:
         query += ' AND agent = ?'
@@ -59,7 +59,7 @@ def readNotes(sessionId: str, agent: str='', key: str='', ack: bool=False) -> li
     if key:
         query += ' AND key = ?'
         params.append(key)
-    query += ' ORDER BY priority DESC, created_at DESC'
+    query += ' ORDER BY priority DESC, createdAt DESC'
     rows = conn.execute(query, params).fetchall()
     # SQLite rows are dicts that match BlackboardNoteDict structurally;
     # mypy can't narrow the inferred List[dict[Any, Any]] to the TypedDict.
@@ -76,13 +76,13 @@ def clearNotes(sessionId: str, agent: str='') -> int:
     """Clear blackboard notes, optionally for a specific agent."""
     conn = _conn()
     if agent:
-        cursor = conn.execute('DELETE FROM blackboard WHERE session_id = ? AND agent = ?', (sessionId, agent))
+        cursor = conn.execute('DELETE FROM blackboard WHERE sessionId = ? AND agent = ?', (sessionId, agent))
     else:
-        cursor = conn.execute('DELETE FROM blackboard WHERE session_id = ?', (sessionId,))
+        cursor = conn.execute('DELETE FROM blackboard WHERE sessionId = ?', (sessionId,))
     conn.commit()
     return cursor.rowcount
 
 def _cleanupExpired(conn) -> None:
     """Delete expired notes."""
-    conn.execute("DELETE FROM blackboard WHERE expires_at IS NOT NULL AND expires_at < datetime('now')")
+    conn.execute("DELETE FROM blackboard WHERE expiresAt IS NOT NULL AND expiresAt < datetime('now')")
     conn.commit()

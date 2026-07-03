@@ -16,14 +16,14 @@ export interface SpawnRequest {
 }
 
 export interface SubagentInfo {
-  task_id: string;
-  agent_id: string;
+  taskId: string;
+  agentId: string;
   goal: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'recovered';
   result?: string;
   error?: string;
-  started_at: number;
-  finished_at?: number;
+  startedAt: number;
+  finishedAt?: number;
   elapsed: number;
 }
 
@@ -33,14 +33,14 @@ export interface SpawnResult {
   succeeded?: number;
   failed?: number;
   results?: SubagentInfo[];
-  proposal_id?: string;
+  proposalId?: string;
   message?: string;
 }
 
 export interface SubagentEvent {
   type: string;
-  task_id?: string;
-  agent_id?: string;
+  taskId?: string;
+  agentId?: string;
   goal?: string;
   content?: string;
   [key: string]: unknown;

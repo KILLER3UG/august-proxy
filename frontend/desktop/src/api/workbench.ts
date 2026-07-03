@@ -1,5 +1,5 @@
 /* Workbench API client — talks to backend /api/workbench/* endpoints */
-/* Uses named SSE events (event: text, event: tool_use, etc.) per backend. */
+/* Uses named SSE events (event: text, event: toolUse, etc.) per backend. */
 
 import type {
   WorkbenchSession,
@@ -51,7 +51,7 @@ export async function confirmWorkbenchMutation(
   handlers.onToolResult?.({
     id: token,
     content: JSON.stringify({ type: 'mutation_confirmation_result', result: data }, null, 2),
-    is_error: !!data.blocked || !!data.error,
+    isError: !!data.blocked || !!data.error,
   });
   handlers.onDone?.();
 }
@@ -388,7 +388,7 @@ export interface QueuedUserMessage {
 
 /** Submit a follow-up message that will be delivered to the model mid-
  *  response. The next time the chat loop's iteration boundary fires
- *  (after tool_results or after the model emits a text-only turn), the
+ *  (after toolResults or after the model emits a text-only turn), the
  *  queued entries are drained and the model decides whether to act on
  *  them. */
 export async function queueWorkbenchMessage(
@@ -460,17 +460,17 @@ function dispatchWorkbenchEvent(
       break;
     case 'text':
     case 'content':
-    case 'final_output':
+    case 'finalOutput':
       handlers.onText?.({ content: String(p?.content ?? '') });
       break;
-    case 'tool_use':
+    case 'toolUse':
       handlers.onToolUse?.({
         id: String(p?.id ?? ''),
         name: String(p?.name ?? ''),
         input: (p?.input as Record<string, unknown>) ?? {},
       });
       break;
-    case 'tool_call': {
+    case 'toolCall': {
       let input: Record<string, unknown> = {};
       try {
         input = typeof p?.input === 'string' ? JSON.parse(p.input) : ((p?.input as Record<string, unknown>) ?? {});
@@ -484,11 +484,11 @@ function dispatchWorkbenchEvent(
       });
       break;
     }
-    case 'tool_result':
+    case 'toolResult':
       handlers.onToolResult?.({
         id: String(p?.id ?? ''),
         content: p?.content,
-        is_error: p?.is_error as boolean | undefined,
+        isError: p?.isError as boolean | undefined,
       });
       break;
     case 'tool_progress': {
@@ -534,7 +534,7 @@ function dispatchWorkbenchEvent(
     case 'started':
       handlers.onStarted?.({ sinceSeq: p?.sinceSeq as number | undefined });
       break;
-    case 'user_message_queued':
+    case 'userMessageQueued':
       handlers.onUserMessageQueued?.({
         sessionId: String(p?.sessionId ?? ''),
         messageId: String(p?.messageId ?? ''),
@@ -542,13 +542,13 @@ function dispatchWorkbenchEvent(
         queuedAt: typeof p?.queuedAt === 'string' ? p.queuedAt : new Date().toISOString(),
       });
       break;
-    case 'user_message_dequeued':
+    case 'userMessageDequeued':
       handlers.onUserMessageDequeued?.({
         sessionId: String(p?.sessionId ?? ''),
         messageId: String(p?.messageId ?? ''),
       });
       break;
-    case 'user_message_injected':
+    case 'userMessageInjected':
       handlers.onUserMessageInjected?.({
         sessionId: String(p?.sessionId ?? ''),
         messageId: String(p?.messageId ?? ''),
@@ -556,7 +556,7 @@ function dispatchWorkbenchEvent(
         queuedAt: typeof p?.queuedAt === 'string' ? p.queuedAt : new Date().toISOString(),
       });
       break;
-    case 'subagent_start':
+    case 'subagentStart':
       handlers.onSubagentStart?.({
         jobId: String(p?.jobId ?? ''),
         agentId: String(p?.agentId ?? ''),
@@ -567,7 +567,7 @@ function dispatchWorkbenchEvent(
         task: p?.task as string | undefined,
       });
       break;
-    case 'subagent_done':
+    case 'subagentDone':
       handlers.onSubagentDone?.({
         jobId: String(p?.jobId ?? ''),
         agentId: String(p?.agentId ?? ''),
@@ -587,14 +587,14 @@ function dispatchWorkbenchEvent(
         ...p,
       });
       break;
-    case 'subagent_text':
+    case 'subagentText':
       handlers.onSubagentText?.({
         jobId: String(p?.jobId ?? ''),
         agentId: String(p?.agentId ?? ''),
         content: String(p?.content ?? ''),
       });
       break;
-    case 'subagent_tool_call':
+    case 'subagentToolCall':
       handlers.onSubagentToolCall?.({
         jobId: String(p?.jobId ?? ''),
         agentId: String(p?.agentId ?? ''),
@@ -604,20 +604,20 @@ function dispatchWorkbenchEvent(
         status: p?.status as 'running' | 'done' | 'error' | undefined,
       });
       break;
-    case 'subagent_tool_result':
+    case 'subagentToolResult':
       handlers.onSubagentToolResult?.({
         jobId: String(p?.jobId ?? ''),
         agentId: String(p?.agentId ?? ''),
         id: String(p?.id ?? ''),
         content: p?.content,
-        is_error: p?.is_error as boolean | undefined,
-        status: p?.is_error ? 'error' : 'done',
+        isError: p?.isError as boolean | undefined,
+        status: p?.isError ? 'error' : 'done',
       });
       break;
     case 'aborted':
       handlers.onDone?.();
       break;
-    case 'browser_action':
+    case 'browserAction':
       handlers.onBrowserAction?.({
         id: String(p?.id ?? ''),
         name: String(p?.name ?? ''),

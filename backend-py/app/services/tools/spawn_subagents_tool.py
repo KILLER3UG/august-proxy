@@ -22,7 +22,7 @@ Schema
 Modes
 -----
 - ``auto``: spawn immediately.
-- ``proposed``: emit a ``subagent-proposed`` event for user approval before
+- ``proposed``: emit a ``subagentProposed`` event for user approval before
   spawning. The frontend shows an approval card; the user must approve via
   ``POST /api/subagents/propose-breakdown`` before spawning begins.
 - ``negotiated``: like proposed, but the orchestrator may rebalance work
@@ -88,13 +88,13 @@ TOOL_DEFINITION = {
 }
 
 # In-memory store for proposed breakdowns pending approval
-_pending_proposals: dict[str, dict[str, Any]] = {}
+_pendingProposals: dict[str, dict[str, Any]] = {}
 
 
 async def execute_spawn_subagents(
     orchestrator: SubagentOrchestrator,
     session: object,
-    work_items: list[dict[str, Any]],
+    workItems: list[dict[str, Any]],
     mode: str = "auto",
     emit: Any | None = None,
 ) -> dict[str, Any]:
@@ -103,7 +103,7 @@ async def execute_spawn_subagents(
     Args:
         orchestrator: The subagent orchestrator instance.
         session: The parent session object.
-        work_items: List of work item dicts (goal, agent_id, etc.).
+        workItems: List of work item dicts (goal, agentId, etc.).
         mode: Spawn mode ('auto', 'proposed', 'negotiated').
         emit: Optional SSE event emitter.
 
@@ -112,71 +112,71 @@ async def execute_spawn_subagents(
     """
     if mode == "proposed":
         # Emit proposal event and wait for user approval
-        proposal_id = f"proposal_{__import__('uuid').uuid4().hex[:8]}"
-        _pending_proposals[proposal_id] = {
-            "work_items": work_items,
+        proposalId = f"proposal_{__import__('uuid').uuid4().hex[:8]}"
+        _pendingProposals[proposalId] = {
+            "workItems": workItems,
             "session": session,
             "mode": mode,
-            "created_at": __import__('time').time(),
+            "createdAt": __import__('time').time(),
         }
 
         if emit:
             emit({
-                "type": "subagent-proposed",
-                "proposal_id": proposal_id,
-                "work_breakdown": [
+                "type": "subagentProposed",
+                "proposalId": proposalId,
+                "workBreakdown": [
                     {
                         "goal": item.get("goal", ""),
-                        "agent_id": item.get("agent_id", "general"),
+                        "agentId": item.get("agentId", "general"),
                     }
-                    for item in work_items
+                    for item in workItems
                 ],
             })
 
         return {
             "status": "awaiting_approval",
-            "proposal_id": proposal_id,
-            "message": f"Proposal {proposal_id} created. Waiting for user approval.",
+            "proposalId": proposalId,
+            "message": f"Proposal {proposalId} created. Waiting for user approval.",
         }
 
     # auto mode — spawn immediately
-    return await _do_spawn(orchestrator, session, work_items, emit=emit)
+    return await _doSpawn(orchestrator, session, workItems, emit=emit)
 
 
 async def approve_proposal(
     orchestrator: SubagentOrchestrator,
-    proposal_id: str,
+    proposalId: str,
 ) -> dict[str, Any]:
     """Approve a pending proposal and trigger spawning."""
-    proposal = _pending_proposals.pop(proposal_id, None)
+    proposal = _pendingProposals.pop(proposalId, None)
     if not proposal:
-        return {"status": "error", "error": f"Proposal {proposal_id} not found or already expired."}
+        return {"status": "error", "error": f"Proposal {proposalId} not found or already expired."}
 
-    return await _do_spawn(
+    return await _doSpawn(
         orchestrator,
         proposal["session"],
-        proposal["work_items"],
+        proposal["workItems"],
         emit=None,
     )
 
 
-async def _do_spawn(
+async def _doSpawn(
     orchestrator: SubagentOrchestrator,
     session: object,
-    work_items: list[dict[str, Any]],
+    workItems: list[dict[str, Any]],
     emit: Any | None = None,
 ) -> dict[str, Any]:
     """Actually spawn the sub-agents and collect results."""
     request = SubagentSpawnRequest(
         session=session,
-        work_items=[
+        workItems=[
             {
                 "goal": item.get("goal", ""),
-                "agent_id": item.get("agentId", item.get("agent_id", "general")),
-                "restricted_tools": item.get("restrictedTools", item.get("restricted_tools")),
+                "agentId": item.get("agentId", "general"),
+                "restrictedTools": item.get("restrictedTools"),
                 "context": item.get("context", ""),
             }
-            for item in work_items
+            for item in workItems
         ],
         mode="auto",
     )
@@ -184,7 +184,7 @@ async def _do_spawn(
     handles = await orchestrator.spawn(request)
 
     # Wait for all handles to complete concurrently
-    results = await orchestrator.wait_for_all(handles)
+    results = await orchestrator.waitForAll(handles)
 
     succeeded = sum(1 for r in results if r["status"] == "completed")
     failed = sum(1 for r in results if r["status"] in ("failed", "error"))

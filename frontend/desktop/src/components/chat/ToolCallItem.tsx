@@ -52,14 +52,14 @@ function extractCommand(context?: string): string | null {
 }
 
 /**
- * Best-effort extraction of the agent_id parameter from a tool's context.
+ * Best-effort extraction of the agentId parameter from a tool's context.
  */
 function extractAgentId(context?: string): string | null {
   if (!context) return null;
   try {
     const parsed = JSON.parse(context);
     if (parsed && typeof parsed === 'object') {
-      for (const key of ['agent_id', 'agent', 'subagent_type']) {
+      for (const key of ['agentId', 'agent', 'subagentType']) {
         const v = (parsed as Record<string, unknown>)[key];
         if (typeof v === 'string' && v.length > 0) return v;
       }

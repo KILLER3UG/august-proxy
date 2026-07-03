@@ -216,11 +216,11 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       });
       // Also seed the live sub-agent container so the parent tool call
       // can render the nested block immediately, even if a separate
-      // `subagent_start` event arrives later (or was missed during a
+      // `subagentStart` event arrives later (or was missed during a
       // reconnect).
       if (jobId) {
         applySubagentEvent(sessionId, {
-          type: 'subagent_start',
+          type: 'subagentStart',
           jobId,
           agentId: subagentId || 'subagent',
           parentToolUseId: toolUseId,
@@ -230,7 +230,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     onSubagentStart: (data) => {
       if (!data?.jobId) return;
       applySubagentEvent(sessionId, {
-        type: 'subagent_start',
+        type: 'subagentStart',
         jobId: data.jobId,
         agentId: data.agentId,
         parentToolUseId: data.parentToolUseId,
@@ -242,7 +242,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     onSubagentDone: (data) => {
       if (!data?.jobId) return;
       applySubagentEvent(sessionId, {
-        type: 'subagent_done',
+        type: 'subagentDone',
         jobId: data.jobId,
         status: data.status,
         message: data.message,
@@ -252,7 +252,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     onSubagentText: (data) => {
       if (!data?.jobId) return;
       applySubagentEvent(sessionId, {
-        type: 'subagent_text',
+        type: 'subagentText',
         jobId: data.jobId,
         content: data.content || '',
       });
@@ -260,7 +260,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     onSubagentToolCall: (data) => {
       if (!data?.jobId) return;
       applySubagentEvent(sessionId, {
-        type: 'subagent_tool_call',
+        type: 'subagentToolCall',
         jobId: data.jobId,
         id: data.id,
         name: data.name,
@@ -271,12 +271,12 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     onSubagentToolResult: (data) => {
       if (!data?.jobId) return;
       applySubagentEvent(sessionId, {
-        type: 'subagent_tool_result',
+        type: 'subagentToolResult',
         jobId: data.jobId,
         id: data.id,
         content: data.content,
-        is_error: data.is_error,
-        status: data.status || (data.is_error ? 'error' : 'done'),
+        isError: data.isError,
+        status: data.status || (data.isError ? 'error' : 'done'),
       });
     },
     onStarted: ({ sinceSeq }) => {
@@ -305,7 +305,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         thinkingEnd = Date.now();
       }
       assistantContent += content;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'finalOutput', content });
       scheduleUpdate();
     },
     onToolUse: ({ id, name, input }) => {
@@ -326,7 +326,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       }
 
       streamBlocks = appendBlockEvent(streamBlocks, {
-        type: name.startsWith('@run_command') || name.startsWith('run_command') ? 'command' : 'tool_call',
+        type: name.startsWith('@run_command') || name.startsWith('run_command') ? 'command' : 'toolCall',
         name,
         id,
         context: JSON.stringify(input || {}, null, 2),
@@ -334,7 +334,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       } as any);
       scheduleUpdate();
     },
-    onToolResult: ({ id, content, is_error }) => {
+    onToolResult: ({ id, content, isError }) => {
       let parsedResult: any;
       try {
         parsedResult = typeof content === 'string' ? JSON.parse(content) : content;
@@ -360,17 +360,17 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
           detail: parsedResult.detail,
           confirmationToken: parsedResult.confirmationToken,
         } : undefined,
-        status: is_error && !parsedResult?.type ? 'error' : 'done',
+        status: isError && !parsedResult?.type ? 'error' : 'done',
         result: resultText,
-        error: is_error && !parsedResult?.type ? resultText : '',
+        error: isError && !parsedResult?.type ? resultText : '',
         duration: t.startedAt ? Date.now() - t.startedAt : undefined,
       } : t);
       streamBlocks = appendBlockEvent(streamBlocks, {
-        type: 'tool_result',
+        type: 'toolResult',
         id,
-        status: is_error && !parsedResult?.type ? 'error' : 'done',
+        status: isError && !parsedResult?.type ? 'error' : 'done',
         summary: resultText.slice(0, 240),
-        error: is_error && !parsedResult?.type ? resultText.slice(0, 240) : '',
+        error: isError && !parsedResult?.type ? resultText.slice(0, 240) : '',
         duration: toolResults.find(t => t.id === id)?.duration,
       });
       scheduleUpdate();
@@ -416,19 +416,19 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // disappears if the turn is rolled back.
       const notice = `\n\n📦 Context compacted — kept the first ${info.headCount} and last ${info.tailCount} messages; summarized ${info.compressedCount} middle messages (~${info.originalTokens} → ~${info.compressedTokens} tokens).`;
       assistantContent += notice;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content: notice });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'finalOutput', content: notice });
       scheduleUpdate();
     },
     onWarning: ({ message }) => {
       const warning = `\n\n⚠️ ${message || 'Warning'}`;
       assistantContent += warning;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content: warning });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'finalOutput', content: warning });
       scheduleUpdate();
     },
     onInfo: ({ message }) => {
       const info = `\n\nℹ️ ${message || ''}`;
       assistantContent += info;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content: info });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'finalOutput', content: info });
       scheduleUpdate();
     },
     onDone: async () => {
@@ -444,7 +444,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     },
     onError: ({ message }) => {
       assistantContent += `\n\n⚠️ Workbench error: ${message}`;
-      streamBlocks = appendBlockEvent(streamBlocks, { type: 'final_output', content: `\n\n⚠️ Workbench error: ${message}` });
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'finalOutput', content: `\n\n⚠️ Workbench error: ${message}` });
       scheduleUpdate();
       finalize('error');
     },

@@ -18,7 +18,7 @@ def bus():
 
 @pytest.fixture
 def orchestrator(bus):
-    return SubagentOrchestrator(bus, max_workers=5)
+    return SubagentOrchestrator(bus, maxWorkers=5)
 
 
 @pytest.mark.asyncio
@@ -27,9 +27,9 @@ async def test_spawn_returns_handles(orchestrator):
     session = MagicMock()
     request = SubagentSpawnRequest(
         session=session,
-        work_items=[
-            {"goal": "do thing 1", "agent_id": "general"},
-            {"goal": "do thing 2", "agent_id": "coder"},
+        workItems=[
+            {"goal": "do thing 1", "agentId": "general"},
+            {"goal": "do thing 2", "agentId": "coder"},
         ],
         mode="auto",
     )
@@ -38,24 +38,24 @@ async def test_spawn_returns_handles(orchestrator):
     assert len(handles) == 2
     assert handles[0].status == "pending"
     assert handles[1].status == "pending"
-    assert handles[0].agent_id == "general"
-    assert handles[1].agent_id == "coder"
+    assert handles[0].agentId == "general"
+    assert handles[1].agentId == "coder"
 
 
 @pytest.mark.asyncio
-async def test_list_active(orchestrator):
-    """Active tasks appear in list_active."""
+async def test_listActive(orchestrator):
+    """Active tasks appear in listActive."""
     session = MagicMock()
     request = SubagentSpawnRequest(
         session=session,
-        work_items=[{"goal": "test"}],
+        workItems=[{"goal": "test"}],
         mode="auto",
     )
 
     handles = await orchestrator.spawn(request)
-    active = orchestrator.list_active()
+    active = orchestrator.listActive()
     assert len(active) >= 1
-    assert active[0]["task_id"] == handles[0].task_id
+    assert active[0]["taskId"] == handles[0].taskId
 
 
 @pytest.mark.asyncio
@@ -64,21 +64,21 @@ async def test_terminate_cancels_task(orchestrator):
     session = MagicMock()
     request = SubagentSpawnRequest(
         session=session,
-        work_items=[{"goal": "long task", "agent_id": "general"}],
+        workItems=[{"goal": "long task", "agentId": "general"}],
         mode="auto",
     )
 
     handles = await orchestrator.spawn(request)
-    task_id = handles[0].task_id
+    taskId = handles[0].taskId
 
     # Give it a moment to start running
     await asyncio.sleep(0.05)
 
-    result = await orchestrator.terminate(task_id)
+    result = await orchestrator.terminate(taskId)
     assert result is True
 
     await asyncio.sleep(0.05)
-    handle = orchestrator.get_handle(task_id)
+    handle = orchestrator.getHandle(taskId)
     assert handle is not None
 
 
@@ -86,7 +86,7 @@ async def test_terminate_cancels_task(orchestrator):
 async def test_orchestrator_events(bus):
     """Orchestrator-level event handlers fire on completion/failure."""
     events: list[str] = []
-    orch = SubagentOrchestrator(bus, max_workers=5)
+    orch = SubagentOrchestrator(bus, maxWorkers=5)
 
     async def on_complete(data):
         events.append(("completed", data.get("status")))
@@ -94,17 +94,17 @@ async def test_orchestrator_events(bus):
     async def on_fail(data):
         events.append(("failed", data.get("status")))
 
-    orch.on("subagent_completed", on_complete)
-    orch.on("subagent_failed", on_fail)
+    orch.on("subagentCompleted", on_complete)
+    orch.on("subagentFailed", on_fail)
 
     session = MagicMock()
     request = SubagentSpawnRequest(
         session=session,
-        work_items=[{"goal": "quick test", "agent_id": "general"}],
+        workItems=[{"goal": "quick test", "agentId": "general"}],
         mode="auto",
     )
 
-    with patch("app.services.subagent_orchestrator.run_subagent", new_callable=AsyncMock) as mock_run:
+    with patch("app.services.subagent_orchestrator.runSubagent", new_callable=AsyncMock) as mock_run:
         mock_run.return_value = {"status": "completed", "result": "done", "error": ""}
         handles = await orch.spawn(request)
         # Wait for tasks to finish
@@ -121,12 +121,12 @@ async def test_close_cancels_all(orchestrator):
     session = MagicMock()
     request = SubagentSpawnRequest(
         session=session,
-        work_items=[{"goal": "task 1"}, {"goal": "task 2"}],
+        workItems=[{"goal": "task 1"}, {"goal": "task 2"}],
         mode="auto",
     )
 
     await orchestrator.spawn(request)
     await orchestrator.close()
 
-    active = orchestrator.list_active()
+    active = orchestrator.listActive()
     assert len(active) == 0

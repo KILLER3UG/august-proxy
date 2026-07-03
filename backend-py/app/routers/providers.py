@@ -91,7 +91,7 @@ async def createProvider(body: ProviderCreate):
     entry = {'id': providerId, 'name': body.name, 'baseUrl': baseUrl, 'apiFormat': apiFormat, 'apiKey': body.apiKey, 'enabled': body.enabled, 'autoFetch': False, 'models': models}
     store['providers'].append(entry)
     configService.saveProvidersStore(store)
-    modelService.invalidate_cache()
+    modelService.invalidateCache()
     return {**entry, 'apiKeySet': bool(body.apiKey)}
 
 @router.post('/import-config')
@@ -112,7 +112,7 @@ async def importProviderConfig(body: dict):
     }
     store['providers'].append(entry)
     configService.saveProvidersStore(store)
-    modelService.invalidate_cache()
+    modelService.invalidateCache()
     return {**entry, 'apiKeySet': bool(entry.get('apiKey'))}
 
 @router.get('/{providerId}')
@@ -139,7 +139,7 @@ async def updateProvider(providerId: str, body: ProviderUpdate):
             if body.enabled is not None:
                 p['enabled'] = body.enabled
             configService.saveProvidersStore(store)
-            modelService.invalidate_cache()
+            modelService.invalidateCache()
             return {**p, 'apiKeySet': bool(p.get('apiKey'))}
     raise HTTPException(status_code=404, detail='Provider not found')
 
@@ -155,7 +155,7 @@ async def deleteProvider(providerId: str):
     if len(store['providers']) == before:
         raise HTTPException(status_code=404, detail='Provider not found')
     configService.saveProvidersStore(store)
-    modelService.invalidate_cache()
+    modelService.invalidateCache()
     return {'deleted': True}
 
 @router.post('/{providerId}/models/refresh')
@@ -214,7 +214,7 @@ async def refreshModels(providerId: str):
                 currentModels.append({'id': mid, 'name': mid, 'contextWindow': 128000, 'reasoning': False, 'free': ':free' in mid or '-free' in mid, 'source': 'fetched'})
         p['models'] = currentModels
         configService.saveProvidersStore(store)
-        modelService.invalidate_cache()
+        modelService.invalidateCache()
         return {'added': added, 'updated': updated, 'removed': removed}
     raise HTTPException(status_code=404, detail='Provider not found')
 
@@ -230,7 +230,7 @@ async def addModel(providerId: str, body: ModelCreate):
             models = p.setdefault('models', [])
             models.append({'id': body.id, 'name': body.name or body.id, 'contextWindow': body.contextWindow or 128000, 'reasoning': body.reasoning or False, 'free': body.free or False, 'source': 'manual'})
             configService.saveProvidersStore(store)
-            modelService.invalidate_cache()
+            modelService.invalidateCache()
             return {**p, 'apiKeySet': bool(p.get('apiKey'))}
     raise HTTPException(status_code=404, detail='Provider not found')
 
@@ -250,7 +250,7 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                     if body.free is not None:
                         m['free'] = body.free
                     configService.saveProvidersStore(store)
-                    modelService.invalidate_cache()
+                    modelService.invalidateCache()
                     return {'updated': True}
             raise HTTPException(status_code=404, detail='Model not found')
     raise HTTPException(status_code=404, detail='Provider not found')
@@ -265,7 +265,7 @@ async def deleteModel(providerId: str, modelId: str):
             if len(p['models']) == before:
                 raise HTTPException(status_code=404, detail='Model not found')
             configService.saveProvidersStore(store)
-            modelService.invalidate_cache()
+            modelService.invalidateCache()
             return {'deleted': True}
     raise HTTPException(status_code=404, detail='Provider not found')
 

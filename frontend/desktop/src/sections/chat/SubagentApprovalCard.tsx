@@ -8,7 +8,7 @@ import { proposeBreakdown } from '@/api/subagents';
 
 interface WorkBreakdownItem {
   goal: string;
-  agent_id?: string;
+  agentId?: string;
 }
 
 interface SubagentApprovalCardProps {
@@ -70,9 +70,9 @@ export function SubagentApprovalCard({
             className="rounded-lg border border-white/[0.06] bg-card/40 px-3 py-2 text-xs"
           >
             <p className="font-medium text-foreground/90">{item.goal}</p>
-            {item.agent_id && (
+            {item.agentId && (
               <p className="text-[10px] text-muted-foreground font-mono">
-                Agent: {item.agent_id}
+                Agent: {item.agentId}
               </p>
             )}
           </div>

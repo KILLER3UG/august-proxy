@@ -12,10 +12,10 @@
  *  narrow on `type` before relying on a specific field shape. */
 export interface MessageBlock {
   id: string;
-  type: 'thinking' | 'tool_call' | 'command' | 'final_output';
+  type: 'thinking' | 'toolCall' | 'command' | 'finalOutput';
   content?: string;
   tool?: MessageBlockToolCall;
-  /** Set on tool_call blocks whose context represents a revised plan
+  /** Set on toolCall blocks whose context represents a revised plan
    *  (august__submit_plan with isRevisedPlan=true). */
   isRevisedPlan?: boolean;
 }
@@ -126,7 +126,7 @@ export interface ChatMessage {
 }
 
 /** Per-session sub-agent container rendered nested under the parent
- *  tool_call. Each sub-agent has its own block timeline. */
+ *  toolCall. Each sub-agent has its own block timeline. */
 export interface SubagentBlockState {
   id: string;
   jobId: string;
@@ -138,7 +138,7 @@ export interface SubagentBlockState {
   status: 'running' | 'completed' | 'failed' | 'cancelled';
   startedAt: number;
   finishedAt?: number;
-  /** Inner blocks (thinking/text/tool_call/tool_result) — same shape as
+  /** Inner blocks (thinking/text/toolCall/toolResult) — same shape as
    *  the parent message's blocks. */
   blocks: MessageBlock[];
   error?: string;
@@ -170,18 +170,18 @@ export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
 
 /** Event payload accepted by `appendBlockEvent`. Broader than the SSE
  *  `WorkbenchEvent` union because the reducer also handles locally
- *  synthesized events (`command`, `final_output`, `tool_progress`)
+ *  synthesized events (`command`, `finalOutput`, `tool_progress`)
  *  that don't cross the wire. */
 export interface AppendBlockEvent {
   type:
     | 'thinking'
     | 'text'
     | 'content'
-    | 'final_output'
-    | 'tool_call'
+    | 'finalOutput'
+    | 'toolCall'
     | 'command'
     | 'tool_progress'
-    | 'tool_result';
+    | 'toolResult';
   content?: string;
   name?: string;
   id?: string;

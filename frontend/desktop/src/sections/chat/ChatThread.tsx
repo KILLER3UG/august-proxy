@@ -311,7 +311,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(sessionId);
   const [runtimeVersion, setRuntimeVersion] = useState(0);
   const streaming = chatRuntime.isSessionStreaming(sessionId);
-  // Sub-agent prompt disclosures, keyed by the parent tool_use id. The
+  // Sub-agent prompt disclosures, keyed by the parent toolUse id. The
   // backend emits a `prompt` SSE event only for august__spawn_subagent /
   // august__run_team calls (and only for the sub-agents they spawn); we
   // store those payloads here so each one can be rendered directly under
@@ -1353,7 +1353,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     // Queue when streaming instead of dropping the message. The model will
     // pick the queued message up at the next iteration boundary (between
-    // tool_results or after a text-only response) without interrupting
+    // toolResults or after a text-only response) without interrupting
     // the current response — the model then decides whether to act on
     // it, defer it, or acknowledge it.
     if (streaming && sessionId) {
@@ -2460,7 +2460,7 @@ function MessageBubble({
   onRegenerate?: () => void;
   onClarifyAnswer?: (answer: string) => void;
   toolProgress?: Map<string, ReadonlyArray<{ path: string; status: 'reading' | 'read' }>>;
-  /** Sub-agent prompt disclosures keyed by the parent tool_use id. Only
+  /** Sub-agent prompt disclosures keyed by the parent toolUse id. Only
    *  present for blocks whose tool name is august__spawn_subagent or
    *  august__run_team (and the team-run agents they spawn). The bubble
    *  renders each disclosure directly under its matching tool call. */
@@ -2473,8 +2473,8 @@ function MessageBubble({
     jobId?: string;
   }>;
   /** Live sub-agent containers keyed by jobId. Each container has the
-   *  sub-agent's own blocks (thinking/text/tool_call/tool_result) and is
-   *  rendered as a nested block under the matching parent tool_call.
+   *  sub-agent's own blocks (thinking/text/toolCall/toolResult) and is
+   *  rendered as a nested block under the matching parent toolCall.
    *  Independent of `subagentPrompts` so it survives tab switches and
    *  backend reconnects. */
   subagentBlocks?: Map<string, import('./chat-stream-manager').SubagentBlockState>;
@@ -2807,7 +2807,7 @@ function MessageBubble({
                   </motion.div>
                 )}
                 {(() => {
-                  // Pre-process blocks: group consecutive tool_call/command
+                  // Pre-process blocks: group consecutive toolCall/command
                   // entries into a single "tool_group" so they share one
                   // parent timeline rail instead of each rendering their own.
                   type ToolEntry = typeof displayBlocks[number] & { tool: NonNullable<typeof displayBlocks[number]['tool']> };
@@ -2819,11 +2819,11 @@ function MessageBubble({
                   let i = 0;
                   while (i < displayBlocks.length) {
                     const block = displayBlocks[i];
-                    if ((block.type === 'tool_call' || block.type === 'command') && block.tool) {
+                    if ((block.type === 'toolCall' || block.type === 'command') && block.tool) {
                       const entries: Array<{ block: ToolEntry; index: number }> = [];
                       while (
                         i < displayBlocks.length &&
-                        (displayBlocks[i].type === 'tool_call' || displayBlocks[i].type === 'command') &&
+                        (displayBlocks[i].type === 'toolCall' || displayBlocks[i].type === 'command') &&
                         displayBlocks[i].tool
                       ) {
                         entries.push({ block: displayBlocks[i] as ToolEntry, index: i });
@@ -2905,7 +2905,7 @@ function MessageBubble({
                       );
                     }
 
-                    // Single block (thinking, final_output)
+                    // Single block (thinking, finalOutput)
                     const block = unit.block;
                     const index = unit.index;
                     const key = block.id || `${block.type}_${index}`;
@@ -2918,7 +2918,7 @@ function MessageBubble({
                             duration={message.thinkingDuration}
                           />
                         );
-                      } else if (block.type === 'final_output') {
+                      } else if (block.type === 'finalOutput') {
                         if (!block.content) return null;
                         const isFinalStreaming = !!(isLast && streaming);
                         return (
@@ -3784,8 +3784,8 @@ function buildDemoThread(sessionId: string | null): ChatMessage[] {
 
 /* ── Custom Markdown & Inline Style Renderer ───────────────────────── */
 
-export function parseSequentialText(text: string): { type: 'thinking' | 'final_output'; content: string }[] {
-  const blocks: { type: 'thinking' | 'final_output'; content: string }[] = [];
+export function parseSequentialText(text: string): { type: 'thinking' | 'finalOutput'; content: string }[] {
+  const blocks: { type: 'thinking' | 'finalOutput'; content: string }[] = [];
   let currentIndex = 0;
 
   const markers = [
@@ -3810,7 +3810,7 @@ export function parseSequentialText(text: string): { type: 'thinking' | 'final_o
     if (earliestOpenIdx === -1) {
       const remaining = text.slice(currentIndex);
       if (remaining) {
-        blocks.push({ type: 'final_output', content: remaining });
+        blocks.push({ type: 'finalOutput', content: remaining });
       }
       break;
     }
@@ -3818,7 +3818,7 @@ export function parseSequentialText(text: string): { type: 'thinking' | 'final_o
     if (earliestOpenIdx > currentIndex) {
       const preceding = text.slice(currentIndex, earliestOpenIdx);
       if (preceding) {
-        blocks.push({ type: 'final_output', content: preceding });
+        blocks.push({ type: 'finalOutput', content: preceding });
       }
     }
 
@@ -3852,7 +3852,7 @@ export function getDisplayBlocks(
 
     if (blocks && blocks.length > 0) {
       for (const block of blocks) {
-        if (block.type === 'final_output' && block.content) {
+        if (block.type === 'finalOutput' && block.content) {
           hasFinalContent = true;
           const parsed = parseSequentialText(block.content);
           for (const [subIndex, sub] of parsed.entries()) {
@@ -3898,7 +3898,7 @@ export function getDisplayBlocks(
         const isCommand = tool.name.startsWith('@run_command') || tool.name.startsWith('run_command');
         resultFallback.push({
           id: `fallback_tool_${tool.id}`,
-          type: isCommand ? 'command' : 'tool_call',
+          type: isCommand ? 'command' : 'toolCall',
           tool: tool
         });
       }
@@ -3922,7 +3922,7 @@ export function getDisplayBlocks(
 
   return [{
     id: 'fallback_raw',
-    type: 'final_output',
+    type: 'finalOutput',
     content: content || ''
   }];
 }

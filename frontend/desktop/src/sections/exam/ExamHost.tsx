@@ -7,7 +7,7 @@ import { ExamBanner } from './ExamBanner';
 
 interface Question {
   id: number;
-  exam_id?: number;
+  examId?: number;
   position?: number;
   stem: string;
   options: string[];
@@ -15,8 +15,8 @@ interface Question {
 
 interface AnswerResult {
   correct?: boolean;
-  is_correct?: boolean;
-  correct_index: number;
+  isCorrect?: boolean;
+  correctIndex: number;
   rationale: string;
 }
 
@@ -68,7 +68,7 @@ export function ExamHost(props: ExamHostProps) {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         if (cancelled) return;
-        setExamId(data.exam_id);
+        setExamId(data.examId);
         setQuestion(data.question);
         setTotal(data.total_questions ?? 0);
         setPosition(1);
@@ -91,14 +91,14 @@ export function ExamHost(props: ExamHostProps) {
       const resp = await fetch(`${API_BASE}/${examId}/answer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question_id: questionId, selected_index: selectedIndex }),
+        body: JSON.stringify({ questionId: questionId, selectedIndex: selectedIndex }),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
-      // Normalize to AnswerResult (backend uses `is_correct`; banner may use `correct`)
+      // Normalize to AnswerResult (backend uses `isCorrect`; banner may use `correct`)
       return {
-        is_correct: data.is_correct ?? data.correct ?? false,
-        correct_index: data.correct_index,
+        isCorrect: data.isCorrect ?? data.correct ?? false,
+        correctIndex: data.correctIndex,
         rationale: data.rationale ?? '',
       };
     },

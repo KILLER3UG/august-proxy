@@ -1,7 +1,7 @@
 /* ── RightDrawerBrowserSection ─ live headless browser view ──────── */
 /* Renders the most recent screenshot captured during a headless browser  */
 /* tool run, with a cursor overlay on the element the action targeted and  */
-/* a rolling action log. Fed by the browser_action SSE event →            */
+/* a rolling action log. Fed by the browserAction SSE event →            */
 /* lib/browser-store atom.                                                */
 
 import { useEffect, useMemo, useRef, useState } from 'react';

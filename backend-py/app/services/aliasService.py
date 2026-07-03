@@ -35,7 +35,7 @@ def _writeAliases(aliases: list[AliasDict]) -> None:
     settings.reload()
     try:
         from app.services import modelService
-        modelService.invalidate_cache()
+        modelService.invalidateCache()
     except Exception:
         pass
 

@@ -201,7 +201,7 @@ export function formatToolContext(toolName: string, contextJson?: string): Forma
 
   // Subagent / team spawn — show agent + task summary
   if (SUBAGENT_OPS.has(canonical)) {
-    const agentId = parsed && pickString(parsed, ['agent_id', 'agent', 'subagent_type', 'team']);
+    const agentId = parsed && pickString(parsed, ['agentId', 'agent', 'subagentType', 'team']);
     const task = parsed && pickString(parsed, ['task', 'prompt', 'description', 'goal']);
     if (agentId && task) {
       return { summary: `Spawning subagent ${agentId}: "${truncate(task, 100)}"`, raw };

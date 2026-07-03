@@ -26,12 +26,12 @@ def saveAutoMemory(key: str, content: object, category: str='auto', importance: 
     conn = _conn()
     now = __import__('datetime').datetime.utcnow().isoformat() + 'Z'
     contentJson = content if isinstance(content, str) else json.dumps(content)
-    existing = conn.execute('SELECT id FROM auto_memories WHERE key = ?', (key,)).fetchone()
+    existing = conn.execute('SELECT id FROM autoMemories WHERE key = ?', (key,)).fetchone()
     if existing:
-        conn.execute('UPDATE auto_memories SET content = ?, importance = ?, updated_at = ? WHERE id = ?', (contentJson, importance, now, existing['id']))
+        conn.execute('UPDATE autoMemories SET content = ?, importance = ?, updatedAt = ? WHERE id = ?', (contentJson, importance, now, existing['id']))
     else:
-        conn.execute('INSERT INTO auto_memories (key, content, category, importance, created_at) VALUES (?, ?, ?, ?, ?)', (key, contentJson, category, importance, now))
-    conn.execute('\n        DELETE FROM auto_memories WHERE id NOT IN (\n            SELECT id FROM auto_memories ORDER BY importance DESC, id DESC LIMIT ?\n        )\n    ', (_MAXMemories,))
+        conn.execute('INSERT INTO autoMemories (key, content, category, importance, createdAt) VALUES (?, ?, ?, ?, ?)', (key, contentJson, category, importance, now))
+    conn.execute('\n        DELETE FROM autoMemories WHERE id NOT IN (\n            SELECT id FROM autoMemories ORDER BY importance DESC, id DESC LIMIT ?\n        )\n    ', (_MAXMemories,))
     conn.commit()
 
 def getRelevantMemories(query: str, limit: int=5) -> list[dict[str, object]]:
@@ -41,7 +41,7 @@ def getRelevantMemories(query: str, limit: int=5) -> list[dict[str, object]]:
     """
     conn = _conn()
     try:
-        rows = conn.execute('SELECT key, content, category, importance, created_at FROM auto_memories_fts WHERE content MATCH ? ORDER BY rank LIMIT ?', (query, limit)).fetchall()
+        rows = conn.execute('SELECT key, content, category, importance, createdAt FROM autoMemories_fts WHERE content MATCH ? ORDER BY rank LIMIT ?', (query, limit)).fetchall()
         if rows:
             result = []
             for r in rows:
@@ -54,7 +54,7 @@ def getRelevantMemories(query: str, limit: int=5) -> list[dict[str, object]]:
             return result
     except Exception:
         pass
-    allRows = conn.execute('SELECT key, content, category, importance, created_at FROM auto_memories').fetchall()
+    allRows = conn.execute('SELECT key, content, category, importance, createdAt FROM autoMemories').fetchall()
     scored = []
     q = query.lower()
     for r in allRows:

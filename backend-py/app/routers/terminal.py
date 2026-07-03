@@ -27,7 +27,7 @@ async def listTerminals():
     """List all terminal sessions."""
     return {'sessions': terminalService.listTerminalSessions()}
 
-@router.get('/{session_id}')
+@router.get('/{sessionId}')
 async def getTerminal(sessionId: str):
     """Get a terminal session by ID."""
     try:
@@ -35,14 +35,14 @@ async def getTerminal(sessionId: str):
     except KeyError:
         raise HTTPException(status_code=404, detail='Terminal session not found')
 
-@router.delete('/{session_id}')
+@router.delete('/{sessionId}')
 async def deleteTerminal(sessionId: str):
     """Delete a terminal session."""
     if not terminalService.close_terminal_session(sessionId):
         raise HTTPException(status_code=404, detail='Terminal session not found')
     return {'status': 'ok'}
 
-@router.post('/{session_id}/write')
+@router.post('/{sessionId}/write')
 async def writeTerminal(sessionId: str, body: TerminalWrite):
     """Write data to a terminal session."""
     result = await terminalService.write_terminal_input(sessionId, body.data)
@@ -50,7 +50,7 @@ async def writeTerminal(sessionId: str, body: TerminalWrite):
         raise HTTPException(status_code=400, detail=result['error'])
     return result
 
-@router.get('/{session_id}/read')
+@router.get('/{sessionId}/read')
 async def readTerminal(sessionId: str):
     """Read output from a terminal session."""
     try:

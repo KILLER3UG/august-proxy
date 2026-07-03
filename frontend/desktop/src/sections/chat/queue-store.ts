@@ -3,7 +3,7 @@
  *
  * The SSE event subscriber (chat-stream-manager.ts → ensureSessionSubscriber)
  * writes to this store whenever the backend emits
- * `user_message_queued` / `user_message_dequeued` / `user_message_injected`.
+ * `userMessageQueued` / `userMessageDequeued` / `userMessageInjected`.
  * ChatThread subscribes via `useStore` and renders the pills + injected
  * user bubbles in real time.
  *

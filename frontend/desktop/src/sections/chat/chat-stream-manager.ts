@@ -21,7 +21,7 @@ export interface SessionStreamState {
     jobId?: string;
   }>;
   /** Live sub-agent containers keyed by the agent job id. Each container
-   *  holds its own `blocks` array so thinking/text/tool_call/tool_result
+   *  holds its own `blocks` array so thinking/text/toolCall/toolResult
    *  events for the sub-agent are rendered nested under the parent
    *  `august__spawn_subagent` / `august__run_team` tool call. */
   subagentBlocks: Map<string, SubagentBlockState>;
@@ -282,8 +282,8 @@ export async function startChatStream(
     // The POST handler returns { sinceSeq } JSON immediately and runs the
     // generation in the background. Live events are delivered via the
     // separate /api/workbench/chat/stream SSE channel — attach it now using
-    // the same per-turn handlers so streamed text / thinking / tool_use /
-    // tool_result events reach the chat UI. Without this, events accumulate
+    // the same per-turn handlers so streamed text / thinking / toolUse /
+    // toolResult events reach the chat UI. Without this, events accumulate
     // in the chat-event-log unread and the assistant bubble stays empty.
     //
     // Always attach the SSE subscriber when the POST didn't already consume
@@ -520,7 +520,7 @@ export function ensureSessionSubscriber(sessionId: string): void {
     onSubagentStart: (data) => {
       if (!data?.jobId) return;
       applySubagentEvent(sessionId, {
-        type: 'subagent_start',
+        type: 'subagentStart',
         jobId: data.jobId,
         agentId: data.agentId,
         parentToolUseId: data.parentToolUseId,
@@ -532,7 +532,7 @@ export function ensureSessionSubscriber(sessionId: string): void {
     onSubagentDone: (data) => {
       if (!data?.jobId) return;
       applySubagentEvent(sessionId, {
-        type: 'subagent_done',
+        type: 'subagentDone',
         jobId: data.jobId,
         status: data.status,
         message: data.message,
@@ -542,7 +542,7 @@ export function ensureSessionSubscriber(sessionId: string): void {
     onSubagentText: (data) => {
       if (!data?.jobId) return;
       applySubagentEvent(sessionId, {
-        type: 'subagent_text',
+        type: 'subagentText',
         jobId: data.jobId,
         content: data.content || '',
       });
@@ -550,7 +550,7 @@ export function ensureSessionSubscriber(sessionId: string): void {
     onSubagentToolCall: (data) => {
       if (!data?.jobId) return;
       applySubagentEvent(sessionId, {
-        type: 'subagent_tool_call',
+        type: 'subagentToolCall',
         jobId: data.jobId,
         id: data.id,
         name: data.name,
@@ -561,12 +561,12 @@ export function ensureSessionSubscriber(sessionId: string): void {
     onSubagentToolResult: (data) => {
       if (!data?.jobId) return;
       applySubagentEvent(sessionId, {
-        type: 'subagent_tool_result',
+        type: 'subagentToolResult',
         jobId: data.jobId,
         id: data.id,
         content: data.content,
-        is_error: data.is_error,
-      status: data.status || (data.is_error ? 'error' : 'done'),
+        isError: data.isError,
+      status: data.status || (data.isError ? 'error' : 'done'),
         });
       },
       onCompaction: (_data) => {
@@ -690,18 +690,18 @@ export function appendBlockEvent(
         content: text
       });
     }
-    } else if (event.type === 'text' || event.type === 'content' || event.type === 'final_output') {
+    } else if (event.type === 'text' || event.type === 'content' || event.type === 'finalOutput') {
     const text = event.content || '';
-    if (lastBlock && lastBlock.type === 'final_output') {
+    if (lastBlock && lastBlock.type === 'finalOutput') {
       lastBlock.content = (lastBlock.content || '') + text;
     } else {
       blocks.push({
         id: `b_out_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        type: 'final_output',
+        type: 'finalOutput',
         content: text
       });
     }
-  } else if (event.type === 'tool_call' || event.type === 'command') {
+  } else if (event.type === 'toolCall' || event.type === 'command') {
     const isCommand = event.type === 'command' || event.name?.startsWith('@run_command') || event.name?.startsWith('run_command');
     const existingIdx = blocks.findIndex(b => b.tool && b.tool.id === event.id);
     if (existingIdx !== -1) {
@@ -717,7 +717,7 @@ export function appendBlockEvent(
     } else {
       blocks.push({
         id: `b_tool_${event.id || Date.now()}`,
-        type: isCommand ? 'command' : 'tool_call',
+        type: isCommand ? 'command' : 'toolCall',
         tool: {
           id: event.id || `tc_${Date.now()}`,
           name: event.name || 'tool',
@@ -740,7 +740,7 @@ export function appendBlockEvent(
       }
       blocks[targetIdx] = target;
     }
-  } else if (event.type === 'tool_result') {
+  } else if (event.type === 'toolResult') {
     const targetIdx = blocks.findIndex(b => b.tool && b.tool.id === event.id);
     if (targetIdx !== -1) {
       const target = { ...blocks[targetIdx] };
@@ -772,18 +772,18 @@ export function appendBlockEvent(
 export function applySubagentEvent(
   sessionId: string,
   event:
-    | { type: 'subagent_start'; jobId: string; agentId: string; parentToolUseId?: string; scope?: string; task?: string; depth?: number }
+    | { type: 'subagentStart'; jobId: string; agentId: string; parentToolUseId?: string; scope?: string; task?: string; depth?: number }
     | { type: 'subagent_thinking'; jobId: string; content?: string }
-    | { type: 'subagent_text'; jobId: string; content?: string }
-    | { type: 'subagent_tool_call'; jobId: string; id: string; name: string; input?: Record<string, unknown>; context?: string; status?: 'running' | 'done' | 'error' }
-    | { type: 'subagent_tool_result'; jobId: string; id: string; content?: unknown; is_error?: boolean; status?: 'done' | 'error' | 'running'; summary?: string; error?: string; duration?: number }
-    | { type: 'subagent_done'; jobId: string; status?: 'completed' | 'failed' | 'cancelled'; message?: string; result?: string }
+    | { type: 'subagentText'; jobId: string; content?: string }
+    | { type: 'subagentToolCall'; jobId: string; id: string; name: string; input?: Record<string, unknown>; context?: string; status?: 'running' | 'done' | 'error' }
+    | { type: 'subagentToolResult'; jobId: string; id: string; content?: unknown; isError?: boolean; status?: 'done' | 'error' | 'running'; summary?: string; error?: string; duration?: number }
+    | { type: 'subagentDone'; jobId: string; status?: 'completed' | 'failed' | 'cancelled'; message?: string; result?: string }
 ): boolean {
   if (!sessionId || !event?.jobId) return false;
   const jobId = event.jobId;
   let mutated = false;
 
-  if (event.type === 'subagent_start') {
+  if (event.type === 'subagentStart') {
     updateSessionStreamState(sessionId, (prev) => {
       const blocks = new Map(prev.subagentBlocks);
       if (blocks.has(jobId)) return {};
@@ -805,7 +805,7 @@ export function applySubagentEvent(
     return mutated;
   }
 
-  if (event.type === 'subagent_done') {
+  if (event.type === 'subagentDone') {
     updateSessionStreamState(sessionId, (prev) => {
       const blocks = new Map(prev.subagentBlocks);
       const current = blocks.get(jobId);
@@ -825,7 +825,7 @@ export function applySubagentEvent(
     return mutated;
   }
 
-  // For thinking/text/tool_call/tool_result events, mutate the inner
+  // For thinking/text/toolCall/toolResult events, mutate the inner
   // blocks array via appendBlockEvent (same reducer as the parent).
   updateSessionStreamState(sessionId, (prev) => {
     const blocks = new Map(prev.subagentBlocks);
@@ -835,17 +835,17 @@ export function applySubagentEvent(
       const inner = appendBlockEvent(current.blocks, { type: 'thinking', content: event.content || '' });
       blocks.set(jobId, { ...current, blocks: inner });
       mutated = true;
-    } else if (event.type === 'subagent_text') {
+    } else if (event.type === 'subagentText') {
       const inner = appendBlockEvent(current.blocks, { type: 'text', content: event.content || '' });
       blocks.set(jobId, { ...current, blocks: inner });
       mutated = true;
-    } else if (event.type === 'subagent_tool_call') {
+    } else if (event.type === 'subagentToolCall') {
       const context = event.context
         || (event.input && Object.keys(event.input).length > 0
           ? JSON.stringify(event.input, null, 2)
           : '');
       const inner = appendBlockEvent(current.blocks, {
-        type: 'tool_call',
+        type: 'toolCall',
         id: event.id,
         name: event.name,
         context,
@@ -853,16 +853,16 @@ export function applySubagentEvent(
       });
       blocks.set(jobId, { ...current, blocks: inner });
       mutated = true;
-    } else if (event.type === 'subagent_tool_result') {
+    } else if (event.type === 'subagentToolResult') {
       const resultStr = typeof event.content === 'string'
         ? event.content
         : event.content != null ? JSON.stringify(event.content) : '';
       const inner = appendBlockEvent(current.blocks, {
-        type: 'tool_result',
+        type: 'toolResult',
         id: event.id,
-        status: (event.status || (event.is_error ? 'error' : 'done')) as 'done' | 'error',
+        status: (event.status || (event.isError ? 'error' : 'done')) as 'done' | 'error',
         summary: event.summary || resultStr.slice(0, 240),
-        error: event.error || (event.is_error ? resultStr.slice(0, 240) : ''),
+        error: event.error || (event.isError ? resultStr.slice(0, 240) : ''),
         duration: event.duration,
       });
       blocks.set(jobId, { ...current, blocks: inner });

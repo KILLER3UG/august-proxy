@@ -63,27 +63,251 @@ def _json(value: object) -> str:
 def init() -> None:
     """Create all tables on first use."""
     conn = _conn()
-    conn.executescript("\n        CREATE TABLE IF NOT EXISTS memory_store (\n            key TEXT PRIMARY KEY,\n            value TEXT,\n            updated_at TEXT DEFAULT (datetime('now'))\n        );\n\n        -- FTS5 on memory_store (content-sync table — triggers added below in Phase 0)\n        CREATE VIRTUAL TABLE IF NOT EXISTS memory_store_fts USING fts5(\n            key, value, content='memory_store', content_rowid='rowid'\n        );\n\n        CREATE TABLE IF NOT EXISTS facts (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            fact_key TEXT UNIQUE NOT NULL,\n            fact_value TEXT NOT NULL,\n            category TEXT DEFAULT 'general',\n            source TEXT DEFAULT '',\n            confidence REAL DEFAULT 1.0,\n            created_at TEXT DEFAULT (datetime('now')),\n            updated_at TEXT DEFAULT (datetime('now'))\n        );\n\n        CREATE TABLE IF NOT EXISTS proposals (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            session_id TEXT NOT NULL,\n            proposal_type TEXT NOT NULL,\n            content TEXT,\n            status TEXT DEFAULT 'pending',\n            created_at TEXT DEFAULT (datetime('now')),\n            decided_at TEXT,\n            decided_by TEXT\n        );\n\n        CREATE TABLE IF NOT EXISTS lifecycle (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            session_id TEXT,\n            event_type TEXT NOT NULL,\n            detail TEXT,\n            created_at TEXT DEFAULT (datetime('now'))\n        );\n\n        CREATE TABLE IF NOT EXISTS session_topics (\n            session_id TEXT PRIMARY KEY,\n            topic TEXT NOT NULL,\n            parent_topic TEXT,\n            confidence REAL DEFAULT 0.75,\n            classified_at TEXT DEFAULT (datetime('now'))\n        );\n\n        CREATE TABLE IF NOT EXISTS sessions (\n            id TEXT PRIMARY KEY,\n            title TEXT,\n            started_at TEXT,\n            message_count INTEGER DEFAULT 0,\n            provider TEXT DEFAULT '',\n            model TEXT DEFAULT '',\n            folder_id TEXT,\n            is_archived INTEGER DEFAULT 0,\n            workspace_path TEXT\n        );\n\n        CREATE TABLE IF NOT EXISTS messages (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            session_id TEXT NOT NULL,\n            role TEXT NOT NULL,\n            content TEXT,\n            created_at TEXT DEFAULT (datetime('now')),\n            FOREIGN KEY (session_id) REFERENCES sessions(id)\n        );\n\n        CREATE TABLE IF NOT EXISTS usage_events (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            session_id TEXT,\n            model TEXT,\n            input_tokens INTEGER DEFAULT 0,\n            output_tokens INTEGER DEFAULT 0,\n            context_tokens INTEGER DEFAULT 0,\n            created_at TEXT DEFAULT (datetime('now'))\n        );\n\n        CREATE TABLE IF NOT EXISTS config_audit (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            category TEXT NOT NULL,\n            action TEXT NOT NULL,\n            actor TEXT DEFAULT '',\n            before_json TEXT,\n            after_json TEXT,\n            created_at TEXT DEFAULT (datetime('now'))\n        );\n\n        -- ═══════════════════════════════════════════════════════════════\n        -- Phase 0: Learned Heuristics table\n        -- ═══════════════════════════════════════════════════════════════\n        CREATE TABLE IF NOT EXISTS learned_heuristics (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            rule TEXT NOT NULL,\n            source TEXT DEFAULT '',\n            category TEXT DEFAULT 'general',\n            created_at TEXT DEFAULT (datetime('now')),\n            updated_at TEXT DEFAULT (datetime('now'))\n        );\n\n        -- ═══════════════════════════════════════════════════════════════\n        -- Phase 0: Flattened auto_memories (individual FTS-indexed rows)\n        -- ═══════════════════════════════════════════════════════════════\n        CREATE TABLE IF NOT EXISTS auto_memories (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            key TEXT,\n            content TEXT,\n            category TEXT DEFAULT 'auto',\n            importance REAL DEFAULT 0.5,\n            source TEXT DEFAULT '',\n            created_at TEXT DEFAULT (datetime('now')),\n            updated_at TEXT DEFAULT (datetime('now'))\n        );\n\n        CREATE VIRTUAL TABLE IF NOT EXISTS auto_memories_fts USING fts5(\n            key, content, content='auto_memories', content_rowid='rowid'\n        );\n\n        -- ═══════════════════════════════════════════════════════════════\n        -- Phase 0: FTS5 triggers — CRITICAL — without these FTS indexes\n        -- stay empty. Both memory_store_fts and auto_memories_fts need\n        -- INSERT/UPDATE/DELETE triggers.\n        -- ═══════════════════════════════════════════════════════════════\n\n        -- memory_store_fts triggers (fixes existing broken FTS)\n        CREATE TRIGGER IF NOT EXISTS memory_store_fts_ai AFTER INSERT ON memory_store BEGIN\n            INSERT INTO memory_store_fts(rowid, key, value)\n            VALUES (new.rowid, new.key, new.value);\n        END;\n        CREATE TRIGGER IF NOT EXISTS memory_store_fts_ad AFTER DELETE ON memory_store BEGIN\n            INSERT INTO memory_store_fts(memory_store_fts, rowid, key, value)\n            VALUES('delete', old.rowid, old.key, old.value);\n        END;\n        CREATE TRIGGER IF NOT EXISTS memory_store_fts_au AFTER UPDATE ON memory_store BEGIN\n            INSERT INTO memory_store_fts(memory_store_fts, rowid, key, value)\n            VALUES('delete', old.rowid, old.key, old.value);\n            INSERT INTO memory_store_fts(rowid, key, value)\n            VALUES (new.rowid, new.key, new.value);\n        END;\n\n        -- auto_memories_fts triggers\n        CREATE TRIGGER IF NOT EXISTS auto_memories_ai AFTER INSERT ON auto_memories BEGIN\n            INSERT INTO auto_memories_fts(rowid, key, content)\n            VALUES (new.id, new.key, new.content);\n        END;\n        CREATE TRIGGER IF NOT EXISTS auto_memories_ad AFTER DELETE ON auto_memories BEGIN\n            INSERT INTO auto_memories_fts(auto_memories_fts, rowid, key, content)\n            VALUES('delete', old.id, old.key, old.content);\n        END;\n        CREATE TRIGGER IF NOT EXISTS auto_memories_au AFTER UPDATE ON auto_memories BEGIN\n            INSERT INTO auto_memories_fts(auto_memories_fts, rowid, key, content)\n            VALUES('delete', old.id, old.key, old.content);\n            INSERT INTO auto_memories_fts(rowid, key, content)\n            VALUES (new.id, new.key, new.content);\n        END;\n\n        CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category);\n        CREATE INDEX IF NOT EXISTS idx_facts_updated ON facts(updated_at);\n        CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals(session_id);\n        CREATE INDEX IF NOT EXISTS idx_lifecycle_session ON lifecycle(session_id);\n        CREATE INDEX IF NOT EXISTS idx_lifecycle_event ON lifecycle(event_type);\n        CREATE INDEX IF NOT EXISTS idx_config_audit_category ON config_audit(category);\n        CREATE INDEX IF NOT EXISTS idx_config_audit_created ON config_audit(created_at);\n    ")
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS memoryStore (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updatedAt TEXT DEFAULT (datetime(\'now\'))
+        );
+
+        -- FTS5 on memoryStore (content-sync table — triggers added below)
+        CREATE VIRTUAL TABLE IF NOT EXISTS memoryStore_fts USING fts5(
+            key, value, content=\'memoryStore\', content_rowid=\'rowid\'
+        );
+
+        CREATE TABLE IF NOT EXISTS facts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            factKey TEXT UNIQUE NOT NULL,
+            factValue TEXT NOT NULL,
+            category TEXT DEFAULT \'general\',
+            source TEXT DEFAULT \'\',
+            confidence REAL DEFAULT 1.0,
+            createdAt TEXT DEFAULT (datetime(\'now\')),
+            updatedAt TEXT DEFAULT (datetime(\'now\'))
+        );
+
+        CREATE TABLE IF NOT EXISTS proposals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sessionId TEXT NOT NULL,
+            proposalType TEXT NOT NULL,
+            content TEXT,
+            status TEXT DEFAULT \'pending\',
+            createdAt TEXT DEFAULT (datetime(\'now\')),
+            decidedAt TEXT,
+            decidedBy TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS lifecycle (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sessionId TEXT,
+            eventType TEXT NOT NULL,
+            detail TEXT,
+            createdAt TEXT DEFAULT (datetime(\'now\'))
+        );
+
+        CREATE TABLE IF NOT EXISTS sessionTopics (
+            sessionId TEXT PRIMARY KEY,
+            topic TEXT NOT NULL,
+            parentTopic TEXT,
+            confidence REAL DEFAULT 0.75,
+            classifiedAt TEXT DEFAULT (datetime(\'now\'))
+        );
+
+        CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            title TEXT,
+            startedAt TEXT,
+            messageCount INTEGER DEFAULT 0,
+            provider TEXT DEFAULT \'\',
+            model TEXT DEFAULT \'\',
+            folderId TEXT,
+            isArchived INTEGER DEFAULT 0,
+            workspacePath TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sessionId TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT,
+            createdAt TEXT DEFAULT (datetime(\'now\')),
+            FOREIGN KEY (sessionId) REFERENCES sessions(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS usageEvents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sessionId TEXT,
+            model TEXT,
+            inputTokens INTEGER DEFAULT 0,
+            outputTokens INTEGER DEFAULT 0,
+            contextTokens INTEGER DEFAULT 0,
+            createdAt TEXT DEFAULT (datetime(\'now\'))
+        );
+
+        CREATE TABLE IF NOT EXISTS configAudit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT NOT NULL,
+            action TEXT NOT NULL,
+            actor TEXT DEFAULT \'\',
+            beforeJson TEXT,
+            afterJson TEXT,
+            createdAt TEXT DEFAULT (datetime(\'now\'))
+        );
+
+        CREATE TABLE IF NOT EXISTS learnedHeuristics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule TEXT NOT NULL,
+            source TEXT DEFAULT \'\',
+            category TEXT DEFAULT \'general\',
+            createdAt TEXT DEFAULT (datetime(\'now\')),
+            updatedAt TEXT DEFAULT (datetime(\'now\'))
+        );
+
+        CREATE TABLE IF NOT EXISTS autoMemories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key TEXT,
+            content TEXT,
+            category TEXT DEFAULT \'auto\',
+            importance REAL DEFAULT 0.5,
+            source TEXT DEFAULT \'\',
+            createdAt TEXT DEFAULT (datetime(\'now\')),
+            updatedAt TEXT DEFAULT (datetime(\'now\'))
+        );
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS autoMemories_fts USING fts5(
+            key, content, content=\'autoMemories\', content_rowid=\'rowid\'
+        );
+
+        -- FTS5 triggers — CRITICAL — without these FTS indexes stay empty
+        -- memoryStore_fts triggers
+        CREATE TRIGGER IF NOT EXISTS memoryStore_fts_ai AFTER INSERT ON memoryStore BEGIN
+            INSERT INTO memoryStore_fts(rowid, key, value)
+            VALUES (new.rowid, new.key, new.value);
+        END;
+        CREATE TRIGGER IF NOT EXISTS memoryStore_fts_ad AFTER DELETE ON memoryStore BEGIN
+            INSERT INTO memoryStore_fts(memoryStore_fts, rowid, key, value)
+            VALUES(\'delete\', old.rowid, old.key, old.value);
+        END;
+        CREATE TRIGGER IF NOT EXISTS memoryStore_fts_au AFTER UPDATE ON memoryStore BEGIN
+            INSERT INTO memoryStore_fts(memoryStore_fts, rowid, key, value)
+            VALUES(\'delete\', old.rowid, old.key, old.value);
+            INSERT INTO memoryStore_fts(rowid, key, value)
+            VALUES (new.rowid, new.key, new.value);
+        END;
+
+        -- autoMemories_fts triggers
+        CREATE TRIGGER IF NOT EXISTS autoMemories_ai AFTER INSERT ON autoMemories BEGIN
+            INSERT INTO autoMemories_fts(rowid, key, content)
+            VALUES (new.id, new.key, new.content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS autoMemories_ad AFTER DELETE ON autoMemories BEGIN
+            INSERT INTO autoMemories_fts(autoMemories_fts, rowid, key, content)
+            VALUES(\'delete\', old.id, old.key, old.content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS autoMemories_au AFTER UPDATE ON autoMemories BEGIN
+            INSERT INTO autoMemories_fts(autoMemories_fts, rowid, key, content)
+            VALUES(\'delete\', old.id, old.key, old.content);
+            INSERT INTO autoMemories_fts(rowid, key, content)
+            VALUES (new.id, new.key, new.content);
+        END;
+
+        CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category);
+        CREATE INDEX IF NOT EXISTS idx_facts_updated ON facts(updatedAt);
+        CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals(sessionId);
+        CREATE INDEX IF NOT EXISTS idx_lifecycle_session ON lifecycle(sessionId);
+        CREATE INDEX IF NOT EXISTS idx_lifecycle_event ON lifecycle(eventType);
+        CREATE INDEX IF NOT EXISTS idx_configAudit_category ON configAudit(category);
+        CREATE INDEX IF NOT EXISTS idx_configAudit_created ON configAudit(createdAt);
+    ''')
     conn.commit()
-    rowCount = conn.execute('SELECT count(*) FROM memory_store_fts').fetchone()[0]
+    rowCount = conn.execute('SELECT count(*) FROM memoryStore_fts').fetchone()[0]
     if rowCount == 0:
-        conn.execute('\n        INSERT INTO memory_store_fts(rowid, key, value)\n        SELECT rowid, key, value FROM memory_store\n    ')
+        conn.execute('''
+            INSERT INTO memoryStore_fts(rowid, key, value)
+            SELECT rowid, key, value FROM memoryStore
+        ''')
     conn.commit()
     try:
-        cols = [r['name'] for r in conn.execute('PRAGMA table_info(auto_memories)').fetchall()]
-        if 'updated_at' not in cols:
-            conn.execute('ALTER TABLE auto_memories ADD COLUMN updated_at TEXT')
+        cols = [r['name'] for r in conn.execute('PRAGMA table_info(autoMemories)').fetchall()]
+        if 'updatedAt' not in cols:
+            conn.execute('ALTER TABLE autoMemories ADD COLUMN updatedAt TEXT')
     except Exception as exc:
         import logging
-        logging.warning('auto_memories updated_at migration failed: %s', exc)
-    conn.execute("\n        CREATE TABLE IF NOT EXISTS episodic_timeline (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            timestamp TEXT,\n            session_id TEXT,\n            event_summary TEXT,\n            category TEXT DEFAULT 'general'\n        )\n    ")
-    conn.execute("\n        CREATE TABLE IF NOT EXISTS blackboard (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            session_id TEXT NOT NULL,\n            agent TEXT NOT NULL DEFAULT 'main',\n            key TEXT NOT NULL,\n            value TEXT NOT NULL,\n            priority INTEGER DEFAULT 0,\n            created_at TEXT DEFAULT (datetime('now')),\n            expires_at TEXT\n        )\n    ")
-    conn.execute("\n        CREATE TABLE IF NOT EXISTS exams (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            title TEXT NOT NULL,\n            topic TEXT DEFAULT '',\n            created_at TEXT DEFAULT (datetime('now')),\n            source TEXT DEFAULT 'model',\n            source_files TEXT DEFAULT ''\n        )\n    ")
-    conn.execute("\n        CREATE TABLE IF NOT EXISTS exam_questions (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            exam_id INTEGER NOT NULL,\n            position INTEGER NOT NULL,\n            stem TEXT NOT NULL,\n            options TEXT NOT NULL,\n            correct_index INTEGER NOT NULL,\n            rationale TEXT DEFAULT '',\n            source_snippet TEXT DEFAULT '',\n            origin TEXT DEFAULT 'generated',\n            FOREIGN KEY (exam_id) REFERENCES exams(id)\n        )\n    ")
-    conn.execute("\n        CREATE TABLE IF NOT EXISTS exam_attempts (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            exam_id INTEGER NOT NULL,\n            question_id INTEGER NOT NULL,\n            selected_index INTEGER,\n            is_correct INTEGER DEFAULT 0,\n            asked_for_help INTEGER DEFAULT 0,\n            answered_at TEXT DEFAULT (datetime('now'))\n        )\n    ")
-    conn.execute("\n        CREATE TABLE IF NOT EXISTS pending_skills (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            name TEXT UNIQUE NOT NULL,\n            description TEXT,\n            trigger_text TEXT,\n            draft_path TEXT NOT NULL,\n            source_session_id TEXT,\n            source_workflow TEXT,\n            created_by TEXT DEFAULT 'auto-gen',\n            created_at TEXT DEFAULT (datetime('now')),\n            status TEXT DEFAULT 'pending',\n            use_count INTEGER DEFAULT 0,\n            last_surfaced_at TEXT\n        )\n    ")
+        logging.warning('autoMemories updatedAt migration failed: %s', exc)
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS episodicTimeline (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            sessionId TEXT,
+            eventSummary TEXT,
+            category TEXT DEFAULT 'general'
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS blackboard (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sessionId TEXT NOT NULL,
+            agent TEXT NOT NULL DEFAULT 'main',
+            key TEXT NOT NULL,
+            value TEXT NOT NULL,
+            priority INTEGER DEFAULT 0,
+            createdAt TEXT DEFAULT (datetime('now')),
+            expiresAt TEXT
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS exams (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            topic TEXT DEFAULT '',
+            createdAt TEXT DEFAULT (datetime('now')),
+            source TEXT DEFAULT 'model',
+            sourceFiles TEXT DEFAULT ''
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS examQuestions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            examId INTEGER NOT NULL,
+            position INTEGER NOT NULL,
+            stem TEXT NOT NULL,
+            options TEXT NOT NULL,
+            correctIndex INTEGER NOT NULL,
+            rationale TEXT DEFAULT '',
+            sourceSnippet TEXT DEFAULT '',
+            origin TEXT DEFAULT 'generated',
+            FOREIGN KEY (examId) REFERENCES exams(id)
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS examAttempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            examId INTEGER NOT NULL,
+            questionId INTEGER NOT NULL,
+            selectedIndex INTEGER,
+            isCorrect INTEGER DEFAULT 0,
+            askedForHelp INTEGER DEFAULT 0,
+            answeredAt TEXT DEFAULT (datetime('now'))
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS pendingSkills (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            triggerText TEXT,
+            draftPath TEXT NOT NULL,
+            sourceSessionId TEXT,
+            sourceWorkflow TEXT,
+            createdBy TEXT DEFAULT 'auto-gen',
+            createdAt TEXT DEFAULT (datetime('now')),
+            status TEXT DEFAULT 'pending',
+            useCount INTEGER DEFAULT 0,
+            lastSurfacedAt TEXT
+        )
+    ''')
     conn.commit()
-    _ensureColumn(conn, 'usage_events', 'context_tokens', 'INTEGER DEFAULT 0')
+    _ensureColumn(conn, 'usageEvents', 'contextTokens', 'INTEGER DEFAULT 0')
 
 def _ensureColumn(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
     """Add a column to a table if it does not already exist (idempotent)."""
@@ -95,13 +319,13 @@ def _ensureColumn(conn: sqlite3.Connection, table: str, column: str, decl: str) 
 def saveMemory(key: str, value: JsonValue) -> None:
     """Save a key-value pair to memory."""
     conn = _conn()
-    conn.execute("INSERT OR REPLACE INTO memory_store (key, value, updated_at) VALUES (?, ?, datetime('now'))", (key, _json(value)))
+    conn.execute("INSERT OR REPLACE INTO memoryStore (key, value, updatedAt) VALUES (?, ?, datetime('now'))", (key, _json(value)))
     conn.commit()
 
 def getMemory(key: str) -> JsonValue | None:
     """Get a value from memory by key."""
     conn = _conn()
-    row = conn.execute('SELECT value FROM memory_store WHERE key = ?', (key,)).fetchone()
+    row = conn.execute('SELECT value FROM memoryStore WHERE key = ?', (key,)).fetchone()
     if row:
         try:
             return json.loads(row['value'])
@@ -112,21 +336,21 @@ def getMemory(key: str) -> JsonValue | None:
 def deleteMemory(key: str) -> bool:
     """Delete a memory key. Returns True if it existed."""
     conn = _conn()
-    cursor = conn.execute('DELETE FROM memory_store WHERE key = ?', (key,))
+    cursor = conn.execute('DELETE FROM memoryStore WHERE key = ?', (key,))
     conn.commit()
     return cursor.rowcount > 0
 
 def listMemory(pattern: str='%') -> list[MemoryEntryDict]:
     """List memory entries with optional key pattern matching."""
     conn = _conn()
-    rows = conn.execute('SELECT key, value, updated_at FROM memory_store WHERE key LIKE ? ORDER BY updated_at DESC', (pattern,)).fetchall()
+    rows = conn.execute('SELECT key, value, updatedAt FROM memoryStore WHERE key LIKE ? ORDER BY updatedAt DESC', (pattern,)).fetchall()
     results: list[MemoryEntryDict] = []
     for r in rows:
         try:
             val = json.loads(r['value'])
         except (json.JSONDecodeError, TypeError):
             val = r['value']
-        results.append({'key': r['key'], 'value': val, 'updated_at': r['updated_at']})
+        results.append({'key': r['key'], 'value': val, 'updatedAt': r['updatedAt']})
     return results
 
 def searchMemory(query: str) -> list[MemoryEntryDict]:
@@ -138,7 +362,7 @@ def searchMemory(query: str) -> list[MemoryEntryDict]:
         ftsQuery = ' OR '.join((f'"{w}"*' for w in query.strip().split() if w))
         if not ftsQuery:
             return []
-        rows = conn.execute('SELECT key, value FROM memory_store_fts WHERE content MATCH ?\n               ORDER BY rank LIMIT 20', (ftsQuery,)).fetchall()
+        rows = conn.execute('SELECT key, value FROM memoryStore_fts WHERE content MATCH ?\n               ORDER BY rank LIMIT 20', (ftsQuery,)).fetchall()
         results: list[MemoryEntryDict] = []
         for r in rows:
             try:
@@ -149,7 +373,7 @@ def searchMemory(query: str) -> list[MemoryEntryDict]:
         return results
     except sqlite3.OperationalError:
         likeQuery = f'%{query.strip()}%'
-        rows = conn.execute('SELECT key, value FROM memory_store WHERE key LIKE ? OR value LIKE ? LIMIT 20', (likeQuery, likeQuery)).fetchall()
+        rows = conn.execute('SELECT key, value FROM memoryStore WHERE key LIKE ? OR value LIKE ? LIMIT 20', (likeQuery, likeQuery)).fetchall()
         results: list[MemoryEntryDict] = []
         for r in rows:
             try:
@@ -162,13 +386,13 @@ def searchMemory(query: str) -> list[MemoryEntryDict]:
 def saveFact(factKey: str, factValue: JsonValue, category: str='general', source: str='', confidence: float=1.0) -> None:
     """Save a structured fact."""
     conn = _conn()
-    conn.execute("INSERT OR REPLACE INTO facts (fact_key, fact_value, category, source, confidence, updated_at)\n           VALUES (?, ?, ?, ?, ?, datetime('now'))", (factKey, _json(factValue), category, source, confidence))
+    conn.execute("INSERT OR REPLACE INTO facts (factKey, factValue, category, source, confidence, updatedAt)\n           VALUES (?, ?, ?, ?, ?, datetime('now'))", (factKey, _json(factValue), category, source, confidence))
     conn.commit()
 
 def getFact(factKey: str) -> FactDict | None:
     """Get a fact by key."""
     conn = _conn()
-    row = conn.execute('SELECT * FROM facts WHERE fact_key = ?', (factKey,)).fetchone()
+    row = conn.execute('SELECT * FROM facts WHERE factKey = ?', (factKey,)).fetchone()
     if not row:
         return None
     return dict(row)  # type: ignore[return-value]
@@ -178,31 +402,31 @@ def searchFacts(query: str, category: str='') -> list[FactDict]:
     conn = _conn()
     like = f'%{query}%'
     if category:
-        rows = conn.execute('SELECT * FROM facts WHERE (fact_key LIKE ? OR fact_value LIKE ?) AND category = ? ORDER BY updated_at DESC LIMIT 20', (like, like, category)).fetchall()
+        rows = conn.execute('SELECT * FROM facts WHERE (factKey LIKE ? OR factValue LIKE ?) AND category = ? ORDER BY updatedAt DESC LIMIT 20', (like, like, category)).fetchall()
     else:
-        rows = conn.execute('SELECT * FROM facts WHERE fact_key LIKE ? OR fact_value LIKE ? ORDER BY updated_at DESC LIMIT 20', (like, like)).fetchall()
+        rows = conn.execute('SELECT * FROM facts WHERE factKey LIKE ? OR factValue LIKE ? ORDER BY updatedAt DESC LIMIT 20', (like, like)).fetchall()
     return [dict(r) for r in rows]  # type: ignore[return-value]
 
 def listFacts(category: str='') -> list[FactDict]:
     """List facts, optionally filtered by category."""
     conn = _conn()
     if category:
-        rows = conn.execute('SELECT * FROM facts WHERE category = ? ORDER BY updated_at DESC', (category,)).fetchall()
+        rows = conn.execute('SELECT * FROM facts WHERE category = ? ORDER BY updatedAt DESC', (category,)).fetchall()
     else:
-        rows = conn.execute('SELECT * FROM facts ORDER BY updated_at DESC').fetchall()
+        rows = conn.execute('SELECT * FROM facts ORDER BY updatedAt DESC').fetchall()
     return [dict(r) for r in rows]  # type: ignore[return-value]
 
 def deleteFact(factKey: str) -> bool:
     """Delete a fact by key."""
     conn = _conn()
-    cursor = conn.execute('DELETE FROM facts WHERE fact_key = ?', (factKey,))
+    cursor = conn.execute('DELETE FROM facts WHERE factKey = ?', (factKey,))
     conn.commit()
     return cursor.rowcount > 0
 
 def saveProposal(sessionId: str, proposalType: str, content: JsonValue) -> int:
     """Save a proposal (plan, mutation, etc.)."""
     conn = _conn()
-    cursor = conn.execute('INSERT INTO proposals (session_id, proposal_type, content) VALUES (?, ?, ?)', (sessionId, proposalType, _json(content)))
+    cursor = conn.execute('INSERT INTO proposals (sessionId, proposalType, content) VALUES (?, ?, ?)', (sessionId, proposalType, _json(content)))
     conn.commit()
     return cursor.lastrowid
 
@@ -216,22 +440,22 @@ def listProposals(sessionId: str, status: str='') -> list[ProposalDict]:
     """List proposals for a session, optionally filtered by status."""
     conn = _conn()
     if status:
-        rows = conn.execute('SELECT * FROM proposals WHERE session_id = ? AND status = ? ORDER BY created_at DESC', (sessionId, status)).fetchall()
+        rows = conn.execute('SELECT * FROM proposals WHERE sessionId = ? AND status = ? ORDER BY createdAt DESC', (sessionId, status)).fetchall()
     else:
-        rows = conn.execute('SELECT * FROM proposals WHERE session_id = ? ORDER BY created_at DESC', (sessionId,)).fetchall()
+        rows = conn.execute('SELECT * FROM proposals WHERE sessionId = ? ORDER BY createdAt DESC', (sessionId,)).fetchall()
     return [dict(r) for r in rows]  # type: ignore[return-value]
 
 def decideProposal(proposalId: int, status: str, decidedBy: str='') -> bool:
     """Decide (approve/reject) a proposal."""
     conn = _conn()
-    cursor = conn.execute("UPDATE proposals SET status = ?, decided_at = datetime('now'), decided_by = ? WHERE id = ?", (status, decidedBy, proposalId))
+    cursor = conn.execute("UPDATE proposals SET status = ?, decidedAt = datetime('now'), decidedBy = ? WHERE id = ?", (status, decidedBy, proposalId))
     conn.commit()
     return cursor.rowcount > 0
 
 def recordLifecycle(sessionId: str, eventType: str, detail: JsonValue = None) -> int:
     """Record a lifecycle event."""
     conn = _conn()
-    cursor = conn.execute('INSERT INTO lifecycle (session_id, event_type, detail) VALUES (?, ?, ?)', (sessionId, eventType, _json(detail) if detail else None))
+    cursor = conn.execute('INSERT INTO lifecycle (sessionId, eventType, detail) VALUES (?, ?, ?)', (sessionId, eventType, _json(detail) if detail else None))
     conn.commit()
     return cursor.lastrowid
 
@@ -239,9 +463,9 @@ def listLifecycle(sessionId: str, eventType: str='', limit: int=100) -> list[dic
     """List lifecycle events for a session."""
     conn = _conn()
     if eventType:
-        rows = conn.execute('SELECT * FROM lifecycle WHERE session_id = ? AND event_type = ? ORDER BY created_at DESC LIMIT ?', (sessionId, eventType, limit)).fetchall()
+        rows = conn.execute('SELECT * FROM lifecycle WHERE sessionId = ? AND eventType = ? ORDER BY createdAt DESC LIMIT ?', (sessionId, eventType, limit)).fetchall()
     else:
-        rows = conn.execute('SELECT * FROM lifecycle WHERE session_id = ? ORDER BY created_at DESC LIMIT ?', (sessionId, limit)).fetchall()
+        rows = conn.execute('SELECT * FROM lifecycle WHERE sessionId = ? ORDER BY createdAt DESC LIMIT ?', (sessionId, limit)).fetchall()
     return [dict(r) for r in rows]
 
 def recordConfigAudit(category: str, action: str, actor: str='', before: JsonValue = None, after: JsonValue = None) -> int:
@@ -251,7 +475,7 @@ def recordConfigAudit(category: str, action: str, actor: str='', before: JsonVal
     self-configuration change is traceable.
     """
     conn = _conn()
-    cursor = conn.execute('INSERT INTO config_audit (category, action, actor, before_json, after_json) VALUES (?, ?, ?, ?, ?)', (category, action, actor, _json(before) if before is not None else None, _json(after) if after is not None else None))
+    cursor = conn.execute('INSERT INTO configAudit (category, action, actor, beforeJson, afterJson) VALUES (?, ?, ?, ?, ?)', (category, action, actor, _json(before) if before is not None else None, _json(after) if after is not None else None))
     conn.commit()
     return cursor.lastrowid
 
@@ -259,13 +483,13 @@ def listConfigAudit(category: str='', limit: int=200) -> list[dict[str, object]]
     """List config-change audit entries, newest first."""
     conn = _conn()
     if category:
-        rows = conn.execute('SELECT * FROM config_audit WHERE category = ? ORDER BY created_at DESC LIMIT ?', (category, limit)).fetchall()
+        rows = conn.execute('SELECT * FROM configAudit WHERE category = ? ORDER BY createdAt DESC LIMIT ?', (category, limit)).fetchall()
     else:
-        rows = conn.execute('SELECT * FROM config_audit ORDER BY created_at DESC LIMIT ?', (limit,)).fetchall()
+        rows = conn.execute('SELECT * FROM configAudit ORDER BY createdAt DESC LIMIT ?', (limit,)).fetchall()
     results = []
     for r in rows:
-        entry = {'id': r['id'], 'category': r['category'], 'action': r['action'], 'actor': r['actor'] or '', 'createdAt': r['created_at']}
-        for rawKey, outKey in (('before_json', 'before'), ('after_json', 'after')):
+        entry = {'id': r['id'], 'category': r['category'], 'action': r['action'], 'actor': r['actor'] or '', 'createdAt': r['createdAt']}
+        for rawKey, outKey in (('beforeJson', 'before'), ('afterJson', 'after')):
             raw = r[rawKey]
             if isinstance(raw, str):
                 try:
@@ -281,7 +505,7 @@ def indexSessionTopic(sessionId: str, topic: str, parentTopic: str | None=None, 
     """Record or update the topic for a session."""
     conn = _conn()
     try:
-        conn.execute("INSERT INTO session_topics (session_id, topic, parent_topic, confidence, classified_at)\n               VALUES (?, ?, ?, ?, datetime('now'))\n               ON CONFLICT(session_id) DO UPDATE SET\n                   topic=excluded.topic,\n                   parent_topic=excluded.parent_topic,\n                   confidence=excluded.confidence,\n                   classified_at=excluded.classified_at", (sessionId, topic, parentTopic, confidence))
+        conn.execute("INSERT INTO sessionTopics (sessionId, topic, parentTopic, confidence, classifiedAt)\n               VALUES (?, ?, ?, ?, datetime('now'))\n               ON CONFLICT(sessionId) DO UPDATE SET\n                   topic=excluded.topic,\n                   parentTopic=excluded.parentTopic,\n                   confidence=excluded.confidence,\n                   classifiedAt=excluded.classifiedAt", (sessionId, topic, parentTopic, confidence))
         conn.commit()
         return True
     except Exception:
@@ -290,31 +514,31 @@ def indexSessionTopic(sessionId: str, topic: str, parentTopic: str | None=None, 
 def getSessionTopic(sessionId: str) -> dict[str, object] | None:
     """Get the classified topic for a session."""
     conn = _conn()
-    row = conn.execute('SELECT * FROM session_topics WHERE session_id = ?', (sessionId,)).fetchone()
+    row = conn.execute('SELECT * FROM sessionTopics WHERE sessionId = ?', (sessionId,)).fetchone()
     return dict(row) if row else None
 
 def listTopics(limit: int=50) -> list[dict[str, object]]:
     """List all classified session topics, most recent first."""
     conn = _conn()
-    rows = conn.execute('SELECT * FROM session_topics ORDER BY classified_at DESC LIMIT ?', (limit,)).fetchall()
+    rows = conn.execute('SELECT * FROM sessionTopics ORDER BY classifiedAt DESC LIMIT ?', (limit,)).fetchall()
     return [dict(r) for r in rows]
 
 def searchSessionsByTopic(topic: str) -> list[dict[str, object]]:
     """Find sessions with a given topic classification."""
     conn = _conn()
-    rows = conn.execute('SELECT * FROM session_topics WHERE topic = ? ORDER BY classified_at DESC', (topic,)).fetchall()
+    rows = conn.execute('SELECT * FROM sessionTopics WHERE topic = ? ORDER BY classifiedAt DESC', (topic,)).fetchall()
     return [dict(r) for r in rows]
 
 def saveSession(session: SessionRecord) -> None:
     """Persist a session record."""
     conn = _conn()
-    conn.execute('INSERT OR REPLACE INTO sessions (id, title, started_at, message_count, provider, model, folder_id, is_archived, workspace_path)\n           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', (session['id'], session.get('title', ''), session.get('startedAt'), session.get('messageCount', 0), session.get('provider', ''), session.get('model', ''), session.get('folderId'), 1 if session.get('isArchived') else 0, session.get('workspacePath')))
+    conn.execute('INSERT OR REPLACE INTO sessions (id, title, startedAt, messageCount, provider, model, folderId, isArchived, workspacePath)\n           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', (session['id'], session.get('title', ''), session.get('startedAt'), session.get('messageCount', 0), session.get('provider', ''), session.get('model', ''), session.get('folderId'), 1 if session.get('isArchived') else 0, session.get('workspacePath')))
     conn.commit()
 
 def listSessions() -> list[SessionRecord]:
     """List all sessions, most recent first."""
     conn = _conn()
-    rows = conn.execute('SELECT * FROM sessions ORDER BY started_at DESC').fetchall()
+    rows = conn.execute('SELECT * FROM sessions ORDER BY startedAt DESC').fetchall()
     return [dict(r) for r in rows]  # type: ignore[return-value]
 
 def getSession(sessionId: str) -> SessionRecord | None:
@@ -333,14 +557,14 @@ def deleteSessionRecord(sessionId: str) -> bool:
 def saveMessage(sessionId: str, role: str, content: JsonValue) -> int:
     """Save a message to a session."""
     conn = _conn()
-    cursor = conn.execute('INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)', (sessionId, role, _json(content)))
+    cursor = conn.execute('INSERT INTO messages (sessionId, role, content) VALUES (?, ?, ?)', (sessionId, role, _json(content)))
     conn.commit()
     return cursor.lastrowid
 
 def getMessages(sessionId: str) -> list[MessageDict]:
     """Get all messages for a session."""
     conn = _conn()
-    rows = conn.execute('SELECT * FROM messages WHERE session_id = ? ORDER BY created_at', (sessionId,)).fetchall()
+    rows = conn.execute('SELECT * FROM messages WHERE sessionId = ? ORDER BY createdAt', (sessionId,)).fetchall()
     results: list[MessageDict] = []
     for r in rows:
         msg: MessageDict = dict(r)  # type: ignore[assignment]
@@ -354,42 +578,42 @@ def getMessages(sessionId: str) -> list[MessageDict]:
 def deleteSessionMessages(sessionId: str) -> int:
     """Delete all messages for a session."""
     conn = _conn()
-    cursor = conn.execute('DELETE FROM messages WHERE session_id = ?', (sessionId,))
+    cursor = conn.execute('DELETE FROM messages WHERE sessionId = ?', (sessionId,))
     conn.commit()
     return cursor.rowcount
 
 def recordUsage(sessionId: str, model: str, inputTokens: int=0, outputTokens: int=0, contextTokens: int=0) -> int:
     """Record a usage event.
 
-    ``context_tokens`` captures the provider-reported ``input_tokens`` of the
+    ``contextTokens`` captures the provider-reported ``inputTokens`` of the
     FINAL sub-call in the agentic turn — i.e. the true current context fill
     (system prompt + tools + messages, counted once). The cumulative
-    ``input_tokens``/``output_tokens`` are still recorded for Usage-page totals.
+    ``inputTokens``/``outputTokens`` are still recorded for Usage-page totals.
     """
     conn = _conn()
-    cursor = conn.execute('INSERT INTO usage_events (sessionId, model, inputTokens, outputTokens, contextTokens) VALUES (?, ?, ?, ?, ?)', (sessionId, model, inputTokens, outputTokens, contextTokens))
+    cursor = conn.execute('INSERT INTO usageEvents (sessionId, model, inputTokens, outputTokens, contextTokens) VALUES (?, ?, ?, ?, ?)', (sessionId, model, inputTokens, outputTokens, contextTokens))
     conn.commit()
     return cursor.lastrowid
 
 def getUsage(sessionId: str) -> dict[str, object]:
     """Get aggregated usage for a session.
 
-    Returns cumulative totals (for the Usage page) plus ``latest_context_tokens``
-    — the ``context_tokens`` of the most recent usage event, which equals the
-    provider-reported input_tokens of the final sub-call of the latest turn
+    Returns cumulative totals (for the Usage page) plus ``latestContextTokens``
+    — the ``contextTokens`` of the most recent usage event, which equals the
+    provider-reported inputTokens of the final sub-call of the latest turn
     (the true current context fill). Also returns the per-event list ordered
     newest-first so the caller can derive the same value independently.
     """
     conn = _conn()
-    row = conn.execute('SELECT SUM(inputTokens) as total_input, SUM(outputTokens) as total_output, COUNT(*) as request_count FROM usage_events WHERE sessionId = ?', (sessionId,)).fetchone()
-    totals = dict(row) if row else {'total_input': 0, 'total_output': 0, 'request_count': 0}
-    latest = conn.execute('SELECT contextTokens, inputTokens FROM usage_events WHERE sessionId = ? ORDER BY createdAt DESC, id DESC LIMIT 1', (sessionId,)).fetchone()
+    row = conn.execute('SELECT SUM(inputTokens) as totalInput, SUM(outputTokens) as totalOutput, COUNT(*) as requestCount FROM usageEvents WHERE sessionId = ?', (sessionId,)).fetchone()
+    totals = dict(row) if row else {'totalInput': 0, 'totalOutput': 0, 'requestCount': 0}
+    latest = conn.execute('SELECT contextTokens, inputTokens FROM usageEvents WHERE sessionId = ? ORDER BY createdAt DESC, id DESC LIMIT 1', (sessionId,)).fetchone()
     if latest:
         latestCtx = latest['contextTokens'] or latest['inputTokens']
     else:
         latestCtx = 0
-    events = [{'id': e['id'], 'model': e['model'], 'inputTokens': e['inputTokens'], 'outputTokens': e['outputTokens'], 'contextTokens': e['contextTokens'] or e['inputTokens'], 'totalTokens': (e['inputTokens'] or 0) + (e['outputTokens'] or 0), 'createdAt': e['createdAt']} for e in conn.execute('SELECT id, model, inputTokens, outputTokens, contextTokens, createdAt FROM usage_events WHERE sessionId = ? ORDER BY createdAt DESC, id DESC', (sessionId,)).fetchall()]
-    return {'sessionId': sessionId, 'totalEvents': totals.get('request_count', 0) or 0, 'totalInputTokens': totals.get('total_input', 0) or 0, 'totalOutputTokens': totals.get('total_output', 0) or 0, 'totalTokens': (totals.get('total_input', 0) or 0) + (totals.get('total_output', 0) or 0), 'totalCost': 0.0, 'model': events[0]['model'] if events else None, 'provider': None, 'contextTokens': latestCtx, 'latestContextTokens': latestCtx, 'events': events}
+    events = [{'id': e['id'], 'model': e['model'], 'inputTokens': e['inputTokens'], 'outputTokens': e['outputTokens'], 'contextTokens': e['contextTokens'] or e['inputTokens'], 'totalTokens': (e['inputTokens'] or 0) + (e['outputTokens'] or 0), 'createdAt': e['createdAt']} for e in conn.execute('SELECT id, model, inputTokens, outputTokens, contextTokens, createdAt FROM usageEvents WHERE sessionId = ? ORDER BY createdAt DESC, id DESC', (sessionId,)).fetchall()]
+    return {'sessionId': sessionId, 'totalEvents': totals.get('requestCount', 0) or 0, 'totalInputTokens': totals.get('totalInput', 0) or 0, 'totalOutputTokens': totals.get('totalOutput', 0) or 0, 'totalTokens': (totals.get('totalInput', 0) or 0) + (totals.get('totalOutput', 0) or 0), 'totalCost': 0.0, 'model': events[0]['model'] if events else None, 'provider': None, 'contextTokens': latestCtx, 'latestContextTokens': latestCtx, 'events': events}
 
 def vacuum() -> None:
     """Vacuum the database to reclaim space."""
@@ -401,7 +625,7 @@ def getStats() -> dict[str, object]:
     """Get database statistics."""
     conn = _conn()
     stats = {}
-    for table in ['memory_store', 'facts', 'proposals', 'sessions', 'messages', 'usage_events', 'session_topics']:
+    for table in ['memoryStore', 'facts', 'proposals', 'sessions', 'messages', 'usageEvents', 'sessionTopics']:
         try:
             row = conn.execute(f'SELECT COUNT(*) as count FROM {table}').fetchone()
             stats[table] = row['count'] if row else 0
@@ -409,7 +633,7 @@ def getStats() -> dict[str, object]:
             stats[table] = 0
     stats['db_size_bytes'] = _dbPath().stat().st_size if _dbPath().exists() else 0
     return stats
-_BRAINStores: dict[str, dict[str, object]] = {'memory': {'table': 'memory_store', 'fts': 'memory_store_fts', 'columns': 'key, value, updated_at', 'search_cols': ['key', 'value'], 'label': 'key-value memory store'}, 'auto_memories': {'table': 'auto_memories', 'fts': 'auto_memories_fts', 'columns': 'id, key, content, category, importance, created_at', 'search_cols': ['key', 'content'], 'label': 'auto-captured memories'}, 'heuristics': {'table': 'learned_heuristics', 'fts': None, 'columns': 'id, rule, source, category, created_at, updated_at', 'search_cols': ['rule', 'source'], 'label': 'learned behavioral rules'}, 'facts': {'table': 'facts', 'fts': None, 'columns': 'id, fact_key, fact_value, category, source, confidence, created_at, updated_at', 'search_cols': ['fact_key', 'fact_value'], 'label': 'structured semantic facts'}, 'sessions': {'table': 'sessions', 'fts': None, 'columns': 'id, title, started_at, message_count, provider, model, workspace_path', 'search_cols': ['title', 'id'], 'label': 'conversation sessions'}, 'messages': {'table': 'messages', 'fts': None, 'columns': 'id, session_id, role, content, created_at', 'search_cols': ['content'], 'label': 'chat messages'}, 'timeline': {'table': 'episodic_timeline', 'fts': None, 'columns': 'id, timestamp, session_id, event_summary, category', 'search_cols': ['event_summary', 'category', 'session_id'], 'label': 'episodic timeline entries'}, 'blackboard': {'table': 'blackboard', 'fts': None, 'columns': 'id, session_id, agent, key, value, priority, created_at, expires_at', 'search_cols': ['agent', 'key', 'value'], 'label': 'inter-agent blackboard notes'}, 'exams': {'table': 'exams', 'fts': None, 'columns': 'id, title, topic, created_at, source, source_files', 'search_cols': ['title', 'topic'], 'label': 'exam sessions'}, 'exam_attempts': {'table': 'exam_attempts', 'fts': None, 'columns': 'id, exam_id, question_id, selected_index, is_correct, asked_for_help, answered_at', 'search_cols': ['exam_id'], 'label': 'exam attempt history'}}
+_BRAINStores: dict[str, dict[str, object]] = {'memory': {'table': 'memoryStore', 'fts': 'memoryStore_fts', 'columns': 'key, value, updatedAt', 'search_cols': ['key', 'value'], 'label': 'key-value memory store'}, 'auto_memories': {'table': 'autoMemories', 'fts': 'autoMemories_fts', 'columns': 'id, key, content, category, importance, createdAt', 'search_cols': ['key', 'content'], 'label': 'auto-captured memories'}, 'heuristics': {'table': 'learnedHeuristics', 'fts': None, 'columns': 'id, rule, source, category, createdAt, updatedAt', 'search_cols': ['rule', 'source'], 'label': 'learned behavioral rules'}, 'facts': {'table': 'facts', 'fts': None, 'columns': 'id, factKey, factValue, category, source, confidence, createdAt, updatedAt', 'search_cols': ['factKey', 'factValue'], 'label': 'structured semantic facts'}, 'sessions': {'table': 'sessions', 'fts': None, 'columns': 'id, title, startedAt, messageCount, provider, model, workspacePath', 'search_cols': ['title', 'id'], 'label': 'conversation sessions'}, 'messages': {'table': 'messages', 'fts': None, 'columns': 'id, sessionId, role, content, createdAt', 'search_cols': ['content'], 'label': 'chat messages'}, 'timeline': {'table': 'episodicTimeline', 'fts': None, 'columns': 'id, timestamp, sessionId, eventSummary, category', 'search_cols': ['eventSummary', 'category', 'sessionId'], 'label': 'episodic timeline entries'}, 'blackboard': {'table': 'blackboard', 'fts': None, 'columns': 'id, sessionId, agent, key, value, priority, createdAt, expiresAt', 'search_cols': ['agent', 'key', 'value'], 'label': 'inter-agent blackboard notes'}, 'exams': {'table': 'exams', 'fts': None, 'columns': 'id, title, topic, createdAt, source, sourceFiles', 'search_cols': ['title', 'topic'], 'label': 'exam sessions'}, 'exam_attempts': {'table': 'examAttempts', 'fts': None, 'columns': 'id, examId, questionId, selectedIndex, isCorrect, askedForHelp, answeredAt', 'search_cols': ['examId'], 'label': 'exam attempt history'}}
 
 def _brainQueryGraph(query: str, filters: dict | None, limit: int) -> str:
     """v1.1: Read graph entities/relations from august_graph_memory.json.
@@ -456,7 +680,7 @@ def _brainQueryGraph(query: str, filters: dict | None, limit: int) -> str:
 def _brainQueryDaemons(query: str, filters: dict | None, limit: int) -> str:
     """v1.1: Read live daemon registry (Phase 8).
 
-    Returns list of {session_id, name, status, watch_condition, last_check, error} rows.
+    Returns list of {sessionId, name, status, watchCondition, lastCheck, error} rows.
     If no daemons are running, returns an empty list.
     Gracefully degrades if daemon_manager is unavailable (returns []).
     """
@@ -478,8 +702,8 @@ def _brainQueryDaemons(query: str, filters: dict | None, limit: int) -> str:
                     info = d
                 else:
                     continue
-                row = {'session_id': sessionId, 'name': info.get('name', ''), 'status': info.get('status', 'unknown'), 'watch_condition': info.get('watch_condition'), 'last_check': info.get('last_check'), 'error': info.get('error')}
-                if filters and filters.get('session_id') and (filters['session_id'] != sessionId):
+                row = {'sessionId': sessionId, 'name': info.get('name', ''), 'status': info.get('status', 'unknown'), 'watchCondition': info.get('watch_condition'), 'lastCheck': info.get('last_check'), 'error': info.get('error')}
+                if filters and filters.get('sessionId') and (filters['sessionId'] != sessionId):
                     continue
                 if query and query.lower() not in row['name'].lower():
                     continue
@@ -568,9 +792,9 @@ def brainQuery(store: str, query: str='', filters: dict | None=None, limit: int=
         return json.dumps({'error': f'brain_query({store}): {exc}'})
 
 def writeTimelineEvent(sessionId: str, eventSummary: str, category: str='general') -> int:
-    """v2: Append an entry to episodic_timeline. Returns the new row's id."""
+    """v2: Append an entry to episodicTimeline. Returns the new row's id."""
     conn = _conn()
-    cur = conn.execute("INSERT INTO episodic_timeline (timestamp, session_id, event_summary, category) VALUES (datetime('now'), ?, ?, ?)", (sessionId, eventSummary, category))
+    cur = conn.execute("INSERT INTO episodicTimeline (timestamp, sessionId, eventSummary, category) VALUES (datetime('now'), ?, ?, ?)", (sessionId, eventSummary, category))
     conn.commit()
     return cur.lastrowid
 
@@ -580,13 +804,18 @@ def timelineSweep() -> int:
     Returns the number of new entries created.
     """
     conn = _conn()
-    rows = conn.execute('\n        SELECT s.id FROM sessions s\n        LEFT JOIN episodic_timeline t ON t.session_id = s.id\n        WHERE t.id IS NULL\n        LIMIT 20\n    ').fetchall()
+    rows = conn.execute('''
+        SELECT s.id FROM sessions s
+        LEFT JOIN episodicTimeline t ON t.sessionId = s.id
+        WHERE t.id IS NULL
+        LIMIT 20
+    ''').fetchall()
     if not rows:
         return 0
     count = 0
     for r in rows:
         sid = r['id']
-        msgs = conn.execute('SELECT role, content FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 10', (sid,)).fetchall()
+        msgs = conn.execute('SELECT role, content FROM messages WHERE sessionId = ? ORDER BY id DESC LIMIT 10', (sid,)).fetchall()
         if not msgs:
             continue
         try:

@@ -59,71 +59,71 @@ def _get_session(request: Request) -> Any:
     return types.SimpleNamespace(
         id=request.headers.get("X-Session-Id", "default"),
         model=request.headers.get("X-Model", ""),
-        agent_id=request.headers.get("X-Agent-Id", ""),
+        agentId=request.headers.get("X-Agent-Id", ""),
         provider=request.headers.get("X-Provider", ""),
     )
 
 
 @router.post("/spawn")
-async def spawn_subagents(body: SpawnRequest, request: Request):
+async def spawnSubagents(body: SpawnRequest, request: Request):
     """Spawn one or more sub-agents for parallel execution."""
     orch = _get_orchestrator(request)
     session = _get_session(request)
 
     # For 'auto' mode, spawn directly
     if body.mode == "auto":
-        work_items = [
+        workItems = [
             {
                 "goal": w.goal,
-                "agent_id": w.agentId,
-                "restricted_tools": w.restrictedTools,
+                "agentId": w.agentId,
+                "restrictedTools": w.restrictedTools,
                 "context": w.context,
             }
             for w in body.workItems
         ]
         result = await execute_spawn_subagents(
-            orch, session, work_items, mode=body.mode
+            orch, session, workItems, mode=body.mode
         )
         return result
     else:
         # For 'proposed'/'negotiated' mode, emit for approval
-        work_items = [
+        workItems = [
             {
                 "goal": w.goal,
-                "agent_id": w.agentId,
-                "restricted_tools": w.restrictedTools,
+                "agentId": w.agentId,
+                "restrictedTools": w.restrictedTools,
                 "context": w.context,
             }
             for w in body.workItems
         ]
         result = await execute_spawn_subagents(
-            orch, session, work_items, mode=body.mode
+            orch, session, workItems, mode=body.mode
         )
         return result
 
 
 @router.get("/active")
-async def list_active(sessionId: Optional[str] = None, request: Request = None):
+async def listActive(sessionId: Optional[str] = None, request: Request = None):
     """List active sub-agents. Optionally filter by sessionId."""
     orch = _get_orchestrator(request)
-    return {"agents": orch.list_active(session_id=sessionId)}
+    return {"agents": orch.listActive(sessionId=sessionId)}
 
 
-@router.post("/{task_id}/terminate")
-async def terminate_subagent(task_id: str, request: Request):
+@router.post("/{taskId}/terminate")
+async def terminateSubagent(taskId: str, request: Request):
     """Terminate a running sub-agent."""
     orch = _get_orchestrator(request)
-    success = await orch.terminate(task_id)
+    success = await orch.terminate(taskId)
     if not success:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found or already completed")
-    return {"status": "cancelled", "task_id": task_id}
+        raise HTTPException(status_code=404, detail=f"Task {taskId} not found or already completed")
+    return {"status": "cancelled", "taskId": taskId}
 
 
 @router.post("/propose-breakdown")
-async def propose_breakdown(body: ProposeBreakdownRequest, request: Request):
+async def proposeBreakdown(body: ProposeBreakdownRequest, request: Request):
     """Approve or reject a proposed sub-agent breakdown."""
     if not body.approved:
-        return {"status": "rejected", "proposal_id": body.proposalId}
+        return {"status": "rejected", "proposalId": body.proposalId}
 
     orch = _get_orchestrator(request)
     result = await approve_proposal(orch, body.proposalId)
@@ -131,7 +131,7 @@ async def propose_breakdown(body: ProposeBreakdownRequest, request: Request):
 
 
 @router.get("/stream")
-async def stream_subagent_events(sessionId: Optional[str] = None, request: Request = None):
+async def streamSubagentEvents(sessionId: Optional[str] = None, request: Request = None):
     """SSE stream of sub-agent events for a session.
 
     Uses the existing ``event_log.py`` SSE pattern: yields ``data:`` lines
@@ -156,7 +156,7 @@ async def stream_subagent_events(sessionId: Optional[str] = None, request: Reque
             while True:
                 ev = await queue.get()
                 yield f"data: {json.dumps(ev)}\n\n"
-                if ev.get("type") in ("subagent_done", "subagent_completed", "done"):
+                if ev.get("type") in ("subagentDone", "subagentCompleted", "done"):
                     break
         except asyncio.CancelledError:
             pass

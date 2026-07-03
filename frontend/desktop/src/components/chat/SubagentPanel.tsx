@@ -86,7 +86,7 @@ export function SubagentPanel({ sessionId }: SubagentPanelProps) {
       {isExpanded && (
         <div className="space-y-1.5 px-3 pb-3">
           {agents.map((agent) => (
-            <SubagentRow key={agent.task_id} agent={agent} />
+            <SubagentRow key={agent.taskId} agent={agent} />
           ))}
         </div>
       )}

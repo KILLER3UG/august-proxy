@@ -1,12 +1,12 @@
 /**
  * SubagentBlock — nested renderer for sub-agent (`august__spawn_subagent` /
- * `august__run_team`) progress. Appears under the parent `tool_call` block
+ * `august__run_team`) progress. Appears under the parent `toolCall` block
  * in the assistant message, indented inside a left rail so the parent/child
  * relationship is visible at a glance.
  *
  * The block's contents are the sub-agent's own `blocks` array, rendered
  * through the same reducer used for the parent assistant message (thinking,
- * final_output, tool_call, tool_result, command).
+ * final_output, toolCall, tool_result, command).
  *
  * Structural layout:
  *   ┌─────────────────────────────────────────┐
@@ -63,7 +63,7 @@ function isSubagentToolName(name?: string): boolean {
 interface SubagentBlockProps {
   state: SubagentBlockState;
   /**
-   * Maps for nested sub-agent dispatch. When a `tool_call` inside this block
+   * Maps for nested sub-agent dispatch. When a `toolCall` inside this block
    * is itself a sub-agent spawn, we look up its child container + prompt and
    * render them indented under the tool row (outside the final output box).
    */
@@ -127,13 +127,13 @@ export function SubagentBlock({ state, subBlocks, subPrompts }: SubagentBlockPro
   );
 
   // Split `state.blocks` into body (tools, thinking, intermediate text) and
-  // the LAST `final_output` chunk, which becomes the boxed summary at the
+  // the LAST `finalOutput` chunk, which becomes the boxed summary at the
   // bottom. Body blocks render in their original chronological order above
   // the box.
   const { bodyBlocks, finalOutput } = useMemo(() => {
     let lastIdx = -1;
     for (let i = state.blocks.length - 1; i >= 0; i--) {
-      if (state.blocks[i].type === 'final_output') { lastIdx = i; break; }
+      if (state.blocks[i].type === 'finalOutput') { lastIdx = i; break; }
     }
     return {
       bodyBlocks: state.blocks.filter((_, i) => i !== lastIdx),
@@ -253,8 +253,8 @@ function SubagentInnerBlock({
       </ThinkingDisclosure>
     );
   }
-  if (block.type === 'final_output') {
-    // Earlier final_output chunks (when multiple streamed chunks exist)
+  if (block.type === 'finalOutput') {
+    // Earlier finalOutput chunks (when multiple streamed chunks exist)
     // render as bare Markdown in the body. The LAST chunk is rendered as a
     // box by the caller.
     return (
@@ -263,7 +263,7 @@ function SubagentInnerBlock({
       </div>
     );
   }
-  if (block.type === 'tool_call' || block.type === 'command') {
+  if (block.type === 'toolCall' || block.type === 'command') {
     if (!block.tool) return null;
 
     const isSubagentCall = isSubagentToolName(block.tool.name);

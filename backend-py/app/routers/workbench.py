@@ -69,7 +69,7 @@ async def resetSession(sessionId: str, request: Request):
         raise HTTPException(status_code=404, detail='Session not found')
     return session.toDict()
 
-@router.get('/sessions/{session_id}/status')
+@router.get('/sessions/{sessionId}/status')
 async def sessionStatus(sessionId: str):
     """Get session status (for approval banner)."""
     status = wb.getWorkbenchSessionStatus(sessionId)
@@ -77,7 +77,7 @@ async def sessionStatus(sessionId: str):
         raise HTTPException(status_code=404, detail='Session not found')
     return status
 
-@router.get('/session/{session_id}/status')
+@router.get('/session/{sessionId}/status')
 async def sessionStatusSingular(sessionId: str):
     """Get session status — singular path (used by ApprovalBanner)."""
     return await sessionStatus(sessionId)

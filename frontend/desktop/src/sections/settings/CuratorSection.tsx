@@ -18,7 +18,7 @@ import { api } from '@/api/client';
 
 interface SkillUsage {
   name: string;
-  use_count: number;
+  useCount: number;
   view_count: number;
   patch_count: number;
   last_used_at: number | null;
@@ -196,7 +196,7 @@ export function CuratorSection() {
                   <tr key={skill.name} className="border-b border-white/[0.06] hover:bg-white/[0.02]">
                     <td className="px-5 py-3 font-medium">{skill.name}</td>
                     <td className="px-5 py-3"><StateBadge state={skill.state} /></td>
-                    <td className="px-5 py-3 text-muted-foreground">{skill.use_count}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{skill.useCount}</td>
                     <td className="px-5 py-3 text-muted-foreground">{skill.view_count}</td>
                     <td className="px-5 py-3 text-muted-foreground">{skill.patch_count}</td>
                     <td className="px-5 py-3 text-muted-foreground">

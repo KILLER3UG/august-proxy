@@ -1,7 +1,7 @@
 /* ── Browser automation store (nanostores atom) ─────────────────── */
 /* Holds the live state for the headless browser drawer section: the   */
 /* latest screenshot + cursor overlay + an action log. Fed by the      */
-/* `browser_action` SSE event emitted from workbench._execute_tool.    */
+/* `browserAction` SSE event emitted from workbench._execute_tool.    */
 
 import { atom } from 'nanostores';
 

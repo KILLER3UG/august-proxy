@@ -251,7 +251,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     try:
         from app.services.memoryStore import _conn as brainConn
         conn = brainConn()
-        heuristicsRows = conn.execute('SELECT rule, source, category FROM learned_heuristics ORDER BY updated_at DESC').fetchall()
+        heuristicsRows = conn.execute('SELECT rule, source, category FROM learnedHeuristics ORDER BY updatedAt DESC').fetchall()
         if heuristicsRows:
             memory['learned_heuristics'] = [dict(r) for r in heuristicsRows]
     except Exception:
@@ -665,7 +665,7 @@ def drainQueuedMessages(sessionId: str, emit: Callable[[dict[str, object]], None
         try:
             from app.services import eventLog
             for entry in entries:
-                eventLog.eventLog.append(sessionId, 'user_message_injected', {
+                eventLog.eventLog.append(sessionId, 'userMessageInjected', {
                     'sessionId': sessionId,
                     'messageId': entry.get('id', ''),
                     'text': entry.get('text', ''),
@@ -852,19 +852,19 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
                 planPayload = toolInput.get('plan') or toolInput.get('steps') or toolInput
                 submitPlan(session, planPayload if isinstance(planPayload, dict) else {'plan': planPayload})
                 if emit:
-                    emit({'type': 'plan_proposed', 'plan': session.plan})
-                    emit({'type': 'tool_result', 'id': toolUseId, 'name': toolName, 'content': 'Plan submitted. Awaiting user approval.', 'status': 'done'})
+                    emit({'type': 'planProposed', 'plan': session.plan})
+                    emit({'type': 'toolResult', 'id': toolUseId, 'name': toolName, 'content': 'Plan submitted. Awaiting user approval.', 'status': 'done'})
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': 'Plan submitted. Awaiting user approval.'})
                 planSubmittedThisRound = True
                 continue
             blockedReason = _checkToolGuard(session, toolName, toolInput)
             if blockedReason:
                 if emit:
-                    emit({'type': 'tool_result', 'name': toolName, 'error': blockedReason, 'status': 'blocked'})
+                    emit({'type': 'toolResult', 'name': toolName, 'error': blockedReason, 'status': 'blocked'})
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': f'[Blocked] {blockedReason}'})
                 continue
             if emit:
-                emit({'type': 'tool_call', 'id': toolUseId, 'name': toolName, 'input': toolInput, 'status': 'running'})
+                emit({'type': 'toolCall', 'id': toolUseId, 'name': toolName, 'input': toolInput, 'status': 'running'})
             try:
                 from app.services.workbench.toolGuardrails import ToolCallTracker
                 if not hasattr(session, '_tool_tracker') or session._tool_tracker is None:
@@ -888,14 +888,14 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
             if contentTruncated:
                 sseContent += '\n\n[... Tool result truncated at 100 KB — full length: {} bytes]'.format(len(result))
             if emit:
-                emit({'type': 'tool_result', 'id': toolUseId, 'name': toolName, 'content': sseContent, 'content_truncated': contentTruncated, 'content_full_length': len(result), 'summary': str(result)[:2000], 'status': 'done'})
+                emit({'type': 'toolResult', 'id': toolUseId, 'name': toolName, 'content': sseContent, 'contentTruncated': contentTruncated, 'contentFullLength': len(result), 'summary': str(result)[:2000], 'status': 'done'})
                 if toolName.startswith('browser_'):
                     try:
                         parsed = json.loads(result)
                     except Exception:
                         parsed = None
                     if isinstance(parsed, dict) and parsed.get('status') == 'success':
-                        emit({'type': 'browser_action', 'id': toolUseId, 'name': toolName, 'input': toolInput, 'url': parsed.get('url'), 'title': parsed.get('title'), 'target': parsed.get('target'), 'screenshot': parsed.get('screenshot'), 'typed': parsed.get('typed'), 'selected': parsed.get('selected'), 'scrolled': parsed.get('scrolled'), 'status': 'success'})
+                        emit({'type': 'browserAction', 'id': toolUseId, 'name': toolName, 'input': toolInput, 'url': parsed.get('url'), 'title': parsed.get('title'), 'target': parsed.get('target'), 'screenshot': parsed.get('screenshot'), 'typed': parsed.get('typed'), 'selected': parsed.get('selected'), 'scrolled': parsed.get('scrolled'), 'status': 'success'})
             toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': result})
         if not toolResults:
             try:
@@ -1149,7 +1149,7 @@ async def _callAnthropicWorkbench(messages: list[dict[str, object]], systemText:
                     if text:
                         accumulatedText += text
                         if emit:
-                            emit({'type': 'final_output', 'content': text})
+                            emit({'type': 'finalOutput', 'content': text})
                 elif blockType == 'thinking':
                     text = block.get('thinking', '')
                     if text:
@@ -1164,7 +1164,7 @@ async def _callAnthropicWorkbench(messages: list[dict[str, object]], systemText:
                     if text:
                         accumulatedText += text
                         if emit:
-                            emit({'type': 'final_output', 'content': text})
+                            emit({'type': 'finalOutput', 'content': text})
                 elif deltaType == 'thinking_delta':
                     text = delta.get('thinking', '')
                     if text:
@@ -1255,7 +1255,7 @@ async def _callOpenaiWorkbench(messages: list[dict[str, object]], systemText: st
                 if textDelta:
                     contentText += textDelta
                     if emit:
-                        emit({'type': 'final_output', 'content': textDelta})
+                        emit({'type': 'finalOutput', 'content': textDelta})
                 for tc in delta.get('tool_calls', []):
                     idx = tc.get('index', 0)
                     if idx not in toolCallsAccum:
@@ -1462,7 +1462,7 @@ def listProxyCapabilities() -> dict[str, object]:
             group = 'agent'
         elif name in ('spawn_daemon', 'list_daemons', 'kill_daemon'):
             group = 'daemon'
-        elif name in ('tool_search', 'tool_describe', 'tool_call'):
+        elif name in ('tool_search', 'tool_describe', 'toolCall'):
             group = 'bridge'
         elif name.startswith('mcp__'):
             group = 'mcp'

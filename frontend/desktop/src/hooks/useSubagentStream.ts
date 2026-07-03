@@ -50,23 +50,23 @@ export function useSubagentStream(sessionId: string | null): UseSubagentStreamRe
       setEvents((prev) => [...prev.slice(-100), event]); // keep last 100
 
       // Update agent status from events
-      if (event.task_id && (event.type === 'subagent_completed' || event.type === 'subagent_done')) {
+      if (event.taskId && (event.type === 'subagentCompleted' || event.type === 'subagentDone')) {
         setAgents((prev) =>
           prev.map((a) =>
-            a.task_id === event.task_id
-              ? { ...a, status: 'completed', finished_at: Date.now() }
+            a.taskId === event.taskId
+              ? { ...a, status: 'completed', finishedAt: Date.now() }
               : a,
           ),
         );
-      } else if (event.type === 'subagent_started' && event.agent_id && event.goal) {
+      } else if (event.type === 'subagentStarted' && event.agentId && event.goal) {
         setAgents((prev) => [
           ...prev,
           {
-            task_id: event.task_id ?? `task_${Date.now()}`,
-            agent_id: event.agent_id,
+            taskId: event.taskId ?? `task_${Date.now()}`,
+            agentId: event.agentId,
             goal: event.goal,
             status: 'running',
-            started_at: Date.now(),
+            startedAt: Date.now(),
             elapsed: 0,
           },
         ]);

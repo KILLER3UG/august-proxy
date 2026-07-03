@@ -24,8 +24,8 @@ async function jsonRequest<T>(path: string, body: unknown): Promise<T | null> {
 
 export const liveClient = {
   async startSession(): Promise<string> {
-    const data = await jsonRequest<{ session_id?: string }>('/session', { action: 'start' });
-    return data?.session_id ?? '';
+    const data = await jsonRequest<{ sessionId?: string }>('/session', { action: 'start' });
+    return data?.sessionId ?? '';
   },
 
   async stopSession(sessionId: string): Promise<void> {

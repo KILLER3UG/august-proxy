@@ -127,7 +127,7 @@ async def recordLifecycleRoute(sessionId: str, eventType: str, detail: object = 
     lid = memoryStore.recordLifecycle(sessionId, eventType, detail)
     return {'id': lid}
 
-@router.get('/lifecycle/{session_id}')
+@router.get('/lifecycle/{sessionId}')
 async def listLifecycleRoute(sessionId: str, eventType: str=''):
     """List lifecycle events for a session."""
     events = memoryStore.listLifecycle(sessionId, eventType)

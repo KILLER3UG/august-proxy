@@ -55,14 +55,14 @@ async def getTree(root: str='', maxDepth: int=Query(4)):
     """Return a recursive agent tree (frontend AgentTree)."""
     return agentRegistry.getAgentTreeRooted(root=root, maxDepth=maxDepth)
 
-@router.get('/{agent_id}')
+@router.get('/{agentId}')
 async def getAgent(agentId: str):
     agent = agentRegistry.getAgent(agentId)
     if not agent:
         raise HTTPException(status_code=404, detail='Agent not found')
     return agent
 
-@router.put('/{agent_id}')
+@router.put('/{agentId}')
 async def updateAgent(agentId: str, body: AgentUpdate):
     """Update an existing agent's configuration."""
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
@@ -71,13 +71,13 @@ async def updateAgent(agentId: str, body: AgentUpdate):
         raise HTTPException(status_code=404, detail='Agent not found')
     return agent
 
-@router.delete('/{agent_id}')
+@router.delete('/{agentId}')
 async def deleteAgent(agentId: str):
     if not agentRegistry.deleteAgent(agentId, actor='ui'):
         raise HTTPException(status_code=404, detail='Agent not found')
     return {'status': 'ok', 'deleted': agentId}
 
-@router.get('/{agent_id}/tree')
+@router.get('/{agentId}/tree')
 async def getAgentTree(agentId: str):
     """Get an agent and its direct children."""
     tree = agentRegistry.getAgent_tree(agentId)

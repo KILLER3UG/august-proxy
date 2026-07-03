@@ -17,7 +17,7 @@ async def liveSession(body: dict[str, object]) -> dict[str, object]:
     action = body.get('action', 'start')
     if action == 'stop':
         return {'status': 'stopped'}
-    return {'session_id': 'live_' + str(hash(str(body))), 'status': 'started'}
+    return {'sessionId': 'live_' + str(hash(str(body))), 'status': 'started'}
 
 @router.post('/turn')
 async def liveTurn(body: dict[str, object]) -> dict[str, object]:
