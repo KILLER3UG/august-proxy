@@ -2231,6 +2231,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                       );
                     })}
 
+                    {/* Streaming indicator — shown at the bottom of the last model message */}
+                    {streaming && messages.length > 0 && (
+                      <div className="px-1 py-1">
+                        <WorkingIndicator />
+                      </div>
+                    )}
+
                     {/* v4 Voice Command UI / Phase 1C: Inline model picker (registry-driven) */}
                     {modelPickerActive && (
                       <ModelPickerCard
@@ -2345,7 +2352,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     className="shrink-0 z-10 w-full bg-background py-3"
                   >
                     <div className="mx-auto w-full max-w-3xl px-4">
-                      {streaming && <div className="px-4 pb-2 text-xs text-muted-foreground"><WorkingIndicator /></div>}
                       {renderComposerContent()}
                     </div>
                   </motion.div>
