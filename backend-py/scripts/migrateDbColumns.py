@@ -168,81 +168,81 @@ COLUMN_MAP: dict[str, list[tuple[str, str]]] = {
 }
 
 
-def find_db_path() -> Path:
-    env_path = Path(__file__).resolve().parent.parent / "data" / "august_brain.sqlite"
-    return env_path
+def findDbPath() -> Path:
+    envPath = Path(__file__).resolve().parent.parent / "data" / "august_brain.sqlite"
+    return envPath
 
 
-def migrate_database(db_path: Path, *, dry_run: bool = False) -> int:
-    if not db_path.exists():
-        print(f"Database not found: {db_path}")
+def migrateDatabase(dbPath: Path, *, dryRun: bool = False) -> int:
+    if not dbPath.exists():
+        print(f"Database not found: {dbPath}")
         return 0
 
-    if not dry_run:
-        backup_path = db_path.with_suffix(db_path.suffix + ".bak")
-        if not backup_path.exists():
-            shutil.copy2(db_path, backup_path)
-            print(f"Backup created: {backup_path}")
+    if not dryRun:
+        backupPath = dbPath.with_suffix(dbPath.suffix + ".bak")
+        if not backupPath.exists():
+            shutil.copy2(dbPath, backupPath)
+            print(f"Backup created: {backupPath}")
         else:
-            print(f"Backup already exists: {backup_path}")
+            print(f"Backup already exists: {backupPath}")
 
-    conn = sqlite3.connect(str(db_path))
-    total_renames = 0
+    conn = sqlite3.connect(str(dbPath))
+    totalRenames = 0
 
     try:
-        existing_tables = [row[0] for row in conn.execute(
+        existingTables = [row[0] for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
         ).fetchall()]
 
-        for table_name, columns in COLUMN_MAP.items():
-            if table_name not in existing_tables:
-                print(f"  Table '{table_name}' not found — skipping")
+        for tableName, columns in COLUMN_MAP.items():
+            if tableName not in existingTables:
+                print(f"  Table '{tableName}' not found — skipping")
                 continue
 
-            for old_name, new_name in columns:
-                if old_name == new_name:
+            for oldName, newName in columns:
+                if oldName == newName:
                     continue
 
-                pragma = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
-                col_names = [row[1] for row in pragma]
-                if old_name not in col_names:
-                    print(f"    Column '{old_name}' not found in '{table_name}' — skipping")
+                pragma = conn.execute(f"PRAGMA table_info({tableName})").fetchall()
+                colNames = [row[1] for row in pragma]
+                if oldName not in colNames:
+                    print(f"    Column '{oldName}' not found in '{tableName}' -- skipping")
                     continue
-                if new_name in col_names:
-                    print(f"    Column '{new_name}' already exists in '{table_name}' — skipping")
+                if newName in colNames:
+                    print(f"    Column '{newName}' already exists in '{tableName}' -- skipping")
                     continue
 
-                if dry_run:
-                    print(f"  [DRY-RUN] {table_name}: {old_name} → {new_name}")
+                if dryRun:
+                    print(f"  [DRY-RUN] {tableName}: {oldName} -> {newName}")
                 else:
-                    conn.execute(f"ALTER TABLE {table_name} RENAME COLUMN {old_name} TO {new_name}")
-                    print(f"  {table_name}: {old_name} → {new_name}")
-                total_renames += 1
+                    conn.execute(f"ALTER TABLE {tableName} RENAME COLUMN {oldName} TO {newName}")
+                    print(f"  {tableName}: {oldName} -> {newName}")
+                totalRenames += 1
 
-        if not dry_run:
+        if not dryRun:
             conn.commit()
             print("\nVerification:")
-            for table_name in existing_tables:
-                pragma = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
-                col_list = ", ".join(f"{row[1]}" for row in pragma)
-                print(f"  {table_name}: {col_list}")
+            for tableName in existingTables:
+                pragma = conn.execute(f"PRAGMA table_info({tableName})").fetchall()
+                colList = ", ".join(f"{row[1]}" for row in pragma)
+                print(f"  {tableName}: {colList}")
 
     finally:
         conn.close()
 
-    return total_renames
+    return totalRenames
 
 
 def main():
     parser = argparse.ArgumentParser(description="Migrate SQLite columns from snake_case to camelCase")
     parser.add_argument("--db", help="Path to SQLite database (default: data/august_brain.sqlite)")
-    parser.add_argument("--dry-run", action="store_true", help="Preview changes without modifying")
+    parser.add_argument("--dry-run", action="store_true", dest="dryRun", help="Preview changes without modifying")
     args = parser.parse_args()
 
-    db_path = Path(args.db) if args.db else find_db_path()
-    print(f"Database: {db_path}")
+    dbPath = Path(args.db) if args.db else findDbPath()
+    print(f"Database: {dbPath}")
 
-    total = migrate_database(db_path, dry_run=args.dry_run)
+    total = migrateDatabase(dbPath, dryRun=args.dryRun)
     print(f"\nTotal columns renamed: {total}")
 
 

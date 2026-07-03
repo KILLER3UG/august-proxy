@@ -1281,7 +1281,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return () => clearTimeout(timer);
   }, [streaming, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const send = async () => {
+  async function send() {
     if (!sessionId || loadedSessionId !== sessionId) return;
 
     let text = input.trim();

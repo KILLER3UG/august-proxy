@@ -59,7 +59,7 @@ class SkillCurator:
     def _save(self) -> None:
         try:
             self._usagePath.parent.mkdir(parents=True, exist_ok=True)
-            raw = {k: {'name': v.name, 'use_count': v.useCount, 'viewCount': v.viewCount, 'patch_count': v.patchCount, 'last_used_at': v.lastUsedAt, 'last_viewed_at': v.lastViewedAt, 'last_patched_at': v.lastPatchedAt, 'state': v.state, 'pinned': v.pinned, 'archived_at': v.archivedAt} for k, v in self._usage.items()}
+            raw = {k: {'name': v.name, 'useCount': v.useCount, 'viewCount': v.viewCount, 'patchCount': v.patchCount, 'lastUsedAt': v.lastUsedAt, 'lastViewedAt': v.lastViewedAt, 'lastPatchedAt': v.lastPatchedAt, 'state': v.state, 'pinned': v.pinned, 'archivedAt': v.archivedAt} for k, v in self._usage.items()}
             tmp = self._usagePath.with_suffix('.tmp')
             tmp.write_text(json.dumps(raw, indent=2), 'utf-8')
             tmp.replace(self._usagePath)

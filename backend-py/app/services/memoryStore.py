@@ -367,7 +367,7 @@ def recordUsage(sessionId: str, model: str, inputTokens: int=0, outputTokens: in
     ``input_tokens``/``output_tokens`` are still recorded for Usage-page totals.
     """
     conn = _conn()
-    cursor = conn.execute('INSERT INTO usage_events (session_id, model, input_tokens, output_tokens, context_tokens) VALUES (?, ?, ?, ?, ?)', (sessionId, model, inputTokens, outputTokens, contextTokens))
+    cursor = conn.execute('INSERT INTO usage_events (sessionId, model, inputTokens, outputTokens, contextTokens) VALUES (?, ?, ?, ?, ?)', (sessionId, model, inputTokens, outputTokens, contextTokens))
     conn.commit()
     return cursor.lastrowid
 
@@ -381,14 +381,14 @@ def getUsage(sessionId: str) -> dict[str, object]:
     newest-first so the caller can derive the same value independently.
     """
     conn = _conn()
-    row = conn.execute('SELECT SUM(input_tokens) as total_input, SUM(output_tokens) as total_output, COUNT(*) as request_count FROM usage_events WHERE session_id = ?', (sessionId,)).fetchone()
+    row = conn.execute('SELECT SUM(inputTokens) as total_input, SUM(outputTokens) as total_output, COUNT(*) as request_count FROM usage_events WHERE sessionId = ?', (sessionId,)).fetchone()
     totals = dict(row) if row else {'total_input': 0, 'total_output': 0, 'request_count': 0}
-    latest = conn.execute('SELECT context_tokens, input_tokens FROM usage_events WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT 1', (sessionId,)).fetchone()
+    latest = conn.execute('SELECT contextTokens, inputTokens FROM usage_events WHERE sessionId = ? ORDER BY createdAt DESC, id DESC LIMIT 1', (sessionId,)).fetchone()
     if latest:
-        latestCtx = latest['context_tokens'] or latest['input_tokens']
+        latestCtx = latest['contextTokens'] or latest['inputTokens']
     else:
         latestCtx = 0
-    events = [{'id': e['id'], 'model': e['model'], 'inputTokens': e['input_tokens'], 'outputTokens': e['output_tokens'], 'contextTokens': e['context_tokens'] or e['input_tokens'], 'totalTokens': (e['input_tokens'] or 0) + (e['output_tokens'] or 0), 'createdAt': e['created_at']} for e in conn.execute('SELECT id, model, input_tokens, output_tokens, context_tokens, created_at FROM usage_events WHERE session_id = ? ORDER BY created_at DESC, id DESC', (sessionId,)).fetchall()]
+    events = [{'id': e['id'], 'model': e['model'], 'inputTokens': e['inputTokens'], 'outputTokens': e['outputTokens'], 'contextTokens': e['contextTokens'] or e['inputTokens'], 'totalTokens': (e['inputTokens'] or 0) + (e['outputTokens'] or 0), 'createdAt': e['createdAt']} for e in conn.execute('SELECT id, model, inputTokens, outputTokens, contextTokens, createdAt FROM usage_events WHERE sessionId = ? ORDER BY createdAt DESC, id DESC', (sessionId,)).fetchall()]
     return {'sessionId': sessionId, 'totalEvents': totals.get('request_count', 0) or 0, 'totalInputTokens': totals.get('total_input', 0) or 0, 'totalOutputTokens': totals.get('total_output', 0) or 0, 'totalTokens': (totals.get('total_input', 0) or 0) + (totals.get('total_output', 0) or 0), 'totalCost': 0.0, 'model': events[0]['model'] if events else None, 'provider': None, 'contextTokens': latestCtx, 'latestContextTokens': latestCtx, 'events': events}
 
 def vacuum() -> None:
