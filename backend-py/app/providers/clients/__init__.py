@@ -16,11 +16,11 @@ def getClient(providerConfig: dict[str, object]) -> BaseProviderClient | None:
     Returns:
         A client instance, or ``None`` if the api_mode is unknown.
     """
-    mode = providerConfig.get('api_mode', 'openai_chat')
+    mode = providerConfig.get('api_mode', 'openai-chat')
     match mode:
         case 'anthropic_messages':
             return AnthropicClient(providerConfig)
-        case 'openai_chat' | 'codex_responses':
+        case 'openai-chat' | 'openai_chat' | 'codex_responses':
             return OpenAIClient(providerConfig)
         case 'gemini_openai':
             return GeminiClient(providerConfig)

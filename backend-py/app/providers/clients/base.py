@@ -290,6 +290,7 @@ class BaseProviderClient:
         """Resolve the API key from config.json or environment variables.
 
         Resolution order:
+        0. Provider config's own ``api_key`` (used for custom ``providers.json`` entries)
         1. ``config.json`` → ``{provider_name}.apiKey`` (tries display name, aliases, env var names)
         2. Environment variable derived from provider name
         3. Env vars from provider's ``env_vars`` config
@@ -297,6 +298,11 @@ class BaseProviderClient:
         import os
         from app.config import settings
         providerName = self.config.get('name', '')
+
+        # 0. Custom provider api_key embedded in the config dict itself
+        embedded = self.config.get('api_key') or self.config.get('apiKey')
+        if embedded:
+            return embedded
         cfg = settings.config
         candidates = [providerName]
         aliasesList = self.config.get('aliases', [])

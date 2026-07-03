@@ -1083,7 +1083,7 @@ def _isAnthropicProvider(provider: dict[str, object] | None) -> bool:
     return provider and provider.get('api_mode') == 'anthropic_messages'
 
 def _isOpenaiProvider(provider: dict[str, object] | None) -> bool:
-    return provider and provider.get('api_mode') in ('openai_chat', 'codex_responses')
+    return provider and provider.get('api_mode') in ('openai-chat', 'openai_chat', 'codex_responses')
 
 def _extractText(contentBlocks: list[dict[str, object]]) -> str:
     """Extract text from Anthropic content blocks."""
