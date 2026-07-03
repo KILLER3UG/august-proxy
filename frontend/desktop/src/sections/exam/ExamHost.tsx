@@ -70,7 +70,7 @@ export function ExamHost(props: ExamHostProps) {
         if (cancelled) return;
         setExamId(data.examId);
         setQuestion(data.question);
-        setTotal(data.total_questions ?? 0);
+        setTotal(data.totalQuestions ?? 0);
         setPosition(1);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);

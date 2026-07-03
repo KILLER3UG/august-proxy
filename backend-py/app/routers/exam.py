@@ -53,7 +53,7 @@ async def generateExam(body: dict[str, object]):
     conn.commit()
     first = conn.execute('SELECT id, position, stem, options FROM examQuestions WHERE examId = ? ORDER BY position LIMIT 1', (examId,)).fetchone()
     firstQ = examService.strip_answer({'id': first['id'], 'examId': examId, 'position': first['position'], 'stem': first['stem'], 'options': json.loads(first['options'])})
-    return {'exam_id': examId, 'question': firstQ, 'total_questions': len(questions)}
+    return {'examId': examId, 'question': firstQ, 'totalQuestions': len(questions)}
 
 @router.post('/{exam_id}/questions')
 async def addQuestion(examId: int, body: dict[str, object]):
@@ -86,7 +86,7 @@ async def addQuestion(examId: int, body: dict[str, object]):
     questionId = cur.lastrowid
     conn.commit()
     newQ = examService.strip_answer({'id': questionId, 'exam_id': examId, 'position': nextPos, 'stem': q['stem'], 'options': q['options']})
-    return {'position': nextPos, 'question_id': questionId, 'question': newQ}
+    return {'position': nextPos, 'questionId': questionId, 'question': newQ}
 
 @router.get('/{exam_id}/question/{position}')
 async def getQuestion(examId: int, position: int):
@@ -100,8 +100,8 @@ async def getQuestion(examId: int, position: int):
 @router.post('/{exam_id}/answer')
 async def answerQuestion(examId: int, body: dict[str, object]):
     """Record an answer for a question. Returns correctness + rationale."""
-    questionId = body.get('question_id')
-    selectedIndex = body.get('selected_index')
+    questionId = body.get('questionId')
+    selectedIndex = body.get('selectedIndex')
     conn = _db()
     q = conn.execute('SELECT correctIndex, rationale FROM examQuestions WHERE id = ? AND examId = ?', (questionId, examId)).fetchone()
     if not q:
@@ -109,12 +109,12 @@ async def answerQuestion(examId: int, body: dict[str, object]):
     isCorrect = 1 if selectedIndex == q['correctIndex'] else 0
     conn.execute("INSERT INTO examAttempts (examId, questionId, selectedIndex, isCorrect, answeredAt) VALUES (?, ?, ?, ?, datetime('now'))", (examId, questionId, selectedIndex, isCorrect))
     conn.commit()
-    return {'is_correct': bool(isCorrect), 'correct_index': q['correct_index'], 'rationale': q['rationale']}
+    return {'isCorrect': bool(isCorrect), 'correctIndex': q['correct_index'], 'rationale': q['rationale']}
 
 @router.post('/{exam_id}/help')
 async def helpQuestion(examId: int, body: dict[str, object]):
     """Explain a question via Prefrontal without revealing the answer in the banner state."""
-    questionId = body.get('question_id')
+    questionId = body.get('questionId')
     ask = body.get('ask', '')
     conn = _db()
     q = conn.execute('SELECT stem, options FROM examQuestions WHERE id = ? AND examId = ?', (questionId, examId)).fetchone()
@@ -127,4 +127,4 @@ async def helpQuestion(examId: int, body: dict[str, object]):
         conn.commit()
     except Exception:
         pass
-    return {'explanation': explanation, 'banner_dismissed': False}
+    return {'explanation': explanation, 'bannerDismissed': False}
