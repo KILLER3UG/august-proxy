@@ -36,7 +36,7 @@ async def activeProvider():
             continue
         apiKey = entry.get('apiKey', '')
         if apiKey:
-            providers.append({'id': name, 'name': name, 'apiMode': entry.get('apiFormat', 'openai-chat'), 'isAvailable': True, 'redactedKey': secrets.mask(apiKey)})
+            providers.append({'id': name, 'name': name, 'apiMode': entry.get('apiFormat', 'openaiChat'), 'isAvailable': True, 'redactedKey': secrets.mask(apiKey)})
     return {'activeProvider': active, 'providers': providers}
 
 @router.get('/safe')

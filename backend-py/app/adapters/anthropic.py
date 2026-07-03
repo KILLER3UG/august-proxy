@@ -473,7 +473,7 @@ async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], 
         if knownTools:
             reqBody['tools'] = knownTools
         if isAnthropicUpstream:
-            client = getClient({'api_mode': 'anthropic_messages'})
+            client = getClient({'api_mode': 'anthropicMessages'})
             if client:
                 resp = await client.request_json('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
             else:
@@ -482,7 +482,7 @@ async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], 
             openaiBody = buildOpenaiRequest({'messages': currentMessages}, model, currentSystem)
             if knownTools:
                 openaiBody['tools'] = [anthropicToOpenaiToolDefinition(t) for t in knownTools]
-            client = getClient({'api_mode': 'openai_chat'})
+            client = getClient({'api_mode': 'openaiChat'})
             if client:
                 resp = await client.request_json('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
             else:
@@ -553,7 +553,7 @@ async def handleMessages(body: dict[str, JsonValue], request: object = None) -> 
         return ({'error': 'API key not configured for provider'}, None)
     headers = client.buildAuthHeaders(apiKey)
     baseUrl = client.resolveBaseUrl()
-    isAnthropicUpstream = client.api_format == 'anthropic_messages'
+    isAnthropicUpstream = client.api_format == 'anthropicMessages'
     if isAnthropicUpstream:
         upstreamUrl = f'{baseUrl}/messages'
     else:

@@ -103,7 +103,7 @@ def _customProviderDict(entry: dict[str, object]) -> dict[str, object]:
         'description': entry.get('description', tmpl.get('description', '') if tmpl else ''),
         'aliases': tmpl.get('aliases', []) if tmpl else [],
         'base_url': entry.get('baseUrl', ''),
-        'api_mode': entry.get('apiFormat', 'openai-chat'),
+        'api_mode': entry.get('apiFormat', 'openaiChat'),
         'api_key': entry.get('apiKey', ''),
         'is_custom': True,
         'env_vars': entry.get('env_vars', tmpl_env),
@@ -131,7 +131,7 @@ def resolve(nameOrId: str) -> Optional[dict[str, object]]:
     custom = _customEntry(nameOrId)
     if custom and custom.get('enabled') and custom.get('apiKey'):
         apiKey = custom.get('apiKey', '') or ''
-        return {'provider': _customProviderDict(custom), 'api_key': apiKey, 'base_url': custom.get('baseUrl', ''), 'api_mode': custom.get('apiFormat', 'openai-chat'), 'source': 'custom_store'}
+        return {'provider': _customProviderDict(custom), 'api_key': apiKey, 'base_url': custom.get('baseUrl', ''), 'api_mode': custom.get('apiFormat', 'openaiChat'), 'source': 'custom_store'}
     from app.providers import resolver as providerResolver
     from app.providers.clients import getClient
     provider = providerResolver.resolve(nameOrId)

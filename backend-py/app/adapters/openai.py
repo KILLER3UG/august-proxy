@@ -73,7 +73,7 @@ def getOpenaiCompatibleProfile(providerName: str | None, model: str) -> dict[str
     if not resolved:
         return None
     client = getClient(resolved)
-    if client and client.api_format in ('openai_chat', 'codex_responses'):
+    if client and client.api_format in ('openaiChat', 'codexResponses'):
         return resolved
     return None
 

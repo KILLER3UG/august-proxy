@@ -11,7 +11,7 @@ from app.providers.clients.base import BaseProviderClient, ProviderResponse
 
 class GeminiClient(BaseProviderClient):
     """Client for Google AI Studio's OpenAI-compatible endpoint."""
-    apiFormat = 'gemini_openai'
+    apiFormat = 'geminiOpenai'
 
     def buildAuthHeaders(self, apiKey: str | None) -> dict[str, str]:
         """Build headers for Google AI Studio.

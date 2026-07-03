@@ -10,7 +10,7 @@ def fakeProvidersStore(tmp_path, monkeypatch):
     from app.services import configService, providerCredentials
 
     path = tmp_path / 'providers.json'
-    path.write_text(json.dumps({'providers': [{'id': 'custom-minimax-abc123', 'name': 'MiniMax (Global)', 'baseUrl': 'https://api.custom.example/anthropic', 'apiFormat': 'anthropic_messages', 'apiKey': 'sk-custom-key-12345', 'enabled': True}, {'id': 'openai-xyz', 'name': 'OpenAI', 'baseUrl': '', 'apiFormat': 'openai-chat', 'apiKey': 'sk-openai-67890', 'enabled': True}]}), encoding='utf-8')
+    path.write_text(json.dumps({'providers': [{'id': 'custom-minimax-abc123', 'name': 'MiniMax (Global)', 'baseUrl': 'https://api.custom.example/anthropic', 'apiFormat': 'anthropicMessages', 'apiKey': 'sk-custom-key-12345', 'enabled': True}, {'id': 'openai-xyz', 'name': 'OpenAI', 'baseUrl': '', 'apiFormat': 'openaiChat', 'apiKey': 'sk-openai-67890', 'enabled': True}]}), encoding='utf-8')
     monkeypatch.setattr(configService, 'dataPath', lambda name, *a, **kw: path if name == 'providers.json' else path)
 
     # Workarounds for camelCase/snake_case mismatches in providerCredentials source:
@@ -88,7 +88,7 @@ def testResolveDisabledProviderFallsBackToRegistry(tmp_path, monkeypatch):
     custom providers from masquerading as available."""
     from app.services import configService, providerCredentials
     path = tmp_path / 'providers.json'
-    path.write_text(json.dumps({'providers': [{'id': 'custom-minimax-abc123', 'name': 'MiniMax (Global)', 'baseUrl': 'https://api.custom.example/anthropic', 'apiFormat': 'anthropic_messages', 'apiKey': 'sk-custom-key-12345', 'enabled': False}]}), encoding='utf-8')
+    path.write_text(json.dumps({'providers': [{'id': 'custom-minimax-abc123', 'name': 'MiniMax (Global)', 'baseUrl': 'https://api.custom.example/anthropic', 'apiFormat': 'anthropicMessages', 'apiKey': 'sk-custom-key-12345', 'enabled': False}]}), encoding='utf-8')
     monkeypatch.setattr(configService, 'dataPath', lambda name, *a, **kw: path if name == 'providers.json' else path)
     providerCredentials.invalidate()
     monkeypatch.setenv('MINIMAX_API_KEY', 'sk-from-env')
@@ -103,7 +103,7 @@ def testResolveEmptyApiKeyFallsBackToRegistry(tmp_path, monkeypatch):
     entries that are both enabled AND keyed should win over the registry."""
     from app.services import configService, providerCredentials
     path = tmp_path / 'providers.json'
-    path.write_text(json.dumps({'providers': [{'id': 'custom-minimax-abc123', 'name': 'MiniMax (Global)', 'baseUrl': 'https://api.custom.example/anthropic', 'apiFormat': 'anthropic_messages', 'apiKey': '', 'enabled': True}]}), encoding='utf-8')
+    path.write_text(json.dumps({'providers': [{'id': 'custom-minimax-abc123', 'name': 'MiniMax (Global)', 'baseUrl': 'https://api.custom.example/anthropic', 'apiFormat': 'anthropicMessages', 'apiKey': '', 'enabled': True}]}), encoding='utf-8')
     monkeypatch.setattr(configService, 'dataPath', lambda name, *a, **kw: path if name == 'providers.json' else path)
     providerCredentials.invalidate()
     monkeypatch.setenv('MINIMAX_API_KEY', 'sk-from-env')

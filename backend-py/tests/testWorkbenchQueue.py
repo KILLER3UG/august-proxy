@@ -149,7 +149,7 @@ class TestChatLoopInjection:
         monkeypatch.setattr(settings, 'dataDir', tmp_path)
         settings.reload()
         monkeypatch.setattr(wb, '_sessions', {})
-        monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **kw: {'name': 'stub-anthropic', 'api_mode': 'anthropic_messages', 'default_model': 'stub-claude', 'model_profiles': {}})
+        monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **kw: {'name': 'stub-anthropic', 'api_mode': 'anthropicMessages', 'default_model': 'stub-claude', 'model_profiles': {}})
         monkeypatch.setattr(wb, '_resolveModel', lambda p, hint='': 'stub-claude')
         monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session: 'stub system prompt')
         monkeypatch.setattr(providerCredsMod, 'resolve', lambda name: {'api_key': 'stub-key'})

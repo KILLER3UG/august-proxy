@@ -47,7 +47,7 @@ class StubClient:
             yield {'_event_type': 'message_delta', 'usage': {'input_tokens': 10, 'output_tokens': 5}}
         elif self.mode == 'error':
             yield {'_event_type': 'error', 'error': {'type': 'upstream_error'}}
-STUB_PROVIDER = {'name': 'stub-anthropic', 'api_mode': 'anthropic_messages', 'default_model': 'stub-claude', 'model_profiles': {}}
+STUB_PROVIDER = {'name': 'stub-anthropic', 'api_mode': 'anthropicMessages', 'default_model': 'stub-claude', 'model_profiles': {}}
 
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch, tmp_path):

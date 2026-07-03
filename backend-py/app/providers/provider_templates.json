@@ -5,7 +5,7 @@
     "displayName": "Anthropic",
     "description": "Anthropic Messages API — Claude models",
     "baseUrl": "https://api.anthropic.com/v1/messages",
-    "apiFormat": "anthropic_messages",
+    "apiFormat": "anthropicMessages",
     "authType": "api_key",
     "envVars": [
       "ANTHROPIC_API_KEY",
@@ -59,7 +59,7 @@
     "displayName": "OpenAI API",
     "description": "OpenAI Chat Completions API — GPT models",
     "baseUrl": "https://api.openai.com/v1",
-    "apiFormat": "codex_responses",
+    "apiFormat": "codexResponses",
     "authType": "api_key",
     "envVars": [
       "OPENAI_API_KEY",
@@ -119,7 +119,7 @@
     "displayName": "Google AI Studio",
     "description": "Google AI Studio — Gemini models via OpenAI-compatible endpoint",
     "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai/",
-    "apiFormat": "gemini_openai",
+    "apiFormat": "geminiOpenai",
     "authType": "api_key",
     "envVars": [
       "GEMINI_API_KEY",
@@ -164,7 +164,7 @@
     "displayName": "DeepSeek",
     "description": "DeepSeek API — deepseek-v4 and deepseek-reasoner models",
     "baseUrl": "https://api.deepseek.com/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "DEEPSEEK_API_KEY",
@@ -209,7 +209,7 @@
     "displayName": "OpenRouter",
     "description": "OpenRouter — multi-model API aggregator",
     "baseUrl": "https://openrouter.ai/api/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "OPENROUTER_API_KEY",
@@ -243,7 +243,7 @@
     "displayName": "AWS Bedrock",
     "description": "AWS Bedrock Converse API — Claude and other models via AWS",
     "baseUrl": "",
-    "apiFormat": "bedrock_converse",
+    "apiFormat": "bedrockConverse",
     "authType": "aws_sdk",
     "envVars": [
       "AWS_ACCESS_KEY_ID",
@@ -283,7 +283,7 @@
     "displayName": "Azure AI Foundry",
     "description": "Azure AI Foundry — OpenAI models via Azure",
     "baseUrl": "",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "AZURE_OPENAI_API_KEY",
@@ -314,7 +314,7 @@
     "displayName": "MiniMax (Global)",
     "description": "MiniMax global API — M2.5 and M2.7 models via Anthropic-compatible endpoint",
     "baseUrl": "https://api.minimax.io/anthropic",
-    "apiFormat": "anthropic_messages",
+    "apiFormat": "anthropicMessages",
     "authType": "api_key",
     "envVars": [
       "MINIMAX_API_KEY",
@@ -373,7 +373,7 @@
     "displayName": "MiniMax (China)",
     "description": "MiniMax China endpoint — M2.5 and M2.7 models",
     "baseUrl": "https://minimax.qlangtech.com/anthropic",
-    "apiFormat": "anthropic_messages",
+    "apiFormat": "anthropicMessages",
     "authType": "api_key",
     "envVars": [
       "MINIMAX_CN_API_KEY",
@@ -426,7 +426,7 @@
     "displayName": "OpenCode Go",
     "description": "OpenCode Go aggregator — multi-model access",
     "baseUrl": "https://opencode.ai/zen/go/v1/chat/completions",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "OPENCODE_GO_API_KEY",
@@ -498,7 +498,7 @@
     "displayName": "OpenCode Zen",
     "description": "OpenCode Zen API — single-model direct access",
     "baseUrl": "https://opencode.ai/zen/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "OPENCODE_ZEN_API_KEY",
@@ -568,7 +568,7 @@
     "displayName": "KiloCode",
     "description": "KiloCode aggregator — multi-model API gateway",
     "baseUrl": "https://api.kilo.ai/api/gateway",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "KILOCODE_API_KEY",
@@ -604,7 +604,7 @@
     "displayName": "GitHub Copilot",
     "description": "GitHub Copilot — OpenAI-compatible endpoint",
     "baseUrl": "https://api.githubcopilot.com",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "COPILOT_API_KEY",
@@ -640,7 +640,7 @@
     "displayName": "Cline AI",
     "description": "Cline AI — OpenRouter-based model access",
     "baseUrl": "https://api.cline.bot/api/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "CLINE_API_KEY",
@@ -675,7 +675,7 @@
     "displayName": "xAI",
     "description": "xAI API — Grok models",
     "baseUrl": "https://api.x.ai/v1",
-    "apiFormat": "codex_responses",
+    "apiFormat": "codexResponses",
     "authType": "api_key",
     "envVars": [
       "XAI_API_KEY",
@@ -720,7 +720,7 @@
     "displayName": "GMI Cloud",
     "description": "GMI Cloud API — hosted open models",
     "baseUrl": "https://api.gmi.cloud/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "GMI_API_KEY",
@@ -775,7 +775,7 @@
     "displayName": "Zhipu AI (GLM)",
     "description": "Zhipu AI (智谱AI) API — GLM and CodeGeeX models",
     "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "ZHIPU_API_KEY",
@@ -854,7 +854,7 @@
     "displayName": "Xiaomi MiMo",
     "description": "Xiaomi MiMo API — reasoning and flash models",
     "baseUrl": "https://api.mimo.xyz/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "XIAOMI_API_KEY",
@@ -910,7 +910,7 @@
     "displayName": "StepFun (阶跃星辰)",
     "description": "StepFun API — Step-1 and Step-2 models",
     "baseUrl": "https://api.stepfun.com/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "STEPFUN_API_KEY",
@@ -980,7 +980,7 @@
     "displayName": "Alibaba Cloud (Qwen)",
     "description": "Alibaba Cloud DashScope API — Qwen and QwQ models",
     "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "ALIBABA_API_KEY",
@@ -1051,7 +1051,7 @@
     "displayName": "Kimi (Moonshot)",
     "description": "Kimi/Moonshot API — kimi-k2 reasoning and moonshot-v1 models",
     "baseUrl": "https://api.moonshot.cn/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "MOONSHOT_API_KEY",
@@ -1122,7 +1122,7 @@
     "displayName": "NVIDIA NIM",
     "description": "NVIDIA NIM — GPU-accelerated model inference",
     "baseUrl": "https://integrate.api.nvidia.com/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "NVIDIA_API_KEY",
@@ -1158,7 +1158,7 @@
     "displayName": "Nous Research (Portal)",
     "description": "Nous Portal API — hermes-4 and hermes-3 models",
     "baseUrl": "https://api.nousresearch.com/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "NOUS_API_KEY",
@@ -1222,7 +1222,7 @@
     "displayName": "Novita AI",
     "description": "Novita AI — multi-model API gateway",
     "baseUrl": "https://api.novita.ai/v3/openai",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "NOVITA_API_KEY",
@@ -1255,7 +1255,7 @@
     "displayName": "Hugging Face",
     "description": "Hugging Face Inference Endpoints — open models",
     "baseUrl": "https://api-inference.huggingface.co/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "HUGGINGFACE_API_KEY",
@@ -1286,7 +1286,7 @@
     "displayName": "Arcee AI",
     "description": "Arcee AI API — supernova models",
     "baseUrl": "https://api.arcee.ai/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "ARCEE_API_KEY",
@@ -1348,7 +1348,7 @@
     "displayName": "Ollama Cloud",
     "description": "Ollama Cloud hosted API — open models on demand",
     "baseUrl": "https://cloud.ollama.ai/api/chat",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "OLLAMA_CLOUD_API_KEY",
@@ -1425,7 +1425,7 @@
     "displayName": "Token Router",
     "description": "Token Router API — AI routing gateway with auto:balance, auto:cost, auto:quality and auto:latency modes",
     "baseUrl": "https://api.tokenrouter.com/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "TOKENROUTER_API_KEY",
@@ -1484,7 +1484,7 @@
     "displayName": "AI Gateway",
     "description": "Generic AI Gateway proxy — pass-through to upstream providers",
     "baseUrl": "https://gateway.ai.cloudflare.com/v1",
-    "apiFormat": "openai_chat",
+    "apiFormat": "openaiChat",
     "authType": "api_key",
     "envVars": [
       "AI_GATEWAY_API_KEY",

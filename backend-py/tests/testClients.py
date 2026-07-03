@@ -119,23 +119,23 @@ class TestBedrockClient:
 class TestFactory:
 
     def testAnthropicMessages(self):
-        client = getClient({'name': 'Anthropic', 'api_mode': 'anthropic_messages'})
+        client = getClient({'name': 'Anthropic', 'api_mode': 'anthropicMessages'})
         assert isinstance(client, AnthropicClient)
 
     def testOpenaiChat(self):
-        client = getClient({'name': 'DeepSeek', 'api_mode': 'openai_chat'})
+        client = getClient({'name': 'DeepSeek', 'api_mode': 'openaiChat'})
         assert isinstance(client, OpenAIClient)
 
     def testCodexResponses(self):
-        client = getClient({'name': 'OpenAI API', 'api_mode': 'codex_responses'})
+        client = getClient({'name': 'OpenAI API', 'api_mode': 'codexResponses'})
         assert isinstance(client, OpenAIClient)
 
     def testGeminiOpenai(self):
-        client = getClient({'name': 'Google AI Studio', 'api_mode': 'gemini_openai'})
+        client = getClient({'name': 'Google AI Studio', 'api_mode': 'geminiOpenai'})
         assert isinstance(client, GeminiClient)
 
     def testBedrockConverse(self):
-        client = getClient({'name': 'AWS Bedrock', 'api_mode': 'bedrock_converse'})
+        client = getClient({'name': 'AWS Bedrock', 'api_mode': 'bedrockConverse'})
         assert isinstance(client, BedrockClient)
 
     def testMinimax(self):

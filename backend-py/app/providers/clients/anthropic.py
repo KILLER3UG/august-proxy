@@ -13,7 +13,7 @@ from app.providers.clients.base import BaseProviderClient, ProviderResponse
 
 class AnthropicClient(BaseProviderClient):
     """Client for the Anthropic Messages API (``api_mode: anthropic_messages``)."""
-    apiFormat = 'anthropic_messages'
+    apiFormat = 'anthropicMessages'
 
     def buildAuthHeaders(self, apiKey: str | None) -> dict[str, str]:
         """Build headers for the Anthropic API.

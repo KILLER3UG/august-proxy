@@ -12,7 +12,7 @@ from app.providers.clients.base import BaseProviderClient, ProviderResponse
 
 class OpenAIClient(BaseProviderClient):
     """Client for OpenAI Chat Completions and Responses APIs."""
-    apiFormat = 'openai_chat'
+    apiFormat = 'openaiChat'
 
     def buildAuthHeaders(self, apiKey: str | None) -> dict[str, str]:
         """Build headers for OpenAI-compatible APIs.

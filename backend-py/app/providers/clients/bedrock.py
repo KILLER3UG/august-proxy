@@ -15,7 +15,7 @@ class BedrockClient(BaseProviderClient):
     Uses AWS SigV4 signing via boto3 for authentication rather than
     Bearer tokens.
     """
-    apiFormat = 'bedrock_converse'
+    apiFormat = 'bedrockConverse'
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)

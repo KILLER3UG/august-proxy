@@ -300,7 +300,7 @@ class TestAnthropicWorkbenchStreaming:
         import app.providers.clients as clients
         monkeypatch.setattr(clients, 'getClient', lambda provider: _FakeClient())
         emitted: list[dict] = []
-        provider = {'name': 'test', 'model_profiles': {'*': {}}, 'api_mode': 'anthropic_messages'}
+        provider = {'name': 'test', 'model_profiles': {'*': {}}, 'api_mode': 'anthropicMessages'}
         result = await _callAnthropicWorkbench([{'role': 'user', 'content': 'hi'}], 'You are helpful.', 'claude-3-5-sonnet-20241022', [], 'medium', provider=provider, emit=emitted.append)
         assert result is not None
         assert 'error' not in result
@@ -340,7 +340,7 @@ class TestAnthropicWorkbenchStreaming:
             return 1
         import app.services.memoryStore as memoryStore
         monkeypatch.setattr(memoryStore, 'recordUsage', fakeRecordUsage)
-        providerConfig = {'name': 'anthropic', 'model_profiles': {'*': {}}, 'api_mode': 'anthropic_messages'}
+        providerConfig = {'name': 'anthropic', 'model_profiles': {'*': {}}, 'api_mode': 'anthropicMessages'}
         monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **k: providerConfig)
         monkeypatch.setattr(wb, '_resolveModel', lambda *a, **k: 'claude-3-5-sonnet-20241022')
         await sendWorkbenchMessageStream(sessionId=session.id, message='hi', provider='anthropic', emit=lambda e: None)

@@ -37,7 +37,7 @@ async def testCreateProvider(monkeypatch):
         resp = await client.post('/api/providers', json={
             'name': 'Test Provider',
             'baseUrl': 'https://test.api.com/v1',
-            'apiFormat': 'openai-chat',
+            'apiFormat': 'openaiChat',
             'apiKey': 'sk-test123',
             'enabled': True,
         })
@@ -65,7 +65,7 @@ async def testCreateProviderWithTemplate(monkeypatch):
         # baseUrl should be pre-filled from template
         assert 'api.anthropic.com' in data['baseUrl']
         # apiFormat should be pre-filled from template
-        assert data['apiFormat'] == 'anthropic_messages'
+        assert data['apiFormat'] == 'anthropicMessages'
         # models should be seeded from template modelProfiles (non-* keys)
         assert len(data['models']) > 0
         model_ids = {m['id'] for m in data['models']}
@@ -92,7 +92,7 @@ async def testImportProviderConfig(monkeypatch):
         resp = await client.post('/api/providers/import-config', json={
             'name': 'Imported Provider',
             'baseUrl': 'https://imported.api.com/v1',
-            'apiFormat': 'openai-chat',
+            'apiFormat': 'openaiChat',
             'apiKey': 'sk-imported',
             'models': [{'id': 'model-1', 'name': 'Model 1'}],
         })

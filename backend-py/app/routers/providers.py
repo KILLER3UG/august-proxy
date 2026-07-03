@@ -14,7 +14,7 @@ router = APIRouter(prefix='/api/providers')
 class ProviderCreate(BaseModel):
     name: str
     baseUrl: str = ''
-    apiFormat: str = 'openai-chat'
+    apiFormat: str = 'openaiChat'
     apiKey: str = ''
     enabled: bool = True
     template: str | None = None  # Optional template id to pre-fill fields
@@ -69,8 +69,8 @@ async def createProvider(body: ProviderCreate):
         if tmpl:
             if not baseUrl:
                 baseUrl = tmpl.get('baseUrl', '')
-            if not apiFormat or apiFormat == 'openai-chat':
-                apiFormat = tmpl.get('apiFormat', 'openai-chat')
+            if not apiFormat or apiFormat == 'openaiChat':
+                apiFormat = tmpl.get('apiFormat', 'openaiChat')
             # Seed default models from template modelProfiles
             profiles = tmpl.get('modelProfiles', {})
             for key in profiles:
@@ -104,7 +104,7 @@ async def importProviderConfig(body: dict):
         'id': body.get('id', ''),
         'name': body.get('name', 'Imported Provider'),
         'baseUrl': body.get('baseUrl', ''),
-        'apiFormat': body.get('apiFormat', 'openai-chat'),
+        'apiFormat': body.get('apiFormat', 'openaiChat'),
         'apiKey': body.get('apiKey', ''),
         'enabled': body.get('enabled', True),
         'autoFetch': body.get('autoFetch', False),
