@@ -1759,7 +1759,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           >
             <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-semibold">Commands & Tools</div>
             {getDisplayCommands().filter(c => {
-              const q = input.trim().toLowerCase();
+              const q = input.trim().toLowerCase().split(/\s+/)[0];
               if (!q) return true;
               return c.name.toLowerCase().startsWith(q);
             }).map((c, idx) => (
@@ -1779,7 +1779,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               </button>
             ))}
             {getDisplayCommands().filter(c => {
-              const q = input.trim().toLowerCase();
+              const q = input.trim().toLowerCase().split(/\s+/)[0];
               if (!q) return false;
               return c.name.toLowerCase().startsWith(q);
             }).length === 0 && input.trim() && (

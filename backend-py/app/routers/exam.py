@@ -41,7 +41,7 @@ async def generateExam(body: dict[str, object]):
     if not topic:
         topic = f'the content of {len(files)} uploaded file(s)'
     try:
-        questions = await examService.generate_questions(topic=topic, count=count, difficulty=difficulty, context=context)
+        questions = await examService.generateQuestions(topic=topic, count=count, difficulty=difficulty, context=context)
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     conn = _db()
@@ -52,7 +52,7 @@ async def generateExam(body: dict[str, object]):
         conn.execute('INSERT INTO examQuestions (examId, position, stem, options, correctIndex, rationale, origin) VALUES (?, ?, ?, ?, ?, ?, ?)', (examId, i + 1, q['stem'], json.dumps(q['options']), q['correct_index'], q['rationale'], 'generated'))
     conn.commit()
     first = conn.execute('SELECT id, position, stem, options FROM examQuestions WHERE examId = ? ORDER BY position LIMIT 1', (examId,)).fetchone()
-    firstQ = examService.strip_answer({'id': first['id'], 'examId': examId, 'position': first['position'], 'stem': first['stem'], 'options': json.loads(first['options'])})
+    firstQ = examService.stripAnswer({'id': first['id'], 'examId': examId, 'position': first['position'], 'stem': first['stem'], 'options': json.loads(first['options'])})
     return {'examId': examId, 'question': firstQ, 'totalQuestions': len(questions)}
 
 @router.post('/{exam_id}/questions')
@@ -73,7 +73,7 @@ async def addQuestion(examId: int, body: dict[str, object]):
         except Exception:
             continue
     try:
-        q = await examService.generate_one_question(topic=topic, request_text=requestText, similar_to=similar)
+        q = await examService.generateOneQuestion(topic=topic, requestText=requestText, similarTo=similar)
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     if afterPosition is not None:
@@ -85,7 +85,7 @@ async def addQuestion(examId: int, body: dict[str, object]):
     cur = conn.execute('INSERT INTO examQuestions (examId, position, stem, options, correctIndex, rationale, origin) VALUES (?, ?, ?, ?, ?, ?, ?)', (examId, nextPos, q['stem'], json.dumps(q['options']), q['correct_index'], q['rationale'], f'user-requested: {requestText}' if requestText else 'user-requested'))
     questionId = cur.lastrowid
     conn.commit()
-    newQ = examService.strip_answer({'id': questionId, 'exam_id': examId, 'position': nextPos, 'stem': q['stem'], 'options': q['options']})
+    newQ = examService.stripAnswer({'id': questionId, 'examId': examId, 'position': nextPos, 'stem': q['stem'], 'options': q['options']})
     return {'position': nextPos, 'questionId': questionId, 'question': newQ}
 
 @router.get('/{exam_id}/question/{position}')
@@ -95,7 +95,7 @@ async def getQuestion(examId: int, position: int):
     q = conn.execute('SELECT id, stem, options FROM examQuestions WHERE examId = ? AND position = ?', (examId, position)).fetchone()
     if not q:
         raise HTTPException(status_code=404, detail='Question not found')
-    return examService.strip_answer({'id': q['id'], 'examId': examId, 'position': position, 'stem': q['stem'], 'options': json.loads(q['options'])})
+    return examService.stripAnswer({'id': q['id'], 'examId': examId, 'position': position, 'stem': q['stem'], 'options': json.loads(q['options'])})
 
 @router.post('/{exam_id}/answer')
 async def answerQuestion(examId: int, body: dict[str, object]):
@@ -121,7 +121,7 @@ async def helpQuestion(examId: int, body: dict[str, object]):
     if not q:
         raise HTTPException(status_code=404, detail='Question not found')
     options = json.loads(q['options'])
-    explanation = await examService.help_explanation(stem=q['stem'], options=options, user_question=ask or 'Explain this question.')
+    explanation = await examService.helpExplanation(stem=q['stem'], options=options, userQuestion=ask or 'Explain this question.')
     try:
         conn.execute('UPDATE examAttempts SET askedForHelp = 1 WHERE questionId = ?', (questionId,))
         conn.commit()

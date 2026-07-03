@@ -121,5 +121,5 @@ async def helpExplanation(stem: str, options: list[str], userQuestion: str) -> s
     return explanation or '(no explanation available)'
 
 def stripAnswer(question: dict) -> dict:
-    """Strip correct_index and rationale before sending to the client."""
-    return {'id': question.get('id'), 'exam_id': question.get('exam_id'), 'position': question.get('position'), 'stem': question.get('stem'), 'options': question.get('options')}
+    """Strip correctIndex and rationale before sending to the client."""
+    return {'id': question.get('id'), 'examId': question.get('examId'), 'position': question.get('position'), 'stem': question.get('stem'), 'options': question.get('options')}

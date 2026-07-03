@@ -65,7 +65,10 @@ export function ExamHost(props: ExamHostProps) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
         const data = await resp.json();
         if (cancelled) return;
         setExamId(data.examId);
