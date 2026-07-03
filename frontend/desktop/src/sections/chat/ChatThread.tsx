@@ -3096,7 +3096,7 @@ function ToolCallCard({
   if (!isCommand && tool.args) {
     try {
       const parsed = JSON.parse(tool.args);
-      for (const key of ['file_path', 'path', 'filename', 'file', 'filepath']) {
+      for (const key of ['filePath', 'file_path', 'path', 'filename', 'file', 'filepath']) {
         const v = parsed?.[key];
         if (typeof v === 'string' && v.length > 0) { legacyFilename = v; break; }
       }

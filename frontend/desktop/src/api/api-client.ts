@@ -651,7 +651,7 @@ export function manageAugustSessions(payload: {
 }
 
 export function updateAugustSetting(payload: {
-  key_path: string;
+  keyPath: string;
   value: unknown;
 }): Promise<{ ok: boolean; keyPath?: string; value?: unknown; rollbackId?: string }> {
   return api.post('/api/august/settings/update', payload);

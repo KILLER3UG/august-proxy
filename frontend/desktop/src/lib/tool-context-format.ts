@@ -146,7 +146,7 @@ export function formatToolContext(toolName: string, contextJson?: string): Forma
 
   // File ops
   if (FILE_OPS.has(canonical)) {
-    const path = parsed && pickString(parsed, ['file_path', 'path', 'filename', 'file', 'filepath', 'notebook_path', 'target_file']);
+    const path = parsed && pickString(parsed, ['filePath', 'file_path', 'path', 'filename', 'file', 'filepath', 'notebook_path', 'target_file']);
     if (path) {
       const verb =
         canonical.startsWith('write') || canonical === 'create_file' ? 'Writing' :
@@ -159,20 +159,20 @@ export function formatToolContext(toolName: string, contextJson?: string): Forma
 
   // List directory
   if (LIST_OPS.has(canonical)) {
-    const path = parsed && pickString(parsed, ['path', 'dir', 'directory', 'file_path']);
+    const path = parsed && pickString(parsed, ['path', 'dir', 'directory', 'filePath', 'file_path']);
     if (path) return { summary: `Listing directory ${path}`, raw };
     return { summary: 'Listing directory', raw };
   }
 
   // Web search / fetch
   if (WEB_OPS.has(canonical)) {
-    const query = parsed && pickString(parsed, ['query', 'q', 'url', 'search_query']);
-    const maxResults = parsed && (typeof parsed.max_results === 'number' ? parsed.max_results : undefined);
+    const query = parsed && pickString(parsed, ['query', 'q', 'url', 'searchQuery', 'search_query']);
+    const maxResults = parsed && (typeof parsed.maxResults === 'number' ? parsed.maxResults : (typeof parsed.max_results === 'number' ? parsed.max_results : undefined));
     const verb = canonical === 'web_fetch' || canonical === 'web' || canonical === 'read_url_content' || canonical === 'execute_url'
       ? 'Fetching'
       : 'Searched';
     if (query) {
-      const tail = typeof maxResults === 'number' ? ` · max_results=${maxResults}` : '';
+      const tail = typeof maxResults === 'number' ? ` · ${maxResults} results` : '';
       return { summary: `${verb}: "${query}"${tail}`, raw };
     }
     return { summary: verb === 'Fetching' ? 'Fetching URL' : 'Web request', raw };
@@ -180,8 +180,8 @@ export function formatToolContext(toolName: string, contextJson?: string): Forma
 
   // Grep / search files
   if (SEARCH_OPS.has(canonical)) {
-    const pattern = parsed && pickString(parsed, ['pattern', 'query', 'q', 'regex', 'search_pattern']);
-    const path = parsed && pickString(parsed, ['path', 'dir', 'directory', 'file_path', 'include_pattern']);
+    const pattern = parsed && pickString(parsed, ['pattern', 'query', 'q', 'regex', 'searchPattern', 'search_pattern']);
+    const path = parsed && pickString(parsed, ['path', 'dir', 'directory', 'filePath', 'file_path', 'includePattern', 'include_pattern']);
     if (pattern && path) return { summary: `Searching files: "${truncate(pattern, 80)}" in ${path}`, raw };
     if (pattern) return { summary: `Searching files: "${truncate(pattern, 80)}"`, raw };
     return { summary: 'Searching files', raw };
@@ -550,7 +550,7 @@ export function formatToolError(toolName: string, errorText?: string): Formatted
       : typeof parsed.exitCode === 'number'
         ? String(parsed.exitCode)
         : undefined;
-    const path = pickString(parsed, ['path', 'file_path', 'file', 'directory']);
+    const path = pickString(parsed, ['path', 'filePath', 'file_path', 'file', 'directory']);
     if (code) detailParts.push(`code: ${code}`);
     if (exitCode) detailParts.push(`exit: ${exitCode}`);
     if (path) detailParts.push(path);
