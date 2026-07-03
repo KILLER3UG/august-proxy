@@ -47,12 +47,12 @@ def invalidate() -> None:
     :func:`resolve` calls reload from disk. ``config_service.saveProvidersStore``
     does this automatically via the invalidation registry.
     """
-    global _store_cache
+    global _storeCache
     _storeCache = None
 
 def _loadStore() -> dict[str, object]:
     """Reload the providers.json cache from disk."""
-    global _store_cache
+    global _storeCache
     _storeCache = configService.getProvidersStore()
     return _storeCache
 

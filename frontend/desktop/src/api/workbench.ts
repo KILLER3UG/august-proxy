@@ -317,7 +317,13 @@ export async function streamWorkbenchReconnect(
         onError: (err: unknown) => {
           // If we see a terminal error from the backend, we don't auto-retry.
           terminalSeen = true;
-          wrappedHandlers.onError?.({ message: err instanceof Error ? err.message : String(err) });
+          const msg =
+            err instanceof Error
+              ? err.message
+              : typeof err === 'object' && err !== null && 'message' in err
+                ? String((err as Record<string, unknown>).message)
+                : String(err);
+          wrappedHandlers.onError?.({ message: msg });
         }
       };
 
@@ -342,7 +348,12 @@ export async function streamWorkbenchReconnect(
       // the turn stays alive across transient drops. Bounded callers
       // surface the error once exhausted.
       if (maxRetries > 0 && retryCount > maxRetries) {
-        const errMsg = e instanceof Error ? e.message : String(e);
+        const errMsg =
+          e instanceof Error
+            ? e.message
+            : typeof e === 'object' && e !== null && 'message' in e
+              ? String((e as Record<string, unknown>).message)
+              : String(e);
         console.error(`[streamWorkbenchReconnect] Max retries reached (${maxRetries}). Connection failed:`, e);
         handlers.onError?.({ message: errMsg });
         break;
@@ -350,7 +361,12 @@ export async function streamWorkbenchReconnect(
 
       const delay = Math.min(maxBackoffMs, baseDelayMs * Math.pow(2, retryCount - 1) + Math.random() * 1000);
       const budgetLabel = maxRetries > 0 ? `attempt ${retryCount}/${maxRetries}` : `attempt ${retryCount} (unbounded)`;
-      const errMsg = e instanceof Error ? e.message : String(e);
+      const errMsg =
+        e instanceof Error
+          ? e.message
+          : typeof e === 'object' && e !== null && 'message' in e
+            ? String((e as Record<string, unknown>).message)
+            : String(e);
       console.warn(`[streamWorkbenchReconnect] Connection lost. Retrying in ${Math.round(delay)}ms (${budgetLabel}). Error:`, errMsg);
       
       await new Promise((resolve, reject) => {
