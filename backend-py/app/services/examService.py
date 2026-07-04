@@ -25,10 +25,16 @@ async def _callPrefrontal(prompt: str, model: str='', provider: str='') -> str:
         if provider:
             provider_config = providerResolver.resolve(provider)
             if provider_config:
+                logger.info('_call_prefrontal: resolved provider %s via name', provider)
                 client = getClient(provider_config)
                 if client and hasattr(client, 'generate'):
                     response = await client.generate(prompt)
+                    logger.info('_call_prefrontal: provider generate returned %d chars', len(response or ''))
                     return response or ''
+                else:
+                    logger.warning('_call_prefrontal: no client for provider %s', provider)
+            else:
+                logger.warning('_call_prefrontal: could not resolve provider %s', provider)
         # Otherwise try to resolve by model ID
         provider_config = providerResolver.resolve(model)
         if not provider_config:
