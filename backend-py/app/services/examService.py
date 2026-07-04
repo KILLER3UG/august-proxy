@@ -25,7 +25,8 @@ async def _callPrefrontal(prompt: str, model: str='', provider: str='') -> str:
         if provider:
             provider_config = providerResolver.resolve(provider)
             if provider_config:
-                logger.info('_call_prefrontal: resolved provider %s via name', provider)
+                provider_config['model'] = model  # Set the specific model on the provider config
+                logger.info('_call_prefrontal: resolved provider %s via name, model=%s', provider, model)
                 client = getClient(provider_config)
                 if client and hasattr(client, 'generate'):
                     response = await client.generate(prompt)
@@ -41,6 +42,8 @@ async def _callPrefrontal(prompt: str, model: str='', provider: str='') -> str:
             logger.warning('_call_prefrontal: no provider found for model %s, trying first available', model)
             available = [p for p in providerResolver.listAvailable() if p.get('api_key')]
             provider_config = available[0] if available else None
+        if provider_config:
+            provider_config['model'] = model
         if not provider_config:
             logger.warning('_call_prefrontal: no provider configured. Set one in Settings > Model Fleet.')
             return ''
