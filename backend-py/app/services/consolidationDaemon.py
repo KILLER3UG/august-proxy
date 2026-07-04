@@ -62,6 +62,9 @@ async def _callHippocampus(prompt: str) -> str:
             return ''
         provider = providerResolver.resolve(model)
         if not provider:
+            available = [p for p in providerResolver.listAvailable() if p.get('api_key')]
+            provider = available[0] if available else None
+        if not provider:
             return ''
         client = getClient(provider)
         if client and hasattr(client, 'generate'):
@@ -81,6 +84,9 @@ async def _callPrefrontal(prompt: str) -> str:
         if not model:
             return ''
         provider = providerResolver.resolve(model)
+        if not provider:
+            available = [p for p in providerResolver.listAvailable() if p.get('api_key')]
+            provider = available[0] if available else None
         if not provider:
             return ''
         client = getClient(provider)
