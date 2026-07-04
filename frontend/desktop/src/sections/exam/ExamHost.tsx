@@ -44,6 +44,7 @@ export function ExamHost(props: ExamHostProps) {
   const [count] = useState<number>(() => props.count ?? 5);
   const [difficulty] = useState<string>(() => props.difficulty ?? 'medium');
   const [sessionModel] = useState<string>(() => props.model ?? '');
+  const [sessionProvider] = useState<string>(() => props.provider ?? '');
 
   const [examId, setExamId] = useState<number | null>(null);
   const [question, setQuestion] = useState<Question | null>(null);
