@@ -22,6 +22,8 @@ async def generateExam(body: dict[str, object]):
     count = min(int(body.get('count', 5)), 50)
     difficulty = body.get('difficulty', 'medium')
     model = body.get('model') or ''
+    if isinstance(model, dict):
+        model = model.get('id', '')
     files = body.get('files') or []
     if not topic and (not files):
         raise HTTPException(status_code=400, detail='topic or files required')

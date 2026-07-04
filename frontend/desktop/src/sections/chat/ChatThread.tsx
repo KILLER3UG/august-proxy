@@ -2052,7 +2052,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           <ExamHost
             topic={examSeed.topic}
             files={examSeed.files}
-            model={modelForRequest}
+            model={typeof modelForRequest === 'string' ? modelForRequest : modelForRequest?.id || ''}
             onDismiss={() => {
               setExamActive(false);
               setExamSeed({});
