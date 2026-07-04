@@ -41,9 +41,8 @@ def getModelForRole(role: str) -> str:
     """Return the configured model for a role.
 
     Reads `data/config.json → auxiliary.model_fleet` if present.
-    Empty 'cortex' resolves to the session's primary model (caller's
-    responsibility — get_model_for_role returns '' and the caller
-    uses whatever the session has).
+    Returns empty string when no model is configured for the role,
+    meaning the caller should use the session's primary model.
     """
     fleet = DEFAULT_FLEET.copy()
     config = _loadConfig()

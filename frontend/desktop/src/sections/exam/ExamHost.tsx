@@ -25,6 +25,7 @@ interface ExamHostProps {
   files?: string[];
   count?: number;
   difficulty?: string;
+  model?: string;
   onDismiss: () => void;
 }
 
@@ -41,6 +42,7 @@ export function ExamHost(props: ExamHostProps) {
   const [files] = useState<string[]>(() => props.files ?? []);
   const [count] = useState<number>(() => props.count ?? 5);
   const [difficulty] = useState<string>(() => props.difficulty ?? 'medium');
+  const [sessionModel] = useState<string>(() => props.model ?? '');
 
   const [examId, setExamId] = useState<number | null>(null);
   const [question, setQuestion] = useState<Question | null>(null);
@@ -57,6 +59,7 @@ export function ExamHost(props: ExamHostProps) {
     const bootstrap = async () => {
       try {
         const body: Record<string, unknown> = { count, difficulty };
+        if (sessionModel) body.model = sessionModel;
         if (files.length > 0) body.files = files;
         else body.topic = topic;
 

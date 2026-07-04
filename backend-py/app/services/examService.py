@@ -10,15 +10,16 @@ import json
 import logging
 logger = logging.getLogger(__name__)
 
-async def _callPrefrontal(prompt: str) -> str:
+async def _callPrefrontal(prompt: str, model: str='') -> str:
     """v3: Call the Prefrontal model. Returns raw text response (may include code fences)."""
     try:
         from app.services.workbench import modelFleet
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
-        model = modelFleet.getModelForRole('prefrontal')
         if not model:
-            logger.warning('_call_prefrontal: no prefrontal model configured')
+            model = modelFleet.getModelForRole('prefrontal')
+        if not model:
+            logger.warning('_call_prefrontal: no prefrontal model configured. Set one in Settings > Model Fleet.')
             return ''
         provider = providerResolver.resolve(model)
         if not provider:
@@ -84,13 +85,13 @@ def _buildPrompt(topic: str, count: int, difficulty: str, context: str='', simil
         parts.insert(1, f'''\nSimilar in style to: stem="{example.get('stem', '')}" options={example.get('options', [])}''')
     return '\n'.join(parts)
 
-async def generateQuestions(topic: str, count: int, difficulty: str, context: str='') -> list[dict]:
+async def generateQuestions(topic: str, count: int, difficulty: str, context: str='', model: str='') -> list[dict]:
     """Call Prefrontal, validate, and return up to `count` valid question dicts.
 
     Raises ValueError if the model output can't be made valid.
     """
     prompt = _buildPrompt(topic=topic, count=count, difficulty=difficulty, context=context)
-    raw = await _callPrefrontal(prompt)
+    raw = await _callPrefrontal(prompt, model=model)
     if not raw:
         raise ValueError('Prefrontal returned empty response')
     valid = _parseQuestions(raw)
@@ -105,7 +106,7 @@ async def generateOneQuestion(topic: str, requestText: str, similarTo: list[dict
     or a JSON array with one element.
     """
     prompt = _buildPrompt(topic=f'{topic} (specific ask: {requestText})', count=1, difficulty='medium', similar_to=similarTo)
-    raw = await _callPrefrontal(prompt)
+    raw = await _callPrefrontal(prompt, model=model)
     if not raw:
         raise ValueError('Prefrontal returned empty response')
     cleaned = _stripCodeFences(raw)
