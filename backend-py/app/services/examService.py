@@ -10,7 +10,7 @@ import json
 import logging
 logger = logging.getLogger(__name__)
 
-async def _callPrefrontal(prompt: str, model: str='') -> str:
+async def _callPrefrontal(prompt: str, model: str='', provider: str='') -> str:
     """v3: Call the Prefrontal model. Returns raw text response (may include code fences)."""
     try:
         from app.services.workbench import modelFleet
@@ -21,17 +21,24 @@ async def _callPrefrontal(prompt: str, model: str='') -> str:
         if not model:
             logger.warning('_call_prefrontal: no prefrontal model configured. Set one in Settings > Model Fleet.')
             return ''
-        provider = providerResolver.resolve(model)
-        if not provider:
-            # Model didn't match any provider's profiles — try the first
-            # available provider that has an API key configured.
+        # If the caller provided a provider name, resolve by provider first
+        if provider:
+            provider_config = providerResolver.resolve(provider)
+            if provider_config:
+                client = getClient(provider_config)
+                if client and hasattr(client, 'generate'):
+                    response = await client.generate(prompt)
+                    return response or ''
+        # Otherwise try to resolve by model ID
+        provider_config = providerResolver.resolve(model)
+        if not provider_config:
             logger.warning('_call_prefrontal: no provider found for model %s, trying first available', model)
             available = [p for p in providerResolver.listAvailable() if p.get('api_key')]
-            provider = available[0] if available else None
-        if not provider:
+            provider_config = available[0] if available else None
+        if not provider_config:
             logger.warning('_call_prefrontal: no provider configured. Set one in Settings > Model Fleet.')
             return ''
-        client = getClient(provider)
+        client = getClient(provider_config)
         if client and hasattr(client, 'generate'):
             response = await client.generate(prompt)
             return response or ''
@@ -91,13 +98,13 @@ def _buildPrompt(topic: str, count: int, difficulty: str, context: str='', simil
         parts.insert(1, f'''\nSimilar in style to: stem="{example.get('stem', '')}" options={example.get('options', [])}''')
     return '\n'.join(parts)
 
-async def generateQuestions(topic: str, count: int, difficulty: str, context: str='', model: str='') -> list[dict]:
+async def generateQuestions(topic: str, count: int, difficulty: str, context: str='', model: str='', provider: str='') -> list[dict]:
     """Call Prefrontal, validate, and return up to `count` valid question dicts.
 
     Raises ValueError if the model output can't be made valid.
     """
     prompt = _buildPrompt(topic=topic, count=count, difficulty=difficulty, context=context)
-    raw = await _callPrefrontal(prompt, model=model)
+    raw = await _callPrefrontal(prompt, model=model, provider=provider)
     if not raw:
         raise ValueError('Prefrontal returned empty response')
     valid = _parseQuestions(raw)
@@ -112,7 +119,7 @@ async def generateOneQuestion(topic: str, requestText: str, similarTo: list[dict
     or a JSON array with one element.
     """
     prompt = _buildPrompt(topic=f'{topic} (specific ask: {requestText})', count=1, difficulty='medium', similar_to=similarTo)
-    raw = await _callPrefrontal(prompt, model=model)
+    raw = await _callPrefrontal(prompt)
     if not raw:
         raise ValueError('Prefrontal returned empty response')
     cleaned = _stripCodeFences(raw)

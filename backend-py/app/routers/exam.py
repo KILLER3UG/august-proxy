@@ -24,6 +24,7 @@ async def generateExam(body: dict[str, object]):
     model = body.get('model') or ''
     if isinstance(model, dict):
         model = model.get('id', '')
+    provider = body.get('provider') or ''
     files = body.get('files') or []
     if not topic and (not files):
         raise HTTPException(status_code=400, detail='topic or files required')
@@ -44,7 +45,7 @@ async def generateExam(body: dict[str, object]):
     if not topic:
         topic = f'the content of {len(files)} uploaded file(s)'
     try:
-        questions = await examService.generateQuestions(topic=topic, count=count, difficulty=difficulty, context=context, model=model)
+        questions = await examService.generateQuestions(topic=topic, count=count, difficulty=difficulty, context=context, model=model, provider=provider)
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     conn = _db()

@@ -26,6 +26,7 @@ interface ExamHostProps {
   count?: number;
   difficulty?: string;
   model?: string;
+  provider?: string;
   onDismiss: () => void;
 }
 
@@ -60,6 +61,7 @@ export function ExamHost(props: ExamHostProps) {
       try {
         const body: Record<string, unknown> = { count, difficulty };
         if (sessionModel) body.model = sessionModel;
+        if (sessionProvider) body.provider = sessionProvider;
         if (files.length > 0) body.files = files;
         else body.topic = topic;
 
