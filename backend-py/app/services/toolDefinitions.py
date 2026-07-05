@@ -166,26 +166,18 @@ async def _webFetch(url: str) -> str:
     return await _fetchUrlContent(url, max_length=50000)
 
 def _htmlToMarkdown(html: str) -> str:
-    """Basic HTML to Markdown conversion."""
-    import re
-    text = html
-    text = re.sub('<script[^>]*>.*?</script>', '', text, flags=re.DOTALL)
-    text = re.sub('<style[^>]*>.*?</style>', '', text, flags=re.DOTALL)
-    for i in range(6, 0, -1):
-        text = re.sub(f'<h{i}[^>]*>(.*?)</h{i}>', lambda m: '#' * i + ' ' + re.sub('<[^>]+>', '', m.group(1)), text, flags=re.DOTALL)
-    text = re.sub('<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>', '[\\2](\\1)', text)
-    text = re.sub('<(strong|b)[^>]*>(.*?)</\\1>', '**\\2**', text, flags=re.DOTALL)
-    text = re.sub('<(em|i)[^>]*>(.*?)</\\1>', '*\\2*', text, flags=re.DOTALL)
-    text = re.sub('<br\\s*/?>', '\n', text)
-    text = re.sub('</p>', '\n\n', text)
-    text = re.sub('</(div|tr|li)>', '\n', text)
-    text = re.sub('<li[^>]*>', '- ', text)
-    text = re.sub('<[^>]+>', '', text)
-    text = text.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
-    text = text.replace('&quot;', '"').replace('&#39;', "'").replace('&nbsp;', ' ')
-    lines = [line.strip() for line in text.split('\n')]
-    text = '\n'.join((line for line in lines if line))
-    return text[:50000]
+    """Convert HTML to clean Markdown using html2text."""
+    import html2text
+    converter = html2text.HTML2Text()
+    converter.body_width = 0  # no line wrapping
+    converter.ignore_links = False
+    converter.ignore_images = False
+    converter.ignore_emphasis = False
+    converter.protect_links = True
+    converter.unicode_snob = True  # use Unicode instead of ASCII
+    converter.skip_internal_links = True
+    converter.reference_links = False
+    return converter.handle(html)[:50000]
 
 def _unescape_html(text: str) -> str:
     """Unescape HTML entities like &amp; &lt; &gt; &quot; &#39; etc."""

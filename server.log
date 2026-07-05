@@ -1,0 +1,65 @@
+INFO:     Started server process [24764]
+INFO:     Waiting for application startup.
+Subagent orchestrator initialization skipped
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8085 (Press CTRL+C to quit)
+Backup already exists: C:\Dev\august-proxy\data\august_brain.sqlite.bak
+
+--- Renaming columns ---
+  Table 'memory_store' not found -- skipping
+  Table 'session_topics' not found -- skipping
+  Table 'usage_events' not found -- skipping
+  Table 'config_audit' not found -- skipping
+  Table 'learned_heuristics' not found -- skipping
+  Table 'auto_memories' not found -- skipping
+  Table 'episodic_timeline' not found -- skipping
+  Table 'exam_questions' not found -- skipping
+  Table 'exam_attempts' not found -- skipping
+  Table 'pending_skills' not found -- skipping
+
+--- Dropping FTS tables for renamed content tables ---
+
+--- Renaming tables ---
+  Table 'memory_store' not found -- skipping
+  Table 'session_topics' not found -- skipping
+  Table 'usage_events' not found -- skipping
+  Table 'config_audit' not found -- skipping
+  Table 'learned_heuristics' not found -- skipping
+  Table 'auto_memories' not found -- skipping
+  Table 'episodic_timeline' not found -- skipping
+  Table 'exam_questions' not found -- skipping
+  Table 'exam_attempts' not found -- skipping
+  Table 'pending_skills' not found -- skipping
+
+--- Verification ---
+  autoMemories: id, key, content, category, importance, source, createdAt, updatedAt
+  autoMemories_fts: key, content
+  autoMemories_fts_config: k, v
+  autoMemories_fts_data: id, block
+  autoMemories_fts_docsize: id, sz
+  autoMemories_fts_idx: segid, term, pgno
+  blackboard: id, sessionId, agent, key, value, priority, createdAt, expiresAt
+  configAudit: id, category, action, actor, beforeJson, afterJson, createdAt
+  episodicTimeline: id, timestamp, sessionId, eventSummary, category
+  examAttempts: id, examId, questionId, selectedIndex, isCorrect, askedForHelp, answeredAt
+  examQuestions: id, examId, position, stem, options, correctIndex, rationale, sourceSnippet, origin
+  exams: id, title, topic, createdAt, source, sourceFiles
+  facts: id, factKey, factValue, category, source, confidence, createdAt, updatedAt
+  learnedHeuristics: id, rule, source, category, createdAt, updatedAt
+  lifecycle: id, sessionId, eventType, detail, createdAt
+  memoryStore: key, value, updatedAt
+  memoryStore_fts: key, value
+  memoryStore_fts_config: k, v
+  memoryStore_fts_data: id, block
+  memoryStore_fts_docsize: id, sz
+  memoryStore_fts_idx: segid, term, pgno
+  messages: id, sessionId, role, content, createdAt
+  pendingSkills: id, name, description, triggerText, draftPath, sourceSessionId, sourceWorkflow, createdBy, createdAt, status, useCount, lastSurfacedAt
+  proposals: id, sessionId, proposalType, content, status, createdAt, decidedAt, decidedBy
+  sessionTopics: sessionId, topic, parentTopic, confidence, classifiedAt
+  sessions: id, title, startedAt, messageCount, provider, model, folderId, isArchived, workspacePath
+  sqlite_sequence: name, seq
+  usageEvents: id, sessionId, model, inputTokens, outputTokens, contextTokens, createdAt
+INFO:     127.0.0.1:61736 - "GET / HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57243 - "POST /api/exam/generate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57249 - "POST /api/exam/generate HTTP/1.1" 200 OK

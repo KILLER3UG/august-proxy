@@ -16,6 +16,22 @@ async def _callPrefrontal(prompt: str, model: str='', provider: str='') -> str:
         from app.services.workbench import modelFleet
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
+        from app.config import settings
+
+        # Resolve model alias (e.g. "claude-sonnet-4-6" → "deepseek-v4-flash-free")
+        if model:
+            aliases_cfg = settings.config.get('modelAliases', [])
+            for alias_entry in aliases_cfg if isinstance(aliases_cfg, list) else []:
+                if isinstance(alias_entry, dict) and alias_entry.get('alias') == model:
+                    target_model = alias_entry.get('targetModel')
+                    if target_model:
+                        logger.info('_call_prefrontal: resolved model alias %s → %s', model, target_model)
+                        model = target_model
+                    target_provider = alias_entry.get('targetProvider')
+                    if target_provider and not provider:
+                        provider = target_provider
+                    break
+
         if not model:
             model = modelFleet.getModelForRole('prefrontal')
         if not model:

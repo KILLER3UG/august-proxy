@@ -373,7 +373,7 @@ class BaseProviderClient:
         Default implementation uses chat_completions (OpenAI-compatible).
         AnthropicClient and other subclasses override this.
         """
-        if hasattr(self, 'chat_completions'):
+        if hasattr(self, 'chatCompletions'):
             messages: list[dict[str, str]] = []
             if system:
                 messages.append({'role': 'system', 'content': system})

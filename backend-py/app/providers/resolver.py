@@ -189,9 +189,9 @@ def listAvailable() -> list[dict[str, object]]:
     providers = [_template_to_provider_dict(t) for t in templates]
 
     # Merge custom store entries, skipping disabled or unkeyed ones
-    from app.config import settings as cfg_settings
     try:
-        store = cfg_settings.getProvidersStore() if hasattr(cfg_settings, 'getProvidersStore') else {}
+        from app.services import configService
+        store = configService.getProvidersStore()
     except Exception:
         store = {}
     for entry in store.get('providers', []):

@@ -106,7 +106,7 @@ def resolveOrFallback(input: str | None, providerHint: str | None=None, defaultA
     originalInput = _normalize(input)
     normalized = originalInput or _normalize(defaultAlias) or DEFAULT_ALIAS
     try:
-        result = resolve(normalized, provider_hint=providerHint)
+        result = resolve(normalized, providerHint=providerHint)
         if result:
             return result
     except ModelResolutionError:
