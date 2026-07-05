@@ -750,7 +750,8 @@ export function appendBlockEvent(
           status: event.status || 'done',
           summary: event.summary || '',
           error: event.error || '',
-          duration: event.duration
+          duration: event.duration,
+          searchHits: event.searchHits ?? target.tool.searchHits,
         };
       }
       blocks[targetIdx] = target;

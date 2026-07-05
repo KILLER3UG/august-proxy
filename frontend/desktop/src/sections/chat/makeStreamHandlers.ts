@@ -353,6 +353,20 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       }
 
       const resultText = typeof content === 'string' ? content : content != null ? JSON.stringify(content) : '';
+
+      // Extract search hits from structured web_search JSON result
+      let searchHits: Array<{ title: string; url: string; snippet?: string }> | undefined;
+      const toolEntry = toolResults.find(t => t.id === id);
+      if (toolEntry && (toolEntry.name === 'web_search' || toolEntry.name === 'WebSearch')) {
+        if (parsedResult && Array.isArray(parsedResult.results)) {
+          searchHits = parsedResult.results.map((r: any) => ({
+            title: r.title || r.snippet || '',
+            url: r.url || '',
+            snippet: r.snippet || '',
+          }));
+        }
+      }
+
       toolResults = toolResults.map(t => t.id === id ? {
         ...t,
         pendingApproval: parsedResult?.type === 'mutation_pending_confirmation' ? {
@@ -364,6 +378,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         result: resultText,
         error: isError && !parsedResult?.type ? resultText : '',
         duration: t.startedAt ? Date.now() - t.startedAt : undefined,
+        searchHits: searchHits ?? t.searchHits,
       } : t);
       streamBlocks = appendBlockEvent(streamBlocks, {
         type: 'toolResult',
@@ -372,6 +387,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         summary: resultText.slice(0, 240),
         error: isError && !parsedResult?.type ? resultText.slice(0, 240) : '',
         duration: toolResults.find(t => t.id === id)?.duration,
+        searchHits,
       });
       scheduleUpdate();
     },

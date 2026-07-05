@@ -446,23 +446,42 @@ export function ToolCallItem({
 
           {tool.searchHits && tool.searchHits.length > 0 && (
             <Section label="results">
-              <ol className="m-0 grid list-none gap-2 p-0">
+              <ol className="m-0 grid list-none gap-3 p-0">
                 {tool.searchHits.map((hit, i) => (
-                  <li key={i} className="grid min-w-0 gap-0.5">
-                    {hit.url ? (
-                      <a
-                        href={hit.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs font-medium text-primary hover:underline truncate block"
-                      >
-                        {hit.title || new URL(hit.url).hostname}
-                      </a>
-                    ) : (
-                      <span className="text-xs font-medium text-foreground/90">{hit.title}</span>
-                    )}
+                  <li key={i} className="grid min-w-0 gap-1">
+                    <div className="flex items-start gap-2">
+                      {hit.url && (
+                        <img
+                          src={`https://www.google.com/s2/favicons?domain=${new URL(hit.url).hostname}&sz=16`}
+                          alt=""
+                          className="size-4 shrink-0 mt-0.5 rounded"
+                          width={16}
+                          height={16}
+                          loading="lazy"
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        {hit.url ? (
+                          <a
+                            href={hit.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-medium text-primary hover:underline truncate block"
+                          >
+                            {hit.title || new URL(hit.url).hostname}
+                          </a>
+                        ) : (
+                          <span className="text-xs font-medium text-foreground/90">{hit.title}</span>
+                        )}
+                        {hit.url && (
+                          <p className="text-[10px] text-muted-foreground/60 truncate mt-0.5">
+                            {hit.url}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                     {hit.snippet && (
-                      <p className="text-[10px] text-muted-foreground line-clamp-3 m-0">{hit.snippet}</p>
+                      <p className="text-[10px] text-muted-foreground line-clamp-3 m-0 pl-6">{hit.snippet}</p>
                     )}
                   </li>
                 ))}
@@ -470,7 +489,7 @@ export function ToolCallItem({
             </Section>
           )}
 
-          {tool.summary && (
+          {tool.summary && !tool.searchHits && (
             <FormattedResultSection toolName={tool.name} raw={tool.summary} />
           )}
 

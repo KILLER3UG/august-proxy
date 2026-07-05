@@ -192,4 +192,6 @@ export interface AppendBlockEvent {
   status?: 'running' | 'done' | 'error';
   duration?: number;
   isRevisedPlan?: boolean;
+  /** For web_search results: structured search hits to render as linked list */
+  searchHits?: Array<{ title: string; url: string; snippet?: string }>;
 }

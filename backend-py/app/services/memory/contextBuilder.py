@@ -209,7 +209,7 @@ def buildSystemPrompt(session: dict[str, object] | None=None, memory: dict[str, 
         merged['agent_context'] = agentContext
     if tools:
         coreCount = len(tools)
-        merged['tool_guidance'] = f'You have {coreCount} tools available. To learn about any tool, call tool_describe(name). To search for a tool, call tool_search(query, limit).'
+        merged['tool_guidance'] = f'You have {coreCount} tools available. To learn about any tool, call tool_describe(name). To search for a tool, call tool_search(query, limit). When doing web research, call web_search with maxResults=5 or more -- it automatically fetches full content from the top results, so you get rich content in one call.'
     tiers: list[str] = []
     if cachedT12:
         tiers.append(cachedT12)

@@ -139,8 +139,8 @@ async def _runCommand(command: str) -> str:
     except Exception as exc:
         return f'Error executing command: {exc}'
 
-async def _webFetch(url: str) -> str:
-    """Fetch a URL and return its content as Markdown."""
+async def _fetchUrlContent(url: str, max_length: int = 50000) -> str:
+    """Fetch a URL and return its content as Markdown (shared helper for web_fetch and web_search auto-fetch)."""
     import httpx
     blockedPrefixes = ['http://localhost', 'http://127.0.0.1', 'http://10.', 'http://172.16.', 'http://192.168.', 'https://localhost']
     if any((url.startswith(prefix) for prefix in blockedPrefixes)):
@@ -153,13 +153,17 @@ async def _webFetch(url: str) -> str:
             text = resp.text
             if 'text/html' in contentType:
                 text = _htmlToMarkdown(text)
-            return f'URL: {url}\nStatus: {resp.status_code}\n\n{text[:50000]}'
+            return f'URL: {url}\nStatus: {resp.status_code}\n\n{text[:max_length]}'
     except httpx.HTTPStatusError as exc:
         return f'Error: HTTP {exc.response.status_code} fetching {url}'
     except httpx.RequestError as exc:
         return f'Error: Request failed: {exc}'
     except Exception as exc:
         return f'Error: {exc}'
+
+async def _webFetch(url: str) -> str:
+    """Fetch a URL and return its content as Markdown."""
+    return await _fetchUrlContent(url, max_length=50000)
 
 def _htmlToMarkdown(html: str) -> str:
     """Basic HTML to Markdown conversion."""
@@ -183,35 +187,105 @@ def _htmlToMarkdown(html: str) -> str:
     text = '\n'.join((line for line in lines if line))
     return text[:50000]
 
+def _unescape_html(text: str) -> str:
+    """Unescape HTML entities like &amp; &lt; &gt; &quot; &#39; etc."""
+    import html as _html
+    return _html.unescape(text)
+
 async def _webSearch(query: str, maxResults: int=10) -> str:
-    """Search the web using DuckDuckGo."""
-    import httpx
+    """Search the web using DuckDuckGo. Automatically fetches content from top results.
+
+    Uses the ``duckduckgo_search`` library which handles DuckDuckGo's anti-bot
+    protections. Returns a JSON object (serialised) with:
+      search_query    — the query string
+      result_count    — number of search results found
+      results         — array of {index, title, url, snippet}
+      fetched_content — array of {index, url, content} with full page content
+    """
+    import json as _json
+    from ddgs import DDGS
     maxResults = min(maxResults, 20)
-    url = 'https://api.duckduckgo.com/'
-    params = {'q': query, 'format': 'json', 'no_html': '1', 'skip_disambig': '1'}
+    search_results: list[dict[str, object]] = []
+    error_hint: str | None = None
+
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-            results = []
-            for i, topic in enumerate(data.get('RelatedTopics', [])[:maxResults]):
-                if 'Text' in topic and 'FirstURL' in topic:
-                    results.append(f"[{i + 1}] {topic['Text']}\nURL: {topic['FirstURL']}")
-                elif 'Topics' in topic:
-                    for sub in topic['Topics'][:3]:
-                        if 'Text' in sub and 'FirstURL' in sub:
-                            results.append(f"[{i + 1}] {sub['Text']}\nURL: {sub['FirstURL']}")
-            if not results:
-                abstract = data.get('Abstract', '')
-                if abstract:
-                    return f"Query: {query}\n\n{abstract}\nSource: {data.get('AbstractURL', '')}"
-            output = f'Search query: {query}\nResult count: {len(results)}\n\n' + '\n\n'.join(results)
-            return output if results else f'No results found for: {query}'
-    except httpx.HTTPStatusError as exc:
-        return f'Error: HTTP {exc.response.status_code} from search API'
+        # duckduckgo_search.text() is synchronous — run in thread pool
+        def _search() -> list[dict[str, str]]:
+            with DDGS() as ddgs:
+                return list(ddgs.text(query, max_results=maxResults))
+
+        loop = asyncio.get_running_loop()
+        raw_results: list[dict[str, str]] = await loop.run_in_executor(None, _search)
+
+        for i, r in enumerate(raw_results):
+            title = (r.get('title') or '').strip()
+            url = (r.get('href') or '').strip()
+            snippet = (r.get('body') or '').strip()
+            if title and url:
+                search_results.append({
+                    'index': i + 1,
+                    'title': title,
+                    'url': url,
+                    'snippet': snippet,
+                })
+
     except Exception as exc:
-        return f'Error: {exc}'
+        error_hint = str(exc)
+
+    # Fallback: if duckduckgo_search failed or returned nothing, try the
+    # Instant Answer API for definitions/abstracts
+    if not search_results and not error_hint:
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                ia_resp = await client.get(
+                    'https://api.duckduckgo.com/',
+                    params={'q': query, 'format': 'json', 'no_html': '1', 'skip_disambig': '1'},
+                )
+                ia_resp.raise_for_status()
+                ia_data = ia_resp.json()
+                abstract = ia_data.get('Abstract', '')
+                if abstract:
+                    return _json.dumps({
+                        'search_query': query,
+                        'result_count': 0,
+                        'abstract': abstract,
+                        'source': ia_data.get('AbstractURL', ''),
+                    }, ensure_ascii=False)
+        except Exception:
+            pass
+
+    if not search_results:
+        msg = error_hint or f'No results found for: {query}'
+        return _json.dumps({
+            'search_query': query,
+            'result_count': 0,
+            'message': msg,
+        }, ensure_ascii=False)
+
+    # Auto-fetch top results in parallel (at most 10)
+    fetch_count = min(10, len(search_results))
+    fetched_content: list[dict[str, object]] = []
+    if fetch_count > 0:
+        fetched = await asyncio.gather(
+            *[_fetchUrlContent(r['url'], max_length=8000) for r in search_results[:fetch_count]],
+            return_exceptions=True,
+        )
+        for i, content in enumerate(fetched):
+            if isinstance(content, BaseException):
+                continue
+            fetched_content.append({
+                'index': search_results[i]['index'],
+                'url': search_results[i]['url'],
+                'content': content,
+            })
+
+    return _json.dumps({
+        'search_query': query,
+        'result_count': len(search_results),
+        'results': search_results,
+        'fetched_content': fetched_content,
+    }, ensure_ascii=False)
 
 async def _memorySearch(query: str) -> str:
     """Search past conversation memory."""
@@ -590,8 +664,8 @@ def registerAll() -> None:
     toolRegistry.register('list_directory', 'List files and directories in a given path (absolute). Output shows dir/file prefix, size, and name.', _listDirectory, {'type': 'object', 'properties': {'path': {'type': 'string', 'description': 'Absolute path to the directory.'}}, 'required': ['path']})
     toolRegistry.register('search_files', 'Search file contents using ripgrep or fallback grep. Case-insensitive. Path defaults to current directory.', _searchFiles, {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'The text to search for.'}, 'path': {'type': 'string', 'description': 'Directory to search in (default: current).'}}, 'required': ['query']})
     toolRegistry.register('run_command', 'Run a shell command. Allowed commands: git, python, npm, node, npx, ls, cat, less, head, tail, wc, echo, mkdir, cp, mv, rm, rmdir, chmod, curl, wget, jq, sed, awk, grep, sort, uniq, date, whoami, pwd, cd, source, export, which, make, cargo, pip, deno, bun, go, rustc, clang, gcc, bash, zsh, sh. Timeout 300s.', _runCommand, {'type': 'object', 'properties': {'command': {'type': 'string', 'description': 'The command to execute.'}}, 'required': ['command']})
-    toolRegistry.register('web_fetch', 'Fetch a URL and return its content as clean Markdown. Local/private network addresses are blocked. Max response ~50 KB.', _webFetch, {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'The URL to fetch.'}}, 'required': ['url']})
-    toolRegistry.register('web_search', 'Search the web for information using DuckDuckGo. Returns a numbered list of results with titles, URLs, and snippets. Max 20 results (default 10).', _webSearch, {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'The search query.'}, 'maxResults': {'type': 'integer', 'description': 'Maximum results (max 20). Default 10.'}}, 'required': ['query']})
+    toolRegistry.register('web_fetch', 'Fetch a specific URL and return its content as clean Markdown. Use this to fetch additional URLs beyond those auto-fetched by web_search. Local/private network addresses are blocked. Max response ~50 KB.', _webFetch, {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'The URL to fetch.'}}, 'required': ['url']})
+    toolRegistry.register('web_search', 'Search the web for information using DuckDuckGo. Returns a numbered list of results with titles, URLs, and snippets, and AUTOMATICALLY fetches the full content from the top 10 results (fetched content appears below the result list). Max 20 results (default 10).', _webSearch, {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'The search query.'}, 'maxResults': {'type': 'integer', 'description': 'Maximum results (max 20, default 10). Request at least 5-10 for thorough research.'}}, 'required': ['query']})
     from app.services.browser import handlers as _browser
     toolRegistry.register('browser_open', 'Open a URL in the headless browser and return the page title plus an interactive-element snapshot (use the [@eN] refs for clicks/types).', _browser.browserOpen, {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'The URL to open.'}, 'waitUntil': {'type': 'string', 'enum': ['load', 'domcontentloaded', 'networkidle', 'commit'], 'description': 'When navigation is considered complete (default: load).'}}, 'required': ['url']})
     toolRegistry.register('browser_click', "Click an element. Locate it by ref (e.g. '@e3'), CSS/XPath selector, or visible text.", _browser.browserClick, {'type': 'object', 'properties': {'ref': {'type': 'string', 'description': "Snapshot ref like '@e3'."}, 'selector': {'type': 'string', 'description': 'CSS selector or XPath (//...).'}, 'text': {'type': 'string', 'description': 'Visible text of the element.'}}})
