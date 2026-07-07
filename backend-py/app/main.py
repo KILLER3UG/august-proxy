@@ -34,6 +34,11 @@ async def lifespan(app: FastAPI):
             logger.info('Database columns migrated: snake_case → camelCase')
         except Exception as exc:
             logger.warning('DB migration skipped: %s', exc)
+        try:
+            from app.lib.storageKeyMigration import migrateStorageKeys
+            migrateStorageKeys(_dbPathVal)
+        except Exception as exc:
+            logger.warning('Storage-key migration skipped: %s', exc)
     try:
         from app.services.tools.mcpClient import refreshMcpTools
         asyncio.create_task(refreshMcpTools())

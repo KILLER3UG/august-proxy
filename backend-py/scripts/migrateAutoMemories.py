@@ -2,7 +2,7 @@
 One-time migration: split old auto_memories JSON blob into individual FTS-indexed rows.
 
 The original auto_memory.py stored all entries as a single JSON array under the
-key "auto_memories" in the memory_store table. This script:
+key "autoMemories" in the memory_store table. This script:
 1. Reads that blob
 2. Inserts each entry as an individual row in the auto_memories table
    (FTS triggers automatically index them)
@@ -40,7 +40,7 @@ def _normalizeIso(ts: str | None) -> str:
 
 def _readBlob(conn: sqlite3.Connection) -> list[dict] | None:
     """Read the old auto_memories JSON blob from memory_store."""
-    row = conn.execute('SELECT value FROM memory_store WHERE key = ?', ('auto_memories',)).fetchone()
+    row = conn.execute('SELECT value FROM memory_store WHERE key = ?', ('autoMemories',)).fetchone()
     if not row:
         return None
     try:
@@ -93,7 +93,7 @@ def runMigration(dryRun: bool=False) -> dict[str, Any]:
         conn.execute('INSERT INTO auto_memories (key, content, category, importance, source, created_at) VALUES (?, ?, ?, ?, ?, ?)', (key, content, category, importance, source, created))
         stats['inserted'] += 1
     if not dryRun and stats['inserted'] > 0:
-        conn.execute("DELETE FROM memory_store WHERE key = 'auto_memories'")
+        conn.execute("DELETE FROM memory_store WHERE key = 'autoMemories'")
         stats['blob_deleted'] = True
     if not dryRun:
         conn.commit()
@@ -103,7 +103,7 @@ def runMigration(dryRun: bool=False) -> dict[str, Any]:
     except Exception as e:
         stats['fts_error'] = str(e)
     if stats['blob_deleted']:
-        blobCheck = conn.execute("SELECT value FROM memory_store WHERE key = 'auto_memories'").fetchone()
+        blobCheck = conn.execute("SELECT value FROM memory_store WHERE key = 'autoMemories'").fetchone()
         stats['blob_remains'] = blobCheck is not None
     conn.close()
     return stats

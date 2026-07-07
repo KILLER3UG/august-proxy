@@ -149,7 +149,7 @@ def _parseRecommendations(raw: str) -> dict[str, object]:
 def _saveFact(action: str, content: str) -> None:
     """Save a fact to the core memory KV store."""
     from app.services.memoryStore import getMemory, saveMemory
-    KEY = 'core_memory'
+    KEY = 'coreMemory'
     facts: list[dict] = getMemory(KEY) or []
     if not isinstance(facts, list):
         facts = []

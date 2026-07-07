@@ -33,7 +33,7 @@ def buildTier1(session: dict[str, object] | None=None) -> str:
     constraints.extend(['=== GUARD MODE RULES ===', '- This session enforces a guard mode. You operate in one of three modes:', '  * ask: All mutating actions (write, edit, delete, run_command with mutations)', '         require user confirmation. Propose the action and wait for approval.', '  * plan: Destructive tools are blocked until a plan is submitted and approved.', '          Submit a plan via submit_plan(), then execute only approved steps.', '  * full: All tools available. Use responsibly.', '- Cognitive Budget: Monitor <cognitive_budget>.', "  At 'high' pressure, proactively compact context.", "  At 'critical' pressure, save state and ask user to start fresh.", '- Proactive Interrupts: <subconscious_updates> may contain daemon', '  results with [CRITICAL] prefix. If [CRITICAL] is present, pause', '  and inform the user before continuing.', "- Verifier Gate: Before transitioning to 'review' or 'complete', you must", '  execute a verification command. Do not skip or fake verification output.', '- Brain Access: You have a unified long-term brain (august_brain.sqlite).', '  Call brain_query(store, query, filters) to recall anything not in the prompt.', '- Math: Prefer unicode math symbols (², ³, √, ∑, ∏, ∫, π, ≈, ≤, ≥, ±, →,', '  ×, ÷, ∈, ∉, ∞, ∂) over LaTeX. Use plain unicode fractions (½) or', '  parentheses ((a+b)/c) instead of \\frac{a+b}{c}. Reserve LaTeX $...$', '  / $$...$$ for genuinely complex formulas (matrices, multi-line derivations).'])
     blocks.append(wrapTag('system_constraints', '\n'.join(constraints)))
     userParts: list[str] = []
-    profile = getMemory('user_profile') if session else None
+    profile = getMemory('userProfile') if session else None
     if profile:
         userParts.append(f'Profile: {_fmtVal(profile, 300)}')
     skillsManifest = (session or {}).get('skills_manifest', '')
@@ -65,7 +65,7 @@ def buildTier2(session: dict[str, object] | None=None) -> str:
         dirParts.append(f'Plan ({status}):\n{_fmtVal(planText, 2000)}')
     if dirParts:
         blocks.append(wrapTag('directives', '\n'.join(dirParts)))
-    heuristics = (session or {}).get('learned_heuristics', [])
+    heuristics = (session or {}).get('learnedHeuristics', [])
     if heuristics:
         lines = []
         for h in heuristics:
@@ -73,7 +73,7 @@ def buildTier2(session: dict[str, object] | None=None) -> str:
             if rule:
                 lines.append(f'- {rule}')
         if lines:
-            blocks.append(wrapTag('learned_heuristics', '\n'.join(lines)))
+            blocks.append(wrapTag('learnedHeuristics', '\n'.join(lines)))
     return '\n\n'.join((b for b in blocks if b.strip()))
 
 def buildTier3(session: dict[str, object] | None=None) -> str:
@@ -133,7 +133,7 @@ def buildTier3(session: dict[str, object] | None=None) -> str:
     if primed:
         blocks.append(wrapTag('primed_playbooks', primed))
     rcParts: list[str] = []
-    coreFacts = (session or {}).get('core_memory')
+    coreFacts = (session or {}).get('coreMemory')
     if coreFacts:
         rcParts.append('User facts:')
         if isinstance(coreFacts, dict):
@@ -193,14 +193,14 @@ def buildSystemPrompt(session: dict[str, object] | None=None, memory: dict[str, 
     """
     merged = dict(session or {})
     if memory:
-        if 'core_memory' in memory:
-            merged['core_memory'] = memory['core_memory']
-        if 'learned_heuristics' in memory:
-            merged['learned_heuristics'] = memory['learned_heuristics']
-        if 'auto_memories' in memory:
-            merged['auto_memories'] = memory['auto_memories']
-        if 'user_profile' in memory:
-            merged['user_profile'] = memory['user_profile']
+        if 'coreMemory' in memory:
+            merged['coreMemory'] = memory['coreMemory']
+        if 'learnedHeuristics' in memory:
+            merged['learnedHeuristics'] = memory['learnedHeuristics']
+        if 'autoMemories' in memory:
+            merged['autoMemories'] = memory['autoMemories']
+        if 'userProfile' in memory:
+            merged['userProfile'] = memory['userProfile']
         if 'global_context' in memory:
             merged['global_context'] = memory['global_context']
         if 'active_projects' in memory:
@@ -232,4 +232,4 @@ def buildSlimCoreContext(memory: dict[str, object] | None=None) -> str:
     """Legacy slim context builder. Delegates to Tier 3 runtime context."""
     if not memory:
         return ''
-    return buildTier3({'core_memory': memory.get('core_memory'), 'global_context': memory.get('global_context'), 'active_projects': memory.get('active_projects')})
+    return buildTier3({'coreMemory': memory.get('coreMemory'), 'global_context': memory.get('global_context'), 'active_projects': memory.get('active_projects')})

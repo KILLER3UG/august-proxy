@@ -30,7 +30,7 @@ db_path = settings.data_dir / "august_brain.sqlite"
 conn = sqlite3.connect(str(db_path))
 cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
 tables = {r[0] for r in cursor.fetchall()}
-for t in ["learned_heuristics", "auto_memories", "auto_memories_fts", "episodic_timeline", "blackboard", "exams", "exam_questions", "exam_attempts"]:
+for t in ["learnedHeuristics", "autoMemories", "autoMemoriesFts", "episodicTimeline", "blackboard", "exams", "exam_questions", "exam_attempts"]:
     if t in tables:
         print(f"  {t}: OK")
     else:
@@ -50,7 +50,7 @@ conn.close()
 # 5. brain_query
 print("\n5. brain_query...")
 from app.services.memoryStore import brainQuery
-stores = ["memory", "auto_memories", "heuristics", "facts", "sessions", "messages", "timeline", "blackboard"]
+stores = ["memory", "autoMemories", "heuristics", "facts", "sessions", "messages", "timeline", "blackboard"]
 for s in stores:
     try:
         result = brain_query(s, "", None, 1)

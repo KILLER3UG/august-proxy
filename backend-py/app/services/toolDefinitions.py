@@ -265,7 +265,7 @@ async def _contextRead() -> str:
     """Read current context/profile from memory."""
     from app.services.memoryStore import getMemory
     try:
-        profile = getMemory('user_profile')
+        profile = getMemory('userProfile')
         context = getMemory('current_context')
         preferences = getMemory('user_preferences')
         parts = []

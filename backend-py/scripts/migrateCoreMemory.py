@@ -79,11 +79,11 @@ def runMigration(source: str='merge', dryRun: bool=False) -> dict:
     jsonData = _readJson(jsonPath)
     if jsonData is not None:
         stats['json_found'] = True
-    sqliteProfile = _readSqliteKey(conn, 'user_profile')
+    sqliteProfile = _readSqliteKey(conn, 'userProfile')
     sqliteContext = _readSqliteKey(conn, 'current_context')
     sqliteProjects = _readSqliteKey(conn, 'active_projects')
     stats['sqlite_source_count'] = sum((1 for v in [sqliteProfile, sqliteContext, sqliteProjects] if v))
-    jsonProfile = (jsonData or {}).get('user_profile')
+    jsonProfile = (jsonData or {}).get('userProfile')
     jsonContext = (jsonData or {}).get('global_context')
     jsonProjects = (jsonData or {}).get('active_projects')
     if source == 'json':
@@ -102,7 +102,7 @@ def runMigration(source: str='merge', dryRun: bool=False) -> dict:
         if dryRun:
             print(f'[dry-run] Would upsert user_profile: {str(profileVal)[:100]}...')
         else:
-            _upsert(conn, 'user_profile', profileVal)
+            _upsert(conn, 'userProfile', profileVal)
         stats['upserted'] += 1
     if contextVal is not None:
         if dryRun:
@@ -118,7 +118,7 @@ def runMigration(source: str='merge', dryRun: bool=False) -> dict:
         stats['upserted'] += 1
     if not dryRun:
         conn.commit()
-    for key in ('user_profile', 'current_context', 'active_projects'):
+    for key in ('userProfile', 'current_context', 'active_projects'):
         stored = _readSqliteKey(conn, key)
         if stored is not None:
             stats[f'verified_{key}'] = True

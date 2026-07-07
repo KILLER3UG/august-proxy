@@ -109,8 +109,8 @@ async def brainLearning() -> dict[str, object]:
     from app.services import consolidationDaemon as _cd
     from app.services import deltaEngine as _de
     heuristics = listHeuristics()
-    coreFacts = memoryStore.getMemory('core_memory')
-    userProfile = memoryStore.getMemory('user_profile')
+    coreFacts = memoryStore.getMemory('coreMemory')
+    userProfile = memoryStore.getMemory('userProfile')
     try:
         deltaQueueSize = len(getattr(_de, '_diff_queue', []) or [])
     except Exception:

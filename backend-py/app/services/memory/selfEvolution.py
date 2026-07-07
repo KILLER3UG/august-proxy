@@ -66,10 +66,10 @@ def reflectOnTurn(messages: list[dict[str, object]], model: str='') -> dict[str,
             match = pattern.search(text)
             if match:
                 value = match.group(1).strip()
-                profile = getMemory('user_profile') or {}
+                profile = getMemory('userProfile') or {}
                 if isinstance(profile, dict) and key not in profile:
                     profile[key] = value
-                    saveMemory('user_profile', profile)
+                    saveMemory('userProfile', profile)
                     learnings.append(f'Learned {key}: {value}')
                     memoryUpdates += 1
     reflection = {'timestamp': time.time(), 'model': model, 'learnings': learnings, 'guideline_updates': guidelineUpdates, 'memory_updates': memoryUpdates, 'tool_failures': toolFailures, 'message_count': len(messages)}

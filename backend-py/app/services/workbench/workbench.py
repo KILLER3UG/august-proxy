@@ -221,9 +221,9 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     from app.services.memory.contextBuilder import buildSystemPrompt as ctxBuild
     from app.services.memoryStore import getMemory
     memory = {}
-    profile = getMemory('user_profile')
+    profile = getMemory('userProfile')
     if profile:
-        memory['user_profile'] = profile
+        memory['userProfile'] = profile
     context = getMemory('current_context')
     if context:
         memory['global_context'] = context
@@ -239,7 +239,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
         if recentText:
             prefetched = getRelevantMemories(recentText, limit=5)
             if prefetched:
-                memory['auto_memories'] = prefetched
+                memory['autoMemories'] = prefetched
     except Exception:
         pass
     try:
@@ -247,12 +247,12 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
         conn = brainConn()
         heuristicsRows = conn.execute('SELECT rule, source, category FROM learnedHeuristics ORDER BY updatedAt DESC').fetchall()
         if heuristicsRows:
-            memory['learned_heuristics'] = [dict(r) for r in heuristicsRows]
+            memory['learnedHeuristics'] = [dict(r) for r in heuristicsRows]
     except Exception:
         pass
-    coreFacts = getMemory('core_memory')
+    coreFacts = getMemory('coreMemory')
     if coreFacts:
-        memory['core_memory'] = coreFacts
+        memory['coreMemory'] = coreFacts
     agentContext = None
     if session.agentId:
         try:
@@ -327,7 +327,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     except Exception:
         pass
     sessionDict = {'goal': session.goal, 'plan': session.plan.to_dict() if hasattr(session.plan, 'to_dict') else session.plan, 'planApproved': session.planApproved, 'workspacePath': workspacePath, 'vcs': vcsInfo, 'brainPolicy': brainPolicy, 'cognitiveBudget': cognitiveBudget, 'memoryStats': memoryStats, 'whatsNew': whatsNew, 'skillsManifest': skillsManifest, 'executionState': getattr(session, '_execution_state', None), 'workingMemory': getattr(session, '_working_memory', None), 'subconsciousUpdates': _buildDaemonUpdates(getattr(session, 'id', ''))}
-    for k in ('core_memory', 'learned_heuristics', 'auto_memories'):
+    for k in ('coreMemory', 'learnedHeuristics', 'autoMemories'):
         if k in memory:
             sessionDict[k] = memory[k]
     tools = toolDefinitions(session)

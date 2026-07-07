@@ -82,9 +82,9 @@ def deleteOrphanedBlob() -> bool:
     Returns True if the blob was found and deleted, False otherwise.
     Call this once after migration to avoid polluting LIKE-based searches.
     """
-    blob = getMemory('auto_memories')
+    blob = getMemory('autoMemories')
     if blob is not None:
-        saveMemory('auto_memories', None)
+        saveMemory('autoMemories', None)
         return True
     return False
 
