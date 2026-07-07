@@ -3,6 +3,8 @@ request-log.json
 # Claude agent cache (local only, never commit)
 .claude/
 .kimchi/
+# ZCode agent cache (local only, never commit)
+.zcode/
 # Dependencies (never commit)
 node_modules/
 backend/host-agent/node_modules/
