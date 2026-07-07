@@ -12,21 +12,12 @@ legacy snake_case keys, and rewrites the row in place. It is safe to call
 on every startup (no-op if migration is already applied).
 """
 from __future__ import annotations
-
 import logging
 import sqlite3
 from pathlib import Path
 from typing import Iterable
-
 logger = logging.getLogger(__name__)
-
-
-# Old → new key remapping for the JSON-blob memory store.
-BLOB_KEY_RENAMES = {
-    'core_memory': 'coreMemory',
-    'user_profile': 'userProfile',
-}
-
+BLOB_KEY_RENAMES = {'core_memory': 'coreMemory', 'user_profile': 'userProfile'}
 
 def migrateStorageKeys(dbPath: Path) -> None:
     """Walk the brain SQLite database and migrate legacy snake_case keys.
@@ -40,9 +31,6 @@ def migrateStorageKeys(dbPath: Path) -> None:
     conn = sqlite3.connect(str(dbPath))
     try:
         conn.row_factory = sqlite3.Row
-        # The old row is only migrated if the new key is not already present.
-        # That avoids clobbering newer data if the user happened to populate
-        # the new key while the old key was still around.
         for oldKey, newKey in BLOB_KEY_RENAMES.items():
             oldRow = conn.execute('SELECT value FROM memory_store WHERE key = ?', (oldKey,)).fetchone()
             if oldRow is None:
@@ -55,7 +43,6 @@ def migrateStorageKeys(dbPath: Path) -> None:
         conn.commit()
     finally:
         conn.close()
-
 
 def isAlreadyMigrated(dbPath: Path) -> bool:
     """True if the DB has at least one camelCase row and no snake_case rows.

@@ -528,3 +528,20 @@ set_title
 set_extensions
 set_filters
 add_extension
+
+# ── 17. xlsx (SheetJS) library method names ─────────────────────────────
+# The ``XLSX.utils`` methods — these are dictated by the upstream SheetJS
+# library and can't be renamed.
+sheet_to_csv
+sheet_to_json
+sheet_to_html
+sheet_to_text
+sheet_to_formulae
+sheet_to_blob
+sheet_to_aoa
+json_to_sheet
+csv_to_sheet
+table_to_sheet
+sheet_add_json
+sheet_add_aoa
+sheet_add_table
