@@ -103,8 +103,8 @@ async def brainLearning() -> dict[str, object]:
     Includes heuristics, core facts, user profile, auto-memories,
     sleep cycle stats, delta engine stats, and pending skills.
     The legacy `{status, lastStartedAt, lastTopic}` shape is preserved
-    as a top-level `background_review` field for backward compatibility.
-    """
+    as a top-level `backgroundReview` field for backward compatibility.
+"""
     from app.services.heuristicsService import listHeuristics
     from app.services import consolidationDaemon as _cd
     from app.services import deltaEngine as _de
@@ -139,7 +139,7 @@ async def brainLearning() -> dict[str, object]:
     lastTopic = topics[0].get('topic') if topics else None
     lastAt = topics[0].get('classified_at') if topics else None
     backgroundReview = {'status': 'idle', 'lastStartedAt': lastAt, 'lastTopic': lastTopic}
-    return {'status': 'idle', 'heuristics': heuristics, 'heuristic_count': len(heuristics), 'core_facts': coreFacts, 'user_profile': userProfile, 'auto_memories': autoMemories, 'sleep_cycle': sleepCycle, 'delta_engine': {'consent_granted': False, 'queue_size': deltaQueueSize, 'last_flush_at': lastFlushAt}, 'pending_skills': pendingSkills, 'background_review': backgroundReview}
+    return {'status': 'idle', 'heuristics': heuristics, 'heuristicCount': len(heuristics), 'coreFacts': coreFacts, 'userProfile': userProfile, 'autoMemories': autoMemories, 'sleepCycle': sleepCycle, 'deltaEngine': {'consentGranted': False, 'queueSize': deltaQueueSize, 'lastFlushAt': lastFlushAt}, 'pendingSkills': pendingSkills, 'backgroundReview': backgroundReview}
 
 @router.get('/prompt')
 async def brainPrompt() -> dict[str, object]:
