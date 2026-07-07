@@ -86,36 +86,36 @@ class SnakeToCamelTransformer(ast.NodeTransformer):
         if node.args.kwarg:
             node.args.kwarg.arg = self._rename(node.args.kwarg.arg, 'parameter', (node.args.kwarg.lineno or node.lineno, 0))
 
-    def visitFunctiondef(self, node: ast.FunctionDef) -> Any:
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         node.name = self._rename(node.name, 'function', (node.lineno, node.col_offset))
         self._renameFunctionParams(node)
-        self.genericVisit(node)
+        self.generic_visit(node)
         return node
 
-    def visitAsyncfunctiondef(self, node: ast.AsyncFunctionDef) -> Any:
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
         node.name = self._rename(node.name, 'function', (node.lineno, node.col_offset))
         self._renameFunctionParams(node)
-        self.genericVisit(node)
+        self.generic_visit(node)
         return node
 
-    def visitName(self, node: ast.Name) -> Any:
+    def visit_Name(self, node: ast.Name) -> Any:
         """Rename ALL variable references — both assignments (Store) and usages (Load)."""
         if isinstance(node.ctx, (ast.Store, ast.Load)):
             newId = self._rename(node.id, 'variable', (node.lineno, node.col_offset))
             node.id = newId
         return node
 
-    def visitAttribute(self, node: ast.Attribute) -> Any:
+    def visit_Attribute(self, node: ast.Attribute) -> Any:
         """Rename attribute access on 'self' (method calls within class definitions).
         This is safe because 'self.method_name' always refers to our own methods.
         Does NOT rename attributes on other objects (library objects, etc.)."""
         if isinstance(node.value, ast.Name) and node.value.id == 'self':
             newAttr = self._rename(node.attr, 'attribute', (node.lineno, node.col_offset))
             node.attr = newAttr
-        self.genericVisit(node)
+        self.generic_visit(node)
         return node
 
-    def visitImportfrom(self, node: ast.ImportFrom) -> Any:
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> Any:
         """Rename imported names in 'from X import Y' statements."""
         for alias in node.names:
             if alias.asname:
@@ -124,18 +124,18 @@ class SnakeToCamelTransformer(ast.NodeTransformer):
                 alias.name = self._rename(alias.name, 'import', (node.lineno, 0))
         return node
 
-    def visitImport(self, node: ast.Import) -> Any:
+    def visit_Import(self, node: ast.Import) -> Any:
         for alias in node.names:
             if alias.asname:
                 alias.asname = self._rename(alias.asname, 'import_as', (node.lineno, 0))
         return node
 
-    def visitClassdef(self, node: ast.ClassDef) -> Any:
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
         """Rename class def only if snake_case (rare for classes)."""
         if '_' in node.name and (not node.name[0].isupper()):
             newName = self._rename(node.name, 'class', (node.lineno, node.col_offset))
             node.name = newName
-        self.genericVisit(node)
+        self.generic_visit(node)
         return node
 
 def convertFile(path: Path, deny: set[str], *, dryRun: bool=False, showDiff: bool=False) -> dict[str, Any]:
@@ -197,10 +197,10 @@ def main():
     for target in args.targets:
         path = Path(target)
         if path.is_file():
-            r = convertFile(path, deny, dry_run=args.dry_run, show_diff=args.diff)
+            r = convertFile(path, deny, dryRun=args.dry_run, showDiff=args.diff)
             allResults.append(r)
         elif path.is_dir():
-            r = convertDirectory(path, deny, dry_run=args.dry_run, show_diff=args.diff)
+            r = convertDirectory(path, deny, dryRun=args.dry_run, showDiff=args.diff)
             allResults.extend(r)
         else:
             print(f'Warning: {target} not found', file=sys.stderr)

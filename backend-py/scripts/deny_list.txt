@@ -376,3 +376,29 @@ ansible_playbook
 apply_patch
 replace_file
 local_bash
+
+# ── 11. Python AST visitor method names ────────────────────────────────
+# These are the AST NodeTransformer / NodeVisitor dispatch method names.
+# Their case MUST match ``visit_<ClassName>`` for ast dispatch to work.
+# DO NOT rename — would silently break AST walking.
+visit_FunctionDef
+visit_AsyncFunctionDef
+visit_Name
+visit_Attribute
+visit_ImportFrom
+visit_Import
+visit_ClassDef
+visit_Lambda
+visit_Expr
+visit_Call
+visit_Return
+visit_Assign
+visit_If
+visit_For
+visit_While
+visit_Try
+visit_With
+visit_Match
+visit_aliases
+generic_visit
+genericVisit

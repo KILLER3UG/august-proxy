@@ -147,7 +147,7 @@ async def startScheduler(intervalS: int=60) -> None:
             if _matchesCron(job.get('schedule', '* * * * *'), now):
                 task = asyncio.create_task(runJobNow(jobId))
                 _tasks[jobId] = task
-                task.add_done_callback(lambda t, j_id=jobId: _tasks.pop(jId, None))
+                task.add_done_callback(lambda t, jId=jobId: _tasks.pop(jId, None))
         await asyncio.sleep(intervalS)
 
 def stopScheduler() -> None:
