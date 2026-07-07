@@ -402,3 +402,129 @@ visit_Match
 visit_aliases
 generic_visit
 genericVisit
+
+# ── 12. Rust crate names + Tauri / tauri-plugin API surface ──────────────
+# These are crate identifiers (Cargo.toml, extern crate, use statements)
+# and Tauri framework APIs. The compiler + linker determine the exact
+# form. Do not rename.
+tauri_plugin_clipboard_manager
+tauri_plugin_process
+tauri_plugin_shell
+tauri_plugin_updater
+tauri_plugin_dialog
+windows_subsystem
+august_desktop_lib
+august_desktop
+# Tauri framework APIs (camelCase already — kept for completeness)
+generate_handler
+generate_context
+Builder
+WindowEvent
+CloseRequested
+
+# ── 13. Rust stdlib / Tauri / common crate method names ─────────────────
+# Methods on standard types (Option, Result, PathBuf, Command, App, etc.)
+# and Tauri / serde / reqwest builders — their names are dictated by the
+# upstream APIs and cannot be renamed.
+unwrap_or
+unwrap_or_else
+unwrap_or_default
+as_ref
+as_mut
+into_iter
+iter_mut
+collect_into
+to_owned
+to_string
+to_string_lossy
+and_then
+or_else
+map_err
+map_or
+is_ok
+is_err
+is_some
+is_none
+is_file
+is_dir
+is_empty
+is_success
+current_dir
+stdin
+stdout
+stderr
+create_dir_all
+read_to_string
+from_millis
+from_secs
+join_paths
+from_str
+parse_from_url
+into_boxed_str
+from_utf8
+field
+emit
+
+# ── 14. Rust attribute names and built-in attributes ────────────────────
+# Rust attribute syntax ``#[<name>(...)]`` and ``#![<name>]`` — the name is
+# determined by the compiler / external proc-macros and is not renameable.
+cfg_attr
+cfg
+allow
+deny
+warn
+forbid
+derive
+test
+tokio_test
+non_camel_case_types
+non_snake_case
+non_upper_case_globals
+mobile_entry_point
+debug_assertions
+windows_subsystem
+allow_internal_unsafe
+allow_internal_unstable
+
+# ── 15. Tauri / trait / builder method names (more) ──────────────────────
+with_id
+with_items
+with_label
+with_title
+with_tooltip
+with_icon
+with_menu
+with_event
+with_position
+with_size
+with_inner_size
+on_window_event
+on_menu_event
+on_tray_icon_event
+on_page_load
+prevent_close
+set_title
+set_size
+set_position
+set_focus
+set_visible
+invoke_handler
+generate_handler
+generate_context
+app_handle
+
+# ── 16. rfd (Rust File Dialog) crate method names ───────────────────────
+# The ``rfd::FileDialog`` builder methods — its name and chain methods are
+# fixed by the upstream API.
+pick_folder
+pick_file
+save_file
+add_filter
+set_file_name
+set_directory
+set_can_create_directories
+set_parent
+set_title
+set_extensions
+set_filters
+add_extension

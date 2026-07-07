@@ -3,6 +3,14 @@
 // Folder map:
 //   src-tauri/ ← this crate: Rust shell + Node supervisor
 //   webview content comes from ../../web-dist during desktop builds
+//
+// Crate-wide lint suppressions: after the snake_case → camelCase migration
+// we keep these identifiers as `camelCase` to align with the rest of the
+// codebase. Function names, struct fields, and locals are intentional —
+// not to be re-renamed.
+
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
 
 
 mod backend;
@@ -18,7 +26,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // 1) Try to start (or reuse) the Node backend at :8085
-            backend::ensure_running(app.handle());
+            backend::ensureRunning(app.handle());
 
             // 2) Install the system tray (Show / Hide / Quit)
             tray::install(app.handle())?;
@@ -33,9 +41,9 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            backend::restart_proxy,
-            backend::proxy_status,
-            backend::select_directory,
+            backend::restartProxy,
+            backend::proxyStatus,
+            backend::selectDirectory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

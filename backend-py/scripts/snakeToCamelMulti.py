@@ -100,6 +100,14 @@ def _iterStringSpans(text: str, lang: str) -> Iterable[tuple[int, int]]:
             i = j
             continue
         if c in ('"', "'"):
+            # Rust-specific guard: lifetime syntax (``'a``, ``'_``, ``'static``)
+            # is NOT a string literal. Lifetime tokens are always preceded by
+            # a single quote (not a double quote). Detect them by checking
+            # what immediately follows the apostrophe.
+            if c == "'" and lang == 'rust' and i + 1 < n and (text[i + 1] == '_' or text[i + 1].isalpha()):
+                # Skip the apostrophe — leave the lifetime token intact.
+                i += 1
+                continue
             quote = c
             j = i + 1
             while j < n:
@@ -212,7 +220,11 @@ def _renameInCode(text: str, lang: str, deny: set[str]) -> tuple[str, list[dict]
             out.append(text[start:end])
             i = end
             continue
-        if end < n and text[end] in ('*', '?', '+', '(', ')', '{'):
+        # Skip identifiers that are immediately followed by a glob-like
+        # wildcard (e.g. ``computer_*`` in docblocks). Do NOT skip
+        # function-call parentheses or block braces — those are normal
+        # syntax.
+        if end < n and text[end] in ('*', '?', '+'):
             out.append(text[start:end])
             i = end
             continue
