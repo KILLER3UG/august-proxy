@@ -3,7 +3,7 @@
 /* Tool calls render as inline cards. Right rail optional.                  */
 
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type Dispatch, type KeyboardEvent, type SetStateAction } from 'react';
-import { Send, Paperclip, Mic, AtSign, Plus, ChevronDown, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw } from 'lucide-react';
+import { Send, Paperclip, Mic, AtSign, Plus, ChevronDown, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw, Eye } from 'lucide-react';
 import { cn, formatClockTime, workspaceBaseName } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
@@ -501,6 +501,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
   const [showCommandsDropdown, setShowCommandsDropdown] = useState(false);
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  // Live markdown preview lives below the textarea but is opt-in: most
+  // users want a plain textarea while typing, and the rendered preview
+  // visually reads like a second input box. Toggle via the "Preview"
+  // button in the composer toolbar.
+  const [showPreview, setShowPreview] = useState(false);
   // Mid-response queued messages live in the queue-store (per-session
   // atom). ChatThread mirrors a local copy for quick synchronous access;
   // the SSE subscriber writes back into the store when messages are
@@ -1987,16 +1992,20 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 style={{ minHeight: '64px', maxHeight: '360px' }}
               />
 
-              {/* Live markdown preview — mirrors the chat-area render
-                  pipeline so tables, code blocks, lists, etc. look the
-                  same as they will in the bubble. Hidden when the input
-                  is empty so it never competes with the cursor. */}
-              {input.trim() && (
+              {/* Live markdown preview — mirrors the chat-area render pipeline so
+                  tables, code blocks, lists, etc. look the same as they
+                  will in the bubble. Opt-in via the Preview toggle in
+                  the composer toolbar (default off, because the rendered
+                  view visually reads like a second input box). */}
+              {showPreview && input.trim() && (
                 <div
-                  className="border-t border-border bg-muted/10 max-h-[280px] overflow-y-auto px-4 py-2.5 text-foreground"
+                  className="border-t border-border bg-muted/5 max-h-[240px] overflow-y-auto px-4 py-2 text-foreground/90"
                   aria-label="Message preview"
                   data-testid="composer-preview"
                 >
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1.5 font-semibold">
+                    Preview
+                  </div>
                   <Markdown content={input} />
                 </div>
               )}
@@ -2108,6 +2117,23 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 value={effort}
                 onChange={setEffort}
               />
+
+              {/* Preview toggle — when on, shows the live <Markdown>
+                  rendering of the textarea below it. Off by default
+                  since the rendered preview visually reads like a
+                  second input. */}
+              <Button
+                type="button"
+                size="sm"
+                variant={showPreview ? 'default' : 'outline'}
+                onClick={() => setShowPreview((v) => !v)}
+                aria-pressed={showPreview}
+                title={showPreview ? 'Hide preview' : 'Show preview'}
+                data-testid="composer-preview-toggle"
+              >
+                <Eye className="size-3" />
+                Preview
+              </Button>
 
               {streaming ? (
                 <Button onClick={stop} size="sm" variant="outline">
