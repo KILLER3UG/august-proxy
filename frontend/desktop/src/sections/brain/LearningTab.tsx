@@ -56,22 +56,22 @@ export function LearningTab() {
         // render site doing the conversion.
         const normalized: LearningData = {
           heuristics: json.heuristics ?? [],
-          heuristicCount: json.heuristicCount ?? json.heuristic_count ?? 0,
-          coreFacts: json.coreFacts ?? json.core_facts ?? null,
-          userProfile: json.userProfile ?? json.user_profile ?? null,
-          autoMemories: json.autoMemories ?? json.auto_memories ?? [],
+          heuristicCount: json.heuristicCount ?? json.heuristicCount ?? 0,
+          coreFacts: json.coreFacts ?? json.coreFacts ?? null,
+          userProfile: json.userProfile ?? json.userProfile ?? null,
+          autoMemories: json.autoMemories ?? json.autoMemories ?? [],
           sleepCycle: {
-            lastRunAt: json.sleepCycle?.lastRunAt ?? json.sleep_cycle?.last_run_at ?? null,
-            lastMerged: json.sleepCycle?.lastMerged ?? json.sleep_cycle?.last_merged ?? 0,
-            lastPromoted: json.sleepCycle?.lastPromoted ?? json.sleep_cycle?.last_promoted ?? 0,
-            lastDeleted: json.sleepCycle?.lastDeleted ?? json.sleep_cycle?.last_deleted ?? 0,
+            lastRunAt: json.sleepCycle?.lastRunAt ?? json.sleep_cycle?.lastRunAt ?? null,
+            lastMerged: json.sleepCycle?.lastMerged ?? json.sleep_cycle?.lastMerged ?? 0,
+            lastPromoted: json.sleepCycle?.lastPromoted ?? json.sleep_cycle?.lastPromoted ?? 0,
+            lastDeleted: json.sleepCycle?.lastDeleted ?? json.sleep_cycle?.lastDeleted ?? 0,
           },
           deltaEngine: {
-            consentGranted: json.deltaEngine?.consentGranted ?? json.delta_engine?.consent_granted ?? false,
-            queueSize: json.deltaEngine?.queueSize ?? json.delta_engine?.queue_size ?? 0,
-            lastFlushAt: json.deltaEngine?.lastFlushAt ?? json.delta_engine?.last_flush_at ?? null,
+            consentGranted: json.deltaEngine?.consentGranted ?? json.delta_engine?.consentGranted ?? false,
+            queueSize: json.deltaEngine?.queueSize ?? json.delta_engine?.queueSize ?? 0,
+            lastFlushAt: json.deltaEngine?.lastFlushAt ?? json.delta_engine?.lastFlushAt ?? null,
           },
-          pendingSkills: json.pendingSkills ?? json.pending_skills ?? [],
+          pendingSkills: json.pendingSkills ?? json.pendingSkills ?? [],
         };
         if (!cancelled) setData(normalized);
       } catch (e) {

@@ -44,7 +44,7 @@ interface SkillSummary {
   trigger: string;
   category: string;
   enabled: boolean;
-  created_by: string;
+  createdBy: string;
 }
 
 interface SkillDetail extends SkillSummary {
@@ -54,12 +54,12 @@ interface SkillDetail extends SkillSummary {
 interface SkillUsage {
   name: string;
   useCount: number;
-  view_count: number;
-  patch_count: number;
-  last_used_at: number | null;
+  viewCount: number;
+  patchCount: number;
+  lastUsedAt: number | null;
   state: string;
   pinned: boolean;
-  archived_at: number | null;
+  archivedAt: number | null;
 }
 
 interface CuratorReport {
@@ -144,7 +144,7 @@ export function SkillsSection() {
         name: s.name,
         description: s.description,
         category: s.category,
-        source: s.created_by || 'builtin',
+        source: s.createdBy || 'builtin',
         enabled: s.enabled,
         state: 'active',
         pinned: false,
@@ -160,9 +160,9 @@ export function SkillsSection() {
         existing.state = u.state;
         existing.pinned = u.pinned;
         existing.useCount = u.useCount;
-        existing.viewCount = u.view_count;
-        existing.patchCount = u.patch_count;
-        existing.lastUsedAt = u.last_used_at;
+        existing.viewCount = u.viewCount;
+        existing.patchCount = u.patchCount;
+        existing.lastUsedAt = u.lastUsedAt;
       } else {
         byName.set(u.name, {
           name: u.name,
@@ -173,9 +173,9 @@ export function SkillsSection() {
           state: u.state,
           pinned: u.pinned,
           useCount: u.useCount,
-          viewCount: u.view_count,
-          patchCount: u.patch_count,
-          lastUsedAt: u.last_used_at,
+          viewCount: u.viewCount,
+          patchCount: u.patchCount,
+          lastUsedAt: u.lastUsedAt,
         });
       }
     }
@@ -544,7 +544,7 @@ export function SkillsSection() {
               <div><span className="text-muted-foreground">Name:</span> <span className="font-medium">{selected.name}</span></div>
               <div><span className="text-muted-foreground">Category:</span> <span>{selected.category}</span></div>
               <div><span className="text-muted-foreground">Trigger:</span> <span>{selected.trigger || '—'}</span></div>
-              <div><span className="text-muted-foreground">Source:</span> <span>{selected.created_by || 'builtin'}</span></div>
+              <div><span className="text-muted-foreground">Source:</span> <span>{selected.createdBy || 'builtin'}</span></div>
             </div>
             <div className="text-sm">
               <span className="text-muted-foreground">Description:</span>

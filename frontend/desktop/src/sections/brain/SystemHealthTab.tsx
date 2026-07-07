@@ -5,10 +5,10 @@ import { Clock, Heart } from 'lucide-react';
 interface LayerInfo {
   layer: string;
   flag: string;
-  flag_value: boolean;
+  flagValue: boolean;
   status: 'on & healthy' | 'on & failing' | 'off' | 'not shipped';
   detail: string;
-  last_check_at: string;
+  lastCheckAt: string;
 }
 
 interface HealthData {
@@ -94,7 +94,7 @@ export function SystemHealthTab() {
           <div className="col-span-4 text-xs text-muted-foreground">
             <p>{p.detail}</p>
             <p className="text-[10px] mt-0.5">
-              checked {new Date(p.last_check_at).toLocaleTimeString()}
+              checked {new Date(p.lastCheckAt).toLocaleTimeString()}
             </p>
           </div>
         </div>

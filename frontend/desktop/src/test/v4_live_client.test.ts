@@ -9,7 +9,7 @@ describe('v4 — liveClient', () => {
   it('startSession posts to /api/live/session and returns sessionId', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ session_id: 'live_abc', status: 'started' }),
+      json: async () => ({ sessionId: 'live_abc', status: 'started' }),
     });
     const id = await liveClient.startSession();
     expect(id).toBe('live_abc');

@@ -31,9 +31,9 @@ interface HealthReport {
 interface ComputerUseConfig {
   enabled: boolean;
   backend: string;
-  auto_approve: string[];
-  blocklist_keys: string[];
-  blocklist_patterns: string[];
+  autoApprove: string[];
+  blocklistKeys: string[];
+  blocklistPatterns: string[];
 }
 
 export function ComputerUseSection() {
@@ -189,12 +189,12 @@ export function ComputerUseSection() {
           <div>
             <p className="text-xs text-muted-foreground mb-1">Auto-approve actions</p>
             <div className="flex flex-wrap gap-1">
-              {config?.auto_approve.map((action) => (
+              {config?.autoApprove.map((action) => (
                 <Badge key={action} variant="outline" className="text-xs">
                   {action}
                 </Badge>
               ))}
-              {(!config?.auto_approve || config.auto_approve.length === 0) && (
+              {(!config?.autoApprove || config.autoApprove.length === 0) && (
                 <span className="text-xs text-muted-foreground">None</span>
               )}
             </div>
@@ -202,7 +202,7 @@ export function ComputerUseSection() {
           <div>
             <p className="text-xs text-muted-foreground mb-1">Blocked key combos</p>
             <div className="flex flex-wrap gap-1">
-              {config?.blocklist_keys.map((key) => (
+              {config?.blocklistKeys.map((key) => (
                 <Badge key={key} variant="outline" className="text-xs bg-destructive/10">
                   {key}
                 </Badge>

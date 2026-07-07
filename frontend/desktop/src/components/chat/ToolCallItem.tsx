@@ -113,8 +113,8 @@ function extractDiffData(tool: { context?: string; result?: unknown; name?: stri
     // The context itself looks like a diff
     return { diff: tool.context };
   }
-  if (typeof (tool as { inline_diff?: string }).inline_diff === 'string') {
-    return { diff: (tool as { inline_diff?: string }).inline_diff };
+  if (typeof (tool as { inlineDiff?: string }).inlineDiff === 'string') {
+    return { diff: (tool as { inlineDiff?: string }).inlineDiff };
   }
 
   // 2) Inspect args and result for old/new pairs
@@ -132,7 +132,7 @@ function extractDiffData(tool: { context?: string; result?: unknown; name?: stri
     const r = result as Record<string, unknown>;
     if (typeof r.diff === 'string') return { diff: r.diff };
     if (typeof r.patch === 'string') return { diff: r.patch };
-    if (typeof r.unified_diff === 'string') return { diff: r.unified_diff };
+    if (typeof r.unifiedDiff === 'string') return { diff: r.unifiedDiff };
     if (typeof r.old === 'string' && typeof r.new === 'string') {
       return { oldContent: r.old, newContent: r.new };
     }
@@ -169,7 +169,7 @@ export interface ToolEntry {
   preview?: string;
   summary?: string;
   error?: string;
-  inline_diff?: string;
+  inlineDiff?: string;
   status: 'running' | 'done' | 'error';
   duration?: number;
   startedAt?: number;
@@ -240,7 +240,7 @@ export function ToolCallItem({
 
 
   const hasBody = !!(
-    tool.context || tool.preview || tool.summary || tool.error || tool.inline_diff || tool.searchHits || tool.pendingApproval
+    tool.context || tool.preview || tool.summary || tool.error || tool.inlineDiff || tool.searchHits || tool.pendingApproval
   );
   const [approvalStatus, setApprovalStatus] = useState<'idle' | 'confirming' | 'confirmed'>('idle');
 

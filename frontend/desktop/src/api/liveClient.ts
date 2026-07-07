@@ -31,7 +31,7 @@ export const liveClient = {
       '/session',
       { action: 'start' },
     );
-    return data?.sessionId ?? data?.session_id ?? '';
+    return data?.sessionId ?? data?.sessionId ?? '';
   },
 
   async stopSession(sessionId: string): Promise<void> {

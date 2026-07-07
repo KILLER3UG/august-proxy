@@ -29,15 +29,15 @@ interface GraphSearchResult {
 
 const TYPE_COLORS: Record<string, string> = {
   project: '#3b82f6',
-  project_info: '#60a5fa',
+  projectInfo: '#60a5fa',
   concept: '#8b5cf6',
   tool: '#f59e0b',
   integration: '#10b981',
-  user_preference: '#ec4899',
-  user_detail: '#f472b6',
-  workflow_rule: '#ef4444',
-  checkpoint_topic: '#06b6d4',
-  session_temp: '#6366f1',
+  userPreference: '#ec4899',
+  userDetail: '#f472b6',
+  workflowRule: '#ef4444',
+  checkpointTopic: '#06b6d4',
+  sessionTemp: '#6366f1',
   path: '#78716c',
   memory: '#f97316',
 };

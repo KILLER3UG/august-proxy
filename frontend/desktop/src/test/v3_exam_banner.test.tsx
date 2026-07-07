@@ -4,20 +4,20 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ExamHost } from '@/sections/exam/ExamHost';
 
 const Q1 = {
-  exam_id: 1,
-  question: { id: 10, exam_id: 1, position: 1, stem: 'What is 2+2?', options: ['3', '4', '5', '6'] },
-  total_questions: 2,
+  examId: 1,
+  question: { id: 10, examId: 1, position: 1, stem: 'What is 2+2?', options: ['3', '4', '5', '6'] },
+  totalQuestions: 2,
 };
 
 const Q2_NEXT = {
   id: 11,
-  exam_id: 1,
+  examId: 1,
   position: 2,
   stem: 'Capital of France?',
   options: ['Berlin', 'Madrid', 'Paris', 'Rome'],
 };
 
-const ANSWER_OK = { is_correct: true, correct_index: 1, rationale: '2+2=4.' };
+const ANSWER_OK = { isCorrect: true, correctIndex: 1, rationale: '2+2=4.' };
 
 function mockFetchSequence(responses: Array<{ ok?: boolean; body?: unknown; status?: number }>) {
   let i = 0;

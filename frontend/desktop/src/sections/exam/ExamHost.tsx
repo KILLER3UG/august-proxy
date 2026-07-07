@@ -81,12 +81,12 @@ export function ExamHost(props: ExamHostProps) {
         // snake_case (`exam_id`, `total_questions`, …) but the component
         // works in camelCase; accept either so tests + future backend
         // renames don't break the UI.
-        const examIdNum: number | null = data.examId ?? data.exam_id ?? null;
-        const total: number = data.totalQuestions ?? data.total_questions ?? 0;
+        const examIdNum: number | null = data.examId ?? data.examId ?? null;
+        const total: number = data.totalQuestions ?? data.totalQuestions ?? 0;
         const rawQ = data.question ?? data;
         const question: Question = {
           id: rawQ.id,
-          examId: rawQ.examId ?? rawQ.exam_id ?? examIdNum ?? 0,
+          examId: rawQ.examId ?? rawQ.examId ?? examIdNum ?? 0,
           position: rawQ.position ?? 1,
           stem: rawQ.stem,
           options: rawQ.options ?? [],
@@ -122,8 +122,8 @@ export function ExamHost(props: ExamHostProps) {
       // `is_correct` / `correct_index` / `rationale` instead of the
       // camelCase fields the component prefers).
       return {
-        isCorrect: data.isCorrect ?? data.correct ?? data.is_correct ?? false,
-        correctIndex: data.correctIndex ?? data.correct_index ?? -1,
+        isCorrect: data.isCorrect ?? data.correct ?? data.isCorrect ?? false,
+        correctIndex: data.correctIndex ?? data.correctIndex ?? -1,
         rationale: data.rationale ?? '',
       };
     },
@@ -153,7 +153,7 @@ export function ExamHost(props: ExamHostProps) {
       // `position`) → camelCase.
       const nextQuestion: Question = {
         id: q.id,
-        examId: q.examId ?? q.exam_id ?? examId,
+        examId: q.examId ?? q.examId ?? examId,
         position: q.position ?? nextPos,
         stem: q.stem,
         options: q.options ?? [],

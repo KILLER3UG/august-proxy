@@ -15,7 +15,7 @@ const EVENTS = [
     category: 'consolidation' as const,
     layer: 'consolidation_daemon',
     summary: 'Sleep cycle merged 2 duplicate Yarn rules',
-    meta: { merged: 2, promoted: 0, deleted_stale: 0 },
+    meta: { merged: 2, promoted: 0, deletedStale: 0 },
     at: '2026-06-30T10:24:15Z',
   },
   {

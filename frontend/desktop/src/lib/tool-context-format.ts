@@ -167,7 +167,7 @@ export function formatToolContext(toolName: string, contextJson?: string): Forma
   // Web search / fetch
   if (WEB_OPS.has(canonical)) {
     const query = parsed && pickString(parsed, ['query', 'q', 'url', 'searchQuery', 'search_query']);
-    const maxResults = parsed && (typeof parsed.maxResults === 'number' ? parsed.maxResults : (typeof parsed.max_results === 'number' ? parsed.max_results : undefined));
+    const maxResults = parsed && (typeof parsed.maxResults === 'number' ? parsed.maxResults : (typeof parsed.maxResults === 'number' ? parsed.maxResults : undefined));
     const verb = canonical === 'web_fetch' || canonical === 'web' || canonical === 'read_url_content' || canonical === 'execute_url'
       ? 'Fetching'
       : 'Searched';

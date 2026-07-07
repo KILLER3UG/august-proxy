@@ -15,22 +15,22 @@ function mockFetchSequence(responses: Array<unknown>) {
 
 const FULL_LEARNING = {
   heuristics: [
-    { id: 1, rule: 'Use Yarn', source: 'manual', category: 'build', created_at: '2026-06-29' },
-    { id: 2, rule: 'Prefer tabs', source: 'local-diff', category: 'style', created_at: '2026-06-29' },
+    { id: 1, rule: 'Use Yarn', source: 'manual', category: 'build', createdAt: '2026-06-29' },
+    { id: 2, rule: 'Prefer tabs', source: 'local-diff', category: 'style', createdAt: '2026-06-29' },
   ],
-  heuristic_count: 2,
-  core_facts: { code_style: 'spaces' },
-  user_profile: null,
-  auto_memories: [{ id: 1, key: 'jwt-fix', content: 'JWT expiry bug', importance: 0.8 }],
-  sleep_cycle: { last_run_at: '2026-06-29T10:00:00Z', last_merged: 2, last_promoted: 1, last_deleted: 0 },
-  delta_engine: { consent_granted: false, queue_size: 0, last_flush_at: null },
-  pending_skills: [{ id: 1, name: 'jwtDebugFlow', description: 'Debug JWT', trigger_text: 'auth error' }],
+  heuristicCount: 2,
+  coreFacts: { codeStyle: 'spaces' },
+  userProfile: null,
+  autoMemories: [{ id: 1, key: 'jwt-fix', content: 'JWT expiry bug', importance: 0.8 }],
+  sleepCycle: { lastRunAt: '2026-06-29T10:00:00Z', lastMerged: 2, lastPromoted: 1, lastDeleted: 0 },
+  deltaEngine: { consentGranted: false, queueSize: 0, lastFlushAt: null },
+  pendingSkills: [{ id: 1, name: 'jwtDebugFlow', description: 'Debug JWT', triggerText: 'auth error' }],
 };
 
 const FULL_HEALTH = {
   phases: [
-    { layer: 'Phase 4 — Learned Heuristics', flag: 'heuristics', flag_value: true, status: 'on & healthy', detail: '12 active heuristics', last_check_at: '2026-06-29T10:00:00Z' },
-    { layer: 'Phase 10 — Blackboard', flag: 'blackboard', flag_value: true, status: 'on & failing', detail: '3 notes stale', last_check_at: '2026-06-29T10:00:01Z' },
+    { layer: 'Phase 4 — Learned Heuristics', flag: 'heuristics', flagValue: true, status: 'on & healthy', detail: '12 active heuristics', lastCheckAt: '2026-06-29T10:00:00Z' },
+    { layer: 'Phase 10 — Blackboard', flag: 'blackboard', flagValue: true, status: 'on & failing', detail: '3 notes stale', lastCheckAt: '2026-06-29T10:00:01Z' },
   ],
 };
 
