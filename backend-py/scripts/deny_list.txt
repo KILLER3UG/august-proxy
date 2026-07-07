@@ -1,4 +1,20 @@
-# Python dunder methods (must never change)
+# snake_to_camel deny-list — identifiers that must never be renamed.
+#
+# Sections:
+#   1. Python dunder methods
+#   2. Pytest fixtures
+#   3. FastAPI / Pydantic internals
+#   4. Environment variable names (UPPER_SNAKE_CASE)
+#   5. Module-level UPPER_SNAKE_CASE constants (false positives)
+#   6. Anthropic / internal `august__*` tool names (Anthropic wire protocol —
+#      the LLM emits these literally and they must stay snake_case on the wire)
+#   7. Common alternative tool-name aliases (legacy/vendor-specific)
+#   8. MCP, browser, desktop, workbench plugin tool names
+#   9. OpenAI / Anthropic adapter external wire fields (token counts, tool ids,
+#      content block event names, etc. — these match the upstream API shapes
+#      and cannot be renamed without breaking LLM interop)
+
+# ── 1. Python dunder methods (must never change) ─────────────────────────
 __init__
 __str__
 __repr__
@@ -58,13 +74,14 @@ __iand__
 __ior__
 __ixor__
 
-# Pytest fixtures
+# ── 2. Pytest fixtures ───────────────────────────────────────────────────
 tmp_path
 monkeypatch
 capsys
 caplog
+request
 
-# FastAPI/Pydantic internals
+# ── 3. FastAPI / Pydantic internals ─────────────────────────────────────
 ConfigDict
 model_validator
 field_validator
@@ -72,10 +89,251 @@ model_dump
 model_validate
 field_serializer
 model_config
+model_fields
 
-# Environment variable names
+# ── 4. Environment variable names (UPPER_SNAKE_CASE) ────────────────────
 AUGUST_DATA_DIR
 AUGUST_BRAIN_SQLITE_FILE
+AUGUST_PROXY_PORT
+AUGUST_PROXY_WORKDIR
+AUGUST_PROXY_ALLOWED_ROOTS
+AUGUST_PROXY_CONTAINER_ROOT
+OPENAI_API_KEY
+ANTHROPIC_API_KEY
+MINIMAX_API_KEY
+NVIDIA_API_KEY
+OPENROUTER_API_KEY
+KILOCODE_API_KEY
+OPENCODE_API_KEY
+OPENCODE_GO_API_KEY
+CLINE_API_KEY
+GATEWAY_API_KEY
+GOOGLE_OAUTH_CLIENT_ID
+GOOGLE_OAUTH_CLIENT_SECRET
+GOOGLE_OAUTH_REDIRECT_URI
+NODE_ENV
+PATH
+HOME
+USERPROFILE
+PYTHONPATH
 
-# Module-level UPPER_SNAKE constants (not true snake_case)
+# ── 5. Module-level UPPER_SNAKE_CASE constants (false positives) ────────
 _WEB_DIST
+
+# ── 6. Internal `august__*` tool names (Anthropic wire protocol) ────────
+# These are the literal tool names the LLM emits. Renaming them breaks
+# tool-call dispatch in `toolDefinitions.py` and `tool-labels.ts`.
+august__api
+august__bash
+august__context_read
+august__create_file
+august__delegate_task
+august__delete
+august__describe_environment
+august__diagnose_proxy
+august__edit
+august__edit_file
+august__forget
+august__get_activity
+august__get_agent_job
+august__grep
+august__learn_subagent
+august__list_agent_jobs
+august__list_agent_registry
+august__list_dir
+august__list_directory
+august__list_proxy_capabilities
+august__load_skill
+august__memory_search
+august__memory_write
+august__read
+august__read_file
+august__recall
+august__remember
+august__replace_text
+august__run_command
+august__run_team
+august__search
+august__search_files
+august__spawn_subagent
+august__submit_plan
+august__system_info
+august__update_todos
+august__web
+august__web_fetch
+august__web_search
+august__write
+august__write_file
+
+# ── 7. Common alternative tool-name aliases (legacy / vendor) ───────────
+august_api
+august_bash
+august_delete
+august_edit
+august_memory_write
+august_read
+august_search
+august_spawn_subagent
+august_web
+august_write
+create_file
+delete_file
+edit_file
+read_file
+view_file
+write_file
+write_to_file
+replace_file_content
+multi_replace_file_content
+replace_text
+create_file
+grep_search
+search_files
+search_web
+run_command
+web_search
+web_fetch
+fetch_url
+execute_url
+read_url_content
+context_read
+memory_search
+memory_write
+fetched_content
+invoke_subagent
+spawn_subagent
+delegate_task
+run_team
+system_info
+describe_environment
+diagnose_proxy
+get_activity
+get_agent_job
+list_agent_jobs
+list_agent_registry
+list_proxy_capabilities
+list_agents
+list_aliases
+list_daemons
+list_skills
+load_skill
+skill_manage
+fact_search
+update_heuristics
+update_state
+end_turn
+
+# ── 8. MCP / browser / desktop / workbench plugin tool names ────────────
+mcp__workspace__bash
+mcp__workspace__web_fetch
+mcp__workspace__web_search
+browser_click
+browser_evaluate
+browser_get_content
+browser_navigate
+browser_open
+browser_screenshot
+browser_scroll
+browser_select
+browser_snapshot
+browser_type
+browser_wait
+desktop_click
+desktop_list_windows
+desktop_mouse_position
+desktop_open_url
+desktop_press_key
+desktop_screen_size
+desktop_screenshot
+desktop_type
+workbench_describe_environment
+workbench_diagnose_proxy
+workbench_get_activity
+workbench_get_agent_job
+workbench_list_agent_jobs
+workbench_list_agent_registry
+workbench_list_proxy_capabilities
+workbench_run_team
+workbench_spawn_subagent
+workbench_system_info
+
+# ── 9. OpenAI / Anthropic adapter external wire fields ─────────────────
+# These match the upstream API schemas; renaming them breaks LLM interop.
+# OpenAI: chat.completion chunks and usage objects
+prompt_tokens
+completion_tokens
+total_tokens
+max_tokens
+reasoning_effort
+tool_calls
+tool_call_id
+finish_reason
+function_call
+function_name
+index
+logprobs
+content_filter
+# Anthropic: messages API
+input_tokens
+output_tokens
+cache_creation_input_tokens
+cache_read_input_tokens
+max_output_tokens
+budget_tokens
+top_p
+top_k
+stop_sequences
+stop_reason
+tool_use_id
+tool_use
+tool_result
+is_error
+message_start
+message_stop
+message_delta
+message_id
+content_block_start
+content_block_stop
+content_block_delta
+content_block
+content_blocks
+input_json_delta
+thinking_delta
+text_delta
+partial_json
+reasoning_content
+accumulated_reasoning
+accumulated_text
+# Bedrock adapter
+adapter_parallel_tools
+has_managed
+has_client_or_unknown
+managed_local_tool_names
+managed_tool_calls
+managed_tool_uses
+# General external
+image_url
+file_path
+include_pattern
+search_pattern
+search_query
+notebook_path
+shell_command
+verification_command
+target_file
+remove_file
+fetch_url
+error_code
+exit_code
+result_count
+job_id
+update_agent
+update_alias
+create_agent
+delete_agent
+create_alias
+delete_alias
+timeout_ms
+api_key
+base_url
+api_mode

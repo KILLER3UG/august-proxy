@@ -86,6 +86,45 @@ export default tseslint.config(
         },
       ],
 
+      // ── snake_case → camelCase enforcement (Phase 0.2 of repo-wide rename) ──
+      //
+      // The built-in `camelcase` rule plus @typescript-eslint/naming-convention
+      // provide the canonical surface: variables, functions, methods, params,
+      // properties must be camelCase; types/classes/interfaces must be
+      // PascalCase. Identifiers allowed by the snakeToCamelMulti deny-list are
+      // mirrored in the camelcase rule's `allow` block above so that ESLint
+      // stays aligned with the migration tool.
+      //
+      // The built-in `camelcase` rule flags snake_case identifiers.
+      // The `allow` list covers wire-protocol identifiers that the LLM emits
+      // literally (Anthropic tool names) and other identifiers that the
+      // snakeToCamelMulti tool already knows to leave alone. We mirror the
+      // deny-list from backend-py/scripts/deny_list.txt here so that ESLint
+      // stays in sync.
+      //
+      // Properties must be camelCase; string keys (object literals like
+      // localStorage key names) follow the in-source migration.
+      'camelcase': [
+        'error',
+        {
+          properties: 'always',
+          allow: [
+            'accumulated_reasoning', 'accumulated_text', 'always', 'anthropic_messages', 'august_composer_draft', 'august_last', 'browser_click', 'browser_evaluate', 'browser_get_content', 'browser_navigate',
+            'browser_open', 'browser_screenshot', 'browser_scroll', 'browser_select', 'browser_snapshot', 'browser_type', 'browser_wait', 'budget_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens',
+            'cancelled', 'chat_messages', 'cline', 'close_drawer', 'codex_responses', 'completed', 'completion_tokens', 'consolidation', 'content_block', 'content_block_delta',
+            'content_block_start', 'content_block_stop', 'content_blocks', 'content_filter', 'default_api', 'default_format', 'delta_engine', 'desktop_click', 'desktop_list_windows', 'desktop_mouse_position',
+            'desktop_open_url', 'desktop_press_key', 'desktop_screen_size', 'desktop_screenshot', 'desktop_type', 'final_output', 'finish_reason', 'focus_composer', 'function_call', 'function_name',
+            'gemini', 'heuristic', 'in_progress', 'input_json_delta', 'input_tokens', 'insert_composer_text', 'is_error', 'kilo_code', 'marked_subagent_only', 'max_output_tokens',
+            'max_tokens', 'mcp__workspace__bash', 'mcp__workspace__web_fetch', 'mcp__workspace__web_search', 'message_delta', 'message_id', 'message_start', 'message_stop', 'mutation_confirmation_result', 'mutation_pending_confirmation',
+            'off', 'open_drawer', 'openai_chat', 'opencode', 'opencode_go', 'output_tokens', 'partial_json', 'prompt_tokens', 'proxy_context', 'proxy_debug',
+            'proxy_incoming', 'proxy_model_route', 'proxy_status', 'proxy_tools', 'proxy_upstream', 'reasoning_content', 'reasoning_effort', 'review', 'session_only', 'set_drawer_section',
+            'set_guard_mode', 'skill_genesis', 'stop_reason', 'stop_sequences', 'subagent_started', 'subagent_thinking', 'text_delta', 'thinking_delta', 'tool_call_id', 'tool_calls',
+            'tool_progress', 'tool_result', 'tool_use', 'tool_use_id', 'top_k', 'top_p', 'total_tokens', 'workbench_describe_environment', 'workbench_diagnose_proxy', 'workbench_get_activity',
+            'workbench_get_agent_job', 'workbench_list_agent_jobs', 'workbench_list_agent_registry', 'workbench_list_proxy_capabilities', 'workbench_run_team', 'workbench_spawn_subagent', 'workbench_system_info',
+          ],
+        },
+      ],
+
       // Acceptable relaxation: namespace conventions vary in this codebase
       '@typescript-eslint/no-namespace': 'off',
       '@typescript-eslint/triple-slash-reference': 'off',
