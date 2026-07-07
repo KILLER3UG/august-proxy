@@ -2,7 +2,12 @@
 /* Drives the left rail, global search, route resolution, and the
  * parallel chat-side workspace panel.
  *
- * 5 categories, 17 sections, all balanced 3–5 items per category.
+ * 5 categories, 16 sections, balanced 3–5 items per category.
+ * Sections are tagged `tier: 'basic' | 'advanced'` so the rail can show
+ * a short beginner list by default and reveal advanced surfaces behind
+ * a "Show advanced" toggle (persisted to localStorage by
+ * `useSettingsAdvancedPreference`).
+ *
  * See `docs/settings-audit.md` for the rationale + section movement
  * history.
  *
@@ -15,6 +20,7 @@
  *   • Every keyword is owned by exactly one section. (Tags like
  *     `usage`, `error`, `host` are no longer claimed by the largest
  *     section just because it has room.)
+ *   • Every section declares a valid `tier` (`basic` or `advanced`).
  */
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -28,7 +34,6 @@ import {
   MessagesSquare,
   Monitor,
   Network,
-  Pencil,
   Plug,
   Radio,
   Search as SearchIcon,
@@ -36,6 +41,10 @@ import {
   SlidersHorizontal,
   TerminalSquare,
 } from 'lucide-react';
+
+/** Visibility tier for the rail. `basic` items are always shown; the
+ *  `advanced` tier is hidden until the user toggles "Show advanced". */
+export type SettingsTier = 'basic' | 'advanced';
 
 /**
  * A single settings screen. `id` doubles as the URL param (`?tab=<id>`),
@@ -49,6 +58,11 @@ export interface SettingsSection {
   description: string;
   icon: LucideIcon;
   category: string;
+  /** Beginner-friendliness tier. `basic` items are always shown in the
+   *  rail; `advanced` items are hidden until the user enables the
+   *  "Show advanced" toggle. Deep links always resolve and reveal the
+   *  targeted section even when advanced is off. */
+  tier: SettingsTier;
   keywords: string[];
   /** Old tab keys that should now open this section. */
   legacyAliases?: string[];
@@ -98,11 +112,14 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
 ] as const;
 
 /**
- * The 17 sections of the Settings left rail.
+ * The 16 sections of the Settings left rail.
  *
  * Every section's `id` is immutable for legacy-alias support. To rename
  * a section, change the `label` and re-export the old label as an
  * alias.
+ *
+ * `tier: 'basic'` items are shown by default. `tier: 'advanced'` items
+ * are hidden until the user enables the "Show advanced" toggle.
  */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   /* ── General ───────────────────────────────────────────────────── */
@@ -112,6 +129,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Gateway status, uptime, RAM, endpoint URLs, and connect-an-app URLs.',
     icon: Activity,
     category: 'general',
+    tier: 'basic',
     // Note: 'gateway' is owned by api-access (the action surface for
     // opening/closing it). 'connect' is owned by api-access.
     // 'connection' is owned by tools-connections. 'ram' is used in
@@ -125,6 +143,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Theme, appearance, text size, presets, keyboard shortcuts, and onboarding.',
     icon: SlidersHorizontal,
     category: 'general',
+    tier: 'basic',
     keywords: ['profile', 'theme', 'appearance', 'shortcuts', 'hotkeys', 'presets', 'onboarding', 'tour', 'language'],
     legacyAliases: ['appearance', 'theme', 'shortcuts', 'hotkeys'],
   },
@@ -134,6 +153,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Archived chat sessions and per-conversation history.',
     icon: MessagesSquare,
     category: 'general',
+    tier: 'basic',
     keywords: ['conversation', 'history', 'archive', 'session', 'chat'],
     legacyAliases: ['archive', 'conversations', 'chat-history', 'session-history'],
   },
@@ -145,6 +165,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Provider cards, model catalog, aliases, quotas, and per-model usage + cost.',
     icon: Boxes,
     category: 'intelligence',
+    tier: 'basic',
     keywords: ['model', 'provider', 'api key', 'quota', 'usage', 'cost', 'token', 'catalog', 'alias', 'context window', 'reasoning', 'effort', 'temperature'],
     legacyAliases: ['models', 'providers'],
   },
@@ -154,6 +175,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Per-turn policy: adaptive rules, agent depth, parallel tools, failure learning.',
     icon: Cpu,
     category: 'intelligence',
+    tier: 'advanced',
     keywords: ['brain', 'orchestrator', 'policy', 'agent depth', 'subagent', 'tool loop', 'parallel'],
     legacyAliases: ['brain'],
   },
@@ -163,6 +185,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Memory store, semantic facts, vector entries, knowledge graph, and system prompt.',
     icon: Network,
     category: 'intelligence',
+    tier: 'advanced',
     keywords: ['memory', 'semantic', 'facts', 'vector', 'db', 'graph', 'knowledge', 'prompt', 'learning', 'guidelines'],
     legacyAliases: ['memory', 'semantic-facts', 'vector-db'],
   },
@@ -174,34 +197,31 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'MCP servers, connected accounts, and external service connections.',
     icon: Plug,
     category: 'tools',
-    // Note: 'skill' is owned by skill-curator and skills-authoring.
-    // 'connection' is owned here; tools-connections also owns the
-    // legacy alias 'connections' (singular 'connection' is a keyword,
-    // plural is the legacy alias).
+    tier: 'basic',
+    // Note: 'skill' is owned by the skills section below. 'connection'
+    // is owned here; tools-connections also owns the legacy alias
+    // 'connections' (singular 'connection' is a keyword, plural is the
+    // legacy alias).
     keywords: ['mcp', 'command', 'connection', 'service', 'oauth', 'account', 'google', 'github', 'slack'],
-    legacyAliases: ['mcp', 'skills', 'commands', 'connections', 'services'],
+    legacyAliases: ['mcp', 'commands', 'connections', 'services'],
   },
   {
-    id: 'skill-curator',
-    label: 'Skill Catalogue',
-    description: 'Skill lifecycle management — usage tracking, auto-stale/archived transitions, consolidation.',
+    id: 'skills',
+    label: 'Skills',
+    description: 'Create, edit, and manage agent skills and their lifecycle (active / stale / archived).',
     icon: BookOpen,
     category: 'tools',
-    // Note: 'archive' and 'usage' are owned by other sections
-    // ('archive' → conversations-history for archived sessions; 'usage' →
-    // model-providers for token cost). Skill archival is reached via
-    // 'curator' or 'stale'.
-    keywords: ['skill', 'curator', 'lifecycle', 'stale', 'consolidate'],
-  },
-  {
-    id: 'skills-authoring',
-    label: 'Skill Authoring',
-    description: 'Create, edit, and manage agent-authored skills.',
-    icon: Pencil,
-    category: 'tools',
-    // Note: 'skill' is owned by skill-curator (the broader catalogue).
-    // Authoring is reached via 'author' or 'create'.
-    keywords: ['create', 'edit', 'delete', 'author', 'manage'],
+    tier: 'basic',
+    // Merged keywords from the old skill-curator + skills-authoring
+    // sections. Authoring actions are reached via 'author' or 'create';
+    // lifecycle actions via 'curator', 'lifecycle', or 'stale'.
+    // 'skill' is owned by this section. 'archive' is owned by
+    // conversations-history (archived sessions), so we don't claim it
+    // here — pin/unpin/curate are reached via their own keywords.
+    keywords: ['skill', 'author', 'create', 'edit', 'delete', 'manage', 'curator', 'lifecycle', 'stale', 'consolidate', 'pin'],
+    // Old ids preserved so /settings/skills-authoring and
+    // /settings/skill-curator deep links still resolve here.
+    legacyAliases: ['skills-authoring', 'skill-curator'],
   },
   {
     id: 'computer-use',
@@ -209,6 +229,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Desktop automation with SOM overlay, cross-platform support, and safe approval workflows.',
     icon: Monitor,
     category: 'tools',
+    tier: 'advanced',
     // Note: 'automation' is owned by agents-automation (cron/automations).
     // Computer Use is reached via 'desktop', 'som', or 'screenshot'.
     keywords: ['computer', 'use', 'desktop', 'som', 'overlay', 'screenshot', 'click', 'type'],
@@ -219,6 +240,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Agent registry, permissions, automations, and approvals.',
     icon: Bot,
     category: 'tools',
+    tier: 'advanced',
     keywords: ['agent', 'automation', 'permission', 'scope', 'approval', 'terminal', 'schedule', 'job'],
     legacyAliases: ['agents', 'agent-permissions', 'automations', 'terminal'],
   },
@@ -230,6 +252,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Audit log, rollback history, post-observation screenshots, traffic, and logs.',
     icon: LineChart,
     category: 'activity',
+    tier: 'advanced',
     // Note: 'screenshot' is owned by computer-use. 'history' is owned
     // by conversations-history. 'security' is owned by computer-access.
     // Post-observation screenshots are reached via 'observation' here.
@@ -242,6 +265,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Readable transcript, raw request/response bodies, and assistant thinking.',
     icon: SearchIcon,
     category: 'activity',
+    tier: 'advanced',
     // Note: 'debug' is owned by developer-console. Conversation Inspector
     // is reached via 'inspector', 'request', 'response', 'thinking'.
     keywords: ['inspector', 'request', 'response', 'body', 'thinking', 'trace', 'finish reason', 'error'],
@@ -253,6 +277,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Real-time stream of proxy, memory, scheduler, and tool events.',
     icon: Radio,
     category: 'activity',
+    tier: 'advanced',
     // Note: 'memory' is owned by memory-knowledge. 'console' is owned
     // by developer-console. 'monitor' is the dominant discoverer here.
     keywords: ['logs', 'live', 'stream', 'events', 'monitor', 'websocket', 'proxy', 'scheduler'],
@@ -265,6 +290,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Filesystem scope, allowed roots, and computer-use app allowlist.',
     icon: ShieldCheck,
     category: 'security',
+    tier: 'advanced',
     keywords: ['filesystem', 'security', 'allowlist', 'computer-use'],
   },
   {
@@ -273,6 +299,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'Open or close the proxy gateway for external clients, manage the API key.',
     icon: Globe,
     category: 'security',
+    tier: 'basic',
     // Note: 'token' is owned by model-providers (token cost tracking).
     // API auth tokens are reached via 'bearer' here.
     keywords: ['api', 'access', 'gateway', 'key', 'external', 'client', 'curl', 'openai', 'anthropic', 'bearer', 'sdk', 'endpoint'],
@@ -283,6 +310,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description: 'August console and advanced debug/reset options (experimental).',
     icon: TerminalSquare,
     category: 'security',
+    tier: 'advanced',
     keywords: ['developer', 'console', 'august', 'debug', 'reset', 'experimental'],
     legacyAliases: ['advanced'],
   },
@@ -324,12 +352,20 @@ export function auditRegistry(): void {
   const icons = new Map<LucideIcon, string[]>();
   const keywords = new Map<string, string>();
   const legacyAliases = new Map<string, string>();
+  const tiers = new Set<string>();
 
   for (const s of SETTINGS_SECTIONS) {
     if (ids.has(s.id)) {
       throw new Error(`settings-registry: duplicate section id "${s.id}"`);
     }
     ids.add(s.id);
+
+    if (s.tier !== 'basic' && s.tier !== 'advanced') {
+      throw new Error(
+        `settings-registry: section "${s.id}" has invalid tier "${s.tier}" — must be "basic" or "advanced"`,
+      );
+    }
+    tiers.add(s.tier);
 
     const iconOwners = icons.get(s.icon) ?? [];
     iconOwners.push(s.id);

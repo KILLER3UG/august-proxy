@@ -9,7 +9,8 @@ import {
   ArrowLeft,
   Activity,
   Boxes,
-  Cpu,
+  ChevronDown,
+  ChevronRight,
   Globe,
   LineChart,
   ShieldCheck,
@@ -19,6 +20,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { WorkspaceNavLink } from './WorkspaceNavLink';
 import { SettingsSearch } from '@/components/settings/SettingsSearch';
+import { useSettingsAdvancedPreference } from '@/hooks/useSettingsAdvancedPreference';
 import { cn } from '@/lib/utils';
 import {
   SETTINGS_SECTIONS,
@@ -58,10 +60,12 @@ export function WorkspaceShell({
 }: WorkspaceShellProps) {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
+  const { showAdvanced, toggle: toggleAdvanced } = useSettingsAdvancedPreference();
 
-  // Resolve each section's category label and icon. Falls back to the
-  // raw `category` string if a section isn't in the settings registry
-  // (e.g., legacy workspace-registry panels still calling this).
+  // Resolve each section's category label, icon, tier, description, and
+  // keywords. Falls back to the raw `category` string if a section isn't
+  // in the settings registry (e.g., legacy workspace-registry panels
+  // still calling this).
   const decorated = useMemo(() => {
     return sections.map((s) => {
       const fromRegistry: SettingsSection | undefined =
@@ -75,6 +79,7 @@ export function WorkspaceShell({
         ...s,
         categoryLabel,
         categoryIcon,
+        tier: fromRegistry?.tier ?? 'basic',
         // Pull description/keywords from the registry when available —
         // gives the search something useful to match.
         description: fromRegistry?.description ?? '',
@@ -83,33 +88,32 @@ export function WorkspaceShell({
     });
   }, [sections]);
 
-  // Group sections by category while preserving registry order.
-  const grouped = useMemo(() => {
-    const m = new Map<string, typeof decorated>();
-    for (const s of decorated) {
-      const k = s.category ?? '';
-      if (!m.has(k)) m.set(k, []);
-      m.get(k)!.push(s);
-    }
-    return m;
-  }, [decorated]);
+  // Apply tier filter: when "Show advanced" is off, hide advanced items
+  // UNLESS the user has deep-linked to one (we keep the active section
+  // visible so legacy URLs continue to work).
+  const tiered = useMemo(() => {
+    if (showAdvanced) return decorated;
+    return decorated.filter((s) => s.tier === 'basic' || s.id === active);
+  }, [decorated, showAdvanced, active]);
 
   // Filter by free-text query (matches label, description, keywords).
+  // Search bypasses the tier filter so users can still find advanced
+  // sections by keyword even when advanced is hidden.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return grouped;
+    const source = q ? decorated : tiered;
     const m = new Map<string, typeof decorated>();
-    for (const [cat, items] of grouped.entries()) {
+    for (const [cat, items] of groupAllByCategory(source).entries()) {
       const kept = items.filter((s) => {
         if (s.label.toLowerCase().includes(q)) return true;
         if (s.description.toLowerCase().includes(q)) return true;
-        if (s.keywords.some((k) => k.toLowerCase().includes(q))) return true;
+        if (s.keywords.some((k) => k.toLowerCase().includes(q)) ) return true;
         return false;
       });
       if (kept.length > 0) m.set(cat, kept);
     }
     return m;
-  }, [grouped, query]);
+  }, [decorated, tiered, query]);
 
   const isFiltering = query.trim().length > 0;
   const totalShown = useMemo(
@@ -169,10 +173,39 @@ export function WorkspaceShell({
             })
           )}
         </nav>
+
+        {/* Bottom: Show advanced toggle. Quiet and always visible so
+         * power users can reveal advanced sections without using search. */}
+        <div className="shrink-0 border-t border-white/[0.06] px-3 py-2">
+          <button
+            type="button"
+            onClick={toggleAdvanced}
+            aria-pressed={showAdvanced}
+            className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition"
+          >
+            <span>{showAdvanced ? 'Hide advanced' : 'Show advanced'}</span>
+            {showAdvanced
+              ? <ChevronDown className="size-3.5" aria-hidden="true" />
+              : <ChevronRight className="size-3.5" aria-hidden="true" />}
+          </button>
+        </div>
       </aside>
 
       {/* Main content — each section renders its own h1 inside */}
       <div className="flex-1 min-w-0 overflow-auto">{children}</div>
     </div>
   );
+}
+
+/** Re-group a flat section list by category (used by search to bypass
+ *  the tier filter). Generic so callers can pass either the full
+ *  decorated list or the tier-filtered one. */
+function groupAllByCategory<T extends { category?: string }>(items: ReadonlyArray<T>) {
+  const m = new Map<string, T[]>();
+  for (const s of items) {
+    const k = s.category ?? '';
+    if (!m.has(k)) m.set(k, []);
+    m.get(k)!.push(s);
+  }
+  return m;
 }

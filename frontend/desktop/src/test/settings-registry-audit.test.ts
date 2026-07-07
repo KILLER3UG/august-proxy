@@ -4,6 +4,7 @@
  *   - every section icon is unique within the registry
  *   - every keyword is owned by exactly one section
  *   - every section.category references a declared category id
+ *   - every section declares a valid `tier` (`basic` or `advanced`)
  *   - legacy alias resolution is stable
  *   - the 5/3-5/3 distribution is preserved (no singleton categories)
  *
@@ -37,8 +38,8 @@ describe('settings-registry audit', () => {
     }
   });
 
-  it('has 17 sections distributed across categories', () => {
-    expect(SETTINGS_SECTIONS).toHaveLength(17);
+  it('has 16 sections distributed across categories', () => {
+    expect(SETTINGS_SECTIONS).toHaveLength(16);
   });
 
   it('every section id is unique', () => {
@@ -65,6 +66,17 @@ describe('settings-registry audit', () => {
         owners.set(key, s.id);
       }
     }
+  });
+
+  it('every section declares a valid tier', () => {
+    for (const s of SETTINGS_SECTIONS) {
+      expect(['basic', 'advanced'], `${s.id} has invalid tier`).toContain(s.tier);
+    }
+  });
+
+  it('has at least 4 basic sections (so the beginner rail is useful)', () => {
+    const basicCount = SETTINGS_SECTIONS.filter((s) => s.tier === 'basic').length;
+    expect(basicCount).toBeGreaterThanOrEqual(4);
   });
 
   it('every section.category references a declared category', () => {
@@ -103,9 +115,15 @@ describe('legacy alias resolution', () => {
     ['services',         'tools-connections'],
     // tools-connections aliases
     ['mcp',             'tools-connections'],
-    ['skills',          'tools-connections'],
     ['commands',        'tools-connections'],
     ['connections',     'tools-connections'], // first-writer wins over system-health
+    // Note: the historical 'skills' alias for tools-connections has
+    // been retired now that there is a real 'skills' section id.
+    // resolveLegacyTab('skills') returns 'skills' (its own id).
+    // Skills merge: the two old skill sections now resolve to the
+    // unified `skills` section (id preserved in legacyAliases).
+    ['skill-curator',   'skills'],
+    ['skills-authoring','skills'],
     // observability aliases
     ['traffic-activity','observability'],
     ['overview',        'observability'],

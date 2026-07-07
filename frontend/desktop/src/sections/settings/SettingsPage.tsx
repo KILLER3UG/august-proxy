@@ -27,8 +27,7 @@ import { DeveloperConsoleSection } from './DeveloperConsoleSection';
 import { ComputerAccessSettings } from './ComputerAccessSettings';
 import { ObservabilitySection } from './ObservabilitySection';
 import { BackendMonitorSection } from './BackendMonitorSection';
-import { CuratorSection } from './CuratorSection';
-import { SkillsAuthoringSection } from './SkillsAuthoringSection';
+import { SkillsSection } from './SkillsSection';
 import { ComputerUseSection } from './ComputerUseSection';
 import { ExternalAccessSection } from './ExternalAccessSection';
 
@@ -76,8 +75,9 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   // resolveLegacyTab + legacyAliases in the registry), so no entry here.
   observability: ObservabilitySectionWrapper,
   'backend-monitor': BackendMonitorWrapper,
-  'skill-curator': CuratorWrapper,
-  'skills-authoring': SkillsAuthoringWrapper,
+  'skill-curator': SkillsWrapper,
+  'skills-authoring': SkillsWrapper,
+  skills: SkillsWrapper,
   'computer-use': ComputerUseWrapper,
   'api-access': ExternalAccessWrapper,
 };
@@ -98,8 +98,7 @@ function ToolsConnectionsWrapper() { return <ToolsConnectionsSection />; }
 function ConversationsHistoryWrapper() { return <ConversationsHistorySection />; }
 function AgentsAutomationWrapper() { return <AgentsAutomationSection />; }
 function DeveloperConsoleWrapper() { return <DeveloperConsoleSection />; }
-function CuratorWrapper() { return <CuratorSection />; }
-function SkillsAuthoringWrapper() { return <SkillsAuthoringSection />; }
+function SkillsWrapper() { return <SkillsSection />; }
 function ComputerUseWrapper() { return <ComputerUseSection />; }
 
 /** Placeholder for sections not yet wired. With all 10 entries now
