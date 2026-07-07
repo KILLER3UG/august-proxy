@@ -59,11 +59,15 @@ async def generateExam(body: dict[str, object]):
     firstQ = examService.stripAnswer({'id': first['id'], 'examId': examId, 'position': first['position'], 'stem': first['stem'], 'options': json.loads(first['options'])})
     return {'examId': examId, 'question': firstQ, 'totalQuestions': len(questions)}
 
-@router.post('/{exam_id}/questions')
+@router.post('/{examId}/questions')
 async def addQuestion(examId: int, body: dict[str, object]):
     """Add a user-requested question. The model authors it (origin='user-requested')."""
     requestText = (body.get('request') or '').strip()
     afterPosition = body.get('after_position')
+    model = body.get('model') or ''
+    if isinstance(model, dict):
+        model = model.get('id', '')
+    provider = body.get('provider') or ''
     conn = _db()
     exam = conn.execute('SELECT topic FROM exams WHERE id = ?', (examId,)).fetchone()
     if not exam:
@@ -77,7 +81,7 @@ async def addQuestion(examId: int, body: dict[str, object]):
         except Exception:
             continue
     try:
-        q = await examService.generateOneQuestion(topic=topic, requestText=requestText, similarTo=similar)
+        q = await examService.generateOneQuestion(topic=topic, requestText=requestText, similarTo=similar, model=model, provider=provider)
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     if afterPosition is not None:
@@ -92,7 +96,7 @@ async def addQuestion(examId: int, body: dict[str, object]):
     newQ = examService.stripAnswer({'id': questionId, 'examId': examId, 'position': nextPos, 'stem': q['stem'], 'options': q['options']})
     return {'position': nextPos, 'questionId': questionId, 'question': newQ}
 
-@router.get('/{exam_id}/question/{position}')
+@router.get('/{examId}/question/{position}')
 async def getQuestion(examId: int, position: int):
     """Fetch one question. NEVER leaks correct_index or rationale (the authoring invariant)."""
     conn = _db()
@@ -101,7 +105,7 @@ async def getQuestion(examId: int, position: int):
         raise HTTPException(status_code=404, detail='Question not found')
     return examService.stripAnswer({'id': q['id'], 'examId': examId, 'position': position, 'stem': q['stem'], 'options': json.loads(q['options'])})
 
-@router.post('/{exam_id}/answer')
+@router.post('/{examId}/answer')
 async def answerQuestion(examId: int, body: dict[str, object]):
     """Record an answer for a question. Returns correctness + rationale."""
     questionId = body.get('questionId')
@@ -113,9 +117,9 @@ async def answerQuestion(examId: int, body: dict[str, object]):
     isCorrect = 1 if selectedIndex == q['correctIndex'] else 0
     conn.execute("INSERT INTO examAttempts (examId, questionId, selectedIndex, isCorrect, answeredAt) VALUES (?, ?, ?, ?, datetime('now'))", (examId, questionId, selectedIndex, isCorrect))
     conn.commit()
-    return {'isCorrect': bool(isCorrect), 'correctIndex': q['correct_index'], 'rationale': q['rationale']}
+    return {'isCorrect': bool(isCorrect), 'correctIndex': q['correctIndex'], 'rationale': q['rationale']}
 
-@router.post('/{exam_id}/help')
+@router.post('/{examId}/help')
 async def helpQuestion(examId: int, body: dict[str, object]):
     """Explain a question via Prefrontal without revealing the answer in the banner state."""
     questionId = body.get('questionId')

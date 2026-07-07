@@ -142,10 +142,13 @@ export function ExamHost(props: ExamHostProps) {
   const handleAddQuestion = useCallback(
     async (request: string) => {
       if (!examId) return;
+      const body: Record<string, unknown> = { request };
+      if (sessionModel) body.model = sessionModel;
+      if (sessionProvider) body.provider = sessionProvider;
       const resp = await fetch(`${API_BASE}/${examId}/questions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request }),
+        body: JSON.stringify(body),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
@@ -155,7 +158,7 @@ export function ExamHost(props: ExamHostProps) {
         setTotal((t) => (t > 0 ? t + 1 : t));
       }
     },
-    [examId],
+    [examId, sessionModel, sessionProvider],
   );
 
   if (loading) {
@@ -181,6 +184,7 @@ export function ExamHost(props: ExamHostProps) {
 
   return (
     <ExamBanner
+      key={question.id}
       examId={examId}
       question={question}
       onAnswer={handleAnswer}

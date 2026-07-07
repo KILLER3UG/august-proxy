@@ -137,14 +137,14 @@ async def generateQuestions(topic: str, count: int, difficulty: str, context: st
         raise ValueError(f'Prefrontal produced {len(valid)} valid question(s); need {count}')
     return valid[:count]
 
-async def generateOneQuestion(topic: str, requestText: str, similarTo: list[dict] | None=None) -> dict:
+async def generateOneQuestion(topic: str, requestText: str, similarTo: list[dict] | None=None, model: str='', provider: str='') -> dict:
     """Generate a single question based on a user request (for /api/exam/{id}/questions).
 
     Accepts either a JSON object (preferred — matches the "one question" intent)
     or a JSON array with one element.
     """
-    prompt = _buildPrompt(topic=f'{topic} (specific ask: {requestText})', count=1, difficulty='medium', similar_to=similarTo)
-    raw = await _callPrefrontal(prompt)
+    prompt = _buildPrompt(topic=f'{topic} (specific ask: {requestText})', count=1, difficulty='medium', similarTo=similarTo)
+    raw = await _callPrefrontal(prompt, model=model, provider=provider)
     if not raw:
         raise ValueError('Prefrontal returned empty response')
     cleaned = _stripCodeFences(raw)
