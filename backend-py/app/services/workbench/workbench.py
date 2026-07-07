@@ -326,7 +326,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
         cognitiveBudget = computeBudget(msgsForBudget, model=modelName or None, provider=providerName or None)
     except Exception:
         pass
-    sessionDict = {'goal': session.goal, 'plan': session.plan.to_dict() if hasattr(session.plan, 'to_dict') else session.plan, 'planApproved': session.planApproved, 'workspace_path': workspacePath, 'vcs': vcsInfo, 'brain_policy': brainPolicy, 'cognitive_budget': cognitiveBudget, 'memory_stats': memoryStats, 'whats_new': whatsNew, 'skills_manifest': skillsManifest, 'execution_state': getattr(session, '_execution_state', None), 'working_memory': getattr(session, '_working_memory', None), 'subconscious_updates': _buildDaemonUpdates(getattr(session, 'id', ''))}
+    sessionDict = {'goal': session.goal, 'plan': session.plan.to_dict() if hasattr(session.plan, 'to_dict') else session.plan, 'planApproved': session.planApproved, 'workspacePath': workspacePath, 'vcs': vcsInfo, 'brainPolicy': brainPolicy, 'cognitiveBudget': cognitiveBudget, 'memoryStats': memoryStats, 'whatsNew': whatsNew, 'skillsManifest': skillsManifest, 'executionState': getattr(session, '_execution_state', None), 'workingMemory': getattr(session, '_working_memory', None), 'subconsciousUpdates': _buildDaemonUpdates(getattr(session, 'id', ''))}
     for k in ('core_memory', 'learned_heuristics', 'auto_memories'):
         if k in memory:
             sessionDict[k] = memory[k]
