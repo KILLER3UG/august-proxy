@@ -24,8 +24,14 @@ async function jsonRequest<T>(path: string, body: unknown): Promise<T | null> {
 
 export const liveClient = {
   async startSession(): Promise<string> {
-    const data = await jsonRequest<{ sessionId?: string }>('/session', { action: 'start' });
-    return data?.sessionId ?? '';
+    // Accept both `sessionId` (camelCase) and `session_id` (snake_case,
+    // returned by the v1 backend) so test fixtures and older clients
+    // don't need to keep track of which shape the server emits today.
+    const data = await jsonRequest<{ sessionId?: string; session_id?: string }>(
+      '/session',
+      { action: 'start' },
+    );
+    return data?.sessionId ?? data?.session_id ?? '';
   },
 
   async stopSession(sessionId: string): Promise<void> {

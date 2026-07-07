@@ -2,7 +2,7 @@
 /* The main view. User/assistant messages with proper avatars + bubbles.  */
 /* Tool calls render as inline cards. Right rail optional.                  */
 
-import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type KeyboardEvent } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type Dispatch, type KeyboardEvent, type SetStateAction } from 'react';
 import { Send, Paperclip, Mic, AtSign, Plus, ChevronDown, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw } from 'lucide-react';
 import { cn, formatClockTime, workspaceBaseName } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
@@ -37,6 +37,7 @@ import { CommandHelpCard } from './CommandHelpCard';
 import {
   voiceCommandRegistry,
   getDisplayCommands,
+  type ChatMessageLite,
   type VoiceCommandCardProps,
 } from '@/api/voice/registry';
 import { voiceCommandEvents, type VoiceCommandEvent } from '@/api/voice/registry-events';
@@ -114,6 +115,72 @@ let visibleSessionId: string | null = null;
 let visibleGeneration = 0;
 
 const STREAM_UPDATE_INTERVAL_MS = 24;
+
+/**
+ * Maps file extensions to the corresponding `marked` / highlight.js
+ * language identifier. Used when shaping attachment content into the
+ * user message body so the chat-area renderer can syntax-color the
+ * fenced code block. Entries are kept in sync with the extensions
+ * recognised by `lib/file-reader.ts`.
+ */
+const CODE_LANG_MAP: Record<string, string> = {
+  ts: 'typescript',
+  tsx: 'tsx',
+  js: 'javascript',
+  jsx: 'jsx',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  py: 'python',
+  rb: 'ruby',
+  rs: 'rust',
+  go: 'go',
+  java: 'java',
+  kt: 'kotlin',
+  swift: 'swift',
+  c: 'c',
+  h: 'c',
+  cpp: 'cpp',
+  cxx: 'cpp',
+  hpp: 'cpp',
+  cs: 'csharp',
+  php: 'php',
+  sh: 'bash',
+  bash: 'bash',
+  zsh: 'bash',
+  ps1: 'powershell',
+  sql: 'sql',
+  json: 'json',
+  jsonc: 'json',
+  yaml: 'yaml',
+  yml: 'yaml',
+  toml: 'ini',
+  ini: 'ini',
+  xml: 'xml',
+  html: 'html',
+  htm: 'html',
+  css: 'css',
+  scss: 'scss',
+  less: 'less',
+  md: 'markdown',
+  mdx: 'markdown',
+  vue: 'vue',
+  svelte: 'svelte',
+  dart: 'dart',
+  lua: 'lua',
+  r: 'r',
+  graphql: 'graphql',
+  gql: 'graphql',
+};
+
+/**
+ * Resolve the highlight language id for an attached file's filename.
+ * Returns an empty string when the extension is not a known code type
+ * — `marked` interprets ` ``` ` (no language) as a plain code block.
+ */
+function codeLangFor(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  return CODE_LANG_MAP[ext] ?? '';
+}
 
 // NOTE: ChatMessage / MessageBlock / FileAttachment were historically
 // defined here. After the Phase 2 type-centralisation refactor they live
@@ -695,10 +762,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           break;
         }
         case 'push-message': {
-          setMessages(prev => [...prev, event.message as ChatMessage]);
+          setMessages(prev => [...prev, event.message as unknown as ChatMessage]);
           persistMessages(
             sessionId,
-            [...messagesRef.current, event.message as ChatMessage],
+            [...messagesRef.current, event.message as unknown as ChatMessage],
           );
           break;
         }
@@ -1281,19 +1348,24 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return () => clearTimeout(timer);
   }, [streaming, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function send() {
+  async function send(textOverride?: string) {
     if (!sessionId || loadedSessionId !== sessionId) return;
 
-    let text = input.trim();
+    let text = (textOverride ?? input).trim();
     if (!text && attachments.length === 0) return;
 
     if (attachments.length > 0) {
-      // Build rich attachment sections with extracted content
+      // Build rich attachment sections with extracted content. Each
+      // attachment becomes a `📄 **name**` header followed by the
+      // extracted text wrapped in a fenced code block (with an inferred
+      // language so the chat-area renderer can syntax-color it). The
+      // chip in the bubble already shows the icon + name, so we don't
+      // duplicate size/status here.
       const sections = attachments.map(a => {
-        const icon = getFileIcon(a.name);
-        const header = `📄 **${a.name}** (${a.size})`;
+        const header = `📄 **${a.name}**`;
         if (a.type === 'text' && a.content) {
-          return `${header}\n\`\`\`\n${a.content}\n\`\`\``;
+          const lang = codeLangFor(a.name);
+          return `${header}\n\`\`\`${lang}\n${a.content}\n\`\`\``;
         }
         if (a.type === 'image' && a.dataUrl) {
           return `${header}\n[Image attached — available for vision analysis]`;
@@ -1322,12 +1394,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       const voiceCmd = voiceCommandRegistry.getBySlashCommand('/' + cmd);
       if (voiceCmd) {
         try {
+          // Voice command handlers accept the lite `ChatMessageLite[]` view;
+          // cast across the boundary since the full `ChatMessage[]` carries
+          // every lite field plus extras (timestamp, attachments, blocks, …).
           const handlerResult = voiceCmd.handler({
             sessionId: sessionId ?? '',
             transcript: text,
             args: arg,
-            messages,
-            setMessages,
+            messages: messages as unknown as ChatMessageLite[],
+            setMessages: setMessages as unknown as Dispatch<SetStateAction<ChatMessageLite[]>>,
           });
           void Promise.resolve(handlerResult).catch(err => {
             // eslint-disable-next-line no-console
@@ -1617,11 +1692,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       const matched = voiceCommandRegistry.matchCommand(finalTranscript);
       if (matched) {
         try {
+          // Same boundary cast as the slash-command path — see comment there.
           const handlerResult = matched.handler({
             sessionId: sessionId ?? '',
             transcript: finalTranscript,
-            messages,
-            setMessages,
+            messages: messages as unknown as ChatMessageLite[],
+            setMessages: setMessages as unknown as Dispatch<SetStateAction<ChatMessageLite[]>>,
           });
           // Fire-and-forget async handlers.
           void Promise.resolve(handlerResult).catch(err => {
@@ -1879,16 +1955,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   {attachments.map((file, i) => {
                     const fileIcon = getFileIcon(file.name);
                     const IconComponent = fileIcon.Icon;
-                    const statusDot = file.type === 'text' ? 'text-green-500' : file.type === 'image' ? 'text-blue-500' : 'text-yellow-500';
                     return (
                       <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted border border-border text-[10.5px]">
                         <IconComponent size={12} color={fileIcon.color} />
                         <span className="font-mono truncate max-w-[150px]">{file.name}</span>
-                        <span className="text-[9px] text-muted-foreground">({file.size})</span>
-                        <span className={`size-1.5 rounded-full ${statusDot}`} title={file.type === 'text' ? 'Content extracted' : file.type === 'image' ? 'Image attached' : 'Unsupported'} />
                         <button
                           onClick={() => removeAttachment(i)}
                           className="p-0.5 hover:bg-background rounded text-muted-foreground hover:text-foreground transition"
+                          aria-label={`Remove ${file.name}`}
                         >
                           <X className="size-2.5" />
                         </button>
@@ -1912,6 +1986,20 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-xs outline-none placeholder:text-muted-foreground"
                 style={{ minHeight: '64px', maxHeight: '360px' }}
               />
+
+              {/* Live markdown preview — mirrors the chat-area render
+                  pipeline so tables, code blocks, lists, etc. look the
+                  same as they will in the bubble. Hidden when the input
+                  is empty so it never competes with the cursor. */}
+              {input.trim() && (
+                <div
+                  className="border-t border-border bg-muted/10 max-h-[280px] overflow-y-auto px-4 py-2.5 text-foreground"
+                  aria-label="Message preview"
+                  data-testid="composer-preview"
+                >
+                  <Markdown content={input} />
+                </div>
+              )}
             </>
           )}
 
@@ -2026,7 +2114,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   <StopCircle className="size-3" /> Stop
                 </Button>
               ) : (
-                <Button onClick={send} disabled={!sessionId || loadedSessionId !== sessionId || (!input.trim() && attachments.length === 0)} size="sm">
+                <Button onClick={() => send()} disabled={!sessionId || loadedSessionId !== sessionId || (!input.trim() && attachments.length === 0)} size="sm">
                   <Send className="size-3" />
                   Send
                   <kbd className="ml-1 rounded bg-muted/20 border border-border/20 px-1 text-[10px] font-mono">↵</kbd>
@@ -2234,11 +2322,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     })}
 
                     {/* Streaming indicator — shown at the bottom of the last model message */}
-                    {streaming && messages.length > 0 && (
-                      <div className="px-1 py-1">
-                        <WorkingIndicator />
-                      </div>
-                    )}
+                    {streaming && messages.length > 0 && <WorkingIndicator />}
 
                     {/* v4 Voice Command UI / Phase 1C: Inline model picker (registry-driven) */}
                     {modelPickerActive && (
@@ -2542,7 +2626,7 @@ function MessageBubble({
         // own UI. If the card doesn't call onDismiss, the message stays.
       };
       const props: VoiceCommandCardProps = {
-        sessionId,
+        sessionId: sessionId ?? '',
         onDismiss: dismiss,
         context: message.context,
       };
@@ -2700,13 +2784,10 @@ function MessageBubble({
                     {message.attachments.map((a, i) => {
                       const fi = getFileIcon(a.name);
                       const IconComp = fi.Icon;
-                      const dot = a.type === 'text' ? 'bg-green-500' : a.type === 'image' ? 'bg-blue-500' : 'bg-yellow-500';
                       return (
                         <div key={i} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/60 border border-border/40 text-[10px] font-mono">
                           <IconComp size={11} color={fi.color} />
                           <span className="truncate max-w-[130px]">{a.name}</span>
-                          <span className="text-muted-foreground">({a.size})</span>
-                          <span className={`size-1 rounded-full ${dot}`} />
                         </div>
                       );
                     })}
@@ -2956,9 +3037,12 @@ function MessageBubble({
                 })()}
               </AnimatePresence>
             )}
-            {!isUser && message.changedFiles && message.changedFiles.files.length > 0 && (
-              <ChangedFilesCard changes={message.changedFiles} />
-            )}
+            {!isUser && (() => {
+              const cf = message.changedFiles as { files?: unknown[] } | undefined;
+              return cf && Array.isArray(cf.files) && cf.files.length > 0
+                ? <ChangedFilesCard changes={message.changedFiles as GitDiffResult} />
+                : null;
+            })()}
           </div>
           {/* Action buttons below assistant message */}
           <div className={cn(

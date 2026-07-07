@@ -4,6 +4,12 @@
  * the backend currently emits, and rejects malformed payloads so we
  * catch drift early. Each `it()` block constructs a minimal valid
  * payload for one variant, parses it, and asserts the round-trip.
+ *
+ * Schema shape (mirrors the backend SSE wire format):
+ *   - Type discriminator is camelCase (`toolUse`, `toolCall`,
+ *     `toolResult`, `userMessageInjected`, …).
+ *   - Event fields are flat on the top-level object; only a handful
+ *     of variants (`session`, `btw`) carry a `data` sub-object.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -13,7 +19,7 @@ describe('WorkbenchEventSchema — variant round-trip', () => {
   it('accepts a thinking event', () => {
     const ok = WorkbenchEventSchema.safeParse({
       type: 'thinking',
-      data: { content: 'reasoning...' },
+      content: 'reasoning...',
     });
     expect(ok.success).toBe(true);
   });
@@ -21,31 +27,36 @@ describe('WorkbenchEventSchema — variant round-trip', () => {
   it('accepts a text event', () => {
     const ok = WorkbenchEventSchema.safeParse({
       type: 'text',
-      data: { content: 'Hello world' },
+      content: 'Hello world',
     });
     expect(ok.success).toBe(true);
   });
 
   it('accepts a tool_use event with free-form input', () => {
     const ok = WorkbenchEventSchema.safeParse({
-      type: 'tool_use',
-      data: { id: 'call_1', name: 'august__read_file', input: { path: '/tmp/x' } },
+      type: 'toolUse',
+      id: 'call_1',
+      name: 'august__read_file',
+      input: { path: '/tmp/x' },
     });
     expect(ok.success).toBe(true);
   });
 
   it('accepts a tool_call event with optional input', () => {
     const ok = WorkbenchEventSchema.safeParse({
-      type: 'tool_call',
-      data: { id: 'call_2', name: 'august__ls' },
+      type: 'toolCall',
+      id: 'call_2',
+      name: 'august__ls',
     });
     expect(ok.success).toBe(true);
   });
 
   it('accepts a tool_result event with unknown content', () => {
     const ok = WorkbenchEventSchema.safeParse({
-      type: 'tool_result',
-      data: { id: 'call_1', content: { ok: true, lines: 42 }, is_error: false },
+      type: 'toolResult',
+      id: 'call_1',
+      name: 'august__ls',
+      content: { ok: true, lines: 42 },
     });
     expect(ok.success).toBe(true);
   });
@@ -87,26 +98,24 @@ describe('WorkbenchEventSchema — variant round-trip', () => {
   it('accepts a compaction event with all metrics', () => {
     const ok = WorkbenchEventSchema.safeParse({
       type: 'compaction',
-      data: {
-        headCount: 5,
-        tailCount: 10,
-        compressedCount: 100,
-        originalTokens: 12000,
-        compressedTokens: 4000,
-      },
+      headCount: 5,
+      tailCount: 10,
+      compressedCount: 100,
+      originalTokens: 12000,
+      compressedTokens: 4000,
     });
     expect(ok.success).toBe(true);
   });
 
   it('accepts a done event with empty data', () => {
-    const ok = WorkbenchEventSchema.safeParse({ type: 'done', data: {} });
+    const ok = WorkbenchEventSchema.safeParse({ type: 'done' });
     expect(ok.success).toBe(true);
   });
 
   it('accepts an error event', () => {
     const ok = WorkbenchEventSchema.safeParse({
       type: 'error',
-      data: { message: 'upstream timeout' },
+      message: 'upstream timeout',
     });
     expect(ok.success).toBe(true);
   });
@@ -115,8 +124,8 @@ describe('WorkbenchEventSchema — variant round-trip', () => {
 describe('WorkbenchEventSchema — drift detection', () => {
   it('rejects a tool_use event missing required name', () => {
     const bad = WorkbenchEventSchema.safeParse({
-      type: 'tool_use',
-      data: { id: 'call_1' /* missing name */ },
+      type: 'toolUse',
+      id: 'call_1', // missing name
     });
     expect(bad.success).toBe(false);
   });
@@ -132,7 +141,7 @@ describe('WorkbenchEventSchema — drift detection', () => {
   it('rejects a thinking event with non-string content', () => {
     const bad = WorkbenchEventSchema.safeParse({
       type: 'thinking',
-      data: { content: 42 },
+      content: 42,
     });
     expect(bad.success).toBe(false);
   });

@@ -39,7 +39,7 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
       provider,
       items: items.filter(
         m =>
-          m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (m.name ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
           m.provider.toLowerCase().includes(searchQuery.toLowerCase()),
       ),
     }));

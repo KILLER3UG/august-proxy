@@ -11,7 +11,7 @@
  */
 import type { LucideIcon } from 'lucide-react';
 import {
-  Bars3,
+  AlignJustify,
   Boxes,
   Brain,
   Search as SearchIcon,
@@ -42,7 +42,7 @@ const WORKSPACE_ICONS: Record<string, LucideIcon> = {
   'profile-preferences':    SlidersHorizontal,
   'model-providers':        Boxes,
   'memory-knowledge':       Brain,
-  'observability':          Bars3,
+  'observability':          AlignJustify,
   'conversation-inspector': SearchIcon,
 };
 

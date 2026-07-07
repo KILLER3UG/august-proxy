@@ -106,7 +106,7 @@ function fmtContextWindow(n?: number) {
 }
 
 export function WorkspaceModelsSection() {
-  const [subtab, setSubtab] = useState<'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection' | 'fleet'>('providers');
+  const [subtab, setSubtab] = useState<'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection' | 'fleet' | 'live'>('providers');
 
   return (
     <div className="px-8 py-6 space-y-4 h-full flex flex-col">

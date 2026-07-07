@@ -82,15 +82,18 @@ describe('v4.1 — ModelFleetTab', () => {
 
     await waitFor(() => {
       const putCall = fetchMock.mock.calls.find(
-        ([, init]: [string, RequestInit | undefined]) => init?.method === 'PUT',
+        (call) => {
+          const [url, init] = call as unknown as [string, RequestInit | undefined];
+          return typeof url === 'string' && url.includes('/api/config/model-fleet') && init?.method === 'PUT';
+        },
       );
       expect(putCall).toBeDefined();
       // Verify the PUT URL and that the body mutates hippocampus to ''.
       // (The frontend sends the entire edit state; the backend merges via
       // dict.update so any roles not in the body keep their values.)
-      const [putUrl, putInit] = putCall!;
+      const [putUrl, putInit] = putCall as unknown as [string, RequestInit];
       expect(putUrl).toContain('/api/config/model-fleet');
-      const body = JSON.parse(putInit!.body as string);
+      const body = JSON.parse(putInit.body as string);
       expect(body.hippocampus).toBe('');
     });
   });

@@ -50,7 +50,30 @@ export function LearningTab() {
         const resp = await fetch(`${API_BASE}/learning`);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const json = await resp.json();
-        if (!cancelled) setData(json);
+        // Normalize backend snake_case → camelCase used by the component.
+        // The backend currently emits snake_case keys (see v3 brain API);
+        // this adapter lets the component rely on camelCase without each
+        // render site doing the conversion.
+        const normalized: LearningData = {
+          heuristics: json.heuristics ?? [],
+          heuristicCount: json.heuristicCount ?? json.heuristic_count ?? 0,
+          coreFacts: json.coreFacts ?? json.core_facts ?? null,
+          userProfile: json.userProfile ?? json.user_profile ?? null,
+          autoMemories: json.autoMemories ?? json.auto_memories ?? [],
+          sleepCycle: {
+            lastRunAt: json.sleepCycle?.lastRunAt ?? json.sleep_cycle?.last_run_at ?? null,
+            lastMerged: json.sleepCycle?.lastMerged ?? json.sleep_cycle?.last_merged ?? 0,
+            lastPromoted: json.sleepCycle?.lastPromoted ?? json.sleep_cycle?.last_promoted ?? 0,
+            lastDeleted: json.sleepCycle?.lastDeleted ?? json.sleep_cycle?.last_deleted ?? 0,
+          },
+          deltaEngine: {
+            consentGranted: json.deltaEngine?.consentGranted ?? json.delta_engine?.consent_granted ?? false,
+            queueSize: json.deltaEngine?.queueSize ?? json.delta_engine?.queue_size ?? 0,
+            lastFlushAt: json.deltaEngine?.lastFlushAt ?? json.delta_engine?.last_flush_at ?? null,
+          },
+          pendingSkills: json.pendingSkills ?? json.pending_skills ?? [],
+        };
+        if (!cancelled) setData(normalized);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
       }
@@ -166,12 +189,12 @@ export function LearningTab() {
           <Clock className="size-4 text-primary" />
           <h3 className="font-medium text-sm">Sleep cycle</h3>
         </div>
-        {data.sleepCycle.last_run_at ? (
+        {data.sleepCycle.lastRunAt ? (
           <p className="text-xs text-muted-foreground">
-            Last run: {new Date(data.sleepCycle.last_run_at).toLocaleString()}
+            Last run: {new Date(data.sleepCycle.lastRunAt).toLocaleString()}
             <br />
-            {data.sleepCycle.last_merged} merges, {data.sleepCycle.last_promoted} promotions,{' '}
-            {data.sleepCycle.last_deleted} deletions
+            {data.sleepCycle.lastMerged} merges, {data.sleepCycle.lastPromoted} promotions,{' '}
+            {data.sleepCycle.lastDeleted} deletions
           </p>
         ) : (
           <p className="text-xs text-muted-foreground">No consolidation runs yet.</p>
@@ -185,13 +208,13 @@ export function LearningTab() {
           <h3 className="font-medium text-sm">Delta engine</h3>
         </div>
         <p className="text-xs text-muted-foreground">
-          Queue: {data.deltaEngine.queue_size} ·{' '}
-          Consent: {data.deltaEngine.consent_granted ? 'granted' : 'not granted'}
+          Queue: {data.deltaEngine.queueSize} ·{' '}
+          Consent: {data.deltaEngine.consentGranted ? 'granted' : 'not granted'}
         </p>
         <p className="text-[10px] text-muted-foreground">
           Last flush:{' '}
-          {data.deltaEngine.last_flush_at
-            ? new Date(data.deltaEngine.last_flush_at).toLocaleString()
+          {data.deltaEngine.lastFlushAt
+            ? new Date(data.deltaEngine.lastFlushAt).toLocaleString()
             : 'never'}
         </p>
       </Card>

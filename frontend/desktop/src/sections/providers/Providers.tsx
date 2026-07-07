@@ -147,7 +147,10 @@ export function Providers() {
     try {
       await providersApi.create({
         name: newProviderName,
-        template: selectedTemplate || undefined,
+        // `selectedTemplate` is UI-only scaffolding for future preset
+        // support; ProviderCreate does not yet accept it, so drop it
+        // when undefined.
+        ...(selectedTemplate ? { template: selectedTemplate } : {}),
         apiKey: newProviderKey,
         apiFormat: 'openai-chat',
         baseUrl: '',

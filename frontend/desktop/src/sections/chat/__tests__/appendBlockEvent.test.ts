@@ -13,7 +13,7 @@ import { appendBlockEvent } from '../chat-stream-manager';
 describe('appendBlockEvent — basic event merging', () => {
   it('creates a normal tool_call block for august__submit_plan', () => {
     const blocks = appendBlockEvent([], {
-      type: 'tool_call',
+      type: 'toolCall',
       name: 'august__submit_plan',
       id: 'call_1',
       context: '{}',
@@ -26,7 +26,7 @@ describe('appendBlockEvent — basic event merging', () => {
 
   it('does NOT set isRevisedPlan for non-submit_plan tool calls', () => {
     const blocks = appendBlockEvent([], {
-      type: 'tool_call',
+      type: 'toolCall',
       name: 'august__write_file',
       id: 'call_2',
       context: '{}',
@@ -48,35 +48,35 @@ describe('appendBlockEvent — basic event merging', () => {
     blocks = appendBlockEvent(blocks, { type: 'text', content: ' second' });
     expect(blocks).toHaveLength(1);
     expect(blocks[0].content).toBe('first second');
-    expect(blocks[0].type).toBe('final_output');
+    expect(blocks[0].type).toBe('finalOutput');
   });
 
   it('handles final_output event type (same as text)', () => {
-    let blocks = appendBlockEvent([], { type: 'final_output', content: 'hello' });
-    blocks = appendBlockEvent(blocks, { type: 'final_output', content: ' world' });
+    let blocks = appendBlockEvent([], { type: 'finalOutput', content: 'hello' });
+    blocks = appendBlockEvent(blocks, { type: 'finalOutput', content: ' world' });
     expect(blocks).toHaveLength(1);
     expect(blocks[0].content).toBe('hello world');
-    expect(blocks[0].type).toBe('final_output');
+    expect(blocks[0].type).toBe('finalOutput');
   });
 
   it('merges final_output into an existing final_output block', () => {
     let blocks = appendBlockEvent([], { type: 'text', content: 'part 1' });
-    blocks = appendBlockEvent(blocks, { type: 'final_output', content: ' part 2' });
+    blocks = appendBlockEvent(blocks, { type: 'finalOutput', content: ' part 2' });
     expect(blocks).toHaveLength(1);
     expect(blocks[0].content).toBe('part 1 part 2');
-    expect(blocks[0].type).toBe('final_output');
+    expect(blocks[0].type).toBe('finalOutput');
   });
 
   it('updates tool status on a tool_result event', () => {
     let blocks = appendBlockEvent([], {
-      type: 'tool_call',
+      type: 'toolCall',
       name: 'august__bash',
       id: 'call_X',
       context: '{}',
       status: 'running',
     });
     blocks = appendBlockEvent(blocks, {
-      type: 'tool_result',
+      type: 'toolResult',
       id: 'call_X',
       status: 'done',
       summary: 'all good',

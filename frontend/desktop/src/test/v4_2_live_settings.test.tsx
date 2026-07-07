@@ -72,10 +72,14 @@ describe('v4.2 — LiveSettingsTab', () => {
     fireEvent.click(screen.getByTestId('live-save'));
     await waitFor(() => {
       const putCall = fetchMock.mock.calls.find(
-        ([, init]: [string, RequestInit | undefined]) => init?.method === 'PUT',
+        (call) => {
+          const [url, init] = call as unknown as [string, RequestInit | undefined];
+          return typeof url === 'string' && url.includes('/api/config/live') && init?.method === 'PUT';
+        },
       );
       expect(putCall).toBeDefined();
-      const body = JSON.parse((putCall![1]!.body as string));
+      const [, putInit] = putCall as unknown as [string, RequestInit];
+      const body = JSON.parse(putInit.body as string);
       expect(body.ttsVoice).toBe('alloy');
     });
   });

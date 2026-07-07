@@ -59,17 +59,26 @@ export function useSubagentStream(sessionId: string | null): UseSubagentStreamRe
           ),
         );
       } else if (event.type === 'subagentStarted' && event.agentId && event.goal) {
-        setAgents((prev) => [
-          ...prev,
-          {
-            taskId: event.taskId ?? `task_${Date.now()}`,
-            agentId: event.agentId,
-            goal: event.goal,
-            status: 'running',
-            startedAt: Date.now(),
-            elapsed: 0,
-          },
-        ]);
+        // Capture into locals so TS narrowing on `event.agentId` / `event.goal`
+        // survives the closure below (the inline conditional narrowing does
+        // not propagate into callback bodies).
+        const taskId = event.taskId ?? `task_${Date.now()}`;
+        const agentId: string = event.agentId;
+        const goal: string = event.goal;
+        setAgents((prev) => {
+          const next: SubagentInfo[] = [
+            ...prev,
+            {
+              taskId,
+              agentId,
+              goal,
+              status: 'running',
+              startedAt: Date.now(),
+              elapsed: 0,
+            },
+          ];
+          return next;
+        });
       }
     });
 

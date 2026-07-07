@@ -174,14 +174,17 @@ describe('ChatThread: queue pill rendering and queue badge', () => {
 });
 
 describe('SSE dispatch: queue events route to the new handlers', () => {
-  it('workbench.ts dispatches user_message_queued / _dequeued / _injected', () => {
+  it('workbench.ts dispatches userMessageQueued / userMessageDequeued / userMessageInjected', () => {
     const src = readFileSync(
       resolve(__dirname, '../api/workbench.ts'),
       'utf8',
     );
-    expect(src).toMatch(/case 'user_message_queued'/);
-    expect(src).toMatch(/case 'user_message_dequeued'/);
-    expect(src).toMatch(/case 'user_message_injected'/);
+    // The SSE event payload uses camelCase discriminator strings
+    // (`userMessageQueued`, etc.) — the schema literals live in
+    // src/api/schemas/workbench.ts and the dispatch switch in workbench.ts.
+    expect(src).toMatch(/case 'userMessageQueued'/);
+    expect(src).toMatch(/case 'userMessageDequeued'/);
+    expect(src).toMatch(/case 'userMessageInjected'/);
     expect(src).toMatch(/handlers\.onUserMessageQueued\?/);
     expect(src).toMatch(/handlers\.onUserMessageDequeued\?/);
     expect(src).toMatch(/handlers\.onUserMessageInjected\?/);

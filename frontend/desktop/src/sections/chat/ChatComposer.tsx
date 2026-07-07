@@ -210,10 +210,10 @@ export function ChatComposer({
                 {attachments.map((file, i) => (
                   <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted border border-border text-[10.5px] font-mono">
                     <span className="truncate max-w-[150px]">{file.name}</span>
-                    <span className="text-[9px] text-muted-foreground">({file.size})</span>
                     <button
                       onClick={() => onRemoveAttachment(i)}
                       className="p-0.5 hover:bg-background rounded text-muted-foreground hover:text-foreground transition"
+                      aria-label={`Remove ${file.name}`}
                     >
                       <X className="size-2.5" />
                     </button>

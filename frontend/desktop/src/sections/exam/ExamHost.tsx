@@ -77,9 +77,23 @@ export function ExamHost(props: ExamHostProps) {
         }
         const data = await resp.json();
         if (cancelled) return;
-        setExamId(data.examId);
-        setQuestion(data.question);
-        setTotal(data.totalQuestions ?? 0);
+        // Normalize backend snake_case → camelCase. Backend currently emits
+        // snake_case (`exam_id`, `total_questions`, …) but the component
+        // works in camelCase; accept either so tests + future backend
+        // renames don't break the UI.
+        const examIdNum: number | null = data.examId ?? data.exam_id ?? null;
+        const total: number = data.totalQuestions ?? data.total_questions ?? 0;
+        const rawQ = data.question ?? data;
+        const question: Question = {
+          id: rawQ.id,
+          examId: rawQ.examId ?? rawQ.exam_id ?? examIdNum ?? 0,
+          position: rawQ.position ?? 1,
+          stem: rawQ.stem,
+          options: rawQ.options ?? [],
+        };
+        setExamId(examIdNum);
+        setQuestion(question);
+        setTotal(total);
         setPosition(1);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
@@ -104,10 +118,12 @@ export function ExamHost(props: ExamHostProps) {
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
-      // Normalize to AnswerResult (backend uses `isCorrect`; banner may use `correct`)
+      // Normalize to AnswerResult (backend may use snake_case `_ok` /
+      // `is_correct` / `correct_index` / `rationale` instead of the
+      // camelCase fields the component prefers).
       return {
-        isCorrect: data.isCorrect ?? data.correct ?? false,
-        correctIndex: data.correctIndex,
+        isCorrect: data.isCorrect ?? data.correct ?? data.is_correct ?? false,
+        correctIndex: data.correctIndex ?? data.correct_index ?? -1,
         rationale: data.rationale ?? '',
       };
     },
@@ -133,7 +149,16 @@ export function ExamHost(props: ExamHostProps) {
         throw new Error(`HTTP ${resp.status}`);
       }
       const q = await resp.json();
-      setQuestion(q);
+      // Normalize next-question payload: backend snake_case (`exam_id`,
+      // `position`) → camelCase.
+      const nextQuestion: Question = {
+        id: q.id,
+        examId: q.examId ?? q.exam_id ?? examId,
+        position: q.position ?? nextPos,
+        stem: q.stem,
+        options: q.options ?? [],
+      };
+      setQuestion(nextQuestion);
     } catch (e) {
       setError((e as Error).message);
     }

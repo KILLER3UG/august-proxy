@@ -31,6 +31,9 @@ export interface MessageBlockToolCall {
   status: 'running' | 'done' | 'error';
   duration?: number;
   startedAt?: number;
+  /** For web_search results: structured search hits rendered as a linked
+   *  list below the tool summary. Mirrors `AppendBlockEvent.searchHits`. */
+  searchHits?: Array<{ title: string; url: string; snippet?: string }>;
   pendingApproval?: {
     message?: string;
     detail?: string;
@@ -107,6 +110,8 @@ export interface ChatMessage {
     preview?: string;
     duration?: number;
     startedAt?: number;
+    /** For web_search: structured search hits to render below the summary. */
+    searchHits?: Array<{ title: string; url: string; snippet?: string }>;
   }>;
   thinking?: string;
   thinkingDuration?: number;

@@ -44,18 +44,18 @@ async function fetchComputerRoots(): Promise<ComputerRoots> {
 async function saveComputerRoots(next: Partial<ComputerRoots>): Promise<ComputerRoots> {
   // Persist via /ui/august/settings/update which writes security.* sub-keys.
   if (next.filesystemScope) {
-    await setAugustSetting({ key_path: 'security.filesystemScope', value: next.filesystemScope });
+    await setAugustSetting({ keyPath: 'security.filesystemScope', value: next.filesystemScope });
   }
   if (next.allowedRoots) {
-    await setAugustSetting({ key_path: 'security.allowedRoots', value: next.allowedRoots });
+    await setAugustSetting({ keyPath: 'security.allowedRoots', value: next.allowedRoots });
   }
   if (typeof next.postObservationScreenshot === 'boolean') {
-    await setAugustSetting({ key_path: 'security.postObservationScreenshot', value: next.postObservationScreenshot });
+    await setAugustSetting({ keyPath: 'security.postObservationScreenshot', value: next.postObservationScreenshot });
   }
   return fetchComputerRoots();
 }
 
-async function setAugustSetting(payload: { key_path: string; value: unknown }): Promise<unknown> {
+async function setAugustSetting(payload: { keyPath: string; value: unknown }): Promise<unknown> {
   const { updateAugustSetting } = await import('@/api/api-client');
   return updateAugustSetting(payload);
 }
