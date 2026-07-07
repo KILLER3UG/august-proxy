@@ -337,3 +337,42 @@ timeout_ms
 api_key
 base_url
 api_mode
+
+# ── 10. CLI command / dev-tool names ──────────────────────────────────
+# These are CLI subcommand / tool names (git, gh, glab, docker, kubectl,
+# terraform, ansible, etc.). Users type them in their shell exactly this
+# way — keep snake_case so the icon dispatch table matches reality.
+# Git
+git_status
+git_diff
+git_log
+git_commit
+git_push
+git_pull
+git_fetch
+git_checkout
+git_branch
+git_clone
+git_init
+# GitHub / GitLab CLIs
+gh_pr
+gh_issue
+gh_release
+glab_mr
+# Docker
+docker_run
+docker_build
+docker_compose
+docker_ps
+# Kubernetes
+kubectl_apply
+kubectl_get
+kubectl_logs
+# Terraform / Ansible
+terraform_apply
+terraform_plan
+ansible_playbook
+# Patch / file-edit tool aliases (some installs use these names)
+apply_patch
+replace_file
+local_bash

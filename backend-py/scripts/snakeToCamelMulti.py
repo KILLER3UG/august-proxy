@@ -113,6 +113,43 @@ def _iterStringSpans(text: str, lang: str) -> Iterable[tuple[int, int]]:
             yield (i, j)
             i = j
             continue
+        # JavaScript regex literals: /pattern/flags — heuristic detection.
+        # When '/' follows a token position that is not a value (i.e. not
+        # identifier, ')' or ']'), it starts a regex. Track the previous
+        # non-whitespace char to decide.
+        if lang != 'rust' and c == '/':
+            prev = ''
+            k = i - 1
+            while k >= 0 and text[k] in ' \t':
+                k -= 1
+            if k >= 0:
+                prev = text[k]
+            # Regex-starting contexts: top-level, '(', ',', '=', ':', ';',
+            # '!', '&', '|', '?', '{', '}', '[', '~', or after a keyword like
+            # `return` (already covered by '(' or ';')
+            is_regex_start = prev in ('', '(', ',', '=', ':', ';', '!', '&', '|', '?', '{', '}', '[', '~', '+', '-', '*', '%', '^')
+            if is_regex_start:
+                # Find closing / (handle escape and character class)
+                j = i + 1
+                in_class = False
+                while j < n:
+                    if text[j] == '\\' and j + 1 < n:
+                        j += 2
+                        continue
+                    if text[j] == '[':
+                        in_class = True
+                    elif text[j] == ']' and in_class:
+                        in_class = False
+                    elif text[j] == '/' and not in_class:
+                        j += 1
+                        break
+                    j += 1
+                # Skip flags (regex-flags are simple letters like 'g', 'i', 'm')
+                while j < n and text[j].isalpha():
+                    j += 1
+                yield (i, j)
+                i = j
+                continue
         if lang != 'rust' and c == '`':
             j = i + 1
             while j < n:
@@ -184,6 +221,13 @@ def _renameInCode(text: str, lang: str, deny: set[str]) -> tuple[str, list[dict]
             out.append(text[start:end])
             i = end
             continue
+        # Skip identifiers that are immediately followed by a glob-like
+        # wildcard (e.g. ``computer_*`` in docblocks). Renaming
+        # ``computer_`` → ``computer`` would break the meaning.
+        if end < n and text[end] in ('*', '?', '+', '(', ')', '{'):
+            out.append(text[start:end])
+            i = end
+            continue
         camel = _snakeToCamel(name)
         if camel == name:
             out.append(text[start:end])
@@ -236,7 +280,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description='Multi-language snake_case → camelCase (TS/TSX/JS/Rust)')
     parser.add_argument('targets', nargs='+', help='Files or directories to convert')
     parser.add_argument('--lang', choices=['ts', 'rust'], required=True)
-    parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--dryRun', dest='dryRun', action='store_true')
     parser.add_argument('--diff', action='store_true')
     parser.add_argument('--report', action='store_true')
     parser.add_argument('--deny-list', help='Additional deny-list file')
@@ -248,9 +292,9 @@ def main() -> None:
     for target in args.targets:
         p = Path(target)
         if p.is_file():
-            allResults.append(convertFile(p, args.lang, deny, dry_run=args.dry_run, show_diff=args.diff))
+            allResults.append(convertFile(p, args.lang, deny, dryRun=args.dryRun, showDiff=args.diff))
         elif p.is_dir():
-            allResults.extend(convertDirectory(p, args.lang, deny, dry_run=args.dry_run, show_diff=args.diff))
+            allResults.extend(convertDirectory(p, args.lang, deny, dryRun=args.dryRun, showDiff=args.diff))
         else:
             print(f'Warning: {target} not found', file=sys.stderr)
     if args.report:
