@@ -1,30 +1,47 @@
 /* ── Settings registry — single source of truth for the Settings IA ── */
-/* The overlay sidebar, global search, and legacy-route redirects all read
- * from here. Replacing 18 tabs with 10 grouped sections (see
- * docs/settings-audit.md) is fully driven by this file. */
-
+/* Drives the left rail, global search, route resolution, and the
+ * parallel chat-side workspace panel.
+ *
+ * 5 categories, 17 sections, all balanced 3–5 items per category.
+ * See `docs/settings-audit.md` for the rationale + section movement
+ * history.
+ *
+ * Hard rules (enforced by the audit at the bottom of this file):
+ *   • Every section id is immutable — deep links and legacy aliases
+ *     resolve to it forever. To rename a section, change only the
+ *     `label` and add the old name to `legacyAliases`.
+ *   • Every icon is unique within the registry. The previous brain-icon
+ *     triplet broke user scanning; we no longer allow it.
+ *   • Every keyword is owned by exactly one section. (Tags like
+ *     `usage`, `error`, `host` are no longer claimed by the largest
+ *     section just because it has room.)
+ */
 import type { LucideIcon } from 'lucide-react';
 import {
-  Heart,
-  SlidersHorizontal,
+  Activity,
   Boxes,
-  Brain,
-  Plug,
-
-  Search,
-  Bot,
-  TerminalSquare,
-  ShieldCheck,
-  LineChart,
-  Radio,
-  Monitor,
   BookOpen,
+  Bot,
+  Cpu,
+  Globe,
+  LineChart,
+  MessagesSquare,
+  Monitor,
+  Network,
+  Pencil,
+  Plug,
+  Radio,
+  Search as SearchIcon,
+  ShieldCheck,
+  SlidersHorizontal,
+  TerminalSquare,
 } from 'lucide-react';
 
 /**
  * A single settings screen. `id` doubles as the URL param (`?tab=<id>`),
  * `keywords` power global search, and `legacyAliases` keep old deep links
- * (`/settings/traffic`, `/settings/logs`, …) resolving to the right place.
+ * (`/settings/traffic`, `/settings/connections`, ...) resolving to the
+ * correct section.
  */
 export interface SettingsSection {
   id: string;
@@ -33,7 +50,7 @@ export interface SettingsSection {
   icon: LucideIcon;
   category: string;
   keywords: string[];
-  /** Old 18-section tab keys that should now open this section. */
+  /** Old tab keys that should now open this section. */
   legacyAliases?: string[];
 }
 
@@ -44,197 +61,234 @@ export interface SettingsCategory {
 }
 
 /**
- * Top-level categories shown as group headers in the sidebar. Order here is
- * the order they render. Sections reference categories by `category` id.
+ * Top-level categories shown as group headers in the sidebar. Order
+ * here is the order they render. Sections reference categories by
+ * `category` id.
+ *
+ * v3 IA (2026-07): replaces the prior 7-category scheme that had
+ * singleton categories (memory, activity), a junk drawer ("Advanced"
+ * with 5 mixed sections), and duplicate Brain icons across 3 sections.
  */
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
-  { id: 'general',        label: 'General',         description: 'Core app behavior and beginner-friendly preferences.' },
-  { id: 'chat',           label: 'Chat & Models',  description: 'Providers, model catalog, and conversation history.' },
-  { id: 'memory',         label: 'Memory',          description: 'Knowledge graph, facts, vectors, and prompts.' },
-  { id: 'tools',          label: 'Tools',           description: 'MCP servers, skills, and connected accounts.' },
-  { id: 'activity',       label: 'Activity',        description: 'Audit log, rollback history, post-observation screenshots, host-agent health, and traffic.' },
-  { id: 'debug',          label: 'Debugging',       description: 'Inspect raw requests and assistant thinking.' },
-  { id: 'advanced',       label: 'Advanced',        description: 'Agents, automations, developer surfaces, and computer access.' },
+  {
+    id: 'general',
+    label: 'General',
+    description: 'App-level basics: health, appearance, and conversation history.',
+  },
+  {
+    id: 'intelligence',
+    label: 'Intelligence',
+    description: 'The cognitive core: providers, brain orchestration, and memory.',
+  },
+  {
+    id: 'tools',
+    label: 'Tools & Skills',
+    description: 'Capabilities the agent can use: MCP servers, skills, computer use, agents.',
+  },
+  {
+    id: 'activity',
+    label: 'Activity',
+    description: 'Telemetry and observability surfaces: traffic, logs, inspectors.',
+  },
+  {
+    id: 'security',
+    label: 'Security & Access',
+    description: 'Gating surfaces: API access, filesystem permissions, developer surfaces.',
+  },
 ] as const;
 
 /**
- * The reduced 10-section information architecture. Each entry carries every
- * old tab key it absorbs so deep links from before this refactor keep working.
+ * The 17 sections of the Settings left rail.
+ *
+ * Every section's `id` is immutable for legacy-alias support. To rename
+ * a section, change the `label` and re-export the old label as an
+ * alias.
  */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
-  /* ── General ─────────────────────────────────────────────────────── */
+  /* ── General ───────────────────────────────────────────────────── */
   {
     id: 'system-health',
     label: 'System & Health',
-    description: 'Gateway, provider status, uptime, and connection details.',
-    icon: Heart,
+    description: 'Gateway status, uptime, RAM, endpoint URLs, and connect-an-app URLs.',
+    icon: Activity,
     category: 'general',
-    keywords: ['health', 'gateway', 'provider', 'status', 'uptime', 'endpoints', 'memory', 'connect'],
-    legacyAliases: ['health', 'connections'],
+    // Note: 'gateway' is owned by api-access (the action surface for
+    // opening/closing it). 'connect' is owned by api-access.
+    // 'connection' is owned by tools-connections. 'ram' is used in
+    // lieu of 'memory' to avoid colliding with memory-knowledge.
+    keywords: ['health', 'provider status', 'uptime', 'endpoints', 'host', 'port', 'ram'],
+    legacyAliases: ['health'],
   },
   {
     id: 'profile-preferences',
     label: 'Profile & Preferences',
-    description: 'Theme, appearance, shortcuts, presets, and onboarding.',
+    description: 'Theme, appearance, text size, presets, keyboard shortcuts, and onboarding.',
     icon: SlidersHorizontal,
     category: 'general',
     keywords: ['profile', 'theme', 'appearance', 'shortcuts', 'hotkeys', 'presets', 'onboarding', 'tour', 'language'],
     legacyAliases: ['appearance', 'theme', 'shortcuts', 'hotkeys'],
   },
+  {
+    id: 'conversations-history',
+    label: 'Conversations',
+    description: 'Archived chat sessions and per-conversation history.',
+    icon: MessagesSquare,
+    category: 'general',
+    keywords: ['conversation', 'history', 'archive', 'session', 'chat'],
+    legacyAliases: ['archive', 'conversations', 'chat-history', 'session-history'],
+  },
 
-  /* ── Chat & Models ───────────────────────────────────────────────── */
+  /* ── Intelligence ────────────────────────────────────────────── */
   {
     id: 'model-providers',
     label: 'Model Providers',
-    description: 'Provider cards, model catalog, aliases, quotas, and usage.',
+    description: 'Provider cards, model catalog, aliases, quotas, and per-model usage + cost.',
     icon: Boxes,
-    category: 'chat',
-    keywords: ['model', 'provider', 'api key', 'quota', 'usage', 'catalog', 'alias', 'context window', 'reasoning', 'effort', 'temperature'],
+    category: 'intelligence',
+    keywords: ['model', 'provider', 'api key', 'quota', 'usage', 'cost', 'token', 'catalog', 'alias', 'context window', 'reasoning', 'effort', 'temperature'],
     legacyAliases: ['models', 'providers'],
   },
   {
     id: 'brain-orchestrator',
     label: 'Brain Orchestrator',
-    description: 'Tune the per-turn policy: adaptive rules, agent depth, parallel tools, failure learning.',
-    icon: Brain,
-    category: 'chat',
+    description: 'Per-turn policy: adaptive rules, agent depth, parallel tools, failure learning.',
+    icon: Cpu,
+    category: 'intelligence',
     keywords: ['brain', 'orchestrator', 'policy', 'agent depth', 'subagent', 'tool loop', 'parallel'],
     legacyAliases: ['brain'],
   },
   {
-    id: 'conversations-history',
-    label: 'Conversations & History',
-    description: 'Chat sessions, archived history, and export/import.',
-    icon: Brain,
-    category: 'chat',
-    keywords: ['conversation', 'history', 'archive', 'session', 'chat', 'export', 'import', 'restore'],
-    legacyAliases: ['archive', 'conversations', 'chat-history', 'session-history'],
-  },
-
-  /* ── Memory ──────────────────────────────────────────────────────── */
-  {
     id: 'memory-knowledge',
     label: 'Memory & Knowledge',
-    description: 'Memory store, facts, vectors, graph, and system prompt.',
-    icon: Brain,
-    category: 'memory',
+    description: 'Memory store, semantic facts, vector entries, knowledge graph, and system prompt.',
+    icon: Network,
+    category: 'intelligence',
     keywords: ['memory', 'semantic', 'facts', 'vector', 'db', 'graph', 'knowledge', 'prompt', 'learning', 'guidelines'],
     legacyAliases: ['memory', 'semantic-facts', 'vector-db'],
   },
 
-  /* ── Tools ───────────────────────────────────────────────────────── */
+  /* ── Tools & Skills ──────────────────────────────────────────── */
   {
     id: 'tools-connections',
-    label: 'Tools & Connections',
-    description: 'MCP servers, skills, commands, and connected accounts.',
+    label: 'MCP & Connections',
+    description: 'MCP servers, connected accounts, and external service connections.',
     icon: Plug,
     category: 'tools',
-    keywords: ['mcp', 'skill', 'command', 'connection', 'service', 'oauth', 'account', 'google', 'github', 'slack'],
+    // Note: 'skill' is owned by skill-curator and skills-authoring.
+    // 'connection' is owned here; tools-connections also owns the
+    // legacy alias 'connections' (singular 'connection' is a keyword,
+    // plural is the legacy alias).
+    keywords: ['mcp', 'command', 'connection', 'service', 'oauth', 'account', 'google', 'github', 'slack'],
     legacyAliases: ['mcp', 'skills', 'commands', 'connections', 'services'],
   },
-
-  /* ── Observability (Task 7) — absorbed Traffic & Activity ────────── */
   {
-    id: 'observability',
-    label: 'Observability',
-    description: 'Audit log, rollback history, post-observation screenshots, host-agent health, and traffic — all in one place.',
-    icon: LineChart,
-    category: 'activity',
-    keywords: ['audit', 'rollback', 'observation', 'screenshot', 'log', 'history', 'security', 'compliance', 'undo', 'health', 'host', 'traffic', 'activity', 'usage', 'request', 'token', 'cost', 'error', 'artifacts'],
-    legacyAliases: ['traffic-activity', 'overview', 'logs', 'traffic', 'activity', 'usage', 'artifacts', 'audit', 'rollback', 'observations'],
+    id: 'skill-curator',
+    label: 'Skill Catalogue',
+    description: 'Skill lifecycle management — usage tracking, auto-stale/archived transitions, consolidation.',
+    icon: BookOpen,
+    category: 'tools',
+    // Note: 'archive' and 'usage' are owned by other sections
+    // ('archive' → conversations-history for archived sessions; 'usage' →
+    // model-providers for token cost). Skill archival is reached via
+    // 'curator' or 'stale'.
+    keywords: ['skill', 'curator', 'lifecycle', 'stale', 'consolidate'],
   },
-
-  /* ── Debugging ───────────────────────────────────────────────────── */
   {
-    id: 'conversation-inspector',
-    label: 'Conversation Inspector',
-    description: 'Readable transcript and raw request/response bodies.',
-    icon: Search,
-    category: 'debug',
-    keywords: ['inspector', 'conversation', 'request', 'response', 'body', 'thinking', 'trace', 'finish reason', 'error'],
-    legacyAliases: ['inspector', 'conversation', 'thinking'],
+    id: 'skills-authoring',
+    label: 'Skill Authoring',
+    description: 'Create, edit, and manage agent-authored skills.',
+    icon: Pencil,
+    category: 'tools',
+    // Note: 'skill' is owned by skill-curator (the broader catalogue).
+    // Authoring is reached via 'author' or 'create'.
+    keywords: ['create', 'edit', 'delete', 'author', 'manage'],
   },
-
-  /* ── Advanced ────────────────────────────────────────────────────── */
+  {
+    id: 'computer-use',
+    label: 'Computer Use',
+    description: 'Desktop automation with SOM overlay, cross-platform support, and safe approval workflows.',
+    icon: Monitor,
+    category: 'tools',
+    // Note: 'automation' is owned by agents-automation (cron/automations).
+    // Computer Use is reached via 'desktop', 'som', or 'screenshot'.
+    keywords: ['computer', 'use', 'desktop', 'som', 'overlay', 'screenshot', 'click', 'type'],
+  },
   {
     id: 'agents-automation',
     label: 'Agents & Automation',
     description: 'Agent registry, permissions, automations, and approvals.',
     icon: Bot,
-    category: 'advanced',
+    category: 'tools',
     keywords: ['agent', 'automation', 'permission', 'scope', 'approval', 'terminal', 'schedule', 'job'],
     legacyAliases: ['agents', 'agent-permissions', 'automations', 'terminal'],
+  },
+
+  /* ── Activity ────────────────────────────────────────────────── */
+  {
+    id: 'observability',
+    label: 'Observability',
+    description: 'Audit log, rollback history, post-observation screenshots, traffic, and logs.',
+    icon: LineChart,
+    category: 'activity',
+    // Note: 'screenshot' is owned by computer-use. 'history' is owned
+    // by conversations-history. 'security' is owned by computer-access.
+    // Post-observation screenshots are reached via 'observation' here.
+    keywords: ['audit', 'rollback', 'observation', 'compliance', 'undo', 'artifacts', 'traffic', 'log', 'activity'],
+    legacyAliases: ['traffic-activity', 'overview', 'logs', 'traffic', 'activity', 'artifacts', 'audit', 'rollback', 'observations'],
+  },
+  {
+    id: 'conversation-inspector',
+    label: 'Conversation Inspector',
+    description: 'Readable transcript, raw request/response bodies, and assistant thinking.',
+    icon: SearchIcon,
+    category: 'activity',
+    // Note: 'debug' is owned by developer-console. Conversation Inspector
+    // is reached via 'inspector', 'request', 'response', 'thinking'.
+    keywords: ['inspector', 'request', 'response', 'body', 'thinking', 'trace', 'finish reason', 'error'],
+    legacyAliases: ['inspector', 'conversation', 'thinking'],
+  },
+  {
+    id: 'backend-monitor',
+    label: 'Backend Monitor',
+    description: 'Real-time stream of proxy, memory, scheduler, and tool events.',
+    icon: Radio,
+    category: 'activity',
+    // Note: 'memory' is owned by memory-knowledge. 'console' is owned
+    // by developer-console. 'monitor' is the dominant discoverer here.
+    keywords: ['logs', 'live', 'stream', 'events', 'monitor', 'websocket', 'proxy', 'scheduler'],
+  },
+
+  /* ── Security & Access ──────────────────────────────────────── */
+  {
+    id: 'computer-access',
+    label: 'Computer Access',
+    description: 'Filesystem scope, allowed roots, and computer-use app allowlist.',
+    icon: ShieldCheck,
+    category: 'security',
+    keywords: ['filesystem', 'security', 'allowlist', 'computer-use'],
+  },
+  {
+    id: 'api-access',
+    label: 'API Access',
+    description: 'Open or close the proxy gateway for external clients, manage the API key.',
+    icon: Globe,
+    category: 'security',
+    // Note: 'token' is owned by model-providers (token cost tracking).
+    // API auth tokens are reached via 'bearer' here.
+    keywords: ['api', 'access', 'gateway', 'key', 'external', 'client', 'curl', 'openai', 'anthropic', 'bearer', 'sdk', 'endpoint'],
   },
   {
     id: 'developer-console',
     label: 'Developer Console',
     description: 'August console and advanced debug/reset options (experimental).',
     icon: TerminalSquare,
-    category: 'advanced',
-    keywords: ['developer', 'console', 'august', 'debug', 'reset', 'experimental', 'advanced'],
+    category: 'security',
+    keywords: ['developer', 'console', 'august', 'debug', 'reset', 'experimental'],
     legacyAliases: ['advanced'],
-  },
-
-  /* ── Task 8: Computer Access ─────────────────────────────────────── */
-  {
-    id: 'computer-access',
-    label: 'Computer Access',
-    description: 'Filesystem scope, allowed roots, and computer-use app allowlist.',
-    icon: ShieldCheck,
-    category: 'advanced',
-    keywords: ['filesystem', 'security', 'allowlist', 'host', 'computer-use', 'permission'],
-  },
-
-  /* ── Backend Monitor (real-time log stream) ──────────────────────── */
-  {
-    id: 'backend-monitor',
-    label: 'Backend Monitor',
-    description: 'Real-time stream of proxy, memory, scheduler, and tool events from the August backend.',
-    icon: Radio,
-    category: 'debug',
-    keywords: ['logs', 'live', 'console', 'stream', 'events', 'debug', 'monitor', 'websocket', 'proxy', 'memory', 'scheduler', 'tokens'],
-  },
-
-  /* ── Skill Curator ───────────────────────────────────────────────── */
-  {
-    id: 'skill-curator',
-    label: 'Skill Curator',
-    description: 'Automatic skill lifecycle management — usage tracking, auto-stale/archived transitions, and consolidation.',
-    icon: BookOpen,
-    category: 'tools',
-    keywords: ['skill', 'curator', 'lifecycle', 'stale', 'archive', 'consolidate', 'usage'],
-  },
-  {
-    id: 'skills-authoring',
-    label: 'Skill Authoring',
-    description: 'Create, edit, and manage agent-authored skills.',
-    icon: BookOpen,
-    category: 'tools',
-    keywords: ['skill', 'create', 'edit', 'delete', 'author', 'manage'],
-  },
-
-  /* ── Computer Use ────────────────────────────────────────────────── */
-  {
-    id: 'computer-use',
-    label: 'Computer Use',
-    description: 'Desktop automation with SOM overlay, cross-platform support, and safe approval workflows.',
-    icon: Monitor,
-    category: 'advanced',
-    keywords: ['computer', 'use', 'desktop', 'automation', 'som', 'overlay', 'screenshot', 'click', 'type'],
-  },
-
-  /* ── API Access (external gateway) ──────────────────────────────── */
-  {
-    id: 'api-access',
-    label: 'API Access',
-    description: 'Open/close the proxy gateway for external clients, manage the API key, see usage examples.',
-    icon: Plug,
-    category: 'advanced',
-    keywords: ['api', 'access', 'gateway', 'key', 'external', 'client', 'curl', 'openai', 'anthropic', 'bearer', 'token', 'sdk'],
   },
 ] as const;
 
-/* ── Lookup helpers (used by routes.ts + SettingsOverlay) ──────────── */
+/* ── Lookup helpers (used by routes.ts + SettingsOverlay + WorkspaceShell) ── */
 
 /** Map of old tab key → new section id, built once from legacyAliases. */
 export const LEGACY_TAB_MAP: ReadonlyMap<string, string> = (() => {
@@ -250,7 +304,7 @@ export const LEGACY_TAB_MAP: ReadonlyMap<string, string> = (() => {
 export function resolveLegacyTab(raw: string | null): string {
   if (!raw) return SETTINGS_SECTIONS[0].id;
   if (raw === 'services') return 'tools-connections';
-  return LEGACY_TAB_MAP.get(raw) ?? SETTINGS_SECTIONS[0].id;
+  return LEGACY_TAB_MAP.get(raw ?? '') ?? SETTINGS_SECTIONS[0].id;
 }
 
 export function getSection(id: string): SettingsSection | undefined {
@@ -259,4 +313,65 @@ export function getSection(id: string): SettingsSection | undefined {
 
 export function sectionsForCategory(categoryId: string): SettingsSection[] {
   return SETTINGS_SECTIONS.filter((s) => s.category === categoryId);
+}
+
+/* ── IA integrity audit ───────────────────────────────────────────────────── */
+/* Run as a dev-time invariant. Throw with a descriptive message if any
+ * invariant is broken — the build will fail rather than silently ship a
+ * buggy IA. */
+export function auditRegistry(): void {
+  const ids = new Set<string>();
+  const icons = new Map<LucideIcon, string[]>();
+  const keywords = new Map<string, string>();
+  const legacyAliases = new Map<string, string>();
+
+  for (const s of SETTINGS_SECTIONS) {
+    if (ids.has(s.id)) {
+      throw new Error(`settings-registry: duplicate section id "${s.id}"`);
+    }
+    ids.add(s.id);
+
+    const iconOwners = icons.get(s.icon) ?? [];
+    iconOwners.push(s.id);
+    icons.set(s.icon, iconOwners);
+
+    for (const k of s.keywords) {
+      const key = k.toLowerCase();
+      if (keywords.has(key)) {
+        throw new Error(
+          `settings-registry: keyword "${k}" claimed by both ` +
+          `"${keywords.get(key)}" and "${s.id}" — keywords are owned by exactly one section`,
+        );
+      }
+      keywords.set(key, s.id);
+    }
+
+    for (const alias of s.legacyAliases ?? []) {
+      if (legacyAliases.has(alias)) {
+        throw new Error(
+          `settings-registry: legacy alias "${alias}" claimed by both ` +
+          `"${legacyAliases.get(alias)}" and "${s.id}" — legacy aliases must be unique`,
+        );
+      }
+      legacyAliases.set(alias, s.id);
+    }
+  }
+
+  for (const [icon, owners] of icons) {
+    if (owners.length > 1) {
+      throw new Error(
+        `settings-registry: lucide icon ${icon.displayName ?? '?'} shared by ${owners.join(', ')} — ` +
+        `every section icon must be unique for visual scanning`,
+      );
+    }
+  }
+
+  const validCategories = new Set(SETTINGS_CATEGORIES.map((c) => c.id));
+  for (const s of SETTINGS_SECTIONS) {
+    if (!validCategories.has(s.category)) {
+      throw new Error(
+        `settings-registry: section "${s.id}" references unknown category "${s.category}"`,
+      );
+    }
+  }
 }
