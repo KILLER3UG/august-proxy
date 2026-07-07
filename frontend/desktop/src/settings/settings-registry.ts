@@ -222,6 +222,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     category: 'advanced',
     keywords: ['computer', 'use', 'desktop', 'automation', 'som', 'overlay', 'screenshot', 'click', 'type'],
   },
+
+  /* ── API Access (external gateway) ──────────────────────────────── */
+  {
+    id: 'api-access',
+    label: 'API Access',
+    description: 'Open/close the proxy gateway for external clients, manage the API key, see usage examples.',
+    icon: Plug,
+    category: 'advanced',
+    keywords: ['api', 'access', 'gateway', 'key', 'external', 'client', 'curl', 'openai', 'anthropic', 'bearer', 'token', 'sdk'],
+  },
 ] as const;
 
 /* ── Lookup helpers (used by routes.ts + SettingsOverlay) ──────────── */

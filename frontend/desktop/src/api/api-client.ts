@@ -951,3 +951,33 @@ export function getRecentLogs(limit = 200): Promise<{ events: LogEvent[]; count:
     const n = Math.max(1, Math.min(2000, Number(limit) || 200));
     return api.get<{ events: LogEvent[]; count: number }>(`/api/logs/recent?limit=${n}`);
 }
+
+/* ── External API gateway access ───────────────────────────────────── */
+/* Config endpoints that gate the /v1/* proxy surface behind a Bearer
+ * key. Used by the API Access settings section and the System Health
+ * panel's "Connect an app" block. */
+
+export interface ExternalAccessConfig {
+  enabled: boolean;
+  hasKey: boolean;
+  /** Masked preview of GATEWAY_API_KEY, or null when not configured. */
+  keyPreview: string | null;
+  /** Where the key is loaded from. Today always 'env', kept as a free
+   * string to allow future sources (e.g., config.json, OS keychain). */
+  source: 'env' | null;
+  endpoints: {
+    anthropic: string;
+    openai: string;
+    models: string;
+  };
+}
+
+export function getExternalAccessConfig(): Promise<ExternalAccessConfig> {
+  return api.get<ExternalAccessConfig>('/api/config/external-access');
+}
+
+export function updateExternalAccessConfig(body: {
+  enabled: boolean;
+}): Promise<{ enabled: boolean; hasKey: boolean; keyPreview: string | null; source: string | null }> {
+  return api.put('/api/config/external-access', body);
+}

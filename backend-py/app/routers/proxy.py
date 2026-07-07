@@ -6,14 +6,20 @@ tool call interception, and SSE streaming. Also wires traffic/activity
 capture into the logger so the Observability section has live data:
 start_request on entry, capture_request for the body, and either
 end_request (non-streaming) or a stream-wrapping end_request (streaming).
+
+All /v1/* endpoints are gated by ``requireGatewayKey`` so external clients
+must authenticate with the ``GATEWAY_API_KEY`` Bearer token. The local SPA
+is unaffected because it uses ``/api/*`` (workbench, sessions, etc.) instead
+of ``/v1/*``.
 """
 from __future__ import annotations
 import time
 from typing import AsyncIterator
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from app.adapters import anthropic as anthropicAdapter
 from app.adapters import openai as openaiAdapter
+from app.lib.gatewayAuth import requireGatewayKey
 from app.providers import resolver as providerResolver
 from app.services import logger as trafficLogger
 router = APIRouter()
@@ -102,7 +108,7 @@ async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[s
         pass
 
 @router.post('/v1/messages')
-async def anthropicMessages(request: Request):
+async def anthropicMessages(request: Request, _auth: bool = Depends(requireGatewayKey)):
     """Anthropic Messages API proxy.
 
     Delegates to the Anthropic adapter which handles:
@@ -123,7 +129,7 @@ async def anthropicMessages(request: Request):
     return result
 
 @router.post('/v1/chat/completions')
-async def openaiChat(request: Request):
+async def openaiChat(request: Request, _auth: bool = Depends(requireGatewayKey)):
     """OpenAI Chat Completions API proxy.
 
     Delegates to the OpenAI adapter which handles:
@@ -143,7 +149,7 @@ async def openaiChat(request: Request):
     return result
 
 @router.post('/v1/responses')
-async def openaiResponses(request: Request):
+async def openaiResponses(request: Request, _auth: bool = Depends(requireGatewayKey)):
     """OpenAI Responses API proxy.
 
     Translates the chat completion response to the Responses API format.
@@ -184,7 +190,7 @@ def _translateToResponsesFormat(chatCompletion: dict) -> dict:
     return {'id': f'resp_{uuid.uuid4().hex[:12]}', 'object': 'response', 'created_at': int(time.time()), 'status': 'completed', 'model': chatCompletion.get('model', ''), 'output': outputItems, 'usage': {'input_tokens': usage.get('prompt_tokens', 0), 'output_tokens': usage.get('completion_tokens', 0), 'total_tokens': usage.get('total_tokens', 0)}}
 
 @router.get('/v1/models')
-async def listModels():
+async def listModels(_auth: bool = Depends(requireGatewayKey)):
     """List available models from all configured providers."""
     providers = providerResolver.listAvailable()
     models = []

@@ -2,8 +2,9 @@
 Configuration API routes.
 """
 from __future__ import annotations
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from app.config import settings
 from app.providers import resolver as providerResolver
 from app.lib import secrets
 from app.services import configService
@@ -170,3 +171,71 @@ async def putLiveConfig(body: dict[str, object]):
     if not ok:
         raise HTTPException(status_code=400, detail={'code': 'validation', 'message': err})
     return cfg
+
+
+# ── External API access ────────────────────────────────────────────────
+# Toggles whether the /v1/* proxy endpoints accept requests from external
+# clients (Claude Code, OpenAI SDKs, etc.). The Bearer token itself lives
+# in the `GATEWAY_API_KEY` env var — we never store it in config.json.
+
+@router.get('/external-access')
+async def getExternalAccess():
+    """Return current external-access config.
+
+    Includes:
+      - enabled:        whether the gateway is open for external clients
+      - hasKey:         whether GATEWAY_API_KEY is configured server-side
+      - keyPreview:     masked preview of the key (or null)
+      - endpoints:      the URLs to give to external clients
+      - source:         where the key is loaded from ('env'|'config'|null)
+    """
+    cfg = configService.getConfig()
+    gw = (cfg.get('gateway') or {})
+    ea = (gw.get('externalAccess') or {})
+    enabled = bool(ea.get('enabled', False))
+    api_key = settings.gatewayApiKey
+    return {
+        'enabled': enabled,
+        'hasKey': bool(api_key),
+        'keyPreview': secrets.mask(api_key) if api_key else None,
+        'source': 'env' if api_key else None,
+        'endpoints': {
+            'anthropic': f'http://localhost:{settings.port}/v1/messages',
+            'openai': f'http://localhost:{settings.port}/v1/chat/completions',
+            'models': f'http://localhost:{settings.port}/v1/models',
+        },
+    }
+
+
+class ExternalAccessUpdate(BaseModel):
+    enabled: bool
+
+
+@router.put('/external-access')
+async def putExternalAccess(body: ExternalAccessUpdate):
+    """Toggle external API gateway access on/off.
+
+    The ``GATEWAY_API_KEY`` itself is not part of this payload — it lives
+    in ``.env`` (or system environment) and is managed outside the app.
+    """
+    if body.enabled and not settings.gatewayApiKey:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                'code': 'no_api_key',
+                'message': 'Cannot enable external access: GATEWAY_API_KEY is not configured. '
+                           'Set it in your .env file and restart the proxy.',
+            },
+        )
+    cfg = configService.getConfig()
+    gw = cfg.setdefault('gateway', {})
+    ea = gw.setdefault('externalAccess', {})
+    ea['enabled'] = bool(body.enabled)
+    configService.saveConfig(cfg)
+    settings.reload()
+    return {
+        'enabled': ea['enabled'],
+        'hasKey': bool(settings.gatewayApiKey),
+        'keyPreview': secrets.mask(settings.gatewayApiKey) if settings.gatewayApiKey else None,
+        'source': 'env' if settings.gatewayApiKey else None,
+    }

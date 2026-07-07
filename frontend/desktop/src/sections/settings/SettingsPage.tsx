@@ -30,6 +30,7 @@ import { BackendMonitorSection } from './BackendMonitorSection';
 import { CuratorSection } from './CuratorSection';
 import { SkillsAuthoringSection } from './SkillsAuthoringSection';
 import { ComputerUseSection } from './ComputerUseSection';
+import { ExternalAccessSection } from './ExternalAccessSection';
 
 /** The default section when no :section param is present. The user
  *  said clicking Settings should land on Model settings. */
@@ -78,11 +79,13 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'skill-curator': CuratorWrapper,
   'skills-authoring': SkillsAuthoringWrapper,
   'computer-use': ComputerUseWrapper,
+  'api-access': ExternalAccessWrapper,
 };
 
 function ComputerAccessSettingsWrapper() { return <ComputerAccessSettings />; }
 function ObservabilitySectionWrapper() { return <ObservabilitySection />; }
 function BackendMonitorWrapper() { return <BackendMonitorSection />; }
+function ExternalAccessWrapper() { return <ExternalAccessSection />; }
 
 function UsageWrapper() { return <WorkspaceUsageSection />; }
 function MemoryWrapper() { return <WorkspaceMemorySection />; }

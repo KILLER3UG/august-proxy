@@ -6,6 +6,7 @@
  * consistency with the rest of the panel. */
 
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useStore } from '@nanostores/react';
 import {
@@ -20,6 +21,8 @@ import {
   Terminal,
   Wifi,
   WifiOff,
+  Plug,
+  PlugZap,
   type LucideIcon,
 } from 'lucide-react';
 import { api } from '@/api/client';
@@ -41,6 +44,11 @@ interface HealthData {
     models: { url: string; label: string; client: string };
   };
   activeUpstream?: { provider: string; baseUrl: string } | null;
+  externalAccess?: {
+    enabled: boolean;
+    hasKey: boolean;
+    configured: boolean;
+  };
 }
 
 function fmtUptime(s?: number) {
@@ -200,9 +208,12 @@ export function SystemHealthSection() {
       </div>
 
       <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-3">
-        <div className="flex items-center gap-2">
-          <Link2 className="size-4 text-muted-foreground" />
-          <span className="text-sm font-semibold">Connect an app</span>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Link2 className="size-4 text-muted-foreground" />
+            <span className="text-sm font-semibold">Connect an app</span>
+          </div>
+          <ExternalAccessPill external={data?.externalAccess} />
         </div>
         <p className="text-xs text-muted-foreground">
           Point any OpenAI- or Anthropic-compatible app at this proxy. Models from every provider are available on all paths.
@@ -248,8 +259,53 @@ export function SystemHealthSection() {
       </div>
 
       <p className="text-[9px] text-muted-foreground font-mono">
-        🔒 The base URL works over the network this app is served from. Use a real API key from Model Providers for the upstream provider.
+        🔒 The base URL works over the network this app is served from. Use a real API key from Model Providers for the upstream provider.{' '}
+        <Link to="/settings/api-access" className="underline underline-offset-2 hover:text-foreground">
+          Open the gateway →
+        </Link>
       </p>
     </div>
+  );
+}
+
+/* Small status pill that summarizes external gateway state. Shown in the
+ * header of the "Connect an app" block. Shades the badge:
+ *   - success  → enabled AND key configured (clients can authenticate)
+ *   - warning  → enabled but no key (clients get 503)
+ *   - secondary/default → disabled (clients get 403)
+ */
+function ExternalAccessPill({ external }: {
+  external?: { enabled: boolean; hasKey: boolean; configured: boolean };
+}) {
+  if (!external || (!external.enabled && !external.hasKey)) {
+    return (
+      <Badge variant="secondary" className="gap-1.5">
+        <Plug className="size-3" />
+        External: closed
+      </Badge>
+    );
+  }
+  if (external.enabled && external.hasKey) {
+    return (
+      <Badge variant="success" className="gap-1.5">
+        <PlugZap className="size-3" />
+        External: open
+      </Badge>
+    );
+  }
+  if (external.enabled && !external.hasKey) {
+    return (
+      <Badge variant="warning" className="gap-1.5">
+        <Plug className="size-3" />
+        External: no key
+      </Badge>
+    );
+  }
+  // disabled but key present — closed-for-now
+  return (
+    <Badge variant="outline" className="gap-1.5">
+      <Plug className="size-3" />
+      External: armed
+    </Badge>
   );
 }

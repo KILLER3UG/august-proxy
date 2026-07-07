@@ -190,4 +190,27 @@ async def health():
 
 @app.get('/api/health/detailed')
 async def healthDetailed():
-    return {'status': 'ok', 'mode': 'python', 'port': settings.port, 'data_dir': str(settings.dataDir)}
+    """Detailed health snapshot — used by System Health and API Access panels.
+
+    Includes ``externalAccess`` so the UI can show whether the proxy
+    gateway is currently open for external clients.
+    """
+    try:
+        cfg = settings.config or {}
+    except Exception:
+        cfg = {}
+    gw = (cfg.get('gateway') or {})
+    ea = (gw.get('externalAccess') or {})
+    enabled = bool(ea.get('enabled', False))
+    has_key = bool(settings.gatewayApiKey)
+    return {
+        'status': 'ok',
+        'mode': 'python',
+        'port': settings.port,
+        'data_dir': str(settings.dataDir),
+        'externalAccess': {
+            'enabled': enabled,
+            'hasKey': has_key,
+            'configured': enabled and has_key,
+        },
+    }

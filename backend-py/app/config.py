@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     projectRoot: Path = _findProjectRoot()
     dataDir: Path = Path(os.environ.get('AUGUST_DATA_DIR', str(_findProjectRoot() / 'data')))
     webDist: Path = _findProjectRoot() / 'web-dist'
+    gatewayApiKey: str | None = None
     _config: Dict[str, object] = {}
     _providers: Dict[str, object] = {}
 
