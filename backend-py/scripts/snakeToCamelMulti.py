@@ -113,10 +113,6 @@ def _iterStringSpans(text: str, lang: str) -> Iterable[tuple[int, int]]:
             yield (i, j)
             i = j
             continue
-        # JavaScript regex literals: /pattern/flags — heuristic detection.
-        # When '/' follows a token position that is not a value (i.e. not
-        # identifier, ')' or ']'), it starts a regex. Track the previous
-        # non-whitespace char to decide.
         if lang != 'rust' and c == '/':
             prev = ''
             k = i - 1
@@ -124,27 +120,22 @@ def _iterStringSpans(text: str, lang: str) -> Iterable[tuple[int, int]]:
                 k -= 1
             if k >= 0:
                 prev = text[k]
-            # Regex-starting contexts: top-level, '(', ',', '=', ':', ';',
-            # '!', '&', '|', '?', '{', '}', '[', '~', or after a keyword like
-            # `return` (already covered by '(' or ';')
-            is_regex_start = prev in ('', '(', ',', '=', ':', ';', '!', '&', '|', '?', '{', '}', '[', '~', '+', '-', '*', '%', '^')
-            if is_regex_start:
-                # Find closing / (handle escape and character class)
+            isRegexStart = prev in ('', '(', ',', '=', ':', ';', '!', '&', '|', '?', '{', '}', '[', '~', '+', '-', '*', '%', '^')
+            if isRegexStart:
                 j = i + 1
-                in_class = False
+                inClass = False
                 while j < n:
                     if text[j] == '\\' and j + 1 < n:
                         j += 2
                         continue
                     if text[j] == '[':
-                        in_class = True
-                    elif text[j] == ']' and in_class:
-                        in_class = False
-                    elif text[j] == '/' and not in_class:
+                        inClass = True
+                    elif text[j] == ']' and inClass:
+                        inClass = False
+                    elif text[j] == '/' and (not inClass):
                         j += 1
                         break
                     j += 1
-                # Skip flags (regex-flags are simple letters like 'g', 'i', 'm')
                 while j < n and text[j].isalpha():
                     j += 1
                 yield (i, j)
@@ -221,9 +212,6 @@ def _renameInCode(text: str, lang: str, deny: set[str]) -> tuple[str, list[dict]
             out.append(text[start:end])
             i = end
             continue
-        # Skip identifiers that are immediately followed by a glob-like
-        # wildcard (e.g. ``computer_*`` in docblocks). Renaming
-        # ``computer_`` → ``computer`` would break the meaning.
         if end < n and text[end] in ('*', '?', '+', '(', ')', '{'):
             out.append(text[start:end])
             i = end
