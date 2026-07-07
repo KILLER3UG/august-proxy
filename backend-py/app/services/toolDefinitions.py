@@ -230,14 +230,14 @@ async def _webSearch(query: str, maxResults: int=10) -> str:
         msg = errorHint or f'No results found for: {query}'
         return _json.dumps({'search_query': query, 'result_count': 0, 'message': msg}, ensure_ascii=False)
     fetchCount = min(10, len(searchResults))
-    fetched_content: list[dict[str, object]] = []
+    fetchedContent: list[dict[str, object]] = []
     if fetchCount > 0:
         fetched = await asyncio.gather(*[_fetchUrlContent(r['url'], max_length=8000) for r in searchResults[:fetchCount]], return_exceptions=True)
         for i, content in enumerate(fetched):
             if isinstance(content, BaseException):
                 continue
-            fetched_content.append({'index': searchResults[i]['index'], 'url': searchResults[i]['url'], 'content': content})
-    return _json.dumps({'search_query': query, 'result_count': len(searchResults), 'results': searchResults, 'fetched_content': fetched_content}, ensure_ascii=False)
+            fetchedContent.append({'index': searchResults[i]['index'], 'url': searchResults[i]['url'], 'content': content})
+    return _json.dumps({'search_query': query, 'result_count': len(searchResults), 'results': searchResults, 'fetched_content': fetchedContent}, ensure_ascii=False)
 
 async def _memorySearch(query: str) -> str:
     """Search past conversation memory."""

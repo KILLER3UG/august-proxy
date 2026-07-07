@@ -21,4 +21,4 @@ async def listAuditLog(sessionId: str='', eventType: str='', limit: int=100):
 async def auditStats():
     """Get audit statistics."""
     stats = memoryStore.getStats()
-    return {'total_events': stats.get('lifecycle', 0), 'total_sessions': stats.get('sessions', 0)}
+    return {'totalEvents': stats.get('lifecycle', 0), 'totalSessions': stats.get('sessions', 0)}

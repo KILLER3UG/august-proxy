@@ -187,8 +187,8 @@ async def getExternalAccess():
     gw = cfg.get('gateway') or {}
     ea = gw.get('externalAccess') or {}
     enabled = bool(ea.get('enabled', False))
-    api_key = settings.gatewayApiKey
-    return {'enabled': enabled, 'hasKey': bool(api_key), 'keyPreview': secrets.mask(api_key) if api_key else None, 'source': 'env' if api_key else None, 'endpoints': {'anthropic': f'http://localhost:{settings.port}/v1/messages', 'openai': f'http://localhost:{settings.port}/v1/chat/completions', 'models': f'http://localhost:{settings.port}/v1/models'}}
+    apiKey = settings.gatewayApiKey
+    return {'enabled': enabled, 'hasKey': bool(apiKey), 'keyPreview': secrets.mask(apiKey) if apiKey else None, 'source': 'env' if apiKey else None, 'endpoints': {'anthropic': f'http://localhost:{settings.port}/v1/messages', 'openai': f'http://localhost:{settings.port}/v1/chat/completions', 'models': f'http://localhost:{settings.port}/v1/models'}}
 
 class ExternalAccessUpdate(BaseModel):
     enabled: bool

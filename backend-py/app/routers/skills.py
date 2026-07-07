@@ -27,7 +27,7 @@ class SkillFileWrite(BaseModel):
 async def listSkills(q: str=Query('', description='Search query (name/description/trigger)'), category: str=Query('', description='Filter by category')):
     """Search and list available skills."""
     results = skillService.search(query=q, category=category, enabledOnly=False)
-    return {'skills': [{'name': s['name'], 'description': s.get('description', ''), 'trigger': s.get('trigger', ''), 'category': s.get('category', 'uncategorized'), 'enabled': s['enabled'], 'created_by': s.get('created_by', '')} for s in results], 'total': len(results)}
+    return {'skills': [{'name': s['name'], 'description': s.get('description', ''), 'trigger': s.get('trigger', ''), 'category': s.get('category', 'uncategorized'), 'enabled': s['enabled'], 'createdBy': s.get('created_by', '')} for s in results], 'total': len(results)}
 
 @router.get('/{name}')
 async def getSkill(name: str):

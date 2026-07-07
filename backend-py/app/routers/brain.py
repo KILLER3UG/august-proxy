@@ -65,10 +65,10 @@ async def getHealth():
     for flagKey, label in phases:
         flagVal = bool(layersCfg.get(flagKey, False))
         if not flagVal:
-            results.append({'layer': label, 'flag': flagKey, 'flag_value': False, 'status': 'off', 'detail': 'feature flag disabled', 'last_check_at': nowIso})
+            results.append({'layer': label, 'flag': flagKey, 'flagValue': False, 'status': 'off', 'detail': 'feature flag disabled', 'lastCheckAt': nowIso})
             continue
         check = _runSelfcheck(flagKey)
-        results.append({'layer': label, 'flag': flagKey, 'flag_value': True, 'status': check['status'], 'detail': check['detail'], 'last_check_at': nowIso})
+        results.append({'layer': label, 'flag': flagKey, 'flagValue': True, 'status': check['status'], 'detail': check['detail'], 'lastCheckAt': nowIso})
     return {'phases': results}
 
 def _runSelfcheck(flagKey: str) -> dict:

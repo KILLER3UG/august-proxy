@@ -58,7 +58,7 @@ async def config() -> dict[str, object]:
     settings UI renders. ``backend`` names the engine so the page label stays
     accurate instead of the misleading legacy ``cua``.
     """
-    return {'enabled': _isAvailable(), 'backend': 'pyautogui', 'auto_approve': ['screenshot', 'mouse_position', 'screen_size', 'list_windows'], 'blocklist_keys': ['ctrl+alt+del', 'cmd+q'], 'blocklist_patterns': []}
+    return {'enabled': _isAvailable(), 'backend': 'pyautogui', 'autoApprove': ['screenshot', 'mouse_position', 'screen_size', 'list_windows'], 'blocklistKeys': ['ctrl+alt+del', 'cmd+q'], 'blocklistPatterns': []}
 
 class ActionRequest(BaseModel):
     action: str = Field(..., description='screenshot|mouse_position|screen_size|click|type|press|navigate|list_windows')
