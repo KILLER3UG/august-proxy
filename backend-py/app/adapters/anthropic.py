@@ -458,7 +458,7 @@ def buildOpenaiAggregatedForAnthropicFromStream(state: dict[str, JsonValue]) -> 
     """Build an OpenAI chat completion response from accumulated Anthropic stream state."""
     return {'id': state.get('message_id', f'chatcmpl-{uuid.uuid4().hex[:12]}'), 'object': 'chat.completion', 'created': int(time.time()), 'model': state.get('model', 'unknown'), 'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': state.get('accumulated_text', '')}, 'finish_reason': state.get('stop_reason', 'stop')}], 'usage': {'prompt_tokens': state.get('input_tokens', 0), 'completion_tokens': state.get('output_tokens', 0), 'total_tokens': state.get('input_tokens', 0) + state.get('output_tokens', 0)}}
 
-async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], system: list[dict[str, JsonValue]] | None, model: str, upstreamUrl: str, upstreamHeaders: dict[str, str], isAnthropicUpstream: bool, knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, JsonValue]], None] | None=None, parentSignal: object = None) -> tuple[list[dict[str, JsonValue]], dict[str, JsonValue] | None]:
+async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], system: list[dict[str, JsonValue]] | None, model: str, upstreamUrl: str, upstreamHeaders: dict[str, str], isAnthropicUpstream: bool, knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, JsonValue]], None] | None=None, parentSignal: object=None) -> tuple[list[dict[str, JsonValue]], dict[str, JsonValue] | None]:
     """Run the multi-round tool resolution loop for Anthropic-format requests.
 
     Similar to the OpenAI version but works with Anthropic's content block format.
@@ -529,7 +529,7 @@ async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], 
             break
     return (currentMessages, finalUsage)
 
-async def handleMessages(body: dict[str, JsonValue], request: object = None) -> tuple[dict[str, JsonValue] | AsyncIterator[str], dict[str, str] | None]:
+async def handleMessages(body: dict[str, JsonValue], request: object=None) -> tuple[dict[str, JsonValue] | AsyncIterator[str], dict[str, str] | None]:
     """Handle a POST /v1/messages request.
 
     Returns a tuple of (response_or_stream, response_headers).
@@ -748,7 +748,7 @@ def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, JsonValue], mo
     usage = openaiResponse.get('usage', {})
     return {'id': openaiResponse.get('id', f'msg_{uuid.uuid4().hex[:16]}'), 'type': 'message', 'role': 'assistant', 'content': contentList, 'model': openaiResponse.get('model', model), 'stop_reason': stopReasonMap.get(finishReason, 'end_turn'), 'stop_sequence': None, 'usage': {'input_tokens': usage.get('prompt_tokens', 0), 'output_tokens': usage.get('completion_tokens', 0)}}
 
-async def handleCountTokens(body: dict[str, JsonValue], request: object = None) -> dict[str, JsonValue]:
+async def handleCountTokens(body: dict[str, JsonValue], request: object=None) -> dict[str, JsonValue]:
     """Handle a POST /v1/messages/count_tokens request."""
     from app.providers.clients.base import estimateTokens
     messages = body.get('messages', [])

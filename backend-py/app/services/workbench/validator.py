@@ -9,12 +9,7 @@ import json
 import re
 from app.typeAliases import JsonValue
 
-
-def validateToolArguments(
-    toolCall: dict[str, JsonValue],
-    toolDefinitions: list[dict[str, JsonValue]],
-    messages: list[dict[str, JsonValue]] | None = None,
-) -> dict[str, JsonValue]:
+def validateToolArguments(toolCall: dict[str, JsonValue], toolDefinitions: list[dict[str, JsonValue]], messages: list[dict[str, JsonValue]] | None=None) -> dict[str, JsonValue]:
     """Validate a tool call against its schema.
 
     Args:
@@ -73,7 +68,7 @@ def validateToolArguments(
         val = args[field]
         if val is None:
             return {'valid': False, 'error': f"Missing required field: '{field}'"}
-        if isinstance(val, str) and not val.strip():
+        if isinstance(val, str) and (not val.strip()):
             return {'valid': False, 'error': f"Missing required field: '{field}'"}
     if schema.get('additionalProperties') is False:
         props = schema.get('properties', {})
@@ -102,11 +97,9 @@ def validateToolArguments(
             return {'valid': False, 'error': f"Field '{field}' must be an object"}
     return {'valid': True}
 
-
 def buildValidationErrorToolMessage(toolCallId: str, toolName: str, errorMsg: str) -> dict[str, JsonValue]:
     """Build a tool result message for a validation error."""
     return {'tool_call_id': toolCallId, 'role': 'tool', 'content': f"[Validation Error] Tool '{toolName}' rejected before execution:\n{errorMsg}\n\n[Proxy Self-Heal]: Fix the tool arguments and retry. Do NOT stop."}
-
 
 def _findToolDefinition(name: str, definitions: list[dict[str, JsonValue]]) -> dict[str, JsonValue] | None:
     """Find a tool definition by name, supporting both Anthropic and OpenAI formats."""
@@ -120,7 +113,6 @@ def _findToolDefinition(name: str, definitions: list[dict[str, JsonValue]]) -> d
             return t
     return None
 
-
 def _applyCompatibilityShims(toolName: str, args: dict[str, JsonValue]) -> dict[str, JsonValue]:
     """Apply compatibility shims for common tool name mappings."""
     if toolName in ('WebFetch', 'web_fetch', 'mcp__workspace__web_fetch'):
@@ -132,10 +124,7 @@ def _applyCompatibilityShims(toolName: str, args: dict[str, JsonValue]) -> dict[
             args = dict(args)
             args['query'] = args['prompt']
     return args
-
-
 _MUTATINGToolPatterns = re.compile('^(StrReplaceEditTool|BashTool|MCP.*(?:write|create|move|edit|delete|rename|copy)|mcp__.*(?:write|create|move|edit|delete))', re.IGNORECASE)
-
 
 def _checkProxyExecutionGate(toolName: str, args: dict[str, JsonValue], messages: list[dict[str, JsonValue]]) -> dict[str, JsonValue]:
     """Proxy Execution Gate: block mutating tools if no plan.md in context.

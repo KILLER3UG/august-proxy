@@ -22,9 +22,7 @@ import os
 import platform
 import logging
 from typing import Optional
-
 logger = logging.getLogger(__name__)
-
 
 class PtyIO:
     """Async PTY I/O wrapper.
@@ -36,46 +34,36 @@ class PtyIO:
 
     def __init__(self) -> None:
         self._proc: AnyProcess | None = None
-        self._reader_task: asyncio.Task | None = None
+        self._readerTask: asyncio.Task | None = None
         self._buffer: asyncio.Queue[bytes] = asyncio.Queue(maxsize=256)
 
-    async def spawn(
-        self,
-        shell: str,
-        args: Optional[list[str]] = None,
-        cwd: Optional[str] = None,
-        env: Optional[dict[str, str]] = None,
-        cols: int = 80,
-        rows: int = 24,
-    ) -> None:
+    async def spawn(self, shell: str, args: Optional[list[str]]=None, cwd: Optional[str]=None, env: Optional[dict[str, str]]=None, cols: int=80, rows: int=24) -> None:
         """Spawn a PTY process running *shell*."""
-        if platform.system() == "Windows":
-            await self._spawn_windows(shell, args or [], cwd, env, cols, rows)
+        if platform.system() == 'Windows':
+            await self._spawnWindows(shell, args or [], cwd, env, cols, rows)
         else:
-            await self._spawn_unix(shell, args or [], cwd, env, cols, rows)
+            await self._spawnUnix(shell, args or [], cwd, env, cols, rows)
+        self._readerTask = asyncio.create_task(self._readerLoop())
 
-        # Start reader task
-        self._reader_task = asyncio.create_task(self._reader_loop())
-
-    async def read(self, n: int = 4096) -> bytes:
+    async def read(self, n: int=4096) -> bytes:
         """Read up to *n* bytes from the PTY.
 
         Blocks until data is available. Returns empty bytes on EOF.
         """
         if self._proc is None:
-            return b""
+            return b''
         try:
             data = await asyncio.wait_for(self._buffer.get(), timeout=30.0)
             return data
         except asyncio.TimeoutError:
-            return b""
+            return b''
 
     async def write(self, data: bytes | str) -> None:
         """Write data to the PTY."""
         if self._proc is None:
             return
         if isinstance(data, str):
-            data = data.encode("utf-8", errors="replace")
+            data = data.encode('utf-8', errors='replace')
         self._write(data)
 
     def resize(self, cols: int, rows: int) -> None:
@@ -88,73 +76,58 @@ class PtyIO:
 
     async def close(self) -> None:
         """Close the PTY and clean up."""
-        if self._reader_task:
-            self._reader_task.cancel()
+        if self._readerTask:
+            self._readerTask.cancel()
             try:
-                await self._reader_task
+                await self._readerTask
             except (asyncio.CancelledError, Exception):
                 pass
-            self._reader_task = None
+            self._readerTask = None
         self._close()
         self._proc = None
 
     @property
-    def is_open(self) -> bool:
+    def isOpen(self) -> bool:
         return self._proc is not None
 
-    # ── Unix implementation ────────────────────────────────────────────
-
-    async def _spawn_unix(
-        self,
-        shell: str,
-        args: list[str],
-        cwd: Optional[str],
-        env: Optional[dict[str, str]],
-        cols: int,
-        rows: int,
-    ) -> None:
+    async def _spawnUnix(self, shell: str, args: list[str], cwd: Optional[str], env: Optional[dict[str, str]], cols: int, rows: int) -> None:
         import pty
         import select
         import struct
         import fcntl
         import termios
-
         pid, fd = pty.fork()
         if pid == 0:
-            # Child process
             if cwd:
                 os.chdir(cwd)
             if env:
                 os.environ.update(env)
             os.execvp(shell, [shell, *args])
             os._exit(1)
-
-        # Set window size
         if cols and rows:
             try:
-                buf = struct.pack("HHHH", rows, cols, 0, 0)
+                buf = struct.pack('HHHH', rows, cols, 0, 0)
                 fcntl.ioctl(fd, termios.TIOCSWINSZ, buf)
             except Exception:
                 pass
-
         self._proc = _UnixPtyProcess(pid=pid, fd=fd)
 
-    def _write_unix(self, data: bytes) -> None:
+    def _writeUnix(self, data: bytes) -> None:
         if self._proc and isinstance(self._proc, _UnixPtyProcess):
             os.write(self._proc.fd, data)
 
-    def _resize_unix(self, cols: int, rows: int) -> None:
+    def _resizeUnix(self, cols: int, rows: int) -> None:
         import struct
         import fcntl
         import termios
         if self._proc and isinstance(self._proc, _UnixPtyProcess):
             try:
-                buf = struct.pack("HHHH", rows, cols, 0, 0)
+                buf = struct.pack('HHHH', rows, cols, 0, 0)
                 fcntl.ioctl(self._proc.fd, termios.TIOCSWINSZ, buf)
             except Exception:
                 pass
 
-    def _close_unix(self) -> None:
+    def _closeUnix(self) -> None:
         if self._proc and isinstance(self._proc, _UnixPtyProcess):
             try:
                 os.close(self._proc.fd)
@@ -165,117 +138,93 @@ class PtyIO:
             except OSError:
                 pass
 
-    # ── Windows implementation ─────────────────────────────────────────
-
-    async def _spawn_windows(
-        self,
-        shell: str,
-        args: list[str],
-        cwd: Optional[str],
-        env: Optional[dict[str, str]],
-        cols: int,
-        rows: int,
-    ) -> None:
+    async def _spawnWindows(self, shell: str, args: list[str], cwd: Optional[str], env: Optional[dict[str, str]], cols: int, rows: int) -> None:
         try:
-            from pywinpty import PtyProcess  # type: ignore[import-untyped]
+            from pywinpty import PtyProcess
         except ImportError:
-            raise ImportError(
-                "pywinpty is required for PTY support on Windows. "
-                "Install it with: pip install pywinpty>=2.0.0"
-            )
-
-        proc = PtyProcess.spawn(
-            [shell, *args],
-            cwd=cwd or os.getcwd(),
-            env=env,
-            dimensions=(rows, cols),
-        )
+            raise ImportError('pywinpty is required for PTY support on Windows. Install it with: pip install pywinpty>=2.0.0')
+        proc = PtyProcess.spawn([shell, *args], cwd=cwd or os.getcwd(), env=env, dimensions=(rows, cols))
         self._proc = _WinPtyProcess(proc=proc)
 
-    def _write_windows(self, data: bytes) -> None:
+    def _writeWindows(self, data: bytes) -> None:
         if self._proc and isinstance(self._proc, _WinPtyProcess):
-            self._proc.proc.write(data.decode("utf-8", errors="replace"))
+            self._proc.proc.write(data.decode('utf-8', errors='replace'))
 
-    def _resize_windows(self, cols: int, rows: int) -> None:
+    def _resizeWindows(self, cols: int, rows: int) -> None:
         if self._proc and isinstance(self._proc, _WinPtyProcess):
             try:
                 self._proc.proc.setwinsize(rows, cols)
             except Exception:
                 pass
 
-    def _close_windows(self) -> None:
+    def _closeWindows(self) -> None:
         if self._proc and isinstance(self._proc, _WinPtyProcess):
             try:
                 self._proc.proc.terminate()
             except Exception:
                 pass
 
-    # ── Dispatch ───────────────────────────────────────────────────────
-
     def _write(self, data: bytes) -> None:
-        if platform.system() == "Windows":
-            self._write_windows(data)
+        if platform.system() == 'Windows':
+            self._writeWindows(data)
         else:
-            self._write_unix(data)
+            self._writeUnix(data)
 
     def _resize(self, cols: int, rows: int) -> None:
-        if platform.system() == "Windows":
-            self._resize_windows(cols, rows)
+        if platform.system() == 'Windows':
+            self._resizeWindows(cols, rows)
         else:
-            self._resize_unix(cols, rows)
+            self._resizeUnix(cols, rows)
 
     def _close(self) -> None:
-        if platform.system() == "Windows":
-            self._close_windows()
+        if platform.system() == 'Windows':
+            self._closeWindows()
         else:
-            self._close_unix()
+            self._closeUnix()
 
-    async def _reader_loop(self) -> None:
+    async def _readerLoop(self) -> None:
         """Read from the PTY in a loop, pushing data into the buffer."""
         try:
             while self._proc:
-                if platform.system() == "Windows":
-                    data = await self._read_windows()
+                if platform.system() == 'Windows':
+                    data = await self._readWindows()
                 else:
-                    data = await self._read_unix()
+                    data = await self._readUnix()
                 if not data:
                     break
                 await self._buffer.put(data)
         except Exception:
-            logger.exception("[PtyIO] reader loop error")
+            logger.exception('[PtyIO] reader loop error')
         finally:
             await self.close()
 
-    async def _read_unix(self) -> bytes:
+    async def _readUnix(self) -> bytes:
         if not self._proc or not isinstance(self._proc, _UnixPtyProcess):
-            return b""
+            return b''
         import select
         loop = asyncio.get_running_loop()
 
         def _read():
-            r, _, _ = select.select([self._proc.fd], [], [], 0.1)
+            r, __, __ = select.select([self._proc.fd], [], [], 0.1)
             if r:
                 return os.read(self._proc.fd, 4096)
-            return b""
-
+            return b''
         return await loop.run_in_executor(None, _read)
 
-    async def _read_windows(self) -> bytes:
+    async def _readWindows(self) -> bytes:
         if not self._proc or not isinstance(self._proc, _WinPtyProcess):
-            return b""
+            return b''
         loop = asyncio.get_running_loop()
 
         def _read():
             try:
                 data = self._proc.proc.read(4096, timeout=100)
                 if data:
-                    return data.encode("utf-8", errors="replace") if isinstance(data, str) else data
+                    return data.encode('utf-8', errors='replace') if isinstance(data, str) else data
             except Exception:
                 pass
-            return b""
-
+            return b''
         return await loop.run_in_executor(None, _read)
-
 
 class _UnixPtyProcess:
     """Container for Unix PTY process state."""
@@ -284,13 +233,9 @@ class _UnixPtyProcess:
         self.pid = pid
         self.fd = fd
 
-
 class _WinPtyProcess:
     """Container for Windows PTY process state."""
 
     def __init__(self, proc: AnyProcess) -> None:
         self.proc = proc
-
-
-# Type alias for pywinpty.PtyProcess (only imported on Windows)
 AnyProcess = object

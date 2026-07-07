@@ -29,6 +29,7 @@ class ProposalCreate(BaseModel):
     sessionId: str
     proposalType: str
     content: object
+
 class ProposalDecide(BaseModel):
     status: str
     decidedBy: str = ''
@@ -122,7 +123,7 @@ async def decideProposalRoute(proposalId: int, body: ProposalDecide):
     return {'status': body.status}
 
 @router.post('/lifecycle')
-async def recordLifecycleRoute(sessionId: str, eventType: str, detail: object = None):
+async def recordLifecycleRoute(sessionId: str, eventType: str, detail: object=None):
     """Record a lifecycle event."""
     lid = memoryStore.recordLifecycle(sessionId, eventType, detail)
     return {'id': lid}

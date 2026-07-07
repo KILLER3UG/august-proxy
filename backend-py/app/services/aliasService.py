@@ -50,14 +50,11 @@ def _providerNames() -> set[str]:
     names: set[str] = set()
     try:
         from app.providers import resolver as providerResolver
-        from app.providers.template_loader import get_templates
-        # Template names + aliases
-        for t in get_templates():
+        from app.providers.template_loader import getTemplates
+        for t in getTemplates():
             names.add(t.get('name', ''))
             for a in t.get('aliases', []) or []:
                 names.add(a)
-        # Custom store entries (already included in resolver.listAvailable
-        # for enabled+keyed entries, but list all names regardless of key state)
         from app.services import configService
         store = configService.getProvidersStore()
         for entry in store.get('providers', []):
@@ -148,7 +145,7 @@ def replaceAliases(aliases: list[AliasDict], actor: str='system') -> list[AliasD
         ok, msg = validateTarget(targetProvider, targetModel)
         if not ok:
             raise ValueError(f"Alias '{alias}': {msg}")
-        normalised.append(AliasDict(alias=alias, targetModel=targetModel, targetProvider=targetProvider, **({'displayAlias': entry['displayAlias']} if entry.get('displayAlias') else {})))
+        normalised.append(AliasDict(alias=alias, targetModel=targetModel, targetProvider=targetProvider, **{'displayAlias': entry['displayAlias']} if entry.get('displayAlias') else {}))
     before = listAliases()
     _writeAliases(normalised)
     recordConfigAudit('alias', 'replace', actor, before=before, after=normalised)

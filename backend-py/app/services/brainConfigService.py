@@ -53,7 +53,7 @@ def _defaultsCamel() -> BrainConfigDict:
     """Return the full defaults dict in camelCase (matches ``BrainConfig``)."""
     out: BrainConfigDict = {}
     for camel, _snake, default, _kind in fieldTable:
-        out[camel] = default  # type: ignore[literal-required]
+        out[camel] = default
     return out
 
 def getDefaults() -> BrainConfigDict:
@@ -80,7 +80,7 @@ def _snakeToCamel(snakeCfg: dict[str, JsonValue]) -> BrainConfigDict:
         camelKey = snakeToCamel.get(snakeKey)
         if camelKey is None:
             continue
-        out[camelKey] = value  # type: ignore[literal-required]
+        out[camelKey] = value
     return out
 
 def _camelPatchToSnake(patch: dict[str, JsonValue]) -> dict[str, JsonValue]:

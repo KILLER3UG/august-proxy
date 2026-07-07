@@ -34,7 +34,7 @@ def isCommandBlocked(command: str) -> bool:
     cmdLower = command.lower()
     return any((p in cmdLower for p in _DAEMONBlockedCommandPatterns))
 
-def register(name: str, description: str, handler: ToolHandler, parameters: dict[str, JsonValue] | None = None, keywords: list[str] | None = None) -> None:
+def register(name: str, description: str, handler: ToolHandler, parameters: dict[str, JsonValue] | None=None, keywords: list[str] | None=None) -> None:
     """Register a tool.
 
     Raises ValueError if the name is reserved (tool_search, tool_describe, tool_call).

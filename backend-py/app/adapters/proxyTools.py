@@ -63,7 +63,7 @@ def _validateToolArguments(toolCall: dict[str, JsonValue], toolDefinitions: list
     """Placeholder — returns valid until validator is ported."""
     return {'valid': True}
 
-def _executeToolBatch(toolCalls: list[dict[str, JsonValue]], executeOne: Callable[..., object], options: dict[str, JsonValue] | None = None) -> list[object]:
+def _executeToolBatch(toolCalls: list[dict[str, JsonValue]], executeOne: Callable[..., object], options: dict[str, JsonValue] | None=None) -> list[object]:
     """Placeholder — returns empty list until tool-executor is ported."""
     return []
 
@@ -302,7 +302,7 @@ def formatManagedToolResult(toolName: str, result: object) -> str:
         return ''
     return json.dumps(result)
 
-async def executeManagedProxyTool(toolName: str, args: dict[str, JsonValue], workspacePath: str | None=None, onProgress: Callable[[str], None] | None=None, parentSignal: object = None) -> object:
+async def executeManagedProxyTool(toolName: str, args: dict[str, JsonValue], workspacePath: str | None=None, onProgress: Callable[[str], None] | None=None, parentSignal: object=None) -> object:
     """Execute a managed proxy tool by dispatching to the correct backend.
 
     Currently stubs all external service calls. Real implementations come
@@ -320,7 +320,7 @@ async def executeManagedProxyTool(toolName: str, args: dict[str, JsonValue], wor
         return _stubExecuteTool(toolName, args or {})
     raise ValueError(f'Unsupported managed proxy tool: {toolName}')
 
-async def executeManagedOpenaiToolCalls(toolCalls: list[dict[str, JsonValue]], knownTools: list[dict[str, JsonValue]], messages: list[dict[str, JsonValue]], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, JsonValue]], None] | None=None, parentSignal: object = None) -> list[dict[str, JsonValue]]:
+async def executeManagedOpenaiToolCalls(toolCalls: list[dict[str, JsonValue]], knownTools: list[dict[str, JsonValue]], messages: list[dict[str, JsonValue]], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, JsonValue]], None] | None=None, parentSignal: object=None) -> list[dict[str, JsonValue]]:
     """Execute OpenAI-format managed tool calls.
 
     Currently uses stubs for validation and brain config.
@@ -336,10 +336,10 @@ async def executeManagedOpenaiToolCalls(toolCalls: list[dict[str, JsonValue]], k
             results.append({'tool_call_id': tc.get('id'), 'role': 'tool', 'content': 'Error: missing tool name'})
             continue
         if isinstance(func, dict):
-            args_raw = func.get('arguments', '{}')
+            argsRaw = func.get('arguments', '{}')
         else:
-            args_raw = '{}'
-        syntheticCall: dict[str, JsonValue] = {'function': {'name': toolName, 'arguments': args_raw}}
+            argsRaw = '{}'
+        syntheticCall: dict[str, JsonValue] = {'function': {'name': toolName, 'arguments': argsRaw}}
         validation = _validateToolArguments(syntheticCall, knownTools, messages)
         if not validation.get('valid'):
             _stubLogActivity('VALIDATOR', f"OpenAI tool '{toolName}' rejected: {validation.get('error')}")
@@ -347,9 +347,9 @@ async def executeManagedOpenaiToolCalls(toolCalls: list[dict[str, JsonValue]], k
             continue
         try:
             if isinstance(func, dict):
-                arg_str = func.get('arguments', '{}')
-                assert isinstance(arg_str, str)
-                parsedArgs = json.loads(arg_str)
+                argStr = func.get('arguments', '{}')
+                assert isinstance(argStr, str)
+                parsedArgs = json.loads(argStr)
             else:
                 parsedArgs = {}
         except (json.JSONDecodeError, TypeError):

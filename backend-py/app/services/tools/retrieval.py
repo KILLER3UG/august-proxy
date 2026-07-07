@@ -17,7 +17,7 @@ from collections import Counter
 class CatalogEntry:
     """A pre-tokenized entry in the BM25 catalog."""
 
-    def __init__(self, name: str, tokens: list[str], metadata: dict[str, object] | None = None):
+    def __init__(self, name: str, tokens: list[str], metadata: dict[str, object] | None=None):
         self.name = name
         self.tokens = tokens
         self.metadata = metadata or {}

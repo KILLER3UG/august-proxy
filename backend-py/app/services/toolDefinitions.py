@@ -139,7 +139,7 @@ async def _runCommand(command: str) -> str:
     except Exception as exc:
         return f'Error executing command: {exc}'
 
-async def _fetchUrlContent(url: str, max_length: int = 50000) -> str:
+async def _fetchUrlContent(url: str, maxLength: int=50000) -> str:
     """Fetch a URL and return its content as Markdown (shared helper for web_fetch and web_search auto-fetch)."""
     import httpx
     blockedPrefixes = ['http://localhost', 'http://127.0.0.1', 'http://10.', 'http://172.16.', 'http://192.168.', 'https://localhost']
@@ -153,7 +153,7 @@ async def _fetchUrlContent(url: str, max_length: int = 50000) -> str:
             text = resp.text
             if 'text/html' in contentType:
                 text = _htmlToMarkdown(text)
-            return f'URL: {url}\nStatus: {resp.status_code}\n\n{text[:max_length]}'
+            return f'URL: {url}\nStatus: {resp.status_code}\n\n{text[:maxLength]}'
     except httpx.HTTPStatusError as exc:
         return f'Error: HTTP {exc.response.status_code} fetching {url}'
     except httpx.RequestError as exc:
@@ -169,17 +169,17 @@ def _htmlToMarkdown(html: str) -> str:
     """Convert HTML to clean Markdown using html2text."""
     import html2text
     converter = html2text.HTML2Text()
-    converter.body_width = 0  # no line wrapping
+    converter.body_width = 0
     converter.ignore_links = False
     converter.ignore_images = False
     converter.ignore_emphasis = False
     converter.protect_links = True
-    converter.unicode_snob = True  # use Unicode instead of ASCII
+    converter.unicode_snob = True
     converter.skip_internal_links = True
     converter.reference_links = False
     return converter.handle(html)[:50000]
 
-def _unescape_html(text: str) -> str:
+def _unescapeHtml(text: str) -> str:
     """Unescape HTML entities like &amp; &lt; &gt; &quot; &#39; etc."""
     import html as _html
     return _html.unescape(text)
@@ -197,87 +197,47 @@ async def _webSearch(query: str, maxResults: int=10) -> str:
     import json as _json
     from ddgs import DDGS
     maxResults = min(maxResults, 20)
-    search_results: list[dict[str, object]] = []
-    error_hint: str | None = None
-
+    searchResults: list[dict[str, object]] = []
+    errorHint: str | None = None
     try:
-        # duckduckgo_search.text() is synchronous — run in thread pool
+
         def _search() -> list[dict[str, str]]:
             with DDGS() as ddgs:
                 return list(ddgs.text(query, max_results=maxResults))
-
         loop = asyncio.get_running_loop()
-        raw_results: list[dict[str, str]] = await loop.run_in_executor(None, _search)
-
-        for i, r in enumerate(raw_results):
+        rawResults: list[dict[str, str]] = await loop.run_in_executor(None, _search)
+        for i, r in enumerate(rawResults):
             title = (r.get('title') or '').strip()
             url = (r.get('href') or '').strip()
             snippet = (r.get('body') or '').strip()
             if title and url:
-                search_results.append({
-                    'index': i + 1,
-                    'title': title,
-                    'url': url,
-                    'snippet': snippet,
-                })
-
+                searchResults.append({'index': i + 1, 'title': title, 'url': url, 'snippet': snippet})
     except Exception as exc:
-        error_hint = str(exc)
-
-    # Fallback: if duckduckgo_search failed or returned nothing, try the
-    # Instant Answer API for definitions/abstracts
-    if not search_results and not error_hint:
+        errorHint = str(exc)
+    if not searchResults and (not errorHint):
         try:
             import httpx
             async with httpx.AsyncClient(timeout=10.0) as client:
-                ia_resp = await client.get(
-                    'https://api.duckduckgo.com/',
-                    params={'q': query, 'format': 'json', 'no_html': '1', 'skip_disambig': '1'},
-                )
-                ia_resp.raise_for_status()
-                ia_data = ia_resp.json()
-                abstract = ia_data.get('Abstract', '')
+                iaResp = await client.get('https://api.duckduckgo.com/', params={'q': query, 'format': 'json', 'no_html': '1', 'skip_disambig': '1'})
+                iaResp.raise_for_status()
+                iaData = iaResp.json()
+                abstract = iaData.get('Abstract', '')
                 if abstract:
-                    return _json.dumps({
-                        'search_query': query,
-                        'result_count': 0,
-                        'abstract': abstract,
-                        'source': ia_data.get('AbstractURL', ''),
-                    }, ensure_ascii=False)
+                    return _json.dumps({'search_query': query, 'result_count': 0, 'abstract': abstract, 'source': iaData.get('AbstractURL', '')}, ensure_ascii=False)
         except Exception:
             pass
-
-    if not search_results:
-        msg = error_hint or f'No results found for: {query}'
-        return _json.dumps({
-            'search_query': query,
-            'result_count': 0,
-            'message': msg,
-        }, ensure_ascii=False)
-
-    # Auto-fetch top results in parallel (at most 10)
-    fetch_count = min(10, len(search_results))
+    if not searchResults:
+        msg = errorHint or f'No results found for: {query}'
+        return _json.dumps({'search_query': query, 'result_count': 0, 'message': msg}, ensure_ascii=False)
+    fetchCount = min(10, len(searchResults))
     fetched_content: list[dict[str, object]] = []
-    if fetch_count > 0:
-        fetched = await asyncio.gather(
-            *[_fetchUrlContent(r['url'], max_length=8000) for r in search_results[:fetch_count]],
-            return_exceptions=True,
-        )
+    if fetchCount > 0:
+        fetched = await asyncio.gather(*[_fetchUrlContent(r['url'], max_length=8000) for r in searchResults[:fetchCount]], return_exceptions=True)
         for i, content in enumerate(fetched):
             if isinstance(content, BaseException):
                 continue
-            fetched_content.append({
-                'index': search_results[i]['index'],
-                'url': search_results[i]['url'],
-                'content': content,
-            })
-
-    return _json.dumps({
-        'search_query': query,
-        'result_count': len(search_results),
-        'results': search_results,
-        'fetched_content': fetched_content,
-    }, ensure_ascii=False)
+            fetched_content.append({'index': searchResults[i]['index'], 'url': searchResults[i]['url'], 'content': content})
+    return _json.dumps({'search_query': query, 'result_count': len(searchResults), 'results': searchResults, 'fetched_content': fetched_content}, ensure_ascii=False)
 
 async def _memorySearch(query: str) -> str:
     """Search past conversation memory."""
@@ -694,7 +654,7 @@ def registerAll() -> None:
     toolRegistry.register('clear_blackboard', 'Clear notes from the shared blackboard, optionally scoped to a specific agent.', _clearBlackboard, {'type': 'object', 'properties': {'agent': {'type': 'string', 'description': 'Only clear notes from this agent (optional).'}}, 'required': []})
     toolRegistry.register('spawn_subagent', 'Dispatch a sub-agent for a focused task. Give it a clear goal and context; optionally specify an agentId (from create_agent) to use a specialized agent, otherwise a general-purpose agent runs.', _spawnSubagent, {'type': 'object', 'properties': {'goal': {'type': 'string', 'description': 'The task goal for the sub-agent.'}, 'agentId': {'type': 'string', 'description': 'Agent id to run (from create_agent). Defaults to a general agent.'}, 'context': {'type': 'string', 'description': 'Background context for the sub-agent.'}, 'toolsets': {'type': 'array', 'items': {'type': 'string'}, 'description': 'Tool sets to grant the sub-agent (optional).'}}, 'required': ['goal']})
     toolRegistry.register('load_skill', "Load a skill's full instructions by name. Use list_skills first to discover available skill names.", _loadSkill, {'type': 'object', 'properties': {'name': {'type': 'string', 'description': 'The skill name to load.'}}, 'required': ['name']})
-    toolRegistry.register('list_skills', 'List available skills with optional search query. Use load_skill to load a skill\'s full instructions.', _listSkills, {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'Optional search query.'}}, 'required': []})
+    toolRegistry.register('list_skills', "List available skills with optional search query. Use load_skill to load a skill's full instructions.", _listSkills, {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'Optional search query.'}}, 'required': []})
     toolRegistry.register('skill_manage', 'Author and maintain skills: create a new skill, patch an existing one, write/remove support files (scripts/, references/, templates/), or delete. Captured lessons live as skills the model loads via load_skill.', _skillManage, {'type': 'object', 'properties': {'action': {'type': 'string', 'enum': ['create', 'patch', 'write_file', 'remove_file', 'delete'], 'description': 'What to do.'}, 'name': {'type': 'string', 'description': 'Skill name (lowercase, dotted/hyphenated).'}, 'body': {'type': 'string', 'description': 'SKILL.md body markdown (create/patch).'}, 'description': {'type': 'string', 'description': 'One-sentence description ≤ 60 chars (create/patch).'}, 'trigger': {'type': 'string', 'description': 'Optional trigger phrase (create/patch).'}, 'category': {'type': 'string', 'description': 'Skill category (create/patch).'}, 'filePath': {'type': 'string', 'description': 'Relative path within the skill dir (write_file/remove_file).'}, 'content': {'type': 'string', 'description': 'File contents (write_file).'}}, 'required': ['action', 'name']})
     from app.services import selfConfigTools
     selfConfigTools.register()

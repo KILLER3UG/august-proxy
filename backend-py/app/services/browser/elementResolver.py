@@ -38,11 +38,11 @@ async def resolveLocator(page: object, *, ref: str | None=None, selector: str | 
         sel = _refToSelector(ref)
         if not sel:
             raise ValueError(f"Invalid ref '{ref}'. Expected '@eN'.")
-        return page.locator(sel)  # type: ignore[attr-defined]
+        return page.locator(sel)
     if selector:
         if _isXpath(selector):
-            return page.locator(f'xpath={selector}')  # type: ignore[attr-defined]
-        return page.locator(selector)  # type: ignore[attr-defined]
+            return page.locator(f'xpath={selector}')
+        return page.locator(selector)
     if text:
-        return page.get_by_text(text, exact=False)  # type: ignore[attr-defined]
+        return page.get_by_text(text, exact=False)
     raise ValueError('One of ref, selector, or text is required.')

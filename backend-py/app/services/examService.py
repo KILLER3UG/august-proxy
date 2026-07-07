@@ -17,33 +17,29 @@ async def _callPrefrontal(prompt: str, model: str='', provider: str='') -> str:
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
         from app.config import settings
-
-        # Resolve model alias (e.g. "claude-sonnet-4-6" → "deepseek-v4-flash-free")
         if model:
-            aliases_cfg = settings.config.get('modelAliases', [])
-            for alias_entry in aliases_cfg if isinstance(aliases_cfg, list) else []:
-                if isinstance(alias_entry, dict) and alias_entry.get('alias') == model:
-                    target_model = alias_entry.get('targetModel')
-                    if target_model:
-                        logger.info('_call_prefrontal: resolved model alias %s → %s', model, target_model)
-                        model = target_model
-                    target_provider = alias_entry.get('targetProvider')
-                    if target_provider and not provider:
-                        provider = target_provider
+            aliasesCfg = settings.config.get('modelAliases', [])
+            for aliasEntry in aliasesCfg if isinstance(aliasesCfg, list) else []:
+                if isinstance(aliasEntry, dict) and aliasEntry.get('alias') == model:
+                    targetModel = aliasEntry.get('targetModel')
+                    if targetModel:
+                        logger.info('_call_prefrontal: resolved model alias %s → %s', model, targetModel)
+                        model = targetModel
+                    targetProvider = aliasEntry.get('targetProvider')
+                    if targetProvider and (not provider):
+                        provider = targetProvider
                     break
-
         if not model:
             model = modelFleet.getModelForRole('prefrontal')
         if not model:
             logger.warning('_call_prefrontal: no prefrontal model configured. Set one in Settings > Model Fleet.')
             return ''
-        # If the caller provided a provider name, resolve by provider first
         if provider:
-            provider_config = providerResolver.resolve(provider)
-            if provider_config:
-                provider_config['model'] = model  # Set the specific model on the provider config
+            providerConfig = providerResolver.resolve(provider)
+            if providerConfig:
+                providerConfig['model'] = model
                 logger.info('_call_prefrontal: resolved provider %s via name, model=%s', provider, model)
-                client = getClient(provider_config)
+                client = getClient(providerConfig)
                 if client and hasattr(client, 'generate'):
                     response = await client.generate(prompt)
                     logger.info('_call_prefrontal: provider generate returned %d chars', len(response or ''))
@@ -52,18 +48,17 @@ async def _callPrefrontal(prompt: str, model: str='', provider: str='') -> str:
                     logger.warning('_call_prefrontal: no client for provider %s', provider)
             else:
                 logger.warning('_call_prefrontal: could not resolve provider %s', provider)
-        # Otherwise try to resolve by model ID
-        provider_config = providerResolver.resolve(model)
-        if not provider_config:
+        providerConfig = providerResolver.resolve(model)
+        if not providerConfig:
             logger.warning('_call_prefrontal: no provider found for model %s, trying first available', model)
             available = [p for p in providerResolver.listAvailable() if p.get('api_key')]
-            provider_config = available[0] if available else None
-        if provider_config:
-            provider_config['model'] = model
-        if not provider_config:
+            providerConfig = available[0] if available else None
+        if providerConfig:
+            providerConfig['model'] = model
+        if not providerConfig:
             logger.warning('_call_prefrontal: no provider configured. Set one in Settings > Model Fleet.')
             return ''
-        client = getClient(provider_config)
+        client = getClient(providerConfig)
         if client and hasattr(client, 'generate'):
             response = await client.generate(prompt)
             return response or ''

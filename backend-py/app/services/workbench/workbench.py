@@ -58,12 +58,6 @@ class WorkbenchSession:
     totalInputTokens: int = 0
     totalOutputTokens: int = 0
     totalCost: float = 0.0
-    # Queued user messages — appended to the in-flight chat loop without
-    # interrupting the model's current response. Drained at the next
-    # iteration boundary (after tool_results are appended, before the
-    # next model call), wrapped as a fresh user-role turn tagged with
-    # <queued_message> markers so the model can decide whether to act
-    # on them, defer them, or acknowledge for later.
     queuedUserMessages: list[dict[str, object]] = field(default_factory=list)
 
     def toDict(self) -> dict[str, object]:
@@ -553,25 +547,19 @@ def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[st
     if not entries:
         return {'role': 'user', 'content': ''}
     parts: list[str] = []
-    parts.append(
-        '[The following message(s) were queued by the user while you were responding. '
-        'They did NOT interrupt your current work — they were added as follow-up(s). '
-        'Consider whether each one changes your current approach, supersedes the '
-        'original request, or should simply be acknowledged for later. Continue with '
-        'whatever is most helpful given this new context.]'
-    )
+    parts.append('[The following message(s) were queued by the user while you were responding. They did NOT interrupt your current work — they were added as follow-up(s). Consider whether each one changes your current approach, supersedes the original request, or should simply be acknowledged for later. Continue with whatever is most helpful given this new context.]')
     parts.append('')
     for entry in entries:
         queuedAt = entry.get('queuedAt') or ''
         text = entry.get('text') or ''
         attachmentCount = len(entry.get('attachments') or [])
-        attr_parts = []
+        attrParts = []
         if queuedAt:
-            attr_parts.append(f'timestamp="{queuedAt}"')
+            attrParts.append(f'timestamp="{queuedAt}"')
         if attachmentCount:
-            attr_parts.append(f'attachments="{attachmentCount}"')
-        attr_str = (' ' + ' '.join(attr_parts)) if attr_parts else ''
-        parts.append(f'<queued_message{attr_str}>')
+            attrParts.append(f'attachments="{attachmentCount}"')
+        attrStr = ' ' + ' '.join(attrParts) if attrParts else ''
+        parts.append(f'<queued_message{attrStr}>')
         parts.append(text)
         parts.append('</queued_message>')
         parts.append('')
@@ -589,23 +577,13 @@ def enqueueUserMessage(sessionId: str, text: str, attachments: list[dict[str, ob
         return None
     if not hasattr(session, 'queuedUserMessages') or session.queuedUserMessages is None:
         session.queuedUserMessages = []
-    entry: dict[str, object] = {
-        'id': f'qm_{uuid.uuid4().hex[:12]}',
-        'text': text,
-        'attachments': list(attachments or []),
-        'queuedAt': _now(),
-    }
+    entry: dict[str, object] = {'id': f'qm_{uuid.uuid4().hex[:12]}', 'text': text, 'attachments': list(attachments or []), 'queuedAt': _now()}
     session.queuedUserMessages.append(entry)
     session.updatedAt = _now()
     saveSessions()
     try:
         from app.services import eventLog
-        eventLog.eventLog.append(sessionId, 'user_message_queued', {
-            'sessionId': sessionId,
-            'messageId': entry['id'],
-            'text': text,
-            'queuedAt': entry['queuedAt'],
-        })
+        eventLog.eventLog.append(sessionId, 'user_message_queued', {'sessionId': sessionId, 'messageId': entry['id'], 'text': text, 'queuedAt': entry['queuedAt']})
     except Exception:
         pass
     return entry
@@ -630,10 +608,7 @@ def dequeueUserMessage(sessionId: str, messageId: str) -> bool:
     saveSessions()
     try:
         from app.services import eventLog
-        eventLog.eventLog.append(sessionId, 'user_message_dequeued', {
-            'sessionId': sessionId,
-            'messageId': messageId,
-        })
+        eventLog.eventLog.append(sessionId, 'user_message_dequeued', {'sessionId': sessionId, 'messageId': messageId})
     except Exception:
         pass
     return True
@@ -665,12 +640,7 @@ def drainQueuedMessages(sessionId: str, emit: Callable[[dict[str, object]], None
         try:
             from app.services import eventLog
             for entry in entries:
-                eventLog.eventLog.append(sessionId, 'userMessageInjected', {
-                    'sessionId': sessionId,
-                    'messageId': entry.get('id', ''),
-                    'text': entry.get('text', ''),
-                    'queuedAt': entry.get('queuedAt', ''),
-                })
+                eventLog.eventLog.append(sessionId, 'userMessageInjected', {'sessionId': sessionId, 'messageId': entry.get('id', ''), 'text': entry.get('text', ''), 'queuedAt': entry.get('queuedAt', '')})
         except Exception:
             pass
     return entries
@@ -778,13 +748,6 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
         toolRound += 1
         if _isCancelled():
             break
-        # Drain queued user messages at the iteration boundary. The
-        # initial user prompt was already appended at the top of this
-        # function (above the loop), so we only drain on subsequent
-        # rounds — never round 1. The prior iteration already appended
-        # its assistant_msg + tool_results pair to currentMessages, so
-        # inserting a fresh user turn here preserves the Anthropic
-        # tool_use / tool_result pairing invariant.
         if toolRound > 1:
             queued = drainQueuedMessages(sessionId, emit=emit)
             if queued:
@@ -831,9 +794,6 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
             if toolRound > 1 and (not textContent) and (not thinkingContent):
                 logger.warning('workbench model re-call returned empty content after tool round %d (no text, no tools)', toolRound - 1)
             currentMessages.append(assistantMsg)
-            # If the user queued messages during this text response, deliver
-            # them mid-response (without interrupting the just-streamed
-            # text) and run another iteration so the model can address them.
             queued = drainQueuedMessages(sessionId, emit=emit)
             if queued:
                 logger.debug('workbench mid-response: injecting %d queued user message(s) after text turn', len(queued))

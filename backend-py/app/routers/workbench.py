@@ -193,7 +193,7 @@ async def queueMessage(request: Request):
     attachments = body.get('attachments') or []
     if not sessionId:
         raise HTTPException(status_code=400, detail='sessionId is required')
-    if not text and not attachments:
+    if not text and (not attachments):
         raise HTTPException(status_code=400, detail='text or attachments required')
     entry = wb.enqueueUserMessage(sessionId=sessionId, text=text, attachments=attachments)
     if entry is None:

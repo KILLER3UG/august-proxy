@@ -1,14 +1,7 @@
 """Shared type aliases and TypedDicts for type safety across the codebase."""
-
 from __future__ import annotations
-
 from typing import TypedDict
-
-# ── Recursive JSON value type ───────────────────────────────────────────
-# Use for truly dynamic JSON data where the shape is not known at compile time.
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
-
-# ── Common API response shapes ──────────────────────────────────────────
 
 class BrainConfigDict(TypedDict, total=False):
     enabled: bool
@@ -23,13 +16,11 @@ class BrainConfigDict(TypedDict, total=False):
     maxAgentDepth: int
     maxWorkbenchToolLoops: int
 
-
 class AliasDict(TypedDict, total=False):
     alias: str
     targetModel: str
     targetProvider: str
     displayAlias: str
-
 
 class ProviderConfigDict(TypedDict, total=False):
     id: str
@@ -37,7 +28,6 @@ class ProviderConfigDict(TypedDict, total=False):
     apiFormat: str
     apiKey: str
     baseUrl: str
-
 
 class WorkbenchSessionDict(TypedDict, total=False):
     id: str
@@ -54,12 +44,10 @@ class WorkbenchSessionDict(TypedDict, total=False):
     task: str
     status: str
 
-
 class MemoryEntryDict(TypedDict, total=False):
     key: str
     value: str
     updatedAt: str
-
 
 class FactDict(TypedDict, total=False):
     id: int
@@ -71,7 +59,6 @@ class FactDict(TypedDict, total=False):
     createdAt: str
     updatedAt: str
 
-
 class ProposalDict(TypedDict, total=False):
     id: int
     sessionId: str
@@ -81,7 +68,6 @@ class ProposalDict(TypedDict, total=False):
     createdAt: str
     decidedAt: str | None
     decidedBy: str | None
-
 
 class SessionRecord(TypedDict, total=False):
     id: str
@@ -94,7 +80,6 @@ class SessionRecord(TypedDict, total=False):
     isArchived: bool
     workspacePath: str | None
 
-
 class UsageEventDict(TypedDict, total=False):
     id: int
     sessionId: str
@@ -104,7 +89,6 @@ class UsageEventDict(TypedDict, total=False):
     contextTokens: int
     createdAt: str
 
-
 class MessageDict(TypedDict, total=False):
     id: int
     sessionId: str
@@ -112,12 +96,10 @@ class MessageDict(TypedDict, total=False):
     content: str
     createdAt: str
 
-
 class ToolCallDict(TypedDict, total=False):
     id: str
     type: str
     function: dict[str, str]
-
 
 class ProviderResponse(TypedDict, total=False):
     status: int
@@ -125,14 +107,12 @@ class ProviderResponse(TypedDict, total=False):
     bodyJson: JsonValue
     headers: dict[str, str]
 
-
 class BrowserSessionDict(TypedDict, total=False):
     id: str
     url: str
     title: str
     state: str
     createdAt: str
-
 
 class BlackboardNoteDict(TypedDict, total=False):
     id: int
@@ -143,7 +123,6 @@ class BlackboardNoteDict(TypedDict, total=False):
     priority: int
     createdAt: str
     expiresAt: str | None
-
 
 class BrainEventMetaDict(TypedDict, total=False):
     """Free-form metadata attached to brain events. Most call sites
@@ -161,15 +140,13 @@ class BrainEventMetaDict(TypedDict, total=False):
     skills: int
     facts: int
 
-
 class ConsolidationSummaryDict(TypedDict, total=False):
     merged: int
     promoted: int
-    deleted_stale: int
+    deletedStale: int
     heuristics: int
     durationMs: int
     errors: list[str]
-
 
 class DaemonStatusDict(TypedDict, total=False):
     id: str

@@ -298,8 +298,6 @@ class BaseProviderClient:
         import os
         from app.config import settings
         providerName = self.config.get('name', '')
-
-        # 0. Custom provider api_key embedded in the config dict itself
         embedded = self.config.get('api_key') or self.config.get('apiKey')
         if embedded:
             return embedded

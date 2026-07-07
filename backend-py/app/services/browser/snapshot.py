@@ -14,7 +14,7 @@ DOM_SNAPSHOT_SCRIPT = '\n() => {\n  const interactiveTags = [\'A\',\'BUTTON\',\'
 async def runSnapshot(page: object) -> list[dict[str, object]]:
     """Execute the snapshot script on ``page`` and return element descriptors."""
     try:
-        elements = await page.evaluate(DOM_SNAPSHOT_SCRIPT)  # type: ignore[attr-defined]
+        elements = await page.evaluate(DOM_SNAPSHOT_SCRIPT)
     except Exception:
         elements = []
     return elements if isinstance(elements, list) else []

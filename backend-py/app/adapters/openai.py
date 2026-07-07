@@ -231,7 +231,7 @@ async def fallbackClientFailedToolsOpenai(messages: list[dict[str, object]], man
             break
     return updated if changed else messages
 
-async def resolveManagedOpenaiToolCalls(messages: list[dict[str, object]], model: str, upstreamUrl: str, upstreamHeaders: dict[str, str], knownTools: list[dict[str, object]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, object]], None] | None=None, parentSignal: object = None, client: object = None) -> tuple[list[dict[str, object]], dict[str, object] | None]:
+async def resolveManagedOpenaiToolCalls(messages: list[dict[str, object]], model: str, upstreamUrl: str, upstreamHeaders: dict[str, str], knownTools: list[dict[str, object]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, object]], None] | None=None, parentSignal: object=None, client: object=None) -> tuple[list[dict[str, object]], dict[str, object] | None]:
     """Run the multi-round tool resolution loop.
 
     For each round:
@@ -345,7 +345,7 @@ async def streamUpstreamAndResolveToolsOpenai(upstreamUrl: str, upstreamHeaders:
             return
     yield writeOpenaiSseDone()
 
-async def handleChatCompletions(body: dict[str, object], request: object = None) -> tuple[dict[str, object] | AsyncIterator[str], dict[str, str] | None]:
+async def handleChatCompletions(body: dict[str, object], request: object=None) -> tuple[dict[str, object] | AsyncIterator[str], dict[str, str] | None]:
     """Handle a /v1/chat/completions or /v1/responses request.
 
     Returns a tuple of (response_or_stream, response_headers).

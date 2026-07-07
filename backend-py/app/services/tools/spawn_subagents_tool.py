@@ -32,72 +32,13 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
-
 from app.services.subagent_orchestrator import SubagentOrchestrator, SubagentSpawnRequest
-
 logger = logging.getLogger(__name__)
-
-TOOL_NAME = "spawn_subagents"
-TOOL_DEFINITION = {
-    "name": TOOL_NAME,
-    "description": "Spawn multiple sub-agents in parallel to complete independent work items. "
-                   "Each sub-agent receives its own goal and can be given a restricted set of tools. "
-                   "Returns consolidated results when all sub-agents complete.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "workItems": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "goal": {
-                            "type": "string",
-                            "description": "The goal/instruction for this sub-agent.",
-                        },
-                        "agentId": {
-                            "type": "string",
-                            "description": "Agent ID to use (default 'general').",
-                            "default": "general",
-                        },
-                        "restrictedTools": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Tool names this sub-agent is restricted from using.",
-                        },
-                        "context": {
-                            "type": "string",
-                            "description": "Additional context for the sub-agent.",
-                        },
-                    },
-                    "required": ["goal"],
-                },
-                "minItems": 1,
-                "maxItems": 10,
-            },
-            "mode": {
-                "type": "string",
-                "enum": ["auto", "proposed", "negotiated"],
-                "default": "auto",
-                "description": "Spawn mode: 'auto' spawns immediately, "
-                               "'proposed' requires user approval.",
-            },
-        },
-        "required": ["workItems"],
-    },
-}
-
-# In-memory store for proposed breakdowns pending approval
+TOOL_NAME = 'spawn_subagents'
+TOOL_DEFINITION = {'name': TOOL_NAME, 'description': 'Spawn multiple sub-agents in parallel to complete independent work items. Each sub-agent receives its own goal and can be given a restricted set of tools. Returns consolidated results when all sub-agents complete.', 'input_schema': {'type': 'object', 'properties': {'workItems': {'type': 'array', 'items': {'type': 'object', 'properties': {'goal': {'type': 'string', 'description': 'The goal/instruction for this sub-agent.'}, 'agentId': {'type': 'string', 'description': "Agent ID to use (default 'general').", 'default': 'general'}, 'restrictedTools': {'type': 'array', 'items': {'type': 'string'}, 'description': 'Tool names this sub-agent is restricted from using.'}, 'context': {'type': 'string', 'description': 'Additional context for the sub-agent.'}}, 'required': ['goal']}, 'minItems': 1, 'maxItems': 10}, 'mode': {'type': 'string', 'enum': ['auto', 'proposed', 'negotiated'], 'default': 'auto', 'description': "Spawn mode: 'auto' spawns immediately, 'proposed' requires user approval."}}, 'required': ['workItems']}}
 _pendingProposals: dict[str, dict[str, Any]] = {}
 
-
-async def execute_spawn_subagents(
-    orchestrator: SubagentOrchestrator,
-    session: object,
-    workItems: list[dict[str, Any]],
-    mode: str = "auto",
-    emit: Any | None = None,
-) -> dict[str, Any]:
+async def executeSpawnSubagents(orchestrator: SubagentOrchestrator, session: object, workItems: list[dict[str, Any]], mode: str='auto', emit: Any | None=None) -> dict[str, Any]:
     """Execute the spawn_subagents tool.
 
     Args:
@@ -110,89 +51,26 @@ async def execute_spawn_subagents(
     Returns:
         Result dict with ``status`` and ``results`` keys.
     """
-    if mode == "proposed":
-        # Emit proposal event and wait for user approval
+    if mode == 'proposed':
         proposalId = f"proposal_{__import__('uuid').uuid4().hex[:8]}"
-        _pendingProposals[proposalId] = {
-            "workItems": workItems,
-            "session": session,
-            "mode": mode,
-            "createdAt": __import__('time').time(),
-        }
-
+        _pendingProposals[proposalId] = {'workItems': workItems, 'session': session, 'mode': mode, 'createdAt': __import__('time').time()}
         if emit:
-            emit({
-                "type": "subagentProposed",
-                "proposalId": proposalId,
-                "workBreakdown": [
-                    {
-                        "goal": item.get("goal", ""),
-                        "agentId": item.get("agentId", "general"),
-                    }
-                    for item in workItems
-                ],
-            })
-
-        return {
-            "status": "awaiting_approval",
-            "proposalId": proposalId,
-            "message": f"Proposal {proposalId} created. Waiting for user approval.",
-        }
-
-    # auto mode — spawn immediately
+            emit({'type': 'subagentProposed', 'proposalId': proposalId, 'workBreakdown': [{'goal': item.get('goal', ''), 'agentId': item.get('agentId', 'general')} for item in workItems]})
+        return {'status': 'awaiting_approval', 'proposalId': proposalId, 'message': f'Proposal {proposalId} created. Waiting for user approval.'}
     return await _doSpawn(orchestrator, session, workItems, emit=emit)
 
-
-async def approve_proposal(
-    orchestrator: SubagentOrchestrator,
-    proposalId: str,
-) -> dict[str, Any]:
+async def approveProposal(orchestrator: SubagentOrchestrator, proposalId: str) -> dict[str, Any]:
     """Approve a pending proposal and trigger spawning."""
     proposal = _pendingProposals.pop(proposalId, None)
     if not proposal:
-        return {"status": "error", "error": f"Proposal {proposalId} not found or already expired."}
+        return {'status': 'error', 'error': f'Proposal {proposalId} not found or already expired.'}
+    return await _doSpawn(orchestrator, proposal['session'], proposal['workItems'], emit=None)
 
-    return await _doSpawn(
-        orchestrator,
-        proposal["session"],
-        proposal["workItems"],
-        emit=None,
-    )
-
-
-async def _doSpawn(
-    orchestrator: SubagentOrchestrator,
-    session: object,
-    workItems: list[dict[str, Any]],
-    emit: Any | None = None,
-) -> dict[str, Any]:
+async def _doSpawn(orchestrator: SubagentOrchestrator, session: object, workItems: list[dict[str, Any]], emit: Any | None=None) -> dict[str, Any]:
     """Actually spawn the sub-agents and collect results."""
-    request = SubagentSpawnRequest(
-        session=session,
-        workItems=[
-            {
-                "goal": item.get("goal", ""),
-                "agentId": item.get("agentId", "general"),
-                "restrictedTools": item.get("restrictedTools"),
-                "context": item.get("context", ""),
-            }
-            for item in workItems
-        ],
-        mode="auto",
-    )
-
+    request = SubagentSpawnRequest(session=session, workItems=[{'goal': item.get('goal', ''), 'agentId': item.get('agentId', 'general'), 'restrictedTools': item.get('restrictedTools'), 'context': item.get('context', '')} for item in workItems], mode='auto')
     handles = await orchestrator.spawn(request)
-
-    # Wait for all handles to complete concurrently
     results = await orchestrator.waitForAll(handles)
-
-    succeeded = sum(1 for r in results if r["status"] == "completed")
-    failed = sum(1 for r in results if r["status"] in ("failed", "error"))
-
-    return {
-        "status": "completed" if failed == 0 else "partial" if succeeded > 0 else "failed",
-        "total": len(results),
-        "succeeded": succeeded,
-        "failed": failed,
-        "results": results,
-    }
+    succeeded = sum((1 for r in results if r['status'] == 'completed'))
+    failed = sum((1 for r in results if r['status'] in ('failed', 'error')))
+    return {'status': 'completed' if failed == 0 else 'partial' if succeeded > 0 else 'failed', 'total': len(results), 'succeeded': succeeded, 'failed': failed, 'results': results}

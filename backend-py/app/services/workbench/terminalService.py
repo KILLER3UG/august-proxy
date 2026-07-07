@@ -27,7 +27,6 @@ def _now() -> str:
 
 def _getShell() -> str:
     if platform.system() == 'Windows':
-        # Probe PowerShell Core first, then Windows PowerShell, then Git Bash, then cmd
         import shutil
         for candidate in ['pwsh.exe', 'powershell.exe', 'bash.exe', 'cmd.exe']:
             if shutil.which(candidate):
@@ -57,14 +56,7 @@ async def createTerminalSession(params: dict[str, object] | None=None) -> dict[s
     session = {'id': sessionId, 'title': params.get('title', 'Terminal'), 'cwd': params.get('cwd') or os.getcwd(), 'command': params.get('command', shell), 'status': 'starting', 'createdAt': _now(), 'updatedAt': _now(), 'buffer': '', 'approvedInteractive': params.get('approvedInteractive', False), 'cols': params.get('cols', 80), 'rows': params.get('rows', 24), 'pty': True, 'pty_io': pty, 'process': None, 'stdin': None, 'stdout': None}
     try:
         args = params.get('args') or ['-i']
-        await pty.spawn(
-            shell=shell,
-            args=args,
-            cwd=str(session['cwd']),
-            env={**os.environ, 'TERM': 'xterm-256color'},
-            cols=session['cols'],
-            rows=session['rows'],
-        )
+        await pty.spawn(shell=shell, args=args, cwd=str(session['cwd']), env={**os.environ, 'TERM': 'xterm-256color'}, cols=session['cols'], rows=session['rows'])
         session['status'] = 'running'
         _sessions[sessionId] = session
         _wsSockets[sessionId] = set()
@@ -148,8 +140,6 @@ async def writeTerminalInput(sessionId: str, inputText: str, approved: bool=Fals
         reqId = f'apr_{uuid.uuid4().hex[:8]}'
         _pendingApprovals[reqId] = {'requestId': reqId, 'type': 'terminal_interactive_input', 'terminalId': sessionId, 'createdAt': _now()}
         return {'status': 'approval_required', 'requestId': reqId}
-
-    # Prefer PTY I/O, fall back to subprocess stdin
     pty = session.get('pty_io')
     if pty and session.get('pty'):
         try:
@@ -157,7 +147,6 @@ async def writeTerminalInput(sessionId: str, inputText: str, approved: bool=Fals
             return {'status': 'written'}
         except Exception as exc:
             return {'error': str(exc)}
-
     stdin = session.get('stdin')
     if not stdin:
         return {'error': 'Process stdin not available'}
@@ -176,7 +165,6 @@ async def resizeTerminalSession(sessionId: str, cols: int=80, rows: int=24) -> d
     if session:
         session['cols'] = cols
         session['rows'] = rows
-        # Resize PTY if available
         pty = session.get('pty_io')
         if pty:
             try:
@@ -243,7 +231,6 @@ def closeTerminalSession(sessionId: str) -> bool:
     readerTask = session.get('reader_task')
     if readerTask:
         readerTask.cancel()
-    # Close PTY if available
     pty = session.get('pty_io')
     if pty:
         try:

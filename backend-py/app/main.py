@@ -16,9 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.config import settings
-
 logger = logging.getLogger(__name__)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,16 +25,15 @@ async def lifespan(app: FastAPI):
     toolDefinitions.registerAll()
     from app.services import memoryStore
     memoryStore.init()
-    # Run database column migration (snake_case → camelCase)
     from app.lib.paths import dataPath
-    _db_path_val = dataPath("august_brain.sqlite")
-    if _db_path_val.exists():
+    _dbPathVal = dataPath('august_brain.sqlite')
+    if _dbPathVal.exists():
         try:
             from scripts.migrateDbColumns import migrateDatabase
-            migrateDatabase(_db_path_val)
-            logger.info("Database columns migrated: snake_case → camelCase")
+            migrateDatabase(_dbPathVal)
+            logger.info('Database columns migrated: snake_case → camelCase')
         except Exception as exc:
-            logger.warning("DB migration skipped: %s", exc)
+            logger.warning('DB migration skipped: %s', exc)
     try:
         from app.services.tools.mcpClient import refreshMcpTools
         asyncio.create_task(refreshMcpTools())
@@ -65,9 +62,9 @@ async def lifespan(app: FastAPI):
         _orchestrator = SubagentOrchestrator(_bus, max_workers=5)
         app.state.subagent_bus = _bus
         app.state.subagent_orchestrator = _orchestrator
-        logger.info("Subagent orchestrator initialized (max_workers=5)")
+        logger.info('Subagent orchestrator initialized (max_workers=5)')
     except Exception:
-        logger.warning("Subagent orchestrator initialization skipped")
+        logger.warning('Subagent orchestrator initialization skipped')
     yield
     if _orchestrator is not None:
         try:
@@ -199,18 +196,8 @@ async def healthDetailed():
         cfg = settings.config or {}
     except Exception:
         cfg = {}
-    gw = (cfg.get('gateway') or {})
-    ea = (gw.get('externalAccess') or {})
+    gw = cfg.get('gateway') or {}
+    ea = gw.get('externalAccess') or {}
     enabled = bool(ea.get('enabled', False))
-    has_key = bool(settings.gatewayApiKey)
-    return {
-        'status': 'ok',
-        'mode': 'python',
-        'port': settings.port,
-        'data_dir': str(settings.dataDir),
-        'externalAccess': {
-            'enabled': enabled,
-            'hasKey': has_key,
-            'configured': enabled and has_key,
-        },
-    }
+    hasKey = bool(settings.gatewayApiKey)
+    return {'status': 'ok', 'mode': 'python', 'port': settings.port, 'data_dir': str(settings.dataDir), 'externalAccess': {'enabled': enabled, 'hasKey': hasKey, 'configured': enabled and hasKey}}

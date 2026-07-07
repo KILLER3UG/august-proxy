@@ -14,7 +14,6 @@ import logging
 import os
 import time
 from app.typeAliases import ConsolidationSummaryDict
-
 logger = logging.getLogger(__name__)
 _CONSOLIDATIONInterval = 86400
 _RECENTProtectionCount = 20

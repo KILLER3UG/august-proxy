@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timedelta
-
 from app.typeAliases import BlackboardNoteDict
 
 def _conn():
@@ -61,8 +60,6 @@ def readNotes(sessionId: str, agent: str='', key: str='', ack: bool=False) -> li
         params.append(key)
     query += ' ORDER BY priority DESC, createdAt DESC'
     rows = conn.execute(query, params).fetchall()
-    # SQLite rows are dicts that match BlackboardNoteDict structurally;
-    # mypy can't narrow the inferred List[dict[Any, Any]] to the TypedDict.
     rawNotes: list[dict[str, object]] = [dict(r) for r in rows]
     notes = rawNotes
     if ack and notes:
@@ -70,7 +67,7 @@ def readNotes(sessionId: str, agent: str='', key: str='', ack: bool=False) -> li
             if n.get('id'):
                 conn.execute('DELETE FROM blackboard WHERE id = ?', (n['id'],))
         conn.commit()
-    return notes  # type: ignore[return-value]
+    return notes
 
 def clearNotes(sessionId: str, agent: str='') -> int:
     """Clear blackboard notes, optionally for a specific agent."""

@@ -17,7 +17,6 @@ import logging
 import time
 from dataclasses import dataclass, field
 from typing import Callable
-
 from app.typeAliases import DaemonStatusDict
 logger = logging.getLogger(__name__)
 MAX_DAEMONS_PER_SESSION = 3

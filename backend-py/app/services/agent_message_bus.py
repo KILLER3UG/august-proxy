@@ -25,13 +25,9 @@ import asyncio
 import logging
 from collections import defaultdict
 from typing import Any, Callable, Coroutine, Optional
-
 logger = logging.getLogger(__name__)
-
 MAX_QUEUE_PER_TOPIC = 256
-
 Handler = Callable[[dict[str, Any]], Coroutine[Any, Any, None] | None]
-
 
 class Subscription:
     """Handle returned by ``subscribe()`` — call ``unsubscribe()`` to cancel."""
@@ -44,19 +40,14 @@ class Subscription:
     def unsubscribe(self) -> None:
         self._bus._unsubscribe(self._topic, self._handler)
 
-
 class AgentMessageBus:
     """In-process async pub/sub message bus."""
 
     def __init__(self) -> None:
-        # topic -> list of handler callbacks
         self._handlers: dict[str, list[Handler]] = defaultdict(list)
-        # topic -> deque of pending messages (for slow consumers / replay)
         self._queues: dict[str, list[dict[str, Any]]] = defaultdict(list)
         self._condition = asyncio.Condition()
         self._closed = False
-
-    # ── public API ────────────────────────────────────────────────────
 
     def subscribe(self, topic: str, handler: Handler) -> Subscription:
         """Register *handler* to be called for every message published on *topic*.
@@ -64,7 +55,7 @@ class AgentMessageBus:
         Returns a ``Subscription`` that can be used to unsubscribe.
         """
         self._handlers[topic].append(handler)
-        logger.debug("[AgentMessageBus] subscribed to %s (total=%d)", topic, len(self._handlers[topic]))
+        logger.debug('[AgentMessageBus] subscribed to %s (total=%d)', topic, len(self._handlers[topic]))
         return Subscription(self, topic, handler)
 
     async def publish(self, topic: str, msg: dict[str, Any]) -> None:
@@ -76,14 +67,10 @@ class AgentMessageBus:
         """
         if self._closed:
             return
-
-        # Queue (bounded)
         q = self._queues[topic]
         q.append(msg)
         while len(q) > MAX_QUEUE_PER_TOPIC:
             q.pop(0)
-
-        # Notify handlers
         handlers = list(self._handlers.get(topic, []))
         if handlers:
             for handler in handlers:
@@ -92,41 +79,36 @@ class AgentMessageBus:
                     if result is not None:
                         await result
                 except Exception:
-                    logger.exception("[AgentMessageBus] handler error on %s", topic)
-
-        # Wake up any wait_for_message consumers
+                    logger.exception('[AgentMessageBus] handler error on %s', topic)
         async with self._condition:
             self._condition.notify_all()
 
-    def get_topic_messages(self, topic: str) -> list[dict[str, Any]]:
+    def getTopicMessages(self, topic: str) -> list[dict[str, Any]]:
         """Return all queued messages for *topic* (for late-joining consumers)."""
         return list(self._queues.get(topic, []))
 
-    async def wait_for_message(self, topic: str, timeout: float | None = None) -> dict[str, Any] | None:
+    async def waitForMessage(self, topic: str, timeout: float | None=None) -> dict[str, Any] | None:
         """Block until a new message arrives on *topic*, then return it.
 
         If *timeout* is set and no message arrives, returns ``None``.
         """
-        loop_start = asyncio.get_running_loop().time()
+        loopStart = asyncio.get_running_loop().time()
         async with self._condition:
             while True:
                 q = self._queues.get(topic, [])
                 if q:
-                    return q[-1]  # most recent
+                    return q[-1]
                 if self._closed:
                     return None
                 if timeout is not None:
-                    elapsed = asyncio.get_running_loop().time() - loop_start
+                    elapsed = asyncio.get_running_loop().time() - loopStart
                     if elapsed >= timeout:
                         return None
                     remaining = timeout - elapsed
                 else:
                     remaining = None
                 try:
-                    await asyncio.wait_for(
-                        self._condition.wait(),
-                        timeout=remaining,
-                    )
+                    await asyncio.wait_for(self._condition.wait(), timeout=remaining)
                 except asyncio.TimeoutError:
                     return None
 
@@ -136,10 +118,8 @@ class AgentMessageBus:
         self._handlers.clear()
         self._queues.clear()
 
-    # ── internal ──────────────────────────────────────────────────────
-
     def _unsubscribe(self, topic: str, handler: Handler) -> None:
         handlers = self._handlers.get(topic, [])
         if handler in handlers:
             handlers.remove(handler)
-            logger.debug("[AgentMessageBus] unsubscribed from %s (remaining=%d)", topic, len(handlers))
+            logger.debug('[AgentMessageBus] unsubscribed from %s (remaining=%d)', topic, len(handlers))

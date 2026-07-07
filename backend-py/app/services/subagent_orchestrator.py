@@ -26,40 +26,30 @@ import logging
 import time
 import uuid
 from typing import Any, Callable, Optional
-
 from app.services.agent_message_bus import AgentMessageBus, Subscription, Handler
-
 logger = logging.getLogger(__name__)
-
 MAX_CONCURRENT_WORKERS = 5
 PEER_HELP_WINDOW_SECONDS = 5.0
-
 
 class SubagentSpawnRequest:
     """Parameters for spawning one or more sub-agents."""
 
-    def __init__(
-        self,
-        session: object,
-        workItems: list[dict[str, Any]],
-        mode: str = "auto",
-    ) -> None:
+    def __init__(self, session: object, workItems: list[dict[str, Any]], mode: str='auto') -> None:
         self.session = session
-        self.workItems = workItems  # list of {goal, agentId?, restrictedTools?, context?}
-        self.mode = mode  # "auto" | "proposed" | "negotiated"
-
+        self.workItems = workItems
+        self.mode = mode
 
 class SubagentHandle:
     """Handle returned by ``spawn()`` for tracking a sub-agent task."""
 
-    def __init__(self, taskId: str, agentId: str, goal: str, sessionId: str = "") -> None:
+    def __init__(self, taskId: str, agentId: str, goal: str, sessionId: str='') -> None:
         self.taskId = taskId
         self.agentId = agentId
         self.goal = goal
         self.sessionId = sessionId
-        self.status: str = "pending"
-        self.result: str = ""
-        self.error: str = ""
+        self.status: str = 'pending'
+        self.result: str = ''
+        self.error: str = ''
         self.startedAt: float = time.time()
         self.finishedAt: float | None = None
         self._future: asyncio.Future | None = None
@@ -71,24 +61,12 @@ class SubagentHandle:
         return round(time.time() - self.startedAt, 2)
 
     def toDict(self) -> dict[str, Any]:
-        return {
-            "taskId": self.taskId,
-            "agentId": self.agentId,
-            "goal": self.goal,
-            "sessionId": self.sessionId,
-            "status": self.status,
-            "result": self.result,
-            "error": self.error,
-            "startedAt": self.startedAt,
-            "finishedAt": self.finishedAt,
-            "elapsed": self.elapsed,
-        }
-
+        return {'taskId': self.taskId, 'agentId': self.agentId, 'goal': self.goal, 'sessionId': self.sessionId, 'status': self.status, 'result': self.result, 'error': self.error, 'startedAt': self.startedAt, 'finishedAt': self.finishedAt, 'elapsed': self.elapsed}
 
 class SubagentOrchestrator:
     """Manages concurrent sub-agent execution with failure recovery."""
 
-    def __init__(self, bus: AgentMessageBus, maxWorkers: int = MAX_CONCURRENT_WORKERS) -> None:
+    def __init__(self, bus: AgentMessageBus, maxWorkers: int=MAX_CONCURRENT_WORKERS) -> None:
         self._bus = bus
         self._semaphore = asyncio.Semaphore(maxWorkers)
         self._handles: dict[str, SubagentHandle] = {}
@@ -96,28 +74,22 @@ class SubagentOrchestrator:
         self._eventHandlers: dict[str, list[Handler]] = {}
         self._closed = False
 
-    # ── public API ────────────────────────────────────────────────────
-
     async def spawn(self, request: SubagentSpawnRequest) -> list[SubagentHandle]:
         """Spawn one or more sub-agents concurrently.
 
         Returns a list of handles (one per work item).
         """
         if self._closed:
-            raise RuntimeError("Orchestrator is closed")
-
+            raise RuntimeError('Orchestrator is closed')
         handles: list[SubagentHandle] = []
         tasks: list[asyncio.Task] = []
-
         for item in request.workItems:
-            goal = item.get("goal", "")
-            agentId = item.get("agentId", "general")
-            context = item.get("context", "")
-            restrictedTools = item.get("restrictedTools")
-
-            taskId = f"task_{uuid.uuid4().hex[:12]}"
-            # Extract sessionId from the session object if available
-            sid = ""
+            goal = item.get('goal', '')
+            agentId = item.get('agentId', 'general')
+            context = item.get('context', '')
+            restrictedTools = item.get('restrictedTools')
+            taskId = f'task_{uuid.uuid4().hex[:12]}'
+            sid = ''
             if hasattr(request.session, 'id'):
                 sid = str(request.session.id)
             elif isinstance(request.session, dict):
@@ -125,22 +97,10 @@ class SubagentOrchestrator:
             handle = SubagentHandle(taskId, agentId, goal, sessionId=sid)
             self._handles[taskId] = handle
             handles.append(handle)
-
-            # Acquire semaphore slot and launch
-            task = asyncio.create_task(
-                self._runWithSlot(
-                    handle=handle,
-                    request=request,
-                    agentId=agentId,
-                    goal=goal,
-                    context=context,
-                    restrictedTools=restrictedTools,
-                )
-            )
+            task = asyncio.create_task(self._runWithSlot(handle=handle, request=request, agentId=agentId, goal=goal, context=context, restrictedTools=restrictedTools))
             self._tasks[taskId] = task
             handle._future = task
             tasks.append(task)
-
         return handles
 
     async def terminate(self, taskId: str) -> bool:
@@ -150,7 +110,7 @@ class SubagentOrchestrator:
         if not task or not handle:
             return False
         task.cancel()
-        handle.status = "cancelled"
+        handle.status = 'cancelled'
         handle.finishedAt = time.time()
         try:
             await task
@@ -158,7 +118,7 @@ class SubagentOrchestrator:
             pass
         return True
 
-    def listActive(self, sessionId: str | None = None) -> list[dict[str, Any]]:
+    def listActive(self, sessionId: str | None=None) -> list[dict[str, Any]]:
         """List active (running/pending) sub-agents, optionally filtered by session."""
         result = []
         for h in self._handles.values():
@@ -180,8 +140,6 @@ class SubagentOrchestrator:
     def getHandle(self, taskId: str) -> SubagentHandle | None:
         """Get a handle by taskId."""
         return self._handles.get(taskId)
-
-    # ── event system ──────────────────────────────────────────────────
 
     def on(self, event: str, handler: Handler) -> Subscription:
         """Subscribe to orchestrator events.
@@ -205,92 +163,51 @@ class SubagentOrchestrator:
                 else:
                     handler(data)
             except Exception:
-                logger.exception("Subagent event handler failed for %s", event)
+                logger.exception('Subagent event handler failed for %s', event)
 
-    # ── internal worker ───────────────────────────────────────────────
-
-    async def _runWithSlot(
-        self,
-        handle: SubagentHandle,
-        request: SubagentSpawnRequest,
-        agentId: str,
-        goal: str,
-        context: str,
-        restrictedTools: list[str] | None,
-    ) -> None:
+    async def _runWithSlot(self, handle: SubagentHandle, request: SubagentSpawnRequest, agentId: str, goal: str, context: str, restrictedTools: list[str] | None) -> None:
         """Acquire semaphore, run the sub-agent task, release."""
         async with self._semaphore:
-            handle.status = "running"
-            await self._fireEvent("subagentStarted", {
-                "taskId": handle.taskId,
-                "agentId": agentId,
-                "goal": goal,
-            })
+            handle.status = 'running'
+            await self._fireEvent('subagentStarted', {'taskId': handle.taskId, 'agentId': agentId, 'goal': goal})
             try:
                 from app.services.subagent_worker import runSubagent
-                result = await runSubagent(
-                    bus=self._bus,
-                    session=request.session,
-                    agentId=agentId,
-                    goal=goal,
-                    context=context,
-                    restrictedTools=restrictedTools,
-                    taskId=handle.taskId,
-                )
+                result = await runSubagent(bus=self._bus, session=request.session, agentId=agentId, goal=goal, context=context, restrictedTools=restrictedTools, taskId=handle.taskId)
                 handle.result = result
-                handle.status = "completed"
+                handle.status = 'completed'
                 handle.finishedAt = time.time()
                 if result:
-                    await self._fireEvent("subagentCompleted", handle.toDict())
+                    await self._fireEvent('subagentCompleted', handle.toDict())
                 else:
-                    handle.status = "failed"
-                    await self._fireEvent("subagentFailed", handle.toDict())
+                    handle.status = 'failed'
+                    await self._fireEvent('subagentFailed', handle.toDict())
             except asyncio.CancelledError:
-                handle.status = "cancelled"
+                handle.status = 'cancelled'
                 handle.finishedAt = time.time()
                 raise
             except Exception as exc:
-                handle.status = "failed"
+                handle.status = 'failed'
                 handle.error = str(exc)
                 handle.finishedAt = time.time()
-                logger.exception("[Orchestrator] unexpected error for task %s", handle.taskId)
+                logger.exception('[Orchestrator] unexpected error for task %s', handle.taskId)
                 await self._handleFailure(handle, request)
-                await self._fireEvent("subagentFailed", handle.toDict())
+                await self._fireEvent('subagentFailed', handle.toDict())
 
-    async def _handleFailure(
-        self,
-        handle: SubagentHandle,
-        request: SubagentSpawnRequest,
-    ) -> None:
+    async def _handleFailure(self, handle: SubagentHandle, request: SubagentSpawnRequest) -> None:
         """Broadcast a failure and open a peer-help window."""
         taskId = handle.taskId
-
-        # Publish failure event
-        await self._bus.publish(f"task:{taskId}:failure", {
-            "taskId": taskId,
-            "agentId": handle.agentId,
-            "goal": handle.goal,
-            "error": handle.error,
-        })
-
-        # Peers can claim by publishing to task:{taskId}:peerHelp
+        await self._bus.publish(f'task:{taskId}:failure', {'taskId': taskId, 'agentId': handle.agentId, 'goal': handle.goal, 'error': handle.error})
         claimed = asyncio.Event()
 
         def onPeerClaim(msg: dict[str, Any]) -> None:
             claimed.set()
-
-        unsub = self._bus.subscribe(f"task:{taskId}:peerHelp", onPeerClaim)
+        unsub = self._bus.subscribe(f'task:{taskId}:peerHelp', onPeerClaim)
         try:
-            await asyncio.wait_for(
-                claimed.wait(),
-                timeout=PEER_HELP_WINDOW_SECONDS,
-            )
+            await asyncio.wait_for(claimed.wait(), timeout=PEER_HELP_WINDOW_SECONDS)
         except asyncio.TimeoutError:
-            logger.info("No peer claimed failed task %s", taskId)
+            logger.info('No peer claimed failed task %s', taskId)
         finally:
             unsub()
-
-    # ── lifecycle ─────────────────────────────────────────────────────
 
     async def close(self) -> None:
         """Cancel all running tasks and release resources."""

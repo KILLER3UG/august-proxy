@@ -6,7 +6,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.providers import resolver
-from app.providers.template_loader import get_templates, get_template
+from app.providers.template_loader import getTemplates, getTemplate
 from app.services import configService
 from app.services import modelService
 router = APIRouter(prefix='/api/providers')
@@ -17,7 +17,7 @@ class ProviderCreate(BaseModel):
     apiFormat: str = 'openaiChat'
     apiKey: str = ''
     enabled: bool = True
-    template: str | None = None  # Optional template id to pre-fill fields
+    template: str | None = None
 
 class ProviderUpdate(BaseModel):
     name: str | None = None
@@ -51,7 +51,7 @@ async def listProviders():
 @router.get('/templates')
 async def listTemplates():
     """Return all provider templates (static definitions from provider_templates.json)."""
-    return get_templates()
+    return getTemplates()
 
 @router.post('')
 async def createProvider(body: ProviderCreate):
@@ -59,32 +59,21 @@ async def createProvider(body: ProviderCreate):
     store = configService.getProvidersStore()
     if 'providers' not in store:
         store['providers'] = []
-
-    # Pre-fill from template if provided
     baseUrl = body.baseUrl
     apiFormat = body.apiFormat
     models = []
     if body.template:
-        tmpl = get_template(body.template)
+        tmpl = getTemplate(body.template)
         if tmpl:
             if not baseUrl:
                 baseUrl = tmpl.get('baseUrl', '')
             if not apiFormat or apiFormat == 'openaiChat':
                 apiFormat = tmpl.get('apiFormat', 'openaiChat')
-            # Seed default models from template modelProfiles
             profiles = tmpl.get('modelProfiles', {})
             for key in profiles:
                 if key != '*':
                     profile = profiles[key]
-                    models.append({
-                        'id': key,
-                        'name': key,
-                        'contextWindow': profile.get('contextWindow', 128000),
-                        'reasoning': profile.get('supportsReasoning', False),
-                        'free': False,
-                        'source': 'template',
-                    })
-
+                    models.append({'id': key, 'name': key, 'contextWindow': profile.get('contextWindow', 128000), 'reasoning': profile.get('supportsReasoning', False), 'free': False, 'source': 'template'})
     slug = body.name.lower().replace(' ', '-')[:40]
     rand = hashlib.md5(str(time.time()).encode()).hexdigest()[:6]
     providerId = f'{slug}-{rand}'
@@ -100,16 +89,7 @@ async def importProviderConfig(body: dict):
     store = configService.getProvidersStore()
     if 'providers' not in store:
         store['providers'] = []
-    entry = {
-        'id': body.get('id', ''),
-        'name': body.get('name', 'Imported Provider'),
-        'baseUrl': body.get('baseUrl', ''),
-        'apiFormat': body.get('apiFormat', 'openaiChat'),
-        'apiKey': body.get('apiKey', ''),
-        'enabled': body.get('enabled', True),
-        'autoFetch': body.get('autoFetch', False),
-        'models': body.get('models', []),
-    }
+    entry = {'id': body.get('id', ''), 'name': body.get('name', 'Imported Provider'), 'baseUrl': body.get('baseUrl', ''), 'apiFormat': body.get('apiFormat', 'openaiChat'), 'apiKey': body.get('apiKey', ''), 'enabled': body.get('enabled', True), 'autoFetch': body.get('autoFetch', False), 'models': body.get('models', [])}
     store['providers'].append(entry)
     configService.saveProvidersStore(store)
     modelService.invalidateCache()

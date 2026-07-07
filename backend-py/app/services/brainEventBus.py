@@ -16,7 +16,6 @@ import uuid
 from collections import deque
 from typing import AsyncIterator
 from app.typeAliases import JsonValue
-
 _MAXEvents = 200
 
 class BrainEventBus:

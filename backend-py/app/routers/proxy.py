@@ -108,7 +108,7 @@ async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[s
         pass
 
 @router.post('/v1/messages')
-async def anthropicMessages(request: Request, _auth: bool = Depends(requireGatewayKey)):
+async def anthropicMessages(request: Request, _auth: bool=Depends(requireGatewayKey)):
     """Anthropic Messages API proxy.
 
     Delegates to the Anthropic adapter which handles:
@@ -129,7 +129,7 @@ async def anthropicMessages(request: Request, _auth: bool = Depends(requireGatew
     return result
 
 @router.post('/v1/chat/completions')
-async def openaiChat(request: Request, _auth: bool = Depends(requireGatewayKey)):
+async def openaiChat(request: Request, _auth: bool=Depends(requireGatewayKey)):
     """OpenAI Chat Completions API proxy.
 
     Delegates to the OpenAI adapter which handles:
@@ -149,7 +149,7 @@ async def openaiChat(request: Request, _auth: bool = Depends(requireGatewayKey))
     return result
 
 @router.post('/v1/responses')
-async def openaiResponses(request: Request, _auth: bool = Depends(requireGatewayKey)):
+async def openaiResponses(request: Request, _auth: bool=Depends(requireGatewayKey)):
     """OpenAI Responses API proxy.
 
     Translates the chat completion response to the Responses API format.
@@ -190,7 +190,7 @@ def _translateToResponsesFormat(chatCompletion: dict) -> dict:
     return {'id': f'resp_{uuid.uuid4().hex[:12]}', 'object': 'response', 'created_at': int(time.time()), 'status': 'completed', 'model': chatCompletion.get('model', ''), 'output': outputItems, 'usage': {'input_tokens': usage.get('prompt_tokens', 0), 'output_tokens': usage.get('completion_tokens', 0), 'total_tokens': usage.get('total_tokens', 0)}}
 
 @router.get('/v1/models')
-async def listModels(_auth: bool = Depends(requireGatewayKey)):
+async def listModels(_auth: bool=Depends(requireGatewayKey)):
     """List available models from all configured providers."""
     providers = providerResolver.listAvailable()
     models = []

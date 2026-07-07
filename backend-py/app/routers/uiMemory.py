@@ -42,7 +42,7 @@ async def brainStatus() -> dict[str, object]:
     try:
         from app.lib.paths import dataPath
         stats = memoryStore.getStats() or {}
-        dbPath = dataPath("august_brain.sqlite")
+        dbPath = dataPath('august_brain.sqlite')
         count = int(stats.get('memoryStore', 0) or 0)
         return {'count': count, 'driver': 'sqlite', 'path': str(dbPath), 'available': True}
     except Exception as exc:

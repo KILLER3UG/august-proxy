@@ -6,10 +6,9 @@ import asyncio
 import random
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
-
 _T = TypeVar('_T')
 
-async def retryWithBackoff(coroFactory: Callable[[], Awaitable[_T]], maxRetries: int = 3, baseDelay: float = 1.0) -> _T:
+async def retryWithBackoff(coroFactory: Callable[[], Awaitable[_T]], maxRetries: int=3, baseDelay: float=1.0) -> _T:
     """Call coro_factory() — retry on ConnectionError / 429 / 503."""
     for attempt in range(maxRetries + 1):
         try:

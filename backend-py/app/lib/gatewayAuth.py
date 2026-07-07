@@ -22,9 +22,7 @@ from __future__ import annotations
 import logging
 from fastapi import Header, HTTPException
 from app.config import settings
-
 log = logging.getLogger(__name__)
-
 
 def _externalAccessEnabled() -> bool:
     """Return True when the user has opted-in to external proxy access."""
@@ -36,8 +34,7 @@ def _externalAccessEnabled() -> bool:
     ea = gw.get('externalAccess', {}) or {}
     return bool(ea.get('enabled', False))
 
-
-async def requireGatewayKey(authorization: str | None = Header(default=None)) -> bool:
+async def requireGatewayKey(authorization: str | None=Header(default=None)) -> bool:
     """FastAPI dependency that protects ``/v1/*`` proxy endpoints.
 
     When external access is disabled the gateway is closed and we reject the
@@ -46,54 +43,16 @@ async def requireGatewayKey(authorization: str | None = Header(default=None)) ->
     env var by ``pydantic-settings``).
     """
     if not _externalAccessEnabled():
-        raise HTTPException(
-            status_code=403,
-            detail={
-                'code': 'external_access_disabled',
-                'message': 'External API access is disabled. Enable it in Settings → API Access.',
-            },
-        )
-
+        raise HTTPException(status_code=403, detail={'code': 'external_access_disabled', 'message': 'External API access is disabled. Enable it in Settings → API Access.'})
     key = settings.gatewayApiKey
     if not key:
         log.warning('gateway: external access enabled but GATEWAY_API_KEY is not set')
-        raise HTTPException(
-            status_code=503,
-            detail={
-                'code': 'gateway_key_unconfigured',
-                'message': 'Gateway is enabled but GATEWAY_API_KEY is not configured on the server.',
-            },
-        )
-
+        raise HTTPException(status_code=503, detail={'code': 'gateway_key_unconfigured', 'message': 'Gateway is enabled but GATEWAY_API_KEY is not configured on the server.'})
     if not authorization:
-        raise HTTPException(
-            status_code=401,
-            detail={
-                'code': 'auth_missing',
-                'message': 'Missing Authorization header. Send: Authorization: Bearer <GATEWAY_API_KEY>',
-            },
-            headers={'WWW-Authenticate': 'Bearer'},
-        )
-
-    scheme, _, token = authorization.partition(' ')
+        raise HTTPException(status_code=401, detail={'code': 'auth_missing', 'message': 'Missing Authorization header. Send: Authorization: Bearer <GATEWAY_API_KEY>'}, headers={'WWW-Authenticate': 'Bearer'})
+    scheme, __, token = authorization.partition(' ')
     if scheme.lower() != 'bearer' or not token:
-        raise HTTPException(
-            status_code=401,
-            detail={
-                'code': 'auth_invalid_format',
-                'message': 'Authorization header must be: Bearer <key>',
-            },
-            headers={'WWW-Authenticate': 'Bearer'},
-        )
-
+        raise HTTPException(status_code=401, detail={'code': 'auth_invalid_format', 'message': 'Authorization header must be: Bearer <key>'}, headers={'WWW-Authenticate': 'Bearer'})
     if token != key:
-        raise HTTPException(
-            status_code=401,
-            detail={
-                'code': 'auth_invalid_key',
-                'message': 'Invalid API key.',
-            },
-            headers={'WWW-Authenticate': 'Bearer'},
-        )
-
+        raise HTTPException(status_code=401, detail={'code': 'auth_invalid_key', 'message': 'Invalid API key.'}, headers={'WWW-Authenticate': 'Bearer'})
     return True

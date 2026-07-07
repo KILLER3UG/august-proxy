@@ -85,37 +85,16 @@ def _customProviderDict(entry: dict[str, object]) -> dict[str, object]:
     consumers can read display_name, description, default_model, etc. without
     KeyError on minimal custom entries.
     """
-    # Try to find a matching template for merging metadata
-    from app.providers.template_loader import get_template
-    tmpl = get_template(str(entry.get('id') or '') or str(entry.get('name') or ''))
-    tmpl_profiles = {}
-    tmpl_headers = {}
-    tmpl_env = []
+    from app.providers.template_loader import getTemplate
+    tmpl = getTemplate(str(entry.get('id') or '') or str(entry.get('name') or ''))
+    tmplProfiles = {}
+    tmplHeaders = {}
+    tmplEnv = []
     if tmpl:
-        tmpl_profiles = tmpl.get('modelProfiles', {}) or {}
-        tmpl_headers = tmpl.get('defaultHeaders', {}) or {}
-        tmpl_env = tmpl.get('envVars', []) or []
-
-    return {
-        'name': entry.get('name', ''),
-        'id': entry.get('id', ''),
-        'display_name': entry.get('display_name', entry.get('name', '')),
-        'description': entry.get('description', tmpl.get('description', '') if tmpl else ''),
-        'aliases': tmpl.get('aliases', []) if tmpl else [],
-        'base_url': entry.get('baseUrl', ''),
-        'api_mode': entry.get('apiFormat', 'openaiChat'),
-        'api_key': entry.get('apiKey', ''),
-        'is_custom': True,
-        'env_vars': entry.get('env_vars', tmpl_env),
-        'auth_type': entry.get('auth_type', tmpl.get('authType', 'api_key') if tmpl else 'api_key'),
-        'model_profiles': entry.get('model_profiles', tmpl_profiles),
-        'default_model': entry.get('default_model', tmpl.get('defaultModel', '') if tmpl else ''),
-        'fallback_models': entry.get('fallback_models', tmpl.get('fallbackModels', []) if tmpl else []),
-        'signup_url': entry.get('signup_url', tmpl.get('signupUrl', '') if tmpl else ''),
-        'supports_health_check': entry.get('supports_health_check', tmpl.get('supportsHealthCheck', False) if tmpl else False),
-        'default_max_tokens': entry.get('default_max_tokens', tmpl.get('defaultMaxTokens', 4096) if tmpl else 4096),
-        'default_headers': entry.get('default_headers', tmpl_headers),
-    }
+        tmplProfiles = tmpl.get('modelProfiles', {}) or {}
+        tmplHeaders = tmpl.get('defaultHeaders', {}) or {}
+        tmplEnv = tmpl.get('envVars', []) or []
+    return {'name': entry.get('name', ''), 'id': entry.get('id', ''), 'display_name': entry.get('display_name', entry.get('name', '')), 'description': entry.get('description', tmpl.get('description', '') if tmpl else ''), 'aliases': tmpl.get('aliases', []) if tmpl else [], 'base_url': entry.get('baseUrl', ''), 'api_mode': entry.get('apiFormat', 'openaiChat'), 'api_key': entry.get('apiKey', ''), 'is_custom': True, 'env_vars': entry.get('env_vars', tmplEnv), 'auth_type': entry.get('auth_type', tmpl.get('authType', 'api_key') if tmpl else 'api_key'), 'model_profiles': entry.get('model_profiles', tmplProfiles), 'default_model': entry.get('default_model', tmpl.get('defaultModel', '') if tmpl else ''), 'fallback_models': entry.get('fallback_models', tmpl.get('fallbackModels', []) if tmpl else []), 'signup_url': entry.get('signup_url', tmpl.get('signupUrl', '') if tmpl else ''), 'supports_health_check': entry.get('supports_health_check', tmpl.get('supportsHealthCheck', False) if tmpl else False), 'default_max_tokens': entry.get('default_max_tokens', tmpl.get('defaultMaxTokens', 4096) if tmpl else 4096), 'default_headers': entry.get('default_headers', tmplHeaders)}
 
 def resolve(nameOrId: str) -> Optional[dict[str, object]]:
     """Return ``{"provider": ..., "api_key": ..., "base_url": ..., "api_mode": ...}`` or ``None``.

@@ -15,24 +15,10 @@ import asyncio
 import logging
 import time
 from typing import Any, Callable
-
 from app.services.agent_message_bus import AgentMessageBus
-
 logger = logging.getLogger(__name__)
 
-
-async def runSubagent(
-    bus: AgentMessageBus,
-    session: object,
-    agentId: str,
-    goal: str,
-    context: str = "",
-    taskId: str | None = None,
-    restrictedTools: list[str] | None = None,
-    parentToolRegistry: Callable | None = None,
-    parentOpenaiTools: Callable | None = None,
-    emit: Callable[[dict[str, Any]], None] | None = None,
-) -> dict[str, Any]:
+async def runSubagent(bus: AgentMessageBus, session: object, agentId: str, goal: str, context: str='', taskId: str | None=None, restrictedTools: list[str] | None=None, parentToolRegistry: Callable | None=None, parentOpenaiTools: Callable | None=None, emit: Callable[[dict[str, Any]], None] | None=None) -> dict[str, Any]:
     """Run a sub-agent and publish lifecycle events to the bus.
 
     Args:
@@ -53,98 +39,50 @@ async def runSubagent(
     """
     import uuid
     if taskId is None:
-        taskId = f"task_{uuid.uuid4().hex[:12]}"
-
+        taskId = f'task_{uuid.uuid4().hex[:12]}'
     startedAt = time.time()
-    topicPrefix = f"task:{taskId}"
+    topicPrefix = f'task:{taskId}'
+    await bus.publish(f'{topicPrefix}:progress', {'type': 'subagentStarted', 'taskId': taskId, 'agentId': agentId, 'goal': goal, 'timestamp': startedAt})
 
-    # Publish initial progress
-    await bus.publish(f"{topicPrefix}:progress", {
-        "type": "subagentStarted",
-        "taskId": taskId,
-        "agentId": agentId,
-        "goal": goal,
-        "timestamp": startedAt,
-    })
-
-    # Build a wrapped emit function that also publishes to the bus
     def _combinedEmit(ev: dict[str, Any]) -> None:
         if emit:
             emit(ev)
-        # Also publish key events to the bus
-        evType = ev.get("type", "")
-        if evType in ("subagentText", "subagentToolCall", "subagentToolResult"):
-            asyncio.ensure_future(bus.publish(f"{topicPrefix}:progress", {
-                "type": evType,
-                "taskId": taskId,
-                "agentId": agentId,
-                **ev,
-            }))
+        evType = ev.get('type', '')
+        if evType in ('subagentText', 'subagentToolCall', 'subagentToolResult'):
+            asyncio.ensure_future(bus.publish(f'{topicPrefix}:progress', {'type': evType, 'taskId': taskId, 'agentId': agentId, **ev}))
 
-    # Publish a peer-help request failure topic so other agents can claim it
     async def _failAndBroadcast(errorMsg: str) -> dict[str, Any]:
-        result = {
-            "taskId": taskId,
-            "agentId": agentId,
-            "status": "failed",
-            "error": errorMsg,
-        }
-        await bus.publish(f"{topicPrefix}:failure", result)
+        result = {'taskId': taskId, 'agentId': agentId, 'status': 'failed', 'error': errorMsg}
+        await bus.publish(f'{topicPrefix}:failure', result)
         return result
-
     try:
         from app.services.workbench.subagent import executeSubAgent
-
-        # Apply tool restrictions if provided
         if restrictedTools:
             originalDefs = parentToolRegistry(session) if parentToolRegistry else None
             originalOpenai = parentOpenaiTools(session) if parentOpenaiTools else None
-            # We monkey-patch toolDefinitions temporarily
             if originalDefs:
                 import app.services.workbench.workbench as wb
                 originalTd = wb.toolDefinitions
 
                 def filteredToolDefs(s):
                     allTools = originalTd(s)
-                    return [t for t in allTools if t.get("name") not in restrictedTools]
-
+                    return [t for t in allTools if t.get('name') not in restrictedTools]
                 wb.toolDefinitions = filteredToolDefs
                 try:
-                    subResult = await executeSubAgent(
-                        session, agentId, goal, context, emit=_combinedEmit
-                    )
+                    subResult = await executeSubAgent(session, agentId, goal, context, emit=_combinedEmit)
                 finally:
                     wb.toolDefinitions = originalTd
             else:
-                subResult = await executeSubAgent(
-                    session, agentId, goal, context, emit=_combinedEmit
-                )
+                subResult = await executeSubAgent(session, agentId, goal, context, emit=_combinedEmit)
         else:
-            subResult = await executeSubAgent(
-                session, agentId, goal, context, emit=_combinedEmit
-            )
-
+            subResult = await executeSubAgent(session, agentId, goal, context, emit=_combinedEmit)
         elapsed = time.time() - startedAt
-        status = subResult.get("status", "completed")
-
-        if status == "completed":
-            await bus.publish(f"{topicPrefix}:result", {
-                "type": "subagentCompleted",
-                "taskId": taskId,
-                "agentId": agentId,
-                "result": subResult.get("result", ""),
-                "elapsedS": round(elapsed, 2),
-            })
+        status = subResult.get('status', 'completed')
+        if status == 'completed':
+            await bus.publish(f'{topicPrefix}:result', {'type': 'subagentCompleted', 'taskId': taskId, 'agentId': agentId, 'result': subResult.get('result', ''), 'elapsedS': round(elapsed, 2)})
         else:
-            return await _failAndBroadcast(subResult.get("error", "Unknown error"))
-
-        return {
-            "taskId": taskId,
-            "agentId": agentId,
-            "status": status,
-            "result": subResult.get("result", ""),
-        }
-
+            return await _failAndBroadcast(subResult.get('error', 'Unknown error'))
+        return {'taskId': taskId, 'agentId': agentId, 'status': status, 'result': subResult.get('result', '')}
     except Exception as exc:
-        logger.exception("[SubagentWorker] error running agent %s", agentId)
+        logger.exception('[SubagentWorker] error running agent %s', agentId)
         return await _failAndBroadcast(str(exc))
