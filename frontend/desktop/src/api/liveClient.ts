@@ -24,14 +24,12 @@ async function jsonRequest<T>(path: string, body: unknown): Promise<T | null> {
 
 export const liveClient = {
   async startSession(): Promise<string> {
-    // Accept both `sessionId` (camelCase) and `session_id` (snake_case,
-    // returned by the v1 backend) so test fixtures and older clients
-    // don't need to keep track of which shape the server emits today.
-    const data = await jsonRequest<{ sessionId?: string; session_id?: string }>(
+    // Wire format: camelCase (Phase 1+ migration standardized on camelCase).
+    const data = await jsonRequest<{ sessionId?: string }>(
       '/session',
       { action: 'start' },
     );
-    return data?.sessionId ?? data?.sessionId ?? '';
+    return data?.sessionId ?? '';
   },
 
   async stopSession(sessionId: string): Promise<void> {

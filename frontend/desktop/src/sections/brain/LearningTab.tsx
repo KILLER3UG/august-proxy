@@ -50,28 +50,27 @@ export function LearningTab() {
         const resp = await fetch(`${API_BASE}/learning`);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const json = await resp.json();
-        // Normalize backend snake_case → camelCase used by the component.
-        // The backend currently emits snake_case keys (see v3 brain API);
-        // this adapter lets the component rely on camelCase without each
-        // render site doing the conversion.
+        // Wire format is camelCase (`heuristics`, `heuristicCount`,
+        // `sleepCycle`, `deltaEngine`, `pendingSkills`, …) per the v3
+        // brain API contract.
         const normalized: LearningData = {
           heuristics: json.heuristics ?? [],
-          heuristicCount: json.heuristicCount ?? json.heuristicCount ?? 0,
-          coreFacts: json.coreFacts ?? json.coreFacts ?? null,
-          userProfile: json.userProfile ?? json.userProfile ?? null,
-          autoMemories: json.autoMemories ?? json.autoMemories ?? [],
+          heuristicCount: json.heuristicCount ?? 0,
+          coreFacts: json.coreFacts ?? null,
+          userProfile: json.userProfile ?? null,
+          autoMemories: json.autoMemories ?? [],
           sleepCycle: {
-            lastRunAt: json.sleepCycle?.lastRunAt ?? json.sleep_cycle?.lastRunAt ?? null,
-            lastMerged: json.sleepCycle?.lastMerged ?? json.sleep_cycle?.lastMerged ?? 0,
-            lastPromoted: json.sleepCycle?.lastPromoted ?? json.sleep_cycle?.lastPromoted ?? 0,
-            lastDeleted: json.sleepCycle?.lastDeleted ?? json.sleep_cycle?.lastDeleted ?? 0,
+            lastRunAt: json.sleepCycle?.lastRunAt ?? null,
+            lastMerged: json.sleepCycle?.lastMerged ?? 0,
+            lastPromoted: json.sleepCycle?.lastPromoted ?? 0,
+            lastDeleted: json.sleepCycle?.lastDeleted ?? 0,
           },
           deltaEngine: {
-            consentGranted: json.deltaEngine?.consentGranted ?? json.delta_engine?.consentGranted ?? false,
-            queueSize: json.deltaEngine?.queueSize ?? json.delta_engine?.queueSize ?? 0,
-            lastFlushAt: json.deltaEngine?.lastFlushAt ?? json.delta_engine?.lastFlushAt ?? null,
+            consentGranted: json.deltaEngine?.consentGranted ?? false,
+            queueSize: json.deltaEngine?.queueSize ?? 0,
+            lastFlushAt: json.deltaEngine?.lastFlushAt ?? null,
           },
-          pendingSkills: json.pendingSkills ?? json.pendingSkills ?? [],
+          pendingSkills: json.pendingSkills ?? [],
         };
         if (!cancelled) setData(normalized);
       } catch (e) {

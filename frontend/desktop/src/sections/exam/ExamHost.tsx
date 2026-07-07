@@ -77,16 +77,13 @@ export function ExamHost(props: ExamHostProps) {
         }
         const data = await resp.json();
         if (cancelled) return;
-        // Normalize backend snake_case → camelCase. Backend currently emits
-        // snake_case (`exam_id`, `total_questions`, …) but the component
-        // works in camelCase; accept either so tests + future backend
-        // renames don't break the UI.
-        const examIdNum: number | null = data.examId ?? data.examId ?? null;
-        const total: number = data.totalQuestions ?? data.totalQuestions ?? 0;
+        // Wire format: camelCase (`examId`, `totalQuestions`, …).
+        const examIdNum: number | null = data.examId ?? null;
+        const total: number = data.totalQuestions ?? 0;
         const rawQ = data.question ?? data;
         const question: Question = {
           id: rawQ.id,
-          examId: rawQ.examId ?? rawQ.examId ?? examIdNum ?? 0,
+          examId: rawQ.examId ?? examIdNum ?? 0,
           position: rawQ.position ?? 1,
           stem: rawQ.stem,
           options: rawQ.options ?? [],
@@ -118,12 +115,10 @@ export function ExamHost(props: ExamHostProps) {
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
-      // Normalize to AnswerResult (backend may use snake_case `_ok` /
-      // `is_correct` / `correct_index` / `rationale` instead of the
-      // camelCase fields the component prefers).
+      // Wire format: camelCase (`isCorrect`, `correctIndex`, `rationale`).
       return {
-        isCorrect: data.isCorrect ?? data.correct ?? data.isCorrect ?? false,
-        correctIndex: data.correctIndex ?? data.correctIndex ?? -1,
+        isCorrect: data.isCorrect ?? data.correct ?? false,
+        correctIndex: data.correctIndex ?? -1,
         rationale: data.rationale ?? '',
       };
     },
@@ -149,11 +144,10 @@ export function ExamHost(props: ExamHostProps) {
         throw new Error(`HTTP ${resp.status}`);
       }
       const q = await resp.json();
-      // Normalize next-question payload: backend snake_case (`exam_id`,
-      // `position`) → camelCase.
+      // Wire format: camelCase (`examId`, `position`, `stem`, `options`).
       const nextQuestion: Question = {
         id: q.id,
-        examId: q.examId ?? q.examId ?? examId,
+        examId: q.examId ?? examId,
         position: q.position ?? nextPos,
         stem: q.stem,
         options: q.options ?? [],
