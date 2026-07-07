@@ -73,8 +73,6 @@ class TestMcpToolDispatch:
             called['name'] = name
             called['args'] = args
             return 'MCP_RESULT'
-        # workbench._executeTool does a local import of mcpClient.executeMcpToolCall,
-        # so monkeypatch the source module instead.
         monkeypatch.setattr(mcpClient, 'executeMcpToolCall', fakeExecuteMcpToolCall)
         result = await _executeTool(MCP_TOOL_NAME, {'text': 'hi'}, session)
         assert result == 'MCP_RESULT'
