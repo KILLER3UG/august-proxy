@@ -94,10 +94,10 @@ def _customProviderDict(entry: dict[str, object]) -> dict[str, object]:
         tmplProfiles = tmpl.get('modelProfiles', {}) or {}
         tmplHeaders = tmpl.get('defaultHeaders', {}) or {}
         tmplEnv = tmpl.get('envVars', []) or []
-    return {'name': entry.get('name', ''), 'id': entry.get('id', ''), 'display_name': entry.get('display_name', entry.get('name', '')), 'description': entry.get('description', tmpl.get('description', '') if tmpl else ''), 'aliases': tmpl.get('aliases', []) if tmpl else [], 'base_url': entry.get('baseUrl', ''), 'api_mode': entry.get('apiFormat', 'openaiChat'), 'api_key': entry.get('apiKey', ''), 'is_custom': True, 'env_vars': entry.get('env_vars', tmplEnv), 'auth_type': entry.get('auth_type', tmpl.get('authType', 'api_key') if tmpl else 'api_key'), 'model_profiles': entry.get('model_profiles', tmplProfiles), 'default_model': entry.get('default_model', tmpl.get('defaultModel', '') if tmpl else ''), 'fallback_models': entry.get('fallback_models', tmpl.get('fallbackModels', []) if tmpl else []), 'signup_url': entry.get('signup_url', tmpl.get('signupUrl', '') if tmpl else ''), 'supports_health_check': entry.get('supports_health_check', tmpl.get('supportsHealthCheck', False) if tmpl else False), 'default_max_tokens': entry.get('default_max_tokens', tmpl.get('defaultMaxTokens', 4096) if tmpl else 4096), 'default_headers': entry.get('default_headers', tmplHeaders)}
+    return {'name': entry.get('name', ''), 'id': entry.get('id', ''), 'displayName': entry.get('displayName', entry.get('name', '')), 'description': entry.get('description', tmpl.get('description', '') if tmpl else ''), 'aliases': tmpl.get('aliases', []) if tmpl else [], 'baseUrl': entry.get('baseUrl', ''), 'apiMode': entry.get('apiFormat', 'openaiChat'), 'api_key': entry.get('apiKey', ''), 'is_custom': True, 'envVars': entry.get('envVars', tmplEnv), 'authType': entry.get('authType', tmpl.get('authType', 'api_key') if tmpl else 'api_key'), 'modelProfiles': entry.get('modelProfiles', tmplProfiles), 'defaultModel': entry.get('defaultModel', tmpl.get('defaultModel', '') if tmpl else ''), 'fallbackModels': entry.get('fallbackModels', tmpl.get('fallbackModels', []) if tmpl else []), 'signupUrl': entry.get('signupUrl', tmpl.get('signupUrl', '') if tmpl else ''), 'supportsHealthCheck': entry.get('supportsHealthCheck', tmpl.get('supportsHealthCheck', False) if tmpl else False), 'defaultMaxTokens': entry.get('defaultMaxTokens', tmpl.get('defaultMaxTokens', 4096) if tmpl else 4096), 'defaultHeaders': entry.get('defaultHeaders', tmplHeaders)}
 
 def resolve(nameOrId: str) -> Optional[dict[str, object]]:
-    """Return ``{"provider": ..., "api_key": ..., "base_url": ..., "api_mode": ...}`` or ``None``.
+    """Return ``{"provider": ..., "api_key": ..., "baseUrl": ..., "apiMode": ...}`` or ``None``.
 
     Resolution order:
     1. Custom ``providers.json`` entry by id or name (authoritative for the key),
@@ -110,7 +110,7 @@ def resolve(nameOrId: str) -> Optional[dict[str, object]]:
     custom = _customEntry(nameOrId)
     if custom and custom.get('enabled') and custom.get('apiKey'):
         apiKey = custom.get('apiKey', '') or ''
-        return {'provider': _customProviderDict(custom), 'api_key': apiKey, 'base_url': custom.get('baseUrl', ''), 'api_mode': custom.get('apiFormat', 'openaiChat'), 'source': 'custom_store'}
+        return {'provider': _customProviderDict(custom), 'api_key': apiKey, 'baseUrl': custom.get('baseUrl', ''), 'apiMode': custom.get('apiFormat', 'openaiChat'), 'source': 'custom_store'}
     from app.providers import resolver as providerResolver
     from app.providers.clients import getClient
     provider = providerResolver.resolve(nameOrId)
@@ -118,5 +118,5 @@ def resolve(nameOrId: str) -> Optional[dict[str, object]]:
         return None
     client = getClient(provider) if provider else None
     apiKey = client.resolveApiKey() if client else None
-    return {'provider': provider, 'api_key': apiKey or '', 'base_url': provider.get('base_url', ''), 'api_mode': provider.get('api_mode', ''), 'source': 'registry'}
+    return {'provider': provider, 'api_key': apiKey or '', 'baseUrl': provider.get('baseUrl', ''), 'apiMode': provider.get('apiMode', ''), 'source': 'registry'}
 registerInvalidationCallback(invalidate)

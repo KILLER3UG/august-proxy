@@ -31,7 +31,7 @@ def _templateToProviderDict(template: dict[str, object]) -> dict[str, object]:
       defaultHeaders → default_headers
       modelProfiles → model_profiles
     """
-    return {'name': template.get('name', ''), 'id': template.get('id', ''), 'display_name': template.get('displayName', template.get('name', '')), 'description': template.get('description', ''), 'aliases': template.get('aliases', []), 'base_url': template.get('baseUrl', ''), 'api_mode': template.get('apiFormat', 'openaiChat'), 'env_vars': template.get('envVars', []), 'auth_type': template.get('authType', 'api_key'), 'default_model': template.get('defaultModel', ''), 'default_max_tokens': template.get('defaultMaxTokens', 4096), 'default_headers': template.get('defaultHeaders', {}), 'signup_url': template.get('signupUrl', ''), 'supports_health_check': template.get('supportsHealthCheck', False), 'fallback_models': template.get('fallbackModels', []), 'model_profiles': template.get('modelProfiles', {})}
+    return {'name': template.get('name', ''), 'id': template.get('id', ''), 'displayName': template.get('displayName', template.get('name', '')), 'description': template.get('description', ''), 'aliases': template.get('aliases', []), 'baseUrl': template.get('baseUrl', ''), 'apiMode': template.get('apiFormat', 'openaiChat'), 'envVars': template.get('envVars', []), 'authType': template.get('authType', 'api_key'), 'defaultModel': template.get('defaultModel', ''), 'defaultMaxTokens': template.get('defaultMaxTokens', 4096), 'defaultHeaders': template.get('defaultHeaders', {}), 'signupUrl': template.get('signupUrl', ''), 'supportsHealthCheck': template.get('supportsHealthCheck', False), 'fallbackModels': template.get('fallbackModels', []), 'modelProfiles': template.get('modelProfiles', {})}
 
 def _customEntryToProviderDict(entry: dict[str, object]) -> dict[str, object]:
     """Build a provider dict from a ``providers.json`` custom entry.
@@ -42,7 +42,7 @@ def _customEntryToProviderDict(entry: dict[str, object]) -> dict[str, object]:
     templateId = str(entry.get('template', '')) or str(entry.get('id', ''))
     tmpl = getTemplate(templateId) if templateId else None
     base = _templateToProviderDict(tmpl) if tmpl else {}
-    base.update({'name': entry.get('name', base.get('name', '')), 'id': entry.get('id', base.get('id', '')), 'display_name': entry.get('display_name', entry.get('name', base.get('display_name', ''))), 'description': entry.get('description', base.get('description', '')), 'base_url': entry.get('baseUrl', base.get('base_url', '')), 'api_mode': entry.get('apiFormat', base.get('api_mode', 'openaiChat')), 'api_key': entry.get('apiKey', ''), 'is_custom': True, 'default_model': entry.get('default_model', base.get('default_model', '')), 'default_max_tokens': entry.get('default_max_tokens', base.get('default_max_tokens', 4096)), 'default_headers': entry.get('default_headers', base.get('default_headers', {})), 'signup_url': entry.get('signup_url', base.get('signup_url', '')), 'supports_health_check': entry.get('supports_health_check', base.get('supports_health_check', False)), 'fallback_models': entry.get('fallback_models', base.get('fallback_models', [])), 'model_profiles': entry.get('model_profiles', base.get('model_profiles', {}))})
+    base.update({'name': entry.get('name', base.get('name', '')), 'id': entry.get('id', base.get('id', '')), 'displayName': entry.get('displayName', entry.get('name', base.get('displayName', ''))), 'description': entry.get('description', base.get('description', '')), 'baseUrl': entry.get('baseUrl', base.get('baseUrl', '')), 'apiMode': entry.get('apiFormat', base.get('apiMode', 'openaiChat')), 'api_key': entry.get('apiKey', ''), 'is_custom': True, 'defaultModel': entry.get('defaultModel', base.get('defaultModel', '')), 'defaultMaxTokens': entry.get('defaultMaxTokens', base.get('defaultMaxTokens', 4096)), 'defaultHeaders': entry.get('defaultHeaders', base.get('defaultHeaders', {})), 'signupUrl': entry.get('signupUrl', base.get('signupUrl', '')), 'supportsHealthCheck': entry.get('supportsHealthCheck', base.get('supportsHealthCheck', False)), 'fallbackModels': entry.get('fallbackModels', base.get('fallbackModels', [])), 'modelProfiles': entry.get('modelProfiles', base.get('modelProfiles', {}))})
     return base
 
 def _hasApiKey(provider: dict[str, object]) -> bool:
@@ -103,7 +103,7 @@ def resolve(name: str) -> Optional[dict[str, object]]:
                         if targetProvider.lower() in [a.lower() for a in p.get('aliases', [])]:
                             return p
     for p in allProviders:
-        profiles = p.get('model_profiles', {})
+        profiles = p.get('modelProfiles', {})
         if nameStr in profiles and _hasApiKey(p):
             return p
     for p in allProviders:
@@ -111,7 +111,7 @@ def resolve(name: str) -> Optional[dict[str, object]]:
         if nameStr.lower().startswith(pname) and _hasApiKey(p):
             return p
     for p in allProviders:
-        profiles = p.get('model_profiles', {})
+        profiles = p.get('modelProfiles', {})
         if nameStr in profiles:
             return p
         for profileKey in profiles:

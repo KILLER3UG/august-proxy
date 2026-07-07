@@ -80,7 +80,7 @@ class TelegramAdapter(BasePlatformAdapter):
 
     async def start(self) -> None:
         """Optionally set the webhook; if no base_url configured, start polling."""
-        baseUrl = self.config.get('base_url', '')
+        baseUrl = self.config.get('baseUrl', '')
         webhookPath = self.config.get('webhook_path', '/api/gateway/telegram/webhook')
         if baseUrl:
             webhookUrl = f"{baseUrl.rstrip('/')}/{webhookPath.lstrip('/')}"

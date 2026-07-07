@@ -49,7 +49,7 @@ def _err(code: str, message: str, status: int=404) -> HTTPException:
 async def snapshot():
     """Full state snapshot for the UI's initial page load."""
     providers = providerResolver.listAvailable()
-    return {'providers': [{'id': p.get('name', ''), 'name': p.get('name', ''), 'description': p.get('description', ''), 'baseUrl': p.get('base_url', ''), 'apiFormat': p.get('api_mode', ''), 'defaultModel': p.get('default_model', ''), 'enabled': True, 'models': list(p.get('model_profiles', {}).keys())} for p in providers], 'sessions': listWorkbenchSessions(), 'memory': getStats()}
+    return {'providers': [{'id': p.get('name', ''), 'name': p.get('name', ''), 'description': p.get('description', ''), 'baseUrl': p.get('baseUrl', ''), 'apiFormat': p.get('apiMode', ''), 'defaultModel': p.get('defaultModel', ''), 'enabled': True, 'models': list(p.get('modelProfiles', {}).keys())} for p in providers], 'sessions': listWorkbenchSessions(), 'memory': getStats()}
 
 @router.get('/aliases')
 async def listAliases():

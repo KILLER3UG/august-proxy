@@ -84,7 +84,7 @@ def resolve(input: str | None, providerHint: str | None=None, defaultAlias: str 
             return {'alias': normalized, 'provider': routed.get('name', userAlias.get('targetProvider', 'unknown')), 'model': userAlias['targetModel'], 'is_fallback': False}
     allProviders = providerResolver.listAvailable()
     for p in allProviders:
-        profiles = p.get('model_profiles', {})
+        profiles = p.get('modelProfiles', {})
         if normalized in profiles:
             break
     routed = resolveForModel(normalized, hint=providerHint)
@@ -115,7 +115,7 @@ def resolveOrFallback(input: str | None, providerHint: str | None=None, defaultA
         logger.warning(f"[ModelResolver] unexpected error resolving '{normalized}': {exc}")
     active = _resolveActiveProvider()
     if active and _hasCredentials(active):
-        model = active.get('default_model', normalized)
+        model = active.get('defaultModel', normalized)
         providerName = active.get('name', 'active')
         logger.warning(f"[ModelResolver] falling back to active provider '{providerName}' for input '{normalized}'")
         return {'alias': originalInput or normalized, 'provider': providerName, 'model': model, 'is_fallback': True}

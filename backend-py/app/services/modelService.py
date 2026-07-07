@@ -48,7 +48,7 @@ def _deriveModelsUrl(baseUrl: str) -> str | None:
 def _getContextWindow(modelId: str, provider: dict[str, object] | None=None, fallback: int | None=None) -> int:
     """Resolve context window from provider profile or inference."""
     if provider:
-        profiles = provider.get('model_profiles', {})
+        profiles = provider.get('modelProfiles', {})
         for key in [modelId] + [k for k in profiles if modelId.startswith(k)]:
             profile = profiles.get(key)
             if isinstance(profile, dict) and profile.get('contextWindow'):
@@ -116,10 +116,10 @@ async def _fetchProviderModels(provider: dict[str, object], timeoutS: float=5.0)
             pass
     static = _STATICModelLists.get(providerName, [])
     if not static:
-        defaultModel = provider.get('default_model')
+        defaultModel = provider.get('defaultModel')
         if defaultModel:
             static = [{'id': defaultModel, 'contextWindow': _getContextWindow(defaultModel, provider)}]
-        fallbackModels = provider.get('fallback_models', [])
+        fallbackModels = provider.get('fallbackModels', [])
         for fm in fallbackModels:
             if not any((s['id'] == fm for s in static)):
                 static.append({'id': fm, 'contextWindow': _getContextWindow(fm, provider)})

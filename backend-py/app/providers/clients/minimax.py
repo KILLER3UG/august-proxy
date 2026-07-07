@@ -29,5 +29,5 @@ class MiniMaxClient(AnthropicClient):
         """
         base = super().resolveBaseUrl()
         if not base:
-            base = self.config.get('base_url', 'https://api.minimax.io/anthropic')
+            base = self.config.get('baseUrl', 'https://api.minimax.io/anthropic')
         return base.rstrip('/')

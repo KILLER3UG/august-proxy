@@ -473,7 +473,7 @@ async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], 
         if knownTools:
             reqBody['tools'] = knownTools
         if isAnthropicUpstream:
-            client = getClient({'api_mode': 'anthropicMessages'})
+            client = getClient({'apiMode': 'anthropicMessages'})
             if client:
                 resp = await client.request_json('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
             else:
@@ -482,7 +482,7 @@ async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], 
             openaiBody = buildOpenaiRequest({'messages': currentMessages}, model, currentSystem)
             if knownTools:
                 openaiBody['tools'] = [anthropicToOpenaiToolDefinition(t) for t in knownTools]
-            client = getClient({'api_mode': 'openaiChat'})
+            client = getClient({'apiMode': 'openaiChat'})
             if client:
                 resp = await client.request_json('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
             else:

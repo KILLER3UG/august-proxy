@@ -279,7 +279,7 @@ class BaseProviderClient:
         Merges in any provider-specific ``default_headers`` from config.
         """
         headers: dict[str, str] = {'Content-Type': 'application/json'}
-        extra = self.config.get('default_headers')
+        extra = self.config.get('defaultHeaders')
         if isinstance(extra, dict):
             headers.update(extra)
         if apiKey:
@@ -306,7 +306,7 @@ class BaseProviderClient:
         aliasesList = self.config.get('aliases', [])
         if isinstance(aliasesList, list):
             candidates.extend(aliasesList)
-        envVars = self.config.get('env_vars', [])
+        envVars = self.config.get('envVars', [])
         for var in envVars:
             if var.endswith('_API_KEY'):
                 base = var.replace('_API_KEY', '').lower()
@@ -340,7 +340,7 @@ class BaseProviderClient:
         from app.config import settings
         providerName = self.config.get('name', '')
         cfg = settings.config.get(providerName, {})
-        baseUrl = cfg.get('baseUrl') or self.config.get('base_url', '')
+        baseUrl = cfg.get('baseUrl') or self.config.get('baseUrl', '')
         return baseUrl.rstrip('/') if baseUrl else ''
 
     async def requestJson(self, method: str, url: str, headers: dict[str, str], body: dict[str, object] | None=None) -> ProviderResponse:

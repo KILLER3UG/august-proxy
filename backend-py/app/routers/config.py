@@ -29,7 +29,7 @@ async def activeProvider():
             if client:
                 apiKey = client.resolveApiKey() or ''
         if apiKey:
-            providers.append({'id': p['name'], 'name': p['name'], 'apiMode': p.get('api_mode', ''), 'isAvailable': True, 'redactedKey': secrets.mask(apiKey)})
+            providers.append({'id': p['name'], 'name': p['name'], 'apiMode': p.get('apiMode', ''), 'isAvailable': True, 'redactedKey': secrets.mask(apiKey)})
     store = configService.getProvidersStore()
     for entry in store.get('providers', []):
         name = entry.get('name', '')

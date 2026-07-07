@@ -21,7 +21,7 @@ class OpenAIClient(BaseProviderClient):
         ``Authorization: Bearer <key>`` header.
         """
         headers = super().buildAuthHeaders(apiKey)
-        extra = self.config.get('default_headers')
+        extra = self.config.get('defaultHeaders')
         if isinstance(extra, dict):
             headers.update(extra)
         return headers

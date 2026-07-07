@@ -56,7 +56,7 @@ class BedrockClient(BaseProviderClient):
         br = self._br
         if br is None:
             return ProviderResponse(status=0, body={'error': 'boto3 is not installed. Install with: pip install boto3'})
-        modelId = body.get('model', self.config.get('default_model', ''))
+        modelId = body.get('model', self.config.get('defaultModel', ''))
         messages = body.get('messages', [])
         system = body.get('system', [])
         toolConfig = self._buildToolConfig(body.get('tools', []))
@@ -73,7 +73,7 @@ class BedrockClient(BaseProviderClient):
         if br is None:
             yield {'type': 'error', 'error': 'boto3 is not installed'}
             return
-        modelId = body.get('model', self.config.get('default_model', ''))
+        modelId = body.get('model', self.config.get('defaultModel', ''))
         messages = body.get('messages', [])
         system = body.get('system', [])
         toolConfig = self._buildToolConfig(body.get('tools', []))

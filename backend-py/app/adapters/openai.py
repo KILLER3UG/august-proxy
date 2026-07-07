@@ -81,7 +81,7 @@ def mergeOpenaiCompatibleProfile(profile: dict[str, object], baseUrl: str | None
     """Merge override values into a provider profile."""
     merged = dict(profile)
     if baseUrl:
-        merged['base_url'] = baseUrl
+        merged['baseUrl'] = baseUrl
     if apiKey:
         merged['api_key'] = apiKey
     return merged

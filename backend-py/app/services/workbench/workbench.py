@@ -1036,14 +1036,14 @@ def _resolveModel(provider: dict[str, object] | None, modelHint: str='') -> str:
     if modelHint:
         return modelHint
     if provider:
-        return provider.get('default_model', '')
+        return provider.get('defaultModel', '')
     return ''
 
 def _isAnthropicProvider(provider: dict[str, object] | None) -> bool:
-    return provider and provider.get('api_mode') == 'anthropicMessages'
+    return provider and provider.get('apiMode') == 'anthropicMessages'
 
 def _isOpenaiProvider(provider: dict[str, object] | None) -> bool:
-    return provider and provider.get('api_mode') in ('openaiChat', 'openaiChat', 'codexResponses')
+    return provider and provider.get('apiMode') in ('openaiChat', 'openaiChat', 'codexResponses')
 
 def _extractText(contentBlocks: list[dict[str, object]]) -> str:
     """Extract text from Anthropic content blocks."""
@@ -1250,7 +1250,7 @@ async def _callOpenaiWorkbench(messages: list[dict[str, object]], systemText: st
 
 def _supportsThinking(provider: dict[str, object], model: str) -> bool:
     """Check if a provider/model supports Anthropic-style thinking."""
-    profiles = provider.get('model_profiles', {})
+    profiles = provider.get('modelProfiles', {})
     profile = profiles.get(model) or profiles.get('*') or {}
     return profile.get('supportsThinking', False) or profile.get('supportsReasoning', False)
 
