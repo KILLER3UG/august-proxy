@@ -81,3 +81,6 @@ nul
 
 # Backup files
 *.bak
+
+# ZCode command cache (local only, never commit)
+.commandcode/

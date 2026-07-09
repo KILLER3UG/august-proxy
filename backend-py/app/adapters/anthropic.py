@@ -475,7 +475,7 @@ async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], 
         if isAnthropicUpstream:
             client = getClient({'apiMode': 'anthropicMessages'})
             if client:
-                resp = await client.request_json('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
+                resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
             else:
                 return (currentMessages, {'error': 'No Anthropic client available'})
         else:
@@ -484,7 +484,7 @@ async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], 
                 openaiBody['tools'] = [anthropicToOpenaiToolDefinition(t) for t in knownTools]
             client = getClient({'apiMode': 'openaiChat'})
             if client:
-                resp = await client.request_json('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
+                resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
             else:
                 return (currentMessages, {'error': 'No OpenAI client available'})
         if resp.is_error:
@@ -596,7 +596,7 @@ async def _handleMessagesNonStreaming(upstreamUrl: str, upstreamHeaders: dict[st
         if knownTools:
             reqBody['tools'] = knownTools
         reqBody['stream'] = False
-        resp = await _getClient().request_json('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
+        resp = await _getClient().requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
         responseBody = snakeToCamel(resp.body_json) or {}
         if resp.is_error:
             return (responseBody, None)
@@ -612,7 +612,7 @@ async def _handleMessagesNonStreaming(upstreamUrl: str, upstreamHeaders: dict[st
         if knownTools:
             openaiBody['tools'] = [anthropicToOpenaiToolDefinition(t) for t in knownTools]
         openaiBody['stream'] = False
-        resp = await _getClient().request_json('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
+        resp = await _getClient().requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
         responseBody = snakeToCamel(resp.body_json) or {}
         if resp.is_error:
             return (responseBody, None)
@@ -636,7 +636,7 @@ async def _streamAnthropicNative(upstreamUrl: str, upstreamHeaders: dict[str, st
         state = createAnthropicNativeStreamState()
         roundBody = dict(reqBody)
         roundBody['messages'] = currentMessages
-        async for event in _getClient().stream_sse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
+        async for event in _getClient().streamSse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
             if event.get('type') == 'error':
                 yield writeAnthropicSseData('error', {'error': {'message': event.get('body', str(event.get('error', '')))}})
                 return
@@ -703,7 +703,7 @@ async def _streamOpenaiAsAnthropic(upstreamUrl: str, upstreamHeaders: dict[str, 
         state = createOpenaiToAnthropicStreamState()
         roundBody = dict(openaiBody)
         roundBody['messages'] = currentMessages
-        async for chunk in _getClient().stream_sse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
+        async for chunk in _getClient().streamSse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
             if chunk.get('type') == 'error':
                 yield writeAnthropicSseData('error', {'error': {'message': chunk.get('body', str(chunk.get('error', '')))}})
                 return

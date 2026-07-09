@@ -163,7 +163,7 @@ async def anthropicMessages(request: Request, _auth: bool=Depends(requireGateway
     if isinstance(body, JSONResponse):
         return body
     reqId = await _trackRequest('messages', body, request)
-    result, headers = await anthropicAdapter.handle_messages(body, request)
+    result, headers = await anthropicAdapter.handleMessages(body, request)
     if isinstance(result, dict):
         return _endNonStream(reqId, result)
     if isinstance(result, AsyncIterator):
@@ -185,7 +185,7 @@ async def openaiChat(request: Request, _auth: bool=Depends(requireGatewayKey)):
     if isinstance(body, JSONResponse):
         return body
     reqId = await _trackRequest('chat/completions', body, request)
-    result, headers = await openaiAdapter.handle_chat_completions(body, request)
+    result, headers = await openaiAdapter.handleChatCompletions(body, request)
     if isinstance(result, dict):
         return _endNonStream(reqId, result)
     if isinstance(result, AsyncIterator):
@@ -205,7 +205,7 @@ async def openaiResponses(request: Request, _auth: bool=Depends(requireGatewayKe
         return body
     body['_endpoint'] = 'responses'
     reqId = await _trackRequest('responses', body, request)
-    result, headers = await openaiAdapter.handle_chat_completions(body, request)
+    result, headers = await openaiAdapter.handleChatCompletions(body, request)
     if isinstance(result, dict):
         if 'error' in result:
             return _endNonStream(reqId, result)

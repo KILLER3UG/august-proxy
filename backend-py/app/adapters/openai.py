@@ -244,10 +244,10 @@ async def resolveManagedOpenaiToolCalls(messages: list[dict[str, object]], model
     currentMessages = list(messages)
     finalUsage: dict[str, object] | None = None
     for _round in range(MAX_MANAGED_TOOL_ROUNDS):
-        resp = await client.request_json('POST', upstreamUrl, upstreamHeaders, camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': False}))
-        if resp.is_error:
-            return (currentMessages, resp.body if isinstance(resp.body, dict) else {'error': str(resp.body)})
-        responseBody = snakeToCamel(resp.body_json) or {}
+        resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': False}))
+        if resp.isError:
+            return (currentMessages, None)
+        responseBody = snakeToCamel(resp.bodyJson) or {}
         if responseBody.get('usage'):
             finalUsage = responseBody['usage']
         choices = responseBody.get('choices', [])
@@ -272,10 +272,14 @@ async def resolveManagedOpenaiToolCalls(messages: list[dict[str, object]], model
     return (currentMessages, finalUsage)
 
 async def streamOpenaiSseToClient(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, object]) -> AsyncIterator[str]:
-    """Pipe SSE events directly from upstream to client."""
-    yield writeOpenaiSseHeaders()
+    """Pipe SSE events directly from upstream to client.
+
+    Response headers (including Content-Type: text/event-stream) are supplied
+    by the caller via the StreamingResponse headers param, so this generator
+    yields only SSE data strings.
+    """
     body['stream'] = True
-    async for event in _client.stream_sse(upstreamUrl, upstreamHeaders, camelToSnake(body)):
+    async for event in _client.streamSse(upstreamUrl, upstreamHeaders, camelToSnake(body)):
         if event.get('type') == 'error':
             yield writeOpenaiSseError(event.get('body', str(event.get('error', ''))))
             yield writeOpenaiSseDone()
@@ -296,13 +300,12 @@ async def streamUpstreamAndResolveToolsOpenai(upstreamUrl: str, upstreamHeaders:
 
     This is the key function for handling streaming with managed tool execution.
     """
-    yield writeOpenaiSseHeaders()
     acc = createOpenaiStreamAccumulator()
     toolRound = 0
     currentMessages = list(body.get('messages', []))
     responseId = ''
     modelName = model
-    async for chunk in _client.stream_sse(upstreamUrl, upstreamHeaders, camelToSnake({**body, 'stream': True})):
+    async for chunk in _client.streamSse(upstreamUrl, upstreamHeaders, camelToSnake({**body, 'stream': True})):
         if chunk.get('type') == 'error':
             yield writeOpenaiSseError(chunk.get('body', str(chunk.get('error', ''))))
             yield writeOpenaiSseDone()
@@ -328,7 +331,7 @@ async def streamUpstreamAndResolveToolsOpenai(upstreamUrl: str, upstreamHeaders:
                     toolResults = await executeManagedOpenaiToolCalls(classification['managed_tool_calls'], knownTools, currentMessages, workspacePath, onToolEvent)
                     currentMessages.extend(toolResults)
                     acc = createOpenaiStreamAccumulator()
-                    async for nextChunk in _client.stream_sse(upstreamUrl, upstreamHeaders, camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': True})):
+                    async for nextChunk in _client.streamSse(upstreamUrl, upstreamHeaders, camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': True})):
                         if nextChunk.get('type') == 'error':
                             yield writeOpenaiSseError(nextChunk.get('body', ''))
                             yield writeOpenaiSseDone()
@@ -382,7 +385,7 @@ async def handleChatCompletions(body: dict[str, object], request: object=None) -
     hasManagedTools = any((isProxyManagedLocalToolName(getToolDefinitionName(t)) for t in knownTools))
     if isResponsesEndpoint:
         body['stream'] = False
-        resp = await client.request_json('POST', upstreamUrl.replace('/chat/completions', '/responses'), headers, camelToSnake(body))
+        resp = await client.requestJson('POST', upstreamUrl.replace('/chat/completions', '/responses'), headers, camelToSnake(body))
         return (snakeToCamel(resp.body) if isinstance(resp.body, (dict, list)) else {'response': str(resp.body)}, None)
     if clientWantsStream:
         if hasManagedTools:
@@ -399,7 +402,7 @@ async def handleChatCompletions(body: dict[str, object], request: object=None) -
             response = buildOpenaiAggregatedFromStream({'id': f'chatcmpl-{uuid.uuid4().hex[:12]}', 'model': model, 'created': int(time.time()), 'content': lastMsg.get('content', ''), 'tool_calls': lastMsg.get('tool_calls', []), 'finish_reason': 'stop' if not lastMsg.get('tool_calls') else 'tool_calls', 'usage': usage or {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}})
             return (response, None)
         else:
-            resp = await client.request_json('POST', upstreamUrl, headers, camelToSnake(body))
+            resp = await client.requestJson('POST', upstreamUrl, headers, camelToSnake(body))
             return (snakeToCamel(resp.body) if isinstance(resp.body, (dict, list)) else {'response': str(resp.body)}, None)
 _client = None
 
