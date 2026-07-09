@@ -9,6 +9,7 @@ from app.providers import resolver
 from app.providers.template_loader import getTemplates, getTemplate
 from app.services import configService
 from app.services import modelService
+from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 router = APIRouter(prefix='/api/providers')
 
 class ProviderCreate(BaseModel):
@@ -42,9 +43,11 @@ class ModelUpdate(BaseModel):
 @router.get('')
 async def listProviders():
     store = configService.getProvidersStore()
-    raw = store.get('providers', [])
+    raw = as_list(store.get('providers'), [])
     result = []
     for p in raw:
+        if not isinstance(p, dict):
+            continue
         result.append({'id': p.get('id', ''), 'name': p.get('name', ''), 'baseUrl': p.get('baseUrl', ''), 'apiFormat': p.get('apiFormat', ''), 'enabled': p.get('enabled', False), 'apiKeySet': bool(p.get('apiKey')), 'autoFetch': p.get('autoFetch', False), 'models': p.get('models', [])})
     return result
 
@@ -78,7 +81,9 @@ async def createProvider(body: ProviderCreate):
     rand = hashlib.md5(str(time.time()).encode()).hexdigest()[:6]
     providerId = f'{slug}-{rand}'
     entry = {'id': providerId, 'name': body.name, 'baseUrl': baseUrl, 'apiFormat': apiFormat, 'apiKey': body.apiKey, 'enabled': body.enabled, 'autoFetch': False, 'models': models}
-    store['providers'].append(entry)
+    _providers = as_list(store.get('providers'), [])
+    _providers.append(entry)
+    store['providers'] = _providers
     configService.saveProvidersStore(store)
     modelService.invalidateCache()
     return {**entry, 'apiKeySet': bool(body.apiKey)}
@@ -87,10 +92,10 @@ async def createProvider(body: ProviderCreate):
 async def importProviderConfig(body: dict):
     """Import a provider config from a JSON blob (paste from clipboard / export)."""
     store = configService.getProvidersStore()
-    if 'providers' not in store:
-        store['providers'] = []
+    _providers = as_list(store.get('providers'), [])
     entry = {'id': body.get('id', ''), 'name': body.get('name', 'Imported Provider'), 'baseUrl': body.get('baseUrl', ''), 'apiFormat': body.get('apiFormat', 'openaiChat'), 'apiKey': body.get('apiKey', ''), 'enabled': body.get('enabled', True), 'autoFetch': body.get('autoFetch', False), 'models': body.get('models', [])}
-    store['providers'].append(entry)
+    _providers.append(entry)
+    store['providers'] = _providers
     configService.saveProvidersStore(store)
     modelService.invalidateCache()
     return {**entry, 'apiKeySet': bool(entry.get('apiKey'))}
@@ -98,7 +103,9 @@ async def importProviderConfig(body: dict):
 @router.get('/{providerId}')
 async def getProvider(providerId: str):
     store = configService.getProvidersStore()
-    for p in store.get('providers', []):
+    for p in as_list(store.get('providers'), []):
+        if not isinstance(p, dict):
+            continue
         if p.get('id') == providerId:
             return {**p, 'apiKeySet': bool(p.get('apiKey'))}
     raise HTTPException(status_code=404, detail='Provider not found')
@@ -106,7 +113,9 @@ async def getProvider(providerId: str):
 @router.put('/{providerId}')
 async def updateProvider(providerId: str, body: ProviderUpdate):
     store = configService.getProvidersStore()
-    for p in store.get('providers', []):
+    for p in as_list(store.get('providers'), []):
+        if not isinstance(p, dict):
+            continue
         if p.get('id') == providerId:
             if body.name is not None:
                 p['name'] = body.name
@@ -130,9 +139,9 @@ async def patchProvider(providerId: str, body: ProviderUpdate):
 @router.delete('/{providerId}')
 async def deleteProvider(providerId: str):
     store = configService.getProvidersStore()
-    before = len(store.get('providers', []))
-    store['providers'] = [p for p in store.get('providers', []) if p.get('id') != providerId]
-    if len(store['providers']) == before:
+    before = len(as_list(store.get('providers'), []))
+    store['providers'] = [p for p in as_list(store.get('providers'), []) if not (isinstance(p, dict) and p.get('id') == providerId)]
+    if len(as_list(store.get('providers'), [])) == before:
         raise HTTPException(status_code=404, detail='Provider not found')
     configService.saveProvidersStore(store)
     modelService.invalidateCache()
@@ -145,14 +154,16 @@ async def refreshModels(providerId: str):
     Returns added/updated/removed model ID arrays for the frontend.
     """
     store = configService.getProvidersStore()
-    for p in store.get('providers', []):
+    for p in as_list(store.get('providers'), []):
+        if not isinstance(p, dict):
+            continue
         if p.get('id') != providerId:
             continue
-        currentModels = p.get('models', [])
+        currentModels = as_list(p.get('models'), [])
         currentIds = {m['id'] for m in currentModels if isinstance(m, dict) and m.get('id')}
         liveModels: list[str] = []
-        baseUrl = p.get('baseUrl', '')
-        apiKey = p.get('apiKey', '')
+        baseUrl = as_str(p.get('baseUrl'), '')
+        apiKey = as_str(p.get('apiKey'), '')
         if baseUrl and apiKey:
             try:
                 import httpx

@@ -19,9 +19,11 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from typing import AsyncIterator, Callable
+from typing import AsyncIterator, Callable, cast
 from app.typeAliases import JsonValue
+from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 from app.adapters.base import streamSse, buildHeaders
+from app.providers.clients.base import BaseProviderClient
 from app.adapters.proxyTools import getProxyOpenaiToolDefinitionsForAnthropic, getCanonicalManagedAnthropicWebTools, appendMissingAnthropicTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, dedupeAndCanonicalizeAnthropicTools, sanitizeAnthropicToolDefinition, getManagedAnthropicWebToolDefinitions, openaiToAnthropicToolDefinition, anthropicToOpenaiToolDefinition, isProxyManagedLocalToolName, isBrowserAutomationToolName, buildClientToolGuidance
 from app.adapters.toolClassification import classifyAnthropicToolUses, classifyOpenaiToolCalls, getToolNameFromAnthropicTool, getToolNameFromOpenaiTool
 from app.adapters.caseConverters import snakeToCamel, camelToSnake
@@ -34,6 +36,10 @@ MAX_MANAGED_TOOL_ROUNDS = 10
 AUGUST_REMINDER = 'This proxy environment is August Proxy — a multi-model AI gateway. You have access to the August tool suite for file operations, web access, bash commands, and memory.'
 RULE_REMINDER_MESSAGE: dict[str, JsonValue] = {'type': 'text', 'text': '## Operational Rules\n\n1. When browsing the web, prioritize fetching text content directly.\n2. When executing commands, prefer safe, non-destructive operations.\n3. Always verify file paths before writing.\n4. Respect user privacy and data boundaries.\n5. If a tool fails, retry with corrected parameters before reporting failure.'}
 
+# ── JsonValue narrowing helpers ───────────────────────────────────────────────
+# The proxy treats provider payloads as `JsonValue` (a broad recursive union).
+# Before operating on a value as a specific type we narrow it at runtime; these
+# helpers keep the dynamic boundary small and give mypy a concrete type.
 def isClaudeFamilyModel(model: str | None) -> bool:
     """True for Claude family model IDs or public alias names."""
     if not isinstance(model, str):
@@ -219,25 +225,42 @@ def translateMessages(messages: list[dict[str, JsonValue]], system: list[dict[st
             if isinstance(content, str):
                 asstMsg['content'] = content
             elif isinstance(content, list):
-                textParts = []
-                toolCalls = []
+                textParts: list[str] = []
+                toolCalls: list[dict[str, JsonValue]] = []
+                reasoning = as_str(asstMsg.get('reasoning'), '')
+                reasoningContent = as_str(asstMsg.get('reasoning_content'), '')
                 for block in content:
-                    if block.get('type') == 'text':
-                        textParts.append(block.get('text', ''))
-                    elif block.get('type') == 'tool_use':
-                        toolCalls.append({'id': block.get('id', ''), 'type': 'function', 'function': {'name': block.get('name', ''), 'arguments': json.dumps(block.get('input', {}))}})
-                    elif block.get('type') == 'thinking':
-                        asstMsg['reasoning'] = asstMsg.get('reasoning', '') + block.get('text', '')
-                        asstMsg['reasoning_content'] = asstMsg.get('reasoning_content', '') + block.get('text', '')
+                    if not isinstance(block, dict):
+                        continue
+                    blockType = block.get('type')
+                    if blockType == 'text':
+                        textParts.append(as_str(block.get('text'), ''))
+                    elif blockType == 'tool_use':
+                        toolCalls.append({
+                            'id': as_str(block.get('id'), ''),
+                            'type': 'function',
+                            'function': {
+                                'name': as_str(block.get('name'), ''),
+                                'arguments': json.dumps(as_dict(block.get('input'), {})),
+                            },
+                        })
+                    elif blockType == 'thinking':
+                        reasoning += as_str(block.get('text'), '')
+                        reasoningContent += as_str(block.get('text'), '')
+                asstMsg['reasoning'] = reasoning
+                asstMsg['reasoning_content'] = reasoningContent
                 asstMsg['content'] = ''.join(textParts) if textParts else ''
                 if toolCalls:
                     asstMsg['tool_calls'] = toolCalls
-            if msg.get('tool_calls') and 'tool_calls' not in asstMsg:
-                asstMsg.setdefault('content', msg.get('content', ''))
-                safeCalls = []
-                for tc in msg['tool_calls']:
+            toolCallsVal = msg.get('tool_calls')
+            if toolCallsVal and 'tool_calls' not in asstMsg and isinstance(toolCallsVal, list):
+                asstMsg.setdefault('content', as_str(msg.get('content'), ''))
+                safeCalls: list[dict[str, JsonValue]] = []
+                for tc in toolCallsVal:
+                    if not isinstance(tc, dict):
+                        continue
                     tcCopy = dict(tc)
-                    fn = dict(tcCopy.get('function', {}))
+                    fn = as_dict(tcCopy.get('function'), {})
                     if 'arguments' in fn and (not isinstance(fn['arguments'], str)):
                         fn['arguments'] = json.dumps(fn['arguments'])
                     tcCopy['function'] = fn
@@ -381,16 +404,19 @@ def createOpenaiToAnthropicStreamState() -> dict[str, JsonValue]:
 def streamOpenaiDeltaAsAnthropic(chunk: dict[str, JsonValue], state: dict[str, JsonValue]) -> list[str]:
     """Convert an OpenAI Chat Completions chunk to Anthropic SSE events."""
     events: list[str] = []
-    choices = chunk.get('choices', [])
+    choices = as_list(chunk.get('choices'), [])
     if not choices:
         return events
     choice = choices[0]
-    delta = choice.get('delta', {})
-    finishReason = choice.get('finish_reason')
-    if chunk.get('id') and (not state.get('_started')):
-        state['message_id'] = chunk['id']
-    if chunk.get('model'):
-        state['model'] = chunk['model']
+    choiceDict = as_dict(choice, {})
+    delta = as_dict(choiceDict.get('delta'), {})
+    finishReason = choiceDict.get('finish_reason')
+    chunkId = chunk.get('id')
+    if chunkId and not state.get('_started'):
+        state['message_id'] = chunkId
+    model = chunk.get('model')
+    if model:
+        state['model'] = model
     if not state.get('_started'):
         state['_started'] = True
         events.append(writeAnthropicSseData('message_start', {'type': 'message_start', 'message': {'id': state['message_id'], 'type': 'message', 'role': 'assistant', 'content': [], 'model': state['model'] or 'unknown', 'stop_reason': None, 'stop_sequence': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}}))
@@ -399,41 +425,58 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, JsonValue], state: dict[str, J
     if content:
         if not state.get('_text_block_started'):
             state['_text_block_started'] = True
-            idx = state['current_index']
-            state['current_index'] += 1
+            idx = as_int(state.get('current_index'), -1) + 1
+            state['current_index'] = idx
             events.append(writeAnthropicSseData('content_block_start', {'type': 'content_block_start', 'index': idx, 'content_block': {'type': 'text', 'text': ''}}))
-        events.append(writeAnthropicSseData('content_block_delta', {'type': 'content_block_delta', 'index': state['current_index'] - 1, 'delta': {'type': 'text_delta', 'text': content}}))
-        state['accumulated_text'] += content
+        events.append(writeAnthropicSseData('content_block_delta', {'type': 'content_block_delta', 'index': as_int(state.get('current_index'), -1), 'delta': {'type': 'text_delta', 'text': content}}))
+        state['accumulated_text'] = as_str(state.get('accumulated_text'), '') + content
     if reasoning:
         if not state.get('_reasoning_block_started'):
             state['_reasoning_block_started'] = True
-            idx = state['current_index']
-            state['current_index'] += 1
+            idx = as_int(state.get('current_index'), -1) + 1
+            state['current_index'] = idx
             events.append(writeAnthropicSseData('content_block_start', {'type': 'content_block_start', 'index': idx, 'content_block': {'type': 'thinking', 'text': ''}}))
-        events.append(writeAnthropicSseData('content_block_delta', {'type': 'content_block_delta', 'index': state['current_index'] - 1, 'delta': {'type': 'thinking_delta', 'thinking': reasoning}}))
-        state['accumulated_reasoning'] += reasoning
-    toolCalls = delta.get('tool_calls', [])
+        events.append(writeAnthropicSseData('content_block_delta', {'type': 'content_block_delta', 'index': as_int(state.get('current_index'), -1), 'delta': {'type': 'thinking_delta', 'thinking': reasoning}}))
+        state['accumulated_reasoning'] = as_str(state.get('accumulated_reasoning'), '') + reasoning
+    toolCalls = as_list(delta.get('tool_calls'), [])
+    pending = as_list(state.get('pending_tool_calls'), [])
     for tc in toolCalls:
-        existing = next((t for t in state['pending_tool_calls'] if t.get('index') == tc.get('index')), None)
+        if not isinstance(tc, dict):
+            continue
+        existing = next((t for t in pending if isinstance(t, dict) and t.get('index') == tc.get('index')), None)
         if existing:
-            if tc.get('id'):
-                existing['id'] = tc['id']
-            if tc.get('function', {}).get('name'):
-                existing.setdefault('function', {})['name'] = existing['function'].get('name', '') + tc['function']['name']
-            if tc.get('function', {}).get('arguments'):
-                existing.setdefault('function', {})['arguments'] = existing['function'].get('arguments', '') + tc['function']['arguments']
+            tcId = tc.get('id')
+            if tcId:
+                existing['id'] = tcId
+            tcFn = as_dict(tc.get('function'), {})
+            tcName = tcFn.get('name')
+            if tcName:
+                existingFn = as_dict(existing.get('function'), {})
+                existingFn['name'] = as_str(existingFn.get('name'), '') + as_str(tcName, '')
+                existing['function'] = existingFn
+            tcArgs = tcFn.get('arguments')
+            if tcArgs:
+                existingFn = as_dict(existing.get('function'), {})
+                existingFn['arguments'] = as_str(existingFn.get('arguments'), '') + as_str(tcArgs, '')
+                existing['function'] = existingFn
         else:
-            state['pending_tool_calls'].append({'index': tc.get('index', 0), 'id': tc.get('id', ''), 'type': 'function', 'function': {'name': tc.get('function', {}).get('name', ''), 'arguments': tc.get('function', {}).get('arguments', '')}})
+            tcFn = as_dict(tc.get('function'), {})
+            pending.append({'index': as_int(tc.get('index'), 0), 'id': as_str(tc.get('id'), ''), 'type': 'function', 'function': {'name': as_str(tcFn.get('name'), ''), 'arguments': as_str(tcFn.get('arguments'), '')}})
+    state['pending_tool_calls'] = pending
     if finishReason and finishReason != 'null':
         if state.get('_text_block_started'):
-            events.append(writeAnthropicSseData('content_block_stop', {'type': 'content_block_stop', 'index': state['current_index'] - 1}))
+            events.append(writeAnthropicSseData('content_block_stop', {'type': 'content_block_stop', 'index': as_int(state.get('current_index'), -1)}))
         if state.get('_reasoning_block_started'):
-            events.append(writeAnthropicSseData('content_block_stop', {'type': 'content_block_stop', 'index': state['current_index'] - 1}))
-        for i, tc in enumerate(state['pending_tool_calls']):
-            idx = state['current_index']
-            state['current_index'] += 1
-            toolName = tc.get('function', {}).get('name', '')
-            toolArgsStr = tc.get('function', {}).get('arguments', '{}')
+            events.append(writeAnthropicSseData('content_block_stop', {'type': 'content_block_stop', 'index': as_int(state.get('current_index'), -1)}))
+        pending = as_list(state.get('pending_tool_calls'), [])
+        for tc in pending:
+            if not isinstance(tc, dict):
+                continue
+            idx = as_int(state.get('current_index'), -1) + 1
+            state['current_index'] = idx
+            tcFn = as_dict(tc.get('function'), {})
+            toolName = as_str(tcFn.get('name'), '')
+            toolArgsStr = as_str(tcFn.get('arguments'), '{}')
             try:
                 toolInput = json.loads(toolArgsStr) if toolArgsStr else {}
             except (json.JSONDecodeError, TypeError):
@@ -441,7 +484,9 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, JsonValue], state: dict[str, J
             events.append(writeAnthropicSseData('content_block_start', {'type': 'content_block_start', 'index': idx, 'content_block': {'type': 'tool_use', 'id': tc.get('id', f'toolu_{uuid.uuid4().hex[:16]}'), 'name': toolName, 'input': toolInput}}))
             events.append(writeAnthropicSseData('content_block_delta', {'type': 'content_block_delta', 'index': idx, 'delta': {'type': 'input_json_delta', 'partial_json': toolArgsStr}}))
             events.append(writeAnthropicSseData('content_block_stop', {'type': 'content_block_stop', 'index': idx}))
-            state['content_blocks'].append({'type': 'tool_use', 'id': tc.get('id', ''), 'name': toolName, 'input': toolInput})
+            contentBlocks = as_list(state.get('content_blocks'), [])
+            contentBlocks.append({'type': 'tool_use', 'id': as_str(tc.get('id'), ''), 'name': toolName, 'input': toolInput})
+            state['content_blocks'] = contentBlocks
         anthropicStopReason = 'end_turn'
         if finishReason == 'tool_calls':
             anthropicStopReason = 'tool_use'
@@ -449,14 +494,32 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, JsonValue], state: dict[str, J
             anthropicStopReason = 'max_tokens'
         events.append(writeAnthropicSseData('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': anthropicStopReason, 'stop_sequence': None}, 'usage': {'output_tokens': 0}}))
         events.append(writeAnthropicSseData('message_stop', {'type': 'message_stop'}))
-    if chunk.get('usage'):
-        state['input_tokens'] = chunk['usage'].get('prompt_tokens', 0)
-        state['output_tokens'] = chunk['usage'].get('completion_tokens', 0)
+    usage = as_dict(chunk.get('usage'), {})
+    if usage:
+        state['input_tokens'] = as_int(usage.get('prompt_tokens'), 0)
+        state['output_tokens'] = as_int(usage.get('completion_tokens'), 0)
     return events
 
 def buildOpenaiAggregatedForAnthropicFromStream(state: dict[str, JsonValue]) -> dict[str, JsonValue]:
     """Build an OpenAI chat completion response from accumulated Anthropic stream state."""
-    return {'id': state.get('message_id', f'chatcmpl-{uuid.uuid4().hex[:12]}'), 'object': 'chat.completion', 'created': int(time.time()), 'model': state.get('model', 'unknown'), 'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': state.get('accumulated_text', '')}, 'finish_reason': state.get('stop_reason', 'stop')}], 'usage': {'prompt_tokens': state.get('input_tokens', 0), 'completion_tokens': state.get('output_tokens', 0), 'total_tokens': state.get('input_tokens', 0) + state.get('output_tokens', 0)}}
+    inputTokens = as_int(state.get('input_tokens'), 0)
+    outputTokens = as_int(state.get('output_tokens'), 0)
+    return {
+        'id': state.get('message_id', f'chatcmpl-{uuid.uuid4().hex[:12]}'),
+        'object': 'chat.completion',
+        'created': int(time.time()),
+        'model': as_str(state.get('model'), 'unknown'),
+        'choices': [{
+            'index': 0,
+            'message': {'role': 'assistant', 'content': as_str(state.get('accumulated_text'), '')},
+            'finish_reason': as_str(state.get('stop_reason'), 'stop'),
+        }],
+        'usage': {
+            'prompt_tokens': inputTokens,
+            'completion_tokens': outputTokens,
+            'total_tokens': inputTokens + outputTokens,
+        },
+    }
 
 async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], system: list[dict[str, JsonValue]] | None, model: str, upstreamUrl: str, upstreamHeaders: dict[str, str], isAnthropicUpstream: bool, knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, JsonValue]], None] | None=None, parentSignal: object=None) -> tuple[list[dict[str, JsonValue]], dict[str, JsonValue] | None]:
     """Run the multi-round tool resolution loop for Anthropic-format requests.
@@ -487,39 +550,52 @@ async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], 
                 resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
             else:
                 return (currentMessages, {'error': 'No OpenAI client available'})
-        if resp.is_error:
-            return (currentMessages, resp.body if isinstance(resp.body, dict) else {'error': str(resp.body)})
-        responseBody = snakeToCamel(resp.body_json) or {}
+        if resp.status != 200:
+            errBody: dict[str, JsonValue] = resp.body if isinstance(resp.body, dict) else {'error': str(resp.body)}
+            return (currentMessages, errBody)
+        responseBody = as_dict(snakeToCamel(resp.body_json), {})
         if responseBody.get('usage'):
-            finalUsage = responseBody['usage']
+            finalUsage = as_dict(responseBody.get('usage'), {})
         if isAnthropicUpstream:
-            content = responseBody.get('content', [])
-            stopReason = responseBody.get('stop_reason', 'end_turn')
+            content = as_list(responseBody.get('content'), [])
+            stopReason = as_str(responseBody.get('stop_reason'), 'end_turn')
             assistantMsg: dict[str, JsonValue] = {'role': 'assistant', 'content': content}
-            toolUses = [b for b in content if b.get('type') == 'tool_use'] if content else []
+            toolUses = [b for b in content if isinstance(b, dict) and b.get('type') == 'tool_use']
         else:
-            choices = responseBody.get('choices', [])
+            choices = as_list(responseBody.get('choices'), [])
             if not choices:
                 break
-            msg = choices[0].get('message', {})
+            msg = as_dict(choices[0], {})
             assistantMsg = msg
             toolUses = []
-            for tc in msg.get('tool_calls', []):
-                toolUses.append({'type': 'tool_use', 'name': tc.get('function', {}).get('name', ''), 'input': json.loads(tc.get('function', {}).get('arguments', '{}'))})
+            for tc in as_list(msg.get('tool_calls'), []):
+                if not isinstance(tc, dict):
+                    continue
+                tcFn = as_dict(tc.get('function'), {})
+                toolUses.append({'type': 'tool_use', 'name': as_str(tcFn.get('name'), ''), 'input': json.loads(as_str(tcFn.get('arguments'), '{}'))})
         if not toolUses:
             currentMessages.append(assistantMsg)
             break
-        classification = classifyAnthropicToolUses(toolUses, managedLocalToolNames, clientToolNames)
-        if not classification['has_managed']:
+        classification = cast(
+            'dict[str, JsonValue]',
+            classifyAnthropicToolUses(
+                cast('list[dict[str, object]] | None', toolUses),
+                managedLocalToolNames,
+                clientToolNames,
+            ),
+        )
+        if not classification.get('has_managed'):
             currentMessages.append(assistantMsg)
             break
         toolResults: list[dict[str, JsonValue]] = []
-        for tu in classification['managed_tool_uses']:
-            toolName = tu.get('name', '')
-            toolInput = tu.get('input', {})
-            toolUseId = tu.get('id', f'toolu_{uuid.uuid4().hex[:16]}')
+        for tu in as_list(classification.get('managed_tool_uses'), []):
+            if not isinstance(tu, dict):
+                continue
+            toolName = as_str(tu.get('name'), '')
+            toolInput = as_dict(tu.get('input'), {})
+            toolUseId = as_str(tu.get('id'), f'toolu_{uuid.uuid4().hex[:16]}')
             try:
-                result = await executeManagedProxyTool(toolName, toolInput, workspacePath, parent_signal=parentSignal)
+                result = await executeManagedProxyTool(toolName, toolInput, workspacePath, parentSignal=parentSignal)
                 toolResults.append({'type': 'tool_result', 'tool_use_id': toolUseId, 'content': formatManagedToolResult(toolName, result)})
             except Exception as exc:
                 toolResults.append({'type': 'tool_result', 'tool_use_id': toolUseId, 'content': f'Error: {exc}', 'is_error': True})
@@ -636,55 +712,57 @@ async def _streamAnthropicNative(upstreamUrl: str, upstreamHeaders: dict[str, st
         state = createAnthropicNativeStreamState()
         roundBody = dict(reqBody)
         roundBody['messages'] = currentMessages
-        async for event in _getClient().streamSse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
+        async for rawEvent in _getClient().streamSse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
+            event = cast('dict[str, JsonValue]', rawEvent)
             if event.get('type') == 'error':
-                yield writeAnthropicSseData('error', {'error': {'message': event.get('body', str(event.get('error', '')))}})
+                yield writeAnthropicSseData('error', {'error': {'message': as_str(event.get('body'), str(event.get('error', '')))}})
                 return
             eventType = event.get('_event_type', '')
             yield writeAnthropicSseDataOnly(event)
-            eventTypePayload = event.get('type', '')
+            eventTypePayload = as_str(event.get('type'), '')
             if eventTypePayload == 'message_start':
-                msg = event.get('message', {})
-                state['message_id'] = msg.get('id', '')
-                state['model'] = msg.get('model', '')
-                state['input_tokens'] = msg.get('usage', {}).get('input_tokens', 0)
+                msg = as_dict(event.get('message'), {})
+                state['message_id'] = as_str(msg.get('id'), '')
+                state['model'] = as_str(msg.get('model'), '')
+                state['input_tokens'] = as_int(as_dict(msg.get('usage'), {}).get('input_tokens'), 0)
             elif eventTypePayload == 'content_block_start':
-                block = event.get('content_block', {})
-                idx = event.get('index', 0)
-                state['content_blocks'].append(block)
+                block = as_dict(event.get('content_block'), {})
+                idx = as_int(event.get('index'), 0)
+                contentBlocks = as_list(state.get('content_blocks'), [])
+                contentBlocks.append(block)
+                state['content_blocks'] = contentBlocks
                 state['current_index'] = idx
             elif eventTypePayload == 'content_block_delta':
                 pass
             elif eventTypePayload == 'content_block_stop':
                 pass
             elif eventTypePayload == 'message_delta':
-                delta = event.get('delta', {})
+                delta = as_dict(event.get('delta'), {})
                 state['stop_reason'] = delta.get('stop_reason')
-                state['output_tokens'] = event.get('usage', {}).get('output_tokens', 0)
+                state['output_tokens'] = as_int(as_dict(event.get('usage'), {}).get('output_tokens'), 0)
             elif eventTypePayload == 'message_stop':
-                toolUses = [b for b in state['content_blocks'] if b.get('type') == 'tool_use']
+                contentBlocks = as_list(state.get('content_blocks'), [])
+                toolUses = [b for b in contentBlocks if isinstance(b, dict) and b.get('type') == 'tool_use']
                 if not toolUses:
                     break
-                classification = classifyAnthropicToolUses(toolUses, managedLocalToolNames, clientToolNames)
-                # No managed tools to resolve locally — pass the turn back to the
-                # client (or finish). Stop the loop so we don't spin.
-                if not classification['has_managed']:
+                classification = cast('dict[str, JsonValue]', classifyAnthropicToolUses(toolUses, managedLocalToolNames, clientToolNames))
+                if not classification.get('has_managed'):
                     break
                 toolRound += 1
-                assistantMsg = {'role': 'assistant', 'content': list(state['content_blocks'])}
+                assistantMsg = {'role': 'assistant', 'content': list(contentBlocks)}
                 currentMessages.append(assistantMsg)
-                for tu in classification['managed_tool_uses']:
-                    toolName = tu.get('name', '')
-                    toolInput = tu.get('input', {})
-                    toolUseId = tu.get('id', f'toolu_{uuid.uuid4().hex[:16]}')
+                for tu in as_list(classification.get('managed_tool_uses'), []):
+                    if not isinstance(tu, dict):
+                        continue
+                    toolName = as_str(tu.get('name'), '')
+                    toolInput = as_dict(tu.get('input'), {})
+                    toolUseId = as_str(tu.get('id'), f'toolu_{uuid.uuid4().hex[:16]}')
                     try:
                         result = await executeManagedProxyTool(toolName, toolInput)
                         currentMessages.append({'type': 'tool_result', 'tool_use_id': toolUseId, 'content': formatManagedToolResult(toolName, result)})
                     except Exception as exc:
                         currentMessages.append({'type': 'tool_result', 'tool_use_id': toolUseId, 'content': f'Error: {exc}', 'is_error': True})
-                # Loop again to re-stream with the tool results appended.
                 continue
-        # Either no tool uses, or only client/unknown tools — we're done.
         break
     yield writeAnthropicSseData('message_stop', {'type': 'message_stop'})
 
@@ -703,52 +781,58 @@ async def _streamOpenaiAsAnthropic(upstreamUrl: str, upstreamHeaders: dict[str, 
         state = createOpenaiToAnthropicStreamState()
         roundBody = dict(openaiBody)
         roundBody['messages'] = currentMessages
-        async for chunk in _getClient().streamSse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
+        async for rawChunk in _getClient().streamSse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
+            chunk = cast('dict[str, JsonValue]', rawChunk)
             if chunk.get('type') == 'error':
-                yield writeAnthropicSseData('error', {'error': {'message': chunk.get('body', str(chunk.get('error', '')))}})
+                yield writeAnthropicSseData('error', {'error': {'message': as_str(chunk.get('body'), str(chunk.get('error', '')))}})
                 return
             events = streamOpenaiDeltaAsAnthropic(chunk, state)
             for eventStr in events:
                 yield eventStr
-            choices = chunk.get('choices', [])
-            if choices and choices[0].get('finish_reason') == 'tool_calls':
+            choices = as_list(chunk.get('choices'), [])
+            if choices and isinstance(choices[0], dict) and choices[0].get('finish_reason') == 'tool_calls':
                 toolCalls = []
-                for tc in state['pending_tool_calls']:
-                    name = tc.get('function', {}).get('name', '')
-                    argsStr = tc.get('function', {}).get('arguments', '{}')
+                pendingTc = as_list(state.get('pending_tool_calls'), [])
+                for tc in pendingTc:
+                    if not isinstance(tc, dict):
+                        continue
+                    tcFn = as_dict(tc.get('function'), {})
+                    name = as_str(tcFn.get('name'), '')
+                    argsStr = as_str(tcFn.get('arguments'), '{}')
                     try:
                         args = json.loads(argsStr)
                     except (json.JSONDecodeError, TypeError):
                         args = {}
-                    toolCalls.append({'type': 'tool_use', 'id': tc.get('id', f'toolu_{uuid.uuid4().hex[:16]}'), 'name': name, 'input': args})
+                    toolCalls.append({'type': 'tool_use', 'id': as_str(tc.get('id'), f'toolu_{uuid.uuid4().hex[:16]}'), 'name': name, 'input': args})
                 if not toolCalls:
                     break
-                classification = classifyAnthropicToolUses(toolCalls, managedLocalToolNames, clientToolNames)
-                # No managed tools to resolve locally — pass the turn back to the
-                # client (or finish). Stop the loop so we don't spin.
-                if not classification['has_managed']:
+                classification = cast('dict[str, JsonValue]', classifyAnthropicToolUses(toolCalls, managedLocalToolNames, clientToolNames))
+                if not classification.get('has_managed'):
                     break
                 toolRound += 1
-                currentMessages.append({'role': 'assistant', 'content': [{'type': 'text', 'text': state.get('accumulated_text', '')}, *toolCalls]})
-                for tu in classification['managed_tool_uses']:
+                currentMessages.append({'role': 'assistant', 'content': [{'type': 'text', 'text': as_str(state.get('accumulated_text'), '')}, *toolCalls]})
+                for tu in as_list(classification.get('managed_tool_uses'), []):
+                    if not isinstance(tu, dict):
+                        continue
+                    tuName = as_str(tu.get('name'), '')
+                    tuInput = as_dict(tu.get('input'), {})
+                    tuId = as_str(tu.get('id'), '')
                     try:
-                        result = await executeManagedProxyTool(tu.get('name', ''), tu.get('input', {}))
-                        currentMessages.append({'type': 'tool_result', 'tool_use_id': tu.get('id', ''), 'content': formatManagedToolResult(tu.get('name', ''), result)})
+                        result = await executeManagedProxyTool(tuName, tuInput)
+                        currentMessages.append({'type': 'tool_result', 'tool_use_id': tuId, 'content': formatManagedToolResult(tuName, result)})
                     except Exception as exc:
-                        currentMessages.append({'type': 'tool_result', 'tool_use_id': tu.get('id', ''), 'content': f'Error: {exc}', 'is_error': True})
-                # Loop again to re-stream with the tool results appended.
+                        currentMessages.append({'type': 'tool_result', 'tool_use_id': tuId, 'content': f'Error: {exc}', 'is_error': True})
                 continue
-        # Either no tool calls, or only client/unknown tools — we're done.
         break
     yield writeAnthropicSseData('message_stop', {'type': 'message_stop'})
 
 def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, JsonValue], model: str) -> dict[str, JsonValue]:
     """Convert an OpenAI Chat Completions response to Anthropic Messages format."""
-    choices = openaiResponse.get('choices', [])
+    choices = as_list(openaiResponse.get('choices'), [])
     if not choices:
         return {'id': f'msg_{uuid.uuid4().hex[:16]}', 'type': 'message', 'role': 'assistant', 'content': [], 'model': model, 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}
     choice = choices[0]
-    message = choice.get('message', {})
+    message = as_dict(choice, {})
     contentList: list[dict[str, JsonValue]] = []
     text = message.get('content', '')
     if text:
@@ -756,16 +840,19 @@ def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, JsonValue], mo
     reasoning = message.get('reasoning') or message.get('reasoning_content', '')
     if reasoning:
         contentList.append({'type': 'thinking', 'text': reasoning})
-    for tc in message.get('tool_calls', []):
+    for tc in as_list(message.get('tool_calls'), []):
+        if not isinstance(tc, dict):
+            continue
+        tcFn = as_dict(tc.get('function'), {})
         try:
-            toolInput = json.loads(tc.get('function', {}).get('arguments', '{}'))
+            toolInput = json.loads(as_str(tcFn.get('arguments'), '{}'))
         except (json.JSONDecodeError, TypeError):
             toolInput = {}
-        contentList.append({'type': 'tool_use', 'id': tc.get('id', f'toolu_{uuid.uuid4().hex[:16]}'), 'name': tc.get('function', {}).get('name', ''), 'input': toolInput})
-    finishReason = choice.get('finish_reason', 'stop')
+        contentList.append({'type': 'tool_use', 'id': as_str(tc.get('id'), f'toolu_{uuid.uuid4().hex[:16]}'), 'name': as_str(tcFn.get('name'), ''), 'input': toolInput})
+    finishReason = as_str(choice.get('finish_reason'), 'stop')
     stopReasonMap = {'stop': 'end_turn', 'tool_calls': 'tool_use', 'length': 'max_tokens', 'content_filter': 'content_filter'}
-    usage = openaiResponse.get('usage', {})
-    return {'id': openaiResponse.get('id', f'msg_{uuid.uuid4().hex[:16]}'), 'type': 'message', 'role': 'assistant', 'content': contentList, 'model': openaiResponse.get('model', model), 'stop_reason': stopReasonMap.get(finishReason, 'end_turn'), 'stop_sequence': None, 'usage': {'input_tokens': usage.get('prompt_tokens', 0), 'output_tokens': usage.get('completion_tokens', 0)}}
+    usage = as_dict(openaiResponse.get('usage'), {})
+    return {'id': openaiResponse.get('id', f'msg_{uuid.uuid4().hex[:16]}'), 'type': 'message', 'role': 'assistant', 'content': contentList, 'model': as_str(openaiResponse.get('model'), model), 'stop_reason': stopReasonMap.get(finishReason, 'end_turn'), 'stop_sequence': None, 'usage': {'input_tokens': as_int(usage.get('prompt_tokens'), 0), 'output_tokens': as_int(usage.get('completion_tokens'), 0)}}
 
 async def handleCountTokens(body: dict[str, JsonValue], request: object=None) -> dict[str, JsonValue]:
     """Handle a POST /v1/messages/count_tokens request."""
@@ -776,7 +863,7 @@ async def handleCountTokens(body: dict[str, JsonValue], request: object=None) ->
     return {'input_tokens': estimated, 'estimated': True}
 _client = None
 
-def _getClient() -> object:
+def _getClient() -> BaseProviderClient:
     global _client
     if _client is None:
         from app.providers.clients.anthropic import AnthropicClient
@@ -808,16 +895,18 @@ def translateMessagesToAnthropic(messages: list[dict[str, JsonValue]]) -> list[d
                 contentBlocks = []
                 if msg.get('content'):
                     contentBlocks.append({'type': 'text', 'text': msg['content']})
-                for tc in msg['tool_calls']:
-                    fn = tc.get('function', {})
+                for tc in as_list(msg.get('tool_calls'), []):
+                    if not isinstance(tc, dict):
+                        continue
+                    fn = as_dict(tc.get('function'), {})
                     try:
-                        args = json.loads(fn.get('arguments', '{}')) if isinstance(fn.get('arguments'), str) else fn.get('arguments', {})
+                        args = json.loads(as_str(fn.get('arguments'), '{}')) if isinstance(fn.get('arguments'), str) else fn.get('arguments', {})
                     except Exception:
                         args = {}
-                    contentBlocks.append({'type': 'tool_use', 'id': tc.get('id', ''), 'name': fn.get('name', ''), 'input': args})
+                    contentBlocks.append({'type': 'tool_use', 'id': as_str(tc.get('id'), ''), 'name': as_str(fn.get('name'), ''), 'input': args})
                 translated.append({'role': 'assistant', 'content': contentBlocks})
             elif role == 'assistant' and isinstance(msg.get('content'), list):
-                filtered = [b for b in msg['content'] if not (isinstance(b, dict) and b.get('type') == 'thinking' and (not b.get('signature')))]
+                filtered = [b for b in as_list(msg.get('content'), []) if not (isinstance(b, dict) and b.get('type') == 'thinking' and (not b.get('signature')))]
                 translated.append({'role': 'assistant', 'content': filtered if filtered else [{'type': 'text', 'text': ''}]})
             else:
                 translated.append(msg)
