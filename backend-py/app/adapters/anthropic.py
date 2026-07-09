@@ -561,9 +561,17 @@ async def handleMessages(body: dict[str, JsonValue], request: object=None) -> tu
     clientWantsStream = body.get('stream', False)
     systemBlocks = buildAnthropicSystemBlocks(body.get('system', []))
     clientTools = body.get('tools', [])
-    knownTools = dedupeAndCanonicalizeAnthropicTools(clientTools + getManagedAnthropicWebToolDefinitions())
+    managedWebTools = getManagedAnthropicWebToolDefinitions()
+    knownTools = dedupeAndCanonicalizeAnthropicTools(clientTools + managedWebTools)
     managedLocalToolNames: set[str] = set()
     clientToolNames: set[str] = set()
+    # Proxy-injected managed web tools are always locally executable, even if
+    # the client didn't list them in its own tool set. Seed the managed set so
+    # classifyAnthropicToolUses() recognizes model calls to them as managed.
+    for t in managedWebTools:
+        name = getToolDefinitionName(t) or t.get('name', '')
+        if name:
+            managedLocalToolNames.add(name)
     for t in clientTools:
         name = getToolDefinitionName(t) or t.get('name', '')
         if isProxyManagedLocalToolName(name):
@@ -588,7 +596,7 @@ async def _handleMessagesNonStreaming(upstreamUrl: str, upstreamHeaders: dict[st
         if knownTools:
             reqBody['tools'] = knownTools
         reqBody['stream'] = False
-        resp = await _client.request_json('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
+        resp = await _getClient().request_json('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
         responseBody = snakeToCamel(resp.body_json) or {}
         if resp.is_error:
             return (responseBody, None)
@@ -604,7 +612,7 @@ async def _handleMessagesNonStreaming(upstreamUrl: str, upstreamHeaders: dict[st
         if knownTools:
             openaiBody['tools'] = [anthropicToOpenaiToolDefinition(t) for t in knownTools]
         openaiBody['stream'] = False
-        resp = await _client.request_json('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
+        resp = await _getClient().request_json('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
         responseBody = snakeToCamel(resp.body_json) or {}
         if resp.is_error:
             return (responseBody, None)
@@ -619,62 +627,65 @@ async def _streamAnthropicNative(upstreamUrl: str, upstreamHeaders: dict[str, st
     if knownTools:
         reqBody['tools'] = knownTools
     reqBody['stream'] = True
-    state = createAnthropicNativeStreamState()
     toolRound = 0
     currentMessages = list(body.get('messages', []))
-    async for event in _client.stream_sse(upstreamUrl, upstreamHeaders, camelToSnake(reqBody)):
-        if event.get('type') == 'error':
-            yield writeAnthropicSseData('error', {'error': {'message': event.get('body', str(event.get('error', '')))}})
-            return
-        eventType = event.get('_event_type', '')
-        yield writeAnthropicSseDataOnly(event)
-        eventTypePayload = event.get('type', '')
-        if eventTypePayload == 'message_start':
-            msg = event.get('message', {})
-            state['message_id'] = msg.get('id', '')
-            state['model'] = msg.get('model', '')
-            state['input_tokens'] = msg.get('usage', {}).get('input_tokens', 0)
-        elif eventTypePayload == 'content_block_start':
-            block = event.get('content_block', {})
-            idx = event.get('index', 0)
-            state['content_blocks'].append(block)
-            state['current_index'] = idx
-        elif eventTypePayload == 'content_block_delta':
-            pass
-        elif eventTypePayload == 'content_block_stop':
-            pass
-        elif eventTypePayload == 'message_delta':
-            delta = event.get('delta', {})
-            state['stop_reason'] = delta.get('stop_reason')
-            state['output_tokens'] = event.get('usage', {}).get('output_tokens', 0)
-        elif eventTypePayload == 'message_stop':
-            toolUses = [b for b in state['content_blocks'] if b.get('type') == 'tool_use']
-            if toolUses:
-                toolRound += 1
-                if toolRound > MAX_MANAGED_TOOL_ROUNDS:
+    # Multi-round managed tool resolution: each round streams from the upstream,
+    # intercepts managed tool uses, executes them locally, appends the results,
+    # and re-streams — up to MAX_MANAGED_TOOL_ROUNDS times.
+    while toolRound < MAX_MANAGED_TOOL_ROUNDS:
+        state = createAnthropicNativeStreamState()
+        roundBody = dict(reqBody)
+        roundBody['messages'] = currentMessages
+        async for event in _getClient().stream_sse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
+            if event.get('type') == 'error':
+                yield writeAnthropicSseData('error', {'error': {'message': event.get('body', str(event.get('error', '')))}})
+                return
+            eventType = event.get('_event_type', '')
+            yield writeAnthropicSseDataOnly(event)
+            eventTypePayload = event.get('type', '')
+            if eventTypePayload == 'message_start':
+                msg = event.get('message', {})
+                state['message_id'] = msg.get('id', '')
+                state['model'] = msg.get('model', '')
+                state['input_tokens'] = msg.get('usage', {}).get('input_tokens', 0)
+            elif eventTypePayload == 'content_block_start':
+                block = event.get('content_block', {})
+                idx = event.get('index', 0)
+                state['content_blocks'].append(block)
+                state['current_index'] = idx
+            elif eventTypePayload == 'content_block_delta':
+                pass
+            elif eventTypePayload == 'content_block_stop':
+                pass
+            elif eventTypePayload == 'message_delta':
+                delta = event.get('delta', {})
+                state['stop_reason'] = delta.get('stop_reason')
+                state['output_tokens'] = event.get('usage', {}).get('output_tokens', 0)
+            elif eventTypePayload == 'message_stop':
+                toolUses = [b for b in state['content_blocks'] if b.get('type') == 'tool_use']
+                if not toolUses:
                     break
+                classification = classifyAnthropicToolUses(toolUses, managedLocalToolNames, clientToolNames)
+                # No managed tools to resolve locally — pass the turn back to the
+                # client (or finish). Stop the loop so we don't spin.
+                if not classification['has_managed']:
+                    break
+                toolRound += 1
                 assistantMsg = {'role': 'assistant', 'content': list(state['content_blocks'])}
                 currentMessages.append(assistantMsg)
-                classification = classifyAnthropicToolUses(toolUses, managedLocalToolNames, clientToolNames)
-                if classification['has_managed']:
-                    for tu in classification['managed_tool_uses']:
-                        toolName = tu.get('name', '')
-                        toolInput = tu.get('input', {})
-                        toolUseId = tu.get('id', f'toolu_{uuid.uuid4().hex[:16]}')
-                        try:
-                            result = await executeManagedProxyTool(toolName, toolInput)
-                            currentMessages.append({'type': 'tool_result', 'tool_use_id': toolUseId, 'content': formatManagedToolResult(toolName, result)})
-                        except Exception as exc:
-                            currentMessages.append({'type': 'tool_result', 'tool_use_id': toolUseId, 'content': f'Error: {exc}', 'is_error': True})
-                    state = createAnthropicNativeStreamState()
-                    continueStream = True
-                    async for nextEvent in _client.stream_sse(upstreamUrl, upstreamHeaders, camelToSnake({'model': model, 'messages': currentMessages, 'system': systemBlocks, 'tools': knownTools, 'stream': True})):
-                        if nextEvent.get('type') == 'error':
-                            yield writeAnthropicSseData('error', {'error': {'message': str(nextEvent.get('error', ''))}})
-                            return
-                        yield writeAnthropicSseDataOnly(nextEvent)
-                    break
-            break
+                for tu in classification['managed_tool_uses']:
+                    toolName = tu.get('name', '')
+                    toolInput = tu.get('input', {})
+                    toolUseId = tu.get('id', f'toolu_{uuid.uuid4().hex[:16]}')
+                    try:
+                        result = await executeManagedProxyTool(toolName, toolInput)
+                        currentMessages.append({'type': 'tool_result', 'tool_use_id': toolUseId, 'content': formatManagedToolResult(toolName, result)})
+                    except Exception as exc:
+                        currentMessages.append({'type': 'tool_result', 'tool_use_id': toolUseId, 'content': f'Error: {exc}', 'is_error': True})
+                # Loop again to re-stream with the tool results appended.
+                continue
+        # Either no tool uses, or only client/unknown tools — we're done.
+        break
     yield writeAnthropicSseData('message_stop', {'type': 'message_stop'})
 
 async def _streamOpenaiAsAnthropic(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, JsonValue], model: str, systemBlocks: list[dict[str, JsonValue]], knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str]) -> AsyncIterator[str]:
@@ -687,7 +698,7 @@ async def _streamOpenaiAsAnthropic(upstreamUrl: str, upstreamHeaders: dict[str, 
     toolRound = 0
     currentMessages = list(body.get('messages', []))
     currentSystem = systemBlocks
-    async for chunk in _client.stream_sse(upstreamUrl, upstreamHeaders, camelToSnake(openaiBody)):
+    async for chunk in _getClient().stream_sse(upstreamUrl, upstreamHeaders, camelToSnake(openaiBody)):
         if chunk.get('type') == 'error':
             yield writeAnthropicSseData('error', {'error': {'message': chunk.get('body', str(chunk.get('error', '')))}})
             return

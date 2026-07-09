@@ -208,6 +208,35 @@ class TestProxyRoutesAreProtected:
         r = client.get('/v1/models', headers={'Authorization': 'Bearer top-secret'})
         assert r.status_code == 403
 
+class TestProxyRequestBodyValidation:
+    """Malformed request bodies should yield a clean 400, not a 500."""
+
+    def testMessagesMalformedJsonReturns400(self, client, isolatedData):
+        _writeCfg(isolatedData, {'gateway': {'externalAccess': {'enabled': True}}})
+        from app.config import settings
+        settings.reload()
+        settings.gatewayApiKey = 'top-secret'
+        r = client.post(
+            '/v1/messages',
+            headers={'Authorization': 'Bearer top-secret', 'Content-Type': 'application/json'},
+            content=b'{not valid json',
+        )
+        assert r.status_code == 400
+        assert r.json()['error']['code'] == 'invalid_json'
+
+    def testChatCompletionsMalformedJsonReturns400(self, client, isolatedData):
+        _writeCfg(isolatedData, {'gateway': {'externalAccess': {'enabled': True}}})
+        from app.config import settings
+        settings.reload()
+        settings.gatewayApiKey = 'top-secret'
+        r = client.post(
+            '/v1/chat/completions',
+            headers={'Authorization': 'Bearer top-secret', 'Content-Type': 'application/json'},
+            content=b'not json at all',
+        )
+        assert r.status_code == 400
+        assert r.json()['error']['code'] == 'invalid_json'
+
 def _writeCfg(dataDir, cfg):
     """Write a complete config.json into the isolated data dir."""
     Path(dataDir, 'config.json').write_text(json.dumps(cfg), encoding='utf-8')

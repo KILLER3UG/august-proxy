@@ -1,7 +1,11 @@
 """Shared type aliases and TypedDicts for type safety across the codebase."""
 from __future__ import annotations
-from typing import TypedDict
-type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
+from typing import Dict, List, TypedDict, Union
+
+# NOTE: defined with typing.* (not the PEP 695 `type` statement) so the module
+# imports cleanly on Python 3.11 as well as 3.12+. The project requires >=3.12,
+# but this keeps typeAliases importable everywhere as a defensive measure.
+JsonValue = Union[str, int, float, bool, None, List["JsonValue"], Dict[str, "JsonValue"]]
 
 class BrainConfigDict(TypedDict, total=False):
     enabled: bool

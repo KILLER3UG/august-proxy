@@ -16,7 +16,7 @@ from __future__ import annotations
 import time
 from typing import AsyncIterator
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from app.adapters import anthropic as anthropicAdapter
 from app.adapters import openai as openaiAdapter
 from app.lib.gatewayAuth import requireGatewayKey
@@ -31,6 +31,27 @@ def _clientTypeFor(endpoint: str) -> str:
     if endpoint == 'responses':
         return 'openai-responses'
     return 'openai'
+
+
+async def _readJsonBody(request: Request, endpoint: str) -> dict:
+    """Read and parse the request JSON body, returning a clean 400 on failure.
+
+    ``request.json()`` raises ``json.JSONDecodeError`` on malformed input; without
+    handling, FastAPI surfaces that as a 500 and never records the request. We catch
+    it so callers get a well-formed error and observability still fires.
+    """
+    try:
+        return await request.json()
+    except Exception as exc:  # malformed JSON / empty body
+        trafficLogger.emitLogEvent({
+            'category': 'proxy_error',
+            'level': 'warn',
+            'message': f'[{endpoint}] malformed request JSON: {exc}',
+        })
+        return JSONResponse(
+            status_code=400,
+            content={'error': {'code': 'invalid_json', 'message': 'Request body must be valid JSON'}},
+        )
 
 
 def _emit(category: str, level: str, message: str, metadata: object = None) -> None:
@@ -138,7 +159,9 @@ async def anthropicMessages(request: Request, _auth: bool=Depends(requireGateway
     - SSE streaming (native and converted)
     - Tool call interception and managed execution
     """
-    body = await request.json()
+    body = await _readJsonBody(request, 'messages')
+    if isinstance(body, JSONResponse):
+        return body
     reqId = await _trackRequest('messages', body, request)
     result, headers = await anthropicAdapter.handle_messages(body, request)
     if isinstance(result, dict):
@@ -158,7 +181,9 @@ async def openaiChat(request: Request, _auth: bool=Depends(requireGatewayKey)):
     - Multi-round tool resolution
     - Session derivation
     """
-    body = await request.json()
+    body = await _readJsonBody(request, 'chat/completions')
+    if isinstance(body, JSONResponse):
+        return body
     reqId = await _trackRequest('chat/completions', body, request)
     result, headers = await openaiAdapter.handle_chat_completions(body, request)
     if isinstance(result, dict):
@@ -175,7 +200,9 @@ async def openaiResponses(request: Request, _auth: bool=Depends(requireGatewayKe
     Translates the chat completion response to the Responses API format.
     Uses the same OpenAI adapter as /v1/chat/completions.
     """
-    body = await request.json()
+    body = await _readJsonBody(request, 'responses')
+    if isinstance(body, JSONResponse):
+        return body
     body['_endpoint'] = 'responses'
     reqId = await _trackRequest('responses', body, request)
     result, headers = await openaiAdapter.handle_chat_completions(body, request)
