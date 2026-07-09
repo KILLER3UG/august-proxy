@@ -16,30 +16,32 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const port = process.env.AUGUST_PROXY_PORT || '8085';
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
-function findPython() {
-    // Check your exact Python 3.13 installation first
-    const exactPath = 'C:\\Users\\rober\\AppData\\Local\\Programs\\Python\\Python313\\python.exe';
-    if (existsSync(exactPath)) return exactPath;
+function isStoreStub(p) {
+    return p.replace(/\\/g, '/').toLowerCase().includes('windowsapps');
+}
 
-    if (process.platform === 'win32') {
-        const commonPaths = [
-            'C:\\Users\\rober\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
-            'C:\\Python313\\python.exe',
-            'C:\\Python312\\python.exe',
-            `${process.env.LOCALAPPDATA || ''}\\Programs\\Python\\Python313\\python.exe`,
-            `${process.env.LOCALAPPDATA || ''}\\Programs\\Python\\Python312\\python.exe`,
-        ];
-        for (const p of commonPaths) {
-            if (existsSync(p)) return p;
-        }
-    }
-    const names = process.platform === 'win32'
-        ? ['python.exe', 'python3.exe', 'py.exe']
-        : ['python3', 'python'];
-    for (const name of names) {
+function findPython() {
+    // 1. Prefer the project's own .venv (created by install.ps1 / install.sh).
+    const venvRel = process.platform === 'win32'
+        ? 'backend-py/.venv/Scripts/python.exe'
+        : 'backend-py/.venv/bin/python';
+    const venvPath = resolve(root, venvRel);
+    if (existsSync(venvPath)) return venvPath;
+
+    // 2. On Windows, prefer the `py` launcher (avoids the Microsoft Store stub).
+    const candidates = [];
+    if (process.platform === 'win32') candidates.push('py');
+    candidates.push('python3', 'python');
+    for (const name of candidates) {
         try {
-            execFileSync(name, ['--version'], { stdio: 'ignore' });
-            return name;
+            // `py` needs the `-3` flag to select Python 3; probe it explicitly.
+            const probeArgs = name === 'py' ? ['-3', '--version'] : ['--version'];
+            execFileSync(name, probeArgs, { stdio: 'ignore' });
+            // Resolve the absolute path so we can reject the Store stub.
+            const resolved = execFileSync(name, name === 'py' ? ['-3', '-c', 'import sys; print(sys.executable)'] : ['-c', 'import sys; print(sys.executable)'], { stdio: ['ignore', 'pipe', 'ignore'] })
+                .toString()
+                .trim();
+            if (resolved && !isStoreStub(resolved)) return resolved;
         } catch { /* try next */ }
     }
     return null;

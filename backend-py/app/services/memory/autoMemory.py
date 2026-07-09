@@ -33,6 +33,12 @@ def saveAutoMemory(key: str, content: object, category: str='auto', importance: 
         conn.execute('INSERT INTO autoMemories (key, content, category, importance, createdAt) VALUES (?, ?, ?, ?, ?)', (key, contentJson, category, importance, now))
     conn.execute('\n        DELETE FROM autoMemories WHERE id NOT IN (\n            SELECT id FROM autoMemories ORDER BY importance DESC, id DESC LIMIT ?\n        )\n    ', (_MAXMemories,))
     conn.commit()
+    # Surface auto-memory writes in the Backend Monitor.
+    try:
+        from app.services import logger as _tl
+        _tl.emitLogEvent({'category': 'auto_memory', 'level': 'info', 'message': f'Auto-memory saved: {key}', 'metadata': {'key': key, 'category': category, 'importance': importance}})
+    except Exception:
+        pass
 
 def getRelevantMemories(query: str, limit: int=5) -> list[dict[str, object]]:
     """Find memories relevant to a query using FTS5 ranking.

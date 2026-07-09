@@ -249,3 +249,39 @@ and hit a circular import, move the import inside the function that needs it.
 The venv produces `.exe` binaries under `.venv/Scripts/` on Windows. Run
 `.venv\Scripts\pytest.exe` directly, or activate the venv first. Path
 separators in a few data files are normalized to the host OS.
+
+---
+
+## Desktop (Tauri) backend
+
+### Backend won't start / "no provider"
+
+- The Tauri shell probes `http://127.0.0.1:8085/api/health` (note
+  the `/api` prefix — the bare `/health` path does not exist on the
+  Python server). If the probe is wrong the SPA never learns the
+  `baseUrl` and the Backend Monitor shows "Disconnected".
+- Resolution order for the Python interpreter is: project `.venv`
+  (`backend-py/.venv/.../python`) → `py -3` launcher → system
+  `python3`/`python`. The **Microsoft Store** `python.exe` stub under
+  `WindowsApps` is a dead-end redirect and is explicitly rejected — if
+  you only have that, install a real Python 3.12+ from python.org.
+- The most recent spawn failure is surfaced by the `backend_last_error`
+  Tauri command and written to `data/logs/backend.log`.
+
+### Backend Monitor shows nothing live
+
+- Events come from `ws://127.0.0.1:8085/api/logs/stream`. In
+  `npm run dev:desktop` the Vite dev server proxies `/api` with
+  WebSocket upgrade (`ws: true`). If you moved the proxy config, ensure
+  `/api` uses the object form `{ target, ws: true }`, not a bare
+  string.
+- Categories are `snake_case` (`proxy_incoming`, `proxy_upstream`,
+  `auto_memory`, `security`, …). The monitor UI keys off these exactly.
+- If the monitor is empty, confirm the backend actually received proxy
+  traffic — emits fire on `/v1/*` requests and on auto-memory writes.
+
+### `pip install` hangs / is slow
+
+- Dependency install is **never** run synchronously inside the Tauri
+  startup. It happens once via `install.ps1` / `install.sh`, or as a
+  background `syncBackendDeps` when the version stamp is stale.

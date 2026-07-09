@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { atom, onMount } from 'nanostores';
 import { useStore } from '@nanostores/react';
 import { getRecentLogs, type LogEvent } from '@/api/api-client';
+import { whenReady } from '@/api/client';
 
 const MAX_EVENTS = 10_000;
 const BACKFILL_LIMIT = 500;
@@ -73,13 +74,22 @@ function scheduleRetry() {
     }, delay);
 }
 
-function connect() {
+async function connect() {
     if (_socket && (_socket.readyState === WebSocket.OPEN || _socket.readyState === WebSocket.CONNECTING)) return;
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${window.location.host}/ui/logs/stream`;
+    // Tauri desktop: connect directly to the backend (loopback HTTP → ws).
+    // Browser dev: same-origin; Vite proxy handles the WS upgrade.
+    let wsUrl: string;
+    const baseUrl = await whenReady();
+    if (baseUrl) {
+        const host = baseUrl.replace(/^https?:\/\//, '');
+        wsUrl = `ws://${host}/api/logs/stream`;
+    } else {
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${proto}//${window.location.host}/api/logs/stream`;
+    }
     let ws: WebSocket;
     try {
-        ws = new WebSocket(url);
+        ws = new WebSocket(wsUrl);
     } catch (err) {
         streamAtom.set({ ...streamAtom.get(), lastError: String(err), status: 'disconnected' });
         scheduleRetry();

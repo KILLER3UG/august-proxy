@@ -24,19 +24,20 @@ import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useLogStream, type StreamStatus } from '@/hooks/useLogStream';
+import { useBackendStatus } from '@/hooks/useBackendStatus';
 import type { LogEvent } from '@/api/api-client';
 
 /* ── Category → visual mapping ─────────────────────────────────────── */
 
 const CATEGORY_META: Record<string, { label: string; chip: string; row: string; icon: typeof Activity }> = {
-    proxyIncoming:        { label: 'Incoming',      chip: 'bg-sky-500/10 text-sky-300 border-sky-500/30',            row: 'text-sky-300',                       icon: Activity },
-    proxyUpstream:        { label: 'Upstream',      chip: 'bg-blue-500/10 text-blue-300 border-blue-500/30',          row: 'text-blue-300',                      icon: Activity },
-    proxyDebug:           { label: 'Debug',         chip: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30',          row: 'text-cyan-300',                      icon: Activity },
-    proxyModelRoute:     { label: 'Model Route',   chip: 'bg-warning/10 text-warning border-warning/30',             row: 'text-warning',                       icon: Activity },
-    proxyContext:         { label: 'Context',       chip: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30',     row: 'text-indigo-300',                    icon: Activity },
-    proxyTools:           { label: 'Tools',         chip: 'bg-pink-500/10 text-pink-300 border-pink-500/30',           row: 'text-pink-300',                      icon: Activity },
-    proxySystemPrompt:   { label: 'Sys Prompt',    chip: 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30', row: 'text-fuchsia-300',                   icon: Activity },
-    autoMemory:           { label: 'Auto-Memory',   chip: 'bg-purple-500/10 text-purple-300 border-purple-500/30',     row: 'text-purple-300',                    icon: Activity },
+    proxy_incoming:        { label: 'Incoming',      chip: 'bg-sky-500/10 text-sky-300 border-sky-500/30',            row: 'text-sky-300',                       icon: Activity },
+    proxy_upstream:        { label: 'Upstream',      chip: 'bg-blue-500/10 text-blue-300 border-blue-500/30',          row: 'text-blue-300',                      icon: Activity },
+    proxy_debug:           { label: 'Debug',         chip: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30',          row: 'text-cyan-300',                      icon: Activity },
+    proxy_model_route:     { label: 'Model Route',   chip: 'bg-warning/10 text-warning border-warning/30',             row: 'text-warning',                       icon: Activity },
+    proxy_context:         { label: 'Context',       chip: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30',     row: 'text-indigo-300',                    icon: Activity },
+    proxy_tools:           { label: 'Tools',         chip: 'bg-pink-500/10 text-pink-300 border-pink-500/30',           row: 'text-pink-300',                      icon: Activity },
+    proxy_system_prompt:   { label: 'Sys Prompt',    chip: 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30', row: 'text-fuchsia-300',                   icon: Activity },
+    auto_memory:           { label: 'Auto-Memory',   chip: 'bg-purple-500/10 text-purple-300 border-purple-500/30',     row: 'text-purple-300',                    icon: Activity },
     scheduler:             { label: 'Scheduler',     chip: 'bg-orange-500/10 text-orange-300 border-orange-500/30',     row: 'text-orange-300',                    icon: Activity },
     security:              { label: 'Security',      chip: 'bg-danger/10 text-danger border-danger/30',                 row: 'text-danger font-semibold',           icon: AlertTriangle },
     error:                 { label: 'Error',         chip: 'bg-danger/10 text-danger border-danger/30',                 row: 'text-danger font-semibold',           icon: AlertTriangle },
@@ -91,6 +92,7 @@ function exportEvents(events: LogEvent[]) {
 
 export function BackendMonitorSection() {
     const { events, status, retryInMs, pause, resume, clear } = useLogStream();
+    const { status: backend, isTauri } = useBackendStatus();
     const [enabled, setEnabled] = useState<Set<string>>(() => new Set(ALL_CATEGORIES));
     const [search, setSearch] = useState('');
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -100,8 +102,12 @@ export function BackendMonitorSection() {
 
     const visible = useMemo(() => {
         const q = search.trim().toLowerCase();
+        const KNOWN = CATEGORY_META;
         return events.filter((e) => {
-            if (!enabled.has(e.category)) return false;
+            // Known categories honor the filter set; unknown ones are shown
+            // by default (styled as `info`) so new emitter categories are
+            // never silently hidden.
+            if (e.category in KNOWN && !enabled.has(e.category)) return false;
             if (!q) return true;
             if (e.message.toLowerCase().includes(q)) return true;
             if (e.metadata) {
@@ -183,6 +189,34 @@ export function BackendMonitorSection() {
                     <span className={cn('size-1.5 rounded-full', badge.dot)} />
                     {badge.label}
                 </span>
+                {isTauri && (
+                  <span
+                    className={
+                      'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset ' +
+                      (backend.proxy === 'up'
+                        ? 'bg-success/15 text-success ring-success/30'
+                        : backend.proxy === 'down'
+                          ? 'bg-rose-400/15 text-rose-300 ring-rose-400/30'
+                          : 'bg-white/[0.06] text-muted-foreground ring-white/10')
+                    }
+                  >
+                    <span
+                      className={
+                        'size-1.5 rounded-full ' +
+                        (backend.proxy === 'up'
+                          ? 'bg-success'
+                          : backend.proxy === 'down'
+                            ? 'bg-rose-400 animate-pulse'
+                            : 'bg-zinc-400')
+                      }
+                    />
+                    {backend.proxy === 'up'
+                      ? 'Backend: up'
+                      : backend.proxy === 'down'
+                        ? 'Backend: down'
+                        : 'Backend: …'}
+                  </span>
+                )}
             </header>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

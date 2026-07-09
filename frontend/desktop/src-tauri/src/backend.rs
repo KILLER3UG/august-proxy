@@ -16,7 +16,7 @@ use tauri::{AppHandle, Manager, State};
 
 const DEFAULT_PROXY_PORT: u16 = 8085;
 
-pub struct BackendProcess(pub Mutex<Option<Child>>);
+pub struct BackendProcess(pub Mutex<Option<Child>>, pub Mutex<Option<String>>);
 
 fn proxyPort() -> u16 {
     std::env::var("AUGUST_PROXY_PORT")
@@ -26,7 +26,7 @@ fn proxyPort() -> u16 {
 }
 
 fn proxyUrl() -> String {
-    format!("http://127.0.0.1:{}/health", proxyPort())
+    format!("http://127.0.0.1:{}/api/health", proxyPort())
 }
 
 // ── Python backend resolution (preferred) ───────────────────────────
@@ -39,17 +39,47 @@ fn pythonBinaryNames() -> &'static [&'static str] {
     }
 }
 
+/// Resolve the `.venv` Python interpreter for a discovered backend entry
+/// (`backend-py/app/main.py`). Returns `…/backend-py/.venv/{Scripts/python.exe|bin/python}`.
+fn resolveVenvPython(backendMain: &Path) -> Option<PathBuf> {
+    let backendPy = backendMain.parent()?.parent()?; // …/backend-py/app/main.py → …/backend-py
+    let candidate = if cfg!(windows) {
+        backendPy.join(".venv/Scripts/python.exe")
+    } else {
+        backendPy.join(".venv/bin/python")
+    };
+    candidate.exists().then_some(candidate)
+}
+
+/// True if a path points at the Windows Store Python alias stub
+/// (`WindowsApps/python.exe`), which is a dead-end redirect, not a real interpreter.
+fn isStoreStub(path: &Path) -> bool {
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .to_lowercase()
+        .contains("windowsapps")
+}
+
 fn resolvePython(app: &AppHandle) -> Option<PathBuf> {
-    let mut candidates: Vec<Option<PathBuf>> = Vec::new();
-    for name in pythonBinaryNames() {
-        candidates.push(app.path().resolve(name, tauri::path::BaseDirectory::Resource).ok());
+    // 1. If we located the backend, prefer its bundled `.venv` interpreter.
+    if let Some(backendMain) = resolvePythonBackend(app) {
+        if let Some(venv) = resolveVenvPython(&backendMain) {
+            return Some(venv);
+        }
     }
+    // 2. Prefer the Windows launcher `py` (or `py -3`) on Windows, then
+    //    system python3/python — but never the Microsoft Store alias stub.
+    let mut candidates: Vec<Option<PathBuf>> = Vec::new();
+    if cfg!(windows) {
+        candidates.push(which::which("py").ok());
+    }
+    candidates.push(which::which("python3").ok());
+    candidates.push(which::which("python").ok());
     candidates
         .into_iter()
         .flatten()
+        .filter(|p| !isStoreStub(p))
         .find(|path| path.exists())
-        .or_else(|| which::which("python3").ok())
-        .or_else(|| which::which("python").ok())
 }
 
 fn resolvePythonBackend(app: &AppHandle) -> Option<PathBuf> {
@@ -146,6 +176,15 @@ fn killChild(child: &mut Child) {
     let _ = child.wait();
 }
 
+/// Record the most recent backend spawn error so the UI can surface it.
+fn setLastError(app: &AppHandle, msg: String) {
+    if let Some(state) = app.tryState::<BackendProcess>() {
+        if let Ok(mut guard) = state.1.lock() {
+            *guard = Some(msg);
+        }
+    }
+}
+
 fn devNullPath() -> PathBuf {
     if cfg!(windows) {
         PathBuf::from("NUL")
@@ -215,7 +254,7 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
             match child {
                 Ok(c) => {
                     if app.tryState::<BackendProcess>().is_none() {
-                        app.manage(BackendProcess(Mutex::new(Some(c))));
+                        app.manage(BackendProcess(Mutex::new(Some(c)), Mutex::new(None)));
                     } else if let Some(state) = app.tryState::<BackendProcess>() {
                         if let Ok(mut guard) = state.0.lock() {
                             *guard = Some(c);
@@ -225,7 +264,9 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
                     return true;
                 }
                 Err(e) => {
-                    log::error!("[backend] python spawn failed: {e} — falling back to Node.js");
+                    let msg = format!("[backend] python spawn failed: {e} — falling back to Node.js");
+                    log::error!("{msg}");
+                    setLastError(app, msg);
                 }
             }
         }
@@ -279,7 +320,7 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
     match child {
         Ok(c) => {
             if app.tryState::<BackendProcess>().is_none() {
-                app.manage(BackendProcess(Mutex::new(Some(c))));
+                app.manage(BackendProcess(Mutex::new(Some(c)), Mutex::new(None)));
             } else if let Some(state) = app.tryState::<BackendProcess>() {
                 if let Ok(mut guard) = state.0.lock() {
                     *guard = Some(c);
@@ -311,7 +352,7 @@ impl Drop for BackendProcess {
 #[tauri::command]
 pub async fn proxyStatus() -> String {
     let port = proxyPort();
-    let url = format!("http://127.0.0.1:{}/health", port);
+    let url = format!("http://127.0.0.1:{}/api/health", port);
     let result = tokio::task::spawnBlocking(move || {
         reqwest::blocking::Client::new()
             .get(&url)
@@ -349,4 +390,95 @@ pub fn selectDirectory() -> Option<String> {
     rfd::FileDialog::new()
         .pick_folder()
         .map(|path| path.to_string_lossy().to_string().replace('\\', "/"))
+}
+
+#[tauri::command]
+pub fn backend_last_error(app: AppHandle) -> Option<String> {
+    if let Some(state) = app.tryState::<BackendProcess>() {
+        if let Ok(guard) = state.1.lock() {
+            return guard.clone();
+        }
+    }
+    None
+}
+
+/// Version stamp lives in the app-data `data` dir (same parent used for
+/// `AUGUST_DATA_DIR`), so it tracks the Tauri package version rather than
+/// the repo's `data/backend-version.txt` (a dev-only convenience copy).
+fn versionStampPath(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|p| p.join("data").join("backend-version.txt"))
+}
+
+/// Sync backend Python deps when the app version changed.
+///
+/// Returns `"up-to-date"` | `"synced"` | `"syncing"` | `"needs_setup"` |
+/// `"error: ..."`. The pip install runs as a **detached, non-blocking**
+/// child (with `CREATE_NO_WINDOW` on Windows) so the UI never freezes.
+#[tauri::command]
+pub async fn syncBackendDeps(app: AppHandle) -> String {
+    let Some(backendMain) = resolvePythonBackend(&app) else {
+        return "error: backend-py not found".into();
+    };
+    let Some(backendRoot) = projectRootFor(&backendMain) else {
+        return "error: cannot resolve backend root".into();
+    };
+    // Pick the venv pip (or `python -m pip`) to install into.
+    let venvPy = if cfg!(windows) {
+        backendRoot.join("backend-py/.venv/Scripts/python.exe")
+    } else {
+        backendRoot.join("backend-py/.venv/bin/python")
+    };
+    let pip = if venvPy.exists() {
+        venvPy
+    } else {
+        // No venv yet — cannot safely install. Signal first-run setup.
+        return "needs_setup".into();
+    };
+
+    let app_version = app.package_info().version.to_string();
+    let stamp = versionStampPath(&app);
+    let current = stamp
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+
+    if current == app_version {
+        return "up-to-date".into();
+    }
+
+    // Spawn detached pip install into the venv.
+    let data_dir = appDataDir(&app);
+    let _ = std::fs::create_dir_all(data_dir.join("logs"));
+    let log_path = data_dir.join("logs").join("pip-sync.log");
+    let log_file = File::create(&log_path).unwrap_or_else(|_| File::create(devNullPath()).expect("null"));
+
+    let mut cmd = Command::new(&pip);
+    cmd.arg("-m").arg("pip").arg("install").arg("-e").arg("backend-py");
+    if cfg!(windows) {
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    cmd.current_dir(&backendRoot)
+        .env("AUGUST_PROXY_ROOT", &backendRoot)
+        .stdout(Stdio::from(log_file.try_clone().unwrap_or_else(|_| File::create(devNullPath()).expect("null"))))
+        .stderr(Stdio::from(log_file));
+
+    match cmd.spawn() {
+        Ok(mut child) => {
+            // Detach: we don't await — poll-free background install.
+            let _ = child.id();
+            std::mem::forget(child);
+            // Best-effort: write the new stamp now so we don't re-trigger
+            // immediately; a failed install is caught on next launch.
+            if let Some(p) = stamp {
+                let _ = std::fs::create_dir_all(p.parent().unwrap_or(&backendRoot));
+                let _ = std::fs::write(p, &app_version);
+            }
+            "syncing".into()
+        }
+        Err(e) => format!("error: pip spawn failed: {e}"),
+    }
 }

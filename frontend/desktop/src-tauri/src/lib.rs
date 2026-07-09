@@ -44,6 +44,8 @@ pub fn run() {
             backend::restartProxy,
             backend::proxyStatus,
             backend::selectDirectory,
+            backend::backend_last_error,
+            backend::syncBackendDeps,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
