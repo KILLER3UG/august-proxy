@@ -25,8 +25,8 @@ An earlier @router.get("/health") here collided with it (first-match-wins
 dropped the `python` field); it was removed.
 """
 from __future__ import annotations
-from fastapi import APIRouter, HTTPException, Query
-from app.services.logger import getActivityLog, getPendingRequests, getFilteredRequests, getStats as getUsageStats, getRequestDetails, getRequestDetail as getReqDetail, getRecentLogEvents
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from app.services.logger import getActivityLog, getPendingRequests, getFilteredRequests, getStats as getUsageStats, getRequestDetails, getRequestDetail as getReqDetail, getRecentLogEvents, addLogWsClient, removeLogWsClient
 from app.services.loggerConversations import getConversations
 from app.services.hostAgent import getHostInfo
 router = APIRouter(prefix='/api')
@@ -159,3 +159,30 @@ def _stats(raw: dict[str, object], pendingCount: int) -> dict[str, object]:
         mostUsed = None
         mostUsedCount = 0
     return {'totalRequests': total, 'completedRequests': completed, 'errorRequests': errors, 'totalInputTokens': totalIn, 'totalOutputTokens': totalOut, 'totalTokens': totalIn + totalOut, 'estimatedInputCost': estIn or 0.0, 'estimatedOutputCost': estOut or 0.0, 'estimatedTotalCost': estTotal or 0.0, 'avgDurationMs': raw.get('avgDurationMs', raw.get('averageDuration', 0)), 'pendingRequests': pendingCount, 'mostUsedModel': mostUsed, 'mostUsedCount': mostUsedCount or 0, 'modelBreakdown': mbFull, 'profileStats': raw.get('profileStats') or {}}
+
+
+@router.websocket('/logs/stream')
+async def logsStream(websocket: WebSocket):
+    """Live backend log event stream (newest-first snapshot + live frames).
+
+    Final path: ``/api/logs/stream`` (router prefix ``/api`` + this route).
+    On connect we send a ``{type: 'snapshot', events: [...]}`` frame with
+    the most recent buffered events, then register the socket for live frames.
+    """
+    await websocket.accept()
+    try:
+        recent = getRecentLogEvents(500) or []
+        await websocket.send_json({'type': 'snapshot', 'events': recent})
+    except Exception:
+        pass
+    addLogWsClient(websocket)
+    try:
+        while True:
+            # Client may send pings; we only need to detect disconnect.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        removeLogWsClient(websocket)

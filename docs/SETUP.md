@@ -220,3 +220,55 @@ If port `8085` is taken, change the host-side port in `docker-compose.yml`:
 ports:
   - "8086:8080"   # serve on 8086 instead
 ```
+
+---
+
+## Desktop (Tauri) — local development
+
+The desktop app bundles the React SPA and launches the Python backend
+(`backend-py/`) as a child process via uvicorn. First-run setup is a
+one-shot script.
+
+### Prerequisites
+
+- **Python ≥ 3.12** on `PATH`. On Windows, the launcher `py -3` is
+  preferred; the Microsoft Store `python.exe` stub is **not** a real
+  interpreter and is explicitly rejected.
+- **Node.js** (for the frontend build) and **Rust + VS C++ build tools**
+  (for the Tauri shell — required to compile `src-tauri`).
+
+### One-shot setup
+
+```bash
+# Windows (PowerShell, from repo root)
+.\install.ps1
+
+# macOS / Linux
+./install.sh
+```
+
+`install.ps1` / `install.sh` will:
+
+1. Resolve a Python ≥ 3.12 (prefers the `py` launcher, then `python3`).
+2. Create `backend-py/.venv` and install the backend as an editable
+   package (`pip install -e .`, or `uv sync` if `uv` is present).
+3. Write a version stamp to `data/backend-version.txt`.
+
+### Run the desktop app
+
+```bash
+npm install
+npm run dev:desktop
+```
+
+The Tauri shell starts, probes `http://127.0.0.1:8085/api/health`,
+and spawns the backend from the `.venv` interpreter (falling back to
+`py -3`, then system `python3`). The Backend Monitor (Settings →
+Backend Monitor) streams live proxy / memory / security events over
+`ws://127.0.0.1:8085/api/logs/stream`.
+
+### Packaging note (non-goal for this iteration)
+
+Release builds currently expect the `backend-py/` tree to be present next
+to the executable (dev layout). Bundling an embedded Python + wheels is a
+separate, optional phase (see the setup/live-monitor plan, Phase F).

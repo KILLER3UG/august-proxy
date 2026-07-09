@@ -32,6 +32,14 @@ def _clientTypeFor(endpoint: str) -> str:
         return 'openai-responses'
     return 'openai'
 
+
+def _emit(category: str, level: str, message: str, metadata: object = None) -> None:
+    """Emit a structured log event for the Backend Monitor (snake_case categories)."""
+    try:
+        trafficLogger.emitLogEvent({'category': category, 'level': level, 'message': message, 'metadata': metadata})
+    except Exception:
+        pass
+
 def _safeInt(v: object) -> int:
     try:
         return int(v or 0)
@@ -49,6 +57,11 @@ async def _trackRequest(endpoint: str, body: dict[str, object], request: Request
     reqId = trafficLogger.startRequest({'model': model, 'provider': model, 'clientType': _clientTypeFor(endpoint), 'endpoint': f'/v1/{endpoint}', 'method': request.method if hasattr(request, 'method') else 'POST', 'path': f'/v1/{endpoint}', 'sessionId': body.get('sessionId') or body.get('session_id') or ''})
     trafficLogger.captureRequest(reqId, body)
     trafficLogger.logActivity('request_start', f'{_clientTypeFor(endpoint)} /v1/{endpoint} → {model}')
+    _emit('proxy_incoming', 'info', f'{_clientTypeFor(endpoint)} /v1/{endpoint} → {model}', {
+        'model': model,
+        'endpoint': endpoint,
+        'sessionId': body.get('sessionId') or body.get('session_id') or '',
+    })
     return reqId
 
 def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
@@ -58,6 +71,7 @@ def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
         trafficLogger.capture_response(reqId, result)
         trafficLogger.endRequest(reqId, {'error': str(result.get('error'))})
         trafficLogger.logActivity('request_error', f"[{reqId}] {result.get('error')}")
+        _emit('error', 'error', f'Proxy request failed: {result.get("error")}', {'reqId': reqId})
         return result
     trafficLogger.capture_response(reqId, result)
     usage = result.get('usage') or {}
@@ -67,6 +81,12 @@ def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
         trafficLogger.capture_tokens(reqId, inT, outT)
     trafficLogger.endRequest(reqId, {'usage': usage})
     trafficLogger.logActivity('request_complete', f"[{reqId}] {_clientTypeFor('')} ok ({inT + outT} tok)")
+    _emit('proxy_upstream', 'info', f'Upstream complete ({inT + outT} tokens)', {
+        'reqId': reqId,
+        'inputTokens': inT,
+        'outputTokens': outT,
+        'model': result.get('model', 'unknown'),
+    })
     return result
 
 async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[str]:

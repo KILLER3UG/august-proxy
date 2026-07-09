@@ -18,9 +18,45 @@ from fastapi.responses import FileResponse
 from app.config import settings
 logger = logging.getLogger(__name__)
 
+
+class WebSocketLogHandler(logging.Handler):
+    """Forward stdlib log records into the WS log-event stream (hub).
+
+    Runs at INFO level so it does not flood the monitor. Records are
+    emitted with category ``info`` by default; the hub redacts secret
+    shaped metadata values.
+    """
+
+    LEVEL_MAP = {
+        'DEBUG': 'debug',
+        'INFO': 'info',
+        'WARNING': 'warn',
+        'ERROR': 'error',
+        'CRITICAL': 'error',
+    }
+
+    def emit(self, record: logging.LogRecord) -> None:
+        from app.services import logStream
+        try:
+            level = self.LEVEL_MAP.get(record.levelname, 'info')
+            logStream.emitLogEvent({
+                'category': 'info',
+                'level': level,
+                'message': self.format(record),
+                'metadata': {'logger': record.name, 'module': record.module},
+            })
+        except Exception:
+            pass
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.reload()
+    # Start the thread-safe log-stream hub (WS fan-out + ring buffer).
+    from app.services import logStream
+    await logStream.startHub()
+    wsHandler = WebSocketLogHandler()
+    wsHandler.setLevel(logging.INFO)
+    logging.getLogger().addHandler(wsHandler)
     from app.services import toolDefinitions
     toolDefinitions.registerAll()
     from app.services import memoryStore
@@ -71,6 +107,15 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning('Subagent orchestrator initialization skipped')
     yield
+    # Tear down the log-stream hub and root handler on shutdown.
+    try:
+        logging.getLogger().removeHandler(wsHandler)
+    except Exception:
+        pass
+    try:
+        await logStream.stopHub()
+    except Exception:
+        pass
     if _orchestrator is not None:
         try:
             await _orchestrator.close()

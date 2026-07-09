@@ -205,17 +205,22 @@ class RequestTracker:
             self._wsClients.remove(ws)
 
     def emitLogEvent(self, event: dict[str, object]) -> None:
-        """Create a log event and broadcast to WS clients."""
-        entry = {'id': str(uuid.uuid4()), 'category': event.get('category', 'general'), 'level': event.get('level', 'info'), 'message': event.get('message', ''), 'metadata': event.get('metadata'), 'timestamp': datetime.utcnow().isoformat() + 'Z'}
-        self._logEvents.append(entry)
-        for ws in list(self._wsClients):
-            try:
-                ws.send_json(entry)
-            except Exception:
-                self._wsClients.remove(ws)
+        """Create a log event and broadcast to WS clients (thread-safe).
+
+        Delegates to the log-stream hub, which keeps a newest-first ring
+        buffer and fans out to live WebSocket clients from the asyncio
+        event loop. The default category is ``info`` (not ``general``) so
+        events are visible under the default filter set.
+        """
+        from app.services import logStream
+        event = dict(event)
+        if not event.get('category'):
+            event['category'] = 'info'
+        logStream.emitLogEvent(event)
 
     def getRecentLogEvents(self, limit: int=100) -> list[dict[str, object]]:
-        return list(self._logEvents)[:limit]
+        from app.services import logStream
+        return logStream.getRecentLogEvents(limit)
 
     def _finalize(self, reqId: str, pending: dict[str, object], result: dict[str, object]) -> dict[str, object]:
         """Build the final request log entry."""
@@ -298,10 +303,12 @@ def removeSseClient(client: object) -> None:
     _tracker.removeSseClient(client)
 
 def addLogWsClient(ws: object) -> None:
-    _tracker.addWsClient(ws)
+    from app.services import logStream
+    logStream.addLogWsClient(ws)
 
 def removeLogWsClient(ws: object) -> None:
-    _tracker.removeWsClient(ws)
+    from app.services import logStream
+    logStream.removeLogWsClient(ws)
 
 def emitLogEvent(event: dict[str, object]) -> None:
     _tracker.emitLogEvent(event)
