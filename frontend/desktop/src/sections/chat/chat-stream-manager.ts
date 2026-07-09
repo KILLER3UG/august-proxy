@@ -92,7 +92,7 @@ export function loadMessagesForSession(sessionId: string | null): ChatMessage[] 
   try {
     const saved = localStorage.getItem(key);
     if (saved) return JSON.parse(saved);
-  } catch {}
+  } catch { /* silent */ }
 
   return [];
 }
@@ -171,7 +171,7 @@ export function updateSessionStreamState(
 function persistMessages(sessionId: string, messages: ChatMessage[]) {
   try {
     localStorage.setItem(`chat_messages_${sessionId}`, JSON.stringify(messages));
-  } catch {}
+  } catch { /* silent */ }
 }
 
 // Check if we are currently streaming a session
@@ -330,7 +330,7 @@ export async function startChatStream(
     }));
     // Also emit an error event through the handler so the onError path
     // in makeStreamHandlers can write the ⚠️ block into streamBlocks.
-    try { handlers.onError?.({ message: errorMsg }); } catch {}
+    try { handlers.onError?.({ message: errorMsg }); } catch { /* silent */ }
     finalize('error');
   } finally {
     activeStreamControllers.delete(sessionId);

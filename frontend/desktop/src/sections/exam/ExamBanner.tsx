@@ -78,7 +78,7 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
     try {
       await onAddQuestion(addRequest);
       setAddRequest('');
-    } catch {}
+    } catch { /* silent */ }
     setIsSubmitting(false);
   }, [addRequest, onAddQuestion]);
 

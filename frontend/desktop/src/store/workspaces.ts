@@ -15,7 +15,7 @@ const loadWorkspaces = (): Workspace[] => {
   if (saved) {
     try {
       return JSON.parse(saved);
-    } catch {}
+    } catch { /* silent */ }
   }
   return [];
 };

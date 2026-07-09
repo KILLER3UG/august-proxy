@@ -266,7 +266,7 @@ export function Markdown({ content }: { content: string }) {
     const hljs = window.hljs;
     if (blocks.length > 0 && hljs) {
       blocks.forEach((block) => {
-        try { hljs.highlightElement(block); } catch {}
+        try { hljs.highlightElement(block); } catch { /* silent */ }
       });
     }
   }, [html]);

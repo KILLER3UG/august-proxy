@@ -302,7 +302,7 @@ function loadMessagesForSession(sessionId: string | null): ChatMessage[] {
   try {
     const saved = localStorage.getItem(key);
     if (saved) return JSON.parse(saved);
-  } catch {}
+  } catch { /* ignore parse errors */ }
 
   return buildDemoThread(sessionId);
 }
@@ -324,7 +324,7 @@ function persistComposerDraft(sessionId: string | null, value: string) {
 
   try {
     localStorage.setItem(key, value);
-  } catch {}
+  } catch { /* localStorage may be full or unavailable */ }
 }
 
 function clearComposerDraft(sessionId: string | null) {
@@ -333,7 +333,7 @@ function clearComposerDraft(sessionId: string | null) {
 
   try {
     localStorage.removeItem(key);
-  } catch {}
+  } catch { /* localStorage may be full or unavailable */ }
 }
 
 function persistMessages(sessionId: string | null, value: ChatMessage[]) {
@@ -342,7 +342,7 @@ function persistMessages(sessionId: string | null, value: ChatMessage[]) {
 
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch {}
+  } catch { /* localStorage may be full or unavailable */ }
 }
 
 export function ChatThread({ sessionId }: { sessionId: string | null }) {
@@ -490,7 +490,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       if (saved && ['low', 'medium', 'high', 'max'].includes(saved)) {
         return saved as 'low' | 'medium' | 'high' | 'max';
       }
-    } catch {}
+    } catch { /* silent */ }
     return 'medium';
   });
   const [revertingIndex, setRevertingIndex] = useState<number | null>(null);
@@ -987,11 +987,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   // Persist effort choice to localStorage on every change
   useEffect(() => {
-    try { localStorage.setItem('august_last_effort', effort); } catch {}
+    try { localStorage.setItem('august_last_effort', effort); } catch { /* silent */ }
   }, [effort]);
 
   useEffect(() => {
-    try { localStorage.setItem('august_last_workbench_guard_mode', workbenchMode); } catch {}
+    try { localStorage.setItem('august_last_workbench_guard_mode', workbenchMode); } catch { /* silent */ }
   }, [workbenchMode]);
 
   // Track whether the user manually changed the model so we don't override it when the full list loads
@@ -1846,7 +1846,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       if (model) {
         setSelectedModel(model);
         userSelectedRef.current = model.id;
-        try { localStorage.setItem('august_last_model', JSON.stringify(model)); } catch {}
+        try { localStorage.setItem('august_last_model', JSON.stringify(model)); } catch { /* silent */ }
         if (sessionId) updateSessionModel(sessionId, modelId, provider);
         toast.success(`Switched to ${model.name}`);
       }
@@ -2162,7 +2162,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   // Remember the user's explicit choice so background full-list load doesn't override it
                   userSelectedRef.current = m.id;
                   // Persist for instant restore on next page load and fallback sessions
-                  try { localStorage.setItem('august_last_model', JSON.stringify(m)); } catch {}
+                  try { localStorage.setItem('august_last_model', JSON.stringify(m)); } catch { /* silent */ }
                   // Scope the model to this session. The request payload also carries
                   // model/provider, so normal selection must not rewrite global backend config.
                   if (sessionId) updateSessionModel(sessionId, m.id, m.provider);

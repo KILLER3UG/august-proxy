@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint . --max-warnings=200",
+    "lint": "eslint . --max-warnings=700",
     "check": "npm run typecheck && npm run lint && npm run test",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

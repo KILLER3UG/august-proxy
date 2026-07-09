@@ -61,7 +61,7 @@ export function ChatTitlebar({
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         const win = getCurrentWindow();
         setIsMaximized(await win.isMaximized());
-      } catch {}
+      } catch { /* silent */ }
     })();
   }, [isTauri]);
 
@@ -70,7 +70,7 @@ export function ChatTitlebar({
     try {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().minimize();
-    } catch {}
+    } catch { /* silent */ }
   };
 
   const handleToggleMaximize = async () => {
@@ -80,7 +80,7 @@ export function ChatTitlebar({
       const win = getCurrentWindow();
       await win.toggleMaximize();
       setIsMaximized(await win.isMaximized());
-    } catch {}
+    } catch { /* silent */ }
   };
 
   const handleClose = async () => {
@@ -88,7 +88,7 @@ export function ChatTitlebar({
     try {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().close();
-    } catch {}
+    } catch { /* silent */ }
   };
 
   // ── Auto-update check (Tauri only) ──

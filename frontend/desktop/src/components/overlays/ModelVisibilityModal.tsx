@@ -31,7 +31,7 @@ export function loadHiddenModels(): Set<string> {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) return new Set(JSON.parse(saved));
-  } catch {}
+  } catch { /* silent */ }
   return new Set();
 }
 
