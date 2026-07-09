@@ -694,44 +694,52 @@ async def _streamOpenaiAsAnthropic(upstreamUrl: str, upstreamHeaders: dict[str, 
     if knownTools:
         openaiBody['tools'] = [anthropicToOpenaiToolDefinition(t) for t in knownTools]
     openaiBody['stream'] = True
-    state = createOpenaiToAnthropicStreamState()
     toolRound = 0
     currentMessages = list(body.get('messages', []))
-    currentSystem = systemBlocks
-    async for chunk in _getClient().stream_sse(upstreamUrl, upstreamHeaders, camelToSnake(openaiBody)):
-        if chunk.get('type') == 'error':
-            yield writeAnthropicSseData('error', {'error': {'message': chunk.get('body', str(chunk.get('error', '')))}})
-            return
-        events = streamOpenaiDeltaAsAnthropic(chunk, state)
-        for eventStr in events:
-            yield eventStr
-        choices = chunk.get('choices', [])
-        if choices and choices[0].get('finish_reason') == 'tool_calls':
-            toolRound += 1
-            if toolRound > MAX_MANAGED_TOOL_ROUNDS:
-                break
-            toolCalls = []
-            for tc in state['pending_tool_calls']:
-                name = tc.get('function', {}).get('name', '')
-                argsStr = tc.get('function', {}).get('arguments', '{}')
-                try:
-                    args = json.loads(argsStr)
-                except (json.JSONDecodeError, TypeError):
-                    args = {}
-                toolCalls.append({'type': 'tool_use', 'id': tc.get('id', f'toolu_{uuid.uuid4().hex[:16]}'), 'name': name, 'input': args})
-            if toolCalls:
+    # Multi-round managed tool resolution: each round streams from the upstream,
+    # intercepts managed tool uses, executes them locally, appends the results,
+    # and re-streams — up to MAX_MANAGED_TOOL_ROUNDS times.
+    while toolRound < MAX_MANAGED_TOOL_ROUNDS:
+        state = createOpenaiToAnthropicStreamState()
+        roundBody = dict(openaiBody)
+        roundBody['messages'] = currentMessages
+        async for chunk in _getClient().stream_sse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
+            if chunk.get('type') == 'error':
+                yield writeAnthropicSseData('error', {'error': {'message': chunk.get('body', str(chunk.get('error', '')))}})
+                return
+            events = streamOpenaiDeltaAsAnthropic(chunk, state)
+            for eventStr in events:
+                yield eventStr
+            choices = chunk.get('choices', [])
+            if choices and choices[0].get('finish_reason') == 'tool_calls':
+                toolCalls = []
+                for tc in state['pending_tool_calls']:
+                    name = tc.get('function', {}).get('name', '')
+                    argsStr = tc.get('function', {}).get('arguments', '{}')
+                    try:
+                        args = json.loads(argsStr)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    toolCalls.append({'type': 'tool_use', 'id': tc.get('id', f'toolu_{uuid.uuid4().hex[:16]}'), 'name': name, 'input': args})
+                if not toolCalls:
+                    break
                 classification = classifyAnthropicToolUses(toolCalls, managedLocalToolNames, clientToolNames)
-                if classification['has_managed']:
-                    currentMessages.append({'role': 'assistant', 'content': [{'type': 'text', 'text': state.get('accumulated_text', '')}, *toolCalls]})
-                    for tu in classification['managed_tool_uses']:
-                        try:
-                            result = await executeManagedProxyTool(tu.get('name', ''), tu.get('input', {}))
-                            currentMessages.append({'type': 'tool_result', 'tool_use_id': tu.get('id', ''), 'content': formatManagedToolResult(tu.get('name', ''), result)})
-                        except Exception as exc:
-                            currentMessages.append({'type': 'tool_result', 'tool_use_id': tu.get('id', ''), 'content': f'Error: {exc}', 'is_error': True})
-                    state = createOpenaiToAnthropicStreamState()
-                    continue
-            break
+                # No managed tools to resolve locally — pass the turn back to the
+                # client (or finish). Stop the loop so we don't spin.
+                if not classification['has_managed']:
+                    break
+                toolRound += 1
+                currentMessages.append({'role': 'assistant', 'content': [{'type': 'text', 'text': state.get('accumulated_text', '')}, *toolCalls]})
+                for tu in classification['managed_tool_uses']:
+                    try:
+                        result = await executeManagedProxyTool(tu.get('name', ''), tu.get('input', {}))
+                        currentMessages.append({'type': 'tool_result', 'tool_use_id': tu.get('id', ''), 'content': formatManagedToolResult(tu.get('name', ''), result)})
+                    except Exception as exc:
+                        currentMessages.append({'type': 'tool_result', 'tool_use_id': tu.get('id', ''), 'content': f'Error: {exc}', 'is_error': True})
+                # Loop again to re-stream with the tool results appended.
+                continue
+        # Either no tool calls, or only client/unknown tools — we're done.
+        break
     yield writeAnthropicSseData('message_stop', {'type': 'message_stop'})
 
 def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, JsonValue], model: str) -> dict[str, JsonValue]:
