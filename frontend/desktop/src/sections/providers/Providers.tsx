@@ -113,7 +113,7 @@ export function Providers() {
     setSaveMsg(null);
     try {
       await api.put('/api/config/activeProvider', { provider: providerId });
-      queryClient.invalidateQueries({ queryKey: ['providers'] });
+      void queryClient.invalidateQueries({ queryKey: ['providers'] });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setSaveMsg({ id: providerId, type: 'err', text: message || 'Failed to activate' });
@@ -131,11 +131,11 @@ export function Providers() {
       if (baseUrls[providerId]) config.baseUrl = baseUrls[providerId];
       await api.post('/api/config/provider-details', { provider: providerId, config });
       setSaveMsg({ id: providerId, type: 'ok', text: 'Saved' });
-      queryClient.invalidateQueries({ queryKey: ['providers'] });
-      queryClient.invalidateQueries({ queryKey: ['model-options'] });
+      void queryClient.invalidateQueries({ queryKey: ['providers'] });
+      void queryClient.invalidateQueries({ queryKey: ['model-options'] });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      setSaveMsg({ id: providerId, type: 'err', text: message || 'Save failed' });
+      setSaveMsg({ id: providerId, type: 'err', text: message || 'Failed to activate' });
     } finally {
       setSaving(null);
     }
@@ -160,8 +160,8 @@ export function Providers() {
       setSelectedTemplate('');
       setNewProviderName('');
       setNewProviderKey('');
-      queryClient.invalidateQueries({ queryKey: ['providers'] });
-      queryClient.invalidateQueries({ queryKey: ['aggregated-models'] });
+      void queryClient.invalidateQueries({ queryKey: ['providers'] });
+      void queryClient.invalidateQueries({ queryKey: ['aggregated-models'] });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setSaveMsg({ id: 'add', type: 'err', text: message || 'Failed to add provider' });
@@ -188,7 +188,7 @@ export function Providers() {
               <Plus className="size-3 mr-1" />
               Add Provider
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+            <Button type="button" variant="outline" size="sm" onClick={() => void refetch()}>
               Refresh
             </Button>
           </div>
@@ -248,7 +248,7 @@ export function Providers() {
             <Button type="button" variant="outline" size="sm" onClick={() => { setShowAddForm(false); setSaveMsg(null); }}>
               Cancel
             </Button>
-            <Button type="button" size="sm" onClick={handleAddProvider} disabled={!newProviderName.trim() || adding}>
+            <Button type="button" size="sm" onClick={() => void handleAddProvider()} disabled={!newProviderName.trim() || adding}>
               {adding ? 'Adding…' : 'Add Provider'}
             </Button>
           </div>
@@ -442,7 +442,7 @@ export function Providers() {
                         <div className="flex items-center gap-2">
                           <Button
                             size="sm"
-                            onClick={() => handleSetActive(p.id)}
+                            onClick={() => void handleSetActive(p.id)}
                             disabled={saving === p.id || p.id === data.activeProvider}
                           >
                             {saving === p.id ? <Loader2 className="size-3 mr-1 animate-spin" /> : <PlugZap className="size-3 mr-1" />}
@@ -451,7 +451,7 @@ export function Providers() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleSave(p.id)}
+                            onClick={() => void handleSave(p.id)}
                             disabled={saving === p.id}
                           >
                             <Save className="size-3 mr-1" />

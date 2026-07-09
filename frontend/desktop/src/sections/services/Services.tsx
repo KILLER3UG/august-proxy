@@ -335,7 +335,7 @@ export function MergedMcpSkills() {
     onSuccess: (authUrl) => {
       const popup = window.open(authUrl, "_blank", "width=520,height=760");
       if (!popup) {
-        queryClient.invalidateQueries({ queryKey: ["service-connections"] });
+        void queryClient.invalidateQueries({ queryKey: ["service-connections"] });
       }
     },
   });
@@ -345,7 +345,7 @@ export function MergedMcpSkills() {
       await api.delete(`/api/service-connections/${name}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["service-connections"] });
+      void queryClient.invalidateQueries({ queryKey: ["service-connections"] });
     },
   });
 
@@ -354,7 +354,7 @@ export function MergedMcpSkills() {
       await api.post("/api/service-connections/github", { token });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["service-connections"] });
+      void queryClient.invalidateQueries({ queryKey: ["service-connections"] });
     },
   });
 
@@ -369,7 +369,7 @@ export function MergedMcpSkills() {
       await api.post("/api/service-connections/slack", { botToken, teamId });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["service-connections"] });
+      void queryClient.invalidateQueries({ queryKey: ["service-connections"] });
     },
   });
 
@@ -378,8 +378,8 @@ export function MergedMcpSkills() {
       await api.post("/ui/mcp", server);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
-      queryClient.invalidateQueries({ queryKey: ["mcp-global-env"] });
+      void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
+      void queryClient.invalidateQueries({ queryKey: ["mcp-global-env"] });
     },
   });
 
@@ -388,7 +388,7 @@ export function MergedMcpSkills() {
       await api.post("/ui/mcp/restart");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
+      void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
     },
   });
 
@@ -400,7 +400,7 @@ export function MergedMcpSkills() {
       await api.post("/api/mcp-env", { env });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["mcp-global-env"] });
+      void queryClient.invalidateQueries({ queryKey: ["mcp-global-env"] });
       restartMcpServers.mutate();
     },
   });
@@ -418,7 +418,7 @@ export function MergedMcpSkills() {
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type === "august-service-connection") {
-        queryClient.invalidateQueries({ queryKey: ["service-connections"] });
+        void queryClient.invalidateQueries({ queryKey: ["service-connections"] });
       }
     };
     window.addEventListener("message", onMessage);
@@ -1103,7 +1103,7 @@ function LinkImportPanel() {
     onSuccess: (data) => {
       setResult(data);
       setError(null);
-      queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
+      void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
     },
     onError: (e) => {
       setError(e instanceof Error ? e.message : String(e));

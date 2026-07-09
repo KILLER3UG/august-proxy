@@ -248,27 +248,29 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
               type="text"
               placeholder="Paste path & press Enter (e.g. C:/my-project)..."
               className="w-full h-8 px-2.5 rounded border border-border/40 bg-muted/20 text-xs text-foreground placeholder:text-muted-foreground/45 outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary transition"
-              onKeyDown={async (e) => {
-                if (e.key === 'Enter') {
-                  const val = (e.target as HTMLInputElement).value.trim();
-                  if (val) {
-                    const normalized = val.replace(/\\/g, '/');
-                    const folderName = normalized.split('/').pop() || 'workspace';
-                    const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
-                    try {
-                      const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalized)}`);
-                      if (!res.ok) throw new Error('Directory does not exist or is not readable');
-                      toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
-                      if (sessionId) {
-                        updateSessionWorkspace(sessionId, normalized);
-                        (e.target as HTMLInputElement).value = '';
+              onKeyDown={(e) => {
+                void (async () => {
+                  if (e.key === 'Enter') {
+                    const val = (e.target as HTMLInputElement).value.trim();
+                    if (val) {
+                      const normalized = val.replace(/\\/g, '/');
+                      const folderName = normalized.split('/').pop() || 'workspace';
+                      const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
+                      try {
+                        const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalized)}`);
+                        if (!res.ok) throw new Error('Directory does not exist or is not readable');
+                        toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
+                        if (sessionId) {
+                          updateSessionWorkspace(sessionId, normalized);
+                          (e.target as HTMLInputElement).value = '';
+                        }
+                      } catch (err) {
+                        const message = err instanceof Error ? err.message : String(err);
+                        toast.error(`Access failed: ${message}`, { id: toastId });
                       }
-                    } catch (err) {
-                      const message = err instanceof Error ? err.message : String(err);
-                      toast.error(`Access failed: ${message}`, { id: toastId });
                     }
                   }
-                }
+                })();
               }}
             />
             <div className="relative flex items-center justify-center my-1">

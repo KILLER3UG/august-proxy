@@ -1,22 +1,40 @@
 """
 Model alias types — Pydantic models for the alias proxy-mapping system.
 
-An **alias** in August Proxy is a *proxy mapping*: it lets the proxy display
-one model name in ``/v1/models`` (and accept it in requests) while routing to
-a completely different provider + model combination upstream.
+What is an alias?
+=================
+An **alias** in August Proxy is a *proxy mapping*: it lets the proxy expose
+a specified model name in ``/v1/models`` (and accept it in requests) while
+routing to a completely different provider + model combination upstream.
 
 Example::
 
-    Request:  model="claude-sonnet-4-6"
-    Alias:    alias="claude-sonnet-4-6"
-              → targetProvider="openai"
-              → targetModel="gpt-4o"
-    Upstream: POST /v1/chat/completions  { model: "gpt-4o" }
-    Response: model="claude-sonnet-4-6"  (client sees the alias, not gpt-4o)
+    A user who wants to use ``claude-sonnet`` in Claude Desktop but
+    doesn't have a subscription configures an alias:
 
-This is NOT simply a "nickname" — it is a full provider+model indirection.
-The client sees the alias name throughout the API; the backend model ID is
-never leaked to the client unless explicitly configured.
+        alias:          "claude-sonnet-4-6"
+        targetProvider: "DeepSeek"
+        targetModel:    "deepseek-chat"
+
+    When the backend runs:
+
+    1. ``GET /v1/models`` returns ``claude-sonnet-4-6`` in the model list
+       (alongside all provider models).
+
+    2. ``POST /v1/messages`` with ``model="claude-sonnet-4-6"`` is routed
+       to DeepSeek with ``model="deepseek-chat"``.
+
+    3. The response rewrite ensures the client sees the alias name
+       (``claude-sonnet-4-6``) not the backend model ID.
+
+This is NOT simply a "nickname" — it is a full provider+model indirection
+that makes the proxy completely transparent to the client.
+
+Resolution order (see aliasMappingService.py):
+1. User-defined alias (config.json ``modelAliases``) → targetProvider + targetModel
+2. Built-in public alias (identity, e.g. ``claude-sonnet-4-6`` → itself)
+3. Direct provider routing (``resolveForModel`` credential-aware)
+4. Fallback to active provider
 """
 from __future__ import annotations
 
@@ -28,15 +46,18 @@ class AliasMapping(ExtraAllowBaseModel):
 
     Fields:
         alias: The public-facing model name clients use in requests.
-        target_model: The actual backend model ID routed to upstream.
-        target_provider: The provider name that serves the target model.
-        display_alias: Optional friendlier name shown in the UI dropdown
-            (defaults to ``alias`` if empty).
+            e.g. ``"claude-sonnet-4-6"``
+        targetModel: The actual backend model ID routed to upstream.
+            e.g. ``"deepseek-chat"``
+        targetProvider: The provider name that serves the target model.
+            e.g. ``"DeepSeek"``
+        displayAlias: Optional friendlier name shown in UI dropdown.
+            Defaults to ``alias`` if empty.
     """
     alias: str
-    target_model: str
-    target_provider: str
-    display_alias: str = ""
+    targetModel: str
+    targetProvider: str
+    displayAlias: str = ""
 
 
 class AliasResolutionResult(ExtraAllowBaseModel):
@@ -47,15 +68,15 @@ class AliasResolutionResult(ExtraAllowBaseModel):
 
     Fields:
         alias: The original alias that was resolved.
-        provider: The resolved provider name (from ``target_provider``).
-        model: The resolved backend model ID (from ``target_model``).
-        display_model: The model name to show the client (usually the alias).
-        is_fallback: Whether this was a fallback (no matching alias found).
-        is_direct: Whether this was a direct model ID (not an alias at all).
+        provider: The resolved provider name (from ``targetProvider``).
+        model: The resolved backend model ID (from ``targetModel``).
+        displayModel: The model name to show the client (usually the alias).
+        isFallback: Whether this was a fallback (no matching alias found).
+        isDirect: Whether this was a direct model ID (not an alias at all).
     """
     alias: str
     provider: str
     model: str
-    display_model: str = ""
-    is_fallback: bool = False
-    is_direct: bool = False
+    displayModel: str = ""
+    isFallback: bool = False
+    isDirect: bool = False

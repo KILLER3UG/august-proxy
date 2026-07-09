@@ -132,7 +132,7 @@ export function SkillsSection() {
   }, [fetchSkills, fetchUsage]);
 
   useEffect(() => {
-    reload().finally(() => setLoading(false));
+	    void reload().finally(() => setLoading(false));
   }, [reload]);
 
   /* ── Merged table rows ────────────────────────────────────────── */
@@ -281,7 +281,7 @@ export function SkillsSection() {
 
   const handleSearch = (q: string) => {
     setSearch(q);
-    fetchSkills(q);
+	    void fetchSkills(q);
   };
 
   /* ── Curator actions ──────────────────────────────────────────── */
@@ -462,7 +462,7 @@ export function SkillsSection() {
                       <tr
                         key={r.name}
                         className="group border-b border-white/[0.06] hover:bg-white/[0.02] cursor-pointer"
-                        onClick={() => openSkill(r.name)}
+                        onClick={() => void openSkill(r.name)}
                       >
                         <td className="px-5 py-3 font-medium">{r.name}</td>
                         <td className="px-5 py-3"><StateBadge state={r.state} /></td>
@@ -478,20 +478,20 @@ export function SkillsSection() {
                           >
                             <RowIconButton
                               title={r.pinned ? 'Unpin' : 'Pin'}
-                              onClick={() => handleTogglePin(r.name, r.pinned)}
+                              onClick={() => void handleTogglePin(r.name, r.pinned)}
                             >
                               {r.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
                             </RowIconButton>
                             <RowIconButton
                               title="Archive"
-                              onClick={() => handleArchive(r.name)}
+                              onClick={() => void handleArchive(r.name)}
                               disabled={r.state === 'archived'}
                             >
                               <Archive className="size-4" />
                             </RowIconButton>
                             <RowIconButton
                               title="Restore"
-                              onClick={() => handleRestore(r.name)}
+                              onClick={() => void handleRestore(r.name)}
                               disabled={r.state !== 'archived'}
                             >
                               <RotateCcw className="size-4" />
@@ -517,7 +517,7 @@ export function SkillsSection() {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => handleRunCurator(false)}
+                onClick={() => void handleRunCurator(false)}
                 disabled={running}
                 className="inline-flex items-center gap-2 rounded-lg border border-white/[0.06] bg-card px-3 py-1.5 text-sm text-foreground hover:bg-card/80 disabled:opacity-50"
               >
@@ -525,7 +525,7 @@ export function SkillsSection() {
                 Run
               </button>
               <button
-                onClick={() => handleRunCurator(true)}
+                onClick={() => void handleRunCurator(true)}
                 disabled={running}
                 className="inline-flex items-center gap-2 rounded-lg border border-white/[0.06] bg-card px-3 py-1.5 text-sm text-foreground hover:bg-card/80 disabled:opacity-50"
               >
@@ -631,7 +631,7 @@ export function SkillsSection() {
 
           <div className="flex items-center gap-3">
             <button
-              onClick={handleSave}
+              onClick={() => void handleSave()}
               disabled={saving || !form.name || !form.description || !form.body}
               className="inline-flex items-center gap-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
@@ -670,7 +670,7 @@ export function SkillsSection() {
                 Cancel
               </button>
               <button
-                onClick={() => handleDelete(confirmDelete)}
+                onClick={() => void handleDelete(confirmDelete)}
                 disabled={saving}
                 className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
               >

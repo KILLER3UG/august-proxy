@@ -26,7 +26,7 @@ function mockFetchSequence(responses: Array<{ ok?: boolean; body?: unknown; stat
     return Promise.resolve({
       ok: r.ok ?? true,
       status: r.status ?? 200,
-      json: async () => r.body,
+      json: () => r.body,
     });
   });
 }
@@ -60,7 +60,7 @@ describe('v3 — ExamHost', () => {
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => body,
+        json: () => body,
       });
     });
     global.fetch = fetchMock;

@@ -25,10 +25,10 @@ from app.config import settings
 from app.providers import resolver as providerResolver
 from app.providers.routeResolver import resolveForModel
 from app.services.aliasMappingService import (
-    resolve_alias,
-    resolve_alias_or_none,
-    get_reverse_alias as _get_reverse_alias,
-    list_alias_names,
+    resolveAlias,
+    resolveAliasOrNone,
+    getReverseAlias as _getReverseAlias,
+    listAliasNames,
     BUILTIN_PUBLIC_ALIASES,
 )
 logger = logging.getLogger(__name__)
@@ -79,12 +79,12 @@ def resolve(input: str | None, providerHint: str | None=None, defaultAlias: str 
     """
     normalized = _normalize(input) or _normalize(defaultAlias) or DEFAULT_ALIAS
     try:
-        result = resolve_alias(normalized, provider_hint=providerHint)
+        result = resolveAlias(normalized, providerHint=providerHint)
         return {
             'alias': result.alias,
             'provider': result.provider,
             'model': result.model,
-            'is_fallback': result.is_fallback,
+            'is_fallback': result.isFallback,
         }
     except ValueError as exc:
         raise ModelResolutionError(str(exc), input=normalized, reason='no_matching_provider') from exc
@@ -104,24 +104,24 @@ def resolveOrFallback(input: str | None, providerHint: str | None=None, defaultA
     """
     originalInput = _normalize(input)
     normalized = originalInput or _normalize(defaultAlias) or DEFAULT_ALIAS
-    result = resolve_alias_or_none(normalized, provider_hint=providerHint)
+    result = resolveAliasOrNone(normalized, providerHint=providerHint)
     if result is not None:
         return {
             'alias': result.alias,
             'provider': result.provider,
             'model': result.model,
-            'is_fallback': result.is_fallback,
+            'is_fallback': result.isFallback,
         }
     logger.warning(f"[ModelResolver] no active provider available; cannot resolve '{normalized}'")
     return None
 
 def getAliasForModel(modelId: str) -> str | None:
     """Reverse lookup: given a raw model ID, find the alias that maps to it."""
-    return _get_reverse_alias(modelId)
+    return _getReverseAlias(modelId)
 
 def listAliases() -> list[str]:
     """Return every alias the system knows about, deduplicated."""
-    return list_alias_names()
+    return listAliasNames()
 
 def getDefaultAlias() -> str:
     return DEFAULT_ALIAS

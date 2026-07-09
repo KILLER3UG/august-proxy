@@ -28,13 +28,13 @@ const MODELS = {
 function mockFetchStandard() {
   return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
     if (url.includes('/api/config/model-fleet') && init?.method === 'PUT') {
-      return Promise.resolve({ ok: true, status: 200, json: async () => FLEET });
+      return Promise.resolve({ ok: true, status: 200, json: () => FLEET });
     }
     if (url.includes('/api/config/model-fleet')) {
-      return Promise.resolve({ ok: true, json: async () => FLEET });
+      return Promise.resolve({ ok: true, json: () => FLEET });
     }
     if (url.includes('/api/models')) {
-      return Promise.resolve({ ok: true, json: async () => MODELS });
+      return Promise.resolve({ ok: true, json: () => MODELS });
     }
     return Promise.reject(new Error('unexpected url: ' + url));
   });

@@ -33,7 +33,7 @@ function nativePointer(
 }
 
 async function openPopup(): Promise<void> {
-  await act(async () => {
+  await act(() => {
     fireEvent.click(screen.getByTestId('titlebar-brain-button'));
   });
   await waitFor(() => expect(screen.getByTestId('brain-popup')).toBeTruthy());
@@ -44,13 +44,13 @@ async function dragResize(handle: HTMLElement, dx: number, dy: number): Promise<
     x: 100, y: 100, width: 16, height: 16, top: 100, left: 100, bottom: 116, right: 116,
     toJSON() { return this; },
   });
-  await act(async () => {
+  await act(() => {
     nativePointer(handle, 'pointerdown', { clientX: 108, clientY: 108 });
   });
-  await act(async () => {
+  await act(() => {
     nativePointer(document, 'pointermove', { clientX: 108 + dx, clientY: 108 + dy });
   });
-  await act(async () => {
+  await act(() => {
     nativePointer(document, 'pointerup', { clientX: 108 + dx, clientY: 108 + dy });
   });
   rectSpy.mockRestore();
@@ -149,13 +149,13 @@ describe('v4.4.4 — Brain popup: image-editor resize (8 handles) + drag from an
       toJSON() { return this; },
     });
     const startX = 250, startY = 220;
-    await act(async () => {
+    await act(() => {
       nativePointer(popup, 'pointerdown', { clientX: startX, clientY: startY, button: 0 });
     });
-    await act(async () => {
+    await act(() => {
       nativePointer(document, 'pointermove', { clientX: startX + 60, clientY: startY + 40 });
     });
-    await act(async () => {
+    await act(() => {
       nativePointer(document, 'pointerup', { clientX: startX + 60, clientY: startY + 40 });
     });
     rectSpy.mockRestore();
@@ -170,13 +170,13 @@ describe('v4.4.4 — Brain popup: image-editor resize (8 handles) + drag from an
     const popup = screen.getByTestId('brain-popup');
     const before = { x: popup.style.left, y: popup.style.top };
     const learningTab = screen.getByTestId('brain-popup-tab-learning');
-    await act(async () => {
+    await act(() => {
       nativePointer(learningTab, 'pointerdown', { clientX: 100, clientY: 200 });
     });
-    await act(async () => {
+    await act(() => {
       nativePointer(document, 'pointermove', { clientX: 700, clientY: 600 });
     });
-    await act(async () => {
+    await act(() => {
       nativePointer(document, 'pointerup', { clientX: 700, clientY: 600 });
     });
     expect(screen.queryByTestId('brain-popup')).toBeTruthy();

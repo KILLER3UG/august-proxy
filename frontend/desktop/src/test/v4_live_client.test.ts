@@ -9,7 +9,7 @@ describe('v4 — liveClient', () => {
   it('startSession posts to /api/live/session and returns sessionId', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ sessionId: 'live_abc', status: 'started' }),
+      json: () => ({ sessionId: 'live_abc', status: 'started' }),
     });
     const id = await liveClient.startSession();
     expect(id).toBe('live_abc');
@@ -23,7 +23,7 @@ describe('v4 — liveClient', () => {
   });
 
   it('stopSession posts to /api/live/session with action: stop', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: 'stopped' }) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => ({ status: 'stopped' }) });
     await liveClient.stopSession('live_abc');
     expect(fetch).toHaveBeenCalledWith(
       '/api/live/session',
@@ -37,7 +37,7 @@ describe('v4 — liveClient', () => {
   it('sendTurn posts to /api/live/turn and returns the assistant content', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ sessionId: 'live_abc', type: 'text', content: 'Processing: hello' }),
+      json: () => ({ sessionId: 'live_abc', type: 'text', content: 'Processing: hello' }),
     });
     const text = await liveClient.sendTurn('live_abc', 'hello');
     expect(text).toBe('Processing: hello');
@@ -50,14 +50,14 @@ describe('v4 — liveClient', () => {
   });
 
   it('transcribe posts audio blob to /api/live/stt', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ transcript: 'hi', partial: false }) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => ({ transcript: 'hi', partial: false }) });
     const result = await liveClient.transcribe(new Blob(['a']));
     expect(result.transcript).toBe('hi');
     expect(result.partial).toBe(false);
   });
 
   it('synthesize posts text to /api/live/tts and returns audio URL or null', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ audio: null, format: 'mp3' }) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => ({ audio: null, format: 'mp3' }) });
     const result = await liveClient.synthesize('hi', 'alloy');
     expect(result.audio).toBeNull();
   });

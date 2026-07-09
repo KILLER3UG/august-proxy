@@ -794,8 +794,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           setInput(prev => prev + event.text);
           break;
         }
-        case 'send-message': {
-          send(event.text);
+	      case 'send-message': {
+	          void send(event.text);
           break;
         }
         case 'toast': {
@@ -1022,9 +1022,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // every 30s and refetches on invalidation, so newly-added providers appear
   // without remounting the chat.
 
-  // On mount: fetch active config for initial model selection.
-  useEffect(() => {
-    (async () => {
+	  // On mount: fetch active config for initial model selection.
+	  useEffect(() => {
+	    void (async () => {
       // Phase 1: quick config fetch for initial model selection
       try {
         const configRes = await fetch('/api/config/safe');
@@ -1057,10 +1057,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // Re-fetch models when session changes (provider availability is handled by
   // the useProviderAvailability hook above).
   useEffect(() => {
-    refetchModels();
-  }, [sessionId, refetchModels]);
+	    void refetchModels();
+	  }, [sessionId, refetchModels]);
 
-  // Force a full refresh: bypass any backend cache, invalidate both the
+	  // Force a full refresh: bypass any backend cache, invalidate both the
   // aggregated-models and provider-availability react-query caches so every
   // subscriber refetches, then refetch this component's own models list.
   const handleRefreshModels = useCallback(async () => {
@@ -1069,8 +1069,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       queryClient.invalidateQueries({ queryKey: ['aggregated-models'] }),
       queryClient.invalidateQueries({ queryKey: ['provider-availability'] }),
     ]);
-    refetchModels();
-  }, [queryClient, refetchModels]);
+	    void refetchModels();
+	  }, [queryClient, refetchModels]);
 
   // Reconcile selectedModel when the filtered model list changes (models were
   // refetched or provider availability changed). Preserve user's manual choice.
@@ -1214,14 +1214,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return created;
   };
 
-  useEffect(() => {
-    syncActiveStreams(ensureWorkbenchSession);
+	  useEffect(() => {
+	    void syncActiveStreams(ensureWorkbenchSession);
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        syncActiveStreams(ensureWorkbenchSession);
-      }
-    };
+	    const handleVisibilityChange = () => {
+	      if (document.visibilityState === 'visible') {
+	        void syncActiveStreams(ensureWorkbenchSession);
+	      }
+	    };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -1557,8 +1557,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   };
 
   const stop = () => {
-    if (sessionId) stopChatStream(sessionId);
-  };
+	    if (sessionId) void stopChatStream(sessionId);
+	  };
 
   // ── Revert: delete user message and all subsequent messages, put text back into chat input ──
   const handleRevert = (index: number) => {
@@ -1656,7 +1656,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       if (e.key === 'Enter' && !e.shiftKey && visible.length > 0) { e.preventDefault(); const cmd = visible[highlightedCommandIndex] ?? visible[0]; insertCommand(cmd.name); setShowCommandsDropdown(false); return; }
       if (e.key === 'Escape') { e.preventDefault(); setShowCommandsDropdown(false); return; }
     }
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+	    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); }
   };
 
   // Detect slash commands as user types
@@ -1943,15 +1943,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 </span>
                 <button
                   type="button"
-                  onClick={async () => {
+                  onClick={() => {
                     if (!sessionId) return;
-                    try {
-                      await dequeueWorkbenchMessage(sessionId, q.id);
-                    } catch (err) {
-                       
+                    void dequeueWorkbenchMessage(sessionId, q.id).catch((err) => {
                       console.error('[dequeue] failed', err);
                       toast.error('Could not cancel queued message');
-                    }
+                    });
                     // The SSE event will also remove the entry from the
                     // store; optimistically drop it locally so the pill
                     // disappears immediately.
@@ -1980,7 +1977,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 sessionId={sessionId}
                 onWorkspaceChange={(ws) => {
                   if (!sessionId || !ws) return;
-                  import('@/store/sessions').then(({ createSession, updateSessionWorkspace, $sessions }) => {
+                  void import('@/store/sessions').then(({ createSession, updateSessionWorkspace, $sessions }) => {
                     // Check if any existing session already uses this workspace path
                     const existing = $sessions.get().find(s => s.workspacePath === ws.path);
                     if (existing) {
@@ -2128,11 +2125,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
               <WorkbenchModeSelector
                 selectedMode={workbenchMode}
-                onChange={async (mode) => {
+                onChange={(mode) => {
                   setWorkbenchMode(mode);
                   localStorage.setItem('august_last_workbench_guard_mode', mode);
                   if (workbenchSession?.id) {
-                    setWorkbenchGuardMode(workbenchSession.id, mode).catch((error) => {
+                    void setWorkbenchGuardMode(workbenchSession.id, mode).catch((error) => {
                       console.warn('[ChatThread] Failed to persist guard mode:', error);
                     });
                   }
@@ -2156,7 +2153,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 selected={selectedModel}
                 onRefresh={handleRefreshModels}
                 onEditModels={() => setShowModelVisibility(true)}
-                onSelect={async (m) => {
+                onSelect={(m) => {
                   if (!m) return;
                   setSelectedModel(m);
                   // Remember the user's explicit choice so background full-list load doesn't override it
@@ -2242,33 +2239,35 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         {workbenchBtw && (
           <WorkbenchBtwDrawer
             result={workbenchBtw}
-            onSend={async (question) => {
+            onSend={(question) => {
               if (!sessionId) return;
-              const active = workbenchSession || (activeSession?.workbenchSessionId ? {
-                id: activeSession.workbenchSessionId,
-                provider: activeSession.workbenchProvider || "claude",
-                agentId: activeSession.workbenchAgentId || "build",
-                agentRole: activeSession.workbenchAgentId || "build",
-                agentMode: "assistant",
-                approved: false,
-                approvedAt: null,
-                plan: null,
-                goal: null,
-                lastGoal: null,
-                messageCount: 0,
-                mutationCount: 0,
-                lastMutationAt: null,
-                updatedAt: new Date().toISOString(),
-                todos: [],
-              } : null);
-              if (!active) return;
-              const result = await answerWorkbenchBtw({
-                sessionId: active.id,
-                question,
-                provider: active.provider === "codex" ? "codex" : "claude",
-                agentId: active.agentId,
-              });
-              setWorkbenchBtw(result);
+              void (async () => {
+                const active = workbenchSession || (activeSession?.workbenchSessionId ? {
+                  id: activeSession.workbenchSessionId,
+                  provider: activeSession.workbenchProvider || "claude",
+                  agentId: activeSession.workbenchAgentId || "build",
+                  agentRole: activeSession.workbenchAgentId || "build",
+                  agentMode: "assistant",
+                  approved: false,
+                  approvedAt: null,
+                  plan: null,
+                  goal: null,
+                  lastGoal: null,
+                  messageCount: 0,
+                  mutationCount: 0,
+                  lastMutationAt: null,
+                  updatedAt: new Date().toISOString(),
+                  todos: [],
+                } : null);
+                if (!active) return;
+                const result = await answerWorkbenchBtw({
+                  sessionId: active.id,
+                  question,
+                  provider: active.provider === "codex" ? "codex" : "claude",
+                  agentId: active.agentId,
+                });
+                setWorkbenchBtw(result);
+              })();
             }}
             onClose={() => setWorkbenchBtw(null)}
           />
@@ -2307,61 +2306,67 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                           addRightDrawerSection('plan');
                           window.dispatchEvent(new CustomEvent('august:open-right-sidebar'));
                         }}
-                        onAccept={async () => {
-                          if (!workbenchSession) return;
-                          try {
-                            const updated = await approveWorkbenchPlan(workbenchSession.id);
-                            setWorkbenchSession(updated);
-                            if (sessionId) {
-                              updateSessionWorkbenchMetadata(sessionId, {
-                                workbenchSessionId: updated.id,
-                                workbenchAgentId: updated.agentId,
-                                workbenchProvider: updated.provider,
-                              });
+                        onAccept={() => {
+                          void (async () => {
+                            if (!workbenchSession) return;
+                            try {
+                              const updated = await approveWorkbenchPlan(workbenchSession.id);
+                              setWorkbenchSession(updated);
+                              if (sessionId) {
+                                updateSessionWorkbenchMetadata(sessionId, {
+                                  workbenchSessionId: updated.id,
+                                  workbenchAgentId: updated.agentId,
+                                  workbenchProvider: updated.provider,
+                                });
+                              }
+                              // Tell the model the plan was accepted but should NOT proceed.
+                              // Use the full streaming bundle so the chat thread
+                              // renders the model's reply (thinking, text, tool
+                              // calls) the same way a normal composer message does.
+                              await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
+                            } catch (e) {
+                              const message = e instanceof Error ? e.message : String(e);
+                              toast.error('Could not approve Workbench plan', { description: message });
                             }
-                            // Tell the model the plan was accepted but should NOT proceed.
-                            // Use the full streaming bundle so the chat thread
-                            // renders the model's reply (thinking, text, tool
-                            // calls) the same way a normal composer message does.
-                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : String(e);
-                            toast.error('Could not approve Workbench plan', { description: message });
-                          }
+                          })();
                         }}
-                        onAcceptAndImplement={async () => {
-                          if (!workbenchSession) return;
-                          try {
-                            const updated = await approveWorkbenchPlan(workbenchSession.id);
-                            setWorkbenchSession(updated);
-                            if (sessionId) {
-                              updateSessionWorkbenchMetadata(sessionId, {
-                                workbenchSessionId: updated.id,
-                                workbenchAgentId: updated.agentId,
-                                workbenchProvider: updated.provider,
-                              });
+                        onAcceptAndImplement={() => {
+                          void (async () => {
+                            if (!workbenchSession) return;
+                            try {
+                              const updated = await approveWorkbenchPlan(workbenchSession.id);
+                              setWorkbenchSession(updated);
+                              if (sessionId) {
+                                updateSessionWorkbenchMetadata(sessionId, {
+                                  workbenchSessionId: updated.id,
+                                  workbenchAgentId: updated.agentId,
+                                  workbenchProvider: updated.provider,
+                                });
+                              }
+                              // Switch the guard mode to Full access so the model
+                              // can proceed with implementation.
+                              setWorkbenchMode('full');
+                              // Tell the model to proceed with implementation at Full access.
+                              await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers, signal));
+                            } catch (e) {
+                              const message = e instanceof Error ? e.message : String(e);
+                              toast.error('Could not approve Workbench plan', { description: message });
                             }
-                            // Switch the guard mode to Full access so the model
-                            // can proceed with implementation.
-                            setWorkbenchMode('full');
-                            // Tell the model to proceed with implementation at Full access.
-                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers, signal));
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : String(e);
-                            toast.error('Could not approve Workbench plan', { description: message });
-                          }
+                          })();
                         }}
-                        onReject={async () => {
-                          if (!workbenchSession) return;
-                          try {
-                            const updated = await rejectWorkbenchPlan(workbenchSession.id);
-                            setWorkbenchSession(updated);
-                            // Notify the model the plan was rejected.
-                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'reject', handlers, signal));
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : String(e);
-                            toast.error('Could not reject Workbench plan', { description: message });
-                          }
+                        onReject={() => {
+                          void (async () => {
+                            if (!workbenchSession) return;
+                            try {
+                              const updated = await rejectWorkbenchPlan(workbenchSession.id);
+                              setWorkbenchSession(updated);
+                              // Notify the model the plan was rejected.
+                              await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'reject', handlers, signal));
+                            } catch (e) {
+                              const message = e instanceof Error ? e.message : String(e);
+                              toast.error('Could not reject Workbench plan', { description: message });
+                            }
+                          })();
                         }}
                         onRevise={handlePlanRevision}
                       />
@@ -2462,61 +2467,67 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         addRightDrawerSection('plan');
                         window.dispatchEvent(new CustomEvent('august:open-right-sidebar'));
                       }}
-                        onAccept={async () => {
-                          if (!workbenchSession) return;
-                          try {
-                            const updated = await approveWorkbenchPlan(workbenchSession.id);
-                            setWorkbenchSession(updated);
-                            if (sessionId) {
-                              updateSessionWorkbenchMetadata(sessionId, {
-                                workbenchSessionId: updated.id,
-                                workbenchAgentId: updated.agentId,
-                                workbenchProvider: updated.provider,
-                              });
+                        onAccept={() => {
+                          void (async () => {
+                            if (!workbenchSession) return;
+                            try {
+                              const updated = await approveWorkbenchPlan(workbenchSession.id);
+                              setWorkbenchSession(updated);
+                              if (sessionId) {
+                                updateSessionWorkbenchMetadata(sessionId, {
+                                  workbenchSessionId: updated.id,
+                                  workbenchAgentId: updated.agentId,
+                                  workbenchProvider: updated.provider,
+                                });
+                              }
+                              // Tell the model the plan was accepted but should NOT proceed.
+                              // Use the full streaming bundle so the chat thread
+                              // renders the model's reply (thinking, text, tool
+                              // calls) the same way a normal composer message does.
+                              await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
+                            } catch (e) {
+                              const message = e instanceof Error ? e.message : String(e);
+                              toast.error('Could not approve Workbench plan', { description: message });
                             }
-                            // Tell the model the plan was accepted but should NOT proceed.
-                            // Use the full streaming bundle so the chat thread
-                            // renders the model's reply (thinking, text, tool
-                            // calls) the same way a normal composer message does.
-                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : String(e);
-                            toast.error('Could not approve Workbench plan', { description: message });
-                          }
+                          })();
                         }}
-                        onAcceptAndImplement={async () => {
-                          if (!workbenchSession) return;
-                          try {
-                            const updated = await approveWorkbenchPlan(workbenchSession.id);
-                            setWorkbenchSession(updated);
-                            if (sessionId) {
-                              updateSessionWorkbenchMetadata(sessionId, {
-                                workbenchSessionId: updated.id,
-                                workbenchAgentId: updated.agentId,
-                                workbenchProvider: updated.provider,
-                              });
+                        onAcceptAndImplement={() => {
+                          void (async () => {
+                            if (!workbenchSession) return;
+                            try {
+                              const updated = await approveWorkbenchPlan(workbenchSession.id);
+                              setWorkbenchSession(updated);
+                              if (sessionId) {
+                                updateSessionWorkbenchMetadata(sessionId, {
+                                  workbenchSessionId: updated.id,
+                                  workbenchAgentId: updated.agentId,
+                                  workbenchProvider: updated.provider,
+                                });
+                              }
+                              // Switch the guard mode to Full access so the model
+                              // can proceed with implementation.
+                              setWorkbenchMode('full');
+                              // Tell the model to proceed with implementation at Full access.
+                              await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers, signal));
+                            } catch (e) {
+                              const message = e instanceof Error ? e.message : String(e);
+                              toast.error('Could not approve Workbench plan', { description: message });
                             }
-                            // Switch the guard mode to Full access so the model
-                            // can proceed with implementation.
-                            setWorkbenchMode('full');
-                            // Tell the model to proceed with implementation at Full access.
-                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers, signal));
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : String(e);
-                            toast.error('Could not approve Workbench plan', { description: message });
-                          }
+                          })();
                         }}
-                        onReject={async () => {
-                          if (!workbenchSession) return;
-                          try {
-                            const updated = await rejectWorkbenchPlan(workbenchSession.id);
-                            setWorkbenchSession(updated);
-                            // Notify the model the plan was rejected.
-                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'reject', handlers, signal));
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : String(e);
-                            toast.error('Could not reject Workbench plan', { description: message });
-                          }
+                        onReject={() => {
+                          void (async () => {
+                            if (!workbenchSession) return;
+                            try {
+                              const updated = await rejectWorkbenchPlan(workbenchSession.id);
+                              setWorkbenchSession(updated);
+                              // Notify the model the plan was rejected.
+                              await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'reject', handlers, signal));
+                            } catch (e) {
+                              const message = e instanceof Error ? e.message : String(e);
+                              toast.error('Could not reject Workbench plan', { description: message });
+                            }
+                          })();
                         }}
                         onRevise={handlePlanRevision}
                     />
@@ -3720,9 +3731,9 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
               )}
               {onRefresh && (
                 <button
-                  onClick={async (e) => {
+                  onClick={(e) => {
                     e.stopPropagation();
-                    await onRefresh();
+                    void onRefresh();
                   }}
                   className={cn(
                     "p-0.5 rounded hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground transition",

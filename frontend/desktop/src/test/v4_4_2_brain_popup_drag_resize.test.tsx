@@ -36,7 +36,7 @@ describe('v4.4.2 — Brain popup: drag, resize, dismiss behavior', () => {
 
   it('renders a drag handle in the popup header', async () => {
     withQuery(<BrainIndicator />);
-    await act(async () => {
+    await act(() => {
       fireEvent.click(screen.getByTestId('titlebar-brain-button'));
     });
     expect(screen.getByTestId('brain-drag-handle')).toBeTruthy();
@@ -44,7 +44,7 @@ describe('v4.4.2 — Brain popup: drag, resize, dismiss behavior', () => {
 
   it('renders a resize handle in the bottom-right corner', async () => {
     withQuery(<BrainIndicator />);
-    await act(async () => {
+    await act(() => {
       fireEvent.click(screen.getByTestId('titlebar-brain-button'));
     });
     expect(screen.getByTestId('brain-resize-handle')).toBeTruthy();
@@ -52,11 +52,11 @@ describe('v4.4.2 — Brain popup: drag, resize, dismiss behavior', () => {
 
   it('does NOT close the popup when Escape is pressed', async () => {
     withQuery(<BrainIndicator />);
-    await act(async () => {
+    await act(() => {
       fireEvent.click(screen.getByTestId('titlebar-brain-button'));
     });
     await waitFor(() => expect(screen.getByTestId('brain-popup')).toBeTruthy());
-    await act(async () => {
+    await act(() => {
       fireEvent.keyDown(window, { key: 'Escape' });
     });
     expect(screen.queryByTestId('brain-popup')).toBeTruthy();
@@ -69,12 +69,12 @@ describe('v4.4.2 — Brain popup: drag, resize, dismiss behavior', () => {
         <BrainIndicator />
       </div>,
     );
-    await act(async () => {
+    await act(() => {
       fireEvent.click(screen.getByTestId('titlebar-brain-button'));
     });
     await waitFor(() => expect(screen.getByTestId('brain-popup')).toBeTruthy());
     // Click "outside" — a mousedown on something that's not the popup or the toggle
-    await act(async () => {
+    await act(() => {
       fireEvent.mouseDown(screen.getByTestId('outside'));
     });
     expect(screen.queryByTestId('brain-popup')).toBeTruthy();
@@ -82,7 +82,7 @@ describe('v4.4.2 — Brain popup: drag, resize, dismiss behavior', () => {
 
   it('only the × button closes the popup', async () => {
     withQuery(<BrainIndicator />);
-    await act(async () => {
+    await act(() => {
       fireEvent.click(screen.getByTestId('titlebar-brain-button'));
     });
     await waitFor(() => expect(screen.getByTestId('brain-popup')).toBeTruthy());
@@ -92,7 +92,7 @@ describe('v4.4.2 — Brain popup: drag, resize, dismiss behavior', () => {
 
   it('drags the popup when the header is grabbed and moved', async () => {
     await withQuery(<BrainIndicator />);
-    await act(async () => {
+    await act(() => {
       fireEvent.click(screen.getByTestId('titlebar-brain-button'));
     });
     const handle = screen.getByTestId('brain-drag-handle');
@@ -103,17 +103,17 @@ describe('v4.4.2 — Brain popup: drag, resize, dismiss behavior', () => {
     });
     const startLeft = parseInt(screen.getByTestId('brain-popup').style.left, 10) || 0;
     const startTop = parseInt(screen.getByTestId('brain-popup').style.top, 10) || 0;
-    await act(async () => {
+    await act(() => {
       const ev = new MouseEvent('pointerdown', { bubbles: true, clientX: 300, clientY: 100 });
       (ev as unknown as { pointerId: number }).pointerId = 1;
       handle.dispatchEvent(ev);
     });
-    await act(async () => {
+    await act(() => {
       const ev = new MouseEvent('pointermove', { bubbles: true, clientX: 100, clientY: 200 });
       (ev as unknown as { pointerId: number }).pointerId = 1;
       document.dispatchEvent(ev);
     });
-    await act(async () => {
+    await act(() => {
       const ev = new MouseEvent('pointerup', { bubbles: true, clientX: 100, clientY: 200 });
       (ev as unknown as { pointerId: number }).pointerId = 1;
       document.dispatchEvent(ev);
@@ -129,7 +129,7 @@ describe('v4.4.2 — Brain popup: drag, resize, dismiss behavior', () => {
 
   it('resizes via the bottom-right handle pointer drag', async () => {
     withQuery(<BrainIndicator />);
-    await act(async () => {
+    await act(() => {
       fireEvent.click(screen.getByTestId('titlebar-brain-button'));
     });
     const handle = screen.getByTestId('brain-resize-handle');
@@ -148,7 +148,7 @@ describe('v4.4.2 — Brain popup: drag, resize, dismiss behavior', () => {
 
   it('persists position + size to localStorage', async () => {
     withQuery(<BrainIndicator />);
-    await act(async () => {
+    await act(() => {
       fireEvent.click(screen.getByTestId('titlebar-brain-button'));
     });
     // Closing should persist current size/pos

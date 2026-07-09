@@ -126,7 +126,16 @@ async def _fetchProviderModels(provider: dict[str, object], timeoutS: float=5.0)
     return [{'id': m['id'], 'name': m['id'], 'provider': providerName, 'contextWindow': m.get('contextWindow', 128000)} for m in static]
 
 async def _aggregateModels() -> list[dict[str, object]]:
-    """Aggregate models from user-configured providers in providers.json only."""
+    """Aggregate models from providers + alias models for /v1/models.
+
+    This returns ALL models the proxy can route to:
+    1. User-configured provider models (from ``providers.json``)
+    2. Alias models (from ``config.json modelAliases``) — each alias is
+       exposed as a model entry so clients see alias names in the list.
+
+    Alias models get ``isAlias: True`` so callers can distinguish them
+    from real provider models.
+    """
     allModels: list[dict[str, object]] = []
     try:
         store = settings.providers
@@ -138,6 +147,13 @@ async def _aggregateModels() -> list[dict[str, object]]:
                 mid = m['id']
                 reasoning = m.get('reasoning', False) or bool(re.search('\\b(o1|o3|reasoner|thinking|reasoning)\\b', mid, re.IGNORECASE))
                 allModels.append({'id': mid, 'name': m.get('name', mid), 'provider': entry['name'], 'contextWindow': m.get('contextWindow', 128000), 'supportsReasoning': reasoning, 'supportsThinking': reasoning, 'isFree': m.get('free', False) or _isFreeModelId(m['id'])})
+    except Exception:
+        pass
+    # Inject alias models so /v1/models exposes them alongside provider models.
+    try:
+        from app.services.aliasMappingService import getAliasModelsForV1Models
+        aliasModels = getAliasModelsForV1Models()
+        allModels.extend(aliasModels)
     except Exception:
         pass
     seen: dict[str, dict[str, object]] = {}

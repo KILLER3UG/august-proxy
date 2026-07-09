@@ -22,13 +22,13 @@ const MODELS = { models: [], total: 0 };
 function mockFetchStandard() {
   return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
     if (url.includes('/api/config/live') && init?.method === 'PUT') {
-      return Promise.resolve({ ok: true, status: 200, json: async () => CONFIG });
+      return Promise.resolve({ ok: true, status: 200, json: () => CONFIG });
     }
     if (url.includes('/api/config/live')) {
-      return Promise.resolve({ ok: true, json: async () => CONFIG });
+      return Promise.resolve({ ok: true, json: () => CONFIG });
     }
     if (url.includes('/api/models')) {
-      return Promise.resolve({ ok: true, json: async () => MODELS });
+      return Promise.resolve({ ok: true, json: () => MODELS });
     }
     return Promise.reject(new Error('unexpected url: ' + url));
   });
