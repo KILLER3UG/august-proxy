@@ -28,7 +28,7 @@ export async function setWorkbenchGuardMode(
     body: JSON.stringify({ sessionId, guardMode }),
   });
   if (!res.ok) throw new Error(`setWorkbenchGuardMode failed: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<WorkbenchSession>;
 }
 
 export async function confirmWorkbenchMutation(
@@ -42,16 +42,16 @@ export async function confirmWorkbenchMutation(
   });
 
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    handlers.onError?.({ message: data.message || `confirmWorkbenchMutation failed: ${res.status}` });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    handlers.onError?.({ message: (data.message as string) || `confirmWorkbenchMutation failed: ${res.status}` });
     return;
   }
 
-  const data = await res.json();
+  const data = (await res.json()) as Record<string, unknown>;
   handlers.onToolResult?.({
     id: token,
     content: JSON.stringify({ type: 'mutation_confirmation_result', result: data }, null, 2),
-    isError: !!data.blocked || !!data.error,
+    isError: !!(data.blocked as boolean) || !!(data.error as boolean),
   });
   handlers.onDone?.();
 }
@@ -69,20 +69,20 @@ export async function createWorkbenchSession(
     }),
   });
   if (!res.ok) throw new Error(`createWorkbenchSession failed: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<WorkbenchSession>;
 }
 
 export async function getWorkbenchSessions(): Promise<WorkbenchSession[]> {
   const res = await fetch('/api/workbench/sessions');
   if (!res.ok) throw new Error(`getWorkbenchSessions failed: ${res.status}`);
-  const data = await res.json();
-  return data.sessions || data || [];
+  const data = (await res.json()) as { sessions?: WorkbenchSession[] } | WorkbenchSession[];
+  return (Array.isArray(data) ? data : data.sessions) || [];
 }
 
 export async function getWorkbenchSession(sessionId: string): Promise<WorkbenchSession> {
   const res = await fetch(`/api/workbench/session?sessionId=${encodeURIComponent(sessionId)}`);
   if (!res.ok) throw new Error(`getWorkbenchSession failed: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<WorkbenchSession>;
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -144,7 +144,7 @@ export async function streamWorkbenchChat(
   const contentType = res.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
     try {
-      const body = await res.json();
+      const body = (await res.json()) as { sinceSeq?: number };
       if (Number.isFinite(body?.sinceSeq)) {
         handlers.onStarted?.({ sinceSeq: body.sinceSeq });
         return { sinceSeq: body.sinceSeq };
@@ -219,7 +219,7 @@ async function readSseStream(
         if (!dataStr) continue;
         try {
           throwIfAborted(signal);
-          const payload = JSON.parse(dataStr);
+          const payload = JSON.parse(dataStr) as Record<string, unknown>;
           // Track terminal events — if the stream closes without one,
           // the response is likely incomplete (SSE connection dropped).
           if (currentEvent === 'done' || currentEvent === 'error' || currentEvent === 'aborted') {
@@ -418,7 +418,7 @@ export async function queueWorkbenchMessage(
     body: JSON.stringify({ sessionId, text, attachments: attachments ?? [] }),
   });
   if (!res.ok) throw new Error(`queueWorkbenchMessage failed: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<QueuedUserMessage>;
 }
 
 /** Cancel a single queued message before the model receives it. */
@@ -442,7 +442,7 @@ export async function getQueuedWorkbenchMessages(
     `/api/workbench/chat/queue?sessionId=${encodeURIComponent(sessionId)}`,
   );
   if (!res.ok) throw new Error(`getQueuedWorkbenchMessages failed: ${res.status}`);
-  const data = await res.json();
+  const data = (await res.json()) as { messages?: QueuedUserMessage[] };
   return Array.isArray(data?.messages) ? data.messages : [];
 }
 
@@ -489,7 +489,7 @@ function dispatchWorkbenchEvent(
     case 'toolCall': {
       let input: Record<string, unknown> = {};
       try {
-        input = typeof p?.input === 'string' ? JSON.parse(p.input) : ((p?.input as Record<string, unknown>) ?? {});
+        input = typeof p?.input === 'string' ? (JSON.parse(p.input) as Record<string, unknown>) : ((p?.input as Record<string, unknown>) ?? {});
       } catch {
         input = {};
       }
@@ -664,7 +664,7 @@ export async function approveWorkbenchPlan(sessionId: string): Promise<Workbench
     body: JSON.stringify({ sessionId }),
   });
   if (!res.ok) throw new Error(`approveWorkbenchPlan failed: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<WorkbenchSession>;
 }
 
 export async function rejectWorkbenchPlan(sessionId: string): Promise<WorkbenchSession> {
@@ -674,7 +674,7 @@ export async function rejectWorkbenchPlan(sessionId: string): Promise<WorkbenchS
     body: JSON.stringify({ sessionId }),
   });
   if (!res.ok) throw new Error(`rejectWorkbenchPlan failed: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<WorkbenchSession>;
 }
 
 export async function streamWorkbenchRevision(
@@ -767,19 +767,19 @@ export async function resetWorkbenchSession(
     }),
   });
   if (!res.ok) throw new Error(`resetWorkbenchSession failed: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<WorkbenchSession>;
 }
 
 export async function listWorkbenchAgents(activeAgentId = 'build'): Promise<WorkbenchAgentRegistry> {
   const res = await fetch(`/api/workbench/agents?active=${encodeURIComponent(activeAgentId)}`);
   if (!res.ok) throw new Error(`listWorkbenchAgents failed: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<WorkbenchAgentRegistry>;
 }
 
 export async function listWorkbenchCapabilities(): Promise<WorkbenchCapabilities> {
   const res = await fetch('/api/workbench/capabilities');
   if (!res.ok) throw new Error(`listWorkbenchCapabilities failed: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<WorkbenchCapabilities>;
 }
 
 export interface AnswerWorkbenchBtwParams {
@@ -803,7 +803,7 @@ export async function answerWorkbenchBtw(
     }),
   });
   if (!res.ok) throw new Error(`answerWorkbenchBtw failed: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<WorkbenchBtwResult>;
 }
 
 /* ── Brain orchestrator settings ──────────────────────────────────────── */
@@ -835,7 +835,7 @@ export interface BrainConfigResponse {
 export async function getBrainConfig(): Promise<BrainConfigResponse> {
   const res = await fetch('/api/brain/config');
   if (!res.ok) throw new Error(`getBrainConfig failed: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<BrainConfigResponse>;
 }
 
 export async function saveBrainConfig(updates: Partial<BrainConfig>): Promise<{ ok: boolean; config: BrainConfig; defaults: BrainConfig }> {
@@ -848,17 +848,17 @@ export async function saveBrainConfig(updates: Partial<BrainConfig>): Promise<{ 
     const text = await res.text().catch(() => '');
     throw new Error(text || `saveBrainConfig failed: ${res.status}`);
   }
-  return res.json();
+  return res.json() as Promise<{ ok: boolean; config: BrainConfig; defaults: BrainConfig }>;
 }
 
 export async function resetBrainConfig(): Promise<{ ok: boolean; config: BrainConfig; defaults: BrainConfig }> {
   const res = await fetch('/api/brain/config/reset', { method: 'POST' });
   if (!res.ok) throw new Error(`resetBrainConfig failed: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<{ ok: boolean; config: BrainConfig; defaults: BrainConfig }>;
 }
 
 export async function getBrainConfigFromSession(sessionId: string): Promise<BrainConfigResponse> {
   const res = await fetch(`/api/brain/config/from-session?sessionId=${encodeURIComponent(sessionId)}`);
   if (!res.ok) throw new Error(`getBrainConfigFromSession failed: ${res.status}`);
-  return res.json();
+  return res.json() as Promise<BrainConfigResponse>;
 }

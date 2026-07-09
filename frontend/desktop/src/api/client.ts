@@ -54,7 +54,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let code = 'unknown';
     let message = res.statusText;
     try {
-      const data = await res.json();
+      const data = (await res.json()) as { error?: { code?: string; message?: string } };
       code = data?.error?.code ?? code;
       message = data?.error?.message ?? message;
     } catch { /* keep defaults */ }
