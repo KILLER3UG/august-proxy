@@ -2672,6 +2672,15 @@ function MessageBubble({
   const [showRaw, setShowRaw] = useState(false);
   const [userMsgExpanded, setUserMsgExpanded] = useState(false);
 
+  // Hooks must run on every render path, so compute these BEFORE the early
+  // returns below (rules-of-hooks).
+  const isUser = message.role === 'user';
+  const displayBlocks = useMemo(() => {
+    if (isUser) return [];
+    return getDisplayBlocks(message.blocks, message.thinking, message.tools, message.content);
+  }, [message.blocks, message.thinking, message.tools, message.content, isUser]);
+  const showPendingThinking = !isUser && isLast && streaming && !showRaw && displayBlocks.length === 0;
+
   const startEdit = () => {
     setEditText(message.content);
     setEditing(true);
@@ -2746,14 +2755,6 @@ function MessageBubble({
       </div>
     );
   }
-
-  const isUser = message.role === 'user';
-
-  const displayBlocks = useMemo(() => {
-    if (isUser) return [];
-    return getDisplayBlocks(message.blocks, message.thinking, message.tools, message.content);
-  }, [message.blocks, message.thinking, message.tools, message.content, isUser]);
-  const showPendingThinking = !isUser && isLast && streaming && !showRaw && displayBlocks.length === 0;
 
   const handleCopy = async () => {
     const textToCopy = message.content;
