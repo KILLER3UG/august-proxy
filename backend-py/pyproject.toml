@@ -26,6 +26,9 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "httpx>=0.28.0",
     "watchfiles>=1.0.0",
+    "mypy>=1.13.0",
+    "types-requests",
+    "types-PyYAML",
 ]
 ml = [
     "sentence-transformers>=3.3.0",

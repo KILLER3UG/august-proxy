@@ -27,7 +27,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run mypy
-        run: mypy app/
+        run: python -m mypy app/
 
       - name: Run pytest
         run: pytest -q
@@ -35,9 +35,6 @@ jobs:
   frontend-tsc-eslint:
     name: Frontend — tsc + eslint
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend/desktop
     steps:
       - uses: actions/checkout@v4
 
@@ -46,13 +43,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/desktop/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
       - name: tsc --noEmit
-        run: npm run typecheck
+        run: npm run typecheck -w frontend/desktop
 
       - name: eslint
-        run: npm run lint
+        run: npm run lint -w frontend/desktop
