@@ -1,11 +1,13 @@
 # Static Analysis Errors — Inventory & Fix Guide
 
 > Generated 2026-07-09 from `master` (`2429058`).
-> Purpose: a complete, non-fixing inventory of every `mypy` (backend) and `eslint` (frontend)
-> error currently in the tree, grouped by root cause, with a concrete fix recipe for each.
-> Nothing in this document changes code — it is the map for the later clean-up effort.
+> Last updated 2026-07-09 — Phase 1 committed (`4a3e90a`), Phase 2 planned in `PHASE2_TYPE_REMEDIATION_PLAN.md`.
+>
+> **Two-phase approach:**
+> - **Phase 1** (complete, committed): get mypy green with narrow helpers + targeted `cast()`s at module boundaries. This is the standard industry pattern for incremental mypy adoption (used by Dropbox, Instagram, etc.).
+> - **Phase 2** (planned): introduce Pydantic v2 models for provider payload shapes, scoped to fields the proxy actually *reads and acts on*. Fields that are simply forwarded pass through unchanged with `extra="allow"`.
 
-Raw machine-readable captures (used to build this report) are committed alongside it:
+Raw machine-readable captures (used to build this report) are stored alongside it:
 - `docs/mypy_raw.txt` — full `mypy app/` output (8,882 lines)
 - `docs/eslint_raw.json` — full `eslint . --format json` output
 
@@ -13,21 +15,56 @@ Raw machine-readable captures (used to build this report) are committed alongsid
 
 ## 1. Summary
 
-| Layer  | Tool   | Totals                                  | Notes |
-|--------|--------|-----------------------------------------|-------|
-| Backend| mypy   | **1,870 errors** across 97 files       | Code was never mypy-clean; CI red since 07-07. |
-| Frontend| eslint | **485 errors + 666 warnings** (1,151)  | CI `lint` fails because warnings > `--max-warnings=200`. |
+| Layer  | Tool   | Before Phase 1 | After Phase 1 | Target (Phase 2) |
+|--------|--------|---------------|--------------|-----------------|
+| Backend| mypy   | **1,870 errors** across 97 files | **1,248 errors** across 92 files (−32%) | **0** |
+| Frontend| eslint | **485 errors + 666 warnings** (1,151) | Not started | **0** |
 
-Both are **pre-existing code-debt**, independent of the branch merges and of the CI
-workflow-config fixes. The workflow now *runs* these tools correctly; it is red because
-the code does not pass them.
+Phase 1 reduced the mypy count by 599 errors (−32%) across the two worst files:
+`anthropic.py` (686→184) and `providers.py` (185→88). Shared narrowing helpers
+(`app/jsonUtils.py`) were added as a consistent convention for dynamic-payload
+access.
 
-Recommended remediation order (least risky → most):
-1. Silence the unavoidable `import-not-found` / untyped-third-party noise via `mypy` config (`docs/mypy_raw.txt` shows 14 `import-not-found`, 11 `import-untyped`).
-2. Burn down the high-frequency, mechanical eslint rules (`no-unused-vars`, `camelcase`, `prefer-const`, `no-empty`, `no-useless-escape`).
-3. Burn down the `any`-family eslint rules by adding real types at the API boundary (`src/api/*`).
-4. Burn down mypy `union-attr` / `attr-defined` / `arg-type` by annotating the dynamic `object`/`Any` plumbing in `app/adapters/anthropic.py`, `app/routers/providers.py`, `app/services/workbench/workbench.py`.
-5. Finally flip CI gates to **blocking** (remove the `|| true` on-ramp) once counts are ~0.
+### Key insight from the Phase 1 experience
+
+A codebase-wide mechanical `dict[str, object]` → `dict[str, JsonValue]` swap
+**tripled** errors (tested and reverted). Reason: `object` was being used as a
+permissive escape hatch (like `Any`). `JsonValue` is a strict union, so swapping
+to it surfaced ~1,300 previously-hidden violations. **True type remediation
+requires per-file care, not a blanket type alias change.** The current
+approach — narrow helpers + boundary casts for the hot files, then migrate to
+Pydantic models — is the correct staged migration path.
+
+### Proxy-specific nuance (Claude review 2026-07-09)
+
+For a **pass-through proxy/gateway** like August, strict Pydantic models are
+the wrong default. The industry pattern for gateways (used by most
+OpenAI-compatible proxy projects) is:
+
+> **Strict on what you touch, `extra="allow"` on what you forward.**
+
+- Fields the proxy reads and acts on (model ID, max_tokens, stop sequences,
+  tool schemas, stream flag, usage stats) → strict Pydantic models.
+- Fields the proxy simply forwards to the upstream or client (message content,
+  provider-specific extensions, custom metadata) → pass through unchanged
+  as `JsonValue` / raw dict with `extra="allow"`.
+- Fields *at the boundary* (`dict[str, JsonValue]` in adapters) are normal
+  — this is what `httpx`, `requests`, and typeshed itself use. The mistake is
+  letting `JsonValue` leak *past* the boundary into business logic.
+
+This means **not all `dict[str, JsonValue]` need to become models**. Only the
+~15% of fields the proxy *intercepts or constructs* need strict types. The rest
+stay loose. This makes Phase 2 both safer and smaller than a naive
+model-everything approach.
+
+Recommended remediation order:
+1. ~~Silence import-not-found noise via mypy config~~ **DONE** (Phase 1, mypy.ini).
+2. ~~Burn down the top-3 mypy hot files~~ **DONE** (Phase 1, anthropic.py + providers.py).
+3. Introduce Pydantic v2 models for tool definitions, then routing fields, then token accounting.
+4. Burn down the `any`-family eslint rules by typing the `src/api/*` boundary.
+5. Burn down high-frequency mechanical eslint rules (`no-unused-vars`, `camelcase`, `prefer-const`, `no-empty`).
+6. Sweep remaining mypy files with the established pattern (shared helpers + selective models).
+7. Flip CI gates to **blocking** once both tools report 0 (and warnings within cap).
 
 ---
 
