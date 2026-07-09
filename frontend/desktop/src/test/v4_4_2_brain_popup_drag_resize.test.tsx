@@ -100,7 +100,7 @@ describe('v4.4.2 — Brain popup: drag, resize, dismiss behavior', () => {
     // by default; we drag LEFT+DOWN so the drag isn't clamped by viewport edges).
     const rectSpy = vi.spyOn(handle, 'getBoundingClientRect').mockReturnValue({
       x: 200, y: 80, width: 400, height: 32, top: 80, left: 200, bottom: 112, right: 600, toJSON() {},
-    } as DOMRect);
+    });
     const startLeft = parseInt(screen.getByTestId('brain-popup').style.left, 10) || 0;
     const startTop = parseInt(screen.getByTestId('brain-popup').style.top, 10) || 0;
     await act(async () => {
@@ -119,7 +119,7 @@ describe('v4.4.2 — Brain popup: drag, resize, dismiss behavior', () => {
       document.dispatchEvent(ev);
     });
     rectSpy.mockRestore();
-    const popup = screen.getByTestId('brain-popup') as HTMLElement;
+    const popup = screen.getByTestId('brain-popup');
     const afterLeft = parseInt(popup.style.left, 10);
     const afterTop = parseInt(popup.style.top, 10);
     // Drag was 200px left and 100px down — both should be reflected.
@@ -135,12 +135,12 @@ describe('v4.4.2 — Brain popup: drag, resize, dismiss behavior', () => {
     const handle = screen.getByTestId('brain-resize-handle');
     const rectSpy = vi.spyOn(handle, 'getBoundingClientRect').mockReturnValue({
       x: 600, y: 600, width: 16, height: 16, top: 600, left: 600, bottom: 616, right: 616, toJSON() {},
-    } as DOMRect);
+    });
     fireEvent.pointerDown(handle, { clientX: 608, clientY: 608, pointerId: 1 });
     fireEvent.pointerMove(document, { clientX: 800, clientY: 800, pointerId: 1 });
     fireEvent.pointerUp(document, { pointerId: 1 });
     rectSpy.mockRestore();
-    const popup = screen.getByTestId('brain-popup') as HTMLElement;
+    const popup = screen.getByTestId('brain-popup');
     // Width/height inline style must have grown
     const w = parseInt(popup.style.width, 10);
     expect(w).toBeGreaterThan(400);

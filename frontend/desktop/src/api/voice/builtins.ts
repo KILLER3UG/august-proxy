@@ -24,11 +24,7 @@ voiceCommandRegistry.register({
   slashCommand: '/model',
   category: 'core',
   description: 'Switch the model used by the current session',
-  uiCard: ModelPickerCard as unknown as React.ComponentType<{
-    sessionId: string;
-    onDismiss: () => void;
-    context?: Record<string, unknown>;
-  }>,
+  uiCard: ModelPickerCard,
   handler: ({ sessionId }) => {
     voiceCommandEvents.emit({
       type: 'push-card',
@@ -44,11 +40,7 @@ voiceCommandRegistry.register({
   slashCommand: '/calendar',
   category: 'core',
   description: 'Show a week-view of upcoming events',
-  uiCard: CalendarCard as unknown as React.ComponentType<{
-    sessionId: string;
-    onDismiss: () => void;
-    context?: Record<string, unknown>;
-  }>,
+  uiCard: CalendarCard,
   handler: ({ sessionId }) => {
     voiceCommandEvents.emit({
       type: 'push-card',

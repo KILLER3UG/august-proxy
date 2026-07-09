@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from typing import Callable
 from app.typeAliases import JsonValue
+from app.models import ToolDefinition, FunctionDefinition
 MANAGED_WEB_TOOL_NAMES: set[str] = {'WebSearch', 'WebFetch', 'web_search', 'web_fetch', 'mcp__workspace__web_search', 'mcp__workspace__web_fetch'}
 MANAGED_BASH_TOOL_NAMES: set[str] = {'bash', 'mcp__workspace__bash'}
 
@@ -182,8 +183,10 @@ def getProxyOpenaiToolDefinitionsForAnthropic() -> list[dict[str, JsonValue]]:
     """Return all proxy tool definitions in Anthropic format."""
     return [*_stubToolDefinitions(), *_stubToolDefinitions(), *_stubToolDefinitions(), *getCanonicalManagedAnthropicOpenaiWebTools()]
 
-def getToolDefinitionName(tool: dict[str, JsonValue]) -> str:
+def getToolDefinitionName(tool: ToolDefinition | dict[str, JsonValue]) -> str:
     """Extract the name from a tool definition (Anthropic or OpenAI format)."""
+    if isinstance(tool, ToolDefinition):
+        return tool.function.name
     func = tool.get('function', {})
     if isinstance(func, dict):
         name = func.get('name')

@@ -122,7 +122,7 @@ export function BackendMonitorSection() {
     const stats = useMemo(() => {
         const errors = visible.filter((e) => e.level === 'error' || e.category === 'security').length;
         const autoMem = visible.filter((e) => e.category === 'auto_memory').length;
-        const mdOf = (e: LogEvent) => (e.metadata || {}) as Record<string, unknown>;
+        const mdOf = (e: LogEvent) => (e.metadata || {});
         const tokensIn = visible.reduce((s, e) => s + Number(mdOf(e).tokensIn ?? mdOf(e).inputTokens ?? 0), 0);
         const tokensOut = visible.reduce((s, e) => s + Number(mdOf(e).tokensOut ?? mdOf(e).outputTokens ?? 0), 0);
         const schedTicks = visible.filter((e) => e.category === 'scheduler').length;

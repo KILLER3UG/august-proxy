@@ -295,7 +295,7 @@ export async function startChatStream(
       // (older backend / proxy without the JSON sinceSeq contract).
     } else {
       const reconnectSinceSeq = Number.isFinite(startResult?.sinceSeq)
-        ? startResult!.sinceSeq
+        ? startResult.sinceSeq
         : undefined;
       if (reconnectSinceSeq === undefined) {
         console.warn('[startChatStream] POST succeeded without a valid sinceSeq — reconnecting from current position as fallback');
@@ -861,7 +861,7 @@ export function applySubagentEvent(
       const inner = appendBlockEvent(current.blocks, {
         type: 'toolResult',
         id: event.id,
-        status: (event.status || (event.isError ? 'error' : 'done')) as 'done' | 'error',
+        status: (event.status || (event.isError ? 'error' : 'done')),
         summary: event.summary || resultStr.slice(0, 240),
         error: event.error || (event.isError ? resultStr.slice(0, 240) : ''),
         duration: event.duration,

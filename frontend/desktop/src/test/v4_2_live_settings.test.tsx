@@ -58,15 +58,15 @@ describe('v4.2 — LiveSettingsTab', () => {
     await waitFor(() => screen.getByTestId('live-save'));
 
     // Without editing, save should be disabled
-    const saveBtn = screen.getByTestId('live-save') as HTMLButtonElement;
+    const saveBtn = screen.getByTestId('live-save');
     expect(saveBtn.disabled).toBe(true);
 
     // Fill the tts voice field via a plain input
-    const voiceInput = screen.getByTestId('live-tts-voice-input') as HTMLInputElement;
+    const voiceInput = screen.getByTestId('live-tts-voice-input');
     fireEvent.change(voiceInput, { target: { value: 'alloy' } });
 
     await waitFor(() => {
-      expect((screen.getByTestId('live-save') as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByTestId('live-save')).disabled).toBe(false);
     });
 
     fireEvent.click(screen.getByTestId('live-save'));

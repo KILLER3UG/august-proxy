@@ -91,7 +91,7 @@ export function ComputerAccessSettings() {
   const roots = rootsQuery.data?.allowedRoots ?? [];
   const scope = rootsQuery.data?.filesystemScope ?? 'allowlist';
   const postObs = rootsQuery.data?.postObservationScreenshot !== false;
-  const apps = appsQuery.data ?? {} as AppPolicyMap;
+  const apps = appsQuery.data ?? {};
 
   const healthQuery = useQuery({ queryKey: ['host-agent', 'health'], queryFn: getHostAgentHealth, refetchInterval: 30_000 });
   const observationCount = healthQuery.data?.postObservationCount ?? 0;

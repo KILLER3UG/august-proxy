@@ -7,7 +7,9 @@ from __future__ import annotations
 import asyncio
 import uuid
 from datetime import datetime
+from typing import cast
 from app.services.memoryStore import saveMemory, getMemory, recordConfigAudit
+from app.jsonUtils import as_str, as_dict, as_list
 _AGENTSKey = 'agent_registry'
 _JOBSKey = 'agent_jobs'
 _MAXAgentDepth = 4
@@ -16,7 +18,8 @@ def _now() -> str:
     return datetime.utcnow().isoformat() + 'Z'
 
 def listAgents() -> list[dict[str, object]]:
-    return getMemory(_AGENTSKey) or []
+    raw = getMemory(_AGENTSKey) or []
+    return cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
 
 def getAgent(agentId: str) -> dict[str, object] | None:
     agents = listAgents()
@@ -147,13 +150,15 @@ def deriveChildPermissions(parentId: str, childId: str) -> list[str]:
     return sorted(childEff & parentEff)
 
 def listJobs(agentId: str='') -> list[dict[str, object]]:
-    jobs = getMemory(_JOBSKey) or []
+    raw = getMemory(_JOBSKey) or []
+    jobs = cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
     if agentId:
         return [j for j in jobs if j.get('agentId') == agentId]
     return jobs
 
 def createJob(agentId: str, goal: str, context: str='') -> dict[str, object]:
-    jobs = getMemory(_JOBSKey) or []
+    raw = getMemory(_JOBSKey) or []
+    jobs: list[dict[str, object]] = cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
     jobId = f'job_{uuid.uuid4().hex[:8]}'
     job = {'id': jobId, 'agentId': agentId, 'goal': goal, 'context': context, 'status': 'pending', 'createdAt': _now()}
     jobs.append(job)
@@ -161,7 +166,8 @@ def createJob(agentId: str, goal: str, context: str='') -> dict[str, object]:
     return job
 
 def updateJob(jobId: str, updates: dict[str, object]) -> dict[str, object] | None:
-    jobs = getMemory(_JOBSKey) or []
+    raw = getMemory(_JOBSKey) or []
+    jobs: list[dict[str, object]] = cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
     for j in jobs:
         if j['id'] == jobId:
             j.update(updates)

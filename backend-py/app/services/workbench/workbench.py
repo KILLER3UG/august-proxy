@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncIterator, Callable
+from app.models import AnthropicRequest, ChatCompletionRequest, ChatMessage, ToolDefinition, FunctionDefinition, Usage
 logger = logging.getLogger('workbench')
 MAX_MANAGED_TOOL_ROUNDS = 10
 WORKBENCH_TOKEN_BUDGET = 2000000
@@ -1123,7 +1124,9 @@ async def _callAnthropicWorkbench(messages: list[dict[str, object]], systemText:
         return {'error': 'API key not configured'}
     from app.adapters.anthropic import translateMessagesToAnthropic
     anthropicMessages = translateMessagesToAnthropic(messages)
-    body = buildAnthropicUpstreamRequest({'messages': anthropicMessages, 'max_tokens': 8192}, model, [{'type': 'text', 'text': systemText}])
+    req = AnthropicRequest(model=model, max_tokens=8192)
+    body = buildAnthropicUpstreamRequest(req, model, [{'type': 'text', 'text': systemText}])
+    body['messages'] = anthropicMessages
     if tools:
         body['tools'] = tools
     thinkingBudget = effortToThinkingBudget(effort)
@@ -1222,7 +1225,10 @@ async def _callOpenaiWorkbench(messages: list[dict[str, object]], systemText: st
     from app.adapters.anthropic import translateMessages
     openaiMessages = translateMessages(messages)
     openaiMessages.insert(0, {'role': 'system', 'content': systemText})
-    body: dict[str, object] = {'model': model, 'messages': openaiMessages, 'max_tokens': 8192}
+    req = ChatCompletionRequest(model=model)
+    body: dict[str, object] = req.model_dump()  # type: ignore[assignment]
+    body['messages'] = openaiMessages
+    body['max_tokens'] = 8192
     if tools:
         body['tools'] = tools
     reasoning = effortToOpenaiReasoningEffort(effort)

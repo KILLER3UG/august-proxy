@@ -107,7 +107,7 @@ export function LiveSettingsTab() {
 
   /** Models filtered by the currently-selected provider for a given group. */
   const getModelOptions = (providerKey: keyof LiveConfig) => {
-    const selectedProvider = active[providerKey === 'sttModel' ? 'sttProvider' : 'ttsProvider'] as string;
+    const selectedProvider = active[providerKey === 'sttModel' ? 'sttProvider' : 'ttsProvider'];
     if (!selectedProvider) return [{ value: '', label: '(use provider default)' }];
 
     const filtered = models.filter(
@@ -148,7 +148,7 @@ export function LiveSettingsTab() {
   };
 
   const handleFieldChange = (key: keyof LiveConfig, value: string) => {
-    const next = { ...active, [key]: value } as LiveConfig;
+    const next = { ...active, [key]: value };
     // If provider changed, clear the model selection
     if (key === 'sttProvider') next.sttModel = '';
     if (key === 'ttsProvider') next.ttsModel = '';
@@ -208,7 +208,7 @@ export function LiveSettingsTab() {
                     type="text"
                     value={active[key] ?? ''}
                     onChange={(e) =>
-                      setEditCfg({ ...active, [key]: e.target.value } as LiveConfig)
+                      setEditCfg({ ...active, [key]: e.target.value })
                     }
                     placeholder="(use browser default)"
                     data-testid={`${testid}-input`}

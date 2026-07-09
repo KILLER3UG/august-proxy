@@ -59,7 +59,7 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
 
       {!diff && query.error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-destructive">
-          {(query.error as Error).message}
+          {(query.error).message}
         </div>
       )}
 

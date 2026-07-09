@@ -113,7 +113,7 @@ export type {
 } from '@/types/chat';
 
 let visibleSessionId: string | null = null;
-let visibleGeneration = 0;
+const visibleGeneration = 0;
 
 const STREAM_UPDATE_INTERVAL_MS = 24;
 
@@ -635,7 +635,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const scrollToBottomSmooth = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const scrollable = el.closest(".overflow-y-auto") as HTMLElement | null;
+    const scrollable = el.closest(".overflow-y-auto");
     const target = scrollable ?? el;
     target.scrollTo({ top: target.scrollHeight, behavior: "smooth" });
   }, []);
@@ -644,7 +644,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const scrollable = el.closest(".overflow-y-auto") as HTMLElement | null ?? el;
+    const scrollable = el.closest(".overflow-y-auto") ?? el;
     const check = () => {
       const atBottom = scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight < 1;
       setScrolledFromBottom(!atBottom);
@@ -661,7 +661,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const scrollToBottomImmediate = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const scrollable = el.closest('.overflow-y-auto') as HTMLElement | null;
+    const scrollable = el.closest('.overflow-y-auto');
     const target = scrollable ?? el;
     target.scrollTop = target.scrollHeight;
   }, []);
@@ -879,7 +879,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           if (attachments.length > 0) {
             const filePaths = attachments
               .map(a => a.path || a.name)
-              .filter(Boolean) as string[];
+              .filter(Boolean);
             setExamSeed({ topic: seed, files: filePaths });
           } else {
             setExamSeed({ topic: seed, files: [] });
@@ -970,7 +970,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       getQueuedWorkbenchMessages(sessionId)
         .then((entries) => setQueuedMessages(sessionId, entries))
         .catch((err) => {
-          // eslint-disable-next-line no-console
+           
           console.warn('[ChatThread] failed to hydrate queue', err);
         });
     }
@@ -1284,12 +1284,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       chatRuntime.setTransport(turn.turnId, 'http');
       const startResult = await run(wrappedHandlers as any, abortController.signal);
       const wbSessionId = targetWorkbenchSessionId || workbenchSession?.id || sessionId;
-      if (startResult && Number.isFinite((startResult as any).sinceSeq)) {
+      if (startResult && Number.isFinite((startResult).sinceSeq)) {
         await streamWorkbenchReconnect(
           wbSessionId,
-          wrappedHandlers as any,
+          wrappedHandlers,
           abortController.signal,
-          (startResult as any).sinceSeq
+          (startResult).sinceSeq
         );
       }
       finalize(abortController.signal.aborted ? 'aborted' : 'done');
@@ -1465,7 +1465,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             setMessages: setMessages as unknown as Dispatch<SetStateAction<ChatMessageLite[]>>,
           });
           void Promise.resolve(handlerResult).catch(err => {
-            // eslint-disable-next-line no-console
+             
             console.error('[slash] handler threw', err);
             toast.error('Command failed');
           });
@@ -1477,7 +1477,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           // /btw with an arg), the handler should NOT clear the composer.
           return;
         } catch (err) {
-          // eslint-disable-next-line no-console
+           
           console.error('[slash] handler threw synchronously', err);
           toast.error('Command failed');
           return;
@@ -1505,7 +1505,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         setShowCommandsDropdown(false);
         clearComposerDraft(sessionId);
       } catch (err) {
-        // eslint-disable-next-line no-console
+         
         console.error('[send] queueWorkbenchMessage failed', err);
         toast.error('Could not queue message');
       }
@@ -1761,7 +1761,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           });
           // Fire-and-forget async handlers.
           void Promise.resolve(handlerResult).catch(err => {
-            // eslint-disable-next-line no-console
+             
             console.error('[voice] handler threw', err);
             toast.error('Voice command failed');
           });
@@ -1769,7 +1769,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           setInput(prev => prev.replace(finalTranscript, '').trim());
           return;
         } catch (err) {
-          // eslint-disable-next-line no-console
+           
           console.error('[voice] handler threw synchronously', err);
           toast.error('Voice command failed');
         }
@@ -1948,7 +1948,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     try {
                       await dequeueWorkbenchMessage(sessionId, q.id);
                     } catch (err) {
-                      // eslint-disable-next-line no-console
+                       
                       console.error('[dequeue] failed', err);
                       toast.error('Could not cancel queued message');
                     }
@@ -2213,7 +2213,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     <div className="flex h-full min-h-0 relative w-full">
       <ChatCheckpoints
         messages={messages}
-        scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
+        scrollRef={scrollRef}
       />
       <div className="flex-1 flex flex-col min-w-0 bg-background h-full overflow-hidden relative">
         <ApprovalBanner sessionId={workbenchSession?.id ?? null} />
@@ -3027,12 +3027,12 @@ function MessageBubble({
                           block.tool.name === 'workbench_run_team';
                         const promptEntries = isSubagentCall && block.tool.id && subagentPrompts
                           ? Array.from(subagentPrompts.entries())
-                              .filter(([k]) => k === block.tool!.id)
+                              .filter(([k]) => k === block.tool.id)
                               .map(([, v]) => v)
                           : [];
                         const subagentContainers = isSubagentCall && block.tool.id && subagentBlocks
                           ? Array.from(subagentBlocks.values())
-                              .filter((s) => s.parentToolId === block.tool!.id)
+                              .filter((s) => s.parentToolId === block.tool.id)
                               .sort((a, b) => a.startedAt - b.startedAt)
                           : [];
                         return (
@@ -3418,7 +3418,7 @@ function ChatCheckpoints({ messages, scrollRef }: {
     if (!container || userMessages.length === 0) return;
     // The scrollable ancestor is the screen-edge scroll container in
     // ChatLayout, not the ref'd div (which is no longer scrollable).
-    const scrollable = container.closest('.overflow-y-auto') as HTMLElement | null ?? container;
+    const scrollable = container.closest('.overflow-y-auto') ?? container;
     updatePositions();
     const onScroll = () => updatePositions();
     const onResize = () => updatePositions();
@@ -4006,14 +4006,14 @@ export function parseSequentialText(text: string): { type: 'thinking' | 'finalOu
       }
     }
 
-    const openMarkerLength = selectedMarker!.open.length;
+    const openMarkerLength = selectedMarker.open.length;
     const contentStartIdx = earliestOpenIdx + openMarkerLength;
-    const closeIdx = text.indexOf(selectedMarker!.close, contentStartIdx);
+    const closeIdx = text.indexOf(selectedMarker.close, contentStartIdx);
 
     if (closeIdx !== -1) {
       const thinkingContent = text.slice(contentStartIdx, closeIdx);
       blocks.push({ type: 'thinking', content: thinkingContent });
-      currentIndex = closeIdx + selectedMarker!.close.length;
+      currentIndex = closeIdx + selectedMarker.close.length;
     } else {
       const thinkingContent = text.slice(contentStartIdx);
       blocks.push({ type: 'thinking', content: thinkingContent });

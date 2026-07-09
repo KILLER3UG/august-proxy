@@ -234,7 +234,7 @@ export function Markdown({ content }: { content: string }) {
     if (!content) return '';
     // v1.1: convert common LaTeX math to unicode before marked parsing
     const processed = convertLatexToUnicode(content);
-    return marked.parse(processed, { async: false }) as string;
+    return marked.parse(processed, { async: false });
   }, [content]);
 
   // Copy button handler
@@ -284,5 +284,5 @@ export function renderMarkdown(content: string): string {
   if (!content) return '';
   // v1.1: convert common LaTeX math to unicode before marked parsing
   const processed = convertLatexToUnicode(content);
-  return marked.parse(processed, { async: false }) as string;
+  return marked.parse(processed, { async: false });
 }

@@ -118,7 +118,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   const pendingConfirmations = new Map<string, { message?: string; detail?: string; confirmationToken?: string }>();
   let streamBlocks: MessageBlock[] = [];
   let changedFiles: GitDiffResult | null = null;
-  let beforeMutationCount = initialMutationCount ?? 0;
+  const beforeMutationCount = initialMutationCount ?? 0;
   let latestMutationCount = 0;
   let latestWorkbenchTodos: NonNullable<ChatMessage['todos']> = [];
   const thinkingStart = Date.now();
@@ -285,7 +285,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       // events. We don't need to act on it here (the subscriber is
       // independent), but we expose it for debugging via a console hint.
       if (Number.isFinite(sinceSeq)) {
-        // eslint-disable-next-line no-console
+         
         console.debug('[makeStreamHandlers] chat turn started at seq', sinceSeq);
       }
     },

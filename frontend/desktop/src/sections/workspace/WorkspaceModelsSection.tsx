@@ -1298,7 +1298,7 @@ function ProviderEditor({
     if (field === 'name') setName(value);
     if (field === 'baseUrl') setBaseUrl(value);
     if (field === 'apiKey') setApiKey(value);
-    update.mutate({ [field]: value } as never);
+    update.mutate({ [field]: value });
   }
 
   return (

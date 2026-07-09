@@ -95,7 +95,7 @@ describe('streamWorkbenchReconnect terminal-event detection', () => {
     const onError = vi.fn();
     await streamWorkbenchReconnect(
       'wb_test',
-      { onDone, onError } as any,
+      { onDone, onError },
       undefined,
       0,
       { maxRetries: 3 },
@@ -115,7 +115,7 @@ describe('streamWorkbenchReconnect terminal-event detection', () => {
     const onError = vi.fn();
     await streamWorkbenchReconnect(
       'wb_test',
-      { onDone, onError } as any,
+      { onDone, onError },
       undefined,
       0,
       { maxRetries: 3 },
@@ -133,7 +133,7 @@ describe('streamWorkbenchReconnect terminal-event detection', () => {
     const onDone = vi.fn();
     await streamWorkbenchReconnect(
       'wb_test',
-      { onDone } as any,
+      { onDone },
       undefined,
       0,
       { maxRetries: 3 },
@@ -151,7 +151,7 @@ describe('streamWorkbenchReconnect terminal-event detection', () => {
     const onError = vi.fn();
     await streamWorkbenchReconnect(
       'wb_test',
-      { onDone, onError } as any,
+      { onDone, onError },
       undefined,
       0,
       { maxRetries: 3 },
@@ -186,7 +186,7 @@ describe('streamWorkbenchReconnect retries on premature drop', () => {
     const onError = vi.fn();
     await streamWorkbenchReconnect(
       'wb_test',
-      { onDone, onError } as any,
+      { onDone, onError },
       undefined,
       0,
       { maxRetries: 3 },
@@ -211,7 +211,7 @@ describe('streamWorkbenchReconnect retries on premature drop', () => {
     // retry waits ~1s. Keep budget=1 → one retry, then surface error.
     await streamWorkbenchReconnect(
       'wb_test',
-      { onDone, onError } as any,
+      { onDone, onError },
       undefined,
       0,
       { maxRetries: 1 },
@@ -237,7 +237,7 @@ describe('streamWorkbenchReconnect retries on premature drop', () => {
     const onError = vi.fn();
     await streamWorkbenchReconnect(
       'wb_test',
-      { onDone, onError } as any,
+      { onDone, onError },
       undefined,
       0,
       { maxRetries: Infinity },

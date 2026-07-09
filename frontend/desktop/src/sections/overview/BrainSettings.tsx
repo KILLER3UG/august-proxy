@@ -91,7 +91,7 @@ export function BrainSettings() {
         className="p-6 text-sm text-destructive flex items-center gap-3"
         data-testid="brain-settings-error"
       >
-        <span>Could not load brain config: {(error as Error)?.message || 'unknown error'}</span>
+        <span>Could not load brain config: {(error)?.message || 'unknown error'}</span>
         <Button size="sm" variant="outline" onClick={() => refetch()}>
           <RotateCcw className="mr-1 h-3.5 w-3.5" />
           Retry

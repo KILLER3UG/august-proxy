@@ -290,7 +290,7 @@ export function MergedMcpSkills() {
       const res = await api.get<ServiceConnectionsResponse>(
         "/api/service-connections",
       );
-      return Object.values(res.connections || {}) as ServiceConnection[];
+      return Object.values(res.connections || {});
     },
     refetchInterval: 15_000,
   });

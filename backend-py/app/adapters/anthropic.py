@@ -26,6 +26,7 @@ from app.adapters.base import streamSse, buildHeaders
 from app.providers.clients.base import BaseProviderClient
 from app.adapters.proxyTools import getProxyOpenaiToolDefinitionsForAnthropic, getCanonicalManagedAnthropicWebTools, appendMissingAnthropicTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, dedupeAndCanonicalizeAnthropicTools, sanitizeAnthropicToolDefinition, getManagedAnthropicWebToolDefinitions, openaiToAnthropicToolDefinition, anthropicToOpenaiToolDefinition, isProxyManagedLocalToolName, isBrowserAutomationToolName, buildClientToolGuidance
 from app.adapters.toolClassification import classifyAnthropicToolUses, classifyOpenaiToolCalls, getToolNameFromAnthropicTool, getToolNameFromOpenaiTool
+from app.models import AnthropicRequest, AnthropicMessage, AnthropicResponse, AnthropicUsage, ContentBlock, ToolUseBlock, ToolResultBlock, ChatCompletionRequest, ChatMessage, ToolCall, Usage, StreamChunk
 from app.adapters.caseConverters import snakeToCamel, camelToSnake
 from app.providers import resolver as providerResolver
 from app.providers.modelResolver import resolve, resolveOrFallback
@@ -165,9 +166,17 @@ def appendTextToSystemBlocks(blocks: list[dict[str, JsonValue]] | None, text: st
         blocks.append({'type': 'text', 'text': text})
     return blocks
 
-def deriveSessionIdFromAnthropic(body: dict[str, JsonValue] | None, request: object | None=None) -> str:
+def deriveSessionIdFromAnthropic(body: AnthropicRequest | dict[str, JsonValue] | None, request: object | None=None) -> str:
     """Extract a session identifier from an Anthropic Messages body."""
-    if body and isinstance(body, dict):
+    if isinstance(body, AnthropicRequest):
+        from_model = body.sessionId or body.session_id
+        if from_model:
+            return str(from_model)
+        metadata = as_dict(body.metadata, {})
+        from_meta = metadata.get('sessionId') or metadata.get('session_id')
+        if from_meta:
+            return str(from_meta)
+    elif body and isinstance(body, dict):
         fromBody = body.get('sessionId') or body.get('session_id') or body.get('metadata', {}).get('sessionId') or body.get('metadata', {}).get('session_id')
         if fromBody:
             return str(fromBody)
@@ -305,9 +314,28 @@ def repairManagedWebToolResults(messages: list[dict[str, JsonValue]], managedLoc
     """
     return (messages, False)
 
-def buildOpenaiRequest(body: dict[str, JsonValue], model: str, system: list[dict[str, JsonValue]] | None=None) -> dict[str, JsonValue]:
+def buildOpenaiRequest(body: AnthropicRequest | dict[str, JsonValue], model: str, system: list[dict[str, JsonValue]] | None=None) -> dict[str, JsonValue]:
     """Build an OpenAI-format request from an Anthropic Messages body."""
-    openaiBody: dict[str, JsonValue] = {'model': model, 'messages': translateMessages(body.get('messages', []), system)}
+    if isinstance(body, AnthropicRequest):
+        openaiBody: dict[str, JsonValue] = {'model': model, 'messages': translateMessages(as_list(body.messages, []), system)}
+        if body.max_tokens is not None:
+            openaiBody['max_tokens'] = body.max_tokens
+        if body.temperature is not None:
+            openaiBody['temperature'] = body.temperature
+        if body.top_p is not None:
+            openaiBody['top_p'] = body.top_p
+        if body.top_k is not None:
+            openaiBody['top_k'] = body.top_k
+        if body.stop_sequences is not None:
+            openaiBody['stop'] = body.stop_sequences
+        thinking = as_dict(body.thinking, {})
+        if thinking:
+            budget = as_int(thinking.get('budget_tokens'), 0)
+            if budget > 0:
+                openaiBody['reasoning_effort'] = _budgetToEffort(budget)
+        return openaiBody
+    # Dict fallback for backward compatibility
+    openaiBody = {'model': model, 'messages': translateMessages(body.get('messages', []), system)}
     if 'max_tokens' in body or 'max_output_tokens' in body:
         openaiBody['max_tokens'] = body.get('max_tokens') or body.get('max_output_tokens', 4096)
     if 'temperature' in body:
@@ -333,9 +361,22 @@ def _budgetToEffort(budget: int) -> str:
         return 'medium'
     return 'low'
 
-def buildAnthropicUpstreamRequest(body: dict[str, JsonValue], model: str, system: list[dict[str, JsonValue]] | None=None) -> dict[str, JsonValue]:
+def buildAnthropicUpstreamRequest(body: AnthropicRequest | dict[str, JsonValue], model: str, system: list[dict[str, JsonValue]] | None=None) -> dict[str, JsonValue]:
     """Build an Anthropic-format request for native upstream calls."""
-    anthropicBody: dict[str, JsonValue] = {'model': model, 'messages': body.get('messages', [])}
+    if isinstance(body, AnthropicRequest):
+        anthropicBody: dict[str, JsonValue] = {'model': model, 'messages': as_list(body.messages, [])}
+        anthropicBody['max_tokens'] = body.max_tokens or 8192
+        for key in ('temperature', 'top_p', 'top_k', 'stop_sequences', 'metadata'):
+            val = getattr(body, key, None)
+            if val is not None:
+                anthropicBody[key] = val
+        thinking = as_dict(body.thinking, {})
+        if thinking:
+            anthropicBody['thinking'] = thinking
+        if system:
+            anthropicBody['system'] = system
+        return anthropicBody
+    anthropicBody = {'model': model, 'messages': body.get('messages', [])}
     if 'max_tokens' in body or 'max_output_tokens' in body:
         anthropicBody['max_tokens'] = body.get('max_tokens') or body.get('max_output_tokens', 4096)
     else:
@@ -385,7 +426,13 @@ def sendSimulatedAnthropicStream(response: dict[str, JsonValue]) -> list[str]:
     return events
 
 def createAnthropicNativeStreamState() -> dict[str, JsonValue]:
-    """Create state for tracking an Anthropic native stream."""
+    """Create state for tracking an Anthropic native stream.
+
+    Returns a mutable dict used as an accumulator. The keys are:
+    message_id, model, role, content_blocks, current_index,
+    stop_reason, input_tokens, output_tokens, _started, _text_block_started,
+    _reasoning_block_started.
+    """
     return {'message_id': '', 'model': '', 'role': 'assistant', 'content_blocks': [], 'current_index': -1, 'stop_reason': None, 'input_tokens': 0, 'output_tokens': 0}
 
 def getClientAnthropicIndex(blockType: str, currentIndex: int) -> int:
@@ -596,21 +643,28 @@ async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], 
             toolUseId = as_str(tu.get('id'), f'toolu_{uuid.uuid4().hex[:16]}')
             try:
                 result = await executeManagedProxyTool(toolName, toolInput, workspacePath, parentSignal=parentSignal)
-                toolResults.append({'type': 'tool_result', 'tool_use_id': toolUseId, 'content': formatManagedToolResult(toolName, result)})
+                tr = ToolResultBlock(tool_use_id=toolUseId, content=formatManagedToolResult(toolName, result))
+                toolResults.append(tr.model_dump())  # type: ignore[misc]
             except Exception as exc:
-                toolResults.append({'type': 'tool_result', 'tool_use_id': toolUseId, 'content': f'Error: {exc}', 'is_error': True})
+                tr = ToolResultBlock(tool_use_id=toolUseId, content=f'Error: {exc}', is_error=True)
+                toolResults.append(tr.model_dump())  # type: ignore[misc]
         currentMessages.append(assistantMsg)
         currentMessages.extend(toolResults)
         if classification['has_client_or_unknown']:
             break
     return (currentMessages, finalUsage)
 
-async def handleMessages(body: dict[str, JsonValue], request: object=None) -> tuple[dict[str, JsonValue] | AsyncIterator[str], dict[str, str] | None]:
+async def handleMessages(body: AnthropicRequest | dict[str, JsonValue], request: object=None) -> tuple[dict[str, JsonValue] | AsyncIterator[str], dict[str, str] | None]:
     """Handle a POST /v1/messages request.
 
     Returns a tuple of (response_or_stream, response_headers).
     """
-    model = body.get('model', 'claude-sonnet-4-7')
+    if isinstance(body, AnthropicRequest):
+        model: str = body.model
+        raw_body: dict[str, JsonValue] = body.model_dump()  # type: ignore[assignment]
+    else:
+        model = body.get('model', 'claude-sonnet-4-7')
+        raw_body = body
     resolvedModel = resolveClaudePublicModelAlias(model)
     try:
         resolved = resolve(resolvedModel, default_alias='claude-sonnet-4-7')
@@ -634,9 +688,9 @@ async def handleMessages(body: dict[str, JsonValue], request: object=None) -> tu
         upstreamUrl = f'{baseUrl}/messages'
     else:
         upstreamUrl = f'{baseUrl}/chat/completions'
-    clientWantsStream = body.get('stream', False)
-    systemBlocks = buildAnthropicSystemBlocks(body.get('system', []))
-    clientTools = body.get('tools', [])
+    clientWantsStream = body.stream if isinstance(body, AnthropicRequest) else body.get('stream', False)
+    systemBlocks = buildAnthropicSystemBlocks(raw_body.get('system', []))
+    clientTools = raw_body.get('tools', [])
     managedWebTools = getManagedAnthropicWebToolDefinitions()
     knownTools = dedupeAndCanonicalizeAnthropicTools(clientTools + managedWebTools)
     managedLocalToolNames: set[str] = set()
@@ -654,15 +708,15 @@ async def handleMessages(body: dict[str, JsonValue], request: object=None) -> tu
             managedLocalToolNames.add(name)
         else:
             clientToolNames.add(name)
-    sessionId = deriveSessionIdFromAnthropic(body, request)
+    sessionId = deriveSessionIdFromAnthropic(raw_body, request)
     if clientWantsStream:
         if isAnthropicUpstream:
-            stream = _streamAnthropicNative(upstreamUrl, headers, body, resolvedModel, systemBlocks, knownTools, managedLocalToolNames, clientToolNames)
+            stream = _streamAnthropicNative(upstreamUrl, headers, raw_body, resolvedModel, systemBlocks, knownTools, managedLocalToolNames, clientToolNames)
         else:
-            stream = _streamOpenaiAsAnthropic(upstreamUrl, headers, body, resolvedModel, systemBlocks, knownTools, managedLocalToolNames, clientToolNames)
+            stream = _streamOpenaiAsAnthropic(upstreamUrl, headers, raw_body, resolvedModel, systemBlocks, knownTools, managedLocalToolNames, clientToolNames)
         return (stream, {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive'})
     else:
-        return await _handleMessagesNonStreaming(upstreamUrl, headers, body, resolvedModel, isAnthropicUpstream, systemBlocks, knownTools, managedLocalToolNames, clientToolNames)
+        return await _handleMessagesNonStreaming(upstreamUrl, headers, raw_body, resolvedModel, isAnthropicUpstream, systemBlocks, knownTools, managedLocalToolNames, clientToolNames)
 
 async def _handleMessagesNonStreaming(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, JsonValue], model: str, isAnthropicUpstream: bool, systemBlocks: list[dict[str, JsonValue]], knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str]) -> tuple[dict[str, JsonValue], None]:
     """Non-streaming path for /v1/messages."""
@@ -681,7 +735,8 @@ async def _handleMessagesNonStreaming(upstreamUrl: str, upstreamHeaders: dict[st
         if toolUses:
             updatedMessages, usage = await resolveManagedAnthropicToolUses(messages, systemBlocks, model, upstreamUrl, upstreamHeaders, True, knownTools, managedLocalToolNames, clientToolNames)
             lastMsg = updatedMessages[-1] if updatedMessages else {}
-            return ({'id': responseBody.get('id', f'msg_{uuid.uuid4().hex[:16]}'), 'type': 'message', 'role': 'assistant', 'content': lastMsg.get('content', []), 'model': model, 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': usage or {'input_tokens': 0, 'output_tokens': 0}}, None)
+            resp_usage = AnthropicUsage(input_tokens=as_int(usage.get('input_tokens', 0) if usage else 0), output_tokens=as_int(usage.get('output_tokens', 0) if usage else 0))
+            return ({'id': responseBody.get('id', f'msg_{uuid.uuid4().hex[:16]}'), 'type': 'message', 'role': 'assistant', 'content': lastMsg.get('content', []), 'model': model, 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': resp_usage.model_dump()}, None)
         return (responseBody, None)
     else:
         openaiBody = buildOpenaiRequest(body, model, systemBlocks)
@@ -759,9 +814,11 @@ async def _streamAnthropicNative(upstreamUrl: str, upstreamHeaders: dict[str, st
                     toolUseId = as_str(tu.get('id'), f'toolu_{uuid.uuid4().hex[:16]}')
                     try:
                         result = await executeManagedProxyTool(toolName, toolInput)
-                        currentMessages.append({'type': 'tool_result', 'tool_use_id': toolUseId, 'content': formatManagedToolResult(toolName, result)})
+                        tr = ToolResultBlock(tool_use_id=toolUseId, content=formatManagedToolResult(toolName, result))
+                        currentMessages.append(tr.model_dump())  # type: ignore[misc]
                     except Exception as exc:
-                        currentMessages.append({'type': 'tool_result', 'tool_use_id': toolUseId, 'content': f'Error: {exc}', 'is_error': True})
+                        tr = ToolResultBlock(tool_use_id=toolUseId, content=f'Error: {exc}', is_error=True)
+                        currentMessages.append(tr.model_dump())  # type: ignore[misc]
                 continue
         break
     yield writeAnthropicSseData('message_stop', {'type': 'message_stop'})
@@ -819,9 +876,11 @@ async def _streamOpenaiAsAnthropic(upstreamUrl: str, upstreamHeaders: dict[str, 
                     tuId = as_str(tu.get('id'), '')
                     try:
                         result = await executeManagedProxyTool(tuName, tuInput)
-                        currentMessages.append({'type': 'tool_result', 'tool_use_id': tuId, 'content': formatManagedToolResult(tuName, result)})
+                        tr = ToolResultBlock(tool_use_id=tuId, content=formatManagedToolResult(tuName, result))
+                        currentMessages.append(tr.model_dump())  # type: ignore[misc]
                     except Exception as exc:
-                        currentMessages.append({'type': 'tool_result', 'tool_use_id': tuId, 'content': f'Error: {exc}', 'is_error': True})
+                        tr = ToolResultBlock(tool_use_id=tuId, content=f'Error: {exc}', is_error=True)
+                        currentMessages.append(tr.model_dump())  # type: ignore[misc]
                 continue
         break
     yield writeAnthropicSseData('message_stop', {'type': 'message_stop'})
@@ -830,7 +889,8 @@ def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, JsonValue], mo
     """Convert an OpenAI Chat Completions response to Anthropic Messages format."""
     choices = as_list(openaiResponse.get('choices'), [])
     if not choices:
-        return {'id': f'msg_{uuid.uuid4().hex[:16]}', 'type': 'message', 'role': 'assistant', 'content': [], 'model': model, 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}
+        resp = AnthropicResponse(id=f'msg_{uuid.uuid4().hex[:16]}', model=model)
+        return resp.model_dump()  # type: ignore[return-value]
     choice = choices[0]
     message = as_dict(choice, {})
     contentList: list[dict[str, JsonValue]] = []
@@ -852,7 +912,14 @@ def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, JsonValue], mo
     finishReason = as_str(choice.get('finish_reason'), 'stop')
     stopReasonMap = {'stop': 'end_turn', 'tool_calls': 'tool_use', 'length': 'max_tokens', 'content_filter': 'content_filter'}
     usage = as_dict(openaiResponse.get('usage'), {})
-    return {'id': openaiResponse.get('id', f'msg_{uuid.uuid4().hex[:16]}'), 'type': 'message', 'role': 'assistant', 'content': contentList, 'model': as_str(openaiResponse.get('model'), model), 'stop_reason': stopReasonMap.get(finishReason, 'end_turn'), 'stop_sequence': None, 'usage': {'input_tokens': as_int(usage.get('prompt_tokens'), 0), 'output_tokens': as_int(usage.get('completion_tokens'), 0)}}
+    resp = AnthropicResponse(
+        id=openaiResponse.get('id', f'msg_{uuid.uuid4().hex[:16]}'),
+        model=as_str(openaiResponse.get('model'), model),
+        content=contentList,
+        stop_reason=stopReasonMap.get(finishReason, 'end_turn'),
+        usage=AnthropicUsage(input_tokens=as_int(usage.get('prompt_tokens'), 0), output_tokens=as_int(usage.get('completion_tokens'), 0)),
+    )
+    return resp.model_dump()  # type: ignore[return-value]
 
 async def handleCountTokens(body: dict[str, JsonValue], request: object=None) -> dict[str, JsonValue]:
     """Handle a POST /v1/messages/count_tokens request."""

@@ -33,7 +33,7 @@ export function useSettingsAdvancedPreference() {
       setShowAdvancedState((prev) => {
         const value =
           typeof next === 'function'
-            ? (next as (prev: AdvancedPreference) => AdvancedPreference)(prev)
+            ? (next)(prev)
             : next;
         savePreference(value);
         return value;
