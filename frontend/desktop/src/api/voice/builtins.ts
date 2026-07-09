@@ -166,3 +166,14 @@ voiceCommandRegistry.register({
     voiceCommandEvents.emit({ type: 'open-exam', topic: args });
   },
 });
+
+voiceCommandRegistry.register({
+  id: 'init-aug',
+  triggers: ['init', 'initialize', 'set up project', 'aug init', 'create aug md'],
+  slashCommand: '/init',
+  category: 'core',
+  description: 'Generate or refine AUG.md from workspace analysis',
+  handler: ({ args }) => {
+    voiceCommandEvents.emit({ type: 'init-aug', workspacePath: args || undefined });
+  },
+});

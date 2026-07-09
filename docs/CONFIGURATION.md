@@ -307,3 +307,85 @@ All persistent state lives there:
 | `skills/` | Agent-authored skills + `.usage.json` + `.archive/` |
 | `browser_screenshots/` | Browser tool screenshots |
 | `request-log.json` | Tracked request log (inspector) |
+
+## AUG.md (project instructions)
+
+`AUG.md` is the project instruction file for the August Proxy workbench — the
+equivalent of Claude Code's `CLAUDE.md`. It is plain markdown that teaches the
+agent your project's build commands, test commands, code conventions, and
+architecture so future sessions are more productive.
+
+### Scope & discovery
+
+`AUG.md` is **workspace-relative**: it is read from the session's
+`workspacePath` (the directory you are working in). If no workspace is set, it
+falls back to the August Proxy project root. Only one file is consulted (no
+parent-directory walk-up in this version).
+
+### How it is used
+
+On every chat turn the workbench assembles a 3-tier system prompt. The body of
+`AUG.md` is injected into **Tier 2** as an `<aug_directives>` block, delivered
+as soft context the model should follow but is not strictly forced to honor. If
+the file exceeds ~4000 characters it is truncated (you will be prompted to trim
+it). Changing `AUG.md` invalidates the cached system prompt for the active
+session, so the new instructions take effect on the next message.
+
+### Frontmatter
+
+`AUG.md` may open with optional YAML frontmatter:
+
+```markdown
+---
+description: Project directives for August Proxy (auto-generated).
+---
+
+# My Project
+
+## Build
+npm run build
+
+## Test
+npm test
+```
+
+Only `description` is used today (it is written automatically by `/init`);
+path-scoped `paths:` filtering is not yet active.
+
+### The `/init` command
+
+Type `/init` in the chat composer to generate an `AUG.md` for the current
+workspace:
+
+1. The backend analyzes the workspace (top-level entries, `package.json` /
+   `pyproject.toml` / `README.md`, recent git history).
+2. An LLM drafts a concise `AUG.md` (Create mode). If an `AUG.md` already
+   exists, `/init` runs in **Refine** mode instead — it loads the current file
+   and proposes an improved version.
+3. A preview card shows the draft (with a diff when refining). You can
+   **Refine & Save**, **Regenerate**, or **Cancel**.
+4. On save, the file is written to the workspace root and the prompt cache is
+   invalidated. Nothing is written until you confirm.
+
+### Plan & todo persistence (`.aug/`)
+
+When the model creates a plan (`submit_plan`) or a todo list (`submit_todos`),
+a copy is persisted to the workspace's hidden `.aug/` directory:
+
+```
+.aug/plans/<slug>/plan.json        # { sessionId, title, slug, status, plan }
+.aug/todoList/<slug>/todos.json    # { sessionId, title, slug, status, todos }
+```
+
+These artifacts are **auto-deleted** when the owning session is reset,
+rejected, or deleted, so they do not accumulate on disk. If an artifact is left
+behind by an error, open **Settings ▸ Plans & Todos** to see and manually
+delete any survivors.
+
+### Reference implementation
+
+- Loader / writer / generator: `backend-py/app/services/augDirectiveService.py`
+- Artifact persistence: `backend-py/app/services/augArtifactService.py`
+- API: `backend-py/app/routers/aug.py` (`/api/aug/context`, `/api/aug/init`,
+  `/api/aug/content`, `/api/aug/plans`)
+

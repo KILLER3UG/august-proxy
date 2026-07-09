@@ -119,6 +119,7 @@ from app.routers import august as augustRoutes
 from app.routers import gateway as gatewayRoutes
 from app.routers import curator as curatorRoutes
 from app.routers import uiMemory as uiMemoryRoutes
+from app.routers import aug as augRoutes
 from app.routers import brain as brainRoutes
 from app.routers import brainActivity as brainActivityRoutes
 from app.routers import brainConfig as brainConfigRoutes
@@ -149,6 +150,7 @@ app.include_router(manageRoutes.router)
 app.include_router(monitoringRoutes.router)
 app.include_router(augustRoutes.router)
 app.include_router(gatewayRoutes.router)
+app.include_router(augRoutes.router)
 app.include_router(uiMemoryRoutes.router)
 app.include_router(brainRoutes.router)
 app.include_router(brainConfigRoutes.router)

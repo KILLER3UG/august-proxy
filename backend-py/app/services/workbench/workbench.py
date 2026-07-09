@@ -50,6 +50,7 @@ class WorkbenchSession:
     goal: str = ''
     plan: dict[str, object] | None = None
     planApproved: bool = False
+    todos: list[dict[str, object]] | None = None
     messages: list[dict[str, object]] = field(default_factory=list)
     pendingMutations: list[dict[str, object]] = field(default_factory=list)
     mutationLog: list[dict[str, object]] = field(default_factory=list)
@@ -61,11 +62,11 @@ class WorkbenchSession:
     queuedUserMessages: list[dict[str, object]] = field(default_factory=list)
 
     def toDict(self) -> dict[str, object]:
-        return {'id': self.id, 'title': self.title, 'provider': self.provider, 'model': self.model, 'agentId': self.agentId, 'guardMode': self.guardMode, 'createdAt': self.createdAt, 'updatedAt': self.updatedAt, 'startedAt': self.startedAt, 'messageCount': self.messageCount, 'mutationCount': self.mutationCount, 'workspacePath': self.workspacePath, 'goal': self.goal, 'plan': self.plan, 'planApproved': self.planApproved, 'messages': self.messages, 'pendingMutations': self.pendingMutations, 'mutationLog': self.mutationLog, 'status': self.status, 'metadata': self.metadata, 'totalInputTokens': self.totalInputTokens, 'totalOutputTokens': self.totalOutputTokens, 'totalCost': self.totalCost, 'queuedUserMessages': self.queuedUserMessages}
+        return {'id': self.id, 'title': self.title, 'provider': self.provider, 'model': self.model, 'agentId': self.agentId, 'guardMode': self.guardMode, 'createdAt': self.createdAt, 'updatedAt': self.updatedAt, 'startedAt': self.startedAt, 'messageCount': self.messageCount, 'mutationCount': self.mutationCount, 'workspacePath': self.workspacePath, 'goal': self.goal, 'plan': self.plan, 'planApproved': self.planApproved, 'todos': self.todos, 'messages': self.messages, 'pendingMutations': self.pendingMutations, 'mutationLog': self.mutationLog, 'status': self.status, 'metadata': self.metadata, 'totalInputTokens': self.totalInputTokens, 'totalOutputTokens': self.totalOutputTokens, 'totalCost': self.totalCost, 'queuedUserMessages': self.queuedUserMessages}
 
     @staticmethod
     def fromDict(d: dict[str, object]) -> WorkbenchSession:
-        return WorkbenchSession(id=d.get('id', ''), title=d.get('title', 'New Session'), provider=d.get('provider', ''), model=d.get('model', ''), agentId=d.get('agentId', ''), guardMode=d.get('guardMode', 'full'), createdAt=d.get('createdAt', ''), updatedAt=d.get('updatedAt', ''), startedAt=d.get('startedAt', ''), messageCount=d.get('messageCount', 0), mutationCount=d.get('mutationCount', 0), workspacePath=d.get('workspacePath', ''), goal=d.get('goal', ''), plan=d.get('plan'), planApproved=d.get('planApproved', False), messages=d.get('messages', []), pendingMutations=d.get('pendingMutations', []), mutationLog=d.get('mutationLog', []), status=d.get('status', 'idle'), metadata=d.get('metadata', {}), totalInputTokens=d.get('totalInputTokens', 0), totalOutputTokens=d.get('totalOutputTokens', 0), totalCost=d.get('totalCost', 0.0), queuedUserMessages=d.get('queuedUserMessages', []))
+        return WorkbenchSession(id=d.get('id', ''), title=d.get('title', 'New Session'), provider=d.get('provider', ''), model=d.get('model', ''), agentId=d.get('agentId', ''), guardMode=d.get('guardMode', 'full'), createdAt=d.get('createdAt', ''), updatedAt=d.get('updatedAt', ''), startedAt=d.get('startedAt', ''), messageCount=d.get('messageCount', 0), mutationCount=d.get('mutationCount', 0), workspacePath=d.get('workspacePath', ''), goal=d.get('goal', ''), plan=d.get('plan'), planApproved=d.get('planApproved', False), todos=d.get('todos'), messages=d.get('messages', []), pendingMutations=d.get('pendingMutations', []), mutationLog=d.get('mutationLog', []), status=d.get('status', 'idle'), metadata=d.get('metadata', {}), totalInputTokens=d.get('totalInputTokens', 0), totalOutputTokens=d.get('totalOutputTokens', 0), totalCost=d.get('totalCost', 0.0), queuedUserMessages=d.get('queuedUserMessages', []))
 _SESSIONFile = 'workbench-sessions.json'
 _sessions: dict[str, WorkbenchSession] = {}
 _statusSubscribers: list[Callable[[dict[str, object]], None]] = []
@@ -151,6 +152,12 @@ def deleteWorkbenchSession(sessionId: str) -> bool:
     """Delete a session."""
     if sessionId not in _sessions:
         return False
+    session = _sessions[sessionId]
+    try:
+        from app.services import augArtifactService
+        augArtifactService.deleteForSession(session.workspacePath or None, sessionId)
+    except Exception:
+        pass
     del _sessions[sessionId]
     saveSessions()
     return True
@@ -170,7 +177,7 @@ def getWorkbenchSessionStatus(sessionId: str) -> dict[str, object] | None:
     if not session:
         return None
     hasPending = len(session.pendingMutations) > 0
-    return {'sessionId': sessionId, 'status': session.status, 'guardMode': session.guardMode, 'pendingMutation': session.pendingMutations[-1] if hasPending else None, 'plan': session.plan, 'planApproved': session.planApproved}
+    return {'sessionId': sessionId, 'status': session.status, 'guardMode': session.guardMode, 'pendingMutation': session.pendingMutations[-1] if hasPending else None, 'plan': session.plan, 'planApproved': session.planApproved, 'todos': session.todos}
 
 def subscribeSessionStatus(callback: Callable[[dict[str, object]], None]) -> Callable[[], None]:
     """Register a session status subscriber. Returns unsubscribe function."""
@@ -331,6 +338,18 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
         if k in memory:
             sessionDict[k] = memory[k]
     tools = toolDefinitions(session)
+    # Load workspace AUG.md into Tier 2 as soft context (Claude CLAUDE.md parity).
+    augMdBody = ''
+    if workspacePath:
+        try:
+            from app.services import augDirectiveService
+            loaded = augDirectiveService.load(workspacePath)
+            if loaded and loaded.get('body'):
+                augMdBody = loaded['body']
+        except Exception:
+            pass
+    sessionDict['augMd'] = augMdBody
+    sessionDict['todos'] = session.todos
     from app.services.workbench.promptCache import getCache
     promptCache = getCache()
     cacheKey = getattr(session, 'id', '') or ''
@@ -817,6 +836,28 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': 'Plan submitted. Awaiting user approval.'})
                 planSubmittedThisRound = True
                 continue
+            if toolName in ('submit_todos', 'submitTodos'):
+                todosPayload = toolInput.get('todos') or toolInput.get('items') or toolInput
+                if not isinstance(todosPayload, list):
+                    todosPayload = [todosPayload] if todosPayload else []
+                title = toolInput.get('title') or ''
+                submitTodos(session, todosPayload, title=title)
+                if emit:
+                    emit({'type': 'todosUpdated', 'todos': session.todos})
+                    emit({'type': 'toolResult', 'id': toolUseId, 'name': toolName, 'content': 'Todo list saved.', 'status': 'done'})
+                toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': 'Todo list saved.'})
+                continue
+            if toolName in ('update_todos', 'updateTodos'):
+                todosPayload = toolInput.get('todos') or toolInput.get('items') or toolInput
+                if not isinstance(todosPayload, list):
+                    todosPayload = [todosPayload] if todosPayload else []
+                title = toolInput.get('title') or ''
+                updateTodos(session, todosPayload, title=title)
+                if emit:
+                    emit({'type': 'todosUpdated', 'todos': session.todos})
+                    emit({'type': 'toolResult', 'id': toolUseId, 'name': toolName, 'content': 'Todo list updated.', 'status': 'done'})
+                toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': 'Todo list updated.'})
+                continue
             blockedReason = _checkToolGuard(session, toolName, toolInput)
             if blockedReason:
                 if emit:
@@ -1301,7 +1342,31 @@ def submitPlan(session: WorkbenchSession, planData: dict[str, object]) -> None:
     session._execution_state = None
     session._working_memory = None
     session.updatedAt = _now()
+    try:
+        from app.services import augArtifactService
+        augArtifactService.savePlan(session.workspacePath or None, session.id, planData, status='pending')
+    except Exception:
+        pass
     _emitSessionStatus(session.id)
+
+
+def submitTodos(session: WorkbenchSession, todosData: list[dict[str, object]], *, title: str = '') -> None:
+    """Store a todo list on the session and persist it to `.aug/todoList/`."""
+    if not isinstance(todosData, list):
+        todosData = [todosData] if todosData else []
+    session.todos = todosData
+    session.updatedAt = _now()
+    try:
+        from app.services import augArtifactService
+        augArtifactService.saveTodos(session.workspacePath or None, session.id, todosData, title=title, status='active')
+    except Exception:
+        pass
+    _emitSessionStatus(session.id)
+
+
+def updateTodos(session: WorkbenchSession, todosData: list[dict[str, object]], *, title: str = '') -> None:
+    """Replace the session's todo list in place and re-persist it."""
+    submitTodos(session, todosData, title=title)
 
 def approveWorkbenchPlan(sessionId: str) -> bool:
     """Approve a pending plan."""
@@ -1324,6 +1389,11 @@ def rejectWorkbenchPlan(sessionId: str) -> bool:
     session._execution_state = None
     session._working_memory = None
     session.updatedAt = _now()
+    try:
+        from app.services import augArtifactService
+        augArtifactService.deleteForSession(session.workspacePath or None, sessionId)
+    except Exception:
+        pass
     saveSessions()
     _emitSessionStatus(sessionId)
     return True

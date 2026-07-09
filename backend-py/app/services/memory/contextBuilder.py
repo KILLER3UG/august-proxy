@@ -65,6 +65,9 @@ def buildTier2(session: dict[str, object] | None=None) -> str:
         dirParts.append(f'Plan ({status}):\n{_fmtVal(planText, 2000)}')
     if dirParts:
         blocks.append(wrapTag('directives', '\n'.join(dirParts)))
+    augMd = (session or {}).get('augMd', '')
+    if augMd:
+        blocks.append(wrapTag('aug_directives', _fmtVal(augMd, 4000)))
     heuristics = (session or {}).get('learnedHeuristics', [])
     if heuristics:
         lines = []

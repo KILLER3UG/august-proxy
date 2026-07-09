@@ -55,6 +55,20 @@ export type VoiceCommandEvent =
     }
   | {
       type: 'reset-session';
+    }
+  | {
+      type: 'init-aug';
+      workspacePath?: string;
+    }
+  | {
+      type: 'aug-preview';
+      draft: string;
+      existing: boolean;
+      workspacePath: string;
+    }
+  | {
+      type: 'aug-saved';
+      path: string;
     };
 
 type Listener = (event: VoiceCommandEvent) => void;

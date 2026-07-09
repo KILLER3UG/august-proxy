@@ -38,8 +38,8 @@ describe('settings-registry audit', () => {
     }
   });
 
-  it('has 16 sections distributed across categories', () => {
-    expect(SETTINGS_SECTIONS).toHaveLength(16);
+  it('has 17 sections distributed across categories', () => {
+    expect(SETTINGS_SECTIONS).toHaveLength(17);
   });
 
   it('every section id is unique', () => {

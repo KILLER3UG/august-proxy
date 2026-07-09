@@ -3,6 +3,8 @@ request-log.json
 # Claude agent cache (local only, never commit)
 .claude/
 .kimchi/
+# August Proxy workspace artifacts (AUG.md plan/todo persistence — local, never commit)
+.aug/
 # ZCode agent cache (local only, never commit)
 .zcode/
 # Dependencies (never commit)

@@ -87,6 +87,7 @@ import { ContextRing, estimateContextBreakdown, type ContextBreakdown } from './
 import { PlanProposalBanner } from '@/components/shell/PlanProposalBanner';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { ChangedFilesCard } from '@/components/chat/ChangedFilesCard';
+import { InitAugCard } from './InitAugCard';
 import { gitApi, type GitDiffResult } from '@/api/git';
 import { usageApi } from '@/api/usage';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
@@ -517,6 +518,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [examActive, setExamActive] = useState(false);
   const [examSeed, setExamSeed] = useState<{ topic?: string; files?: string[] }>({});
 
+  // v4: AUG.md /init preview card state
+  const [augPreview, setAugPreview] = useState<{ draft: string; existing: boolean; workspacePath: string } | null>(null);
+
   // v4: Voice command UI — inline model picker card
   const [modelPickerActive, setModelPickerActive] = useState(false);
 
@@ -883,6 +887,39 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           setExamActive(true);
           setInput('');
           clearComposerDraft(sessionId);
+          break;
+        }
+        case 'init-aug': {
+          const ws = event.workspacePath || activeSession?.workspacePath || '';
+          setInput('');
+          clearComposerDraft(sessionId);
+          fetch('/api/aug/init', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: 'create', workspacePath: ws || undefined }),
+          })
+            .then(r => r.json())
+            .then(data => {
+              setAugPreview({
+                draft: data.draft || '',
+                existing: Boolean(data.existing),
+                workspacePath: ws || '',
+              });
+            })
+            .catch(() => toast.error('Failed to generate AUG.md'));
+          break;
+        }
+        case 'aug-preview': {
+          setAugPreview({
+            draft: event.draft,
+            existing: event.existing,
+            workspacePath: event.workspacePath,
+          });
+          break;
+        }
+        case 'aug-saved': {
+          setAugPreview(null);
+          toast.success('AUG.md saved');
           break;
         }
         case 'reset-session': {
@@ -2173,6 +2210,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               setExamSeed({});
             }}
           />
+        )}
+        {augPreview && (
+          <div className="px-4 pt-3">
+            <InitAugCard
+              draft={augPreview.draft}
+              existing={augPreview.existing}
+              workspacePath={augPreview.workspacePath}
+              sessionId={sessionId ?? undefined}
+            />
+          </div>
         )}
         {workbenchBtw && (
           <WorkbenchBtwDrawer

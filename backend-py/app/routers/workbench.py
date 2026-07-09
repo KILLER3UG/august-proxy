@@ -243,6 +243,32 @@ async def rejectPlan(sessionId: str=Query('')):
         raise HTTPException(status_code=404, detail='Session not found')
     return {'status': 'rejected'}
 
+@router.post('/todos')
+async def submitTodosRoute(request: Request):
+    """Submit a todo list for a session."""
+    body = await request.json()
+    sessionId = body.get('sessionId', '')
+    todosData = body.get('todos', [])
+    title = body.get('title', '')
+    session = wb.getWorkbenchSession(sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    wb.submitTodos(session, todosData, title=title)
+    return {'status': 'ok', 'todos': session.todos}
+
+@router.patch('/todos')
+async def updateTodosRoute(request: Request):
+    """Update (replace) a session's todo list."""
+    body = await request.json()
+    sessionId = body.get('sessionId', '')
+    todosData = body.get('todos', [])
+    title = body.get('title', '')
+    session = wb.getWorkbenchSession(sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    wb.updateTodos(session, todosData, title=title)
+    return {'status': 'ok', 'todos': session.todos}
+
 @router.post('/mutations/respond')
 async def respondMutation(request: Request):
     """Respond to a pending mutation (approve/reject)."""

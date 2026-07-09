@@ -28,6 +28,7 @@ import {
   Boxes,
   BookOpen,
   Bot,
+  ClipboardList,
   Cpu,
   Globe,
   LineChart,
@@ -281,6 +282,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     // Note: 'memory' is owned by memory-knowledge. 'console' is owned
     // by developer-console. 'monitor' is the dominant discoverer here.
     keywords: ['logs', 'live', 'stream', 'events', 'monitor', 'websocket', 'proxy', 'scheduler'],
+  },
+  {
+    id: 'plans',
+    label: 'Plans & Todos',
+    description: 'Workspace .aug artifacts — model-generated plans and todo lists. Manually delete survivors left behind by errors.',
+    icon: ClipboardList,
+    category: 'activity',
+    tier: 'advanced',
+    keywords: ['plans', 'todos', 'aug', 'init', 'checklist', 'tasks'],
+    legacyAliases: ['aug-plans', 'aug-artifacts'],
   },
 
   /* ── Security & Access ──────────────────────────────────────── */
