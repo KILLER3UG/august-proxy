@@ -250,6 +250,13 @@ async def generate(workspacePath: str, *, mode: str = 'create', existing: Option
 
     draft = await _callLlm(messages, model=model) or ''
     draft = _stripCodeFences(draft).strip()
+    if not draft:
+        # No provider configured / API key missing / call failed. Surface a
+        # clear error rather than returning a blank AUG.md preview.
+        raise RuntimeError(
+            'No AUG.md draft was produced. Check that a provider/API key is '
+            'configured and reachable, then retry /init.'
+        )
     return {
         'draft': draft,
         'existing': bool(isRefine),

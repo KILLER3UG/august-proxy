@@ -1376,6 +1376,13 @@ def approveWorkbenchPlan(sessionId: str) -> bool:
     session.planApproved = True
     session.updatedAt = _now()
     saveSessions()
+    # Reflect the approval on the persisted .aug artifact so the Plans
+    # section doesn't keep showing it as "pending".
+    try:
+        from app.services import augArtifactService
+        augArtifactService.updatePlanStatus(session.workspacePath or None, sessionId, 'approved')
+    except Exception:
+        pass
     _emitSessionStatus(sessionId)
     return True
 
