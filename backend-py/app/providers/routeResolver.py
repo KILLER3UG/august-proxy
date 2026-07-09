@@ -3,18 +3,20 @@ Route a model ID to the best provider.
 
 Port of backend/providers/route-resolver.js + model-resolver.js.
 
+NOTE: Alias resolution is handled by ``app.services.aliasMappingService``
+BEFORE this function is called. ``resolveForModel`` receives the already-
+resolved backend model ID and finds a provider that can serve it.
+
 Resolution order:
-1. User-defined alias in config.json modelAliases → use targetProvider
-2. Exact model match in provider's model_profiles (credential-aware)
-3. Prefix match on provider name (credential-aware)
-4. Model profile partial match (credential-aware)
-5. Exact model match (any provider)
-6. Prefix match (any provider)
-7. Active provider (first with credentials)
+1. Exact model match in provider's model_profiles (credential-aware)
+2. Prefix match on provider name (credential-aware)
+3. Model profile partial match (credential-aware)
+4. Exact model match (any provider)
+5. Prefix match (any provider)
+6. Active provider (first with credentials)
 """
 from __future__ import annotations
 from typing import Optional
-from app.config import settings
 from app.providers import resolver
 
 def _hasCredentials(provider: dict[str, object]) -> bool:
@@ -43,17 +45,6 @@ def resolveForModel(modelId: str, hint: Optional[str]=None) -> Optional[dict[str
                 return p
             if hint.lower() in [a.lower() for a in p.get('aliases', [])]:
                 return p
-    aliases = settings.config.get('modelAliases', [])
-    if isinstance(aliases, list):
-        for aliasEntry in aliases:
-            if aliasEntry.get('alias', '').lower() == modelLower:
-                targetProvider = aliasEntry.get('targetProvider', '')
-                if targetProvider:
-                    for p in providers:
-                        if p['name'].lower() == targetProvider.lower():
-                            return p
-                        if targetProvider.lower() in [a.lower() for a in p.get('aliases', [])]:
-                            return p
     for p in providers:
         profiles = p.get('model_profiles', {})
         if (modelId in profiles or modelLower in {k.lower() for k in profiles}) and _hasCredentials(p):

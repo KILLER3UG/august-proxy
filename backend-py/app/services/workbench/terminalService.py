@@ -11,6 +11,7 @@ import platform
 import uuid
 from collections import deque
 from datetime import datetime
+from app.jsonUtils import as_int, as_list, as_str
 BUFFER_LIMIT = 256 * 1024
 COMMAND_OUTPUT_LIMIT = 1024 * 1024
 MAX_SESSIONS = 50
@@ -38,7 +39,7 @@ _pendingApprovals: dict[str, dict[str, object]] = {}
 _wsSockets: dict[str, set[object]] = {}
 
 def _summarize(session: dict[str, object]) -> dict[str, object]:
-    return {'id': session['id'], 'title': session.get('title', 'Terminal'), 'cwd': session.get('cwd', ''), 'command': session.get('command', ''), 'status': session.get('status', 'created'), 'createdAt': session.get('createdAt', ''), 'updatedAt': session.get('updatedAt', ''), 'bufferLength': len(session.get('buffer', '')), 'approvedInteractive': session.get('approvedInteractive', False), 'cols': session.get('cols', 80), 'rows': session.get('rows', 24), 'pty': session.get('pty', False)}
+    return {'id': session['id'], 'title': as_str(session.get('title'), 'Terminal'), 'cwd': as_str(session.get('cwd'), ''), 'command': as_str(session.get('command'), ''), 'status': as_str(session.get('status'), 'created'), 'createdAt': as_str(session.get('createdAt'), ''), 'updatedAt': as_str(session.get('updatedAt'), ''), 'bufferLength': len(as_str(session.get('buffer'), '')), 'approvedInteractive': session.get('approvedInteractive', False), 'cols': as_int(session.get('cols'), 80), 'rows': as_int(session.get('rows'), 24), 'pty': session.get('pty', False)}
 
 def listTerminalSessions() -> list[dict[str, object]]:
     return [_summarize(s) for s in _sessions.values()][:MAX_SESSIONS]
@@ -53,9 +54,9 @@ async def createTerminalSession(params: dict[str, object] | None=None) -> dict[s
     shell = _getShell()
     from app.services.workbench.pty_io import PtyIO
     pty = PtyIO()
-    session = {'id': sessionId, 'title': params.get('title', 'Terminal'), 'cwd': params.get('cwd') or os.getcwd(), 'command': params.get('command', shell), 'status': 'starting', 'createdAt': _now(), 'updatedAt': _now(), 'buffer': '', 'approvedInteractive': params.get('approvedInteractive', False), 'cols': params.get('cols', 80), 'rows': params.get('rows', 24), 'pty': True, 'pty_io': pty, 'process': None, 'stdin': None, 'stdout': None}
+    session = {'id': sessionId, 'title': as_str(params.get('title'), 'Terminal'), 'cwd': as_str(params.get('cwd')) or os.getcwd(), 'command': as_str(params.get('command'), shell), 'status': 'starting', 'createdAt': _now(), 'updatedAt': _now(), 'buffer': '', 'approvedInteractive': params.get('approvedInteractive', False), 'cols': as_int(params.get('cols'), 80), 'rows': as_int(params.get('rows'), 24), 'pty': True, 'pty_io': pty, 'process': None, 'stdin': None, 'stdout': None}
     try:
-        args = params.get('args') or ['-i']
+        args = as_list(params.get('args')) or ['-i']
         await pty.spawn(shell=shell, args=args, cwd=str(session['cwd']), env={**os.environ, 'TERM': 'xterm-256color'}, cols=session['cols'], rows=session['rows'])
         session['status'] = 'running'
         _sessions[sessionId] = session
@@ -80,7 +81,7 @@ async def _pipeStdout(sessionId: str) -> None:
             if not chunk:
                 break
             text = chunk.decode('utf-8', errors='replace')
-            session['buffer'] = (session.get('buffer', '') + text)[-BUFFER_LIMIT:]
+            session['buffer'] = (as_str(session.get('buffer'), '') + text)[-BUFFER_LIMIT:]
             session['updatedAt'] = _now()
             for ws in list(_wsSockets.get(sessionId, set())):
                 try:
@@ -92,7 +93,7 @@ async def _pipeStdout(sessionId: str) -> None:
     finally:
         if sessionId in _sessions:
             s = _sessions[sessionId]
-            if s.get('status') == 'running':
+            if as_str(s.get('status')) == 'running':
                 s['status'] = 'exited'
 
 async def _pipePtyStdout(sessionId: str) -> None:
@@ -109,7 +110,7 @@ async def _pipePtyStdout(sessionId: str) -> None:
             if not chunk:
                 break
             text = chunk.decode('utf-8', errors='replace')
-            session['buffer'] = (session.get('buffer', '') + text)[-BUFFER_LIMIT:]
+            session['buffer'] = (as_str(session.get('buffer'), '') + text)[-BUFFER_LIMIT:]
             session['updatedAt'] = _now()
             for ws in list(_wsSockets.get(sessionId, set())):
                 try:
@@ -121,7 +122,7 @@ async def _pipePtyStdout(sessionId: str) -> None:
     finally:
         if sessionId in _sessions:
             s = _sessions[sessionId]
-            if s.get('status') == 'running':
+            if as_str(s.get('status')) == 'running':
                 s['status'] = 'exited'
 
 def readTerminalBuffer(sessionId: str) -> dict[str, object]:
@@ -129,7 +130,7 @@ def readTerminalBuffer(sessionId: str) -> dict[str, object]:
     session = _sessions.get(sessionId)
     if not session:
         raise KeyError(f'Terminal session not found: {sessionId}')
-    return {**_summarize(session), 'buffer': session.get('buffer', '')}
+    return {**_summarize(session), 'buffer': as_str(session.get('buffer'), '')}
 
 async def writeTerminalInput(sessionId: str, inputText: str, approved: bool=False) -> dict[str, object]:
     """Write input to a terminal session."""
@@ -175,11 +176,11 @@ async def resizeTerminalSession(sessionId: str, cols: int=80, rows: int=24) -> d
 
 async def submitTerminalCommand(params: dict[str, object]) -> dict[str, object]:
     """Run a one-shot command and return output."""
-    command = params.get('command', '')
-    cwd = params.get('cwd') or os.getcwd()
+    command = as_str(params.get('command'), '')
+    cwd = as_str(params.get('cwd')) or os.getcwd()
     approved = params.get('approved', False)
-    reason = params.get('reason', '')
-    timeoutMs = params.get('timeoutMs', 30000)
+    reason = as_str(params.get('reason'), '')
+    timeoutMs = as_int(params.get('timeoutMs'), 30000)
     if not approved:
         danger = _dangerousReason(command)
         if danger:
@@ -207,10 +208,10 @@ async def approveTerminalRequest(requestId: str, approve: bool=True) -> dict[str
         return {'error': 'Request not found'}
     if not approve:
         return {'status': 'rejected', 'requestId': requestId}
-    if request.get('type') == 'terminal_command':
-        return await submitTerminalCommand({'command': request.get('command', ''), 'cwd': request.get('cwd', ''), 'approved': True})
-    if request.get('type') == 'terminal_interactive_input':
-        sessionId = request.get('terminalId', '')
+    if as_str(request.get('type')) == 'terminal_command':
+        return await submitTerminalCommand({'command': as_str(request.get('command'), ''), 'cwd': as_str(request.get('cwd'), ''), 'approved': True})
+    if as_str(request.get('type')) == 'terminal_interactive_input':
+        sessionId = as_str(request.get('terminalId'), '')
         session = _sessions.get(sessionId)
         if session:
             session['approvedInteractive'] = True
@@ -260,13 +261,13 @@ async def handleTerminalConnection(websocket: object, terminalId: str) -> None:
         _wsSockets[terminalId] = set()
     _wsSockets[terminalId].add(websocket)
     try:
-        buffer = session.get('buffer', '')
+        buffer = as_str(session.get('buffer'), '')
         if buffer:
             await websocket.send_text(buffer)
         while True:
             data = await websocket.receive_text()
             result = await writeTerminalInput(terminalId, data, approved=session.get('approvedInteractive', False))
-            if result.get('status') == 'approval_required':
+            if as_str(result.get('status')) == 'approval_required':
                 await websocket.send_text(f'\r\n[Approval required for interactive input]\r\n')
     except Exception:
         pass

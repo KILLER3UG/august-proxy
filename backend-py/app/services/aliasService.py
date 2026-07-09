@@ -6,12 +6,27 @@ and ``/api/config/model-aliases``). Centralises read/write of the
 ``config.json`` ``modelAliases`` list, adds provider+model validation, reloads
 settings so resolvers see changes immediately, invalidates the model cache so
 the dropdown refreshes, and records every change to the config audit log.
+
+.. note::
+
+    **CRUD vs. Resolution**
+
+    This module handles **CRUD** (create, read, update, delete) of alias
+    entries in ``config.json``. For **resolution** (turning an alias into
+    a concrete provider + model at request time), use
+    ``app.services.aliasMappingService.resolve_alias()`` instead.
+
+    An alias in August Proxy is a **proxy mapping** — it lets the proxy
+    display one model name (the alias) while routing to a completely
+    different provider + model combination upstream. See
+    ``app.models.aliases`` for the conceptual model.
 """
 from __future__ import annotations
 from app.config import settings
 from app.lib.paths import dataPath
 from app.services.memoryStore import recordConfigAudit
 from app.typeAliases import AliasDict
+from app.jsonUtils import as_dict, as_list, as_str
 
 def listAliases() -> list[AliasDict]:
     """Return all model-alias entries (full records, not just names)."""
@@ -23,7 +38,7 @@ def listAliases() -> list[AliasDict]:
         cfg = json.loads(p.read_text('utf-8'))
     except (OSError, json.JSONDecodeError):
         return []
-    aliases = cfg.get('modelAliases', [])
+    aliases = as_list(cfg.get('modelAliases'), [])
     return aliases if isinstance(aliases, list) else []
 
 def _writeAliases(aliases: list[AliasDict]) -> None:
@@ -41,7 +56,7 @@ def _writeAliases(aliases: list[AliasDict]) -> None:
 
 def _find(alias: str) -> AliasDict | None:
     for a in listAliases():
-        if a.get('alias') == alias:
+        if as_str(a.get('alias')) == alias:
             return a
     return None
 
@@ -52,13 +67,13 @@ def _providerNames() -> set[str]:
         from app.providers import resolver as providerResolver
         from app.providers.template_loader import getTemplates
         for t in getTemplates():
-            names.add(t.get('name', ''))
-            for a in t.get('aliases', []) or []:
+            names.add(as_str(t.get('name'), ''))
+            for a in as_list(t.get('aliases'), []):
                 names.add(a)
         from app.services import configService
         store = configService.getProvidersStore()
-        for entry in store.get('providers', []):
-            names.add(entry.get('name', ''))
+        for entry in as_list(store.get('providers'), []):
+            names.add(as_str(entry.get('name'), ''))
     except Exception:
         pass
     names.discard('')
@@ -105,12 +120,12 @@ def createAlias(alias: str, targetModel: str, targetProvider: str, actor: str='s
 def updateAlias(alias: str, targetModel: str | None=None, targetProvider: str | None=None, actor: str='system') -> AliasDict:
     """Update an existing alias. Raises if not found."""
     aliases = listAliases()
-    existing = next((a for a in aliases if a.get('alias') == alias), None)
+    existing = next((a for a in aliases if as_str(a.get('alias')) == alias), None)
     if existing is None:
         raise KeyError(f"Alias '{alias}' not found")
     before = dict(existing)
-    newModel = targetModel if targetModel is not None else existing.get('targetModel', '')
-    newProvider = targetProvider if targetProvider is not None else existing.get('targetProvider', '')
+    newModel = targetModel if targetModel is not None else as_str(existing.get('targetModel'), '')
+    newProvider = targetProvider if targetProvider is not None else as_str(existing.get('targetProvider'), '')
     ok, msg = validateTarget(newProvider, newModel)
     if not ok:
         raise ValueError(msg)
@@ -125,8 +140,8 @@ def updateAlias(alias: str, targetModel: str | None=None, targetProvider: str | 
 def deleteAlias(alias: str, actor: str='system') -> bool:
     """Delete an alias. Returns True if removed."""
     aliases = listAliases()
-    before = next((a for a in aliases if a.get('alias') == alias), None)
-    newAliases = [a for a in aliases if a.get('alias') != alias]
+    before = next((a for a in aliases if as_str(a.get('alias')) == alias), None)
+    newAliases = [a for a in aliases if as_str(a.get('alias')) != alias]
     if len(newAliases) == len(aliases):
         return False
     _writeAliases(newAliases)
@@ -137,15 +152,15 @@ def replaceAliases(aliases: list[AliasDict], actor: str='system') -> list[AliasD
     """Replace the entire alias list. Validates each entry's provider first."""
     normalised: list[AliasDict] = []
     for entry in aliases:
-        alias = (entry.get('alias') or '').strip()
+        alias = as_str(entry.get('alias')).strip()
         if not alias:
             raise ValueError("alias entry missing 'alias' field")
-        targetModel = entry.get('targetModel') or entry.get('target_model') or ''
-        targetProvider = entry.get('targetProvider') or entry.get('target_provider') or ''
+        targetModel = as_str(entry.get('targetModel')) or as_str(entry.get('target_model')) or ''
+        targetProvider = as_str(entry.get('targetProvider')) or as_str(entry.get('target_provider')) or ''
         ok, msg = validateTarget(targetProvider, targetModel)
         if not ok:
             raise ValueError(f"Alias '{alias}': {msg}")
-        normalised.append(AliasDict(alias=alias, targetModel=targetModel, targetProvider=targetProvider, **{'displayAlias': entry['displayAlias']} if entry.get('displayAlias') else {}))
+        normalised.append(AliasDict(alias=alias, targetModel=targetModel, targetProvider=targetProvider, **{'displayAlias': entry['displayAlias']} if as_str(entry.get('displayAlias')) else {}))
     before = listAliases()
     _writeAliases(normalised)
     recordConfigAudit('alias', 'replace', actor, before=before, after=normalised)

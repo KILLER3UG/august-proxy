@@ -5,17 +5,18 @@ Mirrors `model_fleet_service` — read returns defaults+overrides, write accepts
 a partial dict and validates each field's shape.
 """
 from __future__ import annotations
+from app.jsonUtils import as_dict, as_str
 from app.services import configService
 FIELDS = ('sttProvider', 'sttModel', 'ttsProvider', 'ttsModel', 'ttsVoice')
 DEFAULTS: dict[str, str] = {'sttProvider': '', 'sttModel': '', 'ttsProvider': '', 'ttsModel': '', 'ttsVoice': ''}
 
 def getLiveConfig() -> dict[str, str]:
     cfg = configService.getConfig()
-    user = cfg.get('auxiliary', {}).get('live', {}) or {}
+    user = as_dict(as_dict(cfg.get('auxiliary'), {}).get('live'), {})
     out = DEFAULTS.copy()
     for f in FIELDS:
         if f in user:
-            out[f] = user[f]
+            out[f] = as_str(user.get(f))
     return out
 
 def validatePatch(patch: dict[str, object]) -> tuple[bool, str]:

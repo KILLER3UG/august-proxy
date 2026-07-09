@@ -20,6 +20,7 @@ from app.models.openai import (
 )
 from app.models.config import ProviderConfig, ModelConfig
 from app.models.proxy import ToolClassificationResult
+from app.models.aliases import AliasMapping, AliasResolutionResult
 
 __all__ = [
     "ExtraAllowBaseModel",
@@ -42,4 +43,6 @@ __all__ = [
     "ProviderConfig",
     "ModelConfig",
     "ToolClassificationResult",
+    "AliasMapping",
+    "AliasResolutionResult",
 ]

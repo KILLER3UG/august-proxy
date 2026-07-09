@@ -6,24 +6,35 @@ Port of backend/providers/model-resolver.js.
 Single source of truth for "given an alias or a raw model id, return
 ``{ alias, provider, model, is_fallback }``".
 
-Resolution order:
-1. User-defined alias in config.json modelAliases
-2. Catalog display alias (from model_profiles)
+Resolution is delegated to ``app.services.aliasMappingService``, which
+is the single point of truth for all alias resolution. This module
+provides backward-compatible wrappers so existing callers don't break.
+
+Resolution order (from aliasMappingService):
+1. User-defined alias in config.json modelAliases → targetProvider + targetModel
+2. Built-in public alias (identity, e.g. ``claude-sonnet-4-6`` → itself)
 3. Direct provider routing (profile key match + credential check)
-4. Raise ModelResolutionError
+4. Fallback to active provider
 
 ``resolve_or_fallback`` wraps ``resolve`` and falls back to the
 active provider's model on any miss.
 """
 from __future__ import annotations
 import logging
-from typing import Optional
 from app.config import settings
 from app.providers import resolver as providerResolver
 from app.providers.routeResolver import resolveForModel
+from app.services.aliasMappingService import (
+    resolve_alias,
+    resolve_alias_or_none,
+    get_reverse_alias as _get_reverse_alias,
+    list_alias_names,
+    BUILTIN_PUBLIC_ALIASES,
+)
 logger = logging.getLogger(__name__)
 DEFAULT_ALIAS = 'default'
-BUILTIN_CLAUDE_PUBLIC_ALIASES = frozenset(['claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5'])
+# Re-export for backward compatibility
+BUILTIN_CLAUDE_PUBLIC_ALIASES = BUILTIN_PUBLIC_ALIASES
 
 class ModelResolutionError(Exception):
     """Raised when a model alias cannot be resolved."""
@@ -40,20 +51,6 @@ def _normalize(input: object) -> str | None:
     s = str(input).strip()
     return s or None
 
-def _findUserDefinedAlias(input: str) -> dict[str, object] | None:
-    """Find a user-defined alias in config.json modelAliases."""
-    if not input:
-        return None
-    try:
-        aliases = settings.config.get('modelAliases', [])
-        if isinstance(aliases, list):
-            for a in aliases:
-                if isinstance(a, dict) and a.get('alias') == input:
-                    return a
-    except Exception:
-        pass
-    return None
-
 def _hasCredentials(provider: dict[str, object]) -> bool:
     """Check if a provider has API credentials configured."""
     from app.providers.clients import getClient
@@ -64,6 +61,10 @@ def _hasCredentials(provider: dict[str, object]) -> bool:
 
 def resolve(input: str | None, providerHint: str | None=None, defaultAlias: str | None=None) -> dict[str, object]:
     """Resolve an alias or model ID to a ``{ alias, provider, model, is_fallback }`` tuple.
+
+    Delegates to ``aliasMappingService.resolve_alias()`` which provides the
+    centralized, documented alias-resolution pipeline. Backward-compatible
+    return format preserved for existing callers.
 
     Args:
         input: The alias or raw model ID to resolve.
@@ -77,23 +78,21 @@ def resolve(input: str | None, providerHint: str | None=None, defaultAlias: str 
         ModelResolutionError: If the input cannot be resolved.
     """
     normalized = _normalize(input) or _normalize(defaultAlias) or DEFAULT_ALIAS
-    userAlias = _findUserDefinedAlias(normalized)
-    if userAlias and userAlias.get('targetModel'):
-        routed = resolveForModel(userAlias['targetModel'], hint=userAlias.get('targetProvider') or providerHint)
-        if routed and _hasCredentials(routed):
-            return {'alias': normalized, 'provider': routed.get('name', userAlias.get('targetProvider', 'unknown')), 'model': userAlias['targetModel'], 'is_fallback': False}
-    allProviders = providerResolver.listAvailable()
-    for p in allProviders:
-        profiles = p.get('modelProfiles', {})
-        if normalized in profiles:
-            break
-    routed = resolveForModel(normalized, hint=providerHint)
-    if routed and _hasCredentials(routed):
-        return {'alias': normalized, 'provider': routed.get('name', 'unknown'), 'model': normalized, 'is_fallback': False}
-    raise ModelResolutionError(f"Alias '{normalized}' not found.", input=normalized, reason='no_matching_provider')
+    try:
+        result = resolve_alias(normalized, provider_hint=providerHint)
+        return {
+            'alias': result.alias,
+            'provider': result.provider,
+            'model': result.model,
+            'is_fallback': result.is_fallback,
+        }
+    except ValueError as exc:
+        raise ModelResolutionError(str(exc), input=normalized, reason='no_matching_provider') from exc
 
 def resolveOrFallback(input: str | None, providerHint: str | None=None, defaultAlias: str | None=None) -> dict[str, object] | None:
     """Resolve with graceful fallback to the active provider. Never raises.
+
+    Delegates to ``aliasMappingService.resolve_alias_or_none()``.
 
     Args:
         input: The alias or raw model ID to resolve.
@@ -105,60 +104,24 @@ def resolveOrFallback(input: str | None, providerHint: str | None=None, defaultA
     """
     originalInput = _normalize(input)
     normalized = originalInput or _normalize(defaultAlias) or DEFAULT_ALIAS
-    try:
-        result = resolve(normalized, providerHint=providerHint)
-        if result:
-            return result
-    except ModelResolutionError:
-        pass
-    except Exception as exc:
-        logger.warning(f"[ModelResolver] unexpected error resolving '{normalized}': {exc}")
-    active = _resolveActiveProvider()
-    if active and _hasCredentials(active):
-        model = active.get('defaultModel', normalized)
-        providerName = active.get('name', 'active')
-        logger.warning(f"[ModelResolver] falling back to active provider '{providerName}' for input '{normalized}'")
-        return {'alias': originalInput or normalized, 'provider': providerName, 'model': model, 'is_fallback': True}
+    result = resolve_alias_or_none(normalized, provider_hint=providerHint)
+    if result is not None:
+        return {
+            'alias': result.alias,
+            'provider': result.provider,
+            'model': result.model,
+            'is_fallback': result.is_fallback,
+        }
     logger.warning(f"[ModelResolver] no active provider available; cannot resolve '{normalized}'")
-    return None
-
-def _resolveActiveProvider() -> dict[str, object] | None:
-    """Get the currently active provider (first available with credentials)."""
-    for p in providerResolver.listAvailable():
-        if _hasCredentials(p):
-            return p
     return None
 
 def getAliasForModel(modelId: str) -> str | None:
     """Reverse lookup: given a raw model ID, find the alias that maps to it."""
-    if not modelId:
-        return None
-    try:
-        aliases = settings.config.get('modelAliases', [])
-        if isinstance(aliases, list):
-            for a in aliases:
-                if isinstance(a, dict) and a.get('targetModel') == modelId:
-                    return a.get('alias')
-    except Exception:
-        pass
-    if modelId in BUILTIN_CLAUDE_PUBLIC_ALIASES:
-        return modelId
-    return None
+    return _get_reverse_alias(modelId)
 
 def listAliases() -> list[str]:
     """Return every alias the system knows about, deduplicated."""
-    out: set[str] = set()
-    try:
-        aliases = settings.config.get('modelAliases', [])
-        if isinstance(aliases, list):
-            for a in aliases:
-                if isinstance(a, dict) and a.get('alias'):
-                    out.add(a['alias'])
-    except Exception:
-        pass
-    for a in BUILTIN_CLAUDE_PUBLIC_ALIASES:
-        out.add(a)
-    return sorted(out)
+    return list_alias_names()
 
 def getDefaultAlias() -> str:
     return DEFAULT_ALIAS

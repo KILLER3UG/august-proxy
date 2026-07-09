@@ -9,6 +9,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
+from app.jsonUtils import as_dict, as_int, as_list, as_str
 from app.lib.paths import dataPath
 _DEFAULTGraphFile = dataPath('august_graph_memory.json')
 _MAXEntities = 1000
@@ -47,7 +48,7 @@ def _defaultGraph() -> dict[str, object]:
 
 def _normalize(raw: object) -> dict[str, object]:
     g = raw if isinstance(raw, dict) else _defaultGraph()
-    return {'version': int(g.get('version', 1)), 'updatedAt': g.get('updatedAt'), 'entities': list(g.get('entities', [])), 'relations': list(g.get('relations', [])), 'observations': list(g.get('observations', []))}
+    return {'version': as_int(g.get('version'), 1), 'updatedAt': g.get('updatedAt'), 'entities': as_list(g.get('entities'), []), 'relations': as_list(g.get('relations'), []), 'observations': as_list(g.get('observations'), [])}
 
 def _read() -> dict[str, object]:
     p = _graphFile()
@@ -71,7 +72,7 @@ def _write(graph: dict[str, object]) -> None:
 def addEntity(name: str, entityType: str='general', metadata: dict[str, object] | None=None) -> dict[str, object]:
     g = _read()
     key = _safeKey(name)
-    existing = next((e for e in g['entities'] if _safeKey(e.get('name', '')) == key), None)
+    existing = next((e for e in g['entities'] if _safeKey(as_str(e.get('name'), '')) == key), None)
     if existing:
         existing['updatedAt'] = _now()
         if metadata:
@@ -86,17 +87,17 @@ def addEntity(name: str, entityType: str='general', metadata: dict[str, object] 
 def getEntity(name: str) -> dict[str, object] | None:
     g = _read()
     key = _safeKey(name)
-    return next((e for e in g['entities'] if _safeKey(e.get('name', '')) == key), None)
+    return next((e for e in g['entities'] if _safeKey(as_str(e.get('name'), '')) == key), None)
 
 def searchEntities(query: str) -> list[dict[str, object]]:
     g = _read()
     q = query.lower()
-    return [e for e in g['entities'] if q in e.get('name', '').lower() or q in str(e.get('metadata', '')).lower()]
+    return [e for e in g['entities'] if q in as_str(e.get('name'), '').lower() or q in str(as_dict(e.get('metadata'), {})).lower()]
 
 def addRelation(source: str, target: str, relationType: str, metadata: dict[str, object] | None=None) -> dict[str, object]:
     g = _read()
     srcKey, tgtKey = (_safeKey(source), _safeKey(target))
-    existing = next((r for r in g['relations'] if _safeKey(r.get('source', '')) == srcKey and _safeKey(r.get('target', '')) == tgtKey and (r.get('type') == relationType)), None)
+    existing = next((r for r in g['relations'] if _safeKey(as_str(r.get('source'), '')) == srcKey and _safeKey(as_str(r.get('target'), '')) == tgtKey and (as_str(r.get('type')) == relationType)), None)
     if existing:
         existing['updatedAt'] = _now()
         _write(g)
@@ -109,12 +110,12 @@ def addRelation(source: str, target: str, relationType: str, metadata: dict[str,
 def getRelations(entityName: str) -> list[dict[str, object]]:
     g = _read()
     key = _safeKey(entityName)
-    return [r for r in g['relations'] if _safeKey(r.get('source', '')) == key or _safeKey(r.get('target', '')) == key]
+    return [r for r in g['relations'] if _safeKey(as_str(r.get('source'), '')) == key or _safeKey(as_str(r.get('target'), '')) == key]
 
 def addObservation(entityName: str, content: str, source: str='') -> dict[str, object]:
     g = _read()
     key = _safeKey(entityName)
-    entity = next((e for e in g['entities'] if _safeKey(e.get('name', '')) == key), None)
+    entity = next((e for e in g['entities'] if _safeKey(as_str(e.get('name'), '')) == key), None)
     if not entity:
         entity = addEntity(entityName)
     obs = {'id': f"o_{len(g['observations']) + 1}", 'entityKey': key, 'entityName': entity['name'], 'content': _compact(content, 1000), 'source': source, 'createdAt': _now()}
@@ -125,21 +126,21 @@ def addObservation(entityName: str, content: str, source: str='') -> dict[str, o
 def searchObservations(query: str) -> list[dict[str, object]]:
     g = _read()
     q = query.lower()
-    return [o for o in g['observations'] if q in o.get('content', '').lower()]
+    return [o for o in g['observations'] if q in as_str(o.get('content'), '').lower()]
 
 def explore(entityName: str, depth: int=1) -> dict[str, object]:
     """Explore the graph from an entity outward to given depth."""
     g = _read()
     key = _safeKey(entityName)
-    entity = next((e for e in g['entities'] if _safeKey(e.get('name', '')) == key), None)
+    entity = next((e for e in g['entities'] if _safeKey(as_str(e.get('name'), '')) == key), None)
     if not entity:
         return {'entity': None, 'relations': [], 'related': []}
     relations = getRelations(entityName)
     relatedNames = set()
     for r in relations:
-        if _safeKey(r.get('source', '')) != key:
+        if _safeKey(as_str(r.get('source'), '')) != key:
             relatedNames.add(r['source'])
-        if _safeKey(r.get('target', '')) != key:
+        if _safeKey(as_str(r.get('target'), '')) != key:
             relatedNames.add(r['target'])
     related = [e for e in g['entities'] if e['name'] in relatedNames]
     return {'entity': entity, 'relations': relations, 'related': related}
