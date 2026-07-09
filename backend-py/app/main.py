@@ -18,6 +18,17 @@ from fastapi.responses import FileResponse
 from app.config import settings
 logger = logging.getLogger(__name__)
 
+# Enforce the supported Python floor. The project targets 3.12+ (see
+# requires-python in pyproject.toml and the CI pin); PEP 695 type aliases and
+# other 3.12-only syntax are used throughout. Fail fast with a clear message
+# instead of a cryptic SyntaxError deep in the import graph on older runtimes.
+import sys
+if sys.version_info < (3, 12):
+    raise RuntimeError(
+        f"August Proxy requires Python 3.12 or newer (running {sys.version.split()[0]}). "
+        "Please upgrade your Python interpreter."
+    )
+
 
 class WebSocketLogHandler(logging.Handler):
     """Forward stdlib log records into the WS log-event stream (hub).

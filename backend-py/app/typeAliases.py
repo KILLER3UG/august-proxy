@@ -1,11 +1,10 @@
 """Shared type aliases and TypedDicts for type safety across the codebase."""
 from __future__ import annotations
-from typing import Dict, List, TypedDict, Union
+from typing import TypedDict
 
-# NOTE: defined with typing.* (not the PEP 695 `type` statement) so the module
-# imports cleanly on Python 3.11 as well as 3.12+. The project requires >=3.12,
-# but this keeps typeAliases importable everywhere as a defensive measure.
-JsonValue = Union[str, int, float, bool, None, List["JsonValue"], Dict[str, "JsonValue"]]
+# PEP 695 `type` alias — requires Python 3.12+. This is intentional: the project
+# targets 3.12+ (see requires-python in pyproject.toml) and CI pins 3.12.
+type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
 
 class BrainConfigDict(TypedDict, total=False):
     enabled: bool
