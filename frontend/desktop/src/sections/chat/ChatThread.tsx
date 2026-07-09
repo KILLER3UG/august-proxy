@@ -893,12 +893,28 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           const ws = event.workspacePath || activeSession?.workspacePath || '';
           setInput('');
           clearComposerDraft(sessionId);
-          fetch('/api/aug/init', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode: 'create', workspacePath: ws || undefined }),
-          })
-            .then(r => r.json())
+          // Decide create vs refine by checking whether an AUG.md already
+          // exists for this workspace. /init should refine an existing file
+          // rather than blindly overwrite it.
+          const decideMode = fetch(
+            '/api/aug/context' + (ws ? `?workspacePath=${encodeURIComponent(ws)}` : ''),
+            { method: 'GET' },
+          )
+            .then(r => (r.ok ? r.json() : { exists: false }))
+            .then(c => (c && c.exists ? 'refine' : 'create'))
+            .catch(() => 'create');
+          decideMode
+            .then(mode =>
+              fetch('/api/aug/init', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode, workspacePath: ws || undefined }),
+              }),
+            )
+            .then(r => {
+              if (!r.ok) return r.json().then(err => { throw new Error(err?.error || err?.detail || 'generation failed'); });
+              return r.json();
+            })
             .then(data => {
               setAugPreview({
                 draft: data.draft || '',
@@ -906,7 +922,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 workspacePath: ws || '',
               });
             })
-            .catch(() => toast.error('Failed to generate AUG.md'));
+            .catch((e: unknown) =>
+              toast.error(e instanceof Error ? e.message : 'Failed to generate AUG.md'),
+            );
           break;
         }
         case 'aug-preview': {
