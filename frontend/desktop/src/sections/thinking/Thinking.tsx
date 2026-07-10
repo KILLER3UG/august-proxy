@@ -50,12 +50,13 @@ function stringifyThinking(v: unknown): string {
     }
     if (typeof v === 'object') {
       const o = v as Record<string, unknown>;
-      return String(o.thinking || o.text || o.content || '');
+      const textVal = o.thinking || o.text || o.content || '';
+      return typeof textVal === 'string' ? textVal : JSON.stringify(textVal);
     }
   } catch {
     /* ignore */
   }
-  return String(v);
+  return typeof v === 'string' ? v : JSON.stringify(v);
 }
 
 const PERIODS: { key: Period; label: string }[] = [

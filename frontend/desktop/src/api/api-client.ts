@@ -14,7 +14,7 @@ export interface RequestEntry {
   clientType: string;
   endpoint: string;
   model: string;
-  status: 'success' | 'completed' | 'error' | string;
+  status: string;
   durationMs: number;
   error?: string | null;
   /** logger stores time as locale string + iso date + epoch. */
@@ -940,7 +940,7 @@ export type LogCategory =
 export interface LogEvent {
     id: string;
     timestamp: number;
-    category: LogCategory | string;
+    category: string;
     level: LogLevel;
     message: string;
     metadata: Record<string, unknown> | null;

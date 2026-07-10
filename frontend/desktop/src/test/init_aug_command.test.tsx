@@ -35,7 +35,7 @@ describe('/init command registration', () => {
     const cmd = voiceCommandRegistry.getBySlashCommand('/init')!;
     const spy = vi.fn();
     const unsub = voiceCommandEvents.subscribe(spy);
-    cmd.handler(ctx(''));
+    void cmd.handler(ctx(''));
     unsub();
     expect(spy).toHaveBeenCalledTimes(1);
     const event = spy.mock.calls[0][0];
@@ -46,7 +46,7 @@ describe('/init command registration', () => {
     const cmd = voiceCommandRegistry.getBySlashCommand('/init')!;
     const spy = vi.fn();
     const unsub = voiceCommandEvents.subscribe(spy);
-    cmd.handler(ctx('/some/path'));
+    void cmd.handler(ctx('/some/path'));
     unsub();
     expect(spy.mock.calls[0][0].workspacePath).toBe('/some/path');
   });

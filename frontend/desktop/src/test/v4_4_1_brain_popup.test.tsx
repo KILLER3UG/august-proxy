@@ -49,7 +49,7 @@ describe('v4.4.1 — BrainIndicator (floating popup)', () => {
       json: () => EVENTS,
     });
     withQuery(<BrainIndicator />);
-    await act(() => {
+    act(() => {
       fireEvent.click(screen.getByTestId('titlebar-brain-button'));
     });
     await waitFor(() => {
@@ -62,11 +62,11 @@ describe('v4.4.1 — BrainIndicator (floating popup)', () => {
   it('clicking the icon again closes the popup', async () => {
     withQuery(<BrainIndicator />);
     const btn = screen.getByTestId('titlebar-brain-button');
-    await act(() => {
+    act(() => {
       fireEvent.click(btn);
     });
     await waitFor(() => expect(screen.queryByTestId('brain-popup')).toBeTruthy());
-    await act(() => {
+    act(() => {
       fireEvent.click(btn);
     });
     expect(screen.queryByTestId('brain-popup')).toBeNull();

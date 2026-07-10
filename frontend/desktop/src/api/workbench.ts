@@ -472,17 +472,17 @@ function dispatchWorkbenchEvent(
   const p = payload;
   switch (event) {
     case 'thinking':
-      handlers.onThinking?.({ content: String(p?.content ?? '') });
+      handlers.onThinking?.({ content: typeof p?.content === 'string' ? p.content : JSON.stringify(p?.content ?? '') });
       break;
     case 'text':
     case 'content':
     case 'finalOutput':
-      handlers.onText?.({ content: String(p?.content ?? '') });
+      handlers.onText?.({ content: typeof p?.content === 'string' ? p.content : JSON.stringify(p?.content ?? '') });
       break;
     case 'toolUse':
       handlers.onToolUse?.({
-        id: String(p?.id ?? ''),
-        name: String(p?.name ?? ''),
+        id: typeof p?.id === 'string' ? p.id : JSON.stringify(p?.id ?? ''),
+        name: typeof p?.name === 'string' ? p.name : JSON.stringify(p?.name ?? ''),
         input: (p?.input as Record<string, unknown>) ?? {},
       });
       break;
@@ -494,24 +494,24 @@ function dispatchWorkbenchEvent(
         input = {};
       }
       handlers.onToolUse?.({
-        id: String(p?.id ?? ''),
-        name: String(p?.name ?? ''),
+        id: typeof p?.id === 'string' ? p.id : JSON.stringify(p?.id ?? ''),
+        name: typeof p?.name === 'string' ? p.name : JSON.stringify(p?.name ?? ''),
         input,
       });
       break;
     }
     case 'toolResult':
       handlers.onToolResult?.({
-        id: String(p?.id ?? ''),
+        id: typeof p?.id === 'string' ? p.id : JSON.stringify(p?.id ?? ''),
         content: p?.content,
         isError: p?.isError as boolean | undefined,
       });
       break;
     case 'tool_progress': {
-      const phase = (String(p?.phase ?? 'done') as 'reading' | 'read' | 'running' | 'done' | 'error');
+      const phase = (typeof p?.phase === 'string' ? p.phase : JSON.stringify(p?.phase ?? 'done')) as 'reading' | 'read' | 'running' | 'done' | 'error';
       handlers.onToolProgress?.({
-        id: String(p?.id ?? ''),
-        name: String(p?.name ?? ''),
+        id: typeof p?.id === 'string' ? p.id : JSON.stringify(p?.id ?? ''),
+        name: typeof p?.name === 'string' ? p.name : JSON.stringify(p?.name ?? ''),
         phase,
         paths: Array.isArray(p?.paths) ? (p.paths as string[]) : undefined,
         path: typeof p?.path === 'string' ? p.path : undefined,
@@ -538,7 +538,7 @@ function dispatchWorkbenchEvent(
       break;
     case 'prompt':
       handlers.onPrompt?.({
-        content: String(p?.content ?? ''),
+        content: typeof p?.content === 'string' ? p.content : JSON.stringify(p?.content ?? ''),
         systemPrompt: p?.systemPrompt as string | undefined,
         userMessage: p?.userMessage as string | undefined,
         tokens: p?.tokens as number | undefined,
@@ -552,31 +552,31 @@ function dispatchWorkbenchEvent(
       break;
     case 'userMessageQueued':
       handlers.onUserMessageQueued?.({
-        sessionId: String(p?.sessionId ?? ''),
-        messageId: String(p?.messageId ?? ''),
-        text: String(p?.text ?? ''),
+        sessionId: typeof p?.sessionId === 'string' ? p.sessionId : JSON.stringify(p?.sessionId ?? ''),
+        messageId: typeof p?.messageId === 'string' ? p.messageId : JSON.stringify(p?.messageId ?? ''),
+        text: typeof p?.text === 'string' ? p.text : JSON.stringify(p?.text ?? ''),
         queuedAt: typeof p?.queuedAt === 'string' ? p.queuedAt : new Date().toISOString(),
       });
       break;
     case 'userMessageDequeued':
       handlers.onUserMessageDequeued?.({
-        sessionId: String(p?.sessionId ?? ''),
-        messageId: String(p?.messageId ?? ''),
+        sessionId: typeof p?.sessionId === 'string' ? p.sessionId : JSON.stringify(p?.sessionId ?? ''),
+        messageId: typeof p?.messageId === 'string' ? p.messageId : JSON.stringify(p?.messageId ?? ''),
       });
       break;
     case 'userMessageInjected':
       handlers.onUserMessageInjected?.({
-        sessionId: String(p?.sessionId ?? ''),
-        messageId: String(p?.messageId ?? ''),
-        text: String(p?.text ?? ''),
+        sessionId: typeof p?.sessionId === 'string' ? p.sessionId : JSON.stringify(p?.sessionId ?? ''),
+        messageId: typeof p?.messageId === 'string' ? p.messageId : JSON.stringify(p?.messageId ?? ''),
+        text: typeof p?.text === 'string' ? p.text : JSON.stringify(p?.text ?? ''),
         queuedAt: typeof p?.queuedAt === 'string' ? p.queuedAt : new Date().toISOString(),
       });
       break;
     case 'subagentStart':
       handlers.onSubagentStart?.({
-        jobId: String(p?.jobId ?? ''),
-        agentId: String(p?.agentId ?? ''),
-        parentJobId: p?.parentJobId !== undefined ? String(p.parentJobId) : null,
+        jobId: typeof p?.jobId === 'string' ? p.jobId : JSON.stringify(p?.jobId ?? ''),
+        agentId: typeof p?.agentId === 'string' ? p.agentId : JSON.stringify(p?.agentId ?? ''),
+        parentJobId: p?.parentJobId !== undefined ? (typeof p.parentJobId === 'string' ? p.parentJobId : JSON.stringify(p.parentJobId)) : null,
         parentToolUseId: p?.parentToolUseId as string | undefined,
         scope: p?.scope as string | undefined,
         depth: Number.isFinite(Number(p?.depth)) ? Number(p.depth) : undefined,
@@ -585,8 +585,8 @@ function dispatchWorkbenchEvent(
       break;
     case 'subagentDone':
       handlers.onSubagentDone?.({
-        jobId: String(p?.jobId ?? ''),
-        agentId: String(p?.agentId ?? ''),
+        jobId: typeof p?.jobId === 'string' ? p.jobId : JSON.stringify(p?.jobId ?? ''),
+        agentId: typeof p?.agentId === 'string' ? p.agentId : JSON.stringify(p?.agentId ?? ''),
         status: (['completed', 'failed', 'cancelled'].includes(p?.status as string)
           ? (p.status as 'completed' | 'failed' | 'cancelled')
           : 'completed'),
@@ -605,26 +605,26 @@ function dispatchWorkbenchEvent(
       break;
     case 'subagentText':
       handlers.onSubagentText?.({
-        jobId: String(p?.jobId ?? ''),
-        agentId: String(p?.agentId ?? ''),
-        content: String(p?.content ?? ''),
+        jobId: typeof p?.jobId === 'string' ? p.jobId : JSON.stringify(p?.jobId ?? ''),
+        agentId: typeof p?.agentId === 'string' ? p.agentId : JSON.stringify(p?.agentId ?? ''),
+        content: typeof p?.content === 'string' ? p.content : JSON.stringify(p?.content ?? ''),
       });
       break;
     case 'subagentToolCall':
       handlers.onSubagentToolCall?.({
-        jobId: String(p?.jobId ?? ''),
-        agentId: String(p?.agentId ?? ''),
-        id: String(p?.id ?? ''),
-        name: String(p?.name ?? ''),
+        jobId: typeof p?.jobId === 'string' ? p.jobId : JSON.stringify(p?.jobId ?? ''),
+        agentId: typeof p?.agentId === 'string' ? p.agentId : JSON.stringify(p?.agentId ?? ''),
+        id: typeof p?.id === 'string' ? p.id : JSON.stringify(p?.id ?? ''),
+        name: typeof p?.name === 'string' ? p.name : JSON.stringify(p?.name ?? ''),
         input: (p?.input as Record<string, unknown>) ?? {},
         status: p?.status as 'running' | 'done' | 'error' | undefined,
       });
       break;
     case 'subagentToolResult':
       handlers.onSubagentToolResult?.({
-        jobId: String(p?.jobId ?? ''),
-        agentId: String(p?.agentId ?? ''),
-        id: String(p?.id ?? ''),
+        jobId: typeof p?.jobId === 'string' ? p.jobId : JSON.stringify(p?.jobId ?? ''),
+        agentId: typeof p?.agentId === 'string' ? p.agentId : JSON.stringify(p?.agentId ?? ''),
+        id: typeof p?.id === 'string' ? p.id : JSON.stringify(p?.id ?? ''),
         content: p?.content,
         isError: p?.isError as boolean | undefined,
         status: p?.isError ? 'error' : 'done',
@@ -635,8 +635,8 @@ function dispatchWorkbenchEvent(
       break;
     case 'browserAction':
       handlers.onBrowserAction?.({
-        id: String(p?.id ?? ''),
-        name: String(p?.name ?? ''),
+        id: typeof p?.id === 'string' ? p.id : JSON.stringify(p?.id ?? ''),
+        name: typeof p?.name === 'string' ? p.name : JSON.stringify(p?.name ?? ''),
         input: (p?.input as Record<string, unknown>) ?? {},
         url: p?.url as string | undefined,
         title: p?.title as string | undefined,
@@ -652,7 +652,7 @@ function dispatchWorkbenchEvent(
       handlers.onDone?.();
       break;
     case 'error':
-      handlers.onError?.({ message: String(p?.message ?? 'Unknown error') });
+      handlers.onError?.({ message: typeof p?.message === 'string' ? p.message : JSON.stringify(p?.message ?? 'Unknown error') });
       break;
   }
 }

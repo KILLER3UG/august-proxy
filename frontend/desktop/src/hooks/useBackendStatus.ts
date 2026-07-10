@@ -72,7 +72,7 @@ export function useBackendStatus() {
             } else if (res === 'syncing') {
                 setStatus((s) => ({ ...s, sync: 'syncing' }));
                 // The sync is detached; re-check shortly after.
-                setTimeout(() => refresh(), 4000);
+                setTimeout(() => { void refresh(); }, 4000);
             } else {
                 setStatus((s) => ({ ...s, sync: 'up-to-date' }));
             }
@@ -87,7 +87,7 @@ export function useBackendStatus() {
 
     useEffect(() => {
         if (!tauri) return;
-        refresh();
+        void refresh();
     }, [tauri, refresh]);
 
     return { status, refresh, sync, isTauri: tauri };

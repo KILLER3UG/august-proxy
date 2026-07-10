@@ -35,9 +35,9 @@ export function useProviderHealth(pollMs = 60_000) {
   }, []);
 
   useEffect(() => {
-    refresh(false);
+    void refresh(false);
     if (pollMs <= 0) return;
-    const id = window.setInterval(() => refresh(false), pollMs);
+    const id = window.setInterval(() => { void refresh(false); }, pollMs);
     return () => window.clearInterval(id);
   }, [refresh, pollMs]);
 

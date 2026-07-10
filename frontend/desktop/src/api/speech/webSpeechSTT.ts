@@ -32,7 +32,7 @@ export class WebSpeechSTT implements LiveSTT {
   private finalListeners = new Set<(text: string) => void>();
   private errorListeners = new Set<(err: Error) => void>();
 
-  start(): void {
+  async start(): Promise<void> {
     const Ctor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!Ctor) throw new Error('Web Speech API not available');
     const r = new Ctor() as unknown as SpeechRecognitionLike;
@@ -55,11 +55,13 @@ export class WebSpeechSTT implements LiveSTT {
     };
     r.start();
     this.recognition = r;
+    await Promise.resolve(); // keep async for LiveSTT interface conformance
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     this.recognition?.stop();
     this.recognition = null;
+    await Promise.resolve(); // keep async for LiveSTT interface conformance
   }
 
   onPartial(callback: (text: string) => void): () => void {

@@ -65,7 +65,7 @@ export function ComputerUseSection() {
   }, []);
 
   useEffect(() => {
-    Promise.all([fetchHealth(), fetchConfig()]).finally(() => setLoading(false));
+    void Promise.all([fetchHealth(), fetchConfig()]).finally(() => setLoading(false));
   }, [fetchHealth, fetchConfig]);
 
   const handleRefresh = async () => {
@@ -132,7 +132,7 @@ export function ComputerUseSection() {
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold">Health Checks</h3>
           <button
-            onClick={handleRefresh}
+            onClick={() => { void handleRefresh(); }}
             className="text-sm text-muted-foreground hover:text-foreground"
           >
             <RefreshCw className="size-4" />

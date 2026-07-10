@@ -33,24 +33,24 @@ function nativePointer(
 }
 
 async function openPopup(): Promise<void> {
-  await act(() => {
+  act(() => {
     fireEvent.click(screen.getByTestId('titlebar-brain-button'));
   });
   await waitFor(() => expect(screen.getByTestId('brain-popup')).toBeTruthy());
 }
 
-async function dragResize(handle: HTMLElement, dx: number, dy: number): Promise<void> {
+function dragResize(handle: HTMLElement, dx: number, dy: number): void {
   const rectSpy = vi.spyOn(handle, 'getBoundingClientRect').mockReturnValue({
     x: 100, y: 100, width: 16, height: 16, top: 100, left: 100, bottom: 116, right: 116,
     toJSON() { return this; },
   });
-  await act(() => {
+  act(() => {
     nativePointer(handle, 'pointerdown', { clientX: 108, clientY: 108 });
   });
-  await act(() => {
+  act(() => {
     nativePointer(document, 'pointermove', { clientX: 108 + dx, clientY: 108 + dy });
   });
-  await act(() => {
+  act(() => {
     nativePointer(document, 'pointerup', { clientX: 108 + dx, clientY: 108 + dy });
   });
   rectSpy.mockRestore();
@@ -71,7 +71,7 @@ describe('v4.4.4 — Brain popup: image-editor resize (8 handles) + drag from an
   });
 
   it('renders 4 corner resize handles (NW/NE/SW/SE)', async () => {
-    await withQuery(<BrainIndicator />);
+    withQuery(<BrainIndicator />);
     await openPopup();
     expect(screen.getByTestId('brain-resize-nw')).toBeTruthy();
     expect(screen.getByTestId('brain-resize-ne')).toBeTruthy();
@@ -80,7 +80,7 @@ describe('v4.4.4 — Brain popup: image-editor resize (8 handles) + drag from an
   });
 
   it('renders 4 edge resize handles (N/S/E/W)', async () => {
-    await withQuery(<BrainIndicator />);
+    withQuery(<BrainIndicator />);
     await openPopup();
     expect(screen.getByTestId('brain-resize-n')).toBeTruthy();
     expect(screen.getByTestId('brain-resize-s')).toBeTruthy();
@@ -89,13 +89,13 @@ describe('v4.4.4 — Brain popup: image-editor resize (8 handles) + drag from an
   });
 
   it('NE corner drag grows both width and height', async () => {
-    await withQuery(<BrainIndicator />);
+    withQuery(<BrainIndicator />);
     await openPopup();
     const popup = screen.getByTestId('brain-popup');
     const beforeW = parseInt(popup.style.width, 10);
     const beforeH = parseInt(popup.style.height, 10);
     const handle = screen.getByTestId('brain-resize-ne');
-    await dragResize(handle, 200, 150);
+    dragResize(handle, 200, 150);
     const afterW = parseInt(popup.style.width, 10);
     const afterH = parseInt(popup.style.height, 10);
     expect(afterW).toBeGreaterThan(beforeW + 100);
@@ -103,13 +103,13 @@ describe('v4.4.4 — Brain popup: image-editor resize (8 handles) + drag from an
   });
 
   it('E (east) edge drag grows width, leaves height alone', async () => {
-    await withQuery(<BrainIndicator />);
+    withQuery(<BrainIndicator />);
     await openPopup();
     const popup = screen.getByTestId('brain-popup');
     const beforeW = parseInt(popup.style.width, 10);
     const beforeH = parseInt(popup.style.height, 10);
     const handle = screen.getByTestId('brain-resize-e');
-    await dragResize(handle, 250, 0);
+    dragResize(handle, 250, 0);
     const afterW = parseInt(popup.style.width, 10);
     const afterH = parseInt(popup.style.height, 10);
     expect(afterW).toBeGreaterThan(beforeW + 100);
@@ -117,13 +117,13 @@ describe('v4.4.4 — Brain popup: image-editor resize (8 handles) + drag from an
   });
 
   it('S (south) edge drag grows height, leaves width alone', async () => {
-    await withQuery(<BrainIndicator />);
+    withQuery(<BrainIndicator />);
     await openPopup();
     const popup = screen.getByTestId('brain-popup');
     const beforeW = parseInt(popup.style.width, 10);
     const beforeH = parseInt(popup.style.height, 10);
     const handle = screen.getByTestId('brain-resize-s');
-    await dragResize(handle, 0, 220);
+    dragResize(handle, 0, 220);
     const afterW = parseInt(popup.style.width, 10);
     const afterH = parseInt(popup.style.height, 10);
     expect(afterH).toBeGreaterThan(beforeH + 100);
@@ -131,17 +131,17 @@ describe('v4.4.4 — Brain popup: image-editor resize (8 handles) + drag from an
   });
 
   it('W (west) edge drag grows width too', async () => {
-    await withQuery(<BrainIndicator />);
+    withQuery(<BrainIndicator />);
     await openPopup();
     const before = parseInt(screen.getByTestId('brain-popup').style.width, 10);
     const handle = screen.getByTestId('brain-resize-w');
-    await dragResize(handle, 100, 0);
+    dragResize(handle, 100, 0);
     const after = parseInt(screen.getByTestId('brain-popup').style.width, 10);
     expect(after).toBeGreaterThanOrEqual(before);
   });
 
   it('drags the popup when a pointer is pressed on the body (not the header)', async () => {
-    await withQuery(<BrainIndicator />);
+    withQuery(<BrainIndicator />);
     await openPopup();
     const popup = screen.getByTestId('brain-popup');
     const rectSpy = vi.spyOn(popup, 'getBoundingClientRect').mockReturnValue({
@@ -149,13 +149,13 @@ describe('v4.4.4 — Brain popup: image-editor resize (8 handles) + drag from an
       toJSON() { return this; },
     });
     const startX = 250, startY = 220;
-    await act(() => {
+    act(() => {
       nativePointer(popup, 'pointerdown', { clientX: startX, clientY: startY, button: 0 });
     });
-    await act(() => {
+    act(() => {
       nativePointer(document, 'pointermove', { clientX: startX + 60, clientY: startY + 40 });
     });
-    await act(() => {
+    act(() => {
       nativePointer(document, 'pointerup', { clientX: startX + 60, clientY: startY + 40 });
     });
     rectSpy.mockRestore();
@@ -165,18 +165,18 @@ describe('v4.4.4 — Brain popup: image-editor resize (8 handles) + drag from an
   });
 
   it('does NOT drag when pressing on an interactive child (a tab button)', async () => {
-    await withQuery(<BrainIndicator />);
+    withQuery(<BrainIndicator />);
     await openPopup();
     const popup = screen.getByTestId('brain-popup');
     const before = { x: popup.style.left, y: popup.style.top };
     const learningTab = screen.getByTestId('brain-popup-tab-learning');
-    await act(() => {
+    act(() => {
       nativePointer(learningTab, 'pointerdown', { clientX: 100, clientY: 200 });
     });
-    await act(() => {
+    act(() => {
       nativePointer(document, 'pointermove', { clientX: 700, clientY: 600 });
     });
-    await act(() => {
+    act(() => {
       nativePointer(document, 'pointerup', { clientX: 700, clientY: 600 });
     });
     expect(screen.queryByTestId('brain-popup')).toBeTruthy();

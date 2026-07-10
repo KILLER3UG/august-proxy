@@ -45,7 +45,7 @@ function useExtAccessQuery() {
 function CopyButton({ value, label = 'copy' }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   function copy() {
-    navigator.clipboard?.writeText(value);
+    void navigator.clipboard?.writeText(value);
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   }
@@ -91,8 +91,8 @@ export function ExternalAccessSection() {
   const mutation = useMutation({
     mutationFn: (next: boolean) => updateExternalAccessConfig({ enabled: next }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['external-access'] });
-      qc.invalidateQueries({ queryKey: ['health', 'detailed'] });
+      void qc.invalidateQueries({ queryKey: ['external-access'] });
+      void qc.invalidateQueries({ queryKey: ['health', 'detailed'] });
     },
   });
 

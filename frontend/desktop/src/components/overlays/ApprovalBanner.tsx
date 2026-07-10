@@ -34,7 +34,7 @@ async function fetchStatus(sessionId: string): Promise<SessionStatus | null> {
         const r = await fetch(`/api/workbench/session/${encodeURIComponent(sessionId)}/status`, { credentials: 'same-origin' });
         if (!r.ok) return null;
         return r.json() as Promise<SessionStatus>;
-    } catch (_) {
+    } catch {
         return null;
     }
 }
@@ -59,8 +59,8 @@ function summarizeTool(toolName: string | null, args: Record<string, unknown> | 
     const keys = Object.keys(args).filter((k) => k !== 'confirmed' && k !== 'reReadFirst');
     const first = keys[0];
     if (first) {
-        const value = String(args[first] ?? '').slice(0, 80);
-        return `Tool: ${toolName} — ${first}: ${value}`;
+        const value = typeof args[first] === 'string' ? args[first] : JSON.stringify(args[first] ?? '');
+        return `Tool: ${toolName} — ${first}: ${value.slice(0, 80)}`;
     }
     return `Tool: ${toolName}`;
 }
@@ -82,8 +82,8 @@ export function ApprovalBanner({ sessionId, pollIntervalMs = 2000, onStatusChang
             setStatus(next);
             onStatusChange?.(next);
         };
-        tick();
-        const t = setInterval(tick, pollIntervalMs);
+        void tick();
+        const t = setInterval(() => { void tick(); }, pollIntervalMs);
         return () => {
             cancelled = true;
             clearInterval(t);
@@ -156,7 +156,7 @@ export function ApprovalBanner({ sessionId, pollIntervalMs = 2000, onStatusChang
                         <Button
                             size="sm"
                             variant="outline"
-                            onClick={onReject}
+                            onClick={() => { void onReject(); }}
                             disabled={!!deciding}
                             className="border-warning/40 text-warning hover:bg-warning/20"
                         >
@@ -165,7 +165,7 @@ export function ApprovalBanner({ sessionId, pollIntervalMs = 2000, onStatusChang
                         </Button>
                         <Button
                             size="sm"
-                            onClick={onApprove}
+                            onClick={() => { void onApprove(); }}
                             disabled={!!deciding}
                             className="bg-warning text-black hover:bg-warning/90"
                         >

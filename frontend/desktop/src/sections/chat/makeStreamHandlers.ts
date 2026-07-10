@@ -447,16 +447,18 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'finalOutput', content: info });
       scheduleUpdate();
     },
-    onDone: async () => {
-      if (latestMutationCount > beforeMutationCount && sessionId) {
-        try {
-          const diff = await gitApi.diff(sessionId);
-          if (diff.files.length > 0) changedFiles = diff;
-        } catch (e) {
-          console.warn('[makeStreamHandlers] Failed to load changed files:', e);
+    onDone: () => {
+      void (async () => {
+        if (latestMutationCount > beforeMutationCount && sessionId) {
+          try {
+            const diff = await gitApi.diff(sessionId);
+            if (diff.files.length > 0) changedFiles = diff;
+          } catch (e) {
+            console.warn('[makeStreamHandlers] Failed to load changed files:', e);
+          }
         }
-      }
-      finalize('done');
+        finalize('done');
+      })();
     },
     onError: ({ message }) => {
       assistantContent += `\n\n⚠️ Workbench error: ${message}`;

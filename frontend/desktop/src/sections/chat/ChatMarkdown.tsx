@@ -139,7 +139,8 @@ function convertLatexToUnicode(input: string): string {
   s = s.replace(/=>/g, '⇒');
 
   // 5) Restore protected regions
-  s = s.replace(/\u0000MATH-PROTECTED-(\d+)\u0000/g, (_m, idx) => placeholders[Number(idx)] || '');
+  const nullGuard = '\u0000';
+  s = s.replace(new RegExp(nullGuard + 'MATH-PROTECTED-(\\d+)' + nullGuard, 'g'), (_m, idx) => placeholders[Number(idx)] || '');
 
   return s;
 }

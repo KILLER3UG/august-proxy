@@ -68,8 +68,8 @@ export function AgentTree({ rootId, maxDepth = 4, onSelect }: Props) {
       setTree(next);
       setLoading(false);
     };
-    tick();
-    const t = setInterval(tick, 3000);
+    void tick();
+    const t = setInterval(() => { void tick(); }, 3000);
     return () => {
       cancelled = true;
       clearInterval(t);

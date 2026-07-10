@@ -98,7 +98,7 @@ export function ExamHost(props: ExamHostProps) {
         if (!cancelled) setLoading(false);
       }
     };
-    bootstrap();
+    void bootstrap();
     return () => {
       cancelled = true;
     };
@@ -207,7 +207,7 @@ export function ExamHost(props: ExamHostProps) {
       examId={examId}
       question={question}
       onAnswer={handleAnswer}
-      onNext={handleNext}
+      onNext={() => { void handleNext(); }}
       onAddQuestion={handleAddQuestion}
       onDismiss={onDismiss}
     />

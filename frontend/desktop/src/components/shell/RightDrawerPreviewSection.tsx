@@ -58,26 +58,26 @@ export function RightDrawerPreviewSection({
     mutationFn: () => startPreviewSession({ command, cwd: workspacePath || undefined, approved: false }),
     onSuccess: (result: any) => {
       if (result?.status === 'approval_required') {
-        qc.invalidateQueries({ queryKey: ['preview-sessions', sessionId] });
+        void qc.invalidateQueries({ queryKey: ['preview-sessions', sessionId] });
         return;
       }
       setCommand('');
-      qc.invalidateQueries({ queryKey: ['preview-sessions', sessionId] });
+      void qc.invalidateQueries({ queryKey: ['preview-sessions', sessionId] });
     },
   });
 
   const stop = useMutation({
     mutationFn: (id: string) => stopPreviewSession(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['preview-sessions', sessionId] }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['preview-sessions', sessionId] }); },
   });
 
   const approve = useMutation({
     mutationFn: (requestId: string) => approvePreviewRequest(requestId, true),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['preview-sessions', sessionId] }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['preview-sessions', sessionId] }); },
   });
   const reject = useMutation({
     mutationFn: (requestId: string) => approvePreviewRequest(requestId, false),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['preview-sessions', sessionId] }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['preview-sessions', sessionId] }); },
   });
 
   const url = activePreview?.url || active?.url || previewUrl;

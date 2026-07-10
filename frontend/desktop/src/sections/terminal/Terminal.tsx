@@ -48,7 +48,7 @@ export function Terminal() {
     mutationFn: () => submitTerminalCommand(activeId || '', command),
     onSuccess: (res: any) => {
       setCommand('');
-      qc.invalidateQueries({ queryKey: ['terminal-sessions'] });
+      void qc.invalidateQueries({ queryKey: ['terminal-sessions'] });
       if (res?.status === 'approval_required') {
         // Approval will surface in the approvals list.
       }

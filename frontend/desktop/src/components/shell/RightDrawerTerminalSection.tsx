@@ -42,30 +42,30 @@ export function RightDrawerTerminalSection() {
   const resize = useMutation({
     mutationFn: ({ sessionId, cols, rows }: { sessionId: string; cols: number; rows: number }) =>
       resizeTerminalSession(sessionId, cols, rows),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['terminal-sessions'] }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['terminal-sessions'] }); },
   });
 
   const createSession = useMutation({
     mutationFn: () => createTerminalSession(),
     onSuccess: (session) => {
       setSelectedId(session.id);
-      qc.invalidateQueries({ queryKey: ['terminal-sessions'] });
+      void qc.invalidateQueries({ queryKey: ['terminal-sessions'] });
     },
   });
 
   const approve = useMutation({
     mutationFn: (requestId: string) => approveTerminalRequest(requestId, true),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['terminal-sessions'] }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['terminal-sessions'] }); },
   });
   const reject = useMutation({
     mutationFn: (requestId: string) => approveTerminalRequest(requestId, false),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['terminal-sessions'] }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['terminal-sessions'] }); },
   });
   const close = useMutation({
     mutationFn: deleteTerminalSession,
     onSuccess: () => {
       if (selectedId) setSelectedId(null);
-      qc.invalidateQueries({ queryKey: ['terminal-sessions'] });
+      void qc.invalidateQueries({ queryKey: ['terminal-sessions'] });
     },
   });
 
@@ -154,7 +154,7 @@ export function RightDrawerTerminalSection() {
       } else if (event.data instanceof ArrayBuffer) {
         terminal.write(new Uint8Array(event.data));
       } else if (event.data instanceof Blob) {
-        event.data.arrayBuffer().then((buffer) => terminal.write(new Uint8Array(buffer)));
+        void event.data.arrayBuffer().then((buffer) => terminal.write(new Uint8Array(buffer)));
       }
     });
     socket.addEventListener('close', () => {

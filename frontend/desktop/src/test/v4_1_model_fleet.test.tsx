@@ -63,19 +63,19 @@ describe('v4.1 — ModelFleetTab', () => {
     await waitFor(() => screen.getByTestId('fleet-save'));
 
     // The Save button should start disabled (no dirty state).
-    const saveBtn = screen.getByTestId('fleet-save');
+    const saveBtn = screen.getByTestId<HTMLButtonElement>('fleet-save');
     expect(saveBtn.disabled).toBe(true);
 
     // Click Clear on hippocampus to set it to '' (use session model).
     // This requires the test to actually be able to mutate state via the
     // Clear button. We can't easily open the ModelPickerDropdown in jsdom,
     // but the Clear button is a plain button that mutates editFleet.
-    const clearHippocampus = screen.getByTestId('fleet-hippocampus-clear');
+    const clearHippocampus = screen.getByTestId<HTMLButtonElement>('fleet-hippocampus-clear');
     expect(clearHippocampus.disabled).toBe(false); // hippocampus starts non-empty
     fireEvent.click(clearHippocampus);
 
     await waitFor(() => {
-      expect((screen.getByTestId('fleet-save')).disabled).toBe(false);
+      expect(screen.getByTestId<HTMLButtonElement>('fleet-save').disabled).toBe(false);
     });
 
     fireEvent.click(screen.getByTestId('fleet-save'));
@@ -105,7 +105,7 @@ describe('v4.1 — ModelFleetTab', () => {
     fireEvent.click(screen.getByTestId('fleet-reset'));
     // After Reset, the Save button should become enabled (the form is dirty)
     await waitFor(() => {
-      expect((screen.getByTestId('fleet-save')).disabled).toBe(false);
+      expect(screen.getByTestId<HTMLButtonElement>('fleet-save').disabled).toBe(false);
     });
   });
 });

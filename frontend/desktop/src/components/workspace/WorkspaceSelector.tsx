@@ -174,7 +174,7 @@ export function WorkspaceSelector({ sessionId, onWorkspaceChange }: WorkspaceSel
 
           <div className="border-t border-border/70 mt-1 pt-1">
             <button
-              onClick={handleOpenFolder}
+              onClick={() => { void handleOpenFolder(); }}
               className="w-full text-left px-2.5 py-1.5 rounded-md text-xs hover:bg-muted transition flex items-center gap-2 text-primary"
             >
               <Plus className="size-3.5" />

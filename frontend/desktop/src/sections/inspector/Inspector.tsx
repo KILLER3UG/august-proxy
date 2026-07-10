@@ -218,6 +218,10 @@ function safeStringify(v: unknown): string {
   try {
     return JSON.stringify(v, null, 2);
   } catch {
-    return String(v);
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return '{}';
+    }
   }
 }

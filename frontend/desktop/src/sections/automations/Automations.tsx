@@ -21,7 +21,7 @@ export function Automations() {
   const run = useMutation({
     mutationFn: (job: AutomationJob) => runAutomation(job.id, job.approvalRequired === false),
     onSuccess: (res: any) => {
-      qc.invalidateQueries({ queryKey: ['automations'] });
+      void qc.invalidateQueries({ queryKey: ['automations'] });
       if (res?.status === 'approval_required') {
         toast.info('Automation requires approval', { description: 'Approve it to run the next time.' });
       } else {
@@ -34,7 +34,7 @@ export function Automations() {
   const remove = useMutation({
     mutationFn: (id: string) => deleteAutomation(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['automations'] });
+      void qc.invalidateQueries({ queryKey: ['automations'] });
       toast.success('Automation deleted');
     },
   });

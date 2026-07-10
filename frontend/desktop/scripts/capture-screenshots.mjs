@@ -1,3 +1,4 @@
+/* global process, console, localStorage */
 /* ── Visual regression capture (dev-only) ─────────────────────────── */
 /* Run via: node scripts/capture-screenshots.mjs                       */
 /* Requires the Vite dev server to be running on http://127.0.0.1:5191 */
@@ -37,7 +38,7 @@ async function snap(name, url, options = {}) {
   if (options.waitFor) {
     try {
       await page.waitForSelector(options.waitFor, { timeout: 8_000 });
-    } catch (e) {
+    } catch {
       console.warn(`  ! selector "${options.waitFor}" not found, continuing`);
     }
   }

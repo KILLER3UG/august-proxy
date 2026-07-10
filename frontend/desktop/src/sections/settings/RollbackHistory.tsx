@@ -28,8 +28,8 @@ export function RollbackHistory() {
     const undo = useMutation({
         mutationFn: (id: string) => undoAugustRollback(id),
         onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['rollback'] });
-            qc.invalidateQueries({ queryKey: ['audit'] });
+            void qc.invalidateQueries({ queryKey: ['rollback'] });
+            void qc.invalidateQueries({ queryKey: ['audit'] });
             toast.success('Rollback undone');
         },
         onError: (e: any) => toast.error(`Undo failed: ${e?.message || e}`)

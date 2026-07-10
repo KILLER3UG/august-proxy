@@ -27,7 +27,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
   // Sync state with active session's workspace path
   useEffect(() => {
     if (workspacePath) {
-      loadRootFiles(workspacePath);
+      void loadRootFiles(workspacePath);
     } else {
       setFlatTree([]);
       setError(null);
@@ -176,7 +176,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
     const normalizedPath = fullPath.replace(/\\/g, '/');
     const folderName = normalizedPath.split('/').pop() || 'workspace';
     const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
-    (async () => {
+    void (async () => {
       try {
         const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`);
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Directory not accessible');
@@ -278,7 +278,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
               <span className="text-[9px] uppercase px-2 bg-sidebar text-muted-foreground/60 relative font-bold">or</span>
             </div>
             <button
-              onClick={handleSelectFolder}
+              onClick={() => { void handleSelectFolder(); }}
               className="w-full py-1.5 px-3 rounded-lg bg-primary text-primary-foreground font-semibold text-[10.5px] hover:opacity-95 active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <FolderGit2 className="size-3.5" />
@@ -310,7 +310,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
                 key={node.path}
                 className="group flex items-center justify-between rounded px-1.5 py-1 hover:bg-white/5 transition cursor-pointer text-foreground/80 hover:text-foreground"
                 style={{ paddingLeft: `${node.depth * 10 + 6}px` }}
-                onClick={() => node.isDir && toggleFolder(node, i)}
+                onClick={() => { if (node.isDir) { void toggleFolder(node, i); } }}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   {node.isDir ? (

@@ -126,7 +126,7 @@ export function WorkspaceShell({
       {/* Left rail */}
       <aside className="w-64 shrink-0 border-r border-white/[0.06] bg-[#0f0f12] flex flex-col">
         <button
-          onClick={() => navigate('/')}
+          onClick={() => { void navigate('/'); }}
           className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition text-left"
         >
           <ArrowLeft className="size-4" />
@@ -164,7 +164,7 @@ export function WorkspaceShell({
                       active={active === s.id}
                       onSelect={() => {
                         setQuery('');
-                        navigate(`/settings/${s.id}`);
+                        void navigate(`/settings/${s.id}`);
                       }}
                     />
                   ))}

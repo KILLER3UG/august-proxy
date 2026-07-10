@@ -37,7 +37,7 @@ export function NoProviderBanner() {
         No AI providers configured.{' '}
         <button
           type="button"
-          onClick={() => navigate('/settings/providers')}
+          onClick={() => { void navigate('/settings/providers'); }}
           className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
         >
           <Settings className="size-3" />

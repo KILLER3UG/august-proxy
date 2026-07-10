@@ -25,7 +25,7 @@ export function useProviderOnboardingState() {
 
   const skip = () => {
     localStorage.setItem(SKIP_KEY, 'true');
-    qc.invalidateQueries({ queryKey: ['providers'] });
+    void qc.invalidateQueries({ queryKey: ['providers'] });
     setTick((t) => t + 1);
   };
 

@@ -131,7 +131,7 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
           <button
             type="button"
             onClick={() => {
-              navigate('/settings/providers');
+              void navigate('/settings/providers');
               onDismiss();
             }}
             className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity"

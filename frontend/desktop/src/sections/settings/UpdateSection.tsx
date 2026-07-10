@@ -86,7 +86,7 @@ export function UpdateSection() {
               </div>
 
               {state.status === 'idle' && (
-                <Button variant="outline" size="sm" onClick={checkForUpdates}>
+                <Button variant="outline" size="sm" onClick={() => { void checkForUpdates(); }}>
                   <RotateCw className="size-3.5 mr-1.5" />
                   Check for Updates
                 </Button>
@@ -139,7 +139,7 @@ export function UpdateSection() {
                     </div>
                   )}
                 </div>
-                <Button size="sm" onClick={doInstallUpdate}>
+                <Button size="sm" onClick={() => { void doInstallUpdate(); }}>
                   <Download className="size-3.5 mr-1.5" />
                   Install
                 </Button>
@@ -174,7 +174,7 @@ export function UpdateSection() {
                     variant="ghost"
                     size="sm"
                     className="mt-2 text-xs"
-                    onClick={checkForUpdates}
+                    onClick={() => { void checkForUpdates(); }}
                   >
                     Try again
                   </Button>
@@ -184,7 +184,7 @@ export function UpdateSection() {
           )}
 
           {/* Backend dependencies card (secondary to the app updater) */}
-          <BackendDepsCard backend={backend} onSync={sync} isTauri={backendTauri} />
+          <BackendDepsCard backend={backend} onSync={() => { void sync(); }} isTauri={backendTauri} />
         </div>
       )}
     </div>

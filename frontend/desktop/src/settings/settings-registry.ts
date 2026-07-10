@@ -373,7 +373,7 @@ export function auditRegistry(): void {
 
     if (s.tier !== 'basic' && s.tier !== 'advanced') {
       throw new Error(
-        `settings-registry: section "${s.id}" has invalid tier "${s.tier}" — must be "basic" or "advanced"`,
+        `settings-registry: section "${s.id}" has invalid tier "${String(s.tier)}" — must be "basic" or "advanced"`,
       );
     }
     tiers.add(s.tier);

@@ -128,7 +128,7 @@ export function LiveSettingsTab() {
     try {
       await updateLiveConfig(editCfg);
       setEditCfg(null);
-      qc.invalidateQueries({ queryKey: ['live-config'] });
+      void qc.invalidateQueries({ queryKey: ['live-config'] });
       toast.success('Saved Live settings');
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
@@ -240,7 +240,7 @@ export function LiveSettingsTab() {
             </button>
             <button
               type="button"
-              onClick={handleSave}
+              onClick={() => { void handleSave(); }}
               disabled={!dirty || saving}
               className="px-3 py-1.5 text-xs rounded bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
               data-testid="live-save"

@@ -70,12 +70,12 @@ function scheduleRetry() {
     _retryTimer = setTimeout(() => {
         _retryTimer = null;
         _retryDelay = Math.min(_retryDelay * 2, 30_000);
-        connect();
-    }, delay);
-}
+        void connect();
+	    }, delay);
+	}
 
-async function connect() {
-    if (_socket && (_socket.readyState === WebSocket.OPEN || _socket.readyState === WebSocket.CONNECTING)) return;
+	async function connect() {
+	    if (_socket && (_socket.readyState === WebSocket.OPEN || _socket.readyState === WebSocket.CONNECTING)) return;
     // Tauri desktop: connect directly to the backend (loopback HTTP → ws).
     // Browser dev: same-origin; Vite proxy handles the WS upgrade.
     let wsUrl: string;
@@ -146,7 +146,7 @@ export function useLogStream() {
         if (isMounted.current) return;
         isMounted.current = true;
         _mountedSubscribers += 1;
-        if (!_socket) connect();
+        if (!_socket) void connect();
         return () => {
             _mountedSubscribers -= 1;
             if (_mountedSubscribers <= 0) {

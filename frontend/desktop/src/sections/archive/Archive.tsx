@@ -39,10 +39,10 @@ export function Archive() {
     if (confirm('Are you sure you want to delete sessions? This will wipe your conversation history and cannot be undone.')) {
       const deleteArchived = confirm('Do you want to delete archived sessions as well? Click OK to delete BOTH active and archived sessions, or Cancel to delete ONLY active sessions.');
       const newSess = clearAllSessions(deleteArchived);
-      navigate(`/c/${newSess.id}`);
+      void navigate(`/c/${newSess.id}`);
       // Close settings by pressing Escape or navigating back
       const preSettingsPath = sessionStorage.getItem('pre-settings-path') || '/';
-      navigate(preSettingsPath);
+      void navigate(preSettingsPath);
     }
   };
 

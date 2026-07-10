@@ -64,7 +64,7 @@ export function WorkbenchPlanPanel({
 
         {!approved && (
           <div className="flex justify-end gap-2 pt-1">
-            <Button size="sm" variant="outline" onClick={onApprove}>
+            <Button size="sm" variant="outline" onClick={() => { void onApprove(); }}>
               Approve plan
             </Button>
           </div>

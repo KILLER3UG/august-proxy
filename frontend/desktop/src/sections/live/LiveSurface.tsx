@@ -44,8 +44,8 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      sttRef.current?.stop();
-      ttsRef.current?.cancel();
+      void sttRef.current?.stop();
+      void ttsRef.current?.cancel();
     };
   }, []);
 
@@ -64,22 +64,24 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
       }
       session.onPartial(text);
     });
-    stt.onFinal(async (text) => {
-      session.onFinal(text);
-      const turnId = `t-${Date.now()}`;
-      session.addToolEvent({
-        id: turnId,
-        name: 'turn',
-        args: { transcript: text },
-        status: 'running',
-      });
-      const response = await liveClient.sendTurn(sessionIdRef.current, text);
-      if (response) {
-        await tts.speak(response);
-        session.updateToolEvent(turnId, { status: 'done', result: response });
-      } else {
-        session.updateToolEvent(turnId, { status: 'error' });
-      }
+    stt.onFinal((text) => {
+      void (async () => {
+        session.onFinal(text);
+        const turnId = `t-${Date.now()}`;
+        session.addToolEvent({
+          id: turnId,
+          name: 'turn',
+          args: { transcript: text },
+          status: 'running',
+        });
+        const response = await liveClient.sendTurn(sessionIdRef.current, text);
+        if (response) {
+          await tts.speak(response);
+          session.updateToolEvent(turnId, { status: 'done', result: response });
+        } else {
+          session.updateToolEvent(turnId, { status: 'error' });
+        }
+      })();
     });
     stt.onError((err) => {
       session.addToolEvent({
@@ -127,7 +129,7 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
             <button
               type="button"
               data-testid="start-listening"
-              onClick={startListening}
+              onClick={() => { void startListening(); }}
               className="px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm hover:opacity-90"
             >
               <Mic className="size-4 inline mr-2" />
@@ -156,16 +158,16 @@ export function LiveSurface({ onSwitchToChat, pendingMutations = [] }: LiveSurfa
             // isMuted state updates through toggleMute() but we don't
             // read it back here to avoid a stale-closure on `session`.
             if (sttRef.current) {
-              if (session.isMuted) sttRef.current.start();
-              else sttRef.current.stop();
+              if (session.isMuted) void sttRef.current.start();
+              else void sttRef.current.stop();
             }
             session.toggleMute();
           }}
           onEnd={() => {
             session.stop();
-            sttRef.current?.stop();
-            ttsRef.current?.cancel();
-            if (sessionIdRef.current) liveClient.stopSession(sessionIdRef.current);
+            void sttRef.current?.stop();
+            void ttsRef.current?.cancel();
+            if (sessionIdRef.current) void liveClient.stopSession(sessionIdRef.current);
             onSwitchToChat();
           }}
           onToggleContinuous={() => {}}

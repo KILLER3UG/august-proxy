@@ -131,7 +131,7 @@ export function PlanProposalBanner({
             dropdown menu items so the banner feels like part of the same
             control family. */}
         <div className="mt-2 flex items-center gap-1">
-          <BannerButton onClick={onReject} disabled={sending}>
+          <BannerButton onClick={() => { void onReject(); }} disabled={sending}>
             <X className="size-3" />
             Reject
           </BannerButton>
@@ -164,10 +164,10 @@ export function PlanProposalBanner({
             </BannerButton>
           ) : (
             <>
-              <BannerButton onClick={onAccept} disabled={sending}>
+              <BannerButton onClick={() => { void onAccept(); }} disabled={sending}>
                 Accept
               </BannerButton>
-              <BannerButton primary onClick={onAcceptAndImplement} disabled={sending} className="ml-auto">
+              <BannerButton primary onClick={() => { void onAcceptAndImplement(); }} disabled={sending} className="ml-auto">
                 Accept and allow edits
                 <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-[10px] font-mono">Ctrl ↵</kbd>
               </BannerButton>

@@ -84,7 +84,7 @@ export function ChatLayout() {
     const handler = (e: { action: string; target: string; payload?: Record<string, unknown> }) => {
       switch (e.action) {
         case 'navigate':
-          navigate(e.target);
+          void navigate(e.target);
           break;
         case 'open_drawer': {
           const section = (e.payload?.section || 'preview') as RightDrawerSectionId;
@@ -113,7 +113,7 @@ export function ChatLayout() {
           }
           break;
         case 'refresh':
-          queryClient.invalidateQueries();
+          void queryClient.invalidateQueries();
           break;
         case 'focus_composer':
           dispatchFocusComposer();
@@ -161,19 +161,19 @@ export function ChatLayout() {
       if (!activeSess) {
         activeSess = createSession(null, 'New Chat', currentWorkspacePath);
       }
-      navigate(`/c/${activeSess.id}`, { replace: true });
+      void navigate(`/c/${activeSess.id}`, { replace: true });
     } else if (location.pathname.startsWith("/c/")) {
       const match = sessions.find((s) => s.id === sessionId);
       if (!match || match.isArchived) {
         const fallback = activeSessions[0] || createSession(null, 'New Chat', currentWorkspacePath);
-        navigate(`/c/${fallback.id}`, { replace: true });
+        void navigate(`/c/${fallback.id}`, { replace: true });
       }
     }
   }, [location.pathname, sessionId, sessions, navigate, currentWorkspacePath]);
 
   const handleNewSession = (folderId?: string | null) => {
     const newSess = createSession(folderId ?? null, 'New Chat', currentWorkspacePath);
-    navigate(`/c/${newSess.id}`);
+    void navigate(`/c/${newSess.id}`);
   };
 
   const approvePlan = async () => {
@@ -205,7 +205,7 @@ export function ChatLayout() {
     try {
       await streamWorkbenchRevision(active.workbenchSessionId, feedback, {
         onError: (data) => toast.error('Could not send plan revision', { description: data.message }),
-        onSession: () => queryClient.invalidateQueries({ queryKey: ['workbench-session', active.workbenchSessionId] }),
+        onSession: () => { void queryClient.invalidateQueries({ queryKey: ['workbench-session', active.workbenchSessionId] }); },
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -241,7 +241,7 @@ export function ChatLayout() {
               if (path.startsWith("settings") || path.startsWith("/settings")) {
                 sessionStorage.setItem("pre-settings-path", location.pathname);
               }
-              navigate(path.startsWith("/") ? path : `/${path}`);
+              void navigate(path.startsWith("/") ? path : `/${path}`);
             }}
           />
         )}
@@ -254,7 +254,7 @@ export function ChatLayout() {
             onToggleSidebar={() => setCollapsed((c) => !c)}
             onSettings={() => {
               sessionStorage.setItem("pre-settings-path", location.pathname);
-              navigate("/settings");
+              void navigate("/settings");
             }}
             onSelectRightDrawerSection={openWorkbenchSidebar}
           />

@@ -148,7 +148,7 @@ export function WorkspaceUsageSection() {
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold">Activity heatmap</span>
               <button
-                onClick={() => heatmapQ.refetch()}
+                onClick={() => { void heatmapQ.refetch(); }}
                 aria-label="Refresh heatmap"
                 className="text-muted-foreground hover:text-foreground transition"
               >
@@ -163,7 +163,7 @@ export function WorkspaceUsageSection() {
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold">Tokens per day</span>
               <button
-                onClick={() => byDayQ.refetch()}
+                onClick={() => { void byDayQ.refetch(); }}
                 aria-label="Refresh bar chart"
                 className="text-muted-foreground hover:text-foreground transition"
               >

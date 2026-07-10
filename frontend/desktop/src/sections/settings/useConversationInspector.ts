@@ -72,7 +72,8 @@ function toMessages(raw: unknown): MessageItem[] {
           .filter(Boolean)
           .join('\n');
       } else if (m?.content && typeof m.content === 'object') {
-        content = String(m.content.text || m.content.content || '');
+        const textVal = (m.content as Record<string, unknown>).text || (m.content as Record<string, unknown>).content || '';
+        content = typeof textVal === 'string' ? textVal : JSON.stringify(textVal);
       }
       return { role, content };
     })
@@ -114,10 +115,11 @@ function stringifyThinking(v: unknown): string {
     }
     if (typeof v === 'object') {
       const o = v as Record<string, unknown>;
-      return String(o.thinking || o.text || o.content || '');
+      const textVal = o.thinking || o.text || o.content || '';
+      return typeof textVal === 'string' ? textVal : JSON.stringify(textVal);
     }
   } catch { /* ignore */ }
-  return String(v);
+  return typeof v === 'string' ? v : JSON.stringify(v);
 }
 
 function extractTraces(details: RequestDetailEntry[] | undefined): ThinkingTrace[] {
@@ -145,7 +147,11 @@ function safeStringify(v: unknown): string {
   try {
     return JSON.stringify(v, null, 2);
   } catch {
-    return String(v);
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return '{}';
+    }
   }
 }
 

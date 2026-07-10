@@ -25,7 +25,7 @@ export function ProviderOnboardingModal() {
   if (!shouldShow || isLoading) return null;
 
   const handleSetUpProvider = () => {
-    navigate('/settings/providers');
+    void navigate('/settings/providers');
   };
 
   const handleImport = async () => {
@@ -34,8 +34,8 @@ export function ProviderOnboardingModal() {
     try {
       const config = JSON.parse(importJson);
       await providersApi.importConfig(config);
-      qc.invalidateQueries({ queryKey: ['providers'] });
-      qc.invalidateQueries({ queryKey: ['aggregated-models'] });
+      void qc.invalidateQueries({ queryKey: ['providers'] });
+      void qc.invalidateQueries({ queryKey: ['aggregated-models'] });
       setShowImport(false);
       setImportJson('');
     } catch (e: unknown) {
@@ -100,7 +100,7 @@ export function ProviderOnboardingModal() {
               </button>
               <button
                 type="button"
-                onClick={handleImport}
+                onClick={() => { void handleImport(); }}
                 disabled={!importJson.trim() || importing}
                 className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
               >

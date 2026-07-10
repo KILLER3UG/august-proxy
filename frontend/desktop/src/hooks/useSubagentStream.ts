@@ -43,7 +43,7 @@ export function useSubagentStream(sessionId: string | null): UseSubagentStreamRe
     if (!sessionId) return;
 
     // Initial fetch
-    refresh();
+    void refresh();
 
     // Subscribe to SSE events
     const unsub = subscribeToSubagentEvents(sessionId, (event: SubagentEvent) => {
@@ -90,5 +90,5 @@ export function useSubagentStream(sessionId: string | null): UseSubagentStreamRe
     };
   }, [sessionId, refresh]);
 
-  return { agents, events, loading, error, refresh };
+  return { agents, events, loading, error, refresh: () => { void refresh(); } };
 }

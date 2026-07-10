@@ -77,8 +77,8 @@ export function LearningTab() {
         if (!cancelled) setError((e as Error).message);
       }
     };
-    fetchData();
-    const id = setInterval(fetchData, 5000);
+    void fetchData();
+    const id = setInterval(() => { void fetchData(); }, 5000);
     return () => {
       cancelled = true;
       clearInterval(id);

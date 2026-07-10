@@ -81,7 +81,7 @@ export function ModelFleetTab() {
     try {
       await updateModelFleet(editFleet);
       setEditFleet(null);
-      qc.invalidateQueries({ queryKey: ['model-fleet-config'] });
+      void qc.invalidateQueries({ queryKey: ['model-fleet-config'] });
       toast.success('Saved Model Fleet settings');
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
@@ -170,7 +170,7 @@ export function ModelFleetTab() {
             </button>
             <button
               type="button"
-              onClick={handleSave}
+              onClick={() => { void handleSave(); }}
               disabled={!dirty || saving}
               className="px-3 py-1.5 text-xs rounded bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
               data-testid="fleet-save"

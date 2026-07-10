@@ -44,7 +44,7 @@ export function RightDrawerDiffSection({ sessionId }: { sessionId: string | null
           variant="outline"
           size="sm"
           disabled={!sessionId || query.isFetching}
-          onClick={() => qc.invalidateQueries({ queryKey: ['git', 'diff', sessionId] })}
+          onClick={() => { void qc.invalidateQueries({ queryKey: ['git', 'diff', sessionId] }); }}
         >
           <RefreshCw className={cn('size-3', query.isFetching && 'animate-spin')} />
           Refresh

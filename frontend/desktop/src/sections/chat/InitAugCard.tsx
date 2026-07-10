@@ -142,14 +142,14 @@ export function InitAugCard({ draft, existing, workspacePath, sessionId }: InitA
 
       <div className="flex gap-2">
         <button
-          onClick={save}
+          onClick={() => { void save(); }}
           disabled={busy}
           className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
         >
           <Check size={14} /> {currentExisting ? 'Refine & Save' : 'Save AUG.md'}
         </button>
         <button
-          onClick={regenerate}
+          onClick={() => { void regenerate(); }}
           disabled={busy}
           className="flex items-center gap-1 rounded bg-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-100 hover:bg-zinc-600 disabled:opacity-50"
         >

@@ -99,10 +99,10 @@ export function SubagentBlock({ state, subBlocks, subPrompts }: SubagentBlockPro
     try {
       const saved = localStorage.getItem(expandKey);
       return saved == null ? true : saved === '1';
-    } catch (_) { return true; }
+    } catch { /* silent */ return true; }
   });
   useEffect(() => {
-    try { localStorage.setItem(expandKey, expanded ? '1' : '0'); } catch (_) {}
+    try { localStorage.setItem(expandKey, expanded ? '1' : '0'); } catch { /* silent */ }
   }, [expandKey, expanded]);
 
   // Live elapsed timer while the sub-agent is running.

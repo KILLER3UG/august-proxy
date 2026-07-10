@@ -78,7 +78,7 @@ function readLastSeq(sessionId: string): number {
 
 function writeLastSeq(sessionId: string, seq: number) {
   if (!Number.isFinite(seq) || seq <= 0) return;
-  try { localStorage.setItem(SUB_LAST_SEQ(sessionId), String(seq)); } catch (_) {}
+  try { localStorage.setItem(SUB_LAST_SEQ(sessionId), String(seq)); } catch { /* silent */ }
 }
 
 const MESSAGES_STORAGE_PREFIX = 'chat_messages_';
@@ -902,7 +902,7 @@ export function registerStreamResync(
   const resync = () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     // syncActiveStreams accepts a no-arg ensureWorkbenchSession; wrap ours.
-    syncActiveStreams(() => _registeredEnsureSession
+    void syncActiveStreams(() => _registeredEnsureSession
       ? _registeredEnsureSession('')
       : Promise.resolve(null));
   };

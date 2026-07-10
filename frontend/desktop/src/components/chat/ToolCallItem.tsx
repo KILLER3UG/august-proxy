@@ -515,15 +515,15 @@ export function ToolCallItem({
                   const token = tool.pendingApproval?.confirmationToken;
                   if (!token) return;
                   setApprovalStatus('confirming');
-                  confirmWorkbenchMutation(token, {
+                  void confirmWorkbenchMutation(token, {
                     onText: ({ content }) => {
-                      tool.summary = `${tool.summary || ''}\n${content}`.trim();
+                      tool.summary = `${tool.summary || ''}\n${typeof content === 'string' ? content : JSON.stringify(content ?? '')}`.trim();
                     },
                     onToolUse: ({ id, name, input }) => {
                       tool.summary = `${tool.summary || ''}\nStarted ${name}: ${JSON.stringify(input || {})}`.trim();
                     },
                     onToolResult: ({ content }) => {
-                      tool.summary = `${tool.summary || ''}\n${content}`.trim();
+                      tool.summary = `${tool.summary || ''}\n${typeof content === 'string' ? content : JSON.stringify(content ?? '')}`.trim();
                     },
                     onError: ({ message }) => {
                       tool.error = message;
