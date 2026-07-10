@@ -17,8 +17,9 @@ import time
 import uuid
 from typing import AsyncIterator, Callable, cast
 from app.adapters.base import streamSse, buildHeaders
-from app.adapters.proxyTools import getProxyOpenaiToolDefinitions, appendMissingOpenaiTools, getCanonicalManagedOpenaiWebTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, isProxyManagedLocalToolName
+from app.adapters.proxyTools import getProxyOpenaiToolDefinitions, appendMissingOpenaiTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, isProxyManagedLocalToolName
 from app.adapters.toolClassification import classifyOpenaiToolCalls, getToolNameFromOpenaiTool
+from app.adapters.stream_state import OpenaiStreamAccumulator, ToolCallDelta
 from app.adapters.caseConverters import snakeToCamel, camelToSnake
 from app.providers import resolver as providerResolver
 from app.providers.modelResolver import resolve, resolveOrFallback
@@ -147,51 +148,18 @@ def sendSimulatedOpenaiStream(response: dict[str, object]) -> list[str]:
     events.append(writeOpenaiSseDone())
     return events
 
-def createOpenaiStreamAccumulator() -> dict[str, object]:
-    """Create a state object for accumulating streaming chunks."""
-    return {'id': '', 'model': '', 'created': 0, 'content': '', 'reasoning': '', 'tool_calls': [], 'finish_reason': None, 'usage': None}
+def createOpenaiStreamAccumulator() -> OpenaiStreamAccumulator:
+    """Backward-compat: return a new OpenaiStreamAccumulator instance."""
+    return OpenaiStreamAccumulator()
 
-def accumulateOpenaiChunk(acc: dict[str, object], chunk: dict[str, object]) -> None:
-    """Accumulate a streaming chunk into the accumulator state."""
-    if chunk.get('id'):
-        acc['id'] = chunk['id']
-    if chunk.get('model'):
-        acc['model'] = chunk['model']
-    if chunk.get('created'):
-        acc['created'] = chunk['created']
-    if chunk.get('usage'):
-        acc['usage'] = chunk['usage']
-    choices = chunk.get('choices', [])
-    for choice in choices:
-        delta = choice.get('delta', {})
-        if choice.get('finish_reason'):
-            acc['finish_reason'] = choice['finish_reason']
-        if delta.get('content'):
-            acc['content'] += delta['content']
-        if delta.get('reasoning') or delta.get('reasoning_content'):
-            acc['reasoning'] += delta.get('reasoning', '') or delta.get('reasoning_content', '')
-        if delta.get('tool_calls'):
-            for tc in delta['tool_calls']:
-                existing = next((t for t in acc['tool_calls'] if t.get('index') == tc.get('index')), None)
-                if existing:
-                    if tc.get('id'):
-                        existing['id'] = tc['id']
-                    if tc.get('function', {}).get('name'):
-                        existing.setdefault('function', {})['name'] = existing.get('function', {}).get('name', '') + tc['function']['name']
-                    if tc.get('function', {}).get('arguments'):
-                        existing.setdefault('function', {})['arguments'] = existing.get('function', {}).get('arguments', '') + tc['function']['arguments']
-                else:
-                    acc['tool_calls'].append({'index': tc.get('index', 0), 'id': tc.get('id', ''), 'type': tc.get('type', 'function'), 'function': {'name': tc.get('function', {}).get('name', ''), 'arguments': tc.get('function', {}).get('arguments', '')}})
+def accumulateOpenaiChunk(acc: OpenaiStreamAccumulator, chunk: dict[str, object]) -> None:
+    """Backward-compat: delegate to OpenaiStreamAccumulator.accumulate."""
+    acc.accumulate(chunk)  # type: ignore[arg-type]
 
-def buildOpenaiAggregatedFromStream(acc: dict[str, object]) -> dict[str, object]:
-    """Build a complete response dict from accumulated stream data."""
-    responseId = acc.get('id') or f'chatcmpl-{uuid.uuid4().hex[:12]}'
-    message: dict[str, object] = {'role': 'assistant', 'content': acc.get('content', '')}
-    if acc.get('reasoning'):
-        message['reasoning'] = acc['reasoning']
-    if acc.get('tool_calls'):
-        message['tool_calls'] = [{'id': tc.get('id') or f'call_{uuid.uuid4().hex[:8]}', 'type': 'function', 'function': {'name': tc.get('function', {}).get('name', ''), 'arguments': tc.get('function', {}).get('arguments', '')}} for tc in acc['tool_calls']]
-    return {'id': responseId, 'object': 'chat.completion', 'created': acc.get('created') or int(time.time()), 'model': acc.get('model') or 'unknown', 'choices': [{'index': 0, 'message': message, 'finish_reason': acc.get('finish_reason') or 'stop'}], 'usage': acc.get('usage') or {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}}
+
+def buildOpenaiAggregatedFromStream(acc: OpenaiStreamAccumulator) -> dict[str, object]:
+    """Backward-compat: delegate to OpenaiStreamAccumulator.build_response."""
+    return acc.build_response()  # type: ignore[return-value]
 
 def isOpenaiToolResultError(toolMessage: ChatMessage | dict[str, object]) -> bool:
     """Check if a tool result contains an error pattern."""
@@ -313,7 +281,7 @@ async def streamUpstreamAndResolveToolsOpenai(upstreamUrl: str, upstreamHeaders:
 
     This is the key function for handling streaming with managed tool execution.
     """
-    acc = createOpenaiStreamAccumulator()
+    acc = OpenaiStreamAccumulator()
     toolRound = 0
     raw_body = body.model_dump() if isinstance(body, ChatCompletionRequest) else body
     currentMessages = list(raw_body.get('messages', []))
@@ -324,40 +292,46 @@ async def streamUpstreamAndResolveToolsOpenai(upstreamUrl: str, upstreamHeaders:
             yield writeOpenaiSseError(chunk.get('body', str(chunk.get('error', ''))))
             yield writeOpenaiSseDone()
             return
-        accumulateOpenaiChunk(acc, chunk)
+        acc.accumulate(chunk)
         yield writeOpenaiSseData(chunk)
         choices = chunk.get('choices', [])
         if choices and choices[0].get('finish_reason') in ('tool_calls', 'stop'):
-            responseId = acc.get('id') or chunk.get('id', '')
-            modelName = acc.get('model') or model
-            if acc['tool_calls']:
+            responseId = acc.id or chunk.get('id', '')
+            modelName = acc.model or model
+            if acc.tool_calls:
                 toolRound += 1
                 if toolRound > MAX_MANAGED_TOOL_ROUNDS:
                     break
-                assistantMsg = {'role': 'assistant', 'content': acc.get('content', '')}
-                if acc['reasoning']:
-                    assistantMsg['reasoning'] = acc['reasoning']
-                if acc['tool_calls']:
-                    assistantMsg['tool_calls'] = [{'id': tc.get('id') or f'call_{uuid.uuid4().hex[:8]}', 'type': 'function', 'function': {'name': tc.get('function', {}).get('name', ''), 'arguments': tc.get('function', {}).get('arguments', '')}} for tc in acc['tool_calls']]
+                toolCallDicts = [tc.to_openai_dict() for tc in acc.tool_calls]
+                assistantMsg: dict[str, object] = {'role': 'assistant', 'content': acc.content}
+                if acc.reasoning:
+                    assistantMsg['reasoning'] = acc.reasoning
+                if toolCallDicts:
+                    assistantMsg['tool_calls'] = toolCallDicts
                 currentMessages.append(assistantMsg)
-                classification = classifyOpenaiToolCalls(acc['tool_calls'], managedLocalToolNames, clientToolNames)
+                classification = classifyOpenaiToolCalls(toolCallDicts, managedLocalToolNames, clientToolNames)
                 if classification['has_managed'] and (classification['can_execute_managed'] or toolRound < MAX_MANAGED_TOOL_ROUNDS):
                     toolResults = await executeManagedOpenaiToolCalls(classification['managed_tool_calls'], knownTools, currentMessages, workspacePath, onToolEvent)
                     currentMessages.extend(toolResults)
-                    acc = createOpenaiStreamAccumulator()
+                    acc = OpenaiStreamAccumulator()
                     async for nextChunk in _client.streamSse(upstreamUrl, upstreamHeaders, camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': True})):
                         if nextChunk.get('type') == 'error':
                             yield writeOpenaiSseError(nextChunk.get('body', ''))
                             yield writeOpenaiSseDone()
                             return
-                        accumulateOpenaiChunk(acc, nextChunk)
+                        acc.accumulate(nextChunk)
                         yield writeOpenaiSseData(nextChunk)
                         nchoices = nextChunk.get('choices', [])
                         if nchoices and nchoices[0].get('finish_reason'):
                             break
-                    currentMessages.append({'role': 'assistant', 'content': acc.get('content', ''), **({'tool_calls': acc['tool_calls']} if acc['tool_calls'] else {})})
-                    if acc['usage']:
-                        yield writeOpenaiSseData({'choices': [], 'usage': acc['usage']})
+                    nextToolDicts = [tc.to_openai_dict() for tc in acc.tool_calls] if acc.tool_calls else []
+                    currentMessages.append({
+                        'role': 'assistant',
+                        'content': acc.content,
+                        **({'tool_calls': nextToolDicts} if nextToolDicts else {}),
+                    })
+                    if acc.usage:
+                        yield writeOpenaiSseData({'choices': [], 'usage': acc.usage})
             yield writeOpenaiSseDone()
             return
     yield writeOpenaiSseDone()
@@ -400,8 +374,20 @@ async def handleChatCompletions(body: ChatCompletionRequest | dict[str, object],
     if clientTools:
         appendMissingOpenaiTools(knownTools, clientTools)
     managedLocalToolNames: set[str] = set()
-    clientToolNames: set[str] = {getToolDefinitionName(t) for t in clientTools or [] if t}
-    hasManagedTools = any((isProxyManagedLocalToolName(getToolDefinitionName(t)) for t in knownTools))
+    clientToolNames: set[str] = set()
+    # Proxy-injected managed tools are always locally executable
+    for t in knownTools:
+        name = getToolDefinitionName(t)
+        if name and isProxyManagedLocalToolName(name):
+            managedLocalToolNames.add(name)
+    # Client-listed tools: separate managed from client-owned
+    for t in clientTools or []:
+        name = getToolDefinitionName(t)
+        if name and isProxyManagedLocalToolName(name):
+            managedLocalToolNames.add(name)
+        elif name:
+            clientToolNames.add(name)
+    hasManagedTools = len(managedLocalToolNames) > 0
     if isResponsesEndpoint:
         raw_body['stream'] = False
         resp = await client.requestJson('POST', upstreamUrl.replace('/chat/completions', '/responses'), headers, camelToSnake(raw_body))
@@ -418,7 +404,23 @@ async def handleChatCompletions(body: ChatCompletionRequest | dict[str, object],
             messages = raw_body.get('messages', [])
             updatedMessages, usage = await resolveManagedOpenaiToolCalls(messages, model, upstreamUrl, headers, knownTools, managedLocalToolNames, clientToolNames, client=client)
             lastMsg = updatedMessages[-1] if updatedMessages else {}
-            response = buildOpenaiAggregatedFromStream({'id': f'chatcmpl-{uuid.uuid4().hex[:12]}', 'model': model, 'created': int(time.time()), 'content': lastMsg.get('content', ''), 'tool_calls': lastMsg.get('tool_calls', []), 'finish_reason': 'stop' if not lastMsg.get('tool_calls') else 'tool_calls', 'usage': usage or {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}})
+            response_acc = OpenaiStreamAccumulator(
+                id=f'chatcmpl-{uuid.uuid4().hex[:12]}',
+                model=model,
+                created=int(time.time()),
+                content=str(lastMsg.get('content', '')),
+                finish_reason='stop' if not lastMsg.get('tool_calls') else 'tool_calls',
+                usage=usage or {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0},
+            )
+            for tc in (lastMsg.get('tool_calls') or []):
+                if isinstance(tc, dict):
+                    fn = tc.get('function', {}) or {}
+                    response_acc.tool_calls.append(ToolCallDelta(
+                        id=tc.get('id', ''),
+                        function_name=fn.get('name', '') if isinstance(fn, dict) else '',
+                        function_arguments=fn.get('arguments', '') if isinstance(fn, dict) else '',
+                    ))
+            response = response_acc.build_response()
             return (response, None)
         else:
             resp = await client.requestJson('POST', upstreamUrl, headers, camelToSnake(raw_body))

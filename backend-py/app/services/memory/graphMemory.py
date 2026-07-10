@@ -9,7 +9,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from app.jsonUtils import as_dict, as_int, as_list, as_str
+from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
 from app.lib.paths import dataPath
 _DEFAULTGraphFile = dataPath('august_graph_memory.json')
 _MAXEntities = 1000

@@ -141,6 +141,22 @@ export const WorkbenchPlanProposedEventSchema = WorkbenchBaseSchema.extend({
   plan: z.unknown(),
 });
 
+/** Event emitted when the model asks a clarifying question (it was uncertain). */
+export const WorkbenchClarifyProposedEventSchema = WorkbenchBaseSchema.extend({
+  type: z.literal('clarifyProposed'),
+  clarify: z
+    .object({
+      question: z.string().optional(),
+      choices: z.array(z.string()).optional(),
+      questions: z
+        .array(z.object({ question: z.string(), choices: z.array(z.string()).optional() }))
+        .optional(),
+      currentIndex: z.number().optional(),
+      contextSummary: z.string().optional(),
+    })
+    .optional(),
+});
+
 /** Event emitted for browser automation actions. */
 export const WorkbenchBrowserActionEventSchema = WorkbenchBaseSchema.extend({
   type: z.literal('browserAction'),
@@ -238,6 +254,7 @@ export const WorkbenchEventSchema = z.discriminatedUnion('type', [
   WorkbenchDoneEventSchema,
   WorkbenchErrorEventSchema,
   WorkbenchPlanProposedEventSchema,
+  WorkbenchClarifyProposedEventSchema,
   WorkbenchBrowserActionEventSchema,
   WorkbenchFinalOutputEventSchema,
   WorkbenchSubagentStartEventSchema,

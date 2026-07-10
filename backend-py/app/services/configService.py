@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 from app.lib.paths import dataPath
 from app.typeAliases import JsonValue
+from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 from app.models.config import ProviderConfig, ModelConfig
 
 def _readJson(path: Path) -> dict[str, JsonValue]:
@@ -37,26 +38,23 @@ def saveProvidersStore(data: dict[str, JsonValue]) -> None:
 def getProvidersAsModels() -> list[ProviderConfig]:
     """Read providers from the store and return typed ProviderConfig models."""
     store = getProvidersStore()
-    raw_list: list[dict[str, JsonValue]] = store.get('providers', [])
-    if not isinstance(raw_list, list):
-        return []
+    raw_list = as_list(store.get('providers'))
     result: list[ProviderConfig] = []
     for raw in raw_list:
         if not isinstance(raw, dict):
             continue
-        models_raw = raw.get('models', [])
+        models_raw = as_list(raw.get('models'))
         models: list[ModelConfig] = []
-        if isinstance(models_raw, list):
-            for m in models_raw:
-                if isinstance(m, dict):
-                    models.append(ModelConfig(
-                        id=str(m.get('id', '')),
-                        name=str(m.get('name', '')),
-                        contextWindow=int(m.get('contextWindow', 128000)),
-                        reasoning=bool(m.get('reasoning', False)),
-                        free=bool(m.get('free', False)),
-                        source=str(m.get('source', 'manual')),
-                    ))
+        for m in models_raw:
+            if isinstance(m, dict):
+                models.append(ModelConfig(
+                    id=str(m.get('id', '')),
+                    name=str(m.get('name', '')),
+                    contextWindow=as_int(m.get('contextWindow'), 128000),
+                    reasoning=bool(m.get('reasoning', False)),
+                    free=bool(m.get('free', False)),
+                    source=str(m.get('source', 'manual')),
+                ))
         result.append(ProviderConfig(
             id=str(raw.get('id', '')),
             name=str(raw.get('name', '')),

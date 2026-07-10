@@ -13,7 +13,7 @@ This is a pure function — trivially testable.
 from __future__ import annotations
 from dataclasses import dataclass, field
 from app.services.tools.retrieval import buildToolCatalog, searchTools, buildQueryFromMessages
-AUGUST_CORE_TOOLS: frozenset[str] = frozenset({'read_file', 'write_file', 'list_directory', 'search_files', 'run_command', 'web_fetch', 'web_search', 'memory_search', 'fact_search', 'context_read', 'brain_query', 'load_skill', 'list_skills', 'skill_manage', 'spawn_subagent', 'diagnose_proxy', 'describe_environment', 'tool_search', 'tool_describe', 'tool_call', 'update_heuristics', 'update_state', 'write_scratchpad', 'spawn_daemon', 'list_daemons', 'kill_daemon', 'write_blackboard', 'read_blackboard', 'clear_blackboard'})
+AUGUST_CORE_TOOLS: frozenset[str] = frozenset({'read_file', 'write_file', 'list_directory', 'search_files', 'run_command', 'web_fetch', 'web_search', 'memory_search', 'fact_search', 'context_read', 'brain_query', 'load_skill', 'list_skills', 'skill_manage', 'spawn_subagent', 'diagnose_proxy', 'describe_environment', 'tool_search', 'tool_describe', 'tool_call', 'update_heuristics', 'update_state', 'write_scratchpad', 'spawn_daemon', 'list_daemons', 'kill_daemon', 'write_blackboard', 'read_blackboard', 'clear_blackboard', 'setup_provider'})
 
 @dataclass
 class AssemblyResult:

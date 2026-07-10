@@ -22,6 +22,7 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
+from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
 from app.lib.paths import dataPath
 MAX_ACTIVITY_LOG = 200
 MAX_REQUEST_LOG = 1000
@@ -118,17 +119,17 @@ class RequestTracker:
             detail = {}
             self._details[reqId] = detail
         detail['response'] = self._sanitize(responseData)
-        usage = responseData.get('usage', {})
+        usage = as_dict(responseData.get('usage'), {})
         if usage:
-            detail['inputTokens'] = usage.get('prompt_tokens') or usage.get('input_tokens', 0)
-            detail['outputTokens'] = usage.get('completion_tokens') or usage.get('output_tokens', 0)
-        choices = responseData.get('choices', [])
+            detail['inputTokens'] = as_int(usage.get('prompt_tokens')) or as_int(usage.get('input_tokens'))
+            detail['outputTokens'] = as_int(usage.get('completion_tokens')) or as_int(usage.get('output_tokens'))
+        choices = as_list(responseData.get('choices'), [])
         if choices:
-            detail['finishReason'] = choices[0].get('finish_reason', '')
-            message = choices[0].get('message', {}) or choices[0].get('delta', {})
-            if message.get('content'):
+            detail['finishReason'] = as_str(choices[0].get('finish_reason'), '')
+            message = as_dict(choices[0].get('message')) or as_dict(choices[0].get('delta'))
+            if as_str(message.get('content')):
                 detail['responseContent'] = str(message['content'])[:500]
-            if message.get('tool_calls'):
+            if as_list(message.get('tool_calls'), []):
                 detail['toolCalls'] = len(message['tool_calls'])
 
     def captureTokens(self, reqId: str, inputTokens: int, outputTokens: int) -> None:
@@ -137,8 +138,8 @@ class RequestTracker:
         if not detail:
             detail = {}
             self._details[reqId] = detail
-        detail['inputTokens'] = detail.get('inputTokens', 0) + inputTokens
-        detail['outputTokens'] = detail.get('outputTokens', 0) + outputTokens
+        detail['inputTokens'] = as_int(detail.get('inputTokens')) + inputTokens
+        detail['outputTokens'] = as_int(detail.get('outputTokens')) + outputTokens
 
     def captureError(self, reqId: str, error: str) -> None:
         """Set error on a request detail."""
@@ -162,19 +163,19 @@ class RequestTracker:
         cutoff = _periodCutoff(period)
         if cutoff is None:
             return list(self._log)
-        return [e for e in self._log if _parseTimestamp(e.get('startedAt', '')) >= cutoff]
+        return [e for e in self._log if _parseTimestamp(as_str(e.get('startedAt'), '')) >= cutoff]
 
     def getStats(self, period: str='all') -> dict[str, object]:
         """Compute aggregate stats from the request log."""
         entries = self.getFiltered(period)
         total = len(entries)
-        completed = sum((1 for e in entries if e.get('status') == 'completed'))
-        errors = sum((1 for e in entries if e.get('status') == 'error'))
-        totalInput = sum((e.get('inputTokens', 0) for e in entries))
-        totalOutput = sum((e.get('outputTokens', 0) for e in entries))
+        completed = sum((1 for e in entries if as_str(e.get('status')) == 'completed'))
+        errors = sum((1 for e in entries if as_str(e.get('status')) == 'error'))
+        totalInput = sum((as_int(e.get('inputTokens')) for e in entries))
+        totalOutput = sum((as_int(e.get('outputTokens')) for e in entries))
         models: dict[str, int] = {}
         for e in entries:
-            m = e.get('model', 'unknown')
+            m = as_str(e.get('model'), 'unknown')
             models[m] = models.get(m, 0) + 1
         inputCost = totalInput / 1000000 * 3.0
         outputCost = totalOutput / 1000000 * 15.0
@@ -185,7 +186,7 @@ class RequestTracker:
         cutoff = _periodCutoff(period)
         if cutoff is None:
             return list(self._details.values())
-        return [v for v in self._details.values() if _parseTimestamp(v.get('startedAt', '')) >= cutoff]
+        return [v for v in self._details.values() if _parseTimestamp(as_str(v.get('startedAt'), '')) >= cutoff]
 
     def getRequestDetail(self, reqId: str) -> dict[str, object] | None:
         return self._details.get(reqId)
@@ -214,7 +215,7 @@ class RequestTracker:
         """
         from app.services import logStream
         event = dict(event)
-        if not event.get('category'):
+        if not as_str(event.get('category')):
             event['category'] = 'info'
         logStream.emitLogEvent(event)
 
@@ -224,14 +225,14 @@ class RequestTracker:
 
     def _finalize(self, reqId: str, pending: dict[str, object], result: dict[str, object]) -> dict[str, object]:
         """Build the final request log entry."""
-        usage = result.get('usage', {})
+        usage = as_dict(result.get('usage'), {})
         detail = self._details.pop(reqId, {})
-        return {'id': reqId, 'startedAt': pending.get('startedAt', ''), 'completedAt': datetime.utcnow().isoformat() + 'Z', 'status': 'error' if result.get('error') else 'completed', 'model': pending.get('model', ''), 'provider': pending.get('provider', ''), 'inputTokens': usage.get('prompt_tokens') or usage.get('input_tokens') or detail.get('inputTokens', 0), 'outputTokens': usage.get('completion_tokens') or usage.get('output_tokens') or detail.get('outputTokens', 0), 'error': result.get('error') or detail.get('error'), 'method': pending.get('method', 'POST'), 'path': pending.get('path', ''), 'sessionId': result.get('sessionId') or pending.get('sessionId', ''), **detail}
+        return {'id': reqId, 'startedAt': as_str(pending.get('startedAt'), ''), 'completedAt': datetime.utcnow().isoformat() + 'Z', 'status': 'error' if as_str(result.get('error')) else 'completed', 'model': as_str(pending.get('model'), ''), 'provider': as_str(pending.get('provider'), ''), 'inputTokens': as_int(usage.get('prompt_tokens')) or as_int(usage.get('input_tokens')) or as_int(detail.get('inputTokens')), 'outputTokens': as_int(usage.get('completion_tokens')) or as_int(usage.get('output_tokens')) or as_int(detail.get('outputTokens')), 'error': as_str(result.get('error')) or as_str(detail.get('error')), 'method': as_str(pending.get('method'), 'POST'), 'path': as_str(pending.get('path'), ''), 'sessionId': as_str(result.get('sessionId')) or as_str(pending.get('sessionId'), ''), **detail}
 
     def _cleanupStale(self, timeoutS: int=600) -> None:
         """Remove pending requests older than timeout."""
         now = time.time()
-        stale = [rid for rid, v in self._pending.items() if now - _parseTimestamp(v.get('startedAt', '')) > timeoutS]
+        stale = [rid for rid, v in self._pending.items() if now - _parseTimestamp(as_str(v.get('startedAt'), '')) > timeoutS]
         for rid in stale:
             del self._pending[rid]
 
@@ -319,17 +320,17 @@ def getRecentLogEvents(limit: int=100) -> list[dict[str, object]]:
 def extractSessionId(body: dict[str, object]) -> str:
     """Extract a session ID from a request body."""
     for key in ('sessionId', 'session_id', 'x-session-id'):
-        val = body.get(key, '')
+        val = as_str(body.get(key), '')
         if val:
-            return str(val)
+            return val
     return ''
 
 def resolveSessionId(body: dict[str, object], metadata: dict[str, object] | None=None) -> str:
     """Resolve final session ID with priority: metadata > body > synthetic."""
     if metadata:
-        sid = metadata.get('sessionId') or metadata.get('session_id')
+        sid = as_str(metadata.get('sessionId')) or as_str(metadata.get('session_id'))
         if sid:
-            return str(sid)
+            return sid
     return extractSessionId(body) or _syntheticSessionId()
 
 def _syntheticSessionId() -> str:
