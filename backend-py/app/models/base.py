@@ -12,13 +12,12 @@ Design principle (proxy-specific):
 """
 from __future__ import annotations
 
-from typing import TypeAlias
-
 from pydantic import BaseModel, ConfigDict
 
 # Re-export JsonValue from the canonical home in typeAliases so that model
-# code doesn't need to import from two places.
-JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
+# code doesn't need to import from two places. Defined as a PEP 695 type alias
+# (``type JsonValue = ...``) so pydantic 2.13 can resolve the self-reference.
+type JsonValue = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 
 
 class ExtraAllowBaseModel(BaseModel):
