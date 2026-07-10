@@ -773,7 +773,7 @@ export function appendBlockEvent(
           error: event.error || '',
           duration: event.duration,
           searchHits: event.searchHits ?? target.tool.searchHits,
-          providerSetup: (event.providerSetup as ProviderSetupResult | undefined) ?? target.tool.providerSetup,
+          providerSetup: event.providerSetup ?? target.tool.providerSetup,
         };
       }
       blocks[targetIdx] = target;
