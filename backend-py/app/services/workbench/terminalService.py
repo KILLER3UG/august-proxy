@@ -11,7 +11,7 @@ import platform
 import uuid
 from collections import deque
 from datetime import datetime
-from app.jsonUtils import as_int, as_list, as_str
+from app.jsonUtils import as_bool, as_dict, as_float, as_int, as_list, as_str
 BUFFER_LIMIT = 256 * 1024
 COMMAND_OUTPUT_LIMIT = 1024 * 1024
 MAX_SESSIONS = 50
@@ -39,7 +39,7 @@ _pendingApprovals: dict[str, dict[str, object]] = {}
 _wsSockets: dict[str, set[object]] = {}
 
 def _summarize(session: dict[str, object]) -> dict[str, object]:
-    return {'id': session['id'], 'title': as_str(session.get('title'), 'Terminal'), 'cwd': as_str(session.get('cwd'), ''), 'command': as_str(session.get('command'), ''), 'status': as_str(session.get('status'), 'created'), 'createdAt': as_str(session.get('createdAt'), ''), 'updatedAt': as_str(session.get('updatedAt'), ''), 'bufferLength': len(as_str(session.get('buffer'), '')), 'approvedInteractive': session.get('approvedInteractive', False), 'cols': as_int(session.get('cols'), 80), 'rows': as_int(session.get('rows'), 24), 'pty': session.get('pty', False)}
+    return {'id': session['id'], 'title': as_str(session.get('title'), 'Terminal'), 'cwd': as_str(session.get('cwd'), ''), 'command': as_str(session.get('command'), ''), 'status': as_str(session.get('status'), 'created'), 'createdAt': as_str(session.get('createdAt'), ''), 'updatedAt': as_str(session.get('updatedAt'), ''), 'bufferLength': len(as_str(session.get('buffer'), '')), 'approvedInteractive': as_bool(session.get('approvedInteractive', False)), 'cols': as_int(session.get('cols'), 80), 'rows': as_int(session.get('rows'), 24), 'pty': as_bool(session.get('pty', False))}
 
 def listTerminalSessions() -> list[dict[str, object]]:
     return [_summarize(s) for s in _sessions.values()][:MAX_SESSIONS]
@@ -54,7 +54,7 @@ async def createTerminalSession(params: dict[str, object] | None=None) -> dict[s
     shell = _getShell()
     from app.services.workbench.pty_io import PtyIO
     pty = PtyIO()
-    session = {'id': sessionId, 'title': as_str(params.get('title'), 'Terminal'), 'cwd': as_str(params.get('cwd')) or os.getcwd(), 'command': as_str(params.get('command'), shell), 'status': 'starting', 'createdAt': _now(), 'updatedAt': _now(), 'buffer': '', 'approvedInteractive': params.get('approvedInteractive', False), 'cols': as_int(params.get('cols'), 80), 'rows': as_int(params.get('rows'), 24), 'pty': True, 'pty_io': pty, 'process': None, 'stdin': None, 'stdout': None}
+    session = {'id': sessionId, 'title': as_str(params.get('title'), 'Terminal'), 'cwd': as_str(params.get('cwd')) or os.getcwd(), 'command': as_str(params.get('command'), shell), 'status': 'starting', 'createdAt': _now(), 'updatedAt': _now(), 'buffer': '', 'approvedInteractive': as_bool(params.get('approvedInteractive', False)), 'cols': as_int(params.get('cols'), 80), 'rows': as_int(params.get('rows'), 24), 'pty': True, 'pty_io': pty, 'process': None, 'stdin': None, 'stdout': None}
     try:
         args = as_list(params.get('args')) or ['-i']
         await pty.spawn(shell=shell, args=args, cwd=str(session['cwd']), env={**os.environ, 'TERM': 'xterm-256color'}, cols=session['cols'], rows=session['rows'])
@@ -137,12 +137,12 @@ async def writeTerminalInput(sessionId: str, inputText: str, approved: bool=Fals
     session = _sessions.get(sessionId)
     if not session:
         return {'error': 'Session not found'}
-    if not session.get('approvedInteractive') and (not approved):
+    if not as_bool(session.get('approvedInteractive', False)) and (not approved):
         reqId = f'apr_{uuid.uuid4().hex[:8]}'
         _pendingApprovals[reqId] = {'requestId': reqId, 'type': 'terminal_interactive_input', 'terminalId': sessionId, 'createdAt': _now()}
         return {'status': 'approval_required', 'requestId': reqId}
     pty = session.get('pty_io')
-    if pty and session.get('pty'):
+    if pty and as_bool(session.get('pty', False)):
         try:
             await pty.write(inputText)
             return {'status': 'written'}
@@ -178,7 +178,7 @@ async def submitTerminalCommand(params: dict[str, object]) -> dict[str, object]:
     """Run a one-shot command and return output."""
     command = as_str(params.get('command'), '')
     cwd = as_str(params.get('cwd')) or os.getcwd()
-    approved = params.get('approved', False)
+    approved = as_bool(params.get('approved', False))
     reason = as_str(params.get('reason'), '')
     timeoutMs = as_int(params.get('timeoutMs'), 30000)
     if not approved:
@@ -266,7 +266,7 @@ async def handleTerminalConnection(websocket: object, terminalId: str) -> None:
             await websocket.send_text(buffer)
         while True:
             data = await websocket.receive_text()
-            result = await writeTerminalInput(terminalId, data, approved=session.get('approvedInteractive', False))
+            result = await writeTerminalInput(terminalId, data, approved=as_bool(session.get('approvedInteractive', False)))
             if as_str(result.get('status')) == 'approval_required':
                 await websocket.send_text(f'\r\n[Approval required for interactive input]\r\n')
     except Exception:

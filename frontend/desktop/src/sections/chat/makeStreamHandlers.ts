@@ -433,6 +433,14 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     onBtw: (result) => {
       setWorkbenchBtw(result);
     },
+    onClarifyProposed: (data) => {
+      // Anchor the clarifying question to the assistant message of this turn
+      // so the chat thread renders the ClarifyTool popup beneath it.
+      setMessages(prev => prev.map(msg =>
+        msg.id === assistantMsgId ? { ...msg, clarify: data } : msg
+      ));
+      scheduleUpdate();
+    },
     onCompaction: (info) => {
       // When the summarizing compressor collapses the middle of the
       // conversation, surface a small inline notice so the user can see

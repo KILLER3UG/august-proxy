@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import cast
 from app.services.memoryStore import saveMemory, getMemory, recordConfigAudit
-from app.jsonUtils import as_str, as_dict, as_list
+from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
 _AGENTSKey = 'agent_registry'
 _JOBSKey = 'agent_jobs'
 _MAXAgentDepth = 4
@@ -71,7 +71,7 @@ def getAgentTree(agentId: str) -> dict[str, object] | None:
     if not agent:
         return None
     allAgents = listAgents()
-    children = [a for a in allAgents if a.get('parentId') == agentId]
+    children = [a for a in allAgents if as_str(a.get('parentId')) == agentId]
     return {'agent': agent, 'children': children}
 
 def getAgentTreeRooted(root: str='', maxDepth: int=4) -> dict[str, object]:
@@ -85,15 +85,15 @@ def getAgentTreeRooted(root: str='', maxDepth: int=4) -> dict[str, object]:
         children = []
         if depth < maxDepth:
             for a in allAgents:
-                if a.get('parentId') == agent.get('id'):
+                if as_str(a.get('parentId')) == as_str(agent.get('id')):
                     children.append(buildNode(a, depth + 1))
         return {'agent': agent, 'children': children}
     if root:
-        rootAgent = next((a for a in allAgents if a.get('id') == root), None)
+        rootAgent = next((a for a in allAgents if as_str(a.get('id')) == root), None)
         if not rootAgent:
             return {'agent': None, 'children': []}
         return buildNode(rootAgent, 0)
-    roots = [a for a in allAgents if not a.get('parentId')]
+    roots = [a for a in allAgents if not as_str(a.get('parentId'))]
     return {'agent': None, 'children': [buildNode(a, 0) for a in roots]}
 
 def evaluateAgentTool(agentId: str, toolName: str) -> dict[str, object]:
@@ -101,7 +101,7 @@ def evaluateAgentTool(agentId: str, toolName: str) -> dict[str, object]:
     agent = getAgent(agentId)
     if not agent:
         return {'allowed': False, 'reason': 'agent_not_found'}
-    permissions = agent.get('permissions', [])
+    permissions = as_list(agent.get('permissions'), [])
     if 'all' in permissions:
         return {'allowed': True}
     if toolName in permissions:
@@ -109,7 +109,7 @@ def evaluateAgentTool(agentId: str, toolName: str) -> dict[str, object]:
     for perm in permissions:
         if toolName.startswith(perm):
             return {'allowed': True}
-    parentId = agent.get('parentId')
+    parentId = as_str(agent.get('parentId'))
     if parentId:
         return evaluateAgentTool(parentId, toolName)
     return {'allowed': False, 'reason': f"tool '{toolName}' not in permissions"}
@@ -123,10 +123,10 @@ def _effectivePermissions(agentId: str) -> set[str] | None:
     agent = getAgent(agentId)
     if not agent:
         return set()
-    perms = set(agent.get('permissions') or [])
+    perms = set(as_list(agent.get('permissions'), []))
     if 'all' in perms:
         return None
-    parentId = agent.get('parentId')
+    parentId = as_str(agent.get('parentId'))
     if parentId:
         parentEff = _effectivePermissions(parentId)
         if parentEff is None:
@@ -153,7 +153,7 @@ def listJobs(agentId: str='') -> list[dict[str, object]]:
     raw = getMemory(_JOBSKey) or []
     jobs = cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
     if agentId:
-        return [j for j in jobs if j.get('agentId') == agentId]
+        return [j for j in jobs if as_str(j.get('agentId')) == agentId]
     return jobs
 
 def createJob(agentId: str, goal: str, context: str='') -> dict[str, object]:
@@ -192,7 +192,7 @@ def _calculateDepth(parentId: str | None, agents: list[dict[str, object]]) -> in
         return 0
     for a in agents:
         if a['id'] == parentId:
-            return a.get('depth', 0) + 1
+            return as_int(a.get('depth', 0)) + 1
     return 0
 
 def renderAgentContext(agentId: str) -> str:
@@ -200,17 +200,17 @@ def renderAgentContext(agentId: str) -> str:
     agent = getAgent(agentId)
     if not agent:
         return ''
-    parts = [f"Agent: {agent.get('name', 'unknown')}"]
-    if agent.get('role'):
+    parts = [f"Agent: {as_str(agent.get('name'), 'unknown')}"]
+    if as_str(agent.get('role')):
         parts.append(f"Role: {agent['role']}")
-    if agent.get('description'):
+    if as_str(agent.get('description')):
         parts.append(f"Description: {agent['description']}")
-    if agent.get('tools'):
+    if as_list(agent.get('tools'), []):
         parts.append(f"Tools: {', '.join(agent['tools'])}")
-    if agent.get('permissions'):
+    if as_list(agent.get('permissions'), []):
         parts.append(f"Permissions: {', '.join(agent['permissions'])}")
-    if agent.get('toolsets'):
+    if as_list(agent.get('toolsets'), []):
         parts.append(f"Toolsets: {', '.join(agent['toolsets'])}")
-    if agent.get('modelAlias'):
+    if as_str(agent.get('modelAlias')):
         parts.append(f"Model alias: {agent['modelAlias']}")
     return '\n'.join(parts)

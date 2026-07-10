@@ -215,7 +215,7 @@ class DaemonManager:
 
     def _evaluateWatch(self, info: dict) -> bool:
         """Evaluate the watch condition against the daemon's current output."""
-        condition = info.get('watch_condition')
+        condition = as_str(info.get('watch_condition'))
         if not condition:
             return False
         output = info['result'].output

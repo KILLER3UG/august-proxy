@@ -9,6 +9,7 @@ import { confirmWorkbenchMutation } from '@/api/workbench';
 import { visibleProgress, type ProgressEntry } from '@/lib/tool-progress';
 import { getToolLabel } from '@/lib/tool-labels';
 import { formatToolContext, formatToolResult, formatToolError, type FormattedContext } from '@/lib/tool-context-format';
+import type { ProviderSetupResult } from '@/types/chat';
 import { ProviderSetupWidget } from '@/components/chat/ProviderSetupWidget';
 
 /**
@@ -176,6 +177,8 @@ export interface ToolEntry {
   };
   /** For web_search: structured search hits to render as linked list */
   searchHits?: Array<{ title: string; url: string; snippet?: string }>;
+  /** For setup_provider results: structured provider config to render an inline key field. */
+  providerSetup?: ProviderSetupResult;
 }
 
 /**
@@ -236,7 +239,7 @@ export function ToolCallItem({
 
 
   const hasBody = !!(
-    tool.context || tool.preview || tool.summary || tool.error || tool.inlineDiff || tool.searchHits || tool.pendingApproval
+    tool.context || tool.preview || tool.summary || tool.error || tool.inlineDiff || tool.searchHits || tool.providerSetup || tool.pendingApproval
   );
   const [approvalStatus, setApprovalStatus] = useState<'idle' | 'confirming' | 'confirmed'>('idle');
 
