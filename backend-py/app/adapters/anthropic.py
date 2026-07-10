@@ -62,9 +62,9 @@ def resolveClaudePublicModelAlias(requestedModel: str | None) -> str:
     if not normalized:
         return CLAUDE_PUBLIC_MODEL_ALIAS
     lowered = normalized.lower()
-    if lowered in ('sonnet', 'sonnet[1m]'):
+    if lowered in ('sonnet',):
         return 'claude-sonnet-4-6'
-    if lowered in ('opus', 'opus[1m]', 'best', 'opusplan'):
+    if lowered in ('opus', 'best', 'opusplan'):
         return 'claude-opus-4-6'
     if normalized in KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES:
         return normalized
@@ -539,7 +539,7 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, JsonValue], state: dict[str, J
             anthropicStopReason = 'tool_use'
         elif finishReason == 'length':
             anthropicStopReason = 'max_tokens'
-        events.append(writeAnthropicSseData('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': anthropicStopReason, 'stop_sequence': None}, 'usage': {'output_tokens': 0}}))
+        events.append(writeAnthropicSseData('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': anthropicStopReason, 'stop_sequence': None}, 'usage': {'input_tokens': as_int(state.get('input_tokens'), 0), 'output_tokens': as_int(state.get('output_tokens'), 0)}}))
         events.append(writeAnthropicSseData('message_stop', {'type': 'message_stop'}))
     usage = as_dict(chunk.get('usage'), {})
     if usage:
@@ -568,7 +568,7 @@ def buildOpenaiAggregatedForAnthropicFromStream(state: dict[str, JsonValue]) -> 
         },
     }
 
-async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], system: list[dict[str, JsonValue]] | None, model: str, upstreamUrl: str, upstreamHeaders: dict[str, str], isAnthropicUpstream: bool, knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, JsonValue]], None] | None=None, parentSignal: object=None) -> tuple[list[dict[str, JsonValue]], dict[str, JsonValue] | None]:
+async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], system: list[dict[str, JsonValue]] | None, model: str, upstreamUrl: str, upstreamHeaders: dict[str, str], isAnthropicUpstream: bool, knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, JsonValue]], None] | None=None, parentSignal: object=None, client: BaseProviderClient | None=None) -> tuple[list[dict[str, JsonValue]], dict[str, JsonValue] | None]:
     """Run the multi-round tool resolution loop for Anthropic-format requests.
 
     Similar to the OpenAI version but works with Anthropic's content block format.
@@ -582,21 +582,15 @@ async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], 
             reqBody['system'] = currentSystem
         if knownTools:
             reqBody['tools'] = knownTools
+        if not client:
+            return (currentMessages, {'error': 'No client available for tool resolution'})
         if isAnthropicUpstream:
-            client = getClient({'apiMode': 'anthropicMessages'})
-            if client:
-                resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
-            else:
-                return (currentMessages, {'error': 'No Anthropic client available'})
+            resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
         else:
             openaiBody = buildOpenaiRequest({'messages': currentMessages}, model, currentSystem)
             if knownTools:
                 openaiBody['tools'] = [anthropicToOpenaiToolDefinition(t) for t in knownTools]
-            client = getClient({'apiMode': 'openaiChat'})
-            if client:
-                resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
-            else:
-                return (currentMessages, {'error': 'No OpenAI client available'})
+            resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
         if resp.status != 200:
             errBody: dict[str, JsonValue] = resp.body if isinstance(resp.body, dict) else {'error': str(resp.body)}
             return (currentMessages, errBody)
@@ -711,14 +705,14 @@ async def handleMessages(body: AnthropicRequest | dict[str, JsonValue], request:
     sessionId = deriveSessionIdFromAnthropic(raw_body, request)
     if clientWantsStream:
         if isAnthropicUpstream:
-            stream = _streamAnthropicNative(upstreamUrl, headers, raw_body, resolvedModel, systemBlocks, knownTools, managedLocalToolNames, clientToolNames)
+            stream = _streamAnthropicNative(upstreamUrl, headers, raw_body, resolvedModel, systemBlocks, knownTools, managedLocalToolNames, clientToolNames, client=client)
         else:
-            stream = _streamOpenaiAsAnthropic(upstreamUrl, headers, raw_body, resolvedModel, systemBlocks, knownTools, managedLocalToolNames, clientToolNames)
+            stream = _streamOpenaiAsAnthropic(upstreamUrl, headers, raw_body, resolvedModel, systemBlocks, knownTools, managedLocalToolNames, clientToolNames, client=client)
         return (stream, {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive'})
     else:
-        return await _handleMessagesNonStreaming(upstreamUrl, headers, raw_body, resolvedModel, isAnthropicUpstream, systemBlocks, knownTools, managedLocalToolNames, clientToolNames)
+        return await _handleMessagesNonStreaming(upstreamUrl, headers, raw_body, resolvedModel, isAnthropicUpstream, systemBlocks, knownTools, managedLocalToolNames, clientToolNames, client=client)
 
-async def _handleMessagesNonStreaming(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, JsonValue], model: str, isAnthropicUpstream: bool, systemBlocks: list[dict[str, JsonValue]], knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str]) -> tuple[dict[str, JsonValue], None]:
+async def _handleMessagesNonStreaming(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, JsonValue], model: str, isAnthropicUpstream: bool, systemBlocks: list[dict[str, JsonValue]], knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str], client: BaseProviderClient) -> tuple[dict[str, JsonValue], None]:
     """Non-streaming path for /v1/messages."""
     messages = body.get('messages', [])
     if isAnthropicUpstream:
@@ -726,14 +720,14 @@ async def _handleMessagesNonStreaming(upstreamUrl: str, upstreamHeaders: dict[st
         if knownTools:
             reqBody['tools'] = knownTools
         reqBody['stream'] = False
-        resp = await _getClient().requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
+        resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
         responseBody = snakeToCamel(resp.body_json) or {}
         if resp.is_error:
             return (responseBody, None)
         content = responseBody.get('content', [])
         toolUses = [b for b in content or [] if b.get('type') == 'tool_use']
         if toolUses:
-            updatedMessages, usage = await resolveManagedAnthropicToolUses(messages, systemBlocks, model, upstreamUrl, upstreamHeaders, True, knownTools, managedLocalToolNames, clientToolNames)
+            updatedMessages, usage = await resolveManagedAnthropicToolUses(messages, systemBlocks, model, upstreamUrl, upstreamHeaders, True, knownTools, managedLocalToolNames, clientToolNames, client=client)
             lastMsg = updatedMessages[-1] if updatedMessages else {}
             resp_usage = AnthropicUsage(input_tokens=as_int(usage.get('input_tokens', 0) if usage else 0), output_tokens=as_int(usage.get('output_tokens', 0) if usage else 0))
             return ({'id': responseBody.get('id', f'msg_{uuid.uuid4().hex[:16]}'), 'type': 'message', 'role': 'assistant', 'content': lastMsg.get('content', []), 'model': model, 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': resp_usage.model_dump()}, None)
@@ -743,13 +737,13 @@ async def _handleMessagesNonStreaming(upstreamUrl: str, upstreamHeaders: dict[st
         if knownTools:
             openaiBody['tools'] = [anthropicToOpenaiToolDefinition(t) for t in knownTools]
         openaiBody['stream'] = False
-        resp = await _getClient().requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
+        resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
         responseBody = snakeToCamel(resp.body_json) or {}
         if resp.is_error:
             return (responseBody, None)
         return (_translateOpenaiToAnthropicResponse(responseBody, model), None)
 
-async def _streamAnthropicNative(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, JsonValue], model: str, systemBlocks: list[dict[str, JsonValue]], knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str]) -> AsyncIterator[str]:
+async def _streamAnthropicNative(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, JsonValue], model: str, systemBlocks: list[dict[str, JsonValue]], knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str], client: BaseProviderClient) -> AsyncIterator[str]:
     """Stream from an Anthropic upstream in native format.
 
     Intercepts tool uses and resolves managed tools.
@@ -767,7 +761,7 @@ async def _streamAnthropicNative(upstreamUrl: str, upstreamHeaders: dict[str, st
         state = createAnthropicNativeStreamState()
         roundBody = dict(reqBody)
         roundBody['messages'] = currentMessages
-        async for rawEvent in _getClient().streamSse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
+        async for rawEvent in client.streamSse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
             event = cast('dict[str, JsonValue]', rawEvent)
             if event.get('type') == 'error':
                 yield writeAnthropicSseData('error', {'error': {'message': as_str(event.get('body'), str(event.get('error', '')))}})
@@ -823,7 +817,7 @@ async def _streamAnthropicNative(upstreamUrl: str, upstreamHeaders: dict[str, st
         break
     yield writeAnthropicSseData('message_stop', {'type': 'message_stop'})
 
-async def _streamOpenaiAsAnthropic(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, JsonValue], model: str, systemBlocks: list[dict[str, JsonValue]], knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str]) -> AsyncIterator[str]:
+async def _streamOpenaiAsAnthropic(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, JsonValue], model: str, systemBlocks: list[dict[str, JsonValue]], knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str], client: BaseProviderClient) -> AsyncIterator[str]:
     """Stream from an OpenAI-format upstream and convert to Anthropic SSE."""
     openaiBody = buildOpenaiRequest(body, model, systemBlocks)
     if knownTools:
@@ -838,7 +832,7 @@ async def _streamOpenaiAsAnthropic(upstreamUrl: str, upstreamHeaders: dict[str, 
         state = createOpenaiToAnthropicStreamState()
         roundBody = dict(openaiBody)
         roundBody['messages'] = currentMessages
-        async for rawChunk in _getClient().streamSse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
+        async for rawChunk in client.streamSse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
             chunk = cast('dict[str, JsonValue]', rawChunk)
             if chunk.get('type') == 'error':
                 yield writeAnthropicSseData('error', {'error': {'message': as_str(chunk.get('body'), str(chunk.get('error', '')))}})

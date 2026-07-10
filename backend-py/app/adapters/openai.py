@@ -400,8 +400,21 @@ async def handleChatCompletions(body: ChatCompletionRequest | dict[str, object],
     if clientTools:
         appendMissingOpenaiTools(knownTools, clientTools)
     managedLocalToolNames: set[str] = set()
-    clientToolNames: set[str] = {getToolDefinitionName(t) for t in clientTools or [] if t}
-    hasManagedTools = any((isProxyManagedLocalToolName(getToolDefinitionName(t)) for t in knownTools))
+    clientToolNames: set[str] = set()
+    # Proxy-injected managed tools are always locally executable, even if
+    # the client didn't list them in its own tool set.
+    for t in knownTools:
+        name = getToolDefinitionName(t)
+        if name and isProxyManagedLocalToolName(name):
+            managedLocalToolNames.add(name)
+    # Client-listed tools: separate managed from client-owned
+    for t in clientTools or []:
+        name = getToolDefinitionName(t)
+        if name and isProxyManagedLocalToolName(name):
+            managedLocalToolNames.add(name)
+        elif name:
+            clientToolNames.add(name)
+    hasManagedTools = len(managedLocalToolNames) > 0
     if isResponsesEndpoint:
         raw_body['stream'] = False
         resp = await client.requestJson('POST', upstreamUrl.replace('/chat/completions', '/responses'), headers, camelToSnake(raw_body))
