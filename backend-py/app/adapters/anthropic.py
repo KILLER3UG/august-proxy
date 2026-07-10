@@ -21,11 +21,11 @@ import time
 import uuid
 from typing import AsyncIterator, Callable, cast
 from app.typeAliases import JsonValue
-from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
-from app.adapters.base import streamSse, buildHeaders
+from app.jsonUtils import as_str, as_dict, as_list, as_int
+from app.adapters.base import streamSse, buildHeaders, extractRequestHeaders as _extractRequestHeaders, _scanHeadersForSessionId
 from app.adapters.stream_state import AnthropicNativeStreamState, OpenaiToAnthropicStreamState
 from app.providers.clients.base import BaseProviderClient
-from app.adapters.proxyTools import getProxyOpenaiToolDefinitionsForAnthropic, getCanonicalManagedAnthropicWebTools, appendMissingAnthropicTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, dedupeAndCanonicalizeAnthropicTools, sanitizeAnthropicToolDefinition, getManagedAnthropicWebToolDefinitions, openaiToAnthropicToolDefinition, anthropicToOpenaiToolDefinition, isProxyManagedLocalToolName, isBrowserAutomationToolName, buildClientToolGuidance
+from app.adapters.proxyTools import getProxyOpenaiToolDefinitionsForAnthropic, appendMissingAnthropicTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, dedupeAndCanonicalizeAnthropicTools, getManagedAnthropicWebToolDefinitions, openaiToAnthropicToolDefinition, anthropicToOpenaiToolDefinition, isProxyManagedLocalToolName, isBrowserAutomationToolName
 from app.adapters.toolClassification import classifyAnthropicToolUses, classifyOpenaiToolCalls, getToolNameFromAnthropicTool, getToolNameFromOpenaiTool
 from app.models import AnthropicRequest, AnthropicMessage, AnthropicResponse, AnthropicUsage, ContentBlock, ToolUseBlock, ToolResultBlock, ChatCompletionRequest, ChatMessage, ToolCall, Usage, StreamChunk
 from app.adapters.caseConverters import snakeToCamel, camelToSnake
@@ -191,15 +191,8 @@ def deriveSessionIdFromAnthropic(body: AnthropicRequest | dict[str, JsonValue] |
     return ''
 
 def extractRequestHeaders(request: object) -> dict[str, str]:
-    """Safely extract relevant request headers into a dict."""
-    if not request or not hasattr(request, 'headers'):
-        return {}
-    out: dict[str, str] = {}
-    for key in ['x-session-id', 'x-conversation-id', 'x-request-id', 'x-correlation-id', 'user-agent', 'x-august-client']:
-        value = request.headers.get(key)
-        if value:
-            out[key] = str(value)
-    return out
+    """Backward-compat: re-export from base module."""
+    return _extractRequestHeaders(request)
 
 def translateMessages(messages: list[dict[str, JsonValue]], system: list[dict[str, JsonValue]] | None=None) -> list[dict[str, JsonValue]]:
     """Translate Anthropic-format messages to OpenAI format.
@@ -304,24 +297,6 @@ def translateMessages(messages: list[dict[str, JsonValue]], system: list[dict[st
             toolCallId = as_str(msg.get('tool_use_id'), '') or as_str(msg.get('tool_call_id'), '')
             openaiMessages.append({'role': 'tool', 'tool_call_id': toolCallId, 'content': toolResult})
     return openaiMessages
-
-def sanitizeMessagesForOpenaiUpstream(messages: list[dict[str, JsonValue]]) -> list[dict[str, JsonValue]]:
-    """Fix messages for OpenAI upstream compatibility.
-
-    Removes tool_use_id from assistant messages, ensures ordering.
-    """
-    sanitized: list[dict[str, JsonValue]] = []
-    for msg in messages:
-        sanitized.append(msg)
-    return sanitized
-
-def repairManagedWebToolResults(messages: list[dict[str, JsonValue]], managedLocalToolNames: set[str]) -> tuple[list[dict[str, JsonValue]], bool]:
-    """Repair managed web tool results that may have been corrupted by the client.
-
-    This handles the case where a third-party client strips or reformats
-    web tool results, which breaks the upstream model's understanding.
-    """
-    return (messages, False)
 
 def buildOpenaiRequest(body: AnthropicRequest | dict[str, JsonValue], model: str, system: list[dict[str, JsonValue]] | None=None) -> dict[str, JsonValue]:
     """Build an OpenAI-format request from an Anthropic Messages body."""
@@ -446,15 +421,6 @@ def createAnthropicNativeStreamState() -> dict[str, JsonValue]:
     _reasoning_block_started.
     """
     return {'message_id': '', 'model': '', 'role': 'assistant', 'content_blocks': [], 'current_index': -1, 'stop_reason': None, 'input_tokens': 0, 'output_tokens': 0}
-
-def getClientAnthropicIndex(blockType: str, currentIndex: int) -> int:
-    """Get the client-facing content block index.
-
-    Anthropic SSE block indices can differ from the client-facing index
-    when thinking blocks are present (they're counted server-side but
-    may not be exposed to all clients).
-    """
-    return currentIndex
 
 def createOpenaiToAnthropicStreamState() -> dict[str, JsonValue]:
     """Create state for converting OpenAI SSE to Anthropic format."""
@@ -716,7 +682,6 @@ async def handleMessages(body: AnthropicRequest | dict[str, JsonValue], request:
             managedLocalToolNames.add(name)
         else:
             clientToolNames.add(name)
-    sessionId = deriveSessionIdFromAnthropic(raw_body, request)
     if clientWantsStream:
         if isAnthropicUpstream:
             stream = _streamAnthropicNative(upstreamUrl, headers, raw_body, resolvedModel, systemBlocks, knownTools, managedLocalToolNames, clientToolNames, client=client)
@@ -915,14 +880,6 @@ async def handleCountTokens(body: dict[str, JsonValue], request: object=None) ->
     tools = cast('list[dict[str, object]]', as_list(body.get('tools'), []))
     estimated = estimateTokens(messages, tools)
     return {'input_tokens': estimated, 'estimated': True}
-_client = None
-
-def _getClient() -> BaseProviderClient:
-    global _client
-    if _client is None:
-        from app.providers.clients.anthropic import AnthropicClient
-        _client = AnthropicClient({})
-    return _client
 
 def translateMessagesToAnthropic(messages: list[dict[str, JsonValue]]) -> list[dict[str, JsonValue]]:
     """Convert session messages (OpenAI or mixed format) to Anthropic Messages format.

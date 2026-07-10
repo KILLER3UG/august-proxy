@@ -18,7 +18,7 @@ import uuid
 from typing import AsyncIterator, Callable, cast
 from app.typeAliases import JsonValue
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
-from app.adapters.base import streamSse, buildHeaders
+from app.adapters.base import streamSse, buildHeaders, extractRequestHeaders, _scanHeadersForSessionId
 from app.adapters.proxyTools import getProxyOpenaiToolDefinitions, appendMissingOpenaiTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, isProxyManagedLocalToolName
 from app.adapters.toolClassification import classifyOpenaiToolCalls, getToolNameFromOpenaiTool
 from app.adapters.stream_state import OpenaiStreamAccumulator, ToolCallDelta
@@ -71,16 +71,9 @@ def deriveModelInheritanceSessionId(body: dict[str, object] | None, request: obj
     return ''
 
 def extractRequestHeaders(request: object) -> dict[str, str]:
-    """Safely extract relevant request headers into a plain dict."""
-    if not request or not hasattr(request, 'headers'):
-        return {}
-    out: dict[str, str] = {}
-    keys = ['x-session-id', 'x-conversation-id', 'x-request-id', 'x-correlation-id', 'user-agent', 'x-august-client']
-    for key in keys:
-        value = request.headers.get(key)
-        if value:
-            out[key] = str(value)
-    return out
+    """Backward-compat: re-export from base module."""
+    from app.adapters.base import extractRequestHeaders as _baseExtract
+    return _baseExtract(request)
 
 def getOpenaiCompatibleProfile(providerName: str | None, model: str) -> dict[str, object] | None:
     """Resolve an OpenAI-compatible provider profile for a model."""
@@ -378,7 +371,6 @@ async def handleChatCompletions(body: ChatCompletionRequest | dict[str, object],
     upstreamUrl = toOpenaiCompatibleTargetUrl(baseUrl)
     clientWantsStream = raw_body.get('stream', False)
     isResponsesEndpoint = raw_body.get('_endpoint') == 'responses'
-    sessionId = deriveSessionIdFromOpenai(raw_body, request)
     knownTools = getProxyOpenaiToolDefinitions()
     clientTools = raw_body.get('tools', [])
     if clientTools:
