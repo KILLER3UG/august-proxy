@@ -101,12 +101,12 @@ def shouldInjectReminderMessage(messages: list[dict[str, JsonValue]] | None, exi
         if isinstance(content, list):
             for block in content:
                 if isinstance(block, dict) and block.get('type') == 'text':
-                    text = block.get('text', '')
+                    text = as_str(block.get('text', ''))
                     if 'August Proxy' in text or 'August tool suite' in text:
                         return False
     if existingSystem:
         for block in existingSystem:
-            text = block.get('text', '') if isinstance(block, dict) else str(block)
+            text = as_str(block.get('text', '')) if isinstance(block, dict) else str(block)
             if 'August Proxy' in text or 'August tool suite' in text:
                 return False
     return True
@@ -124,20 +124,20 @@ def normalizeSystemBlocks(system: JsonValue) -> list[dict[str, JsonValue]]:
     if isinstance(system, str):
         return [{'type': 'text', 'text': system}]
     if isinstance(system, list):
-        return [{'type': 'text', 'text': block} if isinstance(block, str) else block for block in system]
+        return [{'type': 'text', 'text': block} if isinstance(block, str) else {'type': 'text', 'text': str(block)} for block in system]
     return [{'type': 'text', 'text': str(system)}]
 
 def systemBlocksToText(blocks: list[dict[str, JsonValue]] | None) -> str:
     """Flatten system blocks into a single text string."""
     if not blocks:
         return ''
-    parts = []
+    parts: list[str] = []
     for block in blocks:
         if isinstance(block, dict):
             if block.get('type') == 'text':
-                parts.append(block.get('text', ''))
+                parts.append(as_str(block.get('text', '')))
             elif block.get('type') == 'tool_use':
-                parts.append(json.dumps(block.get('input', {})))
+                parts.append(json.dumps(as_dict(block.get('input', {}))))
         elif isinstance(block, str):
             parts.append(block)
     return '\n'.join(parts)
@@ -161,7 +161,8 @@ def appendTextToSystemBlocks(blocks: list[dict[str, JsonValue]] | None, text: st
         return [{'type': 'text', 'text': text}]
     blocks = list(blocks)
     if blocks and blocks[-1].get('type') == 'text':
-        blocks[-1] = {'type': 'text', 'text': blocks[-1]['text'] + ('\n\n' if not text.startswith('\n') else '') + text}
+        existing_text = as_str(blocks[-1].get('text', ''))
+        blocks[-1] = {'type': 'text', 'text': existing_text + ('\n\n' if not text.startswith('\n') else '') + text}
     else:
         blocks.append({'type': 'text', 'text': text})
     return blocks
@@ -755,11 +756,8 @@ async def _streamAnthropicNative(upstreamUrl: str, upstreamHeaders: dict[str, st
     reqBody['stream'] = True
     toolRound = 0
     currentMessages = list(body.get('messages', []))
-    # Multi-round managed tool resolution: each round streams from the upstream,
-    # intercepts managed tool uses, executes them locally, appends the results,
-    # and re-streams — up to MAX_MANAGED_TOOL_ROUNDS times.
     while toolRound < MAX_MANAGED_TOOL_ROUNDS:
-        state = createAnthropicNativeStreamState()
+        st = AnthropicNativeStreamState()
         roundBody = dict(reqBody)
         roundBody['messages'] = currentMessages
         async for rawEvent in client.streamSse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
@@ -767,55 +765,45 @@ async def _streamAnthropicNative(upstreamUrl: str, upstreamHeaders: dict[str, st
             if event.get('type') == 'error':
                 yield writeAnthropicSseData('error', {'error': {'message': as_str(event.get('body'), str(event.get('error', '')))}})
                 return
-            eventType = event.get('_event_type', '')
             yield writeAnthropicSseDataOnly(event)
             eventTypePayload = as_str(event.get('type'), '')
             if eventTypePayload == 'message_start':
-                msg = as_dict(event.get('message'), {})
-                state['message_id'] = as_str(msg.get('id'), '')
-                state['model'] = as_str(msg.get('model'), '')
-                state['input_tokens'] = as_int(as_dict(msg.get('usage'), {}).get('input_tokens'), 0)
+                st.process_message_start(event)
             elif eventTypePayload == 'content_block_start':
-                block = as_dict(event.get('content_block'), {})
-                idx = as_int(event.get('index'), 0)
-                contentBlocks = as_list(state.get('content_blocks'), [])
-                contentBlocks.append(block)
-                state['content_blocks'] = contentBlocks
-                state['current_index'] = idx
+                st.process_content_block_start(event)
             elif eventTypePayload == 'content_block_delta':
-                pass
+                st.process_content_block_delta(event)
             elif eventTypePayload == 'content_block_stop':
-                pass
+                st.process_content_block_stop(event)
             elif eventTypePayload == 'message_delta':
-                delta = as_dict(event.get('delta'), {})
-                state['stop_reason'] = delta.get('stop_reason')
-                state['output_tokens'] = as_int(as_dict(event.get('usage'), {}).get('output_tokens'), 0)
+                st.process_message_delta(event)
             elif eventTypePayload == 'message_stop':
-                contentBlocks = as_list(state.get('content_blocks'), [])
-                toolUses = [b for b in contentBlocks if isinstance(b, dict) and b.get('type') == 'tool_use']
-                if not toolUses:
-                    break
-                classification = cast('dict[str, JsonValue]', classifyAnthropicToolUses(toolUses, managedLocalToolNames, clientToolNames))
-                if not classification.get('has_managed'):
-                    break
-                toolRound += 1
-                assistantMsg = {'role': 'assistant', 'content': list(contentBlocks)}
-                currentMessages.append(assistantMsg)
-                for tu in as_list(classification.get('managed_tool_uses'), []):
-                    if not isinstance(tu, dict):
-                        continue
-                    toolName = as_str(tu.get('name'), '')
-                    toolInput = as_dict(tu.get('input'), {})
-                    toolUseId = as_str(tu.get('id'), f'toolu_{uuid.uuid4().hex[:16]}')
-                    try:
-                        result = await executeManagedProxyTool(toolName, toolInput)
-                        tr = ToolResultBlock(tool_use_id=toolUseId, content=formatManagedToolResult(toolName, result))
-                        currentMessages.append(tr.model_dump())  # type: ignore[misc]
-                    except Exception as exc:
-                        tr = ToolResultBlock(tool_use_id=toolUseId, content=f'Error: {exc}', is_error=True)
-                        currentMessages.append(tr.model_dump())  # type: ignore[misc]
+                st.process_message_stop(event)
+            elif eventTypePayload == 'ping':
+                st.process_ping(event)
+        toolUses = st.get_tool_uses()
+        if not toolUses:
+            break
+        classification = cast('dict[str, JsonValue]', classifyAnthropicToolUses(toolUses, managedLocalToolNames, clientToolNames))
+        if not classification.get('has_managed'):
+            break
+        toolRound += 1
+        assistantMsg = {'role': 'assistant', 'content': list(st.data.content_blocks)}
+        currentMessages.append(assistantMsg)
+        for tu in as_list(classification.get('managed_tool_uses'), []):
+            if not isinstance(tu, dict):
                 continue
-        break
+            toolName = as_str(tu.get('name'), '')
+            toolInput = as_dict(tu.get('input'), {})
+            toolUseId = as_str(tu.get('id'), f'toolu_{uuid.uuid4().hex[:16]}')
+            try:
+                result = await executeManagedProxyTool(toolName, toolInput)
+                tr = ToolResultBlock(tool_use_id=toolUseId, content=formatManagedToolResult(toolName, result))
+                currentMessages.append(tr.model_dump())  # type: ignore[misc]
+            except Exception as exc:
+                tr = ToolResultBlock(tool_use_id=toolUseId, content=f'Error: {exc}', is_error=True)
+                currentMessages.append(tr.model_dump())  # type: ignore[misc]
+        continue
     yield writeAnthropicSseData('message_stop', {'type': 'message_stop'})
 
 async def _streamOpenaiAsAnthropic(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, JsonValue], model: str, systemBlocks: list[dict[str, JsonValue]], knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str], client: BaseProviderClient) -> AsyncIterator[str]:
@@ -826,11 +814,8 @@ async def _streamOpenaiAsAnthropic(upstreamUrl: str, upstreamHeaders: dict[str, 
     openaiBody['stream'] = True
     toolRound = 0
     currentMessages = list(body.get('messages', []))
-    # Multi-round managed tool resolution: each round streams from the upstream,
-    # intercepts managed tool uses, executes them locally, appends the results,
-    # and re-streams — up to MAX_MANAGED_TOOL_ROUNDS times.
     while toolRound < MAX_MANAGED_TOOL_ROUNDS:
-        state = createOpenaiToAnthropicStreamState()
+        st = OpenaiToAnthropicStreamState()
         roundBody = dict(openaiBody)
         roundBody['messages'] = currentMessages
         async for rawChunk in client.streamSse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
@@ -838,31 +823,21 @@ async def _streamOpenaiAsAnthropic(upstreamUrl: str, upstreamHeaders: dict[str, 
             if chunk.get('type') == 'error':
                 yield writeAnthropicSseData('error', {'error': {'message': as_str(chunk.get('body'), str(chunk.get('error', '')))}})
                 return
-            events = streamOpenaiDeltaAsAnthropic(chunk, state)
+            events = st.convert_chunk(chunk)
             for eventStr in events:
                 yield eventStr
             choices = as_list(chunk.get('choices'), [])
             if choices and isinstance(choices[0], dict) and choices[0].get('finish_reason') == 'tool_calls':
                 toolCalls = []
-                pendingTc = as_list(state.get('pending_tool_calls'), [])
-                for tc in pendingTc:
-                    if not isinstance(tc, dict):
-                        continue
-                    tcFn = as_dict(tc.get('function'), {})
-                    name = as_str(tcFn.get('name'), '')
-                    argsStr = as_str(tcFn.get('arguments'), '{}')
-                    try:
-                        args = json.loads(argsStr)
-                    except (json.JSONDecodeError, TypeError):
-                        args = {}
-                    toolCalls.append({'type': 'tool_use', 'id': as_str(tc.get('id'), f'toolu_{uuid.uuid4().hex[:16]}'), 'name': name, 'input': args})
+                for tc in st.pending_tool_calls:
+                    toolCalls.append(tc.to_anthropic_tool_use())
                 if not toolCalls:
                     break
                 classification = cast('dict[str, JsonValue]', classifyAnthropicToolUses(toolCalls, managedLocalToolNames, clientToolNames))
                 if not classification.get('has_managed'):
                     break
                 toolRound += 1
-                currentMessages.append({'role': 'assistant', 'content': [{'type': 'text', 'text': as_str(state.get('accumulated_text'), '')}, *toolCalls]})
+                currentMessages.append({'role': 'assistant', 'content': [{'type': 'text', 'text': st.accumulated_text}, *toolCalls]})
                 for tu in as_list(classification.get('managed_tool_uses'), []):
                     if not isinstance(tu, dict):
                         continue

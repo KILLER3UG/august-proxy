@@ -103,7 +103,8 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
 
           {/* Options */}
           <div className="space-y-2">
-            {question.options.map((opt, i) => {
+            {/* Cap at 5 options (A–E) to match the backend validation + spec. */}
+            {question.options.slice(0, 5).map((opt, i) => {
               let className = 'w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors ';
               if (answerResult === null) {
                 className += 'border-border hover:border-primary hover:bg-accent/30 cursor-pointer';

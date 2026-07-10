@@ -1,5 +1,5 @@
 import { atom } from 'nanostores';
-import type { ChatMessage, MessageBlock } from '@/types/chat';
+import type { ChatMessage, MessageBlock, ProviderSetupResult } from '@/types/chat';
 import type { WorkbenchMode, EffortLevel } from '@/types/chat';
 import type { WorkbenchSession } from '@/types/workbench';
 import { streamWorkbenchChat, streamWorkbenchReconnect, stopWorkbenchChat } from '@/api/workbench';
@@ -773,6 +773,7 @@ export function appendBlockEvent(
           error: event.error || '',
           duration: event.duration,
           searchHits: event.searchHits ?? target.tool.searchHits,
+          providerSetup: (event.providerSetup as ProviderSetupResult | undefined) ?? target.tool.providerSetup,
         };
       }
       blocks[targetIdx] = target;

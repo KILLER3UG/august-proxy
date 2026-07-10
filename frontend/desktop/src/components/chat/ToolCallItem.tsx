@@ -9,6 +9,7 @@ import { confirmWorkbenchMutation } from '@/api/workbench';
 import { visibleProgress, type ProgressEntry } from '@/lib/tool-progress';
 import { getToolLabel } from '@/lib/tool-labels';
 import { formatToolContext, formatToolResult, formatToolError, type FormattedContext } from '@/lib/tool-context-format';
+import { ProviderSetupWidget } from '@/components/chat/ProviderSetupWidget';
 
 /**
  * Extract a filename hint from a tool's JSON context (best-effort).
@@ -483,8 +484,12 @@ export function ToolCallItem({
             </Section>
           )}
 
-          {tool.summary && !tool.searchHits && (
+          {tool.summary && !tool.searchHits && !tool.providerSetup && (
             <FormattedResultSection toolName={tool.name} raw={tool.summary} />
+          )}
+
+          {tool.providerSetup && (
+            <ProviderSetupWidget setup={tool.providerSetup} />
           )}
 
           {tool.error && (

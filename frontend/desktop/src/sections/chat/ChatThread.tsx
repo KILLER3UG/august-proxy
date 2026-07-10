@@ -32,7 +32,6 @@ import { useModels } from '@/hooks/useModels';
 import { useProviderAvailability } from '@/hooks/useProviderAvailability';
 import { useQueryClient } from '@tanstack/react-query';
 import { getAggregatedModels } from '@/api/api-client';
-import { queueWorkbenchMessage } from '@/api/workbench';
 import { chatRuntime, type ChatTurnRecord } from './chat-runtime';
 import { CommandHelpCard } from './CommandHelpCard';
 import {

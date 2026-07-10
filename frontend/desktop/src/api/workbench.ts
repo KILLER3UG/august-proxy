@@ -505,6 +505,7 @@ function dispatchWorkbenchEvent(
         id: typeof p?.id === 'string' ? p.id : JSON.stringify(p?.id ?? ''),
         content: p?.content,
         isError: p?.isError as boolean | undefined,
+        providerSetup: p?.providerSetup,
       });
       break;
     case 'tool_progress': {
