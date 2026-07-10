@@ -51,6 +51,7 @@ class WorkbenchSession:
     goal: str = ''
     plan: dict[str, object] | None = None
     planApproved: bool = False
+    clarify: dict[str, object] | None = None
     todos: list[dict[str, object]] | None = None
     messages: list[dict[str, object]] = field(default_factory=list)
     pendingMutations: list[dict[str, object]] = field(default_factory=list)
@@ -63,11 +64,11 @@ class WorkbenchSession:
     queuedUserMessages: list[dict[str, object]] = field(default_factory=list)
 
     def toDict(self) -> dict[str, object]:
-        return {'id': self.id, 'title': self.title, 'provider': self.provider, 'model': self.model, 'agentId': self.agentId, 'guardMode': self.guardMode, 'createdAt': self.createdAt, 'updatedAt': self.updatedAt, 'startedAt': self.startedAt, 'messageCount': self.messageCount, 'mutationCount': self.mutationCount, 'workspacePath': self.workspacePath, 'goal': self.goal, 'plan': self.plan, 'planApproved': self.planApproved, 'todos': self.todos, 'messages': self.messages, 'pendingMutations': self.pendingMutations, 'mutationLog': self.mutationLog, 'status': self.status, 'metadata': self.metadata, 'totalInputTokens': self.totalInputTokens, 'totalOutputTokens': self.totalOutputTokens, 'totalCost': self.totalCost, 'queuedUserMessages': self.queuedUserMessages}
+        return {'id': self.id, 'title': self.title, 'provider': self.provider, 'model': self.model, 'agentId': self.agentId, 'guardMode': self.guardMode, 'createdAt': self.createdAt, 'updatedAt': self.updatedAt, 'startedAt': self.startedAt, 'messageCount': self.messageCount, 'mutationCount': self.mutationCount, 'workspacePath': self.workspacePath, 'goal': self.goal, 'plan': self.plan, 'planApproved': self.planApproved, 'clarify': self.clarify, 'todos': self.todos, 'messages': self.messages, 'pendingMutations': self.pendingMutations, 'mutationLog': self.mutationLog, 'status': self.status, 'metadata': self.metadata, 'totalInputTokens': self.totalInputTokens, 'totalOutputTokens': self.totalOutputTokens, 'totalCost': self.totalCost, 'queuedUserMessages': self.queuedUserMessages}
 
     @staticmethod
     def fromDict(d: dict[str, object]) -> WorkbenchSession:
-        return WorkbenchSession(id=d.get('id', ''), title=d.get('title', 'New Session'), provider=d.get('provider', ''), model=d.get('model', ''), agentId=d.get('agentId', ''), guardMode=d.get('guardMode', 'full'), createdAt=d.get('createdAt', ''), updatedAt=d.get('updatedAt', ''), startedAt=d.get('startedAt', ''), messageCount=d.get('messageCount', 0), mutationCount=d.get('mutationCount', 0), workspacePath=d.get('workspacePath', ''), goal=d.get('goal', ''), plan=d.get('plan'), planApproved=d.get('planApproved', False), todos=d.get('todos'), messages=d.get('messages', []), pendingMutations=d.get('pendingMutations', []), mutationLog=d.get('mutationLog', []), status=d.get('status', 'idle'), metadata=d.get('metadata', {}), totalInputTokens=d.get('totalInputTokens', 0), totalOutputTokens=d.get('totalOutputTokens', 0), totalCost=d.get('totalCost', 0.0), queuedUserMessages=d.get('queuedUserMessages', []))
+        return WorkbenchSession(id=d.get('id', ''), title=d.get('title', 'New Session'), provider=d.get('provider', ''), model=d.get('model', ''), agentId=d.get('agentId', ''), guardMode=d.get('guardMode', 'full'), createdAt=d.get('createdAt', ''), updatedAt=d.get('updatedAt', ''), startedAt=d.get('startedAt', ''), messageCount=d.get('messageCount', 0), mutationCount=d.get('mutationCount', 0), workspacePath=d.get('workspacePath', ''), goal=d.get('goal', ''), plan=d.get('plan'), planApproved=d.get('planApproved', False), clarify=d.get('clarify'), todos=d.get('todos'), messages=d.get('messages', []), pendingMutations=d.get('pendingMutations', []), mutationLog=d.get('mutationLog', []), status=d.get('status', 'idle'), metadata=d.get('metadata', {}), totalInputTokens=d.get('totalInputTokens', 0), totalOutputTokens=d.get('totalOutputTokens', 0), totalCost=d.get('totalCost', 0.0), queuedUserMessages=d.get('queuedUserMessages', []))
 _SESSIONFile = 'workbench-sessions.json'
 _sessions: dict[str, WorkbenchSession] = {}
 _statusSubscribers: list[Callable[[dict[str, object]], None]] = []
@@ -387,6 +388,17 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
             extraParts.append('## Available Skills\n' + '\n'.join(lines))
     except Exception:
         pass
+    extraParts.append(
+        "## Clarifying questions when uncertain\n"
+        "When you are genuinely uncertain about the user's intent, requirements, or a decision "
+        "that would change your approach, DO NOT guess or invent requirements. Instead, call the "
+        "`submit_clarify` tool with a concise `question` (1-2 sentences) and up to 5 short `choices` "
+        "(options the user can pick from). You may also pass a `questions` array to ask several "
+        "related questions at once. The UI presents your choices as numbered options and adds its own "
+        "free-text input for anything not covered, so do NOT include a 'something else' option yourself. "
+        "Ask at most one round of clarifying questions unless the user's answer reveals new ambiguity. "
+        "This applies in every guard mode, including plan mode."
+    )
     if extraParts:
         return base + '\n\n' + '\n\n'.join(extraParts)
     return base
@@ -822,6 +834,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
             break
         toolResults: list[dict[str, object]] = []
         planSubmittedThisRound = False
+        clarifySubmittedThisRound = False
         for tu in toolUses:
             if _isCancelled():
                 break
@@ -836,6 +849,14 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
                     emit({'type': 'toolResult', 'id': toolUseId, 'name': toolName, 'content': 'Plan submitted. Awaiting user approval.', 'status': 'done'})
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': 'Plan submitted. Awaiting user approval.'})
                 planSubmittedThisRound = True
+                continue
+            if toolName in ('submit_clarify', 'ask_clarify'):
+                submitClarify(session, toolInput)
+                if emit:
+                    emit({'type': 'clarifyProposed', 'clarify': session.clarify})
+                    emit({'type': 'toolResult', 'id': toolUseId, 'name': toolName, 'content': 'Question sent to the user. Awaiting their answer.', 'status': 'done'})
+                toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': 'Question sent to the user. Awaiting their answer.'})
+                clarifySubmittedThisRound = True
                 continue
             if toolName in ('submit_todos', 'submitTodos'):
                 todosPayload = toolInput.get('todos') or toolInput.get('items') or toolInput
@@ -890,7 +911,15 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
             if contentTruncated:
                 sseContent += '\n\n[... Tool result truncated at 100 KB — full length: {} bytes]'.format(len(result))
             if emit:
-                emit({'type': 'toolResult', 'id': toolUseId, 'name': toolName, 'content': sseContent, 'contentTruncated': contentTruncated, 'contentFullLength': len(result), 'summary': str(result)[:2000], 'status': 'done'})
+                providerSetup = None
+                if toolName == 'setup_provider':
+                    try:
+                        parsed = json.loads(result)
+                        if isinstance(parsed, dict) and parsed.get('providerId'):
+                            providerSetup = parsed
+                    except Exception:
+                        providerSetup = None
+                emit({'type': 'toolResult', 'id': toolUseId, 'name': toolName, 'content': sseContent, 'contentTruncated': contentTruncated, 'contentFullLength': len(result), 'summary': str(result)[:2000], 'status': 'done', 'providerSetup': providerSetup})
                 if toolName.startswith('browser_'):
                     try:
                         parsed = json.loads(result)
@@ -916,6 +945,8 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
         currentMessages.append(assistantMsg)
         currentMessages.extend(toolResults)
         if planSubmittedThisRound:
+            break
+        if clarifySubmittedThisRound:
             break
     try:
         logger.debug('workbench turn complete: %d rounds, in=%d out=%d', toolRound, totalInputTokens, totalOutputTokens)
@@ -1353,6 +1384,43 @@ def submitPlan(session: WorkbenchSession, planData: dict[str, object]) -> None:
         augArtifactService.savePlan(session.workspacePath or None, session.id, planData, status='pending')
     except Exception:
         pass
+    _emitSessionStatus(session.id)
+
+
+def submitClarify(session: WorkbenchSession, clarifyData: dict[str, object]) -> None:
+    """Store a clarification question on the session for the user to answer.
+
+    Mirrors ``submitPlan``: the payload is persisted on the session and an
+    SSE ``clarifyProposed`` event is emitted by the tool loop. The UI renders
+    a question with up to 5 numbered choices plus a free-text "Something
+    else" input, then feeds the user's answer back into the model as a
+    queued user message.
+    """
+    MAX_CLARIFY_CHOICES = 5
+    if not isinstance(clarifyData, dict):
+        clarifyData = {}
+    questions = clarifyData.get('questions')
+    if isinstance(questions, list) and questions:
+        normalized: list[dict[str, object]] = []
+        for q in questions:
+            if not isinstance(q, dict):
+                continue
+            item: dict[str, object] = {'question': str(q.get('question', ''))}
+            rawChoices = q.get('choices') or []
+            if isinstance(rawChoices, list):
+                item['choices'] = [str(c) for c in rawChoices[:MAX_CLARIFY_CHOICES]]
+            normalized.append(item)
+        payload: dict[str, object] = {'questions': normalized}
+    else:
+        question = clarifyData.get('question') or ''
+        rawChoices = clarifyData.get('choices') or []
+        choices = [str(c) for c in rawChoices[:MAX_CLARIFY_CHOICES]] if isinstance(rawChoices, list) else []
+        payload = {'question': str(question), 'choices': choices}
+    contextSummary = clarifyData.get('contextSummary')
+    if contextSummary:
+        payload['contextSummary'] = str(contextSummary)
+    session.clarify = payload
+    session.updatedAt = _now()
     _emitSessionStatus(session.id)
 
 

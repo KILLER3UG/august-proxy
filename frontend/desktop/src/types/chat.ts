@@ -6,9 +6,16 @@
  */
 
 /** Structured provider-setup config carried by `setup_provider`-style tool
- *  results so the UI can render an inline config/API-key form. Kept loose
- *  because consumers pass it through opaquely (cast from `unknown`). */
+ *  results so the UI can render an inline config/API-key form. Shape inferred
+ *  from `ProviderSetupWidget` (id/name/baseUrl/apiFormat/status/error). */
 export interface ProviderSetupResult {
+  providerId?: string;
+  status?: string;
+  error?: string;
+  name?: string;
+  suggestedName?: string;
+  baseUrl?: string;
+  apiFormat?: string;
   [key: string]: unknown;
 }
 
