@@ -34,6 +34,9 @@ export interface MessageBlockToolCall {
   /** For web_search results: structured search hits rendered as a linked
    *  list below the tool summary. Mirrors `AppendBlockEvent.searchHits`. */
   searchHits?: Array<{ title: string; url: string; snippet?: string }>;
+  /** For setup_provider results: structured provider config so the UI can
+   *  render an inline API-key field. Mirrors `AppendBlockEvent.providerSetup`. */
+  providerSetup?: ProviderSetupResult;
   pendingApproval?: {
     message?: string;
     detail?: string;
@@ -112,6 +115,8 @@ export interface ChatMessage {
     startedAt?: number;
     /** For web_search: structured search hits to render below the summary. */
     searchHits?: Array<{ title: string; url: string; snippet?: string }>;
+    /** For setup_provider: structured provider config to render an inline key field. */
+    providerSetup?: ProviderSetupResult;
   }>;
   thinking?: string;
   thinkingDuration?: number;
@@ -199,4 +204,6 @@ export interface AppendBlockEvent {
   isRevisedPlan?: boolean;
   /** For web_search results: structured search hits to render as linked list */
   searchHits?: Array<{ title: string; url: string; snippet?: string }>;
+  /** For setup_provider results: structured provider config so the UI renders an inline key field. */
+  providerSetup?: ProviderSetupResult;
 }

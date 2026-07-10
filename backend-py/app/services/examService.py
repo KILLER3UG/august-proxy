@@ -2,7 +2,7 @@
 v3 — Exam service: Prefrontal-driven exam authoring, validation, and persistence.
 
 The defining rule: the model authors every question. No endpoint accepts a
-client-supplied correct_index. Questions are validated (4 options, valid
+client-supplied correct_index. Questions are validated (2-5 options, valid
 correct_index, non-empty rationale) before being persisted.
 """
 from __future__ import annotations
@@ -67,18 +67,18 @@ async def _callPrefrontal(prompt: str, model: str='', provider: str='') -> str:
     return ''
 
 def _validateQuestion(q: object) -> bool:
-    """A valid question has stem, 4 options, valid correct_index, non-empty rationale."""
+    """A valid question has stem, 2-5 options, valid correct_index, non-empty rationale."""
     if not isinstance(q, dict):
         return False
     if not isinstance(q.get('stem'), str) or not q['stem'].strip():
         return False
     opts = q.get('options')
-    if not isinstance(opts, list) or len(opts) != 4:
+    if not isinstance(opts, list) or len(opts) < 2 or len(opts) > 5:
         return False
     if not all((isinstance(o, str) and o.strip() for o in opts)):
         return False
     ci = q.get('correct_index')
-    if not isinstance(ci, int) or ci < 0 or ci > 3:
+    if not isinstance(ci, int) or ci < 0 or ci > len(opts) - 1:
         return False
     if not isinstance(q.get('rationale'), str) or not q['rationale'].strip():
         return False
@@ -110,7 +110,7 @@ def _parseQuestions(raw: str) -> list[dict]:
 
 def _buildPrompt(topic: str, count: int, difficulty: str, context: str='', similarTo: list[dict] | None=None) -> str:
     """Build the Prefrontal prompt for exam authoring."""
-    parts = [f'Generate {count} multiple-choice question(s) on the topic: {topic}.', f'Difficulty: {difficulty}.', '', 'Each question must have:', "  - 'stem': a clear question string", "  - 'options': exactly 4 distinct non-empty strings", "  - 'correct_index': integer 0-3 pointing to the correct option", "  - 'rationale': a 1-sentence explanation of the correct answer", '', 'Return ONLY a JSON array (no other text, no markdown fences): [{"stem": str, "options": [str, str, str, str], "correct_index": 0-3, "rationale": str}]']
+    parts = [f'Generate {count} multiple-choice question(s) on the topic: {topic}.', f'Difficulty: {difficulty}.', '', 'Each question must have:', "  - 'stem': a clear question string", "  - 'options': between 2 and 5 distinct non-empty strings", "  - 'correct_index': integer 0-(n-1) pointing to the correct option (where n is the number of options)", "  - 'rationale': a 1-sentence explanation of the correct answer", '', 'Return ONLY a JSON array (no other text, no markdown fences): [{"stem": str, "options": [str, ...], "correct_index": 0-(n-1), "rationale": str}]']
     if context:
         parts.insert(1, f'\nGrounded in the following source material:\n{context}\n')
     if similarTo:

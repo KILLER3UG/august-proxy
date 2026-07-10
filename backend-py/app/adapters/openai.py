@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from typing import AsyncIterator, Callable
+from typing import AsyncIterator, Callable, cast
 from app.adapters.base import streamSse, buildHeaders
 from app.adapters.proxyTools import getProxyOpenaiToolDefinitions, appendMissingOpenaiTools, getCanonicalManagedOpenaiWebTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, isProxyManagedLocalToolName
 from app.adapters.toolClassification import classifyOpenaiToolCalls, getToolNameFromOpenaiTool
@@ -369,7 +369,7 @@ async def handleChatCompletions(body: ChatCompletionRequest | dict[str, object],
     """
     if isinstance(body, ChatCompletionRequest):
         model = body.model
-        raw_body: dict[str, object] = body.model_dump()  # type: ignore[assignment]
+        raw_body = cast('dict[str, object]', body.model_dump())
     else:
         model = body.get('model', 'gpt-4o')
         raw_body = body

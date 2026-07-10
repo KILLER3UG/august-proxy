@@ -47,7 +47,12 @@ class AnthropicRequest(ExtraAllowBaseModel):
     """Loose on messages, strict on routing fields.
 
     Fields the proxy acts on are typed explicitly. Everything else
-    (messages, system, metadata, thinking) passes through.
+    (messages, system, metadata, thinking) passes through via extra="allow".
+
+    Commonly-accessed extra fields are annotated as ``JsonValue | None``
+    so the type-checker doesn't reject access. At runtime they may be
+    ``None`` if the client didn't send them (Pydantic's extra="allow"
+    returns the raw JSON value or ``None``).
     """
     model: str
     max_tokens: int | None = None
@@ -58,7 +63,14 @@ class AnthropicRequest(ExtraAllowBaseModel):
     temperature: float | None = None
     top_p: float | None = None
     top_k: int | None = None
-    # messages, system, metadata, thinking → pass through via extra="allow"
+    # Extra fields the proxy reads (typed as optional JsonValue so mypy
+    # doesn't reject access — narrowing is done via as_* helpers):
+    messages: JsonValue | None = None
+    system: JsonValue | None = None
+    metadata: JsonValue | None = None
+    thinking: JsonValue | None = None
+    sessionId: JsonValue | None = None
+    session_id: JsonValue | None = None
 
 
 class AnthropicUsage(ExtraAllowBaseModel):

@@ -53,7 +53,12 @@ class ChatCompletionRequest(ExtraAllowBaseModel):
     stop: str | list[str] | None = None
     temperature: float | None = None
     top_p: float | None = None
-    # messages, functions, logprobs, user → pass through via extra="allow"
+    # Extra fields the proxy reads:
+    messages: JsonValue | None = None
+    user: JsonValue | None = None
+    metadata: JsonValue | None = None
+    sessionId: JsonValue | None = None
+    session_id: JsonValue | None = None
 
 
 class Usage(ExtraAllowBaseModel):

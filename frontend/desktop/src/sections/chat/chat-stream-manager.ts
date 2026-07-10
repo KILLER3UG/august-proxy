@@ -631,6 +631,27 @@ export function ensureSessionSubscriber(sessionId: string): void {
           messages: [...(prev.messages ?? []), entry],
         }));
       },
+      onClarifyProposed: (data) => {
+        // Attach the clarifying question to the last assistant message so the
+        // ClarifyTool popup renders even when the event arrives on the
+        // background subscriber (e.g. after a reconnect mid-turn).
+        updateSessionStreamState(sessionId, (prev) => {
+          const msgs = prev.messages ?? [];
+          if (msgs.length === 0) return prev;
+          let lastAssistantIdx = -1;
+          for (let i = msgs.length - 1; i >= 0; i--) {
+            if (msgs[i].role === 'assistant') {
+              lastAssistantIdx = i;
+              break;
+            }
+          }
+          if (lastAssistantIdx === -1) return prev;
+          return {
+            ...prev,
+            messages: msgs.map((m, i) => (i === lastAssistantIdx ? { ...m, clarify: data } : m)),
+          };
+        });
+      },
     };
 
   streamWorkbenchReconnect(sessionId, handlers, controller.signal, sinceSeq, {

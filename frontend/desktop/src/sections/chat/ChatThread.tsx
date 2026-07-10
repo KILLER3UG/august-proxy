@@ -32,6 +32,7 @@ import { useModels } from '@/hooks/useModels';
 import { useProviderAvailability } from '@/hooks/useProviderAvailability';
 import { useQueryClient } from '@tanstack/react-query';
 import { getAggregatedModels } from '@/api/api-client';
+import { queueWorkbenchMessage } from '@/api/workbench';
 import { chatRuntime, type ChatTurnRecord } from './chat-runtime';
 import { CommandHelpCard } from './CommandHelpCard';
 import {
@@ -1640,6 +1641,19 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     await generateAIResponse([msg]);
   };
 
+  // ── Clarify: queue the user's answer to a clarifying question ──
+  const handleClarifyAnswer = useCallback((msgId: string, answer: string) => {
+    if (sessionId) {
+      // Feed the answer back to the model as a queued user message; the
+      // backend drains it and the model continues from there.
+      void queueWorkbenchMessage(sessionId, answer);
+    }
+    // Mark the question answered locally so the ClarifyTool popup dismisses.
+    setMessages(prev => prev.map(msg =>
+      msg.id === msgId ? { ...msg, clarify: { ...(msg.clarify ?? {}), answer } } : msg
+    ));
+  }, [sessionId, setMessages]);
+
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (showCommandsDropdown) {
       const allCommands = getDisplayCommands();
@@ -2406,6 +2420,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             onRevert={() => handleRevert(i)}
                             onEdit={(text) => handleEdit(i, text)}
                             onRegenerate={() => { void handleRegenerate(i); }}
+                            onClarifyAnswer={(ans) => handleClarifyAnswer(m.id, ans)}
                             toolProgress={toolProgress}
                             subagentPrompts={subagentPrompts}
                             subagentBlocks={subagentBlocks}
