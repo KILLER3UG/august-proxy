@@ -5,6 +5,13 @@
  * orthogonal to the WorkbenchEvent SSE union.
  */
 
+/** Structured provider-setup config carried by `setup_provider`-style tool
+ *  results so the UI can render an inline config/API-key form. Kept loose
+ *  because consumers pass it through opaquely (cast from `unknown`). */
+export interface ProviderSetupResult {
+  [key: string]: unknown;
+}
+
 /** Rendered block inside a chat message (thinking, tool call, etc.).
  *  Kept as a permissive interface rather than a discriminated union so
  *  the existing reducer and rendering pipeline can attach fields like

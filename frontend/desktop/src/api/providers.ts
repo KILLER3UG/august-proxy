@@ -107,6 +107,12 @@ export const providersApi = {
   create: (body: ProviderCreate) => api.post<Provider>(p(''), body),
   update: (id: string, body: ProviderUpdate) => api.patch<Provider>(p(`/${encodeURIComponent(id)}`), body),
   remove: (id: string) => api.delete<void>(p(`/${encodeURIComponent(id)}`)),
+  /** Apply (or overwrite) a provider's API key. Used by the model-driven
+   *  setup flow: the model creates the provider via the setup_provider tool
+   *  (no key), then the user pastes the key into the inline UI field, which
+   *  calls this to PATCH /api/providers/{id} with just the key. */
+  applyKey: (id: string, apiKey: string) =>
+    api.patch<Provider>(p(`/${encodeURIComponent(id)}`), { apiKey }),
   addModel: (id: string, body: ModelCreate) =>
     api.post<Provider>(p(`/${encodeURIComponent(id)}/models`), body),
   updateModel: (id: string, modelId: string, body: Partial<ModelCreate>) =>

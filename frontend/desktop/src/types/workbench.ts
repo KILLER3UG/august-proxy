@@ -280,4 +280,14 @@ export interface WorkbenchEventHandlers {
   }) => void;
   onDone?: () => void;
   onError?: (data: { message: string }) => void;
+  /** The model asked a clarifying question because it was uncertain. The
+   *  chat thread renders a `ClarifyTool` popup anchored to the assistant
+   *  message that asked, and feeds the user's answer back to the model. */
+  onClarifyProposed?: (data: {
+    question?: string;
+    choices?: string[];
+    questions?: Array<{ question: string; choices?: string[] }>;
+    currentIndex?: number;
+    contextSummary?: string;
+  }) => void;
 }

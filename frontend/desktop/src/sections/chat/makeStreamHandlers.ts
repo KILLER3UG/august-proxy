@@ -26,7 +26,7 @@
  * the stream and then calls `finalize` exactly once.
  */
 
-import type { ChatMessage, MessageBlock, WorkbenchBtwState, AppendBlockEvent } from '@/types/chat';
+import type { ChatMessage, MessageBlock, WorkbenchBtwState, AppendBlockEvent, ProviderSetupResult } from '@/types/chat';
 import type { ChatTurnRecord } from './chat-runtime';
 import type { WorkbenchEventHandlers, WorkbenchSession } from '@/types/workbench';
 import type { GitDiffResult } from '@/api/git';
@@ -334,7 +334,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       });
       scheduleUpdate();
     },
-    onToolResult: ({ id, content, isError }) => {
+    onToolResult: ({ id, content, isError, providerSetup }) => {
       let parsedResult: Record<string, unknown> | null;
       try {
         parsedResult = typeof content === 'string' ? JSON.parse(content) as Record<string, unknown> : content as Record<string, unknown>;
@@ -367,6 +367,12 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         }
       }
 
+      // Surface setup_provider results so the UI can render an inline key field.
+      let providerSetupResult: ProviderSetupResult | undefined;
+      if (toolEntry?.name === 'setup_provider' && providerSetup && typeof providerSetup === 'object') {
+        providerSetupResult = providerSetup as ProviderSetupResult;
+      }
+
       toolResults = toolResults.map(t => t.id === id ? {
         ...t,
         pendingApproval: parsedResult?.type === 'mutation_pending_confirmation' ? {
@@ -379,6 +385,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         error: isError && parsedResult?.type !== 'mutation_pending_confirmation' ? resultText : '',
         duration: t.startedAt ? Date.now() - t.startedAt : undefined,
         searchHits: searchHits ?? t.searchHits,
+        providerSetup: providerSetupResult ?? t.providerSetup,
       } : t);
       streamBlocks = appendBlockEvent(streamBlocks, {
         type: 'toolResult',
@@ -388,6 +395,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         error: isError && parsedResult?.type !== 'mutation_pending_confirmation' ? resultText.slice(0, 240) : '',
         duration: toolResults.find(t => t.id === id)?.duration,
         searchHits,
+        providerSetup: providerSetupResult,
       });
       scheduleUpdate();
     },

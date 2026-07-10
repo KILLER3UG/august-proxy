@@ -94,8 +94,8 @@ class TestOpenAIAdapter:
         acc = createOpenaiStreamAccumulator()
         accumulateOpenaiChunk(acc, {'id': 'test', 'model': 'gpt-4', 'choices': [{'delta': {'content': 'Hello'}, 'finish_reason': None}]})
         accumulateOpenaiChunk(acc, {'choices': [{'delta': {'content': ' world'}, 'finish_reason': 'stop'}], 'usage': {'prompt_tokens': 5, 'completion_tokens': 3}})
-        assert acc['content'] == 'Hello world'
-        assert acc['finish_reason'] == 'stop'
+        assert acc.content == 'Hello world'
+        assert acc.finish_reason == 'stop'
         resp = buildOpenaiAggregatedFromStream(acc)
         assert resp['choices'][0]['message']['content'] == 'Hello world'
         assert resp['usage']['prompt_tokens'] == 5
