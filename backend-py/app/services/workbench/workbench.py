@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncIterator, Callable
+from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float, as_bool
 from app.models import AnthropicRequest, ChatCompletionRequest, ChatMessage, ToolDefinition, FunctionDefinition, Usage
 logger = logging.getLogger('workbench')
 MAX_MANAGED_TOOL_ROUNDS = 10
@@ -68,7 +69,7 @@ class WorkbenchSession:
 
     @staticmethod
     def fromDict(d: dict[str, object]) -> WorkbenchSession:
-        return WorkbenchSession(id=d.get('id', ''), title=d.get('title', 'New Session'), provider=d.get('provider', ''), model=d.get('model', ''), agentId=d.get('agentId', ''), guardMode=d.get('guardMode', 'full'), createdAt=d.get('createdAt', ''), updatedAt=d.get('updatedAt', ''), startedAt=d.get('startedAt', ''), messageCount=d.get('messageCount', 0), mutationCount=d.get('mutationCount', 0), workspacePath=d.get('workspacePath', ''), goal=d.get('goal', ''), plan=d.get('plan'), planApproved=d.get('planApproved', False), clarify=d.get('clarify'), todos=d.get('todos'), messages=d.get('messages', []), pendingMutations=d.get('pendingMutations', []), mutationLog=d.get('mutationLog', []), status=d.get('status', 'idle'), metadata=d.get('metadata', {}), totalInputTokens=d.get('totalInputTokens', 0), totalOutputTokens=d.get('totalOutputTokens', 0), totalCost=d.get('totalCost', 0.0), queuedUserMessages=d.get('queuedUserMessages', []))
+        return WorkbenchSession(id=as_str(d.get('id', '')), title=as_str(d.get('title', 'New Session')), provider=as_str(d.get('provider', '')), model=as_str(d.get('model', '')), agentId=as_str(d.get('agentId', '')), guardMode=as_str(d.get('guardMode', 'full')), createdAt=as_str(d.get('createdAt', '')), updatedAt=as_str(d.get('updatedAt', '')), startedAt=as_str(d.get('startedAt', '')), messageCount=as_int(d.get('messageCount', 0)), mutationCount=as_int(d.get('mutationCount', 0)), workspacePath=as_str(d.get('workspacePath', '')), goal=as_str(d.get('goal', '')), plan=as_dict(d.get('plan')), planApproved=as_bool(d.get('planApproved', False)), clarify=as_dict(d.get('clarify')), todos=as_list(d.get('todos')), messages=as_list(d.get('messages', [])), pendingMutations=as_list(d.get('pendingMutations', [])), mutationLog=as_list(d.get('mutationLog', [])), status=as_str(d.get('status', 'idle')), metadata=as_dict(d.get('metadata', {})), totalInputTokens=as_int(d.get('totalInputTokens', 0)), totalOutputTokens=as_int(d.get('totalOutputTokens', 0)), totalCost=as_float(d.get('totalCost', 0.0)), queuedUserMessages=as_list(d.get('queuedUserMessages', [])))
 _SESSIONFile = 'workbench-sessions.json'
 _sessions: dict[str, WorkbenchSession] = {}
 _statusSubscribers: list[Callable[[dict[str, object]], None]] = []
@@ -535,7 +536,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
                 tools.append(raw)
             continue
         t = anthropicToOpenaiToolDefinition(raw)
-        name = t.get('function', {}).get('name', '')
+        name = as_dict(t.get('function', {})).get('name', '')
         if name and name not in seen:
             seen.add(name)
             tools.append(t)
@@ -787,7 +788,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
                 currentMessages.append(_formatQueuedMessagesAsUserTurn(queued))
         logger.debug('workbench round %d start (model=%s, in=%d, out=%d)', toolRound, resolvedModel, totalInputTokens, totalOutputTokens)
         if toolRound == 1:
-            toolNames = [t.get('name') for t in tools] if isAnthropic else [t.get('function', {}).get('name') for t in openaiTools]
+            toolNames = [t.get('name') for t in tools] if isAnthropic else [as_dict(t.get('function', {})).get('name') for t in openaiTools]
             logger.debug('workbench presenting %d tools to model: %s', len(toolNames), toolNames)
         if isAnthropic:
             response = await _callAnthropicWorkbench(currentMessages, systemText, resolvedModel, tools, effectiveEffort, provider=resolvedProvider, emit=emit)

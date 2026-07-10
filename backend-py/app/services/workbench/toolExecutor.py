@@ -9,6 +9,7 @@ are parallel-safe.
 from __future__ import annotations
 import asyncio
 from typing import Callable
+from app.jsonUtils import as_str, as_dict, as_list, as_int
 
 async def executeToolBatch(toolUses: list[object], executeOne: Callable[[object], object], options: dict[str, object] | None=None) -> list[object]:
     """Execute a batch of tool uses.

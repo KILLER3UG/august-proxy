@@ -5,6 +5,7 @@ Port of backend/services/memory/knowledge-tree.js.
 """
 from __future__ import annotations
 from app.services.memoryStore import saveMemory, getMemory
+from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 _TREEKey = 'knowledge_tree'
 
 def _read() -> dict[str, object]:
@@ -32,11 +33,11 @@ def createNode(topic: str, parentTopic: str | None=None, content: str='') -> dic
 
 def getNode(topic: str) -> dict[str, object] | None:
     tree = _read()
-    return tree.get('nodes', {}).get(topic)
+    return as_dict(tree.get('nodes', {})).get(topic)
 
 def getChildren(topic: str) -> list[dict[str, object]]:
     tree = _read()
-    node = tree.get('nodes', {}).get(topic)
+    node = as_dict(tree.get('nodes', {})).get(topic)
     if not node:
         return []
     return [tree['nodes'][c] for c in node.get('children', []) if c in tree.get('nodes', {})]

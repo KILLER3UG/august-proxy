@@ -23,6 +23,7 @@ from typing import AsyncIterator, Callable, cast
 from app.typeAliases import JsonValue
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 from app.adapters.base import streamSse, buildHeaders
+from app.adapters.stream_state import AnthropicNativeStreamState, OpenaiToAnthropicStreamState
 from app.providers.clients.base import BaseProviderClient
 from app.adapters.proxyTools import getProxyOpenaiToolDefinitionsForAnthropic, getCanonicalManagedAnthropicWebTools, appendMissingAnthropicTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, dedupeAndCanonicalizeAnthropicTools, sanitizeAnthropicToolDefinition, getManagedAnthropicWebToolDefinitions, openaiToAnthropicToolDefinition, anthropicToOpenaiToolDefinition, isProxyManagedLocalToolName, isBrowserAutomationToolName, buildClientToolGuidance
 from app.adapters.toolClassification import classifyAnthropicToolUses, classifyOpenaiToolCalls, getToolNameFromAnthropicTool, getToolNameFromOpenaiTool
@@ -178,7 +179,8 @@ def deriveSessionIdFromAnthropic(body: AnthropicRequest | dict[str, JsonValue] |
         if from_meta:
             return str(from_meta)
     elif body and isinstance(body, dict):
-        fromBody = body.get('sessionId') or body.get('session_id') or body.get('metadata', {}).get('sessionId') or body.get('metadata', {}).get('session_id')
+        metadata = as_dict(body.get('metadata'), {})
+        fromBody = body.get('sessionId') or body.get('session_id') or metadata.get('sessionId') or metadata.get('session_id')
         if fromBody:
             return str(fromBody)
     if request and hasattr(request, 'headers'):
@@ -220,16 +222,20 @@ def translateMessages(messages: list[dict[str, JsonValue]], system: list[dict[st
             if isinstance(content, str):
                 openaiMessages.append({'role': 'user', 'content': content})
             elif isinstance(content, list):
-                parts = []
+                parts: list[dict[str, JsonValue]] = []
                 for block in content:
-                    if block.get('type') == 'text':
-                        parts.append({'type': 'text', 'text': block.get('text', '')})
-                    elif block.get('type') == 'image_url' or block.get('type') == 'image':
-                        parts.append({'type': 'image_url', 'image_url': {'url': block.get('source', {}).get('data', '')}})
-                    elif block.get('type') == 'tool_result':
+                    if not isinstance(block, dict):
+                        continue
+                    blockType = as_str(block.get('type'), '')
+                    if blockType == 'text':
+                        parts.append({'type': 'text', 'text': as_str(block.get('text'), '')})
+                    elif blockType in ('image_url', 'image'):
+                        source = as_dict(block.get('source'), {})
+                        parts.append({'type': 'image_url', 'image_url': {'url': as_str(source.get('data'), '')}})
+                    elif blockType == 'tool_result':
                         pass
                 if parts:
-                    openaiMessages.append({'role': 'user', 'content': parts})
+                    openaiMessages.append({'role': 'user', 'content': cast(JsonValue, parts)})
         elif role == 'assistant':
             asstMsg: dict[str, JsonValue] = {'role': 'assistant'}
             if isinstance(content, str):
@@ -242,7 +248,7 @@ def translateMessages(messages: list[dict[str, JsonValue]], system: list[dict[st
                 for block in content:
                     if not isinstance(block, dict):
                         continue
-                    blockType = block.get('type')
+                    blockType = as_str(block.get('type'), '')
                     if blockType == 'text':
                         textParts.append(as_str(block.get('text'), ''))
                     elif blockType == 'tool_use':
@@ -261,7 +267,7 @@ def translateMessages(messages: list[dict[str, JsonValue]], system: list[dict[st
                 asstMsg['reasoning_content'] = reasoningContent
                 asstMsg['content'] = ''.join(textParts) if textParts else ''
                 if toolCalls:
-                    asstMsg['tool_calls'] = toolCalls
+                    asstMsg['tool_calls'] = cast(JsonValue, toolCalls)
             toolCallsVal = msg.get('tool_calls')
             if toolCallsVal and 'tool_calls' not in asstMsg and isinstance(toolCallsVal, list):
                 asstMsg.setdefault('content', as_str(msg.get('content'), ''))
@@ -275,7 +281,7 @@ def translateMessages(messages: list[dict[str, JsonValue]], system: list[dict[st
                         fn['arguments'] = json.dumps(fn['arguments'])
                     tcCopy['function'] = fn
                     safeCalls.append(tcCopy)
-                asstMsg['tool_calls'] = safeCalls
+                asstMsg['tool_calls'] = cast(JsonValue, safeCalls)
             openaiMessages.append(asstMsg)
         elif role == 'tool':
             toolResult = content
@@ -283,10 +289,11 @@ def translateMessages(messages: list[dict[str, JsonValue]], system: list[dict[st
                 text = ''
                 for block in toolResult:
                     if isinstance(block, dict):
-                        if block.get('type') == 'text':
-                            text += block.get('text', '')
-                        elif block.get('type') == 'tool_use':
-                            text += json.dumps(block.get('input', {}))
+                        blockType = as_str(block.get('type'), '')
+                        if blockType == 'text':
+                            text += as_str(block.get('text'), '')
+                        elif blockType == 'tool_use':
+                            text += json.dumps(as_dict(block.get('input'), {}))
                         else:
                             text += json.dumps(block)
                     else:
@@ -294,7 +301,8 @@ def translateMessages(messages: list[dict[str, JsonValue]], system: list[dict[st
                 toolResult = text
             elif not isinstance(toolResult, str):
                 toolResult = json.dumps(toolResult)
-            openaiMessages.append({'role': 'tool', 'tool_call_id': msg.get('tool_use_id') or msg.get('tool_call_id', ''), 'content': toolResult})
+            toolCallId = as_str(msg.get('tool_use_id'), '') or as_str(msg.get('tool_call_id'), '')
+            openaiMessages.append({'role': 'tool', 'tool_call_id': toolCallId, 'content': toolResult})
     return openaiMessages
 
 def sanitizeMessagesForOpenaiUpstream(messages: list[dict[str, JsonValue]]) -> list[dict[str, JsonValue]]:
@@ -318,7 +326,7 @@ def repairManagedWebToolResults(messages: list[dict[str, JsonValue]], managedLoc
 def buildOpenaiRequest(body: AnthropicRequest | dict[str, JsonValue], model: str, system: list[dict[str, JsonValue]] | None=None) -> dict[str, JsonValue]:
     """Build an OpenAI-format request from an Anthropic Messages body."""
     if isinstance(body, AnthropicRequest):
-        openaiBody: dict[str, JsonValue] = {'model': model, 'messages': translateMessages(as_list(body.messages, []), system)}
+        openaiBody: dict[str, JsonValue] = {'model': model, 'messages': cast(JsonValue, translateMessages(cast('list[dict[str, JsonValue]]', as_list(body.messages, [])), system))}
         if body.max_tokens is not None:
             openaiBody['max_tokens'] = body.max_tokens
         if body.temperature is not None:
@@ -328,7 +336,7 @@ def buildOpenaiRequest(body: AnthropicRequest | dict[str, JsonValue], model: str
         if body.top_k is not None:
             openaiBody['top_k'] = body.top_k
         if body.stop_sequences is not None:
-            openaiBody['stop'] = body.stop_sequences
+            openaiBody['stop'] = cast(JsonValue, body.stop_sequences)
         thinking = as_dict(body.thinking, {})
         if thinking:
             budget = as_int(thinking.get('budget_tokens'), 0)
@@ -336,7 +344,7 @@ def buildOpenaiRequest(body: AnthropicRequest | dict[str, JsonValue], model: str
                 openaiBody['reasoning_effort'] = _budgetToEffort(budget)
         return openaiBody
     # Dict fallback for backward compatibility
-    openaiBody = {'model': model, 'messages': translateMessages(body.get('messages', []), system)}
+    openaiBody = {'model': model, 'messages': cast(JsonValue, translateMessages(cast('list[dict[str, JsonValue]]', as_list(body.get('messages'), [])), system))}
     if 'max_tokens' in body or 'max_output_tokens' in body:
         openaiBody['max_tokens'] = body.get('max_tokens') or body.get('max_output_tokens', 4096)
     if 'temperature' in body:
@@ -347,9 +355,9 @@ def buildOpenaiRequest(body: AnthropicRequest | dict[str, JsonValue], model: str
         openaiBody['top_k'] = body['top_k']
     if 'stop_sequences' in body:
         openaiBody['stop'] = body['stop_sequences']
-    thinking = body.get('thinking', {})
-    if thinking and isinstance(thinking, dict):
-        budget = thinking.get('budget_tokens', 0)
+    thinking = as_dict(body.get('thinking'), {})
+    if thinking:
+        budget = as_int(thinking.get('budget_tokens'), 0)
         if budget > 0:
             openaiBody['reasoning_effort'] = _budgetToEffort(budget)
     return openaiBody
@@ -375,9 +383,9 @@ def buildAnthropicUpstreamRequest(body: AnthropicRequest | dict[str, JsonValue],
         if thinking:
             anthropicBody['thinking'] = thinking
         if system:
-            anthropicBody['system'] = system
+            anthropicBody['system'] = cast(JsonValue, system)
         return anthropicBody
-    anthropicBody = {'model': model, 'messages': body.get('messages', [])}
+    anthropicBody = {'model': model, 'messages': cast(JsonValue, as_list(body.get('messages'), []))}
     if 'max_tokens' in body or 'max_output_tokens' in body:
         anthropicBody['max_tokens'] = body.get('max_tokens') or body.get('max_output_tokens', 4096)
     else:
@@ -388,7 +396,7 @@ def buildAnthropicUpstreamRequest(body: AnthropicRequest | dict[str, JsonValue],
     if 'thinking' in body:
         anthropicBody['thinking'] = body['thinking']
     if system:
-        anthropicBody['system'] = system
+        anthropicBody['system'] = cast(JsonValue, system)
     return anthropicBody
 
 def writeAnthropicSseData(event: str, data: dict[str, JsonValue]) -> str:
@@ -406,23 +414,26 @@ def sendSimulatedAnthropicStream(response: dict[str, JsonValue]) -> list[str]:
     then needs to simulate a stream back to the client.
     """
     events: list[str] = []
-    responseId = response.get('id', f'msg_{uuid.uuid4().hex[:16]}')
-    model = response.get('model', 'unknown')
-    role = response.get('role', 'assistant')
-    content = response.get('content', [])
-    usage = response.get('usage', {})
-    events.append(writeAnthropicSseData('message_start', {'type': 'message_start', 'message': {'id': responseId, 'type': 'message', 'role': role, 'content': [], 'model': model, 'stop_reason': None, 'stop_sequence': None, 'usage': {'input_tokens': usage.get('input_tokens', 0), 'output_tokens': 0}}}))
+    responseId = as_str(response.get('id'), f'msg_{uuid.uuid4().hex[:16]}')
+    model = as_str(response.get('model'), 'unknown')
+    role = as_str(response.get('role'), 'assistant')
+    content = as_list(response.get('content'), [])
+    usage = as_dict(response.get('usage'), {})
+    events.append(writeAnthropicSseData('message_start', {'type': 'message_start', 'message': {'id': responseId, 'type': 'message', 'role': role, 'content': [], 'model': model, 'stop_reason': None, 'stop_sequence': None, 'usage': {'input_tokens': as_int(usage.get('input_tokens'), 0), 'output_tokens': 0}}}))
     for i, block in enumerate(content):
+        if not isinstance(block, dict):
+            continue
         events.append(writeAnthropicSseData('content_block_start', {'type': 'content_block_start', 'index': i, 'content_block': block}))
-        if block.get('type') == 'text':
-            events.append(writeAnthropicSseData('content_block_delta', {'type': 'content_block_delta', 'index': i, 'delta': {'type': 'text_delta', 'text': block.get('text', '')}}))
-        elif block.get('type') == 'tool_use':
-            events.append(writeAnthropicSseData('content_block_delta', {'type': 'content_block_delta', 'index': i, 'delta': {'type': 'input_json_delta', 'partial_json': json.dumps(block.get('input', {}))}}))
+        blockType = as_str(block.get('type'), '')
+        if blockType == 'text':
+            events.append(writeAnthropicSseData('content_block_delta', {'type': 'content_block_delta', 'index': i, 'delta': {'type': 'text_delta', 'text': as_str(block.get('text'), '')}}))
+        elif blockType == 'tool_use':
+            events.append(writeAnthropicSseData('content_block_delta', {'type': 'content_block_delta', 'index': i, 'delta': {'type': 'input_json_delta', 'partial_json': json.dumps(as_dict(block.get('input'), {}))}}))
         events.append(writeAnthropicSseData('content_block_stop', {'type': 'content_block_stop', 'index': i}))
-    stopReason = response.get('stop_reason') or 'end_turn'
-    if content and content[-1].get('type') == 'tool_use':
+    stopReason = as_str(response.get('stop_reason'), '') or 'end_turn'
+    if content and isinstance(content[-1], dict) and as_str(content[-1].get('type'), '') == 'tool_use':
         stopReason = 'tool_use'
-    events.append(writeAnthropicSseData('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': stopReason, 'stop_sequence': None}, 'usage': {'output_tokens': usage.get('output_tokens', 0)}}))
+    events.append(writeAnthropicSseData('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': stopReason, 'stop_sequence': None}, 'usage': {'output_tokens': as_int(usage.get('output_tokens'), 0)}}))
     events.append(writeAnthropicSseData('message_stop', {'type': 'message_stop'}))
     return events
 
@@ -458,18 +469,18 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, JsonValue], state: dict[str, J
     choice = choices[0]
     choiceDict = as_dict(choice, {})
     delta = as_dict(choiceDict.get('delta'), {})
-    finishReason = choiceDict.get('finish_reason')
-    chunkId = chunk.get('id')
+    finishReason = as_str(choiceDict.get('finish_reason'), '') or None
+    chunkId = as_str(chunk.get('id'), '')
     if chunkId and not state.get('_started'):
         state['message_id'] = chunkId
-    model = chunk.get('model')
+    model = as_str(chunk.get('model'), '')
     if model:
         state['model'] = model
     if not state.get('_started'):
         state['_started'] = True
-        events.append(writeAnthropicSseData('message_start', {'type': 'message_start', 'message': {'id': state['message_id'], 'type': 'message', 'role': 'assistant', 'content': [], 'model': state['model'] or 'unknown', 'stop_reason': None, 'stop_sequence': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}}))
-    content = delta.get('content', '')
-    reasoning = delta.get('reasoning') or delta.get('reasoning_content', '')
+        events.append(writeAnthropicSseData('message_start', {'type': 'message_start', 'message': {'id': state['message_id'], 'type': 'message', 'role': 'assistant', 'content': [], 'model': as_str(state.get('model'), 'unknown'), 'stop_reason': None, 'stop_sequence': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}}))
+    content = as_str(delta.get('content'), '')
+    reasoning = as_str(delta.get('reasoning'), '') or as_str(delta.get('reasoning_content'), '')
     if content:
         if not state.get('_text_block_started'):
             state['_text_block_started'] = True
@@ -574,30 +585,30 @@ async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], 
 
     Similar to the OpenAI version but works with Anthropic's content block format.
     """
-    if not client:
-        return (currentMessages, {'error': 'No client available for tool resolution'})
     currentMessages = list(messages)
     currentSystem = list(system) if system else []
     finalUsage: dict[str, JsonValue] | None = None
+    if not client:
+        return (currentMessages, {'error': 'No client available for tool resolution'})
     for _round in range(MAX_MANAGED_TOOL_ROUNDS):
-        reqBody: dict[str, JsonValue] = {'model': model, 'messages': currentMessages, 'max_tokens': 8192, 'stream': False}
+        reqBody: dict[str, JsonValue] = {'model': model, 'messages': cast(JsonValue, currentMessages), 'max_tokens': 8192, 'stream': False}
         if currentSystem:
-            reqBody['system'] = currentSystem
+            reqBody['system'] = cast(JsonValue, currentSystem)
         if knownTools:
-            reqBody['tools'] = knownTools
-        if not client:
-            return (currentMessages, {'error': 'No client available for tool resolution'})
+            reqBody['tools'] = cast(JsonValue, knownTools)
         if isAnthropicUpstream:
-            resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
+            reqBodyJson = cast(dict[str, object], as_dict(camelToSnake(reqBody), {}))
+            resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, reqBodyJson)
         else:
-            openaiBody = buildOpenaiRequest({'messages': currentMessages}, model, currentSystem)
+            openaiBody = buildOpenaiRequest({'messages': cast(JsonValue, currentMessages)}, model, currentSystem)
             if knownTools:
                 openaiBody['tools'] = [anthropicToOpenaiToolDefinition(t) for t in knownTools]
-            resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
+            openaiBodyJson = cast(dict[str, object], as_dict(camelToSnake(openaiBody), {}))
+            resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, openaiBodyJson)
         if resp.status != 200:
-            errBody: dict[str, JsonValue] = resp.body if isinstance(resp.body, dict) else {'error': str(resp.body)}
+            errBody: dict[str, JsonValue] = as_dict(resp.body, {}) if isinstance(resp.body, dict) else {'error': str(resp.body or '')}
             return (currentMessages, errBody)
-        responseBody = as_dict(snakeToCamel(resp.body_json), {})
+        responseBody = as_dict(snakeToCamel(cast(JsonValue, resp.bodyJson)), {})
         if responseBody.get('usage'):
             finalUsage = as_dict(responseBody.get('usage'), {})
         if isAnthropicUpstream:
@@ -659,13 +670,13 @@ async def handleMessages(body: AnthropicRequest | dict[str, JsonValue], request:
         model: str = body.model
         raw_body = cast('dict[str, JsonValue]', body.model_dump())
     else:
-        model = body.get('model', 'claude-sonnet-4-7')
+        model = as_str(body.get('model'), 'claude-sonnet-4-7')
         raw_body = body
     resolvedModel = resolveClaudePublicModelAlias(model)
     try:
-        resolved = resolve(resolvedModel, default_alias='claude-sonnet-4-7')
-        providerName = resolved['provider']
-        resolvedModel = resolved['model']
+        resolved = resolve(resolvedModel, defaultAlias='claude-sonnet-4-7')
+        providerName = as_str(resolved.get('provider'), '')
+        resolvedModel = as_str(resolved.get('model'), resolvedModel)
     except Exception:
         providerName = resolvedModel
     provider = providerResolver.resolve(providerName)
@@ -673,21 +684,22 @@ async def handleMessages(body: AnthropicRequest | dict[str, JsonValue], request:
         return ({'error': 'No provider available for model', 'model': resolvedModel}, None)
     client = getClient(provider)
     if not client:
-        return ({'error': f"No client for provider: {provider.get('name')}"}, None)
+        return ({'error': f"No client for provider: {as_str(provider.get('name'), '')}"}, None)
     apiKey = client.resolveApiKey()
     if not apiKey:
         return ({'error': 'API key not configured for provider'}, None)
     headers = client.buildAuthHeaders(apiKey)
     baseUrl = client.resolveBaseUrl()
-    isAnthropicUpstream = client.api_format == 'anthropicMessages'
+    isAnthropicUpstream = client.apiFormat == 'anthropicMessages'
     if isAnthropicUpstream:
         upstreamUrl = f'{baseUrl}/messages'
     else:
         upstreamUrl = f'{baseUrl}/chat/completions'
     clientWantsStream = body.stream if isinstance(body, AnthropicRequest) else body.get('stream', False)
-    systemBlocks = buildAnthropicSystemBlocks(raw_body.get('system', []))
-    clientTools = raw_body.get('tools', [])
+    systemBlocks = buildAnthropicSystemBlocks(as_list(raw_body.get('system'), []))
+    clientToolsRaw = as_list(raw_body.get('tools'), [])
     managedWebTools = getManagedAnthropicWebToolDefinitions()
+    clientTools = cast('list[dict[str, JsonValue]]', clientToolsRaw)
     knownTools = dedupeAndCanonicalizeAnthropicTools(clientTools + managedWebTools)
     managedLocalToolNames: set[str] = set()
     clientToolNames: set[str] = set()
@@ -695,11 +707,11 @@ async def handleMessages(body: AnthropicRequest | dict[str, JsonValue], request:
     # the client didn't list them in its own tool set. Seed the managed set so
     # classifyAnthropicToolUses() recognizes model calls to them as managed.
     for t in managedWebTools:
-        name = getToolDefinitionName(t) or t.get('name', '')
+        name = as_str(getToolDefinitionName(t), '') or as_str(t.get('name'), '')
         if name:
             managedLocalToolNames.add(name)
     for t in clientTools:
-        name = getToolDefinitionName(t) or t.get('name', '')
+        name = as_str(getToolDefinitionName(t), '') or as_str(t.get('name'), '')
         if isProxyManagedLocalToolName(name):
             managedLocalToolNames.add(name)
         else:
@@ -716,32 +728,35 @@ async def handleMessages(body: AnthropicRequest | dict[str, JsonValue], request:
 
 async def _handleMessagesNonStreaming(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, JsonValue], model: str, isAnthropicUpstream: bool, systemBlocks: list[dict[str, JsonValue]], knownTools: list[dict[str, JsonValue]], managedLocalToolNames: set[str], clientToolNames: set[str], client: BaseProviderClient) -> tuple[dict[str, JsonValue], None]:
     """Non-streaming path for /v1/messages."""
-    messages = body.get('messages', [])
+    messages = cast('list[dict[str, JsonValue]]', as_list(body.get('messages'), []))
     if isAnthropicUpstream:
         reqBody = buildAnthropicUpstreamRequest(body, model, systemBlocks)
         if knownTools:
-            reqBody['tools'] = knownTools
+            reqBody['tools'] = cast(JsonValue, knownTools)
         reqBody['stream'] = False
-        resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
-        responseBody = snakeToCamel(resp.body_json) or {}
-        if resp.is_error:
+        reqBodyJson = cast(dict[str, object], as_dict(camelToSnake(reqBody), {}))
+        resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, reqBodyJson)
+        responseBody = as_dict(snakeToCamel(cast(JsonValue, resp.bodyJson)), {})
+        if resp.isError:
             return (responseBody, None)
-        content = responseBody.get('content', [])
-        toolUses = [b for b in content or [] if b.get('type') == 'tool_use']
+        content = as_list(responseBody.get('content'), [])
+        toolUses = [b for b in content if isinstance(b, dict) and as_str(b.get('type'), '') == 'tool_use']
         if toolUses:
             updatedMessages, usage = await resolveManagedAnthropicToolUses(messages, systemBlocks, model, upstreamUrl, upstreamHeaders, True, knownTools, managedLocalToolNames, clientToolNames, client=client)
             lastMsg = updatedMessages[-1] if updatedMessages else {}
-            resp_usage = AnthropicUsage(input_tokens=as_int(usage.get('input_tokens', 0) if usage else 0), output_tokens=as_int(usage.get('output_tokens', 0) if usage else 0))
-            return ({'id': responseBody.get('id', f'msg_{uuid.uuid4().hex[:16]}'), 'type': 'message', 'role': 'assistant', 'content': lastMsg.get('content', []), 'model': model, 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': resp_usage.model_dump()}, None)
+            resolvedUsage: dict[str, JsonValue] = as_dict(usage, {})
+            resp_usage = AnthropicUsage(input_tokens=as_int(resolvedUsage.get('input_tokens'), 0), output_tokens=as_int(resolvedUsage.get('output_tokens'), 0))
+            return ({'id': as_str(responseBody.get('id'), f'msg_{uuid.uuid4().hex[:16]}'), 'type': 'message', 'role': 'assistant', 'content': as_list(lastMsg.get('content'), []), 'model': model, 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': resp_usage.model_dump()}, None)
         return (responseBody, None)
     else:
         openaiBody = buildOpenaiRequest(body, model, systemBlocks)
         if knownTools:
             openaiBody['tools'] = [anthropicToOpenaiToolDefinition(t) for t in knownTools]
         openaiBody['stream'] = False
-        resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(openaiBody))
-        responseBody = snakeToCamel(resp.body_json) or {}
-        if resp.is_error:
+        openaiBodyJson = cast(dict[str, object], as_dict(camelToSnake(openaiBody), {}))
+        resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, openaiBodyJson)
+        responseBody = as_dict(snakeToCamel(cast(JsonValue, resp.bodyJson)), {})
+        if resp.isError:
             return (responseBody, None)
         return (_translateOpenaiToAnthropicResponse(responseBody, model), None)
 
@@ -752,18 +767,19 @@ async def _streamAnthropicNative(upstreamUrl: str, upstreamHeaders: dict[str, st
     """
     reqBody = buildAnthropicUpstreamRequest(body, model, systemBlocks)
     if knownTools:
-        reqBody['tools'] = knownTools
+        reqBody['tools'] = cast(JsonValue, knownTools)
     reqBody['stream'] = True
     toolRound = 0
-    currentMessages = list(body.get('messages', []))
+    currentMessages: list[dict[str, JsonValue]] = cast('list[dict[str, JsonValue]]', as_list(body.get('messages'), []))
     while toolRound < MAX_MANAGED_TOOL_ROUNDS:
         st = AnthropicNativeStreamState()
         roundBody = dict(reqBody)
-        roundBody['messages'] = currentMessages
-        async for rawEvent in client.streamSse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
+        roundBody['messages'] = cast(JsonValue, currentMessages)
+        roundBodyJson = cast(dict[str, object], as_dict(camelToSnake(roundBody), {}))
+        async for rawEvent in client.streamSse(upstreamUrl, upstreamHeaders, roundBodyJson):
             event = cast('dict[str, JsonValue]', rawEvent)
-            if event.get('type') == 'error':
-                yield writeAnthropicSseData('error', {'error': {'message': as_str(event.get('body'), str(event.get('error', '')))}})
+            if as_str(event.get('type'), '') == 'error':
+                yield writeAnthropicSseData('error', {'error': {'message': as_str(event.get('body'), as_str(event.get('error'), ''))}})
                 return
             yield writeAnthropicSseDataOnly(event)
             eventTypePayload = as_str(event.get('type'), '')
@@ -788,7 +804,7 @@ async def _streamAnthropicNative(upstreamUrl: str, upstreamHeaders: dict[str, st
         if not classification.get('has_managed'):
             break
         toolRound += 1
-        assistantMsg = {'role': 'assistant', 'content': list(st.data.content_blocks)}
+        assistantMsg: dict[str, JsonValue] = {'role': 'assistant', 'content': cast(JsonValue, list(st.data.content_blocks))}
         currentMessages.append(assistantMsg)
         for tu in as_list(classification.get('managed_tool_uses'), []):
             if not isinstance(tu, dict):
@@ -813,21 +829,22 @@ async def _streamOpenaiAsAnthropic(upstreamUrl: str, upstreamHeaders: dict[str, 
         openaiBody['tools'] = [anthropicToOpenaiToolDefinition(t) for t in knownTools]
     openaiBody['stream'] = True
     toolRound = 0
-    currentMessages = list(body.get('messages', []))
+    currentMessages: list[dict[str, JsonValue]] = cast('list[dict[str, JsonValue]]', as_list(body.get('messages'), []))
     while toolRound < MAX_MANAGED_TOOL_ROUNDS:
         st = OpenaiToAnthropicStreamState()
         roundBody = dict(openaiBody)
-        roundBody['messages'] = currentMessages
-        async for rawChunk in client.streamSse(upstreamUrl, upstreamHeaders, camelToSnake(roundBody)):
+        roundBody['messages'] = cast(JsonValue, currentMessages)
+        roundBodyJson = cast(dict[str, object], as_dict(camelToSnake(roundBody), {}))
+        async for rawChunk in client.streamSse(upstreamUrl, upstreamHeaders, roundBodyJson):
             chunk = cast('dict[str, JsonValue]', rawChunk)
-            if chunk.get('type') == 'error':
-                yield writeAnthropicSseData('error', {'error': {'message': as_str(chunk.get('body'), str(chunk.get('error', '')))}})
+            if as_str(chunk.get('type'), '') == 'error':
+                yield writeAnthropicSseData('error', {'error': {'message': as_str(chunk.get('body'), as_str(chunk.get('error'), ''))}})
                 return
             events = st.convert_chunk(chunk)
             for eventStr in events:
                 yield eventStr
             choices = as_list(chunk.get('choices'), [])
-            if choices and isinstance(choices[0], dict) and choices[0].get('finish_reason') == 'tool_calls':
+            if choices and isinstance(choices[0], dict) and as_str(choices[0].get('finish_reason'), '') == 'tool_calls':
                 toolCalls = []
                 for tc in st.pending_tool_calls:
                     toolCalls.append(tc.to_anthropic_tool_use())
@@ -861,13 +878,13 @@ def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, JsonValue], mo
     if not choices:
         resp = AnthropicResponse(id=f'msg_{uuid.uuid4().hex[:16]}', model=model)
         return resp.model_dump()  # type: ignore[return-value]
-    choice = choices[0]
-    message = as_dict(choice, {})
+    choiceDict = as_dict(choices[0], {})
+    message = choiceDict
     contentList: list[dict[str, JsonValue]] = []
-    text = message.get('content', '')
+    text = as_str(message.get('content'), '')
     if text:
         contentList.append({'type': 'text', 'text': text})
-    reasoning = message.get('reasoning') or message.get('reasoning_content', '')
+    reasoning = as_str(message.get('reasoning'), '') or as_str(message.get('reasoning_content'), '')
     if reasoning:
         contentList.append({'type': 'thinking', 'text': reasoning})
     for tc in as_list(message.get('tool_calls'), []):
@@ -879,11 +896,11 @@ def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, JsonValue], mo
         except (json.JSONDecodeError, TypeError):
             toolInput = {}
         contentList.append({'type': 'tool_use', 'id': as_str(tc.get('id'), f'toolu_{uuid.uuid4().hex[:16]}'), 'name': as_str(tcFn.get('name'), ''), 'input': toolInput})
-    finishReason = as_str(choice.get('finish_reason'), 'stop')
+    finishReason = as_str(choiceDict.get('finish_reason'), 'stop')
     stopReasonMap = {'stop': 'end_turn', 'tool_calls': 'tool_use', 'length': 'max_tokens', 'content_filter': 'content_filter'}
     usage = as_dict(openaiResponse.get('usage'), {})
     resp = AnthropicResponse(
-        id=openaiResponse.get('id', f'msg_{uuid.uuid4().hex[:16]}'),
+        id=as_str(openaiResponse.get('id'), f'msg_{uuid.uuid4().hex[:16]}'),
         model=as_str(openaiResponse.get('model'), model),
         content=contentList,
         stop_reason=stopReasonMap.get(finishReason, 'end_turn'),
@@ -894,8 +911,8 @@ def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, JsonValue], mo
 async def handleCountTokens(body: dict[str, JsonValue], request: object=None) -> dict[str, JsonValue]:
     """Handle a POST /v1/messages/count_tokens request."""
     from app.providers.clients.base import estimateTokens
-    messages = body.get('messages', [])
-    tools = body.get('tools', [])
+    messages = cast('list[dict[str, object]]', as_list(body.get('messages'), []))
+    tools = cast('list[dict[str, object]]', as_list(body.get('tools'), []))
     estimated = estimateTokens(messages, tools)
     return {'input_tokens': estimated, 'estimated': True}
 _client = None
@@ -917,33 +934,36 @@ def translateMessagesToAnthropic(messages: list[dict[str, JsonValue]]) -> list[d
     i = 0
     while i < len(messages):
         msg = messages[i]
-        role = msg.get('role')
+        role = as_str(msg.get('role'), '')
         if role == 'tool':
             toolBlocks = []
-            while i < len(messages) and messages[i].get('role') == 'tool':
+            while i < len(messages) and as_str(messages[i].get('role'), '') == 'tool':
                 tMsg = messages[i]
-                toolUseId = tMsg.get('tool_use_id') or tMsg.get('tool_call_id') or ''
+                toolUseId = as_str(tMsg.get('tool_use_id'), '') or as_str(tMsg.get('tool_call_id'), '')
                 content = tMsg.get('content', '')
                 toolBlocks.append({'type': 'tool_result', 'tool_use_id': toolUseId, 'content': content})
                 i += 1
-            translated.append({'role': 'user', 'content': toolBlocks})
+            translated.append({'role': 'user', 'content': cast(JsonValue, toolBlocks)})
         else:
             if role == 'assistant' and msg.get('tool_calls'):
                 contentBlocks = []
-                if msg.get('content'):
-                    contentBlocks.append({'type': 'text', 'text': msg['content']})
+                contentVal = msg.get('content')
+                if contentVal:
+                    contentBlocks.append({'type': 'text', 'text': contentVal})
                 for tc in as_list(msg.get('tool_calls'), []):
                     if not isinstance(tc, dict):
                         continue
                     fn = as_dict(tc.get('function'), {})
                     try:
-                        args = json.loads(as_str(fn.get('arguments'), '{}')) if isinstance(fn.get('arguments'), str) else fn.get('arguments', {})
+                        fnArgs = fn.get('arguments', {})
+                        args = json.loads(as_str(fn.get('arguments'), '{}')) if isinstance(fnArgs, str) else as_dict(fnArgs, {})
                     except Exception:
                         args = {}
                     contentBlocks.append({'type': 'tool_use', 'id': as_str(tc.get('id'), ''), 'name': as_str(fn.get('name'), ''), 'input': args})
-                translated.append({'role': 'assistant', 'content': contentBlocks})
+                translated.append({'role': 'assistant', 'content': cast(JsonValue, contentBlocks)})
             elif role == 'assistant' and isinstance(msg.get('content'), list):
-                filtered = [b for b in as_list(msg.get('content'), []) if not (isinstance(b, dict) and b.get('type') == 'thinking' and (not b.get('signature')))]
+                contentList = as_list(msg.get('content'), [])
+                filtered = [b for b in contentList if not (isinstance(b, dict) and as_str(b.get('type'), '') == 'thinking' and (not b.get('signature')))]
                 translated.append({'role': 'assistant', 'content': filtered if filtered else [{'type': 'text', 'text': ''}]})
             else:
                 translated.append(msg)

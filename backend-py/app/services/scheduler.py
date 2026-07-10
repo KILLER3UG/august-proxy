@@ -12,6 +12,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Awaitable, Callable
+from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.lib.paths import dataPath
 _JOBSFile = dataPath('scheduled-jobs.json')
 
@@ -114,7 +115,7 @@ async def runJobNow(jobId: str) -> dict[str, object]:
     try:
         import subprocess
         import shlex
-        proc = await asyncio.create_subprocess_shell(job['command'], stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        proc = await asyncio.create_subprocess_shell(as_str(job['command'], ''), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
         job['lastRun'] = _now()
         job['status'] = 'idle'
@@ -144,7 +145,7 @@ async def startScheduler(intervalS: int=60) -> None:
         for jobId, job in list(_jobs.items()):
             if not job.get('enabled'):
                 continue
-            if _matchesCron(job.get('schedule', '* * * * *'), now):
+            if _matchesCron(as_str(job.get('schedule'), '* * * * *'), now):
                 task = asyncio.create_task(runJobNow(jobId))
                 _tasks[jobId] = task
                 task.add_done_callback(lambda t, jId=jobId: _tasks.pop(jId, None))

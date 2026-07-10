@@ -8,6 +8,7 @@ Tier 3: Dynamic Runtime (volatile, rebuilt every turn)
 Port of backend/services/memory/context-builder.js (224 lines).
 """
 from __future__ import annotations
+from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.services.memoryStore import getMemory
 AUGUST_PLATFORM: str = 'Platform: August Proxy.\n- Cross-session memory tools are available: memory_search() to find past conversations, fact_search() for structured facts, context_read() for user profile.\n- Save recurring user corrections/lessons as skills via `skill_manage`; load them via `load_skill`.\n- Note: "August" or "August Proxy" is the name of this proxy platform. You are still yourself — respond as your actual underlying model identity.\n- Address the user neutrally without honorifics.'
 DEFAULT_CONTEXT_MAX_CHARS: int = 24000
@@ -30,13 +31,31 @@ def buildTier1(session: dict[str, object] | None=None) -> str:
     """Build Tier 1 — static identity and constraints."""
     blocks: list[str] = []
     constraints = [AUGUST_PLATFORM]
-    constraints.extend(['=== GUARD MODE RULES ===', '- This session enforces a guard mode. You operate in one of three modes:', '  * ask: All mutating actions (write, edit, delete, run_command with mutations)', '         require user confirmation. Propose the action and wait for approval.', '  * plan: Destructive tools are blocked until a plan is submitted and approved.', '          Submit a plan via submit_plan(), then execute only approved steps.', '  * full: All tools available. Use responsibly.', '- Cognitive Budget: Monitor <cognitive_budget>.', "  At 'high' pressure, proactively compact context.", "  At 'critical' pressure, save state and ask user to start fresh.", '- Proactive Interrupts: <subconscious_updates> may contain daemon', '  results with [CRITICAL] prefix. If [CRITICAL] is present, pause', '  and inform the user before continuing.', "- Verifier Gate: Before transitioning to 'review' or 'complete', you must", '  execute a verification command. Do not skip or fake verification output.', '- Brain Access: You have a unified long-term brain (august_brain.sqlite).', '  Call brain_query(store, query, filters) to recall anything not in the prompt.', '- Math: Prefer unicode math symbols (², ³, √, ∑, ∏, ∫, π, ≈, ≤, ≥, ±, →,', '  ×, ÷, ∈, ∉, ∞, ∂) over LaTeX. Use plain unicode fractions (½) or', '  parentheses ((a+b)/c) instead of \\frac{a+b}{c}. Reserve LaTeX $...$', '  / $$...$$ for genuinely complex formulas (matrices, multi-line derivations).'])
+    constraints.extend(['=== GUARD MODE RULES ===', '- This session enforces a guard mode. You operate in one of three modes:', '  * ask: All mutating actions (write, edit, delete, run_command with mutations)',
+                         '         require user confirmation. Propose the action and wait for approval.',
+                         '  * plan: Destructive tools are blocked until a plan is submitted and approved.',
+                         '          Submit a plan via submit_plan(), then execute only approved steps.',
+                         '  * full: All tools available. Use responsibly.',
+                         '- Cognitive Budget: Monitor <cognitive_budget>.',
+                         "  At 'high' pressure, proactively compact context.",
+                         "  At 'critical' pressure, save state and ask user to start fresh.",
+                         '- Proactive Interrupts: <subconscious_updates> may contain daemon',
+                         '  results with [CRITICAL] prefix. If [CRITICAL] is present, pause',
+                         '  and inform the user before continuing.',
+                         "- Verifier Gate: Before transitioning to 'review' or 'complete', you must",
+                         '  execute a verification command. Do not skip or fake verification output.',
+                         '- Brain Access: You have a unified long-term brain (august_brain.sqlite).',
+                         '  Call brain_query(store, query, filters) to recall anything not in the prompt.',
+                         '- Math: Prefer unicode math symbols (², ³, √, ∑, ∏, ∫, π, ≈, ≤, ≥, ±, →,',
+                         '  ×, ÷, ∈, ∉, ∞, ∂) over LaTeX. Use plain unicode fractions (½) or',
+                         '  parentheses ((a+b)/c) instead of \\frac{a+b}{c}. Reserve LaTeX $...$',
+                         '  / $$...$$ for genuinely complex formulas (matrices, multi-line derivations).'])
     blocks.append(wrapTag('system_constraints', '\n'.join(constraints)))
     userParts: list[str] = []
     profile = getMemory('userProfile') if session else None
     if profile:
         userParts.append(f'Profile: {_fmtVal(profile, 300)}')
-    skillsManifest = (session or {}).get('skills_manifest', '')
+    skillsManifest = as_str((session or {}).get('skills_manifest'), '')
     if skillsManifest:
         userParts.append(f'Skills:\n{skillsManifest}')
     blocks.append(wrapTag('user_state', '\n'.join(userParts)))
@@ -46,29 +65,32 @@ def buildTier2(session: dict[str, object] | None=None) -> str:
     """Build Tier 2 — workspace, directives, learned heuristics."""
     blocks: list[str] = []
     wsParts: list[str] = []
-    wsPath = (session or {}).get('workspace_path', '')
+    wsPath = as_str((session or {}).get('workspace_path'), '')
     if wsPath:
         wsParts.append(f'Path: {wsPath}')
-    vcs = (session or {}).get('vcs', '')
+    vcs = as_str((session or {}).get('vcs'), '')
     if vcs:
         wsParts.append(f'VCS: {vcs}')
     if wsParts:
         blocks.append(wrapTag('workspace', '\n'.join(wsParts)))
     dirParts: list[str] = []
-    goal = (session or {}).get('goal', '')
+    goal = as_str((session or {}).get('goal'), '')
     if goal:
         dirParts.append(f'Goal: {goal}')
-    plan = (session or {}).get('plan')
-    if plan:
-        planText = plan.get('plan', str(plan)) if isinstance(plan, dict) else str(plan)
+    plan_raw = (session or {}).get('plan')
+    if plan_raw:
+        if isinstance(plan_raw, dict):
+            planText = as_str(as_dict(plan_raw).get('plan'), str(plan_raw))
+        else:
+            planText = str(plan_raw)
         status = 'approved' if (session or {}).get('planApproved') else 'pending'
         dirParts.append(f'Plan ({status}):\n{_fmtVal(planText, 2000)}')
     if dirParts:
         blocks.append(wrapTag('directives', '\n'.join(dirParts)))
-    augMd = (session or {}).get('augMd', '')
+    augMd = as_str((session or {}).get('augMd'), '')
     if augMd:
         blocks.append(wrapTag('aug_directives', _fmtVal(augMd, 4000)))
-    heuristics = (session or {}).get('learnedHeuristics', [])
+    heuristics = as_list((session or {}).get('learnedHeuristics'), [])
     if heuristics:
         lines = []
         for h in heuristics:
@@ -94,14 +116,15 @@ def buildTier3(session: dict[str, object] | None=None) -> str:
     if brainPolicy:
         import json
         blocks.append(wrapTag('brain_policy', json.dumps(brainPolicy, indent=2)))
-    execState = (session or {}).get('execution_state')
+    execState_raw = (session or {}).get('execution_state')
+    execState = as_dict(execState_raw)
     if execState:
         import json
         blocks.append(wrapTag('execution_state', json.dumps(execState, indent=2)))
-        phase = execState.get('phase', '')
+        phase = as_str(execState.get('phase'), '')
         if phase in ('review', 'complete'):
-            verificationCommand = execState.get('verification_command', '')
-            step = execState.get('step', 0)
+            verificationCommand = as_str(execState.get('verification_command'), '')
+            step = as_int(execState.get('step'), 0)
             if verificationCommand:
                 gateBody = f'You marked step {step} as complete. Verify before proceeding:\nRun: {verificationCommand}\nConfirm output shows "PASSED" or "0 failed".\nOnly then use update_state to transition to "review".'
             else:
@@ -119,7 +142,7 @@ def buildTier3(session: dict[str, object] | None=None) -> str:
     blackboard = (session or {}).get('blackboard_state')
     if blackboard:
         blocks.append(wrapTag('blackboard_state', blackboard))
-    environment = (session or {}).get('environment', [])
+    environment = as_list((session or {}).get('environment'), [])
     if environment:
         envLines: list[str] = []
         for e in environment:
@@ -148,26 +171,26 @@ def buildTier3(session: dict[str, object] | None=None) -> str:
         else:
             rcParts.append(f'  {_fmtVal(coreFacts, 500)}')
         rcParts.append('')
-    activeContext = (session or {}).get('global_context', '')
+    activeContext = as_str((session or {}).get('global_context'), '')
     if activeContext:
         rcParts.append(f'Active context:\n{_fmtVal(activeContext, 1000)}\n')
-    projects = (session or {}).get('active_projects', [])
+    projects = as_list((session or {}).get('active_projects'), [])
     if isinstance(projects, list) and projects:
         names = []
         for p in projects:
             if isinstance(p, dict):
-                names.append(p.get('name', ''))
+                names.append(as_str(p.get('name'), ''))
             else:
                 names.append(str(p))
         if names:
             rcParts.append(f"Projects: {', '.join((n for n in names if n))}\n")
-    agentContext = (session or {}).get('agent_context', '')
+    agentContext = as_str((session or {}).get('agent_context'), '')
     if agentContext:
         rcParts.append(f'Agent:\n{_fmtVal(agentContext, 500)}\n')
-    whatsNew = (session or {}).get('whats_new', '')
+    whatsNew = as_str((session or {}).get('whats_new'), '')
     if whatsNew:
         rcParts.append(f"What's new:\n{_fmtVal(whatsNew, 1000)}\n")
-    memoryStats = (session or {}).get('memory_stats', {})
+    memoryStats = as_dict((session or {}).get('memory_stats'), {})
     if memoryStats:
         statsLines = []
         for k, v in memoryStats.items():

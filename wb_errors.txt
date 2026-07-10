@@ -1,0 +1,1453 @@
+app\adapters\stream_state.py:155:44: error: Name "time" is not defined 
+[name-defined]
+                'created': self.created or int(time.time()),
+                                               ^~~~
+app\adapters\stream_state.py:455:28: error: Name "time" is not defined 
+[name-defined]
+                'created': int(time.time()),
+                               ^~~~
+app\services\tools\modelTools.py:46:5: error: "AssemblyResult" has no attribute
+"threshold_tokens"; maybe "thresholdTokens"?  [attr-defined]
+        result.threshold_tokens = int(contextLength * thresholdPct / 100)
+        ^~~~~~~~~~~~~~~~~~~~~~~
+app\services\tools\modelTools.py:57:5: error: "AssemblyResult" has no attribute
+"deferred_tokens"; maybe "deferredTokens"?  [attr-defined]
+        result.deferred_tokens = deferrableTokens
+        ^~~~~~~~~~~~~~~~~~~~~~
+app\services\tools\modelTools.py:58:27: error: "AssemblyResult" has no
+attribute "threshold_tokens"; maybe "thresholdTokens"?  [attr-defined]
+        if deferrableTokens < result.threshold_tokens or not deferrableDef...
+                              ^~~~~~~~~~~~~~~~~~~~~~~
+app\services\tools\modelTools.py:59:9: error: "AssemblyResult" has no attribute
+"tool_defs"; maybe "toolDefs"?  [attr-defined]
+            result.tool_defs = coreDefs + deferrableDefs
+            ^~~~~~~~~~~~~~~~
+app\services\tools\modelTools.py:63:5: error: "AssemblyResult" has no attribute
+"deferred_count"; maybe "deferredCount"?  [attr-defined]
+        result.deferred_count = len(deferrableDefs)
+        ^~~~~~~~~~~~~~~~~~~~~
+app\services\tools\modelTools.py:72:5: error: "AssemblyResult" has no attribute
+"preloaded_tools"; maybe "preloadedTools"?  [attr-defined]
+        result.preloaded_tools = preloadedNames
+        ^~~~~~~~~~~~~~~~~~~~~~
+app\services\tools\modelTools.py:73:5: error: "AssemblyResult" has no attribute
+"preloaded_tool_count"; maybe "preloadedToolCount"?  [attr-defined]
+        result.preloaded_tool_count = len(preloadedNames)
+        ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\tools\modelTools.py:81:5: error: "AssemblyResult" has no attribute
+"auto_loaded_skills"; maybe "autoLoadedSkills"?  [attr-defined]
+        result.auto_loaded_skills = autoSkills
+        ^~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\tools\modelTools.py:82:5: error: "AssemblyResult" has no attribute
+"auto_loaded_skill_count"; maybe "autoLoadedSkillCount"?  [attr-defined]
+        result.auto_loaded_skill_count = len(autoSkills)
+        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\tools\modelTools.py:91:23: error: "AssemblyResult" has no
+attribute "threshold_tokens"; maybe "thresholdTokens"?  [attr-defined]
+        if totalTokens >= result.threshold_tokens:
+                          ^~~~~~~~~~~~~~~~~~~~~~~
+app\services\tools\modelTools.py:92:9: error: "AssemblyResult" has no attribute
+"auto_loaded_skills"; maybe "autoLoadedSkills"?  [attr-defined]
+            result.auto_loaded_skills = []
+            ^~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\tools\modelTools.py:93:9: error: "AssemblyResult" has no attribute
+"auto_loaded_skill_count"; maybe "autoLoadedSkillCount"?  [attr-defined]
+            result.auto_loaded_skill_count = 0
+            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\tools\modelTools.py:94:26: error: "AssemblyResult" has no
+attribute "threshold_tokens"; maybe "thresholdTokens"?  [attr-defined]
+        while totalTokens >= result.threshold_tokens and len(preloadedDefs...
+                             ^~~~~~~~~~~~~~~~~~~~~~~
+app\services\tools\modelTools.py:97:9: error: "AssemblyResult" has no attribute
+"preloaded_tool_count"; maybe "preloadedToolCount"?  [attr-defined]
+            result.preloaded_tool_count = len(preloadedDefs)
+            ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\tools\modelTools.py:98:5: error: "AssemblyResult" has no attribute
+"tool_defs"; maybe "toolDefs"?  [attr-defined]
+        result.tool_defs = coreDefs + preloadedDefs + _BRIDGEToolDefs
+        ^~~~~~~~~~~~~~~~
+app\services\tools\mcpClient.py:51:26: error: Incompatible types in assignment
+(expression has type "dict[str, Collection[str]]", target has type
+"dict[str, object]")  [assignment]
+        _servers[serverId] = server
+                             ^~~~~~
+app\services\tools\mcpClient.py:52:12: error: Incompatible return value type
+(got "dict[str, Collection[str]]", expected "dict[str, object]")  [return-value]
+        return server
+               ^~~~~~
+app\services\tools\mcpClient.py:52:12: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\tools\mcpClient.py:52:12: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\tools\mcpClient.py:52:12: note: Perhaps you need a type annotation for "server"? Suggestion: "dict[str, object]"
+app\services\tools\mcpClient.py:73:5: error: No overload variant of "update" of
+"MutableMapping" matches argument type "object"  [call-overload]
+        env.update(server.get('env', {}))
+        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\tools\mcpClient.py:73:5: note: Possible overload variants:
+app\services\tools\mcpClient.py:73:5: note:     def update(self, SupportsKeysAndGetItem[str, str], /) -> None
+app\services\tools\mcpClient.py:73:5: note:     def update(self, SupportsKeysAndGetItem[str, str], /, **kwargs: str) -> None
+app\services\tools\mcpClient.py:73:5: note:     def update(self, Iterable[tuple[str, str]], /) -> None
+app\services\tools\mcpClient.py:73:5: note:     def update(self, Iterable[tuple[str, str]], /, **kwargs: str) -> None
+app\services\tools\mcpClient.py:73:5: note:     def update(self, **kwargs: str) -> None
+app\services\tools\mcpClient.py:75:22: error: Expected iterable as variadic
+argument  [misc]
+            proc = await asyncio.create_subprocess_exec(server['command'],...
+                         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\services\tools\mcpClient.py:75:53: error: Argument 1 to
+"create_subprocess_exec" has incompatible type "object"; expected
+"str | bytes | PathLike[str] | PathLike[bytes]"  [arg-type]
+    ...     proc = await asyncio.create_subprocess_exec(server['command'], *s...
+                                                        ^~~~~~~~~~~~~~~~~
+app\services\logger.py:43:34: error: Argument 1 to "appendleft" of "deque" has
+incompatible type "dict[str, str]"; expected "dict[str, object]"  [arg-type]
+            self._entries.appendleft(entry)
+                                     ^~~~~
+app\services\logger.py:43:34: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\logger.py:43:34: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\logger.py:44:25: error: Argument 1 to "_broadcast" of
+"ActivityLog" has incompatible type "dict[str, str]"; expected
+"dict[str, object]"  [arg-type]
+            self._broadcast(entry)
+                            ^~~~~
+app\services\logger.py:44:25: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\logger.py:44:25: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\logger.py:45:16: error: Incompatible return value type (got
+"dict[str, str]", expected "dict[str, object]")  [return-value]
+            return entry
+                   ^~~~~
+app\services\logger.py:45:16: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\logger.py:45:16: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\logger.py:45:16: note: Perhaps you need a type annotation for "entry"? Suggestion: "dict[str, object]"
+app\services\logger.py:128:45: error: Item "str" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                detail['finishReason'] = as_str(choices[0].get('finish_rea...
+                                                ^~~~~~~~~~~~~~
+app\services\logger.py:128:45: error: Item "int" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                detail['finishReason'] = as_str(choices[0].get('finish_rea...
+                                                ^~~~~~~~~~~~~~
+app\services\logger.py:128:45: error: Item "float" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                detail['finishReason'] = as_str(choices[0].get('finish_rea...
+                                                ^~~~~~~~~~~~~~
+app\services\logger.py:128:45: error: Item "bool" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                detail['finishReason'] = as_str(choices[0].get('finish_rea...
+                                                ^~~~~~~~~~~~~~
+app\services\logger.py:128:45: error: Item "None" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                detail['finishReason'] = as_str(choices[0].get('finish_rea...
+                                                ^~~~~~~~~~~~~~
+app\services\logger.py:128:45: error: Item "list[JsonValue]" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                detail['finishReason'] = as_str(choices[0].get('finish_rea...
+                                                ^~~~~~~~~~~~~~
+app\services\logger.py:129:31: error: Item "str" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                message = as_dict(choices[0].get('message')) or as_dict(ch...
+                                  ^~~~~~~~~~~~~~
+app\services\logger.py:129:31: error: Item "int" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                message = as_dict(choices[0].get('message')) or as_dict(ch...
+                                  ^~~~~~~~~~~~~~
+app\services\logger.py:129:31: error: Item "float" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                message = as_dict(choices[0].get('message')) or as_dict(ch...
+                                  ^~~~~~~~~~~~~~
+app\services\logger.py:129:31: error: Item "bool" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                message = as_dict(choices[0].get('message')) or as_dict(ch...
+                                  ^~~~~~~~~~~~~~
+app\services\logger.py:129:31: error: Item "None" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                message = as_dict(choices[0].get('message')) or as_dict(ch...
+                                  ^~~~~~~~~~~~~~
+app\services\logger.py:129:31: error: Item "list[JsonValue]" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                message = as_dict(choices[0].get('message')) or as_dict(ch...
+                                  ^~~~~~~~~~~~~~
+app\services\logger.py:133:43: error: Argument 1 to "len" has incompatible type
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None";
+expected "Sized"  [arg-type]
+                    detail['toolCalls'] = len(message['tool_calls'])
+                                              ^~~~~~~~~~~~~~~~~~~~~
+app\services\logger.py:155:69: error: Argument 1 to "_parseTimestamp" has
+incompatible type "object"; expected "str"  [arg-type]
+    ...v, 'elapsed': int((time.time() - _parseTimestamp(v['startedAt'])) * 10...
+                                                        ^~~~~~~~~~~~~~
+app\services\logger.py:182:233: error: Argument "key" to "max" has incompatible
+type overloaded function; expected
+"Callable[[str], SupportsDunderLT[Any] | SupportsDunderGT[Any]]"  [arg-type]
+    ...outputCost, 4), 'mostUsedModel': max(models, key=models.get) if models...
+                                                        ^~~~~~~~~~
+app\services\logger.py:242:17: error: "object" not callable  [operator]
+                    client({'type': 'request_log', 'data': entry})
+                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\adapters\toolClassification.py:19:12: error: Incompatible return value type
+(got "object | Any", expected "str | None")  [return-value]
+        return tool.get('name') or tool.get('function', {}).get('name')
+               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\adapters\toolClassification.py:19:32: error: "object" has no attribute
+"get"  [attr-defined]
+        return tool.get('name') or tool.get('function', {}).get('name')
+                                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\adapters\toolClassification.py:27:12: error: Incompatible return value type
+(got "object", expected "str | None")  [return-value]
+        return tool.get('name')
+               ^~~~~~~~~~~~~~~~
+app\services\skillService.py:118:22: error: Argument 1 to "add" of "set" has
+incompatible type "object"; expected "str"  [arg-type]
+                seen.add(parsed['name'])
+                         ^~~~~~~~~~~~~~
+app\services\skillService.py:133:21: error: "object" has no attribute "lower" 
+[attr-defined]
+                if q in s['name'].lower() or q in s.get('description', '')...
+                        ^~~~~~~~~~~~~~~
+app\services\skillService.py:199:55: error: Argument 1 to "_renderSkillMd" has
+incompatible type "dict[str, str]"; expected "dict[str, object]"  [arg-type]
+    ...agentDir / 'SKILL.md').write_text(_renderSkillMd(frontmatter, body), '...
+                                                        ^~~~~~~~~~~
+app\services\skillService.py:199:55: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\skillService.py:199:55: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\augArtifactService.py:106:12: error: Incompatible return value
+type (got "dict[str, Collection[str]]", expected "dict[str, object]") 
+[return-value]
+        return meta
+               ^~~~
+app\services\augArtifactService.py:106:12: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\augArtifactService.py:106:12: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\augArtifactService.py:106:12: note: Perhaps you need a type annotation for "meta"? Suggestion: "dict[str, object]"
+app\services\augArtifactService.py:127:12: error: Incompatible return value
+type (got "dict[str, Sequence[Collection[str]]]", expected "dict[str, object]") 
+[return-value]
+        return meta
+               ^~~~
+app\services\augArtifactService.py:127:12: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\augArtifactService.py:127:12: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\augArtifactService.py:127:12: note: Perhaps you need a type annotation for "meta"? Suggestion: "dict[str, object]"
+app\services\skills\curator.py:169:32: error: Argument 1 to "_ensure" of
+"SkillCurator" has incompatible type "object"; expected "str"  [arg-type]
+                rec = self._ensure(name)
+                                   ^~~~
+app\services\skills\curator.py:171:17: error: Unsupported operand types for +
+("object" and "int")  [operator]
+                    report['active'] += 1
+                    ^
+app\services\skills\curator.py:175:32: error: Incompatible types in assignment
+(expression has type "object", variable has type "float | int")  [assignment]
+                    lastActivity = skill.get('updatedAt', now)
+                                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\skills\curator.py:181:17: error: "object" has no attribute
+"append"  [attr-defined]
+                    report['staled'].append(name)
+                    ^~~~~~~~~~~~~~~~~~~~~~~
+app\services\skills\curator.py:184:34: error: Argument 1 to "archive" of
+"SkillCurator" has incompatible type "object"; expected "str"  [arg-type]
+                        self.archive(name)
+                                     ^~~~
+app\services\skills\curator.py:185:17: error: "object" has no attribute
+"append"  [attr-defined]
+                    report['archived'].append(name)
+                    ^~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\skills\curator.py:187:17: error: Unsupported operand types for +
+("object" and "int")  [operator]
+                    report['active'] += 1
+                    ^
+app\providers\clients\base.py:176:15: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+        for tc in msg.get('tool_calls', []):
+                  ^~~~~~~~~~~~~~~~~~~~~~~~~
+app\providers\clients\base.py:182:44: error: Argument 1 to
+"estimateStringTokens" has incompatible type "object"; expected "str | None" 
+[arg-type]
+            tokens += 4 + estimateStringTokens(msg['tool_call_id'])
+                                               ^~~~~~~~~~~~~~~~~~~
+app\providers\clients\base.py:193:39: error: "object" has no attribute "get" 
+[attr-defined]
+            total += estimateStringTokens(func.get('name', tool.get('name'...
+                                          ^~~~~~~~
+app\providers\clients\base.py:194:39: error: "object" has no attribute "get" 
+[attr-defined]
+            total += estimateStringTokens(func.get('description', tool.get...
+                                          ^~~~~~~~
+app\providers\clients\base.py:195:18: error: "object" has no attribute "get" 
+[attr-defined]
+            params = func.get('parameters') or func.get('input_schema', {}...
+                     ^~~~~~~~
+app\providers\clients\base.py:303:20: error: Incompatible return value type
+(got "object", expected "str | None")  [return-value]
+                return embedded
+                       ^~~~~~~~
+app\providers\clients\base.py:310:20: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for var in envVars:
+                       ^~~~~~~
+app\providers\clients\base.py:322:27: error: No overload variant of "get" of
+"dict" matches argument types "object", "dict[Never, Never]"  [call-overload]
+                providerCfg = cfg.get(candidate, {})
+                              ^~~~~~~~~~~~~~~~~~~~~~
+app\providers\clients\base.py:322:27: note: Possible overload variants:
+app\providers\clients\base.py:322:27: note:     def get(self, str, None = ..., /) -> object
+app\providers\clients\base.py:322:27: note:     def get(self, str, object, /) -> object
+app\providers\clients\base.py:322:27: note:     def [_T] get(self, str, _T, /) -> object
+app\providers\clients\base.py:327:20: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for var in envVars:
+                       ^~~~~~~
+app\providers\clients\base.py:331:19: error: "object" has no attribute "upper" 
+[attr-defined]
+            envName = providerName.upper().replace(' ', '_').replace('-', ...
+                      ^~~~~~~~~~~~~~~~~~
+app\providers\clients\base.py:342:15: error: No overload variant of "get" of
+"dict" matches argument types "object", "dict[Never, Never]"  [call-overload]
+            cfg = settings.config.get(providerName, {})
+                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\providers\clients\base.py:342:15: note: Possible overload variants:
+app\providers\clients\base.py:342:15: note:     def get(self, str, None = ..., /) -> object
+app\providers\clients\base.py:342:15: note:     def get(self, str, object, /) -> object
+app\providers\clients\base.py:342:15: note:     def [_T] get(self, str, _T, /) -> object
+app\providers\clients\base.py:344:16: error: Item "object" of "Any | object"
+has no attribute "rstrip"  [union-attr]
+            return baseUrl.rstrip('/') if baseUrl else ''
+                   ^~~~~~~~~~~~~~
+app\providers\clients\bedrock.py:21:27: error: Argument 1 to "__init__" of
+"BaseProviderClient" has incompatible type "*tuple[object, ...]"; expected
+"dict[str, object]"  [arg-type]
+            super().__init__(*args, **kwargs)
+                              ^~~~
+app\providers\clients\bedrock.py:21:35: error: Argument 2 to "__init__" of
+"BaseProviderClient" has incompatible type "**dict[str, object]"; expected
+"dict[str, object]"  [arg-type]
+            super().__init__(*args, **kwargs)
+                                      ^~~~~~
+app\providers\clients\bedrock.py:21:35: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\providers\clients\bedrock.py:21:35: note: Consider using "Mapping" instead, which is covariant in the value type
+app\providers\clients\bedrock.py:21:35: error: Argument 2 to "__init__" of
+"BaseProviderClient" has incompatible type "**dict[str, object]"; expected
+"float"  [arg-type]
+            super().__init__(*args, **kwargs)
+                                      ^~~~~~
+app\providers\clients\bedrock.py:21:35: error: Argument 2 to "__init__" of
+"BaseProviderClient" has incompatible type "**dict[str, object]"; expected "int"
+ [arg-type]
+            super().__init__(*args, **kwargs)
+                                      ^~~~~~
+app\providers\clients\bedrock.py:62:44: error: Argument 1 to "_buildToolConfig"
+of "BedrockClient" has incompatible type "object"; expected
+"list[dict[str, object]]"  [arg-type]
+            toolConfig = self._buildToolConfig(body.get('tools', []))
+                                               ^~~~~~~~~~~~~~~~~~~~~
+app\providers\clients\bedrock.py:65:48: error: "object" has no attribute
+"converse"  [attr-defined]
+                response = await asyncio.to_thread(br.converse, modelId=mo...
+                                                   ^~~~~~~~~~~
+app\providers\clients\bedrock.py:79:44: error: Argument 1 to "_buildToolConfig"
+of "BedrockClient" has incompatible type "object"; expected
+"list[dict[str, object]]"  [arg-type]
+            toolConfig = self._buildToolConfig(body.get('tools', []))
+                                               ^~~~~~~~~~~~~~~~~~~~~
+app\providers\clients\bedrock.py:82:48: error: "object" has no attribute
+"converse_stream"  [attr-defined]
+                response = await asyncio.to_thread(br.converse_stream, mod...
+                                                   ^~~~~~~~~~~~~~~~~~
+app\providers\clients\bedrock.py:111:55: error: "object" has no attribute "get"
+ [attr-defined]
+    ...       bedrockTools.append({'toolSpec': {'name': func.get('name', ''),...
+                                                        ^~~~~~~~
+app\providers\clients\anthropic.py:28:41: error: Incompatible types in
+assignment (expression has type "object", target has type "str")  [assignment]
+                headers['anthropic-beta'] = beta
+                                            ^~~~
+app\services\memory\contextCompressor.py:50:87: error: "object" has no
+attribute "__iter__"; maybe "__dir__" or "__str__"? (not iterable) 
+[attr-defined]
+    ...t('function', {}).get('name', tc.get('name', '')) for tc in toolCalls]
+                                                                   ^~~~~~~~~
+app\providers\clients\minimax.py:32:20: error: Incompatible types in assignment
+(expression has type "object", variable has type "str")  [assignment]
+                base = self.config.get('baseUrl', 'https://api.minimax.io/...
+                       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\providers\resolver.py:88:12: error: "object" has no attribute "lower" 
+[attr-defined]
+            if p['name'].lower() == nameStr.lower():
+               ^~~~~~~~~~~~~~~
+app\providers\resolver.py:102:28: error: "object" has no attribute "lower" 
+[attr-defined]
+                            if p['name'].lower() == targetProvider.lower()...
+                               ^~~~~~~~~~~~~~~
+app\providers\resolver.py:104:74: error: "object" has no attribute "__iter__";
+maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+    ...if targetProvider.lower() in [a.lower() for a in p.get('aliases', [])]...
+                                                        ^~~~~~~~~~~~~~~~~~~~
+app\providers\resolver.py:108:12: error: Unsupported right operand type for in
+("object")  [operator]
+            if nameStr in profiles and _hasApiKey(p):
+               ^~~~~~~~~~~~~~~~~~~
+app\providers\resolver.py:111:17: error: "object" has no attribute "lower" 
+[attr-defined]
+            pname = p['name'].lower().split()[0]
+                    ^~~~~~~~~~~~~~~
+app\providers\resolver.py:116:12: error: Unsupported right operand type for in
+("object")  [operator]
+            if nameStr in profiles:
+               ^~~~~~~~~~~~~~~~~~~
+app\providers\resolver.py:118:27: error: "object" has no attribute "__iter__";
+maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for profileKey in profiles:
+                              ^~~~~~~~
+app\providers\resolver.py:122:17: error: "object" has no attribute "lower" 
+[attr-defined]
+            pname = p['name'].lower().split()[0]
+                    ^~~~~~~~~~~~~~~
+app\providers\resolver.py:136:18: error: Item "int" of
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "__iter__" (not iterable)  [union-attr]
+        for entry in store.get('providers', []):
+                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+app\providers\resolver.py:136:18: error: Item "float" of
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "__iter__" (not iterable)  [union-attr]
+        for entry in store.get('providers', []):
+                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+app\providers\resolver.py:136:18: error: Item "None" of
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "__iter__" (not iterable)  [union-attr]
+        for entry in store.get('providers', []):
+                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+app\providers\resolver.py:137:12: error: Item "str" of
+"Any | str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "get"  [union-attr]
+            if entry.get('enabled') and entry.get('apiKey'):
+               ^~~~~~~~~
+app\providers\resolver.py:137:12: error: Item "int" of
+"Any | str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "get"  [union-attr]
+            if entry.get('enabled') and entry.get('apiKey'):
+               ^~~~~~~~~
+app\providers\resolver.py:137:12: error: Item "float" of
+"Any | str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "get"  [union-attr]
+            if entry.get('enabled') and entry.get('apiKey'):
+               ^~~~~~~~~
+app\providers\resolver.py:137:12: error: Item "None" of
+"Any | str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "get"  [union-attr]
+            if entry.get('enabled') and entry.get('apiKey'):
+               ^~~~~~~~~
+app\providers\resolver.py:137:12: error: Item "list[JsonValue]" of
+"Any | str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "get"  [union-attr]
+            if entry.get('enabled') and entry.get('apiKey'):
+               ^~~~~~~~~
+app\providers\resolver.py:138:57: error: Argument 1 to
+"_customEntryToProviderDict" has incompatible type
+"Any | str | int | float | list[JsonValue] | dict[str, JsonValue] | None";
+expected "dict[str, object]"  [arg-type]
+                providers.append(_customEntryToProviderDict(entry))
+                                                            ^~~~~
+app\services\providerCredentials.py:56:19: error: Incompatible types in
+assignment (expression has type "dict[str, JsonValue]", variable has type
+"dict[str, object] | None")  [assignment]
+        _storeCache = configService.getProvidersStore()
+                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\providerCredentials.py:57:12: error: Incompatible return value
+type (got "dict[str, object] | None", expected "dict[str, object]") 
+[return-value]
+        return _storeCache
+               ^~~~~~~~~~~
+app\services\providerCredentials.py:71:18: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+        for entry in store.get('providers', []):
+                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\providerCredentials.py:90:5: error: Need type annotation for
+"tmplProfiles" (hint: "tmplProfiles: dict[<type>, <type>] = ...") 
+[var-annotated]
+        tmplProfiles = {}
+        ^~~~~~~~~~~~
+app\services\providerCredentials.py:91:5: error: Need type annotation for
+"tmplHeaders" (hint: "tmplHeaders: dict[<type>, <type>] = ...")  [var-annotated]
+        tmplHeaders = {}
+        ^~~~~~~~~~~
+app\services\providerCredentials.py:92:5: error: Need type annotation for
+"tmplEnv" (hint: "tmplEnv: list[<type>] = ...")  [var-annotated]
+        tmplEnv = []
+        ^~~~~~~
+app\services\providerCredentials.py:94:24: error: Incompatible types in
+assignment (expression has type "object", variable has type "dict[Any, Any]") 
+[assignment]
+            tmplProfiles = tmpl.get('modelProfiles', {}) or {}
+                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\providerCredentials.py:95:23: error: Incompatible types in
+assignment (expression has type "object", variable has type "dict[Any, Any]") 
+[assignment]
+            tmplHeaders = tmpl.get('defaultHeaders', {}) or {}
+                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\providerCredentials.py:96:19: error: Incompatible types in
+assignment (expression has type "object", variable has type "list[Any]") 
+[assignment]
+            tmplEnv = tmpl.get('envVars', []) or []
+                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\providers\routeResolver.py:44:16: error: "object" has no attribute "lower" 
+[attr-defined]
+                if p['name'].lower() == hint.lower():
+                   ^~~~~~~~~~~~~~~
+app\providers\routeResolver.py:46:52: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+    ...          if hint.lower() in [a.lower() for a in p.get('aliases', [])]...
+                                                        ^~~~~~~~~~~~~~~~~~~~
+app\providers\routeResolver.py:50:13: error: Unsupported right operand type for
+in ("object")  [operator]
+            if (modelId in profiles or modelLower in {k.lower() for k in p...
+                ^~~~~~~~~~~~~~~~~~~
+app\providers\routeResolver.py:50:70: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+    ...in profiles or modelLower in {k.lower() for k in profiles}) and _hasCr...
+                                                        ^~~~~~~~
+app\providers\routeResolver.py:53:17: error: "object" has no attribute "lower" 
+[attr-defined]
+            pname = p['name'].lower().split()[0]
+                    ^~~~~~~~~~~~~~~
+app\providers\routeResolver.py:58:27: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for profileKey in profiles:
+                              ^~~~~~~~
+app\providers\routeResolver.py:62:22: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for alias in p.get('aliases', []):
+                         ^~~~~~~~~~~~~~~~~~~~
+app\providers\routeResolver.py:67:12: error: Unsupported right operand type for
+in ("object")  [operator]
+            if modelId in profiles or modelLower in {k.lower() for k in pr...
+               ^~~~~~~~~~~~~~~~~~~
+app\providers\routeResolver.py:67:69: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+    ...if modelId in profiles or modelLower in {k.lower() for k in profiles}:
+                                                                   ^~~~~~~~
+app\providers\routeResolver.py:70:17: error: "object" has no attribute "lower" 
+[attr-defined]
+            pname = p['name'].lower().split()[0]
+                    ^~~~~~~~~~~~~~~
+app\providers\routeResolver.py:75:27: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for profileKey in profiles:
+                              ^~~~~~~~
+app\providers\routeResolver.py:79:22: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for alias in p.get('aliases', []):
+                         ^~~~~~~~~~~~~~~~~~~~
+app\services\daemonManager.py:54:9: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app\services\daemonManager.py:55:9: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app\services\daemonManager.py:65:123: error: "DaemonSpec" has no attribute
+"watch_condition"; maybe "watchCondition"?  [attr-defined]
+    ...ionId, 'prompt': spec.prompt, 'watch_condition': spec.watch_condition,...
+                                                        ^~~~~~~~~~~~~~~~~~~~
+app\services\daemonManager.py:80:17: error: "object" has no attribute "status" 
+[attr-defined]
+                    self._daemons[daemonId]['result'].status = 'completed'
+                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\daemonManager.py:96:32: error: "DaemonResult" has no attribute
+"turns_alive"; maybe "turnsAlive"?  [attr-defined]
+                if r.triggered and r.turns_alive >= RESULT_EXPIRY_TURNS:
+                                   ^~~~~~~~~~~~~
+app\services\daemonManager.py:100:28: error: Extra keys ("triggered", "error",
+"last_check", "turns_alive", "output") for TypedDict "DaemonStatusDict" 
+[typeddict-unknown-key]
+                results.append({'id': did, 'name': info['name'], 'status':...
+                               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\services\daemonManager.py:100:48: error: Incompatible types (expression has
+type "object", TypedDict item "name" has type "str")  [typeddict-item]
+                results.append({'id': did, 'name': info['name'], 'status':...
+                                                   ^~~~~~~~~~~~
+app\services\daemonManager.py:117:21: error: "DaemonResult" has no attribute
+"turns_alive"; maybe "turnsAlive"?  [attr-defined]
+                        r.turns_alive += 1
+                        ^~~~~~~~~~~~~
+app\services\daemonManager.py:125:19: error: Unexpected keyword argument
+"timeout" for overloaded function "gather"  [call-overload]
+                await asyncio.gather(*tasks, return_exceptions=True, timeo...
+                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\services\daemonManager.py:125:19: error: No overload variant of "gather"
+matches argument types "list[Task[Any]]", "bool", "int"  [call-overload]
+                await asyncio.gather(*tasks, return_exceptions=True, timeo...
+                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\services\daemonManager.py:125:19: note: Possible overload variants:
+app\services\daemonManager.py:125:19: note:     def [_T1] gather(Future[_T1] | Awaitable[_T1], /, *, return_exceptions: Literal[False] = ...) -> Future[tuple[_T1]]
+app\services\daemonManager.py:125:19: note:     def [_T1, _T2] gather(Future[_T1] | Awaitable[_T1], Future[_T2] | Awaitable[_T2], /, *, return_exceptions: Literal[False] = ...) -> Future[tuple[_T1, _T2]]
+app\services\daemonManager.py:125:19: note:     def [_T1, _T2, _T3] gather(Future[_T1] | Awaitable[_T1], Future[_T2] | Awaitable[_T2], Future[_T3] | Awaitable[_T3], /, *, return_exceptions: Literal[False] = ...) -> Future[tuple[_T1, _T2, _T3]]
+app\services\daemonManager.py:125:19: note:     def [_T1, _T2, _T3, _T4] gather(Future[_T1] | Awaitable[_T1], Future[_T2] | Awaitable[_T2], Future[_T3] | Awaitable[_T3], Future[_T4] | Awaitable[_T4], /, *, return_exceptions: Literal[False] = ...) -> Future[tuple[_T1, _T2, _T3, _T4]]
+app\services\daemonManager.py:125:19: note:     def [_T1, _T2, _T3, _T4, _T5] gather(Future[_T1] | Awaitable[_T1], Future[_T2] | Awaitable[_T2], Future[_T3] | Awaitable[_T3], Future[_T4] | Awaitable[_T4], Future[_T5] | Awaitable[_T5], /, *, return_exceptions: Literal[False] = ...) -> Future[tuple[_T1, _T2, _T3, _T4, _T5]]
+app\services\daemonManager.py:125:19: note:     def [_T1, _T2, _T3, _T4, _T5, _T6] gather(Future[_T1] | Awaitable[_T1], Future[_T2] | Awaitable[_T2], Future[_T3] | Awaitable[_T3], Future[_T4] | Awaitable[_T4], Future[_T5] | Awaitable[_T5], Future[_T6] | Awaitable[_T6], /, *, return_exceptions: Literal[False] = ...) -> Future[tuple[_T1, _T2, _T3, _T4, _T5, _T6]]
+app\services\daemonManager.py:125:19: note:     def [_T] gather(*coros_or_futures: Future[_T] | Awaitable[_T], return_exceptions: Literal[False] = ...) -> Future[list[_T]]
+app\services\daemonManager.py:125:19: note:     def [_T1] gather(Future[_T1] | Awaitable[_T1], /, *, return_exceptions: bool) -> Future[tuple[_T1 | BaseException]]
+app\services\daemonManager.py:125:19: note:     def [_T1, _T2] gather(Future[_T1] | Awaitable[_T1], Future[_T2] | Awaitable[_T2], /, *, return_exceptions: bool) -> Future[tuple[_T1 | BaseException, _T2 | BaseException]]
+app\services\daemonManager.py:125:19: note:     def [_T1, _T2, _T3] gather(Future[_T1] | Awaitable[_T1], Future[_T2] | Awaitable[_T2], Future[_T3] | Awaitable[_T3], /, *, return_exceptions: bool) -> Future[tuple[_T1 | BaseException, _T2 | BaseException, _T3 | BaseException]]
+app\services\daemonManager.py:125:19: note:     def [_T1, _T2, _T3, _T4] gather(Future[_T1] | Awaitable[_T1], Future[_T2] | Awaitable[_T2], Future[_T3] | Awaitable[_T3], Future[_T4] | Awaitable[_T4], /, *, return_exceptions: bool) -> Future[tuple[_T1 | BaseException, _T2 | BaseException, _T3 | BaseException, _T4 | BaseException]]
+app\services\daemonManager.py:125:19: note:     def [_T1, _T2, _T3, _T4, _T5] gather(Future[_T1] | Awaitable[_T1], Future[_T2] | Awaitable[_T2], Future[_T3] | Awaitable[_T3], Future[_T4] | Awaitable[_T4], Future[_T5] | Awaitable[_T5], /, *, return_exceptions: bool) -> Future[tuple[_T1 | BaseException, _T2 | BaseException, _T3 | BaseException, _T4 | BaseException, _T5 | BaseException]]
+app\services\daemonManager.py:125:19: note:     def [_T1, _T2, _T3, _T4, _T5, _T6] gather(Future[_T1] | Awaitable[_T1], Future[_T2] | Awaitable[_T2], Future[_T3] | Awaitable[_T3], Future[_T4] | Awaitable[_T4], Future[_T5] | Awaitable[_T5], Future[_T6] | Awaitable[_T6], /, *, return_exceptions: bool) -> Future[tuple[_T1 | BaseException, _T2 | BaseException, _T3 | BaseException, _T4 | BaseException, _T5 | BaseException, _T6 | BaseException]]
+app\services\daemonManager.py:125:19: note:     def [_T] gather(*coros_or_futures: Future[_T] | Awaitable[_T], return_exceptions: bool) -> Future[list[_T | BaseException]]
+app\services\daemonManager.py:137:20: error: Unsupported operand types for <
+("float" and "object")  [operator]
+                    if info['backoff_until'] > time.time():
+                       ^
+app\services\daemonManager.py:144:17: error: "object" has no attribute
+"last_check"  [attr-defined]
+                    info['result'].last_check = time.time()
+                    ^~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\daemonManager.py:147:21: error: "object" has no attribute
+"triggered"  [attr-defined]
+                        info['result'].triggered = True
+                        ^~~~~~~~~~~~~~~~~~~~~~~~
+app\services\daemonManager.py:148:21: error: "object" has no attribute
+"turns_alive"  [attr-defined]
+                        info['result'].turns_alive = 0
+                        ^~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\daemonManager.py:157:17: error: "object" has no attribute "status"
+ [attr-defined]
+                    info['result'].status = 'errored'
+                    ^~~~~~~~~~~~~~~~~~~~~
+app\services\daemonManager.py:158:17: error: "object" has no attribute "error" 
+[attr-defined]
+                    info['result'].error = str(exc)
+                    ^~~~~~~~~~~~~~~~~~~~
+app\services\daemonManager.py:159:20: error: Unsupported operand types for >
+("int" and "object")  [operator]
+                    if info['retries'] < MAX_RETRIES:
+                       ^
+app\services\daemonManager.py:160:21: error: Unsupported operand types for +
+("object" and "int")  [operator]
+                        info['retries'] += 1
+                        ^
+app\services\daemonManager.py:183:70: error: Argument 2 to "_callCerebellum" of
+"DaemonManager" has incompatible type "object"; expected "str"  [arg-type]
+    ...  output = await self._callCerebellum(cerebellumModel, info['prompt'])
+                                                              ^~~~~~~~~~~~~~
+app\services\augDirectiveService.py:152:17: error: Unsupported target for
+indexed assignment ("object")  [index]
+                    signals.setdefault('manifests', {})[manifest] = mp.rea...
+                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\augDirectiveService.py:182:77: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+    ...evel entries:\n' + '\n'.join(f'  - {e}' for e in analysis['topLevel'])...
+                                                        ^~~~~~~~~~~~~~~~~~~~
+app\services\augDirectiveService.py:184:30: error: "object" has no attribute
+"items"  [attr-defined]
+            for name, content in analysis['manifests'].items():
+                                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\augDirectiveService.py:191:78: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+    ...t git history:\n' + '\n'.join(f'  - {l}' for l in analysis['gitLog']))
+                                                         ^~~~~~~~~~~~~~~~~~
+app\services\augDirectiveService.py:234:28: error: Incompatible types in
+assignment (expression has type "object", variable has type "str | None") 
+[assignment]
+                    existing = loaded['body']
+                               ^~~~~~~~~~~~~~
+app\services\augDirectiveService.py:251:28: error: Argument 1 to "_callLlm" has
+incompatible type "list[dict[str, str]]"; expected "list[dict[str, object]]" 
+[arg-type]
+        draft = await _callLlm(messages, model=model) or ''
+                               ^~~~~~~~
+app\services\memoryStore.py:155:9: error: Name "results" already defined on
+line 144  [no-redef]
+            results: list[MemoryEntryDict] = []
+            ^~~~~~~
+app\services\memoryStore.py:176:12: error: Incompatible return value type (got
+"dict[Any, Any]", expected "FactDict | None")  [return-value]
+        return dict(row)
+               ^~~~~~~~~
+app\services\memoryStore.py:186:13: error: List comprehension has incompatible
+type List[dict[Any, Any]]; expected List[FactDict]  [misc]
+        return [dict(r) for r in rows]
+                ^~~~~~~
+app\services\memoryStore.py:195:13: error: List comprehension has incompatible
+type List[dict[Any, Any]]; expected List[FactDict]  [misc]
+        return [dict(r) for r in rows]
+                ^~~~~~~
+app\services\memoryStore.py:209:12: error: Incompatible return value type (got
+"int | None", expected "int")  [return-value]
+        return cursor.lastrowid
+               ^~~~~~~~~~~~~~~~
+app\services\memoryStore.py:215:12: error: Incompatible return value type (got
+"dict[Any, Any] | None", expected "ProposalDict | None")  [return-value]
+        return dict(row) if row else None
+               ^~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\memoryStore.py:224:13: error: List comprehension has incompatible
+type List[dict[Any, Any]]; expected List[ProposalDict]  [misc]
+        return [dict(r) for r in rows]
+                ^~~~~~~
+app\services\memoryStore.py:238:12: error: Incompatible return value type (got
+"int | None", expected "int")  [return-value]
+        return cursor.lastrowid
+               ^~~~~~~~~~~~~~~~
+app\services\memoryStore.py:258:12: error: Incompatible return value type (got
+"int | None", expected "int")  [return-value]
+        return cursor.lastrowid
+               ^~~~~~~~~~~~~~~~
+app\services\memoryStore.py:320:13: error: List comprehension has incompatible
+type List[dict[Any, Any]]; expected List[SessionRecord]  [misc]
+        return [dict(r) for r in rows]
+                ^~~~~~~
+app\services\memoryStore.py:326:12: error: Incompatible return value type (got
+"dict[Any, Any] | None", expected "SessionRecord | None")  [return-value]
+        return dict(row) if row else None
+               ^~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\memoryStore.py:340:12: error: Incompatible return value type (got
+"int | None", expected "int")  [return-value]
+        return cursor.lastrowid
+               ^~~~~~~~~~~~~~~~
+app\services\memoryStore.py:348:28: error: Incompatible types in assignment
+(expression has type "dict[Any, Any]", variable has type "MessageDict") 
+[assignment]
+            msg: MessageDict = dict(r)
+                               ^~~~~~~
+app\services\memoryStore.py:374:12: error: Incompatible return value type (got
+"int | None", expected "int")  [return-value]
+        return cursor.lastrowid
+               ^~~~~~~~~~~~~~~~
+app\services\memoryStore.py:528:74: error: "object" has no attribute "split" 
+[attr-defined]
+    ...qualifiedCols = ', '.join((f't.{c.strip()}' for c in cols.split(',')))
+                                                            ^~~~~~~~~~
+app\services\memoryStore.py:535:28: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+                    for col in info['search_cols']:
+                               ^~~~~~~~~~~~~~~~~~~
+app\services\memoryStore.py:558:13: error: Need type annotation for "truncated"
+(hint: "truncated: list[<type>] = ...")  [var-annotated]
+                truncated = []
+                ^~~~~~~~~
+app\services\memoryStore.py:577:12: error: Incompatible return value type (got
+"int | None", expected "int")  [return-value]
+        return cur.lastrowid
+               ^~~~~~~~~~~~~
+app\services\backgroundReviewService.py:67:68: error: Argument "before" to
+"recordConfigAudit" has incompatible type "dict[str, object]"; expected
+"JsonValue"  [arg-type]
+    ...dit('background_review', 'update', actor, before=before, after=dict(re...
+                                                        ^~~~~~
+app\services\backgroundReviewService.py:67:87: error: Argument 1 to "dict" has
+incompatible type "dict[str, object]"; expected
+"SupportsKeysAndGetItem[str, str | int | float | list[JsonValue] | dict[str, JsonValue] | None]"
+ [arg-type]
+    ...ackground_review', 'update', actor, before=before, after=dict(result))
+                                                                     ^~~~~~
+app\services\memory\backgroundReview.py:56:5: error: "object" has no attribute
+"_last_reviewed_at_turn"  [attr-defined]
+        session._last_reviewed_at_turn = sessionTurns
+        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\memory\backgroundReview.py:71:15: error: Incompatible types in
+"await" (actual type "str", expected type "Awaitable[Any]")  [misc]
+            raw = await llmClient(prompt)
+                  ^~~~~~~~~~~~~~~~~~~~~~~
+app\services\memory\backgroundReview.py:74:9: error: "object" has no attribute
+"append"  [attr-defined]
+            result['errors'].append(str(exc))
+            ^~~~~~~~~~~~~~~~~~~~~~~
+app\services\memory\backgroundReview.py:80:120: error: Argument 1 to "len" has
+incompatible type "object"; expected "Sized"  [arg-type]
+    ..._review', summary=f"Background review done: {len(recommendations.get('...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\services\memory\backgroundReview.py:83:16: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+        for rec in recommendations.get('skills', []):
+                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\memory\backgroundReview.py:91:17: error: "object" has no attribute
+"append"  [attr-defined]
+                    result['skills_created'].append(name)
+                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\memory\backgroundReview.py:99:17: error: "object" has no attribute
+"append"  [attr-defined]
+                    result['skills_patched'].append(name)
+                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\memory\backgroundReview.py:107:13: error: "object" has no
+attribute "append"  [attr-defined]
+                result['errors'].append(str(exc))
+                ^~~~~~~~~~~~~~~~~~~~~~~
+app\services\memory\backgroundReview.py:108:17: error: "object" has no
+attribute "__iter__"; maybe "__dir__" or "__str__"? (not iterable) 
+[attr-defined]
+        for fact in recommendations.get('memory', []):
+                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\memory\backgroundReview.py:115:13: error: "object" has no
+attribute "append"  [attr-defined]
+                result['facts_added'].append(content[:80])
+                ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\memory\backgroundReview.py:117:13: error: "object" has no
+attribute "append"  [attr-defined]
+                result['errors'].append(str(exc))
+                ^~~~~~~~~~~~~~~~~~~~~~~
+app\services\memory\backgroundReview.py:123:12: error: Incompatible return
+value type (got "list[dict[str, object] | dict[str, str]]", expected
+"list[dict[str, object]]")  [return-value]
+        return [systemMsg] + _lastRelevantMessages(messagesSnapshot, maxLe...
+               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\services\memory\backgroundReview.py:153:25: error: Incompatible types in
+assignment (expression has type
+"str | int | float | list[JsonValue] | dict[str, JsonValue]", variable has type
+"list[dict[Any, Any]]")  [assignment]
+        facts: list[dict] = getMemory(KEY) or []
+                            ^~~~~~~~~~~~~~~~~~~~
+app\services\memory\backgroundReview.py:161:33: error: Argument 2 to
+"saveMemory" has incompatible type "list[dict[Any, Any]]"; expected "JsonValue" 
+[arg-type]
+                    saveMemory(KEY, facts)
+                                    ^~~~~
+app\services\memory\backgroundReview.py:161:33: note: "list" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\memory\backgroundReview.py:161:33: note: Consider using "Sequence" instead, which is covariant
+app\services\memory\backgroundReview.py:169:21: error: Argument 2 to
+"saveMemory" has incompatible type "list[dict[Any, Any]]"; expected "JsonValue" 
+[arg-type]
+        saveMemory(KEY, facts)
+                        ^~~~~
+app\services\memory\backgroundReview.py:169:21: note: "list" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\memory\backgroundReview.py:169:21: note: Consider using "Sequence" instead, which is covariant
+app\services\tools\agentRegistry.py:42:19: error: Argument 1 to "append" of
+"list" has incompatible type "dict[str, int | list[str] | str | None]"; expected
+"dict[str, object]"  [arg-type]
+        agents.append(agent)
+                      ^~~~~
+app\services\tools\agentRegistry.py:42:19: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\tools\agentRegistry.py:42:19: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\tools\agentRegistry.py:43:28: error: Argument 2 to "saveMemory"
+has incompatible type "list[dict[str, object]]"; expected "JsonValue" 
+[arg-type]
+        saveMemory(_AGENTSKey, agents)
+                               ^~~~~~
+app\services\tools\agentRegistry.py:44:68: error: Argument "after" to
+"recordConfigAudit" has incompatible type
+"dict[str, int | list[str] | str | None]"; expected "JsonValue"  [arg-type]
+    ... recordConfigAudit('agent', 'create', actor, before=None, after=agent)
+                                                                       ^~~~~
+app\services\tools\agentRegistry.py:45:12: error: Incompatible return value
+type (got "dict[str, int | list[str] | str | None]", expected
+"dict[str, object]")  [return-value]
+        return agent
+               ^~~~~
+app\services\tools\agentRegistry.py:45:12: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\tools\agentRegistry.py:45:12: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\tools\agentRegistry.py:45:12: note: Perhaps you need a type annotation for "agent"? Suggestion: "dict[str, object]"
+app\services\tools\agentRegistry.py:53:36: error: Argument 2 to "saveMemory"
+has incompatible type "list[dict[str, object]]"; expected "JsonValue" 
+[arg-type]
+                saveMemory(_AGENTSKey, agents)
+                                       ^~~~~~
+app\services\tools\agentRegistry.py:54:64: error: Argument "before" to
+"recordConfigAudit" has incompatible type "dict[str, object]"; expected
+"JsonValue"  [arg-type]
+    ...   recordConfigAudit('agent', 'update', actor, before=before, after=a)
+                                                             ^~~~~~
+app\services\tools\agentRegistry.py:54:78: error: Argument "after" to
+"recordConfigAudit" has incompatible type "dict[str, object]"; expected
+"JsonValue"  [arg-type]
+    ...   recordConfigAudit('agent', 'update', actor, before=before, after=a)
+                                                                           ^
+app\services\tools\agentRegistry.py:64:28: error: Argument 2 to "saveMemory"
+has incompatible type "list[dict[str, object]]"; expected "JsonValue" 
+[arg-type]
+        saveMemory(_AGENTSKey, newAgents)
+                               ^~~~~~~~~
+app\services\tools\agentRegistry.py:65:56: error: Argument "before" to
+"recordConfigAudit" has incompatible type "dict[str, object] | None"; expected
+"JsonValue"  [arg-type]
+    ...recordConfigAudit('agent', 'delete', actor, before=before, after=None)
+                                                          ^~~~~~
+app\services\tools\agentRegistry.py:110:32: error: Argument 1 to "startswith"
+of "str" has incompatible type
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None";
+expected "str | tuple[str, ...]"  [arg-type]
+            if toolName.startswith(perm):
+                                   ^~~~
+app\services\tools\agentRegistry.py:133:20: error: Incompatible return value
+type (got
+"set[str | int | float | list[JsonValue] | dict[str, JsonValue] | None]",
+expected "set[str] | None")  [return-value]
+                return perms
+                       ^~~~~
+app\services\tools\agentRegistry.py:134:16: error: Incompatible return value
+type (got
+"set[str | int | float | list[JsonValue] | dict[str, JsonValue] | None]",
+expected "set[str] | None")  [return-value]
+            return perms & parentEff
+                   ^~~~~~~~~~~~~~~~~
+app\services\tools\agentRegistry.py:135:12: error: Incompatible return value
+type (got
+"set[str | int | float | list[JsonValue] | dict[str, JsonValue] | None]",
+expected "set[str] | None")  [return-value]
+        return perms
+               ^~~~~
+app\services\tools\agentRegistry.py:164:17: error: Argument 1 to "append" of
+"list" has incompatible type "dict[str, str]"; expected "dict[str, object]" 
+[arg-type]
+        jobs.append(job)
+                    ^~~
+app\services\tools\agentRegistry.py:164:17: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\tools\agentRegistry.py:164:17: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\tools\agentRegistry.py:165:26: error: Argument 2 to "saveMemory"
+has incompatible type "list[dict[str, object]]"; expected "JsonValue" 
+[arg-type]
+        saveMemory(_JOBSKey, jobs)
+                             ^~~~
+app\services\tools\agentRegistry.py:166:12: error: Incompatible return value
+type (got "dict[str, str]", expected "dict[str, object]")  [return-value]
+        return job
+               ^~~
+app\services\tools\agentRegistry.py:166:12: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\tools\agentRegistry.py:166:12: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\tools\agentRegistry.py:166:12: note: Perhaps you need a type annotation for "job"? Suggestion: "dict[str, object]"
+app\services\tools\agentRegistry.py:174:34: error: Argument 2 to "saveMemory"
+has incompatible type "list[dict[str, object]]"; expected "JsonValue" 
+[arg-type]
+                saveMemory(_JOBSKey, jobs)
+                                     ^~~~
+app\services\tools\agentRegistry.py:181:15: error: Argument 1 to "updateJob"
+has incompatible type "object"; expected "str"  [arg-type]
+        updateJob(job['id'], {'status': 'running'})
+                  ^~~~~~~~~
+app\services\tools\agentRegistry.py:184:19: error: Argument 1 to "updateJob"
+has incompatible type "object"; expected "str"  [arg-type]
+            updateJob(job['id'], {'status': 'completed', 'result': result}...
+                      ^~~~~~~~~
+app\services\tools\agentRegistry.py:187:19: error: Argument 1 to "updateJob"
+has incompatible type "object"; expected "str"  [arg-type]
+            updateJob(job['id'], {'status': 'failed', 'error': str(exc)})
+                      ^~~~~~~~~
+app\services\tools\agentRegistry.py:209:42: error: Argument 1 to "join" of
+"str" has incompatible type "object"; expected "Iterable[str]"  [arg-type]
+            parts.append(f"Tools: {', '.join(agent['tools'])}")
+                                             ^~~~~~~~~~~~~~
+app\services\tools\agentRegistry.py:211:48: error: Argument 1 to "join" of
+"str" has incompatible type "object"; expected "Iterable[str]"  [arg-type]
+            parts.append(f"Permissions: {', '.join(agent['permissions'])}"...
+                                                   ^~~~~~~~~~~~~~~~~~~~
+app\services\tools\agentRegistry.py:213:45: error: Argument 1 to "join" of
+"str" has incompatible type "object"; expected "Iterable[str]"  [arg-type]
+            parts.append(f"Toolsets: {', '.join(agent['toolsets'])}")
+                                                ^~~~~~~~~~~~~~~~~
+app\services\memory\autoMemory.py:128:12: error: Incompatible return value type
+(got "dict[str, int]", expected "dict[str, object]")  [return-value]
+        return result
+               ^~~~~~
+app\services\memory\autoMemory.py:128:12: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\memory\autoMemory.py:128:12: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\memory\autoMemory.py:128:12: note: Perhaps you need a type annotation for "result"? Suggestion: "dict[str, object]"
+app\services\memory\contextBuilder.py:74:18: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for h in heuristics:
+                     ^~~~~~~~~~
+app\services\memory\contextBuilder.py:101:17: error: "object" has no attribute
+"get"  [attr-defined]
+            phase = execState.get('phase', '')
+                    ^~~~~~~~~~~~~
+app\services\memory\contextBuilder.py:103:35: error: "object" has no attribute
+"get"  [attr-defined]
+                verificationCommand = execState.get('verification_command'...
+                                      ^~~~~~~~~~~~~
+app\services\memory\contextBuilder.py:104:20: error: "object" has no attribute
+"get"  [attr-defined]
+                step = execState.get('step', 0)
+                       ^~~~~~~~~~~~~
+app\services\memory\contextBuilder.py:115:51: error: Argument 2 to "wrapTag"
+has incompatible type "object"; expected "str"  [arg-type]
+            blocks.append(wrapTag('failure_feedback', failure))
+                                                      ^~~~~~~
+app\services\memory\contextBuilder.py:118:55: error: Argument 2 to "wrapTag"
+has incompatible type "object"; expected "str"  [arg-type]
+            blocks.append(wrapTag('subconscious_updates', daemonUpdates))
+                                                          ^~~~~~~~~~~~~
+app\services\memory\contextBuilder.py:121:51: error: Argument 2 to "wrapTag"
+has incompatible type "object"; expected "str"  [arg-type]
+            blocks.append(wrapTag('blackboard_state', blackboard))
+                                                      ^~~~~~~~~~
+app\services\memory\contextBuilder.py:125:18: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for e in environment:
+                     ^~~~~~~~~~~
+app\services\memory\contextBuilder.py:137:51: error: Argument 2 to "wrapTag"
+has incompatible type "object"; expected "str"  [arg-type]
+            blocks.append(wrapTag('primed_playbooks', primed))
+                                                      ^~~~~~
+app\services\memory\contextBuilder.py:173:21: error: "object" has no attribute
+"items"  [attr-defined]
+            for k, v in memoryStats.items():
+                        ^~~~~~~~~~~~~~~~~
+app\services\memory\selfEvolution.py:79:24: error: Argument 1 to "append" of
+"list" has incompatible type "dict[str, object]"; expected "JsonValue" 
+[arg-type]
+        reflections.append(reflection)
+                           ^~~~~~~~~~
+app\services\workbench\workbench.py:72:573: error: Argument "plan" to
+"WorkbenchSession" has incompatible type "dict[str, JsonValue]"; expected
+"dict[str, object] | None"  [arg-type]
+    ...ath', '')), goal=as_str(d.get('goal', '')), plan=as_dict(d.get('plan')...
+                                                        ^~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:72:573: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\workbench\workbench.py:72:573: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\workbench\workbench.py:72:657: error: Argument "clarify" to
+"WorkbenchSession" has incompatible type "dict[str, JsonValue]"; expected
+"dict[str, object] | None"  [arg-type]
+    ...d=as_bool(d.get('planApproved', False)), clarify=as_dict(d.get('clarif...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:72:690: error: Argument "todos" to
+"WorkbenchSession" has incompatible type "list[JsonValue]"; expected
+"list[dict[str, object]] | None"  [arg-type]
+    ...alse)), clarify=as_dict(d.get('clarify')), todos=as_list(d.get('todos'...
+                                                        ^~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:72:724: error: Argument "messages" to
+"WorkbenchSession" has incompatible type "list[JsonValue]"; expected
+"list[dict[str, object]]"  [arg-type]
+    ...rify')), todos=as_list(d.get('todos')), messages=as_list(d.get('messag...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:72:773: error: Argument "pendingMutations"
+to "WorkbenchSession" has incompatible type "list[JsonValue]"; expected
+"list[dict[str, object]]"  [arg-type]
+    ...as_list(d.get('messages', [])), pendingMutations=as_list(d.get('pendin...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:72:825: error: Argument "mutationLog" to
+"WorkbenchSession" has incompatible type "list[JsonValue]"; expected
+"list[dict[str, object]]"  [arg-type]
+    ...list(d.get('pendingMutations', [])), mutationLog=as_list(d.get('mutati...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:72:909: error: Argument "metadata" to
+"WorkbenchSession" has incompatible type "dict[str, JsonValue]"; expected
+"dict[str, object]"  [arg-type]
+    ...status=as_str(d.get('status', 'idle')), metadata=as_dict(d.get('metada...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:72:1117: error: Argument
+"queuedUserMessages" to "WorkbenchSession" has incompatible type
+"list[JsonValue]"; expected "list[dict[str, object]]"  [arg-type]
+    ...oat(d.get('totalCost', 0.0)), queuedUserMessages=as_list(d.get('queued...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:252:42: error: Incompatible types in
+assignment (expression has type "list[dict[str, object]]", target has type
+"str | int | float | list[JsonValue] | dict[str, JsonValue]")  [assignment]
+                    memory['autoMemories'] = prefetched
+                                             ^~~~~~~~~~
+app\services\workbench\workbench.py:339:50: error: Item "None" of
+"dict[str, object] | None" has no attribute "to_dict"  [union-attr]
+        sessionDict = {'goal': session.goal, 'plan': session.plan.to_dict(...
+                                                     ^~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:351:29: error: Incompatible types in
+assignment (expression has type "object", variable has type "str")  [assignment]
+                    augMdBody = loaded['body']
+                                ^~~~~~~~~~~~~~
+app\services\workbench\workbench.py:360:49: error: Argument "memory" to
+"buildSystemPrompt" has incompatible type
+"dict[str, str | int | float | list[JsonValue] | dict[str, JsonValue]]";
+expected "dict[str, object] | None"  [arg-type]
+        base = ctxBuild(session=sessionDict, memory=memory, tools=tools, a...
+                                                    ^~~~~~
+app\services\workbench\workbench.py:360:49: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\workbench\workbench.py:360:49: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\workbench\workbench.py:425:19: error: "DaemonManager" has no
+attribute "list_daemons"; maybe "listDaemons" or "_daemons"?  [attr-defined]
+            daemons = manager.list_daemons(sessionId)
+                      ^~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:455:16: error: Incompatible return value
+type (got "object", expected "str")  [return-value]
+            return session.metadata['effort']
+                   ^~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:505:18: error: Argument 1 to "add" of "set"
+has incompatible type
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None";
+expected "str"  [arg-type]
+            seen.add(t['name'])
+                     ^~~~~~~~~
+app\services\workbench\workbench.py:506:22: error: Argument 1 to "append" of
+"list" has incompatible type "dict[str, JsonValue]"; expected
+"dict[str, object]"  [arg-type]
+            tools.append(t)
+                         ^
+app\services\workbench\workbench.py:506:22: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\workbench\workbench.py:506:22: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\workbench\workbench.py:512:18: error: Unexpected keyword argument
+"all_tool_defs" for "assembleToolDefs"  [call-arg]
+            result = assembleToolDefs(all_tool_defs=tools, context_message...
+                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:512:18: note: "assembleToolDefs" defined in "app.services.tools.modelTools"
+app\services\workbench\workbench.py:512:18: error: Unexpected keyword argument
+"context_messages" for "assembleToolDefs"; did you mean "contextMessages"? 
+[call-arg]
+            result = assembleToolDefs(all_tool_defs=tools, context_message...
+                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:514:13: error: "WorkbenchSession" has no
+attribute "_tool_assembly"  [attr-defined]
+                session._tool_assembly = result
+                ^~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:515:20: error: "AssemblyResult" has no
+attribute "tool_defs"; maybe "toolDefs"?  [attr-defined]
+                return result.tool_defs
+                       ^~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:533:20: error: Item "str" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                name = raw['function'].get('name', '')
+                       ^~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:533:20: error: Item "int" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                name = raw['function'].get('name', '')
+                       ^~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:533:20: error: Item "float" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                name = raw['function'].get('name', '')
+                       ^~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:533:20: error: Item "bool" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                name = raw['function'].get('name', '')
+                       ^~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:533:20: error: Item "None" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                name = raw['function'].get('name', '')
+                       ^~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:533:20: error: Item "list[JsonValue]" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+                name = raw['function'].get('name', '')
+                       ^~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:535:26: error: Argument 1 to "add" of "set"
+has incompatible type
+"Any | str | int | float | list[JsonValue] | dict[str, JsonValue]"; expected
+"str"  [arg-type]
+                    seen.add(name)
+                             ^~~~
+app\services\workbench\workbench.py:536:30: error: Argument 1 to "append" of
+"list" has incompatible type "dict[str, JsonValue]"; expected
+"dict[str, object]"  [arg-type]
+                    tools.append(raw)
+                                 ^~~
+app\services\workbench\workbench.py:536:30: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\workbench\workbench.py:536:30: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\workbench\workbench.py:541:22: error: Argument 1 to "add" of "set"
+has incompatible type
+"str | int | float | list[JsonValue] | dict[str, JsonValue]"; expected "str" 
+[arg-type]
+                seen.add(name)
+                         ^~~~
+app\services\workbench\workbench.py:542:26: error: Argument 1 to "append" of
+"list" has incompatible type "dict[str, JsonValue]"; expected
+"dict[str, object]"  [arg-type]
+                tools.append(t)
+                             ^
+app\services\workbench\workbench.py:542:26: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\workbench\workbench.py:542:26: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\workbench\workbench.py:552:45: error: Argument 1 to
+"openaiToAnthropicToolDefinition" has incompatible type "dict[str, object]";
+expected "dict[str, JsonValue]"  [arg-type]
+            t = openaiToAnthropicToolDefinition(raw)
+                                                ^~~
+app\services\workbench\workbench.py:555:22: error: Argument 1 to "add" of "set"
+has incompatible type
+"str | int | float | list[JsonValue] | dict[str, JsonValue]"; expected "str" 
+[arg-type]
+                seen.add(name)
+                         ^~~~
+app\services\workbench\workbench.py:556:24: error: Argument 1 to "append" of
+"list" has incompatible type "dict[str, JsonValue]"; expected
+"dict[str, object]"  [arg-type]
+                out.append(t)
+                           ^
+app\services\workbench\workbench.py:556:24: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\workbench\workbench.py:556:24: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\workbench\workbench.py:565:16: error: "object" has no attribute
+"get"  [attr-defined]
+            name = fn.get('name', '')
+                   ^~~~~~
+app\services\workbench\workbench.py:588:31: error: Argument 1 to "len" has
+incompatible type "object"; expected "Sized"  [arg-type]
+            attachmentCount = len(entry.get('attachments') or [])
+                                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:596:22: error: Argument 1 to "append" of
+"list" has incompatible type "object"; expected "str"  [arg-type]
+            parts.append(text)
+                         ^~~~
+app\services\workbench\workbench.py:707:46: error: Argument 1 to
+"resolveEffectiveEffort" has incompatible type "object"; expected "str | None" 
+[arg-type]
+        effectiveEffort = resolveEffectiveEffort(effort or session.metadat...
+                                                 ^~~~~~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:722:45: error: Argument 1 to "resolve" has
+incompatible type "object"; expected "str"  [arg-type]
+            creds = providerCredentials.resolve(resolvedProvider.get('name...
+                                                ^~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:732:9: error: "WorkbenchSession" has no
+attribute "_failure_feedback_age"  [attr-defined]
+            session._failure_feedback_age += 1
+            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:733:12: error: "WorkbenchSession" has no
+attribute "_failure_feedback_age"  [attr-defined]
+            if session._failure_feedback_age >= 3:
+               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:734:13: error: "WorkbenchSession" has no
+attribute "_failure_feedback"  [attr-defined]
+                session._failure_feedback = None
+                ^~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:735:13: error: "WorkbenchSession" has no
+attribute "_failure_feedback_age"  [attr-defined]
+                session._failure_feedback_age = None
+                ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:764:30: error: Unexpected keyword argument
+"head_count" for "compressMessages"; did you mean "headCount"?  [call-arg]
+                    compressed = compressMessages(currentMessages, thresho...
+                                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:764:30: note: "compressMessages" defined in "app.services.memory.contextCompressor"
+app\services\workbench\workbench.py:764:30: error: Unexpected keyword argument
+"tail_count" for "compressMessages"; did you mean "tailCount"?  [call-arg]
+                    compressed = compressMessages(currentMessages, thresho...
+                                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:769:21: error: "WorkbenchSession" has no
+attribute "_last_compaction_turn"  [attr-defined]
+                        session._last_compaction_turn = currentTurn
+                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:809:33: error: "object" has no attribute
+"get"  [attr-defined]
+                totalInputTokens += respUsage.get('input_tokens', 0)
+                                    ^~~~~~~~~~~~~
+app\services\workbench\workbench.py:810:34: error: "object" has no attribute
+"get"  [attr-defined]
+                totalOutputTokens += respUsage.get('output_tokens', 0)
+                                     ^~~~~~~~~~~~~
+app\services\workbench\workbench.py:811:34: error: "object" has no attribute
+"get"  [attr-defined]
+                finalContextTokens = respUsage.get('input_tokens', 0)
+                                     ^~~~~~~~~~~~~
+app\services\workbench\workbench.py:815:40: error: Argument 1 to "_extractText"
+has incompatible type "object"; expected "list[dict[str, object]]"  [arg-type]
+                textContent = _extractText(contentBlocks)
+                                           ^~~~~~~~~~~~~
+app\services\workbench\workbench.py:816:48: error: Argument 1 to
+"_extractThinking" has incompatible type "object"; expected
+"list[dict[str, object]]"  [arg-type]
+                thinkingContent = _extractThinking(contentBlocks)
+                                                   ^~~~~~~~~~~~~
+app\services\workbench\workbench.py:817:36: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+                toolUses = [b for b in contentBlocks if b.get('type') == '...
+                                       ^~~~~~~~~~~~~
+app\services\workbench\workbench.py:820:22: error: Value of type "object" is
+not indexable  [index]
+                choice = choices[0] if choices else {}
+                         ^~~~~~~~~~
+app\services\workbench\workbench.py:823:27: error: Incompatible types in
+assignment (expression has type "object", variable has type "str")  [assignment]
+                textContent = response.get('text', '')
+                              ^~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:824:31: error: Incompatible types in
+assignment (expression has type "object", variable has type "str")  [assignment]
+                thinkingContent = response.get('thinking', '')
+                                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:825:24: error: Incompatible types in
+assignment (expression has type "object", variable has type "list[Any]") 
+[assignment]
+                toolUses = response.get('tool_uses', [])
+                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:895:21: error: "WorkbenchSession" has no
+attribute "_tool_tracker"  [attr-defined]
+                        session._tool_tracker = ToolCallTracker()
+                        ^~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:896:27: error: "WorkbenchSession" has no
+attribute "_tool_tracker"  [attr-defined]
+                    tracker = session._tool_tracker
+                              ^~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:942:17: error: "DaemonManager" has no
+attribute "increment_turns"; maybe "incrementTurns"?  [attr-defined]
+                    manager.increment_turns(session.id)
+                    ^~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:978:29: error: Unexpected keyword argument
+"llm_client" for "tryBackgroundReview"; did you mean "llmClient"?  [call-arg]
+            asyncio.create_task(tryBackgroundReview(session, list(currentM...
+                                ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:978:29: note: "tryBackgroundReview" defined in "app.services.memory.backgroundReview"
+app\services\workbench\workbench.py:978:87: error: Unexpected keyword argument
+"turn_interval" for "ReviewGates"; did you mean "turnInterval"?  [call-arg]
+    ...oundReview(session, list(currentMessages), gates=ReviewGates(turn_inte...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:978:87: note: "ReviewGates" defined in "app.services.memory.backgroundReview"
+app\services\workbench\workbench.py:978:87: error: Unexpected keyword argument
+"tool_round_interval" for "ReviewGates"; did you mean "toolRoundInterval"? 
+[call-arg]
+    ...oundReview(session, list(currentMessages), gates=ReviewGates(turn_inte...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:1002:20: error: Incompatible return value
+type (got "object", expected "str")  [return-value]
+                return cfg[taskKey]
+                       ^~~~~~~~~~~~
+app\services\workbench\workbench.py:1057:53: error: Argument 1 to "resolve" has
+incompatible type "object"; expected "str"  [arg-type]
+                    provider = providerResolver.resolve(reviewModel)
+                                                        ^~~~~~~~~~~
+app\services\workbench\workbench.py:1080:30: error: "BaseProviderClient" has no
+attribute "chat_completions"  [attr-defined]
+                    resp = await _client.chat_completions(body)
+                                 ^~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1105:17: error: Module has no attribute
+"list_available"; maybe "listAvailable"?  [attr-defined]
+        providers = providerResolver.list_available()
+                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1113:16: error: Incompatible return value
+type (got "object", expected "str")  [return-value]
+            return provider.get('defaultModel', '')
+                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1117:12: error: Incompatible return value
+type (got "dict[str, object] | bool | None", expected "bool")  [return-value]
+        return provider and provider.get('apiMode') == 'anthropicMessages'
+               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1120:12: error: Incompatible return value
+type (got "dict[str, object] | bool | None", expected "bool")  [return-value]
+        return provider and provider.get('apiMode') in ('openaiChat', 'ope...
+               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\services\workbench\workbench.py:1128:22: error: Argument 1 to "join" of
+"str" has incompatible type "list[object]"; expected "Iterable[str]"  [arg-type]
+        return '\n'.join(parts)
+                         ^~~~~
+app\services\workbench\workbench.py:1136:22: error: Argument 1 to "join" of
+"str" has incompatible type "list[object]"; expected "Iterable[str]"  [arg-type]
+        return '\n'.join(parts)
+                         ^~~~~
+app\services\workbench\workbench.py:1158:54: error: Argument 1 to
+"translateMessagesToAnthropic" has incompatible type "list[dict[str, object]]";
+expected "list[dict[str, JsonValue]]"  [arg-type]
+        anthropicMessages = translateMessagesToAnthropic(messages)
+                                                         ^~~~~~~~
+app\services\workbench\workbench.py:1161:24: error: Incompatible types in
+assignment (expression has type "list[dict[str, JsonValue]]", target has type
+"JsonValue")  [assignment]
+        body['messages'] = anthropicMessages
+                           ^~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1163:25: error: Incompatible types in
+assignment (expression has type "list[dict[str, object]]", target has type
+"JsonValue")  [assignment]
+            body['tools'] = tools
+                            ^~~~~
+app\services\workbench\workbench.py:1175:28: error: "BaseProviderClient" has no
+attribute "messagesStream"  [attr-defined]
+            async for event in client.messagesStream(body):
+                               ^~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1258:40: error: Argument 1 to
+"translateMessages" has incompatible type "list[dict[str, object]]"; expected
+"list[dict[str, JsonValue]]"  [arg-type]
+        openaiMessages = translateMessages(messages)
+                                           ^~~~~~~~
+app\services\workbench\workbench.py:1275:32: error: "BaseProviderClient" has no
+attribute "chatCompletionsStream"  [attr-defined]
+                async for event in client.chatCompletionsStream(body):
+                                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1307:29: error: Value of type "object" is
+not indexable  [index]
+                                existing['arguments'] += fn['arguments']
+                                ^~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1307:29: error: Unsupported target for
+indexed assignment ("object")  [index]
+                                existing['arguments'] += fn['arguments']
+                                ^~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1309:29: error: Value of type "object" is
+not indexable  [index]
+                                existing['name'] += fn['name']
+                                ^~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1309:29: error: Unsupported target for
+indexed assignment ("object")  [index]
+                                existing['name'] += fn['name']
+                                ^~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1322:41: error: Value of type "object" is
+not indexable  [index]
+                    parsedArgs = json.loads(fn['arguments']) if fn['argume...
+                                            ^~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1325:85: error: Value of type "object" is
+not indexable  [index]
+    ...['id'], 'type': 'function', 'function': {'name': fn['name'], 'argument...
+                                                        ^~~~~~~~~~
+app\services\workbench\workbench.py:1326:74: error: Value of type "object" is
+not indexable  [index]
+    ...end({'type': 'tool_use', 'id': tc['id'], 'name': fn['name'], 'input': ...
+                                                        ^~~~~~~~~~
+app\services\workbench\workbench.py:1333:15: error: "object" has no attribute
+"get"  [attr-defined]
+        profile = profiles.get(model) or profiles.get('*') or {}
+                  ^~~~~~~~~~~~
+app\services\workbench\workbench.py:1352:47: error: Argument 2 to "dispatch"
+has incompatible type "dict[str, object]"; expected "dict[str, JsonValue]" 
+[arg-type]
+            result = await dispatchTool(toolName, args)
+                                                  ^~~~
+app\services\workbench\workbench.py:1359:9: error: "WorkbenchSession" has no
+attribute "_failure_feedback"  [attr-defined]
+            session._failure_feedback = feedback
+            ^~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1360:9: error: "WorkbenchSession" has no
+attribute "_failure_feedback_age"  [attr-defined]
+            session._failure_feedback_age = 0
+            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1380:5: error: "WorkbenchSession" has no
+attribute "_execution_state"  [attr-defined]
+        session._execution_state = None
+        ^~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1381:5: error: "WorkbenchSession" has no
+attribute "_working_memory"  [attr-defined]
+        session._working_memory = None
+        ^~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1471:5: error: "WorkbenchSession" has no
+attribute "_execution_state"  [attr-defined]
+        session._execution_state = None
+        ^~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1472:5: error: "WorkbenchSession" has no
+attribute "_working_memory"  [attr-defined]
+        session._working_memory = None
+        ^~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1579:14: error: Item "int" of
+"str | int | float | list[JsonValue] | dict[str, JsonValue]" has no attribute
+"startswith"  [union-attr]
+            elif name.startswith('mcp__'):
+                 ^~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1579:14: error: Item "float" of
+"str | int | float | list[JsonValue] | dict[str, JsonValue]" has no attribute
+"startswith"  [union-attr]
+            elif name.startswith('mcp__'):
+                 ^~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1579:14: error: Item "list[JsonValue]" of
+"str | int | float | list[JsonValue] | dict[str, JsonValue]" has no attribute
+"startswith"  [union-attr]
+            elif name.startswith('mcp__'):
+                 ^~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1579:14: error: Item "dict[str, JsonValue]"
+of "str | int | float | list[JsonValue] | dict[str, JsonValue]" has no attribute
+"startswith"  [union-attr]
+            elif name.startswith('mcp__'):
+                 ^~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1589:31: error: Argument 1 to "append" of
+"list" has incompatible type
+"dict[str, str | int | float | list[JsonValue] | dict[str, JsonValue]]";
+expected "dict[str, object]"  [arg-type]
+            grouped[group].append(entry)
+                                  ^~~~~
+app\services\workbench\workbench.py:1589:31: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\services\workbench\workbench.py:1589:31: note: Consider using "Mapping" instead, which is covariant in the value type
+app\services\workbench\workbench.py:1623:9: error: "WorkbenchSession" has no
+attribute "_state_lock"  [attr-defined]
+            session._state_lock = asyncio.Lock()
+            ^~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1625:32: error: "WorkbenchSession" has no
+attribute "_state_lock"  [attr-defined]
+            await asyncio.wait_for(session._state_lock.acquire(), timeout=...
+                                   ^~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1627:13: error: "WorkbenchSession" has no
+attribute "_execution_state"  [attr-defined]
+                session._execution_state = executionState
+                ^~~~~~~~~~~~~~~~~~~~~~~~
+app\services\workbench\workbench.py:1631:13: error: "WorkbenchSession" has no
+attribute "_state_lock"  [attr-defined]
+                session._state_lock.release()
+                ^~~~~~~~~~~~~~~~~~~
+Found 311 errors in 26 files (checked 1 source file)

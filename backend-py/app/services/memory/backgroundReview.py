@@ -21,6 +21,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from typing import Callable, Optional
+from app.jsonUtils import as_str, as_list
 from app.services import skillService
 log = logging.getLogger(__name__)
 _TURNInterval = 3
@@ -49,7 +50,7 @@ async def tryBackgroundReview(session: object, messagesSnapshot: list[dict[str, 
         return
     lastTurn = getattr(session, '_last_reviewed_at_turn', 0)
     sessionTurns = getattr(session, 'messageCount', 0) // 2
-    toolRounds = len([m for m in messagesSnapshot if m.get('role') == 'tool'])
+    toolRounds = len([m for m in messagesSnapshot if as_str(m.get('role')) == 'tool'])
     gates = gates or ReviewGates()
     if not gates.shouldReview(sessionTurns=sessionTurns, toolRounds=toolRounds, lastReviewedAtTurn=lastTurn):
         return
@@ -77,17 +78,17 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llmClient: Rev
     result['reviewed'] = True
     try:
         from app.services.brainEventBus import emitBrainEvent
-        emitBrainEvent(category='review', layer='background_review._do_review', summary=f"Background review done: {len(recommendations.get('skills', []))} skill recs, {len(recommendations.get('facts', []))} fact recs", meta={'skills': len(recommendations.get('skills', [])), 'facts': len(recommendations.get('facts', []))})
+        emitBrainEvent(category='review', layer='background_review._do_review', summary=f"Background review done: {len(as_list(recommendations.get('skills'), []))} skill recs, {len(as_list(recommendations.get('facts'), []))} fact recs", meta={'skills': len(as_list(recommendations.get('skills'), [])), 'facts': len(as_list(recommendations.get('facts'), []))})
     except Exception:
         pass
-    for rec in recommendations.get('skills', []):
+    for rec in as_list(recommendations.get('skills'), []):
         try:
-            action = rec.get('action', 'create')
-            name = rec.get('name', '')
+            action = as_str(rec.get('action'), 'create')
+            name = as_str(rec.get('name'), '')
             if not name:
                 continue
             if action == 'create':
-                skillService.createSkill(name, rec.get('description', ''), rec.get('body', ''), trigger=rec.get('trigger', ''), category=rec.get('category', 'uncategorized'))
+                skillService.createSkill(name, as_str(rec.get('description'), ''), as_str(rec.get('body'), ''), trigger=as_str(rec.get('trigger'), ''), category=as_str(rec.get('category'), 'uncategorized'))
                 result['skills_created'].append(name)
                 try:
                     from app.services.skills.curator import SkillCurator
@@ -95,7 +96,7 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llmClient: Rev
                 except Exception:
                     pass
             elif action == 'patch':
-                skillService.patchSkill(name, body=rec.get('body'), description=rec.get('description'))
+                skillService.patchSkill(name, body=as_str(rec.get('body')), description=as_str(rec.get('description')))
                 result['skills_patched'].append(name)
                 try:
                     from app.services.skills.curator import SkillCurator
@@ -103,12 +104,12 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llmClient: Rev
                 except Exception:
                     pass
         except Exception as exc:
-            log.warning("background_review: skill '%s' failed: %s", rec.get('name'), exc)
+            log.warning("background_review: skill '%s' failed: %s", as_str(rec.get('name')), exc)
             result['errors'].append(str(exc))
-    for fact in recommendations.get('memory', []):
+    for fact in as_list(recommendations.get('memory'), []):
         try:
-            action = fact.get('action', 'add')
-            content = fact.get('fact', '')
+            action = as_str(fact.get('action'), 'add')
+            content = as_str(fact.get('fact'), '')
             if not content:
                 continue
             _saveFact(action, content)
@@ -124,7 +125,7 @@ def _buildReviewPrompt(messagesSnapshot: list[dict[str, object]]) -> list[dict[s
 
 def _lastRelevantMessages(messages: list[dict[str, object]], maxLen: int=60) -> list[dict[str, object]]:
     """Take the tail of the conversation — user + assistant turns only."""
-    relevant = [m for m in messages if m.get('role') in ('user', 'assistant')]
+    relevant = [m for m in messages if as_str(m.get('role')) in ('user', 'assistant')]
     return relevant[-maxLen:] if len(relevant) > maxLen else relevant
 
 def _parseRecommendations(raw: str) -> dict[str, object]:

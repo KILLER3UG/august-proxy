@@ -13,6 +13,7 @@ import random
 import time
 from typing import AsyncIterator, Callable
 import httpx
+from app.jsonUtils import as_str, as_dict, as_list
 
 class SseStreamParser:
     """Line-based SSE stream parser.
@@ -173,11 +174,13 @@ def estimateMessageTokens(msg: dict[str, object]) -> int:
     content = msg.get('content')
     if content:
         tokens += _estimateContentTokens(content)
-    for tc in msg.get('tool_calls', []):
+    for tc_raw in as_list(msg.get('tool_calls'), []):
+        tc = as_dict(tc_raw)
+        func = as_dict(tc.get('function'), {})
         tokens += 10
-        tokens += estimateStringTokens(tc.get('function', {}).get('name', ''))
-        tokens += estimateStringTokens(tc.get('function', {}).get('arguments', ''))
-        tokens += estimateStringTokens(tc.get('id', ''))
+        tokens += estimateStringTokens(as_str(func.get('name'), ''))
+        tokens += estimateStringTokens(as_str(func.get('arguments'), ''))
+        tokens += estimateStringTokens(as_str(tc.get('id'), ''))
     if msg.get('tool_call_id'):
         tokens += 4 + estimateStringTokens(msg['tool_call_id'])
     return tokens
@@ -189,9 +192,9 @@ def estimateToolTokens(tools: list[dict[str, object]] | None) -> int:
     total = 0
     for tool in tools:
         total += 50
-        func = tool.get('function', tool)
-        total += estimateStringTokens(func.get('name', tool.get('name', '')))
-        total += estimateStringTokens(func.get('description', tool.get('description', '')))
+        func = as_dict(tool.get('function'), {})
+        total += estimateStringTokens(as_str(func.get('name'), as_str(tool.get('name'), '')))
+        total += estimateStringTokens(as_str(func.get('description'), as_str(tool.get('description'), '')))
         params = func.get('parameters') or func.get('input_schema', {})
         total += estimateStringTokens(json.dumps(params))
     return total
@@ -297,16 +300,16 @@ class BaseProviderClient:
         """
         import os
         from app.config import settings
-        providerName = self.config.get('name', '')
-        embedded = self.config.get('api_key') or self.config.get('apiKey')
+        providerName = as_str(self.config.get('name'), '')
+        embedded = as_str(self.config.get('api_key')) or as_str(self.config.get('apiKey'))
         if embedded:
             return embedded
         cfg = settings.config
         candidates = [providerName]
-        aliasesList = self.config.get('aliases', [])
+        aliasesList = as_list(self.config.get('aliases'), [])
         if isinstance(aliasesList, list):
             candidates.extend(aliasesList)
-        envVars = self.config.get('envVars', [])
+        envVars = as_list(self.config.get('envVars'), [])
         for var in envVars:
             if var.endswith('_API_KEY'):
                 base = var.replace('_API_KEY', '').lower()
@@ -319,9 +322,9 @@ class BaseProviderClient:
         for candidate in candidates:
             if not candidate:
                 continue
-            providerCfg = cfg.get(candidate, {})
+            providerCfg = as_dict(cfg.get(candidate), {})
             if isinstance(providerCfg, dict):
-                apiKey = providerCfg.get('apiKey')
+                apiKey = as_str(providerCfg.get('apiKey'))
                 if apiKey:
                     return apiKey
         for var in envVars:
@@ -338,9 +341,9 @@ class BaseProviderClient:
     def resolveBaseUrl(self) -> str:
         """Resolve the base URL from env vars, config.json, or provider default."""
         from app.config import settings
-        providerName = self.config.get('name', '')
-        cfg = settings.config.get(providerName, {})
-        baseUrl = cfg.get('baseUrl') or self.config.get('baseUrl', '')
+        providerName = as_str(self.config.get('name'), '')
+        cfg = as_dict(settings.config.get(providerName), {})
+        baseUrl = as_str(cfg.get('baseUrl')) or as_str(self.config.get('baseUrl'), '')
         return baseUrl.rstrip('/') if baseUrl else ''
 
     async def requestJson(self, method: str, url: str, headers: dict[str, str], body: dict[str, object] | None=None) -> ProviderResponse:
@@ -376,7 +379,7 @@ class BaseProviderClient:
             if system:
                 messages.append({'role': 'system', 'content': system})
             messages.append({'role': 'user', 'content': prompt})
-            model = self.config.get('model', '')
+            model = as_str(self.config.get('model'), '')
             body = {'model': model, 'messages': messages, 'stream': False}
             try:
                 resp = await self.chatCompletions(body)

@@ -5,6 +5,7 @@ Port of backend/services/memory/tool-failure-memory.js.
 """
 from __future__ import annotations
 import json
+from app.jsonUtils import as_str
 from app.services.memoryStore import saveMemory, getMemory
 _FAILURESKey = 'tool_failures'
 
@@ -13,7 +14,7 @@ def recordToolFailure(info: dict[str, object]) -> None:
     failures = getMemory(_FAILURESKey) or []
     if not isinstance(failures, list):
         failures = []
-    failures.append({'toolName': info.get('toolName', ''), 'args': info.get('args'), 'error': str(info.get('error', '')), 'phase': info.get('phase', ''), 'timestamp': __import__('datetime').datetime.utcnow().isoformat() + 'Z'})
+    failures.append({'toolName': as_str(info.get('toolName'), ''), 'args': info.get('args'), 'error': str(info.get('error', '')), 'phase': as_str(info.get('phase'), ''), 'timestamp': __import__('datetime').datetime.utcnow().isoformat() + 'Z'})
     failures = failures[-50:]
     saveMemory(_FAILURESKey, failures)
 
@@ -31,6 +32,6 @@ def formatFailureHints(toolName: str) -> str:
         return ''
     hints = [f"Note: '{toolName}' has had {len(failures)} recent failure(s):"]
     for f in failures:
-        hints.append(f"  - {f.get('error', 'unknown error')[:200]}")
+        hints.append(f"  - {as_str(f.get('error'), 'unknown error')[:200]}")
     hints.append('Adjust parameters accordingly.')
     return '\n'.join(hints)

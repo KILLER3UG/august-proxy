@@ -1,0 +1,545 @@
+app\adapters\stream_state.py:155:44: error: Name "time" is not defined 
+[name-defined]
+                'created': self.created or int(time.time()),
+                                               ^~~~
+app\adapters\stream_state.py:455:28: error: Name "time" is not defined 
+[name-defined]
+                'created': int(time.time()),
+                               ^~~~
+app\adapters\toolClassification.py:19:12: error: Incompatible return value type
+(got "object | Any", expected "str | None")  [return-value]
+        return tool.get('name') or tool.get('function', {}).get('name')
+               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\adapters\toolClassification.py:19:32: error: "object" has no attribute
+"get"  [attr-defined]
+        return tool.get('name') or tool.get('function', {}).get('name')
+                                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\adapters\toolClassification.py:27:12: error: Incompatible return value type
+(got "object", expected "str | None")  [return-value]
+        return tool.get('name')
+               ^~~~~~~~~~~~~~~~
+app\providers\clients\base.py:176:15: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+        for tc in msg.get('tool_calls', []):
+                  ^~~~~~~~~~~~~~~~~~~~~~~~~
+app\providers\clients\base.py:182:44: error: Argument 1 to
+"estimateStringTokens" has incompatible type "object"; expected "str | None" 
+[arg-type]
+            tokens += 4 + estimateStringTokens(msg['tool_call_id'])
+                                               ^~~~~~~~~~~~~~~~~~~
+app\providers\clients\base.py:193:39: error: "object" has no attribute "get" 
+[attr-defined]
+            total += estimateStringTokens(func.get('name', tool.get('name'...
+                                          ^~~~~~~~
+app\providers\clients\base.py:194:39: error: "object" has no attribute "get" 
+[attr-defined]
+            total += estimateStringTokens(func.get('description', tool.get...
+                                          ^~~~~~~~
+app\providers\clients\base.py:195:18: error: "object" has no attribute "get" 
+[attr-defined]
+            params = func.get('parameters') or func.get('input_schema', {}...
+                     ^~~~~~~~
+app\providers\clients\base.py:303:20: error: Incompatible return value type
+(got "object", expected "str | None")  [return-value]
+                return embedded
+                       ^~~~~~~~
+app\providers\clients\base.py:310:20: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for var in envVars:
+                       ^~~~~~~
+app\providers\clients\base.py:322:27: error: No overload variant of "get" of
+"dict" matches argument types "object", "dict[Never, Never]"  [call-overload]
+                providerCfg = cfg.get(candidate, {})
+                              ^~~~~~~~~~~~~~~~~~~~~~
+app\providers\clients\base.py:322:27: note: Possible overload variants:
+app\providers\clients\base.py:322:27: note:     def get(self, str, None = ..., /) -> object
+app\providers\clients\base.py:322:27: note:     def get(self, str, object, /) -> object
+app\providers\clients\base.py:322:27: note:     def [_T] get(self, str, _T, /) -> object
+app\providers\clients\base.py:327:20: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for var in envVars:
+                       ^~~~~~~
+app\providers\clients\base.py:331:19: error: "object" has no attribute "upper" 
+[attr-defined]
+            envName = providerName.upper().replace(' ', '_').replace('-', ...
+                      ^~~~~~~~~~~~~~~~~~
+app\providers\clients\base.py:342:15: error: No overload variant of "get" of
+"dict" matches argument types "object", "dict[Never, Never]"  [call-overload]
+            cfg = settings.config.get(providerName, {})
+                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\providers\clients\base.py:342:15: note: Possible overload variants:
+app\providers\clients\base.py:342:15: note:     def get(self, str, None = ..., /) -> object
+app\providers\clients\base.py:342:15: note:     def get(self, str, object, /) -> object
+app\providers\clients\base.py:342:15: note:     def [_T] get(self, str, _T, /) -> object
+app\providers\clients\base.py:344:16: error: Item "object" of "Any | object"
+has no attribute "rstrip"  [union-attr]
+            return baseUrl.rstrip('/') if baseUrl else ''
+                   ^~~~~~~~~~~~~~
+app\providers\clients\bedrock.py:21:27: error: Argument 1 to "__init__" of
+"BaseProviderClient" has incompatible type "*tuple[object, ...]"; expected
+"dict[str, object]"  [arg-type]
+            super().__init__(*args, **kwargs)
+                              ^~~~
+app\providers\clients\bedrock.py:21:35: error: Argument 2 to "__init__" of
+"BaseProviderClient" has incompatible type "**dict[str, object]"; expected
+"dict[str, object]"  [arg-type]
+            super().__init__(*args, **kwargs)
+                                      ^~~~~~
+app\providers\clients\bedrock.py:21:35: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\providers\clients\bedrock.py:21:35: note: Consider using "Mapping" instead, which is covariant in the value type
+app\providers\clients\bedrock.py:21:35: error: Argument 2 to "__init__" of
+"BaseProviderClient" has incompatible type "**dict[str, object]"; expected
+"float"  [arg-type]
+            super().__init__(*args, **kwargs)
+                                      ^~~~~~
+app\providers\clients\bedrock.py:21:35: error: Argument 2 to "__init__" of
+"BaseProviderClient" has incompatible type "**dict[str, object]"; expected "int"
+ [arg-type]
+            super().__init__(*args, **kwargs)
+                                      ^~~~~~
+app\providers\clients\bedrock.py:62:44: error: Argument 1 to "_buildToolConfig"
+of "BedrockClient" has incompatible type "object"; expected
+"list[dict[str, object]]"  [arg-type]
+            toolConfig = self._buildToolConfig(body.get('tools', []))
+                                               ^~~~~~~~~~~~~~~~~~~~~
+app\providers\clients\bedrock.py:65:48: error: "object" has no attribute
+"converse"  [attr-defined]
+                response = await asyncio.to_thread(br.converse, modelId=mo...
+                                                   ^~~~~~~~~~~
+app\providers\clients\bedrock.py:79:44: error: Argument 1 to "_buildToolConfig"
+of "BedrockClient" has incompatible type "object"; expected
+"list[dict[str, object]]"  [arg-type]
+            toolConfig = self._buildToolConfig(body.get('tools', []))
+                                               ^~~~~~~~~~~~~~~~~~~~~
+app\providers\clients\bedrock.py:82:48: error: "object" has no attribute
+"converse_stream"  [attr-defined]
+                response = await asyncio.to_thread(br.converse_stream, mod...
+                                                   ^~~~~~~~~~~~~~~~~~
+app\providers\clients\bedrock.py:111:55: error: "object" has no attribute "get"
+ [attr-defined]
+    ...       bedrockTools.append({'toolSpec': {'name': func.get('name', ''),...
+                                                        ^~~~~~~~
+app\providers\clients\anthropic.py:28:41: error: Incompatible types in
+assignment (expression has type "object", target has type "str")  [assignment]
+                headers['anthropic-beta'] = beta
+                                            ^~~~
+app\providers\clients\minimax.py:32:20: error: Incompatible types in assignment
+(expression has type "object", variable has type "str")  [assignment]
+                base = self.config.get('baseUrl', 'https://api.minimax.io/...
+                       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\providers\resolver.py:87:12: error: "object" has no attribute "lower" 
+[attr-defined]
+            if p['name'].lower() == nameStr.lower():
+               ^~~~~~~~~~~~~~~
+app\providers\resolver.py:101:28: error: "object" has no attribute "lower" 
+[attr-defined]
+                            if p['name'].lower() == targetProvider.lower()...
+                               ^~~~~~~~~~~~~~~
+app\providers\resolver.py:103:74: error: "object" has no attribute "__iter__";
+maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+    ...if targetProvider.lower() in [a.lower() for a in p.get('aliases', [])]...
+                                                        ^~~~~~~~~~~~~~~~~~~~
+app\providers\resolver.py:107:12: error: Unsupported right operand type for in
+("object")  [operator]
+            if nameStr in profiles and _hasApiKey(p):
+               ^~~~~~~~~~~~~~~~~~~
+app\providers\resolver.py:110:17: error: "object" has no attribute "lower" 
+[attr-defined]
+            pname = p['name'].lower().split()[0]
+                    ^~~~~~~~~~~~~~~
+app\providers\resolver.py:115:12: error: Unsupported right operand type for in
+("object")  [operator]
+            if nameStr in profiles:
+               ^~~~~~~~~~~~~~~~~~~
+app\providers\resolver.py:117:27: error: "object" has no attribute "__iter__";
+maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for profileKey in profiles:
+                              ^~~~~~~~
+app\providers\resolver.py:121:17: error: "object" has no attribute "lower" 
+[attr-defined]
+            pname = p['name'].lower().split()[0]
+                    ^~~~~~~~~~~~~~~
+app\providers\resolver.py:135:18: error: Item "int" of
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "__iter__" (not iterable)  [union-attr]
+        for entry in store.get('providers', []):
+                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+app\providers\resolver.py:135:18: error: Item "float" of
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "__iter__" (not iterable)  [union-attr]
+        for entry in store.get('providers', []):
+                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+app\providers\resolver.py:135:18: error: Item "None" of
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "__iter__" (not iterable)  [union-attr]
+        for entry in store.get('providers', []):
+                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+app\providers\resolver.py:136:12: error: Item "str" of
+"Any | str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "get"  [union-attr]
+            if entry.get('enabled') and entry.get('apiKey'):
+               ^~~~~~~~~
+app\providers\resolver.py:136:12: error: Item "int" of
+"Any | str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "get"  [union-attr]
+            if entry.get('enabled') and entry.get('apiKey'):
+               ^~~~~~~~~
+app\providers\resolver.py:136:12: error: Item "float" of
+"Any | str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "get"  [union-attr]
+            if entry.get('enabled') and entry.get('apiKey'):
+               ^~~~~~~~~
+app\providers\resolver.py:136:12: error: Item "None" of
+"Any | str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "get"  [union-attr]
+            if entry.get('enabled') and entry.get('apiKey'):
+               ^~~~~~~~~
+app\providers\resolver.py:136:12: error: Item "list[JsonValue]" of
+"Any | str | int | float | list[JsonValue] | dict[str, JsonValue] | None" has no
+attribute "get"  [union-attr]
+            if entry.get('enabled') and entry.get('apiKey'):
+               ^~~~~~~~~
+app\providers\resolver.py:137:57: error: Argument 1 to
+"_customEntryToProviderDict" has incompatible type
+"Any | str | int | float | list[JsonValue] | dict[str, JsonValue] | None";
+expected "dict[str, object]"  [arg-type]
+                providers.append(_customEntryToProviderDict(entry))
+                                                            ^~~~~
+app\services\providerCredentials.py:56:19: error: Incompatible types in
+assignment (expression has type "dict[str, JsonValue]", variable has type
+"dict[str, object] | None")  [assignment]
+        _storeCache = configService.getProvidersStore()
+                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\providerCredentials.py:57:12: error: Incompatible return value
+type (got "dict[str, object] | None", expected "dict[str, object]") 
+[return-value]
+        return _storeCache
+               ^~~~~~~~~~~
+app\services\providerCredentials.py:71:18: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+        for entry in store.get('providers', []):
+                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\providerCredentials.py:90:5: error: Need type annotation for
+"tmplProfiles" (hint: "tmplProfiles: dict[<type>, <type>] = ...") 
+[var-annotated]
+        tmplProfiles = {}
+        ^~~~~~~~~~~~
+app\services\providerCredentials.py:91:5: error: Need type annotation for
+"tmplHeaders" (hint: "tmplHeaders: dict[<type>, <type>] = ...")  [var-annotated]
+        tmplHeaders = {}
+        ^~~~~~~~~~~
+app\services\providerCredentials.py:92:5: error: Need type annotation for
+"tmplEnv" (hint: "tmplEnv: list[<type>] = ...")  [var-annotated]
+        tmplEnv = []
+        ^~~~~~~
+app\services\providerCredentials.py:94:24: error: Incompatible types in
+assignment (expression has type "object", variable has type "dict[Any, Any]") 
+[assignment]
+            tmplProfiles = tmpl.get('modelProfiles', {}) or {}
+                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\providerCredentials.py:95:23: error: Incompatible types in
+assignment (expression has type "object", variable has type "dict[Any, Any]") 
+[assignment]
+            tmplHeaders = tmpl.get('defaultHeaders', {}) or {}
+                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\services\providerCredentials.py:96:19: error: Incompatible types in
+assignment (expression has type "object", variable has type "list[Any]") 
+[assignment]
+            tmplEnv = tmpl.get('envVars', []) or []
+                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\providers\routeResolver.py:44:16: error: "object" has no attribute "lower" 
+[attr-defined]
+                if p['name'].lower() == hint.lower():
+                   ^~~~~~~~~~~~~~~
+app\providers\routeResolver.py:46:52: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+    ...          if hint.lower() in [a.lower() for a in p.get('aliases', [])]...
+                                                        ^~~~~~~~~~~~~~~~~~~~
+app\providers\routeResolver.py:50:13: error: Unsupported right operand type for
+in ("object")  [operator]
+            if (modelId in profiles or modelLower in {k.lower() for k in p...
+                ^~~~~~~~~~~~~~~~~~~
+app\providers\routeResolver.py:50:70: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+    ...in profiles or modelLower in {k.lower() for k in profiles}) and _hasCr...
+                                                        ^~~~~~~~
+app\providers\routeResolver.py:53:17: error: "object" has no attribute "lower" 
+[attr-defined]
+            pname = p['name'].lower().split()[0]
+                    ^~~~~~~~~~~~~~~
+app\providers\routeResolver.py:58:27: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for profileKey in profiles:
+                              ^~~~~~~~
+app\providers\routeResolver.py:62:22: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for alias in p.get('aliases', []):
+                         ^~~~~~~~~~~~~~~~~~~~
+app\providers\routeResolver.py:67:12: error: Unsupported right operand type for
+in ("object")  [operator]
+            if modelId in profiles or modelLower in {k.lower() for k in pr...
+               ^~~~~~~~~~~~~~~~~~~
+app\providers\routeResolver.py:67:69: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+    ...if modelId in profiles or modelLower in {k.lower() for k in profiles}:
+                                                                   ^~~~~~~~
+app\providers\routeResolver.py:70:17: error: "object" has no attribute "lower" 
+[attr-defined]
+            pname = p['name'].lower().split()[0]
+                    ^~~~~~~~~~~~~~~
+app\providers\routeResolver.py:75:27: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for profileKey in profiles:
+                              ^~~~~~~~
+app\providers\routeResolver.py:79:22: error: "object" has no attribute
+"__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+            for alias in p.get('aliases', []):
+                         ^~~~~~~~~~~~~~~~~~~~
+app\adapters\anthropic.py:234:60: error: Dict entry 1 has incompatible type
+"str": "dict[str, str]"; expected "str": "str"  [dict-item]
+    ...              parts.append({'type': 'image_url', 'image_url': {'url': ...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\adapters\anthropic.py:238:60: error: Dict entry 1 has incompatible type
+"str": "list[dict[str, str]]"; expected "str":
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None"  [dict-item]
+    ...             openaiMessages.append({'role': 'user', 'content': parts})
+                                                           ^~~~~~~~~~~~~~~~
+app\adapters\anthropic.py:251:33: error: Incompatible types in assignment
+(expression has type
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None", variable
+has type "str")  [assignment]
+                        blockType = block.get('type')
+                                    ^~~~~~~~~~~~~~~~~
+app\adapters\anthropic.py:270:45: error: Incompatible types in assignment
+(expression has type "list[dict[str, JsonValue]]", target has type "JsonValue") 
+[assignment]
+                        asstMsg['tool_calls'] = toolCalls
+                                                ^~~~~~~~~
+app\adapters\anthropic.py:284:41: error: Incompatible types in assignment
+(expression has type "list[dict[str, JsonValue]]", target has type "JsonValue") 
+[assignment]
+                    asstMsg['tool_calls'] = safeCalls
+                                            ^~~~~~~~~
+app\adapters\anthropic.py:329:61: error: Dict entry 1 has incompatible type
+"str": "list[dict[str, JsonValue]]"; expected "str":
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None"  [dict-item]
+    ...naiBody: dict[str, JsonValue] = {'model': model, 'messages': translate...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\adapters\anthropic.py:329:91: error: Argument 1 to "translateMessages" has
+incompatible type "list[JsonValue]"; expected "list[dict[str, JsonValue]]" 
+[arg-type]
+    ...= {'model': model, 'messages': translateMessages(as_list(body.messages...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\adapters\anthropic.py:339:34: error: Incompatible types in assignment
+(expression has type "list[str]", target has type "JsonValue")  [assignment]
+                openaiBody['stop'] = body.stop_sequences
+                                     ^~~~~~~~~~~~~~~~~~~
+app\adapters\anthropic.py:347:35: error: Dict entry 1 has incompatible type
+"str": "list[dict[str, JsonValue]]"; expected "str":
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None"  [dict-item]
+        openaiBody = {'model': model, 'messages': translateMessages(as_lis...
+                                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+app\adapters\anthropic.py:347:65: error: Argument 1 to "translateMessages" has
+incompatible type "list[JsonValue]"; expected "list[dict[str, JsonValue]]" 
+[arg-type]
+    ...= {'model': model, 'messages': translateMessages(as_list(body.get('mes...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\adapters\anthropic.py:386:39: error: Incompatible types in assignment
+(expression has type "list[dict[str, JsonValue]]", target has type "JsonValue") 
+[assignment]
+                anthropicBody['system'] = system
+                                          ^~~~~~
+app\adapters\anthropic.py:399:35: error: Incompatible types in assignment
+(expression has type "list[dict[str, JsonValue]]", target has type "JsonValue") 
+[assignment]
+            anthropicBody['system'] = system
+                                      ^~~~~~
+app\adapters\anthropic.py:594:58: error: Dict entry 1 has incompatible type
+"str": "list[dict[str, JsonValue]]"; expected "str":
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None"  [dict-item]
+    ...reqBody: dict[str, JsonValue] = {'model': model, 'messages': currentMe...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\adapters\anthropic.py:596:33: error: Incompatible types in assignment
+(expression has type "list[dict[str, JsonValue]]", target has type "JsonValue") 
+[assignment]
+                reqBody['system'] = currentSystem
+                                    ^~~~~~~~~~~~~
+app\adapters\anthropic.py:598:32: error: Incompatible types in assignment
+(expression has type "list[dict[str, JsonValue]]", target has type "JsonValue") 
+[assignment]
+                reqBody['tools'] = knownTools
+                                   ^~~~~~~~~~
+app\adapters\anthropic.py:600:83: error: Argument 4 to "requestJson" of
+"BaseProviderClient" has incompatible type "dict[str, JsonValue]"; expected
+"dict[str, object] | None"  [arg-type]
+    ...equestJson('POST', upstreamUrl, upstreamHeaders, as_dict(camelToSnake(...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\adapters\anthropic.py:600:83: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\adapters\anthropic.py:600:83: note: Consider using "Mapping" instead, which is covariant in the value type
+app\adapters\anthropic.py:602:46: error: Dict entry 0 has incompatible type
+"str": "list[dict[str, JsonValue]]"; expected "str":
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None"  [dict-item]
+                openaiBody = buildOpenaiRequest({'messages': currentMessag...
+                                                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\adapters\anthropic.py:605:83: error: Argument 4 to "requestJson" of
+"BaseProviderClient" has incompatible type "dict[str, JsonValue]"; expected
+"dict[str, object] | None"  [arg-type]
+    ...equestJson('POST', upstreamUrl, upstreamHeaders, as_dict(camelToSnake(...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\adapters\anthropic.py:605:83: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\adapters\anthropic.py:605:83: note: Consider using "Mapping" instead, which is covariant in the value type
+app\adapters\anthropic.py:609:45: error: Argument 1 to "snakeToCamel" has
+incompatible type "dict[str, object] | None"; expected "JsonValue"  [arg-type]
+            responseBody = as_dict(snakeToCamel(resp.bodyJson), {})
+                                                ^~~~~~~~~~~~~
+app\adapters\anthropic.py:671:17: error: Incompatible types in assignment
+(expression has type
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None", variable
+has type "str")  [assignment]
+            model = body.get('model', 'claude-sonnet-4-7')
+                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+app\adapters\anthropic.py:700:54: error: Argument 1 to
+"dedupeAndCanonicalizeAnthropicTools" has incompatible type
+"list[dict[str, JsonValue] | str | int | float | bool | list[JsonValue] | None]";
+expected "list[dict[str, JsonValue]]"  [arg-type]
+    ...knownTools = dedupeAndCanonicalizeAnthropicTools(clientTools + managed...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\adapters\anthropic.py:709:39: error: Argument 1 to "add" of "set" has
+incompatible type "str | int | float | list[JsonValue] | dict[str, JsonValue]";
+expected "str"  [arg-type]
+                managedLocalToolNames.add(name)
+                                          ^~~~
+app\adapters\anthropic.py:710:5: error: Incompatible types in assignment
+(expression has type "JsonValue", variable has type "dict[str, JsonValue]") 
+[assignment]
+        for t in clientTools:
+        ^
+app\adapters\anthropic.py:712:40: error: Argument 1 to
+"isProxyManagedLocalToolName" has incompatible type
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None"; expected
+"str"  [arg-type]
+            if isProxyManagedLocalToolName(name):
+                                           ^~~~
+app\adapters\anthropic.py:713:39: error: Argument 1 to "add" of "set" has
+incompatible type
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None"; expected
+"str"  [arg-type]
+                managedLocalToolNames.add(name)
+                                          ^~~~
+app\adapters\anthropic.py:715:33: error: Argument 1 to "add" of "set" has
+incompatible type
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None"; expected
+"str"  [arg-type]
+                clientToolNames.add(name)
+                                    ^~~~
+app\adapters\anthropic.py:732:32: error: Incompatible types in assignment
+(expression has type "list[dict[str, JsonValue]]", target has type "JsonValue") 
+[assignment]
+                reqBody['tools'] = knownTools
+                                   ^~~~~~~~~~
+app\adapters\anthropic.py:734:79: error: Argument 4 to "requestJson" of
+"BaseProviderClient" has incompatible type "dict[str, JsonValue]"; expected
+"dict[str, object] | None"  [arg-type]
+    ...equestJson('POST', upstreamUrl, upstreamHeaders, as_dict(camelToSnake(...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\adapters\anthropic.py:734:79: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\adapters\anthropic.py:734:79: note: Consider using "Mapping" instead, which is covariant in the value type
+app\adapters\anthropic.py:735:45: error: Argument 1 to "snakeToCamel" has
+incompatible type "dict[str, object] | None"; expected "JsonValue"  [arg-type]
+            responseBody = as_dict(snakeToCamel(resp.bodyJson), {})
+                                                ^~~~~~~~~~~~~
+app\adapters\anthropic.py:741:76: error: Argument 1 to
+"resolveManagedAnthropicToolUses" has incompatible type "list[JsonValue]";
+expected "list[dict[str, JsonValue]]"  [arg-type]
+    ...s, usage = await resolveManagedAnthropicToolUses(messages, systemBlock...
+                                                        ^~~~~~~~
+app\adapters\anthropic.py:752:79: error: Argument 4 to "requestJson" of
+"BaseProviderClient" has incompatible type "dict[str, JsonValue]"; expected
+"dict[str, object] | None"  [arg-type]
+    ...equestJson('POST', upstreamUrl, upstreamHeaders, as_dict(camelToSnake(...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\adapters\anthropic.py:752:79: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\adapters\anthropic.py:752:79: note: Consider using "Mapping" instead, which is covariant in the value type
+app\adapters\anthropic.py:753:45: error: Argument 1 to "snakeToCamel" has
+incompatible type "dict[str, object] | None"; expected "JsonValue"  [arg-type]
+            responseBody = as_dict(snakeToCamel(resp.bodyJson), {})
+                                                ^~~~~~~~~~~~~
+app\adapters\anthropic.py:765:28: error: Incompatible types in assignment
+(expression has type "list[dict[str, JsonValue]]", target has type "JsonValue") 
+[assignment]
+            reqBody['tools'] = knownTools
+                               ^~~~~~~~~~
+app\adapters\anthropic.py:773:78: error: Argument 3 to "streamSse" of
+"BaseProviderClient" has incompatible type "dict[str, JsonValue]"; expected
+"dict[str, object]"  [arg-type]
+    ...n client.streamSse(upstreamUrl, upstreamHeaders, as_dict(camelToSnake(...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\adapters\anthropic.py:773:78: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\adapters\anthropic.py:773:78: note: Consider using "Mapping" instead, which is covariant in the value type
+app\adapters\anthropic.py:802:32: error: Argument 1 to "append" of "list" has
+incompatible type "dict[str, Sequence[Collection[str]]]"; expected "JsonValue" 
+[arg-type]
+            currentMessages.append(assistantMsg)
+                                   ^~~~~~~~~~~~
+app\adapters\anthropic.py:831:78: error: Argument 3 to "streamSse" of
+"BaseProviderClient" has incompatible type "dict[str, JsonValue]"; expected
+"dict[str, object]"  [arg-type]
+    ...n client.streamSse(upstreamUrl, upstreamHeaders, as_dict(camelToSnake(...
+                                                        ^~~~~~~~~~~~~~~~~~~~~...
+app\adapters\anthropic.py:831:78: note: "dict" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+app\adapters\anthropic.py:831:78: note: Consider using "Mapping" instead, which is covariant in the value type
+app\adapters\anthropic.py:892:27: error: Item "str" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+        finishReason = as_str(choice.get('finish_reason'), 'stop')
+                              ^~~~~~~~~~
+app\adapters\anthropic.py:892:27: error: Item "int" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+        finishReason = as_str(choice.get('finish_reason'), 'stop')
+                              ^~~~~~~~~~
+app\adapters\anthropic.py:892:27: error: Item "float" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+        finishReason = as_str(choice.get('finish_reason'), 'stop')
+                              ^~~~~~~~~~
+app\adapters\anthropic.py:892:27: error: Item "bool" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+        finishReason = as_str(choice.get('finish_reason'), 'stop')
+                              ^~~~~~~~~~
+app\adapters\anthropic.py:892:27: error: Item "None" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+        finishReason = as_str(choice.get('finish_reason'), 'stop')
+                              ^~~~~~~~~~
+app\adapters\anthropic.py:892:27: error: Item "list[JsonValue]" of
+"str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None" has
+no attribute "get"  [union-attr]
+        finishReason = as_str(choice.get('finish_reason'), 'stop')
+                              ^~~~~~~~~~
+app\adapters\anthropic.py:909:32: error: Argument 1 to "estimateTokens" has
+incompatible type "list[JsonValue]"; expected "list[dict[str, object]]" 
+[arg-type]
+        estimated = estimateTokens(messages, tools)
+                                   ^~~~~~~~
+app\adapters\anthropic.py:909:42: error: Argument 2 to "estimateTokens" has
+incompatible type "list[JsonValue]"; expected "list[dict[str, object]] | None" 
+[arg-type]
+        estimated = estimateTokens(messages, tools)
+                                             ^~~~~
+app\adapters\anthropic.py:939:48: error: Dict entry 1 has incompatible type
+"str":
+"list[dict[str, str | int | float | list[JsonValue] | dict[str, JsonValue] | None]]";
+expected "str":
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None"  [dict-item]
+                translated.append({'role': 'user', 'content': toolBlocks})
+                                                   ^~~~~~~~~~~~~~~~~~~~~
+app\adapters\anthropic.py:956:57: error: Dict entry 1 has incompatible type
+"str":
+"list[dict[str, str | int | float | list[JsonValue] | dict[str, JsonValue]]]";
+expected "str":
+"str | int | float | list[JsonValue] | dict[str, JsonValue] | None"  [dict-item]
+    ...         translated.append({'role': 'assistant', 'content': contentBlo...
+                                                        ^~~~~~~~~~~~~~~~~~~~~~~~
+Found 112 errors in 10 files (checked 1 source file)

@@ -16,6 +16,8 @@ import json
 import time
 import uuid
 from typing import AsyncIterator, Callable, cast
+from app.typeAliases import JsonValue
+from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 from app.adapters.base import streamSse, buildHeaders
 from app.adapters.proxyTools import getProxyOpenaiToolDefinitions, appendMissingOpenaiTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, isProxyManagedLocalToolName
 from app.adapters.toolClassification import classifyOpenaiToolCalls, getToolNameFromOpenaiTool
@@ -42,7 +44,8 @@ def deriveSessionIdFromOpenai(body: ChatCompletionRequest | dict[str, object] | 
             if from_meta:
                 return str(from_meta)
     elif body and isinstance(body, dict):
-        fromBody = body.get('sessionId') or body.get('session_id') or body.get('metadata', {}).get('sessionId') or body.get('metadata', {}).get('session_id') or body.get('user')
+        metadata = as_dict(body.get('metadata'), {})
+        fromBody = body.get('sessionId') or body.get('session_id') or metadata.get('sessionId') or metadata.get('session_id') or body.get('user')
         if fromBody:
             return str(fromBody)
     if request and hasattr(request, 'headers'):
@@ -56,7 +59,8 @@ def deriveSessionIdFromOpenai(body: ChatCompletionRequest | dict[str, object] | 
 def deriveModelInheritanceSessionId(body: dict[str, object] | None, request: object | None=None) -> str:
     """Extract session ID specifically for model inheritance lookups."""
     if body and isinstance(body, dict):
-        fromBody = body.get('sessionId') or body.get('session_id') or body.get('metadata', {}).get('sessionId') or body.get('metadata', {}).get('session_id')
+        metadata = as_dict(body.get('metadata'), {})
+        fromBody = body.get('sessionId') or body.get('session_id') or metadata.get('sessionId') or metadata.get('session_id')
         if fromBody:
             return str(fromBody)
     if request and hasattr(request, 'headers'):
@@ -84,7 +88,7 @@ def getOpenaiCompatibleProfile(providerName: str | None, model: str) -> dict[str
     if not resolved:
         return None
     client = getClient(resolved)
-    if client and client.api_format in ('openaiChat', 'codexResponses'):
+    if client and client.apiFormat in ('openaiChat', 'codexResponses'):
         return resolved
     return None
 
@@ -134,15 +138,18 @@ def writeOpenaiSseDone() -> str:
 def sendSimulatedOpenaiStream(response: dict[str, object]) -> list[str]:
     """Create SSE events from a full JSON response, simulating a stream."""
     events: list[str] = [writeOpenaiSseHeaders()]
-    responseId = response.get('id', f'chatcmpl-{uuid.uuid4().hex[:12]}')
-    created = response.get('created', int(time.time()))
-    model = response.get('model', 'unknown')
-    choices = response.get('choices', [])
+    responseId = as_str(response.get('id'), f'chatcmpl-{uuid.uuid4().hex[:12]}')
+    created = as_int(response.get('created'), int(time.time()))
+    model = as_str(response.get('model'), 'unknown')
+    choices = as_list(response.get('choices'), [])
     for choice in choices:
-        index = choice.get('index', 0)
-        delta = choice.get('delta') or choice.get('message', {})
+        if not isinstance(choice, dict):
+            continue
+        choiceDict = cast('dict[str, object]', choice)
+        index = as_int(choiceDict.get('index'), 0)
+        delta = as_dict(choiceDict.get('delta'), {}) or as_dict(choiceDict.get('message'), {})
         events.append(writeOpenaiSseData({'id': responseId, 'object': 'chat.completion.chunk', 'created': created, 'model': model, 'choices': [{'index': index, 'delta': delta, 'finish_reason': None}]}))
-        events.append(writeOpenaiSseData({'id': responseId, 'object': 'chat.completion.chunk', 'created': created, 'model': model, 'choices': [{'index': index, 'delta': {}, 'finish_reason': choice.get('finish_reason', 'stop')}]}))
+        events.append(writeOpenaiSseData({'id': responseId, 'object': 'chat.completion.chunk', 'created': created, 'model': model, 'choices': [{'index': index, 'delta': {}, 'finish_reason': cast('dict[str, object]', choiceDict).get('finish_reason', 'stop')}]}))
     if response.get('usage'):
         events.append(writeOpenaiSseData({'id': responseId, 'object': 'chat.completion.chunk', 'created': created, 'model': model, 'choices': [], 'usage': response['usage']}))
     events.append(writeOpenaiSseDone())
@@ -194,7 +201,7 @@ async def fallbackClientFailedToolsOpenai(messages: list[dict[str, object]], man
             if prev.get('role') != 'assistant':
                 break
             for tc in prev.get('tool_calls', []):
-                if tc.get('id') == toolCallId and tc.get('function', {}).get('name'):
+                if tc.get('id') == toolCallId and as_dict(tc.get('function', {})).get('name'):
                     name = tc['function']['name']
                     if name in managedLocalToolNames:
                         try:
@@ -225,19 +232,20 @@ async def resolveManagedOpenaiToolCalls(messages: list[dict[str, object]] | list
     currentMessages = list(messages)
     finalUsage: dict[str, object] | None = None
     for _round in range(MAX_MANAGED_TOOL_ROUNDS):
-        resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': False}))
+        reqBody = cast(dict[str, object], camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': False}))
+        resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, reqBody)
         if resp.isError:
             return (currentMessages, None)
-        responseBody = snakeToCamel(resp.bodyJson) or {}
+        responseBody = as_dict(snakeToCamel(cast(JsonValue, resp.bodyJson)), {})
         if responseBody.get('usage'):
-            finalUsage = responseBody['usage']
-        choices = responseBody.get('choices', [])
+            finalUsage = cast('dict[str, object]', responseBody['usage'])
+        choices = as_list(responseBody.get('choices'), [])
         if not choices:
             break
-        choice = choices[0]
-        message = choice.get('message', {})
-        finishReason = choice.get('finish_reason', 'stop')
-        toolCalls = message.get('tool_calls', [])
+        choice = as_dict(choices[0], {})
+        message = as_dict(choice.get('message'), {})
+        finishReason = as_str(choice.get('finish_reason'), 'stop')
+        toolCalls = as_list(message.get('tool_calls'), [])
         if not toolCalls:
             currentMessages.append(message)
             break
@@ -260,16 +268,18 @@ async def streamOpenaiSseToClient(upstreamUrl: str, upstreamHeaders: dict[str, s
     yields only SSE data strings.
     """
     body['stream'] = True
-    async for event in _client.streamSse(upstreamUrl, upstreamHeaders, camelToSnake(body)):
-        if event.get('type') == 'error':
-            yield writeOpenaiSseError(event.get('body', str(event.get('error', ''))))
+    bodyJson = cast(dict[str, object], as_dict(camelToSnake(body), {}))
+    async for rawEvent in _client.streamSse(upstreamUrl, upstreamHeaders, bodyJson):
+        event = cast('dict[str, object]', rawEvent)
+        if as_str(event.get('type'), '') == 'error':
+            yield writeOpenaiSseError(as_str(event.get('body'), as_str(event.get('error'), '')))
             yield writeOpenaiSseDone()
             return
         if event.get('_event_type'):
             del event['_event_type']
         yield writeOpenaiSseData(event)
-        choices = event.get('choices', [])
-        if choices and choices[0].get('finish_reason'):
+        choices = as_list(event.get('choices'), [])
+        if choices and isinstance(choices[0], dict) and as_dict(choices[0], {}).get('finish_reason'):
             if event.get('usage'):
                 yield writeOpenaiSseData({'choices': [], 'usage': event['usage']})
             yield writeOpenaiSseDone()

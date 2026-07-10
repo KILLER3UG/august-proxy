@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 
 # Canonical API formats understood by the proxy. Kept in sync with the
 # provider templates (openaiChat / anthropicMessages) plus the OpenAI

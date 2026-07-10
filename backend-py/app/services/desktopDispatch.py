@@ -7,6 +7,8 @@ this layer controls the user's real physical desktop (screen/mouse/keyboard),
 while the browser layer drives an invisible Playwright page.
 """
 from __future__ import annotations
+from typing import Any, Awaitable, Callable
+from app.jsonUtils import as_str, as_int
 from app.services.desktopAutomation import takeScreenshot, getMousePosition, getScreenSize, clickMouse, typeText, pressKey, openUrl, listWindows
 
 async def automateAction(action: str, params: dict[str, object] | None=None) -> dict[str, object] | list[dict[str, object]]:
@@ -17,7 +19,7 @@ async def automateAction(action: str, params: dict[str, object] | None=None) -> 
     (url — opens the default visible browser), ``list_windows``.
     """
     params = params or {}
-    actions: dict[str, object] = {'screenshot': lambda: takeScreenshot(), 'mouse_position': lambda: getMousePosition(), 'screen_size': lambda: getScreenSize(), 'click': lambda: clickMouse(params.get('x', 0), params.get('y', 0), params.get('button', 'left')), 'type': lambda: typeText(params.get('text', '')), 'press': lambda: pressKey(params.get('key', '')), 'navigate': lambda: openUrl(params.get('url', '')), 'list_windows': lambda: listWindows()}
+    actions: dict[str, Callable[[], Awaitable[Any]]] = {'screenshot': lambda: takeScreenshot(), 'mouse_position': lambda: getMousePosition(), 'screen_size': lambda: getScreenSize(), 'click': lambda: clickMouse(as_int(params.get('x'), 0), as_int(params.get('y'), 0), as_str(params.get('button'), 'left')), 'type': lambda: typeText(as_str(params.get('text'), '')), 'press': lambda: pressKey(as_str(params.get('key'), '')), 'navigate': lambda: openUrl(as_str(params.get('url'), '')), 'list_windows': lambda: listWindows()}
     handler = actions.get(action)
     if not handler:
         return {'error': f'Unknown action: {action}'}

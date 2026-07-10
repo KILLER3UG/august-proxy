@@ -1,0 +1,184 @@
+app\providers\clients\anthropic.py:28:41: error: Incompatible types in
+app\adapters\anthropic.py:181:71: error: Item "str" of
+app\adapters\anthropic.py:181:71: error: Item "int" of
+app\adapters\anthropic.py:181:71: error: Item "float" of
+app\adapters\anthropic.py:181:71: error: Item "None" of
+app\adapters\anthropic.py:181:71: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:225:24: error: Item "str" of
+app\adapters\anthropic.py:225:24: error: Item "int" of
+app\adapters\anthropic.py:225:24: error: Item "float" of
+app\adapters\anthropic.py:225:24: error: Item "bool" of
+app\adapters\anthropic.py:225:24: error: Item "None" of
+app\adapters\anthropic.py:225:24: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:226:63: error: Item "str" of
+app\adapters\anthropic.py:226:63: error: Item "int" of
+app\adapters\anthropic.py:226:63: error: Item "float" of
+app\adapters\anthropic.py:226:63: error: Item "bool" of
+app\adapters\anthropic.py:226:63: error: Item "None" of
+app\adapters\anthropic.py:226:63: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:227:26: error: Item "str" of
+app\adapters\anthropic.py:227:26: error: Item "int" of
+app\adapters\anthropic.py:227:26: error: Item "float" of
+app\adapters\anthropic.py:227:26: error: Item "bool" of
+app\adapters\anthropic.py:227:26: error: Item "None" of
+app\adapters\anthropic.py:227:26: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:228:81: error: Item "str" of
+app\adapters\anthropic.py:228:81: error: Item "int" of
+app\adapters\anthropic.py:228:81: error: Item "float" of
+app\adapters\anthropic.py:228:81: error: Item "bool" of
+app\adapters\anthropic.py:228:81: error: Item "None" of
+app\adapters\anthropic.py:228:81: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:228:81: error: Item "str" of
+app\adapters\anthropic.py:228:81: error: Item "int" of
+app\adapters\anthropic.py:228:81: error: Item "float" of
+app\adapters\anthropic.py:228:81: error: Item "None" of
+app\adapters\anthropic.py:228:81: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:229:26: error: Item "str" of
+app\adapters\anthropic.py:229:26: error: Item "int" of
+app\adapters\anthropic.py:229:26: error: Item "float" of
+app\adapters\anthropic.py:229:26: error: Item "bool" of
+app\adapters\anthropic.py:229:26: error: Item "None" of
+app\adapters\anthropic.py:229:26: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:232:60: error: Dict entry 1 has incompatible type
+app\adapters\anthropic.py:264:45: error: Incompatible types in assignment
+app\adapters\anthropic.py:278:41: error: Incompatible types in assignment
+app\adapters\anthropic.py:287:29: error: Unsupported operand types for + ("str"
+app\adapters\anthropic.py:287:29: error: Unsupported operand types for + ("str"
+app\adapters\anthropic.py:287:29: error: Unsupported operand types for + ("str"
+app\adapters\anthropic.py:287:29: error: Unsupported operand types for + ("str"
+app\adapters\anthropic.py:287:29: error: Unsupported operand types for + ("str"
+app\adapters\anthropic.py:287:29: note: Right operand is of type "str | int | float | list[JsonValue] | dict[str, JsonValue] | None"
+app\adapters\anthropic.py:321:61: error: Dict entry 1 has incompatible type
+app\adapters\anthropic.py:321:91: error: Argument 1 to "translateMessages" has
+app\adapters\anthropic.py:331:34: error: Incompatible types in assignment
+app\adapters\anthropic.py:339:35: error: Dict entry 1 has incompatible type
+app\adapters\anthropic.py:339:65: error: Argument 1 to "translateMessages" has
+app\adapters\anthropic.py:350:16: error: Incompatible types in assignment
+app\adapters\anthropic.py:352:18: error: Incompatible types in assignment
+app\adapters\anthropic.py:378:39: error: Incompatible types in assignment
+app\adapters\anthropic.py:391:35: error: Incompatible types in assignment
+app\adapters\anthropic.py:414:248: error: Item "str" of
+app\adapters\anthropic.py:414:248: error: Item "int" of
+app\adapters\anthropic.py:414:248: error: Item "float" of
+app\adapters\anthropic.py:414:248: error: Item "None" of
+app\adapters\anthropic.py:414:248: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:415:31: error: Argument 1 to "enumerate" has
+app\adapters\anthropic.py:417:12: error: Item "str" of
+app\adapters\anthropic.py:417:12: error: Item "int" of
+app\adapters\anthropic.py:417:12: error: Item "float" of
+app\adapters\anthropic.py:417:12: error: Item "None" of
+app\adapters\anthropic.py:417:12: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:418:156: error: Item "str" of
+app\adapters\anthropic.py:418:156: error: Item "int" of
+app\adapters\anthropic.py:418:156: error: Item "float" of
+app\adapters\anthropic.py:418:156: error: Item "None" of
+app\adapters\anthropic.py:418:156: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:419:14: error: Item "str" of
+app\adapters\anthropic.py:419:14: error: Item "int" of
+app\adapters\anthropic.py:419:14: error: Item "float" of
+app\adapters\anthropic.py:419:14: error: Item "None" of
+app\adapters\anthropic.py:419:14: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:420:181: error: Item "str" of
+app\adapters\anthropic.py:420:181: error: Item "int" of
+app\adapters\anthropic.py:420:181: error: Item "float" of
+app\adapters\anthropic.py:420:181: error: Item "None" of
+app\adapters\anthropic.py:420:181: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:423:20: error: Value of type
+app\adapters\anthropic.py:423:20: error: Item "str" of
+app\adapters\anthropic.py:423:20: error: Item "int" of
+app\adapters\anthropic.py:423:20: error: Item "float" of
+app\adapters\anthropic.py:423:20: error: Item "None" of
+app\adapters\anthropic.py:423:20: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:423:28: error: Invalid index type "int" for
+app\adapters\anthropic.py:425:172: error: Item "str" of
+app\adapters\anthropic.py:425:172: error: Item "int" of
+app\adapters\anthropic.py:425:172: error: Item "float" of
+app\adapters\anthropic.py:425:172: error: Item "None" of
+app\adapters\anthropic.py:425:172: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:480:37: error: Unsupported operand types for + ("str"
+app\adapters\anthropic.py:480:37: error: Unsupported operand types for + ("str"
+app\adapters\anthropic.py:480:37: error: Unsupported operand types for + ("str"
+app\adapters\anthropic.py:480:37: error: Unsupported operand types for + ("str"
+app\adapters\anthropic.py:480:37: note: Right operand is of type "str | int | float | list[JsonValue] | dict[str, JsonValue]"
+app\adapters\anthropic.py:488:42: error: Unsupported operand types for + ("str"
+app\adapters\anthropic.py:488:42: error: Unsupported operand types for + ("str"
+app\adapters\anthropic.py:488:42: error: Unsupported operand types for + ("str"
+app\adapters\anthropic.py:488:42: error: Unsupported operand types for + ("str"
+app\adapters\anthropic.py:488:42: note: Right operand is of type "str | int | float | list[JsonValue] | dict[str, JsonValue]"
+app\adapters\anthropic.py:578:17: error: Cannot determine type of
+app\adapters\anthropic.py:578:17: error: Name "currentMessages" is used before
+app\adapters\anthropic.py:583:58: error: Dict entry 1 has incompatible type
+app\adapters\anthropic.py:585:33: error: Incompatible types in assignment
+app\adapters\anthropic.py:587:32: error: Incompatible types in assignment
+app\adapters\anthropic.py:591:83: error: Argument 4 to "requestJson" of
+app\adapters\anthropic.py:593:46: error: Dict entry 0 has incompatible type
+app\adapters\anthropic.py:596:83: error: Argument 4 to "requestJson" of
+app\adapters\anthropic.py:598:45: error: Incompatible types in assignment
+app\adapters\anthropic.py:600:45: error: "ProviderResponse" has no attribute
+app\adapters\anthropic.py:662:17: error: Incompatible types in assignment
+app\adapters\anthropic.py:666:20: error: Unexpected keyword argument
+app\adapters\anthropic.py:666:20: note: "resolve" defined in "app.providers.modelResolver"
+app\adapters\anthropic.py:668:25: error: Incompatible types in assignment
+app\adapters\anthropic.py:671:41: error: Argument 1 to "resolve" has
+app\adapters\anthropic.py:682:27: error: "BaseProviderClient" has no attribute
+app\adapters\anthropic.py:691:54: error: Unsupported left operand type for +
+app\adapters\anthropic.py:691:54: error: Unsupported left operand type for +
+app\adapters\anthropic.py:691:54: note: Left operand is of type "str | int | float | list[JsonValue] | dict[str, JsonValue] | None"
+app\adapters\anthropic.py:691:54: error: Argument 1 to
+app\adapters\anthropic.py:691:68: error: Unsupported operand types for + ("str"
+app\adapters\anthropic.py:691:68: error: Unsupported operand types for + ("int"
+app\adapters\anthropic.py:691:68: error: Unsupported operand types for +
+app\adapters\anthropic.py:700:39: error: Argument 1 to "add" of "set" has
+app\adapters\anthropic.py:701:5: error: Incompatible types in assignment
+app\adapters\anthropic.py:701:14: error: Item "int" of
+app\adapters\anthropic.py:701:14: error: Item "float" of
+app\adapters\anthropic.py:701:14: error: Item "None" of
+app\adapters\anthropic.py:703:40: error: Argument 1 to
+app\adapters\anthropic.py:704:39: error: Argument 1 to "add" of "set" has
+app\adapters\anthropic.py:706:33: error: Argument 1 to "add" of "set" has
+app\adapters\anthropic.py:723:32: error: Incompatible types in assignment
+app\adapters\anthropic.py:725:79: error: Argument 4 to "requestJson" of
+app\adapters\anthropic.py:726:37: error: "ProviderResponse" has no attribute
+app\adapters\anthropic.py:727:12: error: "ProviderResponse" has no attribute
+app\adapters\anthropic.py:728:20: error: Incompatible return value type (got
+app\adapters\anthropic.py:729:19: error: Item "str" of
+app\adapters\anthropic.py:729:19: error: Item "int" of
+app\adapters\anthropic.py:729:19: error: Item "float" of
+app\adapters\anthropic.py:729:19: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:730:32: error: Item "int" of
+app\adapters\anthropic.py:730:32: error: Item "float" of
+app\adapters\anthropic.py:730:49: error: Item "str" of
+app\adapters\anthropic.py:730:49: error: Item "int" of
+app\adapters\anthropic.py:730:49: error: Item "float" of
+app\adapters\anthropic.py:730:49: error: Item "None" of
+app\adapters\anthropic.py:730:49: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:732:76: error: Argument 1 to
+app\adapters\anthropic.py:735:28: error: Item "str" of
+app\adapters\anthropic.py:735:28: error: Item "int" of
+app\adapters\anthropic.py:735:28: error: Item "float" of
+app\adapters\anthropic.py:735:28: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:736:16: error: Incompatible return value type (got
+app\adapters\anthropic.py:742:79: error: Argument 4 to "requestJson" of
+app\adapters\anthropic.py:743:37: error: "ProviderResponse" has no attribute
+app\adapters\anthropic.py:744:12: error: "ProviderResponse" has no attribute
+app\adapters\anthropic.py:745:20: error: Incompatible return value type (got
+app\adapters\anthropic.py:746:53: error: Argument 1 to
+app\adapters\anthropic.py:755:28: error: Incompatible types in assignment
+app\adapters\anthropic.py:758:28: error: Argument 1 to "list" has incompatible
+app\adapters\anthropic.py:760:14: error: Name "AnthropicNativeStreamState" is
+app\adapters\anthropic.py:763:78: error: Argument 3 to "streamSse" of
+app\adapters\anthropic.py:792:32: error: Argument 1 to "append" of "list" has
+app\adapters\anthropic.py:816:28: error: Argument 1 to "list" has incompatible
+app\adapters\anthropic.py:818:14: error: Name "OpenaiToAnthropicStreamState" is
+app\adapters\anthropic.py:821:78: error: Argument 3 to "streamSse" of
+app\adapters\anthropic.py:882:27: error: Item "str" of
+app\adapters\anthropic.py:882:27: error: Item "int" of
+app\adapters\anthropic.py:882:27: error: Item "float" of
+app\adapters\anthropic.py:882:27: error: Item "bool" of
+app\adapters\anthropic.py:882:27: error: Item "None" of
+app\adapters\anthropic.py:882:27: error: Item "list[JsonValue]" of
+app\adapters\anthropic.py:886:12: error: Argument "id" to "AnthropicResponse"
+app\adapters\anthropic.py:899:32: error: Argument 1 to "estimateTokens" has
+app\adapters\anthropic.py:899:42: error: Argument 2 to "estimateTokens" has
+app\adapters\anthropic.py:929:48: error: Dict entry 1 has incompatible type
+app\adapters\anthropic.py:944:57: error: Dict entry 1 has incompatible type
