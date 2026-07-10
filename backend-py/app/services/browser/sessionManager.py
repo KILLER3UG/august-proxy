@@ -11,6 +11,7 @@ the browser engine isn't installed; browser tools then return a clear error.
 from __future__ import annotations
 import asyncio
 import logging
+from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 logger = logging.getLogger(__name__)
 _VIEWPORT = {'width': 1280, 'height': 720}
 _USERAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'

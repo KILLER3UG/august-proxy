@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from app.lib.paths import dataPath
 from app.typeAliases import JsonValue, MemoryEntryDict, FactDict, ProposalDict, SessionRecord, UsageEventDict, MessageDict
+from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 _BRAINFileEnv = 'AUGUST_BRAIN_SQLITE_FILE'
 _DEFAULTBrainFile = 'august_brain.sqlite'
 _TIMEOUTMs = 10000

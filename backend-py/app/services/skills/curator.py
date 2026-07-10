@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 from app.services import skillService
+from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 log = logging.getLogger(__name__)
 _STALEAfterDays = 14
 _ARCHIVEAfterDays = 60
@@ -163,28 +164,30 @@ class SkillCurator:
         now = time.time()
         report: dict[str, object] = {'active': 0, 'staled': [], 'archived': [], 'errors': []}
         for skill in skillService.listAll():
-            if skill.get('created_by', '') != _AGENTCreatedTag:
+            if as_str(skill.get('created_by'), '') != _AGENTCreatedTag:
                 continue
-            name = skill['name']
+            name = as_str(skill['name'], '')
             rec = self._ensure(name)
             if rec.pinned:
-                report['active'] += 1
+                report['active'] = as_int(report['active'], 0) + 1
                 continue
             lastActivity = max(rec.lastUsedAt or 0, rec.lastViewedAt or 0, rec.lastPatchedAt or 0)
             if not lastActivity:
-                lastActivity = skill.get('updatedAt', now)
+                lastActivity = as_float(skill.get('updatedAt'), float(now))
             daysIdle = (now - lastActivity) / 86400
             if rec.state == 'active' and daysIdle >= _STALEAfterDays:
                 if not dryRun:
                     rec.state = 'stale'
                     self._save()
-                report['staled'].append(name)
+                staled = as_list(report['staled'], [])
+                staled.append(name)
             elif rec.state == 'stale' and daysIdle >= _ARCHIVEAfterDays:
                 if not dryRun:
                     self.archive(name)
-                report['archived'].append(name)
+                archived = as_list(report['archived'], [])
+                archived.append(name)
             else:
-                report['active'] += 1
+                report['active'] = as_int(report['active'], 0) + 1
         return report
 
 def makeBackgroundCurator(dataDir: Path | None=None) -> tuple[SkillCurator, asyncio.Task]:

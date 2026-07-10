@@ -21,6 +21,7 @@ Custom-store entry filtering:
 """
 from __future__ import annotations
 from typing import Callable, Optional
+from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 from app.services import configService
 _storeCache: Optional[dict[str, object]] = None
 _invalidationCallbacks: list[Callable[[], None]] = []
@@ -68,11 +69,12 @@ def _customEntry(nameOrId: str) -> Optional[dict[str, object]]:
     target = nameOrId.lower()
     idMatch: Optional[dict[str, object]] = None
     nameMatch: Optional[dict[str, object]] = None
-    for entry in store.get('providers', []):
-        if entry.get('id', '').lower() == target and idMatch is None:
-            idMatch = entry
-        if entry.get('name', '').lower() == target and nameMatch is None:
-            nameMatch = entry
+    for entry in as_list(store.get('providers'), []):
+        if isinstance(entry, dict):
+            if as_str(entry.get('id'), '').lower() == target and idMatch is None:
+                idMatch = entry
+            if as_str(entry.get('name'), '').lower() == target and nameMatch is None:
+                nameMatch = entry
     return idMatch or nameMatch
 
 def _customProviderDict(entry: dict[str, object]) -> dict[str, object]:
@@ -94,7 +96,7 @@ def _customProviderDict(entry: dict[str, object]) -> dict[str, object]:
         tmplProfiles = tmpl.get('modelProfiles', {}) or {}
         tmplHeaders = tmpl.get('defaultHeaders', {}) or {}
         tmplEnv = tmpl.get('envVars', []) or []
-    return {'name': entry.get('name', ''), 'id': entry.get('id', ''), 'displayName': entry.get('displayName', entry.get('name', '')), 'description': entry.get('description', tmpl.get('description', '') if tmpl else ''), 'aliases': tmpl.get('aliases', []) if tmpl else [], 'baseUrl': entry.get('baseUrl', ''), 'apiMode': entry.get('apiFormat', 'openaiChat'), 'api_key': entry.get('apiKey', ''), 'is_custom': True, 'envVars': entry.get('envVars', tmplEnv), 'authType': entry.get('authType', tmpl.get('authType', 'api_key') if tmpl else 'api_key'), 'modelProfiles': entry.get('modelProfiles', tmplProfiles), 'defaultModel': entry.get('defaultModel', tmpl.get('defaultModel', '') if tmpl else ''), 'fallbackModels': entry.get('fallbackModels', tmpl.get('fallbackModels', []) if tmpl else []), 'signupUrl': entry.get('signupUrl', tmpl.get('signupUrl', '') if tmpl else ''), 'supportsHealthCheck': entry.get('supportsHealthCheck', tmpl.get('supportsHealthCheck', False) if tmpl else False), 'defaultMaxTokens': entry.get('defaultMaxTokens', tmpl.get('defaultMaxTokens', 4096) if tmpl else 4096), 'defaultHeaders': entry.get('defaultHeaders', tmplHeaders)}
+    return {'name': as_str(entry.get('name'), ''), 'id': as_str(entry.get('id'), ''), 'displayName': as_str(entry.get('displayName'), as_str(entry.get('name'), '')), 'description': as_str(entry.get('description'), as_str(tmpl.get('description'), '') if tmpl else ''), 'aliases': as_list(tmpl.get('aliases'), []) if tmpl else [], 'baseUrl': as_str(entry.get('baseUrl'), ''), 'apiMode': as_str(entry.get('apiFormat'), 'openaiChat'), 'api_key': as_str(entry.get('apiKey'), ''), 'is_custom': True, 'envVars': as_list(entry.get('envVars'), tmplEnv), 'authType': as_str(entry.get('authType'), as_str(tmpl.get('authType'), 'api_key') if tmpl else 'api_key'), 'modelProfiles': as_dict(entry.get('modelProfiles'), tmplProfiles), 'defaultModel': as_str(entry.get('defaultModel'), as_str(tmpl.get('defaultModel'), '') if tmpl else ''), 'fallbackModels': as_list(entry.get('fallbackModels'), as_list(tmpl.get('fallbackModels'), []) if tmpl else []), 'signupUrl': as_str(entry.get('signupUrl'), as_str(tmpl.get('signupUrl'), '') if tmpl else ''), 'supportsHealthCheck': entry.get('supportsHealthCheck', tmpl.get('supportsHealthCheck', False) if tmpl else False), 'defaultMaxTokens': as_int(entry.get('defaultMaxTokens'), as_int(tmpl.get('defaultMaxTokens'), 4096) if tmpl else 4096), 'defaultHeaders': as_dict(entry.get('defaultHeaders'), tmplHeaders)}
 
 def resolve(nameOrId: str) -> Optional[dict[str, object]]:
     """Return ``{"provider": ..., "api_key": ..., "baseUrl": ..., "apiMode": ...}`` or ``None``.
@@ -109,8 +111,8 @@ def resolve(nameOrId: str) -> Optional[dict[str, object]]:
         return None
     custom = _customEntry(nameOrId)
     if custom and custom.get('enabled') and custom.get('apiKey'):
-        apiKey = custom.get('apiKey', '') or ''
-        return {'provider': _customProviderDict(custom), 'api_key': apiKey, 'baseUrl': custom.get('baseUrl', ''), 'apiMode': custom.get('apiFormat', 'openaiChat'), 'source': 'custom_store'}
+        apiKey = as_str(custom.get('apiKey'), '')
+        return {'provider': _customProviderDict(custom), 'api_key': apiKey, 'baseUrl': as_str(custom.get('baseUrl'), ''), 'apiMode': as_str(custom.get('apiFormat'), 'openaiChat'), 'source': 'custom_store'}
     from app.providers import resolver as providerResolver
     from app.providers.clients import getClient
     provider = providerResolver.resolve(nameOrId)
@@ -118,5 +120,5 @@ def resolve(nameOrId: str) -> Optional[dict[str, object]]:
         return None
     client = getClient(provider) if provider else None
     apiKey = client.resolveApiKey() if client else None
-    return {'provider': provider, 'api_key': apiKey or '', 'baseUrl': provider.get('baseUrl', ''), 'apiMode': provider.get('apiMode', ''), 'source': 'registry'}
+    return {'provider': provider, 'api_key': apiKey or '', 'baseUrl': as_str(provider.get('baseUrl'), ''), 'apiMode': as_str(provider.get('apiMode'), ''), 'source': 'registry'}
 registerInvalidationCallback(invalidate)

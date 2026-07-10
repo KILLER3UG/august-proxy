@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from app.adapters import anthropic as anthropicAdapter
 from app.adapters import openai as openaiAdapter
+from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.lib.gatewayAuth import requireGatewayKey
 from app.providers import resolver as providerResolver
 from app.services import logger as trafficLogger
@@ -74,28 +75,28 @@ async def _trackRequest(endpoint: str, body: dict[str, object], request: Request
     stream) so the entry is finalized — otherwise it lingers in pending
     until the stale-cleanup sweep.
     """
-    model = body.get('model', 'unknown')
-    reqId = trafficLogger.startRequest({'model': model, 'provider': model, 'clientType': _clientTypeFor(endpoint), 'endpoint': f'/v1/{endpoint}', 'method': request.method if hasattr(request, 'method') else 'POST', 'path': f'/v1/{endpoint}', 'sessionId': body.get('sessionId') or body.get('session_id') or ''})
+    model = as_str(body.get('model'), 'unknown')
+    reqId = trafficLogger.startRequest({'model': model, 'provider': model, 'clientType': _clientTypeFor(endpoint), 'endpoint': f'/v1/{endpoint}', 'method': request.method if hasattr(request, 'method') else 'POST', 'path': f'/v1/{endpoint}', 'sessionId': as_str(body.get('sessionId')) or as_str(body.get('session_id')) or ''})
     trafficLogger.captureRequest(reqId, body)
     trafficLogger.logActivity('request_start', f'{_clientTypeFor(endpoint)} /v1/{endpoint} → {model}')
     _emit('proxy_incoming', 'info', f'{_clientTypeFor(endpoint)} /v1/{endpoint} → {model}', {
         'model': model,
         'endpoint': endpoint,
-        'sessionId': body.get('sessionId') or body.get('session_id') or '',
+        'sessionId': as_str(body.get('sessionId')) or as_str(body.get('session_id')) or '',
     })
     return reqId
 
 def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
     """Finalize a non-streaming request: capture response/tokens, end it."""
     if 'error' in result:
-        trafficLogger.capture_error(reqId, str(result.get('error'))[:500])
+        trafficLogger.capture_error(reqId, as_str(result.get('error'))[:500])
         trafficLogger.capture_response(reqId, result)
-        trafficLogger.endRequest(reqId, {'error': str(result.get('error'))})
+        trafficLogger.endRequest(reqId, {'error': as_str(result.get('error'))})
         trafficLogger.logActivity('request_error', f"[{reqId}] {result.get('error')}")
         _emit('error', 'error', f'Proxy request failed: {result.get("error")}', {'reqId': reqId})
         return result
     trafficLogger.capture_response(reqId, result)
-    usage = result.get('usage') or {}
+    usage = as_dict(result.get('usage'), {})
     inT = _safeInt(usage.get('prompt_tokens') or usage.get('input_tokens'))
     outT = _safeInt(usage.get('completion_tokens') or usage.get('output_tokens'))
     if inT or outT:
@@ -106,7 +107,7 @@ def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
         'reqId': reqId,
         'inputTokens': inT,
         'outputTokens': outT,
-        'model': result.get('model', 'unknown'),
+        'model': as_str(result.get('model'), 'unknown'),
     })
     return result
 
@@ -220,21 +221,23 @@ def _translateToResponsesFormat(chatCompletion: dict) -> dict:
     """Translate a Chat Completions response to Responses API format."""
     import uuid
     import time
-    choices = chatCompletion.get('choices', [])
+    choices = as_list(chatCompletion.get('choices'), [])
     choice = choices[0] if choices else {}
-    message = choice.get('message', {})
-    finishReason = choice.get('finish_reason', 'stop')
-    usage = chatCompletion.get('usage', {})
+    message = as_dict(choice.get('message'), {})
+    finishReason = as_str(choice.get('finish_reason'), 'stop')
+    usage = as_dict(chatCompletion.get('usage'), {})
     outputItems = []
-    reasoning = message.get('reasoning') or message.get('reasoning_content', '')
+    reasoning = as_str(message.get('reasoning')) or as_str(message.get('reasoning_content'), '')
     if reasoning:
         outputItems.append({'id': f'item_{uuid.uuid4().hex[:8]}', 'type': 'reasoning', 'status': 'completed', 'content': reasoning})
-    for tc in message.get('tool_calls', []):
-        outputItems.append({'id': tc.get('id', f'call_{uuid.uuid4().hex[:8]}'), 'type': 'function_call', 'status': 'completed', 'name': tc.get('function', {}).get('name', ''), 'arguments': tc.get('function', {}).get('arguments', ''), 'call_id': tc.get('id', '')})
-    content = message.get('content', '')
+    for tc_raw in as_list(message.get('tool_calls'), []):
+        tc = as_dict(tc_raw)
+        func = as_dict(tc.get('function'), {})
+        outputItems.append({'id': as_str(tc.get('id'), f'call_{uuid.uuid4().hex[:8]}'), 'type': 'function_call', 'status': 'completed', 'name': as_str(func.get('name'), ''), 'arguments': as_str(func.get('arguments'), ''), 'call_id': as_str(tc.get('id'), '')})
+    content = as_str(message.get('content'), '')
     if content:
         outputItems.append({'id': f'msg_{uuid.uuid4().hex[:8]}', 'type': 'message', 'status': 'completed', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': content}]})
-    return {'id': f'resp_{uuid.uuid4().hex[:12]}', 'object': 'response', 'created_at': int(time.time()), 'status': 'completed', 'model': chatCompletion.get('model', ''), 'output': outputItems, 'usage': {'input_tokens': usage.get('prompt_tokens', 0), 'output_tokens': usage.get('completion_tokens', 0), 'total_tokens': usage.get('total_tokens', 0)}}
+    return {'id': f'resp_{uuid.uuid4().hex[:12]}', 'object': 'response', 'created_at': int(time.time()), 'status': 'completed', 'model': as_str(chatCompletion.get('model'), ''), 'output': outputItems, 'usage': {'input_tokens': as_int(usage.get('prompt_tokens'), 0), 'output_tokens': as_int(usage.get('completion_tokens'), 0), 'total_tokens': as_int(usage.get('total_tokens'), 0)}}
 
 @router.get('/v1/models')
 async def listModels(_auth: bool=Depends(requireGatewayKey)):
@@ -242,10 +245,10 @@ async def listModels(_auth: bool=Depends(requireGatewayKey)):
     providers = providerResolver.listAvailable()
     models = []
     for p in providers:
-        name = p.get('name', '')
-        modelProfiles = p.get('model_profiles', {})
+        name = as_str(p.get('name'), '')
+        modelProfiles = as_dict(p.get('model_profiles'), {})
         for modelId, profile in modelProfiles.items():
             if modelId == '*':
                 continue
-            models.append({'id': modelId, 'provider': name, 'object': 'model', 'context_window': profile.get('contextWindow', 0), 'max_output_tokens': profile.get('maxOutputTokens', 0)})
+            models.append({'id': modelId, 'provider': name, 'object': 'model', 'context_window': as_int(profile.get('contextWindow'), 0), 'max_output_tokens': as_int(profile.get('maxOutputTokens'), 0)})
     return {'object': 'list', 'data': models}

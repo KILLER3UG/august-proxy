@@ -38,9 +38,9 @@ export function ProviderSetupWidget({ setup }: { setup: ProviderSetupResult }) {
     setMessage('');
     try {
       await providersApi.applyKey(providerId, key.trim());
-      queryClient.invalidateQueries({ queryKey: ['providers'] });
-      queryClient.invalidateQueries({ queryKey: ['model-options'] });
-      queryClient.invalidateQueries({ queryKey: ['aggregated-models'] });
+      void queryClient.invalidateQueries({ queryKey: ['providers'] });
+      void queryClient.invalidateQueries({ queryKey: ['model-options'] });
+      void queryClient.invalidateQueries({ queryKey: ['aggregated-models'] });
       setStatus('ok');
       setMessage('API key saved. This provider is ready to use.');
       setKey('');
@@ -95,7 +95,7 @@ export function ProviderSetupWidget({ setup }: { setup: ProviderSetupResult }) {
               value={key}
               onChange={(e) => setKey(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') apply();
+                if (e.key === 'Enter') void apply();
               }}
               placeholder="sk-..."
               autoComplete="off"
@@ -116,7 +116,7 @@ export function ProviderSetupWidget({ setup }: { setup: ProviderSetupResult }) {
             {status === 'err' && (
               <span className="text-[10px] text-destructive truncate mr-auto">{message}</span>
             )}
-            <Button type="button" size="sm" onClick={apply} disabled={!canApply}>
+            <Button type="button" size="sm" onClick={() => void apply()} disabled={!canApply}>
               {applying ? <Loader2 className="size-3 mr-1 animate-spin" /> : <Key className="size-3 mr-1" />}
               {applying ? 'Saving…' : 'Apply key'}
             </Button>

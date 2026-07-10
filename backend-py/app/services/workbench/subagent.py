@@ -11,11 +11,12 @@ emitted to the parent session's SSE stream as ``subagent_*`` events.
 from __future__ import annotations
 import uuid
 from typing import Callable
+from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
 from app.services.tools.agentRegistry import _MAXAgentDepth, createJob, deriveChildPermissions, evaluateAgentTool, getAgent, renderAgentContext, updateJob
 from app.services.workbench.context import currentSessionId
 
 def _toolName(t: dict[str, object]) -> str:
-    return t.get('name') or (t.get('function') or {}).get('name', '')
+    return as_str(t.get('name')) or as_str(as_dict(t.get('function')).get('name', ''))
 
 def _agentOrGeneral(agentId: str, parentAlias: str) -> dict[str, object]:
     """Return the persisted agent, or a synthetic 'general' fallback."""
@@ -25,11 +26,11 @@ def _agentOrGeneral(agentId: str, parentAlias: str) -> dict[str, object]:
     return {'id': 'general', 'name': 'General', 'role': 'General', 'description': 'General-purpose fallback sub-agent.', 'permissions': ['all'], 'modelAlias': parentAlias, 'depth': 0, '_synthetic': True}
 
 def _toolAllowed(agent: dict[str, object], name: str) -> bool:
-    if 'all' in (agent.get('permissions') or []):
+    if 'all' in as_list(agent.get('permissions'), []):
         return True
-    aid = agent.get('id')
-    if aid and (not agent.get('_synthetic')) and getAgent(aid):
-        return bool(evaluateAgentTool(aid, name).get('allowed'))
+    aid = as_str(agent.get('id'))
+    if aid and (not as_bool(agent.get('_synthetic', False))) and getAgent(aid):
+        return bool(as_bool(evaluateAgentTool(aid, name).get('allowed', False)))
     return True
 
 async def executeSubAgent(session: object, agentId: str, goal: str, context: str='', emit: Callable[[dict[str, object]], None] | None=None) -> dict[str, object]:
@@ -41,8 +42,8 @@ async def executeSubAgent(session: object, agentId: str, goal: str, context: str
     from app.services.workbench.workbench import MAX_MANAGED_TOOL_ROUNDS, _callAnthropicWorkbench, _callOpenaiWorkbench, _extractText, _isAnthropicProvider, _isOpenaiProvider, _resolveModel, _resolveWorkbenchProvider, openaiToolDefinitions, toolDefinitions
     parentAlias = getattr(session, 'model', '') or ''
     agent = _agentOrGeneral(agentId, parentAlias)
-    resolvedAgentId = agent.get('id') or agentId
-    depth = int(agent.get('depth', 0) or 0)
+    resolvedAgentId = as_str(agent.get('id')) or agentId
+    depth = as_int(agent.get('depth', 0))
     if depth >= _MAXAgentDepth:
         msg = f'Sub-agent depth cap reached ({depth} >= {_MAXAgentDepth}).'
         if emit:
@@ -52,25 +53,25 @@ async def executeSubAgent(session: object, agentId: str, goal: str, context: str
     updateJob(job['id'], {'status': 'running'})
     jobId = job['id']
     if emit:
-        emit({'type': 'subagentStart', 'agentId': resolvedAgentId, 'jobId': jobId, 'name': agent.get('name', 'General'), 'role': agent.get('role', ''), 'goal': goal})
-    aliasHint = agent.get('modelAlias') or parentAlias or ''
+        emit({'type': 'subagentStart', 'agentId': resolvedAgentId, 'jobId': jobId, 'name': as_str(agent.get('name'), 'General'), 'role': as_str(agent.get('role'), ''), 'goal': goal})
+    aliasHint = as_str(agent.get('modelAlias')) or parentAlias or ''
     resolution = resolveOrFallback(aliasHint, provider_hint=getattr(session, 'provider', '') or '')
-    model = (resolution or {}).get('model') or aliasHint or ''
-    providerName = (resolution or {}).get('provider') or ''
-    isFallback = bool((resolution or {}).get('is_fallback'))
+    model = as_str((resolution or {}).get('model')) or aliasHint or ''
+    providerName = as_str((resolution or {}).get('provider')) or ''
+    isFallback = as_bool((resolution or {}).get('is_fallback', False))
     provider = _resolveWorkbenchProvider(providerName, model)
     if not provider:
         provider = resolveForModel(model, providerName) if model else None
     fb = getFallback()
-    if fb.get('enabled') and fb.get('mode') != 'off' and (fb.get('provider') or fb.get('model')):
-        fbModel = fb.get('model') or model
-        fbProvider = resolveForModel(fbModel, fb.get('provider') or '')
+    if as_bool(fb.get('enabled', False)) and as_str(fb.get('mode')) != 'off' and (as_str(fb.get('provider')) or as_str(fb.get('model'))):
+        fbModel = as_str(fb.get('model')) or model
+        fbProvider = resolveForModel(fbModel, as_str(fb.get('provider')) or '')
         if fbProvider:
             provider = fbProvider
             model = fbModel
             isFallback = True
             if emit:
-                emit({'type': 'warning', 'kind': 'model_fallback', 'agentId': resolvedAgentId, 'message': f"Sub-agent using fallback {fb.get('provider')}/{fbModel}"})
+                emit({'type': 'warning', 'kind': 'model_fallback', 'agentId': resolvedAgentId, 'message': f"Sub-agent using fallback {as_str(fb.get('provider'))}/{fbModel}"})
     if not provider:
         err = 'No provider available for sub-agent.'
         if emit:
@@ -78,12 +79,12 @@ async def executeSubAgent(session: object, agentId: str, goal: str, context: str
         updateJob(jobId, {'status': 'failed', 'error': err})
         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
     resolvedModel = _resolveModel(provider, model)
-    agentCtx = renderAgentContext(resolvedAgentId) if not agent.get('_synthetic') else ''
+    agentCtx = renderAgentContext(resolvedAgentId) if not as_bool(agent.get('_synthetic', False)) else ''
     if not agentCtx:
-        agentCtx = f"Agent: {agent.get('name', 'General')}\nRole: {agent.get('role', 'General')}"
+        agentCtx = f"Agent: {as_str(agent.get('name'), 'General')}\nRole: {as_str(agent.get('role'), 'General')}"
     systemText = f'{agentCtx}\n\nYou are a focused sub-agent. Complete the assigned goal using the available tools, then return a concise final answer. Do not spawn further sub-agents.'
     parentId = getattr(session, 'agent_id', '') or None
-    if parentId and (not agent.get('_synthetic')):
+    if parentId and (not as_bool(agent.get('_synthetic', False))):
         try:
             deriveChildPermissions(parentId, resolvedAgentId)
         except Exception:
@@ -99,8 +100,8 @@ async def executeSubAgent(session: object, agentId: str, goal: str, context: str
     def _subEmit(ev: dict[str, object]) -> None:
         if not emit:
             return
-        if ev.get('type') == 'finalOutput':
-            emit({'type': 'subagentText', 'agentId': resolvedAgentId, 'jobId': jobId, 'content': ev.get('content', '')})
+        if as_str(ev.get('type')) == 'finalOutput':
+            emit({'type': 'subagentText', 'agentId': resolvedAgentId, 'jobId': jobId, 'content': as_str(ev.get('content'), '')})
     messages: list[dict[str, object]] = [{'role': 'user', 'content': f'Goal: {goal}\n\nContext: {context}' if context else f'Goal: {goal}'}]
     finalText = ''
     token = currentSessionId.set(getattr(session, 'id', 'default'))
@@ -112,22 +113,22 @@ async def executeSubAgent(session: object, agentId: str, goal: str, context: str
                 response = await _callOpenaiWorkbench(messages, systemText, resolvedModel, openaiTools, 'medium', provider=provider, emit=_subEmit)
             else:
                 break
-            if response.get('error'):
+            if as_str(response.get('error')):
                 if emit:
                     emit({'type': 'subagentText', 'agentId': resolvedAgentId, 'jobId': jobId, 'content': f"[error] {response['error']}"})
                 break
             if isAnthropic:
-                contentBlocks = response.get('content', [])
+                contentBlocks = as_list(response.get('content'), [])
                 assistantMsg = {'role': 'assistant', 'content': contentBlocks}
                 textContent = _extractText(contentBlocks)
-                toolUses = [b for b in contentBlocks if b.get('type') == 'tool_use']
+                toolUses = [b for b in contentBlocks if as_str(b.get('type')) == 'tool_use']
             else:
-                choices = response.get('choices', [])
+                choices = as_list(response.get('choices'), [])
                 choice = choices[0] if choices else {}
-                msg = choice.get('message', {})
-                assistantMsg = {'role': 'assistant', 'content': msg.get('content', ''), 'tool_calls': msg.get('tool_calls', [])}
-                textContent = response.get('text', '')
-                toolUses = response.get('tool_uses', [])
+                msg = as_dict(choice.get('message'), {})
+                assistantMsg = {'role': 'assistant', 'content': as_str(msg.get('content'), ''), 'tool_calls': as_list(msg.get('tool_calls'), [])}
+                textContent = as_str(response.get('text'), '')
+                toolUses = as_list(response.get('tool_uses'), [])
             if textContent:
                 finalText += textContent
             if not toolUses:
@@ -135,9 +136,9 @@ async def executeSubAgent(session: object, agentId: str, goal: str, context: str
             messages.append(assistantMsg)
             toolResults: list[dict[str, object]] = []
             for tu in toolUses:
-                tName = tu.get('name', '')
-                tInput = tu.get('input', {}) or {}
-                tId = tu.get('id', f'toolu_{uuid.uuid4().hex[:16]}')
+                tName = as_str(tu.get('name'), '')
+                tInput = as_dict(tu.get('input'), {})
+                tId = as_str(tu.get('id'), f'toolu_{uuid.uuid4().hex[:16]}')
                 if not _toolAllowed(agent, tName) or tName == 'spawn_subagent':
                     result = f"[Blocked] Sub-agent not permitted to use '{tName}'."
                     status = 'blocked'

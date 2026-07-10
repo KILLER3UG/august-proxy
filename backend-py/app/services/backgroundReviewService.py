@@ -17,6 +17,7 @@ When empty, the chat session's model is used for that task.
 from __future__ import annotations
 import json
 from app.config import settings
+from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.lib.paths import dataPath
 from app.services.memoryStore import recordConfigAudit
 _DEFAULTConfig: dict[str, object] = {'enabled': False, 'reviewModel': '', 'reflectionModel': '', 'autoMemoryModel': ''}

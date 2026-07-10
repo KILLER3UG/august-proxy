@@ -42,6 +42,7 @@ from app.config import settings
 from app.models.aliases import AliasMapping, AliasResolutionResult
 from app.providers import resolver as providerResolver
 from app.providers.routeResolver import resolveForModel
+from app.jsonUtils import as_str, as_dict
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +176,7 @@ def resolveAlias(
         if routed is not None and _hasCredentials(routed):
             return AliasResolutionResult(
                 alias=normalized,
-                provider=routed.get("name", "unknown"),
+                provider=as_str(routed.get("name"), "unknown"),
                 model=normalized,
                 displayModel=normalized,
                 isFallback=False,
@@ -189,7 +190,7 @@ def resolveAlias(
     if routed is not None and _hasCredentials(routed):
         return AliasResolutionResult(
             alias=normalized,
-            provider=routed.get("name", "unknown"),
+            provider=as_str(routed.get("name"), "unknown"),
             model=normalized,
             displayModel=normalized,
             isFallback=False,
@@ -207,8 +208,8 @@ def resolveAlias(
         )
         return AliasResolutionResult(
             alias=normalized,
-            provider=provider_name,
-            model=model,
+            provider=as_str(provider_name, "active"),
+            model=as_str(model, normalized),
             displayModel=normalized,
             isFallback=True,
             isDirect=False,

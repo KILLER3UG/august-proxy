@@ -17,6 +17,7 @@ from app.services.browser.elementResolver import resolveLocator
 from app.services.browser.sessionManager import BrowserUnavailableError, getOrCreateSession, getSession
 from app.services.browser.snapshot import buildCompactSnapshot, runSnapshot
 from app.services.workbench.context import currentSessionId
+from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 _NAVTimeoutMs = 30000
 _MAXContentChars = 50000
 

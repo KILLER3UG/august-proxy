@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.providers import resolver
 from app.providers.template_loader import getTemplates, getTemplate
+from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
 from app.services import configService
 from app.services import modelService
 router = APIRouter(prefix='/api/providers')
@@ -61,14 +62,14 @@ def _provider_to_dict(p: object) -> dict:
     # Fallback for raw dicts
     pd = dict(p) if isinstance(p, dict) else {}
     return {
-        'id': pd.get('id', ''),
-        'name': pd.get('name', ''),
-        'baseUrl': pd.get('baseUrl', ''),
-        'apiFormat': pd.get('apiFormat', ''),
-        'enabled': pd.get('enabled', False),
+        'id': as_str(pd.get('id', '')),
+        'name': as_str(pd.get('name', '')),
+        'baseUrl': as_str(pd.get('baseUrl', '')),
+        'apiFormat': as_str(pd.get('apiFormat', '')),
+        'enabled': as_bool(pd.get('enabled', False)),
         'apiKeySet': bool(pd.get('apiKey')),
-        'autoFetch': pd.get('autoFetch', False),
-        'models': pd.get('models', []),
+        'autoFetch': as_bool(pd.get('autoFetch', False)),
+        'models': as_list(pd.get('models', [])),
     }
 
 
@@ -97,19 +98,19 @@ async def createProvider(body: ProviderCreate):
         tmpl = getTemplate(body.template)
         if tmpl:
             if not baseUrl:
-                baseUrl = tmpl.get('baseUrl', '')
+                baseUrl = as_str(tmpl.get('baseUrl', ''))
             if not apiFormat or apiFormat == 'openaiChat':
-                apiFormat = tmpl.get('apiFormat', 'openaiChat')
-            profiles = tmpl.get('modelProfiles', {})
-            for key in profiles:
+                apiFormat = as_str(tmpl.get('apiFormat', 'openaiChat'))
+            profiles = as_dict(tmpl.get('modelProfiles', {}))
+            for key, val in profiles.items():
                 if key != '*':
-                    profile = profiles[key]
-                    models.append({'id': key, 'name': key, 'contextWindow': profile.get('contextWindow', 128000), 'reasoning': profile.get('supportsReasoning', False), 'free': False, 'source': 'template'})
+                    profile = as_dict(val)
+                    models.append({'id': key, 'name': key, 'contextWindow': as_int(profile.get('contextWindow', 128000)), 'reasoning': as_bool(profile.get('supportsReasoning', False)), 'free': False, 'source': 'template'})
     slug = body.name.lower().replace(' ', '-')[:40]
     rand = hashlib.md5(str(time.time()).encode()).hexdigest()[:6]
     providerId = f'{slug}-{rand}'
     entry = {'id': providerId, 'name': body.name, 'baseUrl': baseUrl, 'apiFormat': apiFormat, 'apiKey': body.apiKey, 'enabled': body.enabled, 'autoFetch': False, 'models': models}
-    providers_list = store.get('providers', [])
+    providers_list = as_list(store.get('providers', []))
     if not isinstance(providers_list, list):
         providers_list = []
     providers_list.append(entry)
@@ -123,7 +124,7 @@ async def createProvider(body: ProviderCreate):
 async def importProviderConfig(body: dict):
     """Import a provider config from a JSON blob (paste from clipboard / export)."""
     store = configService.getProvidersStore()
-    providers_list = store.get('providers', [])
+    providers_list = as_list(store.get('providers', []))
     if not isinstance(providers_list, list):
         providers_list = []
     entry = {'id': body.get('id', ''), 'name': body.get('name', 'Imported Provider'), 'baseUrl': body.get('baseUrl', ''), 'apiFormat': body.get('apiFormat', 'openaiChat'), 'apiKey': body.get('apiKey', ''), 'enabled': body.get('enabled', True), 'autoFetch': body.get('autoFetch', False), 'models': body.get('models', [])}
@@ -145,13 +146,13 @@ async def getProvider(providerId: str):
 @router.put('/{providerId}')
 async def updateProvider(providerId: str, body: ProviderUpdate):
     store = configService.getProvidersStore()
-    providers_list = store.get('providers', [])
+    providers_list = as_list(store.get('providers', []))
     if not isinstance(providers_list, list):
         providers_list = []
     for p in providers_list:
         if not isinstance(p, dict):
             continue
-        if p.get('id') == providerId:
+        if as_str(p.get('id', '')) == providerId:
             if body.name is not None:
                 p['name'] = body.name
             if body.baseUrl is not None:
@@ -176,11 +177,11 @@ async def patchProvider(providerId: str, body: ProviderUpdate):
 @router.delete('/{providerId}')
 async def deleteProvider(providerId: str):
     store = configService.getProvidersStore()
-    providers_list = store.get('providers', [])
+    providers_list = as_list(store.get('providers', []))
     if not isinstance(providers_list, list):
         providers_list = []
     before = len(providers_list)
-    store['providers'] = [p for p in providers_list if not (isinstance(p, dict) and p.get('id') == providerId)]
+    store['providers'] = [p for p in providers_list if not (isinstance(p, dict) and as_str(p.get('id', '')) == providerId)]
     if len(store['providers']) == before:
         raise HTTPException(status_code=404, detail='Provider not found')
     configService.saveProvidersStore(store)
@@ -195,21 +196,21 @@ async def refreshModels(providerId: str):
     Returns added/updated/removed model ID arrays for the frontend.
     """
     store = configService.getProvidersStore()
-    providers_list = store.get('providers', [])
+    providers_list = as_list(store.get('providers', []))
     if not isinstance(providers_list, list):
         providers_list = []
     for p in providers_list:
         if not isinstance(p, dict):
             continue
-        if p.get('id') != providerId:
+        if as_str(p.get('id', '')) != providerId:
             continue
-        currentModels = p.get('models', [])
+        currentModels = as_list(p.get('models', []))
         if not isinstance(currentModels, list):
             currentModels = []
-        currentIds = {m['id'] for m in currentModels if isinstance(m, dict) and m.get('id')}
+        currentIds = {m['id'] for m in currentModels if isinstance(m, dict) and as_str(m.get('id', ''))}
         liveModels: list[str] = []
-        baseUrl = str(p.get('baseUrl', ''))
-        apiKey = str(p.get('apiKey', ''))
+        baseUrl = as_str(p.get('baseUrl', ''))
+        apiKey = as_str(p.get('apiKey', ''))
         if baseUrl and apiKey:
             try:
                 import httpx
@@ -232,14 +233,14 @@ async def refreshModels(providerId: str):
                                 data = resp.json()
                                 raw = data.get('data', data.get('models', data if isinstance(data, list) else []))
                                 if isinstance(raw, list):
-                                    liveModels = [m['id'] for m in raw if isinstance(m, dict) and m.get('id')]
+                                    liveModels = [m['id'] for m in raw if isinstance(m, dict) and as_str(m.get('id', ''))]
                                 break
                         except Exception:
                             continue
                         data = resp.json()
                         raw = data.get('data', data.get('models', data if isinstance(data, list) else []))
                         if isinstance(raw, list):
-                            liveModels = [m['id'] for m in raw if isinstance(m, dict) and m.get('id')]
+                            liveModels = [m['id'] for m in raw if isinstance(m, dict) and as_str(m.get('id', ''))]
             except Exception:
                 pass
         liveIds = set(liveModels)
@@ -264,12 +265,12 @@ async def providersHealth():
 @router.post('/{providerId}/models')
 async def addModel(providerId: str, body: ModelCreate):
     store = configService.getProvidersStore()
-    providers_list = store.get('providers', [])
+    providers_list = as_list(store.get('providers', []))
     if not isinstance(providers_list, list):
         providers_list = []
     for p in providers_list:
-        if p.get('id') == providerId:
-            p_models = p.setdefault('models', [])
+        if as_str(p.get('id', '')) == providerId:
+            p_models = as_list(p.setdefault('models', []))
             p_models.append({'id': body.id, 'name': body.name or body.id, 'contextWindow': body.contextWindow or 128000, 'reasoning': body.reasoning or False, 'free': body.free or False, 'source': 'manual'})
             configService.saveProvidersStore(store)
             modelService.invalidateCache()
@@ -280,13 +281,13 @@ async def addModel(providerId: str, body: ModelCreate):
 @router.patch('/{providerId}/models/{modelId}')
 async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
     store = configService.getProvidersStore()
-    providers_list = store.get('providers', [])
+    providers_list = as_list(store.get('providers', []))
     if not isinstance(providers_list, list):
         providers_list = []
     for p in providers_list:
-        if p.get('id') == providerId:
-            for m in p.get('models', []):
-                if m.get('id') == modelId:
+        if as_str(p.get('id', '')) == providerId:
+            for m in as_list(p.get('models', [])):
+                if as_str(m.get('id', '')) == modelId:
                     if body.name is not None:
                         m['name'] = body.name
                     if body.contextWindow is not None:
@@ -305,16 +306,16 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
 @router.delete('/{providerId}/models/{modelId}')
 async def deleteModel(providerId: str, modelId: str):
     store = configService.getProvidersStore()
-    providers_list = store.get('providers', [])
+    providers_list = as_list(store.get('providers', []))
     if not isinstance(providers_list, list):
         providers_list = []
     for p in providers_list:
-        if p.get('id') == providerId:
-            p_models = p.get('models', [])
+        if as_str(p.get('id', '')) == providerId:
+            p_models = as_list(p.get('models', []))
             if not isinstance(p_models, list):
                 p_models = []
             before = len(p_models)
-            p['models'] = [m for m in p_models if m.get('id') != modelId]
+            p['models'] = [m for m in p_models if as_str(m.get('id', '')) != modelId]
             if len(p['models']) == before:
                 raise HTTPException(status_code=404, detail='Model not found')
             configService.saveProvidersStore(store)

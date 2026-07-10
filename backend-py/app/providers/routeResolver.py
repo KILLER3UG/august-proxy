@@ -17,6 +17,7 @@ Resolution order:
 """
 from __future__ import annotations
 from typing import Optional
+from app.jsonUtils import as_dict, as_list
 from app.providers import resolver
 
 def _hasCredentials(provider: dict[str, object]) -> bool:
@@ -43,10 +44,10 @@ def resolveForModel(modelId: str, hint: Optional[str]=None) -> Optional[dict[str
         for p in providers:
             if p['name'].lower() == hint.lower():
                 return p
-            if hint.lower() in [a.lower() for a in p.get('aliases', [])]:
+            if hint.lower() in [a.lower() for a in as_list(p.get('aliases'), [])]:
                 return p
     for p in providers:
-        profiles = p.get('model_profiles', {})
+        profiles = as_dict(p.get('model_profiles'), {})
         if (modelId in profiles or modelLower in {k.lower() for k in profiles}) and _hasCredentials(p):
             return p
     for p in providers:
@@ -54,16 +55,16 @@ def resolveForModel(modelId: str, hint: Optional[str]=None) -> Optional[dict[str
         if modelLower.startswith(pname) and _hasCredentials(p):
             return p
     for p in providers:
-        profiles = p.get('model_profiles', {})
+        profiles = as_dict(p.get('model_profiles'), {})
         for profileKey in profiles:
             if profileKey != '*' and modelLower.startswith(profileKey.lower()) and _hasCredentials(p):
                 return p
     for p in providers:
-        for alias in p.get('aliases', []):
+        for alias in as_list(p.get('aliases'), []):
             if modelLower.startswith(alias.lower()) and _hasCredentials(p):
                 return p
     for p in providers:
-        profiles = p.get('model_profiles', {})
+        profiles = as_dict(p.get('model_profiles'), {})
         if modelId in profiles or modelLower in {k.lower() for k in profiles}:
             return p
     for p in providers:
@@ -71,12 +72,12 @@ def resolveForModel(modelId: str, hint: Optional[str]=None) -> Optional[dict[str
         if modelLower.startswith(pname):
             return p
     for p in providers:
-        profiles = p.get('model_profiles', {})
+        profiles = as_dict(p.get('model_profiles'), {})
         for profileKey in profiles:
             if profileKey != '*' and modelLower.startswith(profileKey.lower()):
                 return p
     for p in providers:
-        for alias in p.get('aliases', []):
+        for alias in as_list(p.get('aliases'), []):
             if modelLower.startswith(alias.lower()):
                 return p
     return providers[0] if providers else None

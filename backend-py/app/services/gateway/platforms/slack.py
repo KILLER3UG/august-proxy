@@ -28,6 +28,7 @@ import asyncio
 import logging
 import os
 from typing import Optional
+from app.jsonUtils import as_str, as_dict
 from app.services.gateway.base import BasePlatformAdapter, MessageEvent, SessionSource
 log = logging.getLogger(__name__)
 
@@ -60,14 +61,14 @@ class SlackAdapter(BasePlatformAdapter):
             async def _onMessage(client, request: SocketModeRequest) -> None:
                 if request.type == 'events_api':
                     payload = request.payload
-                    event = payload.get('event', {})
-                    if event.get('type') == 'message' and 'text' in event:
-                        if event.get('bot_id') or event.get('subtype') == 'bot_message':
+                    event = as_dict(payload.get('event'), {})
+                    if as_str(event.get('type')) == 'message' and 'text' in event:
+                        if as_str(event.get('bot_id')) or as_str(event.get('subtype')) == 'bot_message':
                             return
-                        await self.handleIncoming({'event': event, 'team_id': payload.get('team_id', ''), 'api_app_id': payload.get('api_app_id', '')})
+                        await self.handleIncoming({'event': event, 'team_id': as_str(payload.get('team_id'), ''), 'api_app_id': as_str(payload.get('api_app_id'), '')})
             self._socketClient.socket_mode_request_listeners.append(_onMessage)
             auth = await asyncio.get_event_loop().run_in_executor(None, lambda: self._client.auth_test())
-            log.info('slack: connected as %s', auth.get('user', '?'))
+            log.info('slack: connected as %s', as_str(auth.get('user'), '?'))
             return True
         except ImportError:
             log.error('slack: slack_sdk not installed (run: pip install slack_sdk)')
@@ -124,21 +125,21 @@ class SlackAdapter(BasePlatformAdapter):
             return {'name': chatId, 'type': 'dm'}
         try:
             info = await asyncio.get_event_loop().run_in_executor(None, lambda: self._client.conversations_info(channel=chatId))
-            channel = info.get('channel', {})
-            return {'name': channel.get('name', chatId), 'type': channel.get('is_im', False) and 'dm' or 'channel'}
+            channel = as_dict(info.get('channel'), {})
+            return {'name': as_str(channel.get('name'), chatId), 'type': channel.get('is_im', False) and 'dm' or 'channel'}
         except Exception:
             return {'name': chatId, 'type': 'dm'}
 
     async def normalize(self, raw: dict[str, object]) -> Optional[MessageEvent]:
         """Convert a Slack Socket Mode payload into a MessageEvent."""
-        event = raw.get('event', {})
-        text = event.get('text', '')
+        event = as_dict(raw.get('event'), {})
+        text = as_str(event.get('text'), '')
         if not text:
             return None
-        channel = event.get('channel', '')
-        user = event.get('user', '')
-        threadTs = event.get('thread_ts', event.get('ts', ''))
-        channelType = event.get('channel_type', 'im')
+        channel = as_str(event.get('channel'), '')
+        user = as_str(event.get('user'), '')
+        threadTs = as_str(event.get('thread_ts'), as_str(event.get('ts'), ''))
+        channelType = as_str(event.get('channel_type'), 'im')
         chatTypeMap = {'im': 'dm', 'group': 'group', 'channel': 'channel', 'mpim': 'group'}
         chatType = chatTypeMap.get(channelType, 'dm')
-        return MessageEvent(source=SessionSource(platform='slack', chat_id=channel, user_id=user, thread_id=threadTs, message_id=event.get('ts', ''), chat_type=chatType), text=text, raw=raw)
+        return MessageEvent(source=SessionSource(platform='slack', chat_id=channel, user_id=user, thread_id=threadTs, message_id=as_str(event.get('ts'), ''), chat_type=chatType), text=text, raw=raw)

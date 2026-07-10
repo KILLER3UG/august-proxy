@@ -14,6 +14,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import Optional
+from app.jsonUtils import as_str, as_dict, as_list, as_int
 SKILLS_DIR = Path(__file__).resolve().parent.parent.parent.parent / 'skills'
 
 def _agentSkillsDir() -> Path:
@@ -75,7 +76,7 @@ def _parseSkill(path: Path) -> Optional[dict[str, object]]:
     stat = path.stat()
     return {'name': frontmatter.get('name', path.parent.name), 'description': frontmatter.get('description', ''), 'trigger': frontmatter.get('trigger', ''), 'category': frontmatter.get('category', 'uncategorized'), 'enabled': frontmatter.get('disabled', 'false').lower() != 'true', 'created_by': frontmatter.get('created_by', ''), 'instructions': body, 'path': str(path), 'updatedAt': stat.st_mtime}
 
-def _renderSkillMd(frontmatter: dict[str, object], body: str) -> str:
+def _renderSkillMd(frontmatter: dict[str, str], body: str) -> str:
     lines = ['---']
     for key in ('name', 'description', 'trigger', 'category', 'created_by'):
         val = frontmatter.get(key)
@@ -113,9 +114,9 @@ def listAll() -> list[dict[str, object]]:
             parsed = _parseSkill(md)
             if not parsed:
                 continue
-            if parsed['name'] in seen:
+            if as_str(parsed['name'], '') in seen:
                 continue
-            seen.add(parsed['name'])
+            seen.add(as_str(parsed['name'], ''))
             skills.append(parsed)
     return skills
 
@@ -130,7 +131,7 @@ def search(query: str='', category: str='', enabledOnly: bool=True) -> list[dict
         if category and s.get('category', '') != category:
             continue
         if q:
-            if q in s['name'].lower() or q in s.get('description', '').lower() or q in s.get('trigger', '').lower():
+            if q in as_str(s['name'], '').lower() or q in as_str(s.get('description'), '').lower() or q in as_str(s.get('trigger'), '').lower():
                 results.append(s)
         else:
             results.append(s)
@@ -213,7 +214,7 @@ def patchSkill(name: str, *, body: Optional[str]=None, description: Optional[str
     m = re.match('^---\\s*\\n(.*?)\\n---\\s*\\n(.*)', text, re.DOTALL)
     if not m:
         raise SkillValidationError(f"Skill '{name}' has malformed frontmatter.")
-    frontmatter: dict[str, object] = {}
+    frontmatter: dict[str, str] = {}
     for line in m.group(1).split('\n'):
         if ':' in line:
             key, __, val = line.partition(':')

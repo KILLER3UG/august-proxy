@@ -27,6 +27,7 @@ import asyncio
 import logging
 import os
 from typing import Optional
+from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.services.gateway.base import BasePlatformAdapter, MessageEvent, SessionSource
 log = logging.getLogger(__name__)
 _TELEGRAMApi = 'https://api.telegram.org/bot'
@@ -64,10 +65,10 @@ class TelegramAdapter(BasePlatformAdapter):
         self._client = httpx.AsyncClient()
         me = await self._request('getMe')
         if not me.get('ok'):
-            log.error('telegram: getMe failed: %s', me.get('description'))
+            log.error('telegram: getMe failed: %s', as_str(me.get('description')))
             await self.disconnect()
             return False
-        log.info('telegram: connected as @%s', me.get('result', {}).get('username', '?'))
+        log.info('telegram: connected as @%s', as_str(as_dict(me.get('result'), {}).get('username'), '?'))
         return True
 
     async def disconnect(self) -> None:
@@ -80,15 +81,15 @@ class TelegramAdapter(BasePlatformAdapter):
 
     async def start(self) -> None:
         """Optionally set the webhook; if no base_url configured, start polling."""
-        baseUrl = self.config.get('baseUrl', '')
-        webhookPath = self.config.get('webhook_path', '/api/gateway/telegram/webhook')
+        baseUrl = as_str(self.config.get('baseUrl'), '')
+        webhookPath = as_str(self.config.get('webhook_path'), '/api/gateway/telegram/webhook')
         if baseUrl:
             webhookUrl = f"{baseUrl.rstrip('/')}/{webhookPath.lstrip('/')}"
             r = await self._request('setWebhook', url=webhookUrl)
             if r.get('ok'):
                 log.info('telegram: webhook set to %s', webhookUrl)
             else:
-                log.warning('telegram: setWebhook failed: %s', r.get('description'))
+                log.warning('telegram: setWebhook failed: %s', as_str(r.get('description')))
         else:
             self._pollTask = asyncio.create_task(self._pollLoop())
 
@@ -106,9 +107,9 @@ class TelegramAdapter(BasePlatformAdapter):
             try:
                 r = await self._request('getUpdates', offset=offset, timeout=30)
                 if r.get('ok'):
-                    for update in r.get('result', []):
+                    for update in as_list(r.get('result'), []):
                         await self.handleIncoming(update)
-                        offset = update.get('update_id', offset) + 1
+                        offset = as_int(update.get('update_id'), offset) + 1
                     retries = 0
                 else:
                     retries += 1
@@ -134,16 +135,16 @@ class TelegramAdapter(BasePlatformAdapter):
 
     async def getChatInfo(self, chatId: str) -> dict[str, object]:
         r = await self._request('getChat', chat_id=chatId)
-        return r.get('result', {}) if r.get('ok') else {'name': str(chatId), 'type': 'dm'}
+        return as_dict(r.get('result'), {}) if r.get('ok') else {'name': str(chatId), 'type': 'dm'}
 
     async def normalize(self, raw: dict[str, object]) -> Optional[MessageEvent]:
         """Convert a Telegram webhook update dict into a MessageEvent."""
-        message = raw.get('message') or raw.get('edited_message')
+        message = as_dict(raw.get('message')) or as_dict(raw.get('edited_message'))
         if not message:
             return None
-        text = message.get('text', '')
+        text = as_str(message.get('text'), '')
         if not text:
             return None
-        chat = message.get('chat', {})
-        _from = message.get('from', {})
-        return MessageEvent(source=SessionSource(platform='telegram', chatId=str(chat.get('id', '')), userId=str(_from.get('id', '')), threadId=str(message.get('message_thread_id', '')), messageId=str(message.get('message_id', '')), chatType=chat.get('type', 'dm')), text=text, raw=raw)
+        chat = as_dict(message.get('chat'), {})
+        _from = as_dict(message.get('from'), {})
+        return MessageEvent(source=SessionSource(platform='telegram', chatId=as_str(chat.get('id'), ''), userId=as_str(_from.get('id'), ''), threadId=as_str(message.get('message_thread_id'), ''), messageId=as_str(message.get('message_id'), ''), chatType=as_str(chat.get('type'), 'dm')), text=text, raw=raw)

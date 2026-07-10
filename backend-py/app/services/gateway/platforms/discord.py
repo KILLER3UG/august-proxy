@@ -26,6 +26,7 @@ import asyncio
 import logging
 import os
 from typing import Optional
+from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.services.gateway.base import BasePlatformAdapter, MessageEvent, SessionSource
 log = logging.getLogger(__name__)
 

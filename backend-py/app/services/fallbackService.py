@@ -8,6 +8,7 @@ config is finally live.
 """
 from __future__ import annotations
 from app.config import settings
+from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.lib.paths import dataPath
 from app.services.memoryStore import recordConfigAudit
 _DEFAULTFallback: dict[str, object] = {'enabled': False, 'mode': 'off', 'provider': '', 'model': ''}
@@ -44,9 +45,9 @@ def configureFallback(enabled: bool | None=None, mode: str | None=None, provider
         after['provider'] = provider
     if model is not None:
         after['model'] = model
-    if after.get('enabled') and after.get('mode') != 'off':
-        prov = after.get('provider', '')
-        mdl = after.get('model', '')
+    if after.get('enabled') and as_str(after.get('mode'), '') != 'off':
+        prov = as_str(after.get('provider'), '')
+        mdl = as_str(after.get('model'), '')
         if prov or mdl:
             from app.services.aliasService import validateTarget
             ok, msg = validateTarget(prov, mdl)

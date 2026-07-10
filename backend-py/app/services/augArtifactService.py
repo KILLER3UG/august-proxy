@@ -23,6 +23,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import Optional
+from app.jsonUtils import as_str, as_dict, as_list, as_int
 
 _PLANS_DIR = 'plans'
 _TODOS_DIR = 'todoList'
@@ -92,7 +93,7 @@ def savePlan(workspacePath: str | None, sessionId: str, plan: dict[str, object],
     slug = slugify(title) + '-' + _sessionSuffix(sessionId)
     dirPath = base / _PLANS_DIR / slug
     dirPath.mkdir(parents=True, exist_ok=True)
-    meta = {
+    meta: dict[str, object] = {
         'sessionId': sessionId,
         'title': title,
         'slug': slug,
@@ -113,7 +114,7 @@ def saveTodos(workspacePath: str | None, sessionId: str, todos: list[dict[str, o
     slug = slugify(effectiveTitle) + '-' + _sessionSuffix(sessionId)
     dirPath = base / _TODOS_DIR / slug
     dirPath.mkdir(parents=True, exist_ok=True)
-    meta = {
+    meta: dict[str, object] = {
         'sessionId': sessionId,
         'title': effectiveTitle,
         'slug': slug,

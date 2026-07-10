@@ -34,6 +34,7 @@ Response shapes (match the frontend types):
 """
 from __future__ import annotations
 from app.config import settings
+from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 from app.services import configService
 from app.services.memory.brainOrchestrator import DEFAULT_FEATURES
 from app.services.memoryStore import recordConfigAudit

@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 import httpx
 from app.config import settings
+from app.jsonUtils import as_str, as_list, as_dict, as_int
 from app.providers import resolver as providerResolver
 from app.providers.clients import getClient
 _modelCache: list[dict[str, object]] | None = None
@@ -48,12 +49,12 @@ def _deriveModelsUrl(baseUrl: str) -> str | None:
 def _getContextWindow(modelId: str, provider: dict[str, object] | None=None, fallback: int | None=None) -> int:
     """Resolve context window from provider profile or inference."""
     if provider:
-        profiles = provider.get('modelProfiles', {})
+        profiles = as_dict(provider.get('modelProfiles'), {})
         for key in [modelId] + [k for k in profiles if modelId.startswith(k)]:
-            profile = profiles.get(key)
+            profile = as_dict(profiles.get(key))
             if isinstance(profile, dict) and profile.get('contextWindow'):
                 return profile['contextWindow']
-        wildcard = profiles.get('*', {})
+        wildcard = as_dict(profiles.get('*'), {})
         if isinstance(wildcard, dict) and wildcard.get('contextWindow'):
             return wildcard['contextWindow']
     return fallback or 128000
@@ -80,7 +81,7 @@ def _prettifyModelBase(base: str) -> str:
 
 def _getModelDisplayAlias(model: dict[str, object]) -> str:
     """Generate a display alias for a model."""
-    modelId = model.get('id', '')
+    modelId = as_str(model.get('id'), '')
     base = modelId.split('/')[-1].split(':')[-1] if '/' in modelId or ':' in modelId else modelId
     tag = ''
     for pattern, label in [('-fast$', 'Fast'), ('-thinking$', 'Thinking'), ('-preview$', 'Preview'), ('-latest$', 'Latest'), (':free$', 'Free'), ('-free$', 'Free')]:
@@ -101,7 +102,7 @@ async def _fetchProviderModels(provider: dict[str, object], timeoutS: float=5.0)
         return []
     apiKey = client.resolveApiKey()
     baseUrl = client.resolveBaseUrl()
-    providerName = provider.get('name', '')
+    providerName = as_str(provider.get('name'), '')
     modelsUrl = _deriveModelsUrl(baseUrl)
     if modelsUrl and apiKey:
         try:
@@ -116,14 +117,14 @@ async def _fetchProviderModels(provider: dict[str, object], timeoutS: float=5.0)
             pass
     static = _STATICModelLists.get(providerName, [])
     if not static:
-        defaultModel = provider.get('defaultModel')
+        defaultModel = as_str(provider.get('defaultModel'))
         if defaultModel:
             static = [{'id': defaultModel, 'contextWindow': _getContextWindow(defaultModel, provider)}]
-        fallbackModels = provider.get('fallbackModels', [])
+        fallbackModels = as_list(provider.get('fallbackModels'), [])
         for fm in fallbackModels:
             if not any((s['id'] == fm for s in static)):
                 static.append({'id': fm, 'contextWindow': _getContextWindow(fm, provider)})
-    return [{'id': m['id'], 'name': m['id'], 'provider': providerName, 'contextWindow': m.get('contextWindow', 128000)} for m in static]
+    return [{'id': m['id'], 'name': m['id'], 'provider': providerName, 'contextWindow': as_int(m.get('contextWindow'), 128000)} for m in static]
 
 async def _aggregateModels() -> list[dict[str, object]]:
     """Aggregate models from providers + alias models for /v1/models.
@@ -139,14 +140,16 @@ async def _aggregateModels() -> list[dict[str, object]]:
     allModels: list[dict[str, object]] = []
     try:
         store = settings.providers
-        for entry in store.get('providers', []):
+        for entry_raw in as_list(store.get('providers'), []):
+            entry = as_dict(entry_raw)
             if not entry.get('enabled') or not entry.get('apiKey'):
                 continue
-            for m in entry.get('models', []):
+            for m_raw in as_list(entry.get('models'), []):
+                m = as_dict(m_raw)
                 import re
                 mid = m['id']
                 reasoning = m.get('reasoning', False) or bool(re.search('\\b(o1|o3|reasoner|thinking|reasoning)\\b', mid, re.IGNORECASE))
-                allModels.append({'id': mid, 'name': m.get('name', mid), 'provider': entry['name'], 'contextWindow': m.get('contextWindow', 128000), 'supportsReasoning': reasoning, 'supportsThinking': reasoning, 'isFree': m.get('free', False) or _isFreeModelId(m['id'])})
+                allModels.append({'id': mid, 'name': as_str(m.get('name'), mid), 'provider': entry['name'], 'contextWindow': as_int(m.get('contextWindow'), 128000), 'supportsReasoning': reasoning, 'supportsThinking': reasoning, 'isFree': m.get('free', False) or _isFreeModelId(m['id'])})
     except Exception:
         pass
     # Inject alias models so /v1/models exposes them alongside provider models.
@@ -162,7 +165,7 @@ async def _aggregateModels() -> list[dict[str, object]]:
         if mid not in seen or (m.get('isFree') and (not seen[mid].get('isFree'))):
             seen[mid] = m
     result = list(seen.values())
-    result.sort(key=lambda m: (0 if m.get('isFree') else 1, m.get('id', '')))
+    result.sort(key=lambda m: (0 if m.get('isFree') else 1, as_str(m.get('id'), '')))
     return result
 
 async def aggregate(refresh: bool=False) -> list[dict[str, object]]:

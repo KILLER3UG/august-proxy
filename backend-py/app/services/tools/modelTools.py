@@ -13,7 +13,8 @@ This is a pure function — trivially testable.
 from __future__ import annotations
 from dataclasses import dataclass, field
 from app.services.tools.retrieval import buildToolCatalog, searchTools, buildQueryFromMessages
-AUGUST_CORE_TOOLS: frozenset[str] = frozenset({'read_file', 'write_file', 'list_directory', 'search_files', 'run_command', 'web_fetch', 'web_search', 'memory_search', 'fact_search', 'context_read', 'brain_query', 'load_skill', 'list_skills', 'skill_manage', 'spawn_subagent', 'diagnose_proxy', 'describe_environment', 'tool_search', 'tool_describe', 'tool_call', 'update_heuristics', 'update_state', 'write_scratchpad', 'spawn_daemon', 'list_daemons', 'kill_daemon', 'write_blackboard', 'read_blackboard', 'clear_blackboard'})
+from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
+AUGUST_CORE_TOOLS: frozenset[str] = frozenset({'read_file', 'write_file', 'list_directory', 'search_files', 'run_command', 'web_fetch', 'web_search', 'memory_search', 'fact_search', 'context_read', 'brain_query', 'load_skill', 'list_skills', 'skill_manage', 'spawn_subagent', 'diagnose_proxy', 'describe_environment', 'tool_search', 'tool_describe', 'tool_call', 'update_heuristics', 'update_state', 'write_scratchpad', 'spawn_daemon', 'list_daemons', 'kill_daemon', 'write_blackboard', 'read_blackboard', 'clear_blackboard', 'setup_provider'})
 
 @dataclass
 class AssemblyResult:
@@ -42,7 +43,7 @@ def assembleToolDefs(allToolDefs: list[dict], contextMessages: list[dict] | None
     if coreToolNames is None:
         coreToolNames = set(AUGUST_CORE_TOOLS)
     result = AssemblyResult()
-    result.threshold_tokens = int(contextLength * thresholdPct / 100)
+    result.thresholdTokens = int(contextLength * thresholdPct / 100)
     coreDefs: list[dict] = []
     deferrableDefs: list[dict] = []
     deferrableTokens = 0
@@ -53,13 +54,13 @@ def assembleToolDefs(allToolDefs: list[dict], contextMessages: list[dict] | None
         else:
             deferrableDefs.append(td)
             deferrableTokens += _estimateToolTokens(td)
-    result.deferred_tokens = deferrableTokens
-    if deferrableTokens < result.threshold_tokens or not deferrableDefs:
-        result.tool_defs = coreDefs + deferrableDefs
+    result.deferredTokens = deferrableTokens
+    if deferrableTokens < result.thresholdTokens or not deferrableDefs:
+        result.toolDefs = coreDefs + deferrableDefs
         result.activated = False
         return result
     result.activated = True
-    result.deferred_count = len(deferrableDefs)
+    result.deferredCount = len(deferrableDefs)
     query = ''
     if contextMessages:
         query = buildQueryFromMessages(contextMessages)
@@ -68,8 +69,8 @@ def assembleToolDefs(allToolDefs: list[dict], contextMessages: list[dict] | None
         preloadedNames = searchTools(catalog, query, k=preloadK)
     else:
         preloadedNames = [td.get('name', '') if isinstance(td, dict) else '' for td in deferrableDefs[:preloadK]]
-    result.preloaded_tools = preloadedNames
-    result.preloaded_tool_count = len(preloadedNames)
+    result.preloadedTools = preloadedNames
+    result.preloadedToolCount = len(preloadedNames)
     autoSkills: list[str] = []
     if skillIndex and query:
         from app.services.tools.retrieval import buildSkillCatalog, searchSkills
@@ -77,8 +78,8 @@ def assembleToolDefs(allToolDefs: list[dict], contextMessages: list[dict] | None
         autoSkills = searchSkills(skCatalog, query, j=autoPrimeJ)
     elif skillIndex:
         autoSkills = [s.get('name', '') if isinstance(s, dict) else str(s) for s in skillIndex[:autoPrimeJ]]
-    result.auto_loaded_skills = autoSkills
-    result.auto_loaded_skill_count = len(autoSkills)
+    result.autoLoadedSkills = autoSkills
+    result.autoLoadedSkillCount = len(autoSkills)
     preloadedDefs: list[dict] = []
     for td in deferrableDefs:
         name = td.get('name', '') if isinstance(td, dict) else ''
@@ -87,12 +88,12 @@ def assembleToolDefs(allToolDefs: list[dict], contextMessages: list[dict] | None
     totalTokens = sum((_estimateToolTokens(t) for t in coreDefs))
     totalTokens += sum((_estimateToolTokens(t) for t in preloadedDefs))
     totalTokens += sum((_estimateToolTokens(t) for t in _BRIDGEToolDefs))
-    if totalTokens >= result.threshold_tokens:
-        result.auto_loaded_skills = []
-        result.auto_loaded_skill_count = 0
-    while totalTokens >= result.threshold_tokens and len(preloadedDefs) > 3:
+    if totalTokens >= result.thresholdTokens:
+        result.autoLoadedSkills = []
+        result.autoLoadedSkillCount = 0
+    while totalTokens >= result.thresholdTokens and len(preloadedDefs) > 3:
         removed = preloadedDefs.pop()
         totalTokens -= _estimateToolTokens(removed)
-        result.preloaded_tool_count = len(preloadedDefs)
-    result.tool_defs = coreDefs + preloadedDefs + _BRIDGEToolDefs
+        result.preloadedToolCount = len(preloadedDefs)
+    result.toolDefs = coreDefs + preloadedDefs + _BRIDGEToolDefs
     return result

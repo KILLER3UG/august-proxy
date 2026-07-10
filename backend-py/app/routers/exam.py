@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import time
 from fastapi import APIRouter, HTTPException
+from app.jsonUtils import as_str, as_int, as_list
 from app.services.memoryStore import _conn
 from app.services import examService
 router = APIRouter(prefix='/api/exam')
@@ -18,14 +19,16 @@ def _db():
 @router.post('/generate')
 async def generateExam(body: dict[str, object]):
     """Generate a new exam via Prefrontal. Topic can be a string or derived from uploaded files."""
-    topic = (body.get('topic') or '').strip()
-    count = min(int(body.get('count', 5)), 50)
-    difficulty = body.get('difficulty', 'medium')
-    model = body.get('model') or ''
-    if isinstance(model, dict):
-        model = model.get('id', '')
-    provider = body.get('provider') or ''
-    files = body.get('files') or []
+    topic = as_str(body.get('topic')).strip()
+    count = min(as_int(body.get('count'), 5), 50)
+    difficulty = as_str(body.get('difficulty'), 'medium')
+    model_raw = body.get('model')
+    if isinstance(model_raw, dict):
+        model = as_str(model_raw.get('id'), '')
+    else:
+        model = as_str(model_raw)
+    provider = as_str(body.get('provider'))
+    files = as_list(body.get('files'), [])
     if not topic and (not files):
         raise HTTPException(status_code=400, detail='topic or files required')
     context = ''
@@ -49,7 +52,7 @@ async def generateExam(body: dict[str, object]):
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     conn = _db()
-    source = 'files' if files else 'topic' if body.get('topic') else 'model'
+    source = 'files' if files else 'topic' if as_str(body.get('topic')) else 'model'
     cur = conn.execute('INSERT INTO exams (title, topic, source, sourceFiles) VALUES (?, ?, ?, ?)', (f'Exam: {topic[:80]}', topic, source, sourceFiles))
     examId = cur.lastrowid
     for i, q in enumerate(questions):
@@ -62,12 +65,14 @@ async def generateExam(body: dict[str, object]):
 @router.post('/{examId}/questions')
 async def addQuestion(examId: int, body: dict[str, object]):
     """Add a user-requested question. The model authors it (origin='user-requested')."""
-    requestText = (body.get('request') or '').strip()
+    requestText = as_str(body.get('request')).strip()
     afterPosition = body.get('after_position')
-    model = body.get('model') or ''
-    if isinstance(model, dict):
-        model = model.get('id', '')
-    provider = body.get('provider') or ''
+    model_raw = body.get('model')
+    if isinstance(model_raw, dict):
+        model = as_str(model_raw.get('id'), '')
+    else:
+        model = as_str(model_raw)
+    provider = as_str(body.get('provider'))
     conn = _db()
     exam = conn.execute('SELECT topic FROM exams WHERE id = ?', (examId,)).fetchone()
     if not exam:
@@ -123,7 +128,7 @@ async def answerQuestion(examId: int, body: dict[str, object]):
 async def helpQuestion(examId: int, body: dict[str, object]):
     """Explain a question via Prefrontal without revealing the answer in the banner state."""
     questionId = body.get('questionId')
-    ask = body.get('ask', '')
+    ask = as_str(body.get('ask'), '')
     conn = _db()
     q = conn.execute('SELECT stem, options FROM examQuestions WHERE id = ? AND examId = ?', (questionId, examId)).fetchone()
     if not q:

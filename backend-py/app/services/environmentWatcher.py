@@ -12,6 +12,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from typing import Callable
+from app.jsonUtils import as_str, as_int, as_float
 logger = logging.getLogger(__name__)
 _POLLInterval = 5
 _RATELimit = 2.0
@@ -34,7 +35,7 @@ def getRecentChanges(sessionId: str, maxAgeSeconds: int=300) -> list[dict]:
     """v2: Return recent environment changes for the session."""
     cutoff = time.time() - maxAgeSeconds
     changes = _recentChanges.get(sessionId, [])
-    return [c for c in changes if c.get('timestamp', 0) >= cutoff]
+    return [c for c in changes if as_float(c.get('timestamp'), 0.0) >= cutoff]
 
 def recordChange(sessionId: str, change: dict) -> None:
     """v2: Record an environment change (called by EnvironmentWatcher on emit)."""

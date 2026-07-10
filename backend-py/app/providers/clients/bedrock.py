@@ -7,6 +7,7 @@ when boto3 is not installed.
 """
 from __future__ import annotations
 from typing import AsyncIterator
+from app.jsonUtils import as_str, as_dict, as_list
 from app.providers.clients.base import BaseProviderClient, ProviderResponse
 
 class BedrockClient(BaseProviderClient):
@@ -28,7 +29,7 @@ class BedrockClient(BaseProviderClient):
             return self._bedrockRuntime
         try:
             import boto3
-            region = self.config.get('region', self._resolveEnv('AWS_REGION', 'us-east-1'))
+            region = as_str(self.config.get('region'), self._resolveEnv('AWS_REGION', 'us-east-1'))
             self._bedrockRuntime = boto3.client('bedrock-runtime', region_name=region)
             return self._bedrockRuntime
         except ImportError:
@@ -56,10 +57,10 @@ class BedrockClient(BaseProviderClient):
         br = self._br
         if br is None:
             return ProviderResponse(status=0, body={'error': 'boto3 is not installed. Install with: pip install boto3'})
-        modelId = body.get('model', self.config.get('defaultModel', ''))
-        messages = body.get('messages', [])
-        system = body.get('system', [])
-        toolConfig = self._buildToolConfig(body.get('tools', []))
+        modelId = as_str(body.get('model'), as_str(self.config.get('defaultModel'), ''))
+        messages = as_list(body.get('messages'), [])
+        system = as_list(body.get('system'), [])
+        toolConfig = self._buildToolConfig(as_list(body.get('tools'), []))
         try:
             import asyncio
             response = await asyncio.to_thread(br.converse, modelId=modelId, messages=messages, system=system, toolConfig=toolConfig, **self._extractInferenceConfig(body))
@@ -73,10 +74,10 @@ class BedrockClient(BaseProviderClient):
         if br is None:
             yield {'type': 'error', 'error': 'boto3 is not installed'}
             return
-        modelId = body.get('model', self.config.get('defaultModel', ''))
-        messages = body.get('messages', [])
-        system = body.get('system', [])
-        toolConfig = self._buildToolConfig(body.get('tools', []))
+        modelId = as_str(body.get('model'), as_str(self.config.get('defaultModel'), ''))
+        messages = as_list(body.get('messages'), [])
+        system = as_list(body.get('system'), [])
+        toolConfig = self._buildToolConfig(as_list(body.get('tools'), []))
         try:
             import asyncio
             response = await asyncio.to_thread(br.converse_stream, modelId=modelId, messages=messages, system=system, toolConfig=toolConfig, **self._extractInferenceConfig(body))
@@ -107,6 +108,6 @@ class BedrockClient(BaseProviderClient):
             return {}
         bedrockTools = []
         for tool in tools:
-            func = tool.get('function', tool)
-            bedrockTools.append({'toolSpec': {'name': func.get('name', ''), 'description': func.get('description', ''), 'inputSchema': {'json': func.get('parameters', func.get('input_schema', {}))}}})
+            func = as_dict(tool.get('function'), {})
+            bedrockTools.append({'toolSpec': {'name': as_str(func.get('name'), ''), 'description': as_str(func.get('description'), ''), 'inputSchema': {'json': as_dict(func.get('parameters'), as_dict(func.get('input_schema'), {}))}}})
         return {'tools': bedrockTools}

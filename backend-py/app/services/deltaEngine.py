@@ -19,6 +19,7 @@ import os
 import time
 from difflib import unified_diff as unifiedDiff
 from pathlib import Path
+from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.services.heuristicsService import addHeuristic
 logger = logging.getLogger(__name__)
 _TRACKWindowSeconds = 86400
@@ -123,7 +124,7 @@ def flushQueue() -> list[str]:
     for entry in _diffQueue:
         for patternName, detector in _LOCALPatterns.items():
             try:
-                rule = detector(entry.get('original', ''), entry.get('edited', ''))
+                rule = detector(as_str(entry.get('original'), ''), as_str(entry.get('edited'), ''))
                 if rule:
                     addHeuristic(rule, source='local-diff', category='coding_style')
                     localRules.append(rule)
@@ -192,7 +193,7 @@ def _inferLlmRule(entry: dict) -> str | None:
     a placeholder.
     """
     try:
-        diffText = entry.get('diff', '')[:2000]
+        diffText = as_str(entry.get('diff'), '')[:2000]
         return _callHippocampus(diffText)
     except Exception:
         return None
