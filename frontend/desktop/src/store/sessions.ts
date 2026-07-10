@@ -49,7 +49,7 @@ const loadSessions = (): Session[] => {
   if (saved) {
     try {
       return JSON.parse(saved);
-    } catch {}
+    } catch { /* silent */ }
   }
   return [];
 };
@@ -59,7 +59,7 @@ const loadFolders = (): Folder[] => {
   if (saved) {
     try {
       return JSON.parse(saved);
-    } catch {}
+    } catch { /* silent */ }
   }
   return [];
 };
@@ -271,8 +271,8 @@ export function findOrCreateSessionForPath(
   // the folder so they appear grouped (satisfies the "group existing sessions"
   // requirement). moveSessionToFolder persists the change.
   for (const s of $sessions.get()) {
-    if (s.workspacePath === normalized && s.folderId !== folder!.id) {
-      moveSessionToFolder(s.id, folder!.id);
+    if (s.workspacePath === normalized && s.folderId !== folder.id) {
+      moveSessionToFolder(s.id, folder.id);
     }
   }
 
@@ -280,13 +280,13 @@ export function findOrCreateSessionForPath(
   const existing = $sessions.get().find(s => s.workspacePath === normalized);
   if (existing) {
     // Ensure the existing session is associated with the folder.
-    if (existing.folderId !== folder!.id) {
-      moveSessionToFolder(existing.id, folder!.id);
+    if (existing.folderId !== folder.id) {
+      moveSessionToFolder(existing.id, folder.id);
     }
     return { session: existing, created: false };
   }
 
   // Create a new session tied to this folder path, under the folder.
-  const session = createSession(folder!.id, `Project: ${name}`, normalized);
+  const session = createSession(folder.id, `Project: ${name}`, normalized);
   return { session, created: true };
 }

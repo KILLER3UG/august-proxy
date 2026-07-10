@@ -29,7 +29,7 @@ const SERVICE_LABELS: Record<string, string> = {
 };
 
 export function Connections() {
-  const [params, setParams] = useSearchParams();
+  const [_params, _setParams] = useSearchParams();
 
   const { data: hostData } = useQuery({
     queryKey: ['host-agent-status'],
@@ -53,7 +53,7 @@ export function Connections() {
         title="Connections"
         subtitle={`${connectedCount}/${connections.length} services connected · host agent ${hostStatus}`}
         actions={
-          <Button variant="outline" size="sm" onClick={() => setParams({ tab: 'mcp' })}>
+          <Button variant="outline" size="sm" onClick={() => _setParams({ tab: 'mcp' })}>
             <Plug className="size-3" /> Manage in MCP
           </Button>
         }
@@ -94,7 +94,7 @@ export function Connections() {
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-semibold">Service connections</h3>
           <button
-            onClick={() => setParams({ tab: 'mcp' })}
+            onClick={() => _setParams({ tab: 'mcp' })}
             className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition"
           >
             Open Services <ArrowRight className="size-3" />
@@ -128,7 +128,7 @@ export function Connections() {
                     )}
                   </div>
                   {!c.connected && (
-                    <Button size="sm" variant="outline" onClick={() => setParams({ tab: 'mcp' })}>
+                    <Button size="sm" variant="outline" onClick={() => _setParams({ tab: 'mcp' })}>
                       Connect
                     </Button>
                   )}

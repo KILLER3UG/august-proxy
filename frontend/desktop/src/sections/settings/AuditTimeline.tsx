@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Filter, ChevronDown, ChevronRight } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
 import { StatusPill, variantForResult } from '@/components/workspace/StatusPill';
 import { getAuditLog, getObservationUrl, type AuditEntry } from '@/api/api-client';

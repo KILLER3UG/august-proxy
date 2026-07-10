@@ -165,7 +165,7 @@ function EndpointRow({
 }) {
   const [copied, setCopied] = useState(false);
   function copy() {
-    navigator.clipboard?.writeText(endpoint.url);
+    void navigator.clipboard?.writeText(endpoint.url);
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   }
@@ -194,7 +194,7 @@ function EndpointRow({
 function CopyableUrl({ url, label }: { url: string; label: string }) {
   const [copied, setCopied] = useState(false);
   function copy() {
-    navigator.clipboard?.writeText(url);
+    void navigator.clipboard?.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   }

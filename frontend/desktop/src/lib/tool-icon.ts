@@ -23,7 +23,7 @@ import {
   SiGit, SiGithub, SiGitlab, SiDocker,
   SiNpm, SiPnpm, SiYarn, SiBun, SiNodedotjs, SiDeno,
   SiTypescript, SiVite, SiWebpack, SiTauri, SiRollupdotjs,
-  SiRust, SiGo, SiPython, SiGnubash, SiPowers, SiZsh,
+  SiRust, SiGo, SiPython, SiPowers, SiZsh,
   SiGooglechrome, SiFirefox,
   SiEslint, SiPrettier, SiJest, SiVitest, SiCypress,
   SiPostman, SiGraphql,
@@ -37,7 +37,7 @@ import {
 } from 'react-icons/si';
 import {
   // Lucide fallbacks for brands that have no Simple Icons export
-  Cloud, Drama, Network,
+  Cloud, Drama,
 } from 'lucide-react';
 
 type IconComp = ComponentType<{ size?: number; color?: string } & SVGProps<SVGSVGElement>>;

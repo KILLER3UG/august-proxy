@@ -34,7 +34,7 @@ describe('v4.4.3 — Brain popup escapes transformed ancestors via portal', () =
         <BrainIndicator />
       </div>,
     );
-    await act(async () => {
+    act(() => {
       fireEvent.click(screen.getByTestId('titlebar-brain-button'));
     });
     await waitFor(() => expect(screen.getByTestId('brain-popup')).toBeTruthy());

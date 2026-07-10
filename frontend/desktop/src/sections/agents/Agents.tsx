@@ -70,7 +70,21 @@ export function Agents() {
   );
 }
 
-function AgentCard({ agent }: { agent: any }) {
+interface AgentData {
+  id: string;
+  team?: boolean;
+  role?: string;
+  mode?: string;
+  goal?: string;
+  scopes?: string[];
+  tools?: string[];
+  teamSkills?: Array<{ name: string; description: string; trigger?: string; category?: string }>;
+  effectivePermissions?: Record<string, unknown>;
+  permissions?: Record<string, unknown>;
+  inheritedFrom?: string | null;
+}
+
+function AgentCard({ agent }: { agent: AgentData }) {
   const scopes = Array.isArray(agent.scopes) ? agent.scopes : [];
   const tools = Array.isArray(agent.tools) ? agent.tools : [];
   const teamSkills = Array.isArray(agent.teamSkills) ? agent.teamSkills : [];
@@ -121,7 +135,7 @@ function AgentCard({ agent }: { agent: any }) {
           <div>
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Team skills</p>
             <div className="space-y-1">
-              {teamSkills.slice(0, 4).map((sk: any, i: number) => (
+              {teamSkills.slice(0, 4).map((sk: { name: string; description: string; trigger?: string; category?: string }, i: number) => (
                 <div key={sk.name || i} className="text-[11px]">
                   <span className="font-mono text-foreground">{sk.name}</span>
                   <span className="text-muted-foreground"> — {sk.description}</span>

@@ -1,7 +1,7 @@
 /* ── DiffView.test.ts ─ unit tests for the diff/parser helpers ─────── */
 
 import { describe, it, expect } from 'vitest';
-import { diffLines, parseUnifiedDiff, type DiffLine } from '../DiffView';
+import { diffLines, parseUnifiedDiff } from '../DiffView';
 
 describe('diffLines — same content', () => {
   it('returns all context lines for identical text', () => {

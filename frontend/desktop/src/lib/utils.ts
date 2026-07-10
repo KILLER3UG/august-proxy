@@ -64,7 +64,7 @@ export function formatClockTime(iso: string | number | Date): string {
  */
 export function workspaceBaseName(p: string): string {
   if (!p) return '';
-  const trimmed = p.replace(/[\/\\]+$/, '');
-  const parts = trimmed.split(/[\/\\]/);
+  const trimmed = p.replace(/[/\\]+$/, '');
+  const parts = trimmed.split(/[/\\]/);
   return parts[parts.length - 1] || trimmed;
 }

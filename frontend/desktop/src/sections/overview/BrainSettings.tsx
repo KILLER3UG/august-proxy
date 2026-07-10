@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Brain, RotateCcw, Save, Sparkles, Check, X } from 'lucide-react';
+import { Brain, RotateCcw, Save, Sparkles } from 'lucide-react';
 import {
   getBrainConfig,
   saveBrainConfig,
@@ -58,8 +58,8 @@ export function BrainSettings() {
     mutationFn: (updates: Partial<BrainConfig>) => saveBrainConfig(updates),
     onSuccess: (res) => {
       setDraft(res.config);
-      queryClient.invalidateQueries({ queryKey: ['brain-config'] });
-      queryClient.invalidateQueries({ queryKey: ['brain-policy'] });
+      void queryClient.invalidateQueries({ queryKey: ['brain-config'] });
+      void queryClient.invalidateQueries({ queryKey: ['brain-policy'] });
       toast.success('Brain config saved — next turn will use the new policy.');
     },
     onError: (e: Error) => toast.error(e.message || 'Save failed'),
@@ -69,7 +69,7 @@ export function BrainSettings() {
     mutationFn: () => resetBrainConfig(),
     onSuccess: (res) => {
       setDraft(res.config);
-      queryClient.invalidateQueries({ queryKey: ['brain-config'] });
+      void queryClient.invalidateQueries({ queryKey: ['brain-config'] });
       toast.message('Reset to factory defaults');
     },
     onError: (e: Error) => toast.error(e.message || 'Reset failed'),
@@ -91,8 +91,8 @@ export function BrainSettings() {
         className="p-6 text-sm text-destructive flex items-center gap-3"
         data-testid="brain-settings-error"
       >
-        <span>Could not load brain config: {(error as Error)?.message || 'unknown error'}</span>
-        <Button size="sm" variant="outline" onClick={() => refetch()}>
+        <span>Could not load brain config: {(error)?.message || 'unknown error'}</span>
+        <Button size="sm" variant="outline" onClick={() => { void refetch(); }}>
           <RotateCcw className="mr-1 h-3.5 w-3.5" />
           Retry
         </Button>

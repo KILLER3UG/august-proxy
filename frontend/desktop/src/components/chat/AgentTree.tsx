@@ -3,7 +3,7 @@
 /* /api/agents/tree endpoint.                                               */
 
 import { useEffect, useState } from 'react';
-import { ChevronRight, ChevronDown, Bot, Loader2, Check, X, AlertTriangle, StopCircle } from 'lucide-react';
+import { ChevronRight, ChevronDown, Bot, Loader2, Check, AlertTriangle, StopCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 
@@ -23,9 +23,11 @@ export type AgentNode = {
   resultSummary: string | null;
 };
 
+type Subtree = { root: AgentNode; children: Record<string, Subtree> };
+
 type TreeResponse = {
   root: AgentNode;
-  children: Record<string, { root: AgentNode; children: Record<string, { root: AgentNode; children: Record<string, any> }> }>;
+  children: Record<string, Subtree>;
 };
 
 type Props = {
@@ -68,8 +70,8 @@ export function AgentTree({ rootId, maxDepth = 4, onSelect }: Props) {
       setTree(next);
       setLoading(false);
     };
-    tick();
-    const t = setInterval(tick, 3000);
+    void tick();
+    const t = setInterval(() => { void tick(); }, 3000);
     return () => {
       cancelled = true;
       clearInterval(t);
@@ -86,8 +88,6 @@ export function AgentTree({ rootId, maxDepth = 4, onSelect }: Props) {
     </div>
   );
 }
-
-type Subtree = { root: AgentNode; children: Record<string, Subtree> };
 
 function TreeNode({
   node,

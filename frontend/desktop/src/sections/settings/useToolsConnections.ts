@@ -9,7 +9,7 @@
  * own internal polling for MCP server configs. */
 
 import { useQuery } from '@tanstack/react-query';
-import { getHostAgentStatus, type HostAgentStatus } from '@/api/api-client';
+import { getHostAgentStatus } from '@/api/api-client';
 import { api } from '@/api/client';
 
 export type ServiceName = 'google' | 'github' | 'slack';
@@ -60,10 +60,10 @@ export function useToolsConnections() {
 
   const connections: ServiceConnection[] = Object.values(connsQuery.data?.connections ?? {}).map(
     (c) => ({
-      ...(c as ServiceConnection),
+      ...(c),
       // Fill in label/description if the backend omits them.
-      label: c.label ?? SERVICE_LABELS[c.name as ServiceName] ?? c.name,
-      description: c.description ?? SERVICE_DESCRIPTIONS[c.name as ServiceName] ?? '',
+      label: c.label ?? SERVICE_LABELS[c.name] ?? c.name,
+      description: c.description ?? SERVICE_DESCRIPTIONS[c.name] ?? '',
     }),
   );
   const hostStatus = hostQuery.data?.status ?? 'unknown';
@@ -75,7 +75,7 @@ export function useToolsConnections() {
     connections,
     connectedCount,
     totalCount,
-    host: (hostQuery.data ?? { status: 'unknown' }) as HostAgentStatus,
+    host: (hostQuery.data ?? { status: 'unknown' }),
     hostConnected,
     hostStatus,
     isLoading: connsQuery.isLoading && hostQuery.isLoading,

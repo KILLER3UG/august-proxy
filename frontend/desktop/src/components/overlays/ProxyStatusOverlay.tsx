@@ -34,7 +34,7 @@ export function ProxyStatusOverlay() {
           <Button variant="outline" onClick={() => window.open('http://localhost:8085/', '_blank')}>
             Open in browser
           </Button>
-          <Button onClick={() => qc.invalidateQueries()}>Retry</Button>
+          <Button onClick={() => { void qc.invalidateQueries(); }}>Retry</Button>
         </div>
       </div>
     </Backdrop>

@@ -1,5 +1,4 @@
 import { useStore } from '@nanostores/react';
-import { useLocation } from 'react-router-dom';
 import { Command, Sun, Moon, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { $theme, toggleTheme } from '@/store/theme';

@@ -4,7 +4,7 @@
    Auto-dismisses 3 seconds after all agents complete. */
 
 import { useState, useEffect, useRef } from 'react';
-import { ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSubagentStream } from '@/hooks/useSubagentStream';
 import { useSubagentViewPreference } from '@/hooks/useSubagentViewPreference';

@@ -3,7 +3,7 @@
  * live frames, dedupes by event id, and exposes pause/resume/clear.
  * Reconnects with exponential backoff (1s → 30s). Capped at MAX_EVENTS. */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { atom, onMount } from 'nanostores';
 import { useStore } from '@nanostores/react';
 import { getRecentLogs, type LogEvent } from '@/api/api-client';
@@ -70,12 +70,12 @@ function scheduleRetry() {
     _retryTimer = setTimeout(() => {
         _retryTimer = null;
         _retryDelay = Math.min(_retryDelay * 2, 30_000);
-        connect();
-    }, delay);
-}
+        void connect();
+	    }, delay);
+	}
 
-async function connect() {
-    if (_socket && (_socket.readyState === WebSocket.OPEN || _socket.readyState === WebSocket.CONNECTING)) return;
+	async function connect() {
+	    if (_socket && (_socket.readyState === WebSocket.OPEN || _socket.readyState === WebSocket.CONNECTING)) return;
     // Tauri desktop: connect directly to the backend (loopback HTTP → ws).
     // Browser dev: same-origin; Vite proxy handles the WS upgrade.
     let wsUrl: string;
@@ -104,7 +104,7 @@ async function connect() {
         try {
             const backfill = await getRecentLogs(BACKFILL_LIMIT);
             pushEvents(backfill.events || []);
-        } catch (e) {
+        } catch (_e) {
             // Backfill is best-effort; live stream still works
         }
     };
@@ -146,7 +146,7 @@ export function useLogStream() {
         if (isMounted.current) return;
         isMounted.current = true;
         _mountedSubscribers += 1;
-        if (!_socket) connect();
+        if (!_socket) void connect();
         return () => {
             _mountedSubscribers -= 1;
             if (_mountedSubscribers <= 0) {

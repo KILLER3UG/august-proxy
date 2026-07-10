@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
-import type { WorkbenchPlan, WorkbenchSession, WorkbenchTodo } from '@/types/workbench';
+import type { WorkbenchSession, WorkbenchTodo } from '@/types/workbench';
 
 export function WorkbenchPlanPanel({
   session,
@@ -64,7 +64,7 @@ export function WorkbenchPlanPanel({
 
         {!approved && (
           <div className="flex justify-end gap-2 pt-1">
-            <Button size="sm" variant="outline" onClick={onApprove}>
+            <Button size="sm" variant="outline" onClick={() => { void onApprove(); }}>
               Approve plan
             </Button>
           </div>

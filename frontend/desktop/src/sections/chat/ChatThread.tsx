@@ -1,9 +1,11 @@
+/* eslint-disable react-refresh/only-export-components */
+
 /* ── Chat thread ─────────────────────────────────────────────────────── */
 /* The main view. User/assistant messages with proper avatars + bubbles.  */
 /* Tool calls render as inline cards. Right rail optional.                  */
 
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type Dispatch, type KeyboardEvent, type SetStateAction } from 'react';
-import { Send, Paperclip, Mic, AtSign, Plus, ChevronDown, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw, Eye } from 'lucide-react';
+import { Send, Paperclip, Mic, AtSign, Plus, ChevronDown, Check, StopCircle, X, Loader2, Bug, Play, Pause, RefreshCw, Eye, type LucideIcon } from 'lucide-react';
 import { cn, formatClockTime, workspaceBaseName } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
@@ -19,15 +21,13 @@ import { FileIcon as NewFileIcon } from '@/components/ui/FileIcon';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
-import { applyToolProgress, visibleProgress, type ToolProgressEvent } from '@/lib/tool-progress';
+import { visibleProgress } from '@/lib/tool-progress';
 import { getToolLabel } from '@/lib/tool-labels';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { SubagentBlock } from '@/components/chat/SubagentBlock';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
 import { ExamHost } from '@/sections/exam/ExamHost';
-import { Statusbar } from '@/components/shell/Statusbar';
-import { dispatchFocusComposer, dispatchInsertComposerText } from '@/api/ui-events';
 import { useModels } from '@/hooks/useModels';
 import { useProviderAvailability } from '@/hooks/useProviderAvailability';
 import { useQueryClient } from '@tanstack/react-query';
@@ -48,14 +48,11 @@ import {
   startChatStream,
   stopChatStream,
   syncActiveStreams,
-  ensureSessionSubscriber,
   appendBlockEvent,
-  applySubagentEvent,
   activeStreamControllers,
 } from './chat-stream-manager';
 import {
   $queuedMessagesBySession,
-  type QueuedUserMessage,
   setQueuedMessages,
   clearQueuedMessages,
 } from './queue-store';
@@ -65,8 +62,6 @@ import { getFileIcon } from '@/lib/file-icon';
 import { makeStreamHandlers } from './makeStreamHandlers';
 import {
   createWorkbenchSession,
-  streamWorkbenchChat,
-  confirmWorkbenchMutation,
   approveWorkbenchPlan,
   rejectWorkbenchPlan,
   setWorkbenchGuardMode,
@@ -80,7 +75,7 @@ import {
   dequeueWorkbenchMessage,
   getQueuedWorkbenchMessages,
 } from '@/api/workbench';
-import type { WorkbenchBtwResult, WorkbenchSession } from '@/types/workbench';
+import type { WorkbenchSession } from '@/types/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import { WorkbenchModeSelector, WORKBENCH_GUARD_MODES, applyWorkbenchGuardMode, type WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
 import { ContextRing, estimateContextBreakdown, type ContextBreakdown } from './ChatComposer';
@@ -91,7 +86,6 @@ import { InitAugCard } from './InitAugCard';
 import { gitApi, type GitDiffResult } from '@/api/git';
 import { usageApi } from '@/api/usage';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
-import { addWorkspace } from '@/store/workspaces';
 import { ModelPickerCard } from './ModelPickerCard';
 // Chat domain types live in `@/types/chat` (Phase 2 refactor). Re-export
 // from the canonical location so existing `from './ChatThread'` imports
@@ -100,6 +94,8 @@ import type {
   ChatMessage,
   MessageBlock,
   FileAttachment,
+  ToolProgressEntry,
+  WorkbenchBtwState,
 } from '@/types/chat';
 export type {
   ChatMessage,
@@ -113,7 +109,6 @@ export type {
 } from '@/types/chat';
 
 let visibleSessionId: string | null = null;
-let visibleGeneration = 0;
 
 const STREAM_UPDATE_INTERVAL_MS = 24;
 
@@ -301,8 +296,8 @@ function loadMessagesForSession(sessionId: string | null): ChatMessage[] {
 
   try {
     const saved = localStorage.getItem(key);
-    if (saved) return JSON.parse(saved);
-  } catch {}
+    if (saved) return JSON.parse(saved) as ChatMessage[];
+  } catch { /* ignore parse errors */ }
 
   return buildDemoThread(sessionId);
 }
@@ -324,7 +319,7 @@ function persistComposerDraft(sessionId: string | null, value: string) {
 
   try {
     localStorage.setItem(key, value);
-  } catch {}
+  } catch { /* localStorage may be full or unavailable */ }
 }
 
 function clearComposerDraft(sessionId: string | null) {
@@ -333,7 +328,7 @@ function clearComposerDraft(sessionId: string | null) {
 
   try {
     localStorage.removeItem(key);
-  } catch {}
+  } catch { /* localStorage may be full or unavailable */ }
 }
 
 function persistMessages(sessionId: string | null, value: ChatMessage[]) {
@@ -342,7 +337,7 @@ function persistMessages(sessionId: string | null, value: ChatMessage[]) {
 
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch {}
+  } catch { /* localStorage may be full or unavailable */ }
 }
 
 export function ChatThread({ sessionId }: { sessionId: string | null }) {
@@ -366,18 +361,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [sessionId]);
 
   const messages = streamState.messages;
-  const setMessages = (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+  const setMessages = useCallback((updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
     if (!sessionId) return;
     updateSessionStreamState(sessionId, prev => {
       const next = typeof updater === 'function' ? updater(prev.messages) : updater;
       persistMessages(sessionId, next);
       return { messages: next };
     });
-  };
+  }, [sessionId]);
 
   const [input, setInput] = useState(() => loadComposerDraft(sessionId));
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(sessionId);
-  const [runtimeVersion, setRuntimeVersion] = useState(0);
+  const [_runtimeVersion, _setRuntimeVersion] = useState(0);
   const streaming = chatRuntime.isSessionStreaming(sessionId);
   // Sub-agent prompt disclosures, keyed by the parent toolUse id. The
   // backend emits a `prompt` SSE event only for august__spawn_subagent /
@@ -385,7 +380,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // store those payloads here so each one can be rendered directly under
   // the matching tool call block. Cleared on each new turn.
   const subagentPrompts = streamState.subagentPrompts;
-  const setSubagentPrompts = (updater: any) => {
+  const setSubagentPrompts = (updater: React.SetStateAction<Map<string, { content: string; systemPrompt: string; userMessage: string; tokens: number; subagentId?: string; jobId?: string }>>) => {
     if (!sessionId) return;
     updateSessionStreamState(sessionId, prev => {
       const next = typeof updater === 'function' ? updater(prev.subagentPrompts) : updater;
@@ -401,7 +396,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // entries, used to render the "Reading X" / "Read X" sub-list under
   // in-flight tool calls. Reset on each new turn.
   const toolProgress = streamState.toolProgress;
-  const setToolProgress = (updater: any) => {
+  const setToolProgress = (updater: React.SetStateAction<Map<string, ReadonlyArray<ToolProgressEntry>>>) => {
     if (!sessionId) return;
     updateSessionStreamState(sessionId, prev => {
       const next = typeof updater === 'function' ? updater(prev.toolProgress) : updater;
@@ -446,9 +441,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(loadHiddenModels);
   const [showModelVisibility, setShowModelVisibility] = useState(false);
   const workbenchSession = streamState.workbenchSession;
-  const setWorkbenchSession = (session: any) => {
+  const setWorkbenchSession = (session: WorkbenchSession | null | ((prev: WorkbenchSession | null) => WorkbenchSession | null)) => {
     if (!sessionId) return;
-    updateSessionStreamState(sessionId, () => ({ workbenchSession: session }));
+    if (typeof session === 'function') {
+      updateSessionStreamState(sessionId, (prev) => ({ workbenchSession: session(prev.workbenchSession ?? null) }));
+    } else {
+      updateSessionStreamState(sessionId, () => ({ workbenchSession: session }));
+    }
   };
 
   // Whether a plan is awaiting the user's decision. When true, the composer
@@ -463,7 +462,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'full';
   });
   const workbenchBtw = streamState.workbenchBtw;
-  const setWorkbenchBtw = (btw: any) => {
+  const setWorkbenchBtw = (btw: WorkbenchBtwState | null) => {
     if (!sessionId) return;
     updateSessionStreamState(sessionId, () => ({ workbenchBtw: btw }));
   };
@@ -490,7 +489,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       if (saved && ['low', 'medium', 'high', 'max'].includes(saved)) {
         return saved as 'low' | 'medium' | 'high' | 'max';
       }
-    } catch {}
+    } catch { /* silent */ }
     return 'medium';
   });
   const [revertingIndex, setRevertingIndex] = useState<number | null>(null);
@@ -635,7 +634,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const scrollToBottomSmooth = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const scrollable = el.closest(".overflow-y-auto") as HTMLElement | null;
+    const scrollable = el.closest(".overflow-y-auto");
     const target = scrollable ?? el;
     target.scrollTo({ top: target.scrollHeight, behavior: "smooth" });
   }, []);
@@ -644,7 +643,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const scrollable = el.closest(".overflow-y-auto") as HTMLElement | null ?? el;
+    const scrollable = el.closest(".overflow-y-auto") ?? el;
     const check = () => {
       const atBottom = scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight < 1;
       setScrolledFromBottom(!atBottom);
@@ -661,7 +660,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const scrollToBottomImmediate = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const scrollable = el.closest('.overflow-y-auto') as HTMLElement | null;
+    const scrollable = el.closest('.overflow-y-auto');
     const target = scrollable ?? el;
     target.scrollTop = target.scrollHeight;
   }, []);
@@ -670,10 +669,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   const finishTurn = (turn: ChatTurnRecord, status: 'done' | 'error' | 'aborted' = 'done') => {
     chatRuntime.finishTurn(turn.turnId, status);
-  };
-
-  const abortTurn = (turn: ChatTurnRecord) => {
-    chatRuntime.abortTurn(turn.turnId);
   };
 
   useEffect(() => {
@@ -737,7 +732,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return () => { cancelled = true; };
   }, [sessionId]);
 
-  useEffect(() => chatRuntime.subscribe(() => setRuntimeVersion((value) => value + 1)), []);
+  useEffect(() => chatRuntime.subscribe(() => _setRuntimeVersion((value) => value + 1)), []);
 
 
 
@@ -794,8 +789,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           setInput(prev => prev + event.text);
           break;
         }
-        case 'send-message': {
-          send(event.text);
+	      case 'send-message': {
+	          void send(event.text);
           break;
         }
         case 'toast': {
@@ -810,7 +805,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         }
         case 'load-skill': {
           fetch(`/api/skills?q=${encodeURIComponent(event.skillName)}`)
-            .then(r => r.json())
+            .then(r => r.json() as Promise<{ total: number; skills: Array<{ name: string; description: string; trigger: string; category: string }> }>)
             .then(data => {
               if (data.total === 0) {
                 toast.error(
@@ -840,7 +835,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           const url =
             '/api/skills' + (event.query ? '?q=' + encodeURIComponent(event.query) : '');
           fetch(url)
-            .then(r => r.json())
+            .then(r => r.json() as Promise<{ total: number; skills: Array<{ name: string; category: string; enabled: boolean; description: string }> }>)
             .then(data => {
               if (data.total === 0) {
                 toast.info(
@@ -879,7 +874,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           if (attachments.length > 0) {
             const filePaths = attachments
               .map(a => a.path || a.name)
-              .filter(Boolean) as string[];
+              .filter(Boolean);
             setExamSeed({ topic: seed, files: filePaths });
           } else {
             setExamSeed({ topic: seed, files: [] });
@@ -900,7 +895,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             '/api/aug/context' + (ws ? `?workspacePath=${encodeURIComponent(ws)}` : ''),
             { method: 'GET' },
           )
-            .then(r => (r.ok ? r.json() : { exists: false }))
+            .then(r => (r.ok ? r.json() as Promise<{ exists: boolean }> : Promise.resolve({ exists: false })))
             .then(c => (c && c.exists ? 'refine' : 'create'))
             .catch(() => 'create');
           decideMode
@@ -912,8 +907,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               }),
             )
             .then(r => {
-              if (!r.ok) return r.json().then(err => { throw new Error(err?.error || err?.detail || 'generation failed'); });
-              return r.json();
+              if (!r.ok) return r.json().then((err: { error?: string; detail?: string }) => { throw new Error(err?.error || err?.detail || 'generation failed'); });
+              return r.json() as Promise<{ draft: string; existing: boolean }>;
             })
             .then(data => {
               setAugPreview({
@@ -942,13 +937,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         }
         case 'reset-session': {
           setInput('/reset');
-          setTimeout(() => send(), 0);
+          setTimeout(() => { void send(); }, 0);
           break;
         }
       }
     });
     return unsubscribe;
-  }, [sessionId, attachments, send]);
+  }, [sessionId, attachments, send, activeSession?.workspacePath, setMessages]);
 
   useLayoutEffect(() => {
     if (!sessionId || loadedSessionId !== sessionId) return;
@@ -970,7 +965,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       getQueuedWorkbenchMessages(sessionId)
         .then((entries) => setQueuedMessages(sessionId, entries))
         .catch((err) => {
-          // eslint-disable-next-line no-console
+           
           console.warn('[ChatThread] failed to hydrate queue', err);
         });
     }
@@ -987,11 +982,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   // Persist effort choice to localStorage on every change
   useEffect(() => {
-    try { localStorage.setItem('august_last_effort', effort); } catch {}
+    try { localStorage.setItem('august_last_effort', effort); } catch { /* silent */ }
   }, [effort]);
 
   useEffect(() => {
-    try { localStorage.setItem('august_last_workbench_guard_mode', workbenchMode); } catch {}
+    try { localStorage.setItem('august_last_workbench_guard_mode', workbenchMode); } catch { /* silent */ }
   }, [workbenchMode]);
 
   // Track whether the user manually changed the model so we don't override it when the full list loads
@@ -1007,7 +1002,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       if (prev?.id === activeSession.model && prev.provider === activeSession.provider) return prev;
       return modelFromSession(activeSession || null) || prev;
     });
-  }, [sessionId, activeSession?.model, activeSession?.provider]);
+  }, [sessionId, activeSession, activeSession?.model, activeSession?.provider]);
 
   // ── Model loading ──────────────────────────────────────────────────
   // Phase 1 (instant): read config only — fast, small payload.
@@ -1022,17 +1017,17 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // every 30s and refetches on invalidation, so newly-added providers appear
   // without remounting the chat.
 
-  // On mount: fetch active config for initial model selection.
-  useEffect(() => {
-    (async () => {
+	  // On mount: fetch active config for initial model selection.
+	  useEffect(() => {
+	    void (async () => {
       // Phase 1: quick config fetch for initial model selection
       try {
-        const configRes = await fetch('/api/config/safe');
+          const configRes = await fetch('/api/config/safe');
         if (configRes.ok) {
-          const config = await configRes.json();
-          const activeProvider = config?.activeProvider || '';
-          const pConfig = config?.[activeProvider] || {};
-          const activeModelId: string | null = pConfig.model || pConfig._upstreamModel || pConfig.currentModel || null;
+          const config = await configRes.json() as Record<string, unknown>;
+          const activeProvider = (config?.activeProvider as string) || '';
+          const pConfig = (config?.[activeProvider] as Record<string, unknown>) || {};
+          const activeModelId: string | null = (pConfig?.model as string) || (pConfig?._upstreamModel as string) || (pConfig?.currentModel as string) || null;
           if (activeModelId && activeProvider && !userSelectedRef.current) {
             const placeholder: ModelItem = {
               id: activeModelId,
@@ -1057,10 +1052,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // Re-fetch models when session changes (provider availability is handled by
   // the useProviderAvailability hook above).
   useEffect(() => {
-    refetchModels();
-  }, [sessionId, refetchModels]);
+	    void refetchModels();
+	  }, [sessionId, refetchModels]);
 
-  // Force a full refresh: bypass any backend cache, invalidate both the
+	  // Force a full refresh: bypass any backend cache, invalidate both the
   // aggregated-models and provider-availability react-query caches so every
   // subscriber refetches, then refetch this component's own models list.
   const handleRefreshModels = useCallback(async () => {
@@ -1069,8 +1064,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       queryClient.invalidateQueries({ queryKey: ['aggregated-models'] }),
       queryClient.invalidateQueries({ queryKey: ['provider-availability'] }),
     ]);
-    refetchModels();
-  }, [queryClient, refetchModels]);
+	    void refetchModels();
+	  }, [queryClient, refetchModels]);
 
   // Reconcile selectedModel when the filtered model list changes (models were
   // refetched or provider availability changed). Preserve user's manual choice.
@@ -1093,7 +1088,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const modelForRequest = currentModel || modelFromSession(activeSession || null);
 
 
-  const updateAssistantMessage = useCallback((
+  const _updateAssistantMessage = useCallback((
     turnSessionId: string | null,
     assistantMsgId: string,
     updater: (messages: ChatMessage[]) => ChatMessage[]
@@ -1115,9 +1110,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     } catch {
       persistMessages(turnSessionId, updater([]));
     }
-  }, [sessionId]);
+  }, [sessionId, setMessages]);
 
-  const createAssistantPlaceholder = (assistantMsgId: string): ChatMessage => ({
+  const _createAssistantPlaceholder = (assistantMsgId: string): ChatMessage => ({
     id: assistantMsgId,
     role: 'assistant',
     content: '',
@@ -1182,6 +1177,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // requests to codex and everything else to claude.
   const getWorkbenchProvider = () => modelForRequest?.provider === 'codex' ? 'codex' as const : 'claude' as const;
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const ensureWorkbenchSession = async () => {
     if (!sessionId) return null;
     const existingId = workbenchSession?.id || activeSession?.workbenchSessionId;
@@ -1214,19 +1210,19 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return created;
   };
 
-  useEffect(() => {
-    syncActiveStreams(ensureWorkbenchSession);
+	  useEffect(() => {
+	    void syncActiveStreams(ensureWorkbenchSession);
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        syncActiveStreams(ensureWorkbenchSession);
-      }
-    };
+	    const handleVisibilityChange = () => {
+	      if (document.visibilityState === 'visible') {
+	        void syncActiveStreams(ensureWorkbenchSession);
+	      }
+	    };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [ensureWorkbenchSession]);
 
   /**
    * Helper for banner/panel click handlers. Wraps the streaming
@@ -1237,7 +1233,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
    * the appropriate `stream*` call (e.g. `streamPlanDecision`).
    */
   const streamPlanTurn = async (
-    run: (handlers: { onError?: (data: { message: string }) => void } & Record<string, any>, signal: AbortSignal) => Promise<any>,
+    run: (handlers: { onError?: (data: { message: string }) => void } & Record<string, unknown>, signal: AbortSignal) => Promise<unknown>,
     overrideMessages?: ChatMessage[],
     targetWorkbenchSessionId?: string
   ) => {
@@ -1282,14 +1278,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     };
     try {
       chatRuntime.setTransport(turn.turnId, 'http');
-      const startResult = await run(wrappedHandlers as any, abortController.signal);
+      const startResult = await run(wrappedHandlers, abortController.signal);
       const wbSessionId = targetWorkbenchSessionId || workbenchSession?.id || sessionId;
-      if (startResult && Number.isFinite((startResult as any).sinceSeq)) {
+      const resultWithSeq = startResult as { sinceSeq?: number } | null;
+      if (resultWithSeq && Number.isFinite(resultWithSeq.sinceSeq)) {
         await streamWorkbenchReconnect(
           wbSessionId,
-          wrappedHandlers as any,
+          wrappedHandlers,
           abortController.signal,
-          (startResult as any).sinceSeq
+          resultWithSeq.sinceSeq
         );
       }
       finalize(abortController.signal.aborted ? 'aborted' : 'done');
@@ -1403,11 +1400,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       // Drop the entry we just consumed locally; the backend will see an
       // empty queue when we POST the next /chat call.
       setQueuedMessages(sessionId, rest);
-      setTimeout(() => generateAIResponse(remaining), 0);
+      setTimeout(() => { void generateAIResponse(remaining); }, 0);
     }, 0);
     return () => clearTimeout(timer);
   }, [streaming, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   async function send(textOverride?: string) {
     if (!sessionId || loadedSessionId !== sessionId) return;
 
@@ -1465,7 +1463,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             setMessages: setMessages as unknown as Dispatch<SetStateAction<ChatMessageLite[]>>,
           });
           void Promise.resolve(handlerResult).catch(err => {
-            // eslint-disable-next-line no-console
+             
             console.error('[slash] handler threw', err);
             toast.error('Command failed');
           });
@@ -1477,7 +1475,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           // /btw with an arg), the handler should NOT clear the composer.
           return;
         } catch (err) {
-          // eslint-disable-next-line no-console
+           
           console.error('[slash] handler threw synchronously', err);
           toast.error('Command failed');
           return;
@@ -1505,7 +1503,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         setShowCommandsDropdown(false);
         clearComposerDraft(sessionId);
       } catch (err) {
-        // eslint-disable-next-line no-console
+         
         console.error('[send] queueWorkbenchMessage failed', err);
         toast.error('Could not queue message');
       }
@@ -1557,8 +1555,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   };
 
   const stop = () => {
-    if (sessionId) stopChatStream(sessionId);
-  };
+	    if (sessionId) void stopChatStream(sessionId);
+	  };
 
   // ── Revert: delete user message and all subsequent messages, put text back into chat input ──
   const handleRevert = (index: number) => {
@@ -1595,7 +1593,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         action: {
           label: "Undo",
           onClick: () => {
-            setMessages(prev => {
+            setMessages(_prev => {
               persistMessages(sessionId, originalMessages);
               return originalMessages;
             });
@@ -1656,7 +1654,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       if (e.key === 'Enter' && !e.shiftKey && visible.length > 0) { e.preventDefault(); const cmd = visible[highlightedCommandIndex] ?? visible[0]; insertCommand(cmd.name); setShowCommandsDropdown(false); return; }
       if (e.key === 'Escape') { e.preventDefault(); setShowCommandsDropdown(false); return; }
     }
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+	    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); }
   };
 
   // Detect slash commands as user types
@@ -1720,13 +1718,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     let finalTranscript = '';
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event) => {
       let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
+      const results = event.results;
+      for (let i = event.resultIndex; i < results.length; i++) {
+        if (results[i].isFinal) {
+          finalTranscript += results[i][0].transcript;
         } else {
-          interim += event.results[i][0].transcript;
+          interim += results[i][0].transcript;
         }
       }
       if (finalTranscript || interim) {
@@ -1761,7 +1760,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           });
           // Fire-and-forget async handlers.
           void Promise.resolve(handlerResult).catch(err => {
-            // eslint-disable-next-line no-console
+             
             console.error('[voice] handler threw', err);
             toast.error('Voice command failed');
           });
@@ -1769,7 +1768,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           setInput(prev => prev.replace(finalTranscript, '').trim());
           return;
         } catch (err) {
-          // eslint-disable-next-line no-console
+           
           console.error('[voice] handler threw synchronously', err);
           toast.error('Voice command failed');
         }
@@ -1777,7 +1776,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       // No match (or below threshold): transcript stays as dictation.
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event) => {
       setVoiceActive(false);
       if (event.error !== 'no-speech') {
         toast.error(`Speech error: ${event.error}`);
@@ -1808,9 +1807,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const fullCmd = name + ' ';
     const ta = taRef.current;
     if (!ta) {
-      setInput(prev => {
-        const replaced = prev.replace(/^\s*\/[\w-]*/, '');
-        const trimmed = replaced.trimStart();
+      setInput(_prev => {
         return '/' + name + ' ';
       });
       return;
@@ -1831,7 +1828,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   useEffect(() => {
     const handleInsertText = (e: Event) => {
-      const customEvent = e as CustomEvent;
+      const customEvent = e as CustomEvent<string>;
       if (customEvent.detail) {
         insertText(customEvent.detail);
       }
@@ -1840,13 +1837,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     // Handle model selection from ModelPickerCard (Phase 1C).
     const handleModelSelected = (e: Event) => {
-      const { modelId, provider } = (e as CustomEvent).detail ?? {};
+      const { modelId, provider } = (e as CustomEvent<{ modelId?: string; provider?: string }>).detail ?? {};
       if (!modelId || !provider) return;
       const model = models.find(m => m.id === modelId);
       if (model) {
         setSelectedModel(model);
         userSelectedRef.current = model.id;
-        try { localStorage.setItem('august_last_model', JSON.stringify(model)); } catch {}
+        try { localStorage.setItem('august_last_model', JSON.stringify(model)); } catch { /* silent */ }
         if (sessionId) updateSessionModel(sessionId, modelId, provider);
         toast.success(`Switched to ${model.name}`);
       }
@@ -1943,15 +1940,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 </span>
                 <button
                   type="button"
-                  onClick={async () => {
+                  onClick={() => {
                     if (!sessionId) return;
-                    try {
-                      await dequeueWorkbenchMessage(sessionId, q.id);
-                    } catch (err) {
-                      // eslint-disable-next-line no-console
+                    void dequeueWorkbenchMessage(sessionId, q.id).catch((err) => {
                       console.error('[dequeue] failed', err);
                       toast.error('Could not cancel queued message');
-                    }
+                    });
                     // The SSE event will also remove the entry from the
                     // store; optimistically drop it locally so the pill
                     // disappears immediately.
@@ -1980,7 +1974,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 sessionId={sessionId}
                 onWorkspaceChange={(ws) => {
                   if (!sessionId || !ws) return;
-                  import('@/store/sessions').then(({ createSession, updateSessionWorkspace, $sessions }) => {
+                  void import('@/store/sessions').then(({ createSession, $sessions }) => {
                     // Check if any existing session already uses this workspace path
                     const existing = $sessions.get().find(s => s.workspacePath === ws.path);
                     if (existing) {
@@ -2128,11 +2122,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
               <WorkbenchModeSelector
                 selectedMode={workbenchMode}
-                onChange={async (mode) => {
+                onChange={(mode) => {
                   setWorkbenchMode(mode);
                   localStorage.setItem('august_last_workbench_guard_mode', mode);
                   if (workbenchSession?.id) {
-                    setWorkbenchGuardMode(workbenchSession.id, mode).catch((error) => {
+                    void setWorkbenchGuardMode(workbenchSession.id, mode).catch((error) => {
                       console.warn('[ChatThread] Failed to persist guard mode:', error);
                     });
                   }
@@ -2154,15 +2148,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 visibleModels={visibleModels}
                 loading={modelsLoading}
                 selected={selectedModel}
-                onRefresh={handleRefreshModels}
+                onRefresh={() => { void handleRefreshModels(); }}
                 onEditModels={() => setShowModelVisibility(true)}
-                onSelect={async (m) => {
+                onSelect={(m) => {
                   if (!m) return;
                   setSelectedModel(m);
                   // Remember the user's explicit choice so background full-list load doesn't override it
                   userSelectedRef.current = m.id;
                   // Persist for instant restore on next page load and fallback sessions
-                  try { localStorage.setItem('august_last_model', JSON.stringify(m)); } catch {}
+                  try { localStorage.setItem('august_last_model', JSON.stringify(m)); } catch { /* silent */ }
                   // Scope the model to this session. The request payload also carries
                   // model/provider, so normal selection must not rewrite global backend config.
                   if (sessionId) updateSessionModel(sessionId, m.id, m.provider);
@@ -2195,7 +2189,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   <StopCircle className="size-3" /> Stop
                 </Button>
               ) : (
-                <Button onClick={() => send()} disabled={!sessionId || loadedSessionId !== sessionId || (!input.trim() && attachments.length === 0)} size="sm">
+                <Button onClick={() => { void send(); }} disabled={!sessionId || loadedSessionId !== sessionId || (!input.trim() && attachments.length === 0)} size="sm">
                   <Send className="size-3" />
                   Send
                   <kbd className="ml-1 rounded bg-muted/20 border border-border/20 px-1 text-[10px] font-mono">↵</kbd>
@@ -2213,7 +2207,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     <div className="flex h-full min-h-0 relative w-full">
       <ChatCheckpoints
         messages={messages}
-        scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
+        scrollRef={scrollRef}
       />
       <div className="flex-1 flex flex-col min-w-0 bg-background h-full overflow-hidden relative">
         <ApprovalBanner sessionId={workbenchSession?.id ?? null} />
@@ -2242,33 +2236,35 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         {workbenchBtw && (
           <WorkbenchBtwDrawer
             result={workbenchBtw}
-            onSend={async (question) => {
+            onSend={(question) => {
               if (!sessionId) return;
-              const active = workbenchSession || (activeSession?.workbenchSessionId ? {
-                id: activeSession.workbenchSessionId,
-                provider: activeSession.workbenchProvider || "claude",
-                agentId: activeSession.workbenchAgentId || "build",
-                agentRole: activeSession.workbenchAgentId || "build",
-                agentMode: "assistant",
-                approved: false,
-                approvedAt: null,
-                plan: null,
-                goal: null,
-                lastGoal: null,
-                messageCount: 0,
-                mutationCount: 0,
-                lastMutationAt: null,
-                updatedAt: new Date().toISOString(),
-                todos: [],
-              } : null);
-              if (!active) return;
-              const result = await answerWorkbenchBtw({
-                sessionId: active.id,
-                question,
-                provider: active.provider === "codex" ? "codex" : "claude",
-                agentId: active.agentId,
-              });
-              setWorkbenchBtw(result);
+              void (async () => {
+                const active = workbenchSession || (activeSession?.workbenchSessionId ? {
+                  id: activeSession.workbenchSessionId,
+                  provider: activeSession.workbenchProvider || "claude",
+                  agentId: activeSession.workbenchAgentId || "build",
+                  agentRole: activeSession.workbenchAgentId || "build",
+                  agentMode: "assistant",
+                  approved: false,
+                  approvedAt: null,
+                  plan: null,
+                  goal: null,
+                  lastGoal: null,
+                  messageCount: 0,
+                  mutationCount: 0,
+                  lastMutationAt: null,
+                  updatedAt: new Date().toISOString(),
+                  todos: [],
+                } : null);
+                if (!active) return;
+                const result = await answerWorkbenchBtw({
+                  sessionId: active.id,
+                  question,
+                  provider: active.provider === "codex" ? "codex" : "claude",
+                  agentId: active.agentId,
+                });
+                setWorkbenchBtw(result);
+              })();
             }}
             onClose={() => setWorkbenchBtw(null)}
           />
@@ -2307,61 +2303,67 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                           addRightDrawerSection('plan');
                           window.dispatchEvent(new CustomEvent('august:open-right-sidebar'));
                         }}
-                        onAccept={async () => {
-                          if (!workbenchSession) return;
-                          try {
-                            const updated = await approveWorkbenchPlan(workbenchSession.id);
-                            setWorkbenchSession(updated);
-                            if (sessionId) {
-                              updateSessionWorkbenchMetadata(sessionId, {
-                                workbenchSessionId: updated.id,
-                                workbenchAgentId: updated.agentId,
-                                workbenchProvider: updated.provider,
-                              });
+                        onAccept={() => {
+                          void (async () => {
+                            if (!workbenchSession) return;
+                            try {
+                              const updated = await approveWorkbenchPlan(workbenchSession.id);
+                              setWorkbenchSession(updated);
+                              if (sessionId) {
+                                updateSessionWorkbenchMetadata(sessionId, {
+                                  workbenchSessionId: updated.id,
+                                  workbenchAgentId: updated.agentId,
+                                  workbenchProvider: updated.provider,
+                                });
+                              }
+                              // Tell the model the plan was accepted but should NOT proceed.
+                              // Use the full streaming bundle so the chat thread
+                              // renders the model's reply (thinking, text, tool
+                              // calls) the same way a normal composer message does.
+                              await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
+                            } catch (e) {
+                              const message = e instanceof Error ? e.message : String(e);
+                              toast.error('Could not approve Workbench plan', { description: message });
                             }
-                            // Tell the model the plan was accepted but should NOT proceed.
-                            // Use the full streaming bundle so the chat thread
-                            // renders the model's reply (thinking, text, tool
-                            // calls) the same way a normal composer message does.
-                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : String(e);
-                            toast.error('Could not approve Workbench plan', { description: message });
-                          }
+                          })();
                         }}
-                        onAcceptAndImplement={async () => {
-                          if (!workbenchSession) return;
-                          try {
-                            const updated = await approveWorkbenchPlan(workbenchSession.id);
-                            setWorkbenchSession(updated);
-                            if (sessionId) {
-                              updateSessionWorkbenchMetadata(sessionId, {
-                                workbenchSessionId: updated.id,
-                                workbenchAgentId: updated.agentId,
-                                workbenchProvider: updated.provider,
-                              });
+                        onAcceptAndImplement={() => {
+                          void (async () => {
+                            if (!workbenchSession) return;
+                            try {
+                              const updated = await approveWorkbenchPlan(workbenchSession.id);
+                              setWorkbenchSession(updated);
+                              if (sessionId) {
+                                updateSessionWorkbenchMetadata(sessionId, {
+                                  workbenchSessionId: updated.id,
+                                  workbenchAgentId: updated.agentId,
+                                  workbenchProvider: updated.provider,
+                                });
+                              }
+                              // Switch the guard mode to Full access so the model
+                              // can proceed with implementation.
+                              setWorkbenchMode('full');
+                              // Tell the model to proceed with implementation at Full access.
+                              await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers, signal));
+                            } catch (e) {
+                              const message = e instanceof Error ? e.message : String(e);
+                              toast.error('Could not approve Workbench plan', { description: message });
                             }
-                            // Switch the guard mode to Full access so the model
-                            // can proceed with implementation.
-                            setWorkbenchMode('full');
-                            // Tell the model to proceed with implementation at Full access.
-                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers, signal));
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : String(e);
-                            toast.error('Could not approve Workbench plan', { description: message });
-                          }
+                          })();
                         }}
-                        onReject={async () => {
-                          if (!workbenchSession) return;
-                          try {
-                            const updated = await rejectWorkbenchPlan(workbenchSession.id);
-                            setWorkbenchSession(updated);
-                            // Notify the model the plan was rejected.
-                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'reject', handlers, signal));
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : String(e);
-                            toast.error('Could not reject Workbench plan', { description: message });
-                          }
+                        onReject={() => {
+                          void (async () => {
+                            if (!workbenchSession) return;
+                            try {
+                              const updated = await rejectWorkbenchPlan(workbenchSession.id);
+                              setWorkbenchSession(updated);
+                              // Notify the model the plan was rejected.
+                              await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'reject', handlers, signal));
+                            } catch (e) {
+                              const message = e instanceof Error ? e.message : String(e);
+                              toast.error('Could not reject Workbench plan', { description: message });
+                            }
+                          })();
                         }}
                         onRevise={handlePlanRevision}
                       />
@@ -2403,7 +2405,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             sessionId={sessionId ?? undefined}
                             onRevert={() => handleRevert(i)}
                             onEdit={(text) => handleEdit(i, text)}
-                            onRegenerate={() => handleRegenerate(i)}
+                            onRegenerate={() => { void handleRegenerate(i); }}
                             toolProgress={toolProgress}
                             subagentPrompts={subagentPrompts}
                             subagentBlocks={subagentBlocks}
@@ -2462,61 +2464,67 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                         addRightDrawerSection('plan');
                         window.dispatchEvent(new CustomEvent('august:open-right-sidebar'));
                       }}
-                        onAccept={async () => {
-                          if (!workbenchSession) return;
-                          try {
-                            const updated = await approveWorkbenchPlan(workbenchSession.id);
-                            setWorkbenchSession(updated);
-                            if (sessionId) {
-                              updateSessionWorkbenchMetadata(sessionId, {
-                                workbenchSessionId: updated.id,
-                                workbenchAgentId: updated.agentId,
-                                workbenchProvider: updated.provider,
-                              });
+                        onAccept={() => {
+                          void (async () => {
+                            if (!workbenchSession) return;
+                            try {
+                              const updated = await approveWorkbenchPlan(workbenchSession.id);
+                              setWorkbenchSession(updated);
+                              if (sessionId) {
+                                updateSessionWorkbenchMetadata(sessionId, {
+                                  workbenchSessionId: updated.id,
+                                  workbenchAgentId: updated.agentId,
+                                  workbenchProvider: updated.provider,
+                                });
+                              }
+                              // Tell the model the plan was accepted but should NOT proceed.
+                              // Use the full streaming bundle so the chat thread
+                              // renders the model's reply (thinking, text, tool
+                              // calls) the same way a normal composer message does.
+                              await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
+                            } catch (e) {
+                              const message = e instanceof Error ? e.message : String(e);
+                              toast.error('Could not approve Workbench plan', { description: message });
                             }
-                            // Tell the model the plan was accepted but should NOT proceed.
-                            // Use the full streaming bundle so the chat thread
-                            // renders the model's reply (thinking, text, tool
-                            // calls) the same way a normal composer message does.
-                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept', handlers, signal));
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : String(e);
-                            toast.error('Could not approve Workbench plan', { description: message });
-                          }
+                          })();
                         }}
-                        onAcceptAndImplement={async () => {
-                          if (!workbenchSession) return;
-                          try {
-                            const updated = await approveWorkbenchPlan(workbenchSession.id);
-                            setWorkbenchSession(updated);
-                            if (sessionId) {
-                              updateSessionWorkbenchMetadata(sessionId, {
-                                workbenchSessionId: updated.id,
-                                workbenchAgentId: updated.agentId,
-                                workbenchProvider: updated.provider,
-                              });
+                        onAcceptAndImplement={() => {
+                          void (async () => {
+                            if (!workbenchSession) return;
+                            try {
+                              const updated = await approveWorkbenchPlan(workbenchSession.id);
+                              setWorkbenchSession(updated);
+                              if (sessionId) {
+                                updateSessionWorkbenchMetadata(sessionId, {
+                                  workbenchSessionId: updated.id,
+                                  workbenchAgentId: updated.agentId,
+                                  workbenchProvider: updated.provider,
+                                });
+                              }
+                              // Switch the guard mode to Full access so the model
+                              // can proceed with implementation.
+                              setWorkbenchMode('full');
+                              // Tell the model to proceed with implementation at Full access.
+                              await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers, signal));
+                            } catch (e) {
+                              const message = e instanceof Error ? e.message : String(e);
+                              toast.error('Could not approve Workbench plan', { description: message });
                             }
-                            // Switch the guard mode to Full access so the model
-                            // can proceed with implementation.
-                            setWorkbenchMode('full');
-                            // Tell the model to proceed with implementation at Full access.
-                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'accept-and-implement', handlers, signal));
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : String(e);
-                            toast.error('Could not approve Workbench plan', { description: message });
-                          }
+                          })();
                         }}
-                        onReject={async () => {
-                          if (!workbenchSession) return;
-                          try {
-                            const updated = await rejectWorkbenchPlan(workbenchSession.id);
-                            setWorkbenchSession(updated);
-                            // Notify the model the plan was rejected.
-                            await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'reject', handlers, signal));
-                          } catch (e) {
-                            const message = e instanceof Error ? e.message : String(e);
-                            toast.error('Could not reject Workbench plan', { description: message });
-                          }
+                        onReject={() => {
+                          void (async () => {
+                            if (!workbenchSession) return;
+                            try {
+                              const updated = await rejectWorkbenchPlan(workbenchSession.id);
+                              setWorkbenchSession(updated);
+                              // Notify the model the plan was rejected.
+                              await streamPlanTurn((handlers, signal) => streamPlanDecision(workbenchSession.id, 'reject', handlers, signal));
+                            } catch (e) {
+                              const message = e instanceof Error ? e.message : String(e);
+                              toast.error('Could not reject Workbench plan', { description: message });
+                            }
+                          })();
                         }}
                         onRevise={handlePlanRevision}
                     />
@@ -2543,7 +2551,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         <input
           type="file"
           ref={fileInputRef}
-          onChange={handleFileUpload}
+          onChange={(e) => { void handleFileUpload(e); }}
           multiple
           className="hidden"
         />
@@ -2559,7 +2567,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           onNavigate={(p) => {
             window.location.href = p;
           }}
-          onRefreshModels={handleRefreshModels}
+          onRefreshModels={() => { void handleRefreshModels(); }}
         />
       </div>
     </div>
@@ -2598,7 +2606,7 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
 }
 
 // ── Tool execution block ──
-function ToolBlock({
+function _ToolBlock({
   tools,
   toolProgress,
 }: {
@@ -2797,11 +2805,11 @@ function MessageBubble({
     }
   };
 
-  const handleRegenClick = async () => {
+  const handleRegenClick = () => {
     if (onRegenerate) {
       setIsRegenerating(true);
       try {
-        await onRegenerate();
+        onRegenerate();
       } finally {
         setIsRegenerating(false);
       }
@@ -2914,7 +2922,7 @@ function MessageBubble({
 		            )}
 		            {!editing && (
 		              <button
-		                onClick={handleCopy}
+		                onClick={() => { void handleCopy(); }}
 		                className="p-1 rounded text-muted-foreground/70 hover:text-foreground transition-colors duration-150"
 		                title="Copy message"
 		                aria-label="Copy message"
@@ -2922,7 +2930,7 @@ function MessageBubble({
 		                {copied ? (
 		                  <Check className="size-3 text-success" />
 		                ) : (
-		                  <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+		                  <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
 		                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
 		                  </svg>
 		                )}
@@ -2944,16 +2952,16 @@ function MessageBubble({
 	            >
 	              &larr;
 	            </button>
-	            {isLast && (
-	              <button
-	                onClick={handleRegenClick}
-	                disabled={streaming || isRegenerating}
-	                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
-	                title="Regenerate response"
-	              >
-	                <svg
-	                  className={cn("size-3", isRegenerating && "animate-spin")}
-	                  viewBox="0 0 24 24"
+		            {isLast && (
+		              <button
+		                onClick={() => { void handleRegenClick(); }}
+		                disabled={streaming || isRegenerating}
+		                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
+		                title="Regenerate response"
+		              >
+		                <svg
+		                  className={cn("size-3", isRegenerating && "animate-spin")}
+		                  viewBox="0 0 24 24"
 	                  fill="none"
 	                  stroke="currentColor"
 	                  strokeWidth="2"
@@ -3027,12 +3035,12 @@ function MessageBubble({
                           block.tool.name === 'workbench_run_team';
                         const promptEntries = isSubagentCall && block.tool.id && subagentPrompts
                           ? Array.from(subagentPrompts.entries())
-                              .filter(([k]) => k === block.tool!.id)
+                              .filter(([k]) => k === block.tool.id)
                               .map(([, v]) => v)
                           : [];
                         const subagentContainers = isSubagentCall && block.tool.id && subagentBlocks
                           ? Array.from(subagentBlocks.values())
-                              .filter((s) => s.parentToolId === block.tool!.id)
+                              .filter((s) => s.parentToolId === block.tool.id)
                               .sort((a, b) => a.startedAt - b.startedAt)
                           : [];
                         return (
@@ -3158,7 +3166,7 @@ function MessageBubble({
               )}
             </button>
             <button
-              onClick={handleCopy}
+              onClick={() => { void handleCopy(); }}
               className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition relative"
               title="Copy"
             >
@@ -3174,7 +3182,7 @@ function MessageBubble({
             </button>
             {isLast && (
               <button
-                onClick={handleRegenClick}
+                onClick={() => { void handleRegenClick(); }}
                 disabled={streaming || isRegenerating}
                 className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
                 title="Retry / Regenerate"
@@ -3258,7 +3266,7 @@ function SubagentApprovalInline({
 
 function ToolCallCard({
   tool,
-  timestamp,
+  timestamp: _timestamp,
   progress,
 }: {
   tool: NonNullable<ChatMessage['tool']>;
@@ -3273,7 +3281,7 @@ function ToolCallCard({
   let legacyFilename: string | null = null;
   if (!isCommand && tool.args) {
     try {
-      const parsed = JSON.parse(tool.args);
+      const parsed = JSON.parse(tool.args) as Record<string, unknown>;
       for (const key of ['filePath', 'file_path', 'path', 'filename', 'file', 'filepath']) {
         const v = parsed?.[key];
         if (typeof v === 'string' && v.length > 0) { legacyFilename = v; break; }
@@ -3418,7 +3426,7 @@ function ChatCheckpoints({ messages, scrollRef }: {
     if (!container || userMessages.length === 0) return;
     // The scrollable ancestor is the screen-edge scroll container in
     // ChatLayout, not the ref'd div (which is no longer scrollable).
-    const scrollable = container.closest('.overflow-y-auto') as HTMLElement | null ?? container;
+    const scrollable = container.closest('.overflow-y-auto') ?? container;
     updatePositions();
     const onScroll = () => updatePositions();
     const onResize = () => updatePositions();
@@ -3503,7 +3511,7 @@ function ChatCheckpoints({ messages, scrollRef }: {
   );
 }
 
-function ToolBtn({ Icon, label, onClick, className, buttonRef }: { Icon: any; label: string; onClick?: () => void; className?: string; buttonRef?: React.RefObject<HTMLButtonElement | null> }) {
+function ToolBtn({ Icon, label, onClick, className, buttonRef }: { Icon: LucideIcon; label: string; onClick?: () => void; className?: string; buttonRef?: React.RefObject<HTMLButtonElement | null> }) {
   return (
     <button
       ref={buttonRef ?? undefined}
@@ -3536,7 +3544,7 @@ export function formatContextWindow(num?: number): string {
  * main column — without this, the dropdown was clipped at the chat-thread
  * boundary when opened in the empty/centered composer state. */
 
-function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onRefresh, onEditModels }: {
+function ModelDropdown({ models: _models, visibleModels, loading, selected, onSelect, onRefresh, onEditModels }: {
   models: ModelItem[];
   visibleModels: ModelItem[];
   loading?: boolean;
@@ -3720,9 +3728,9 @@ function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onR
               )}
               {onRefresh && (
                 <button
-                  onClick={async (e) => {
+                  onClick={(e) => {
                     e.stopPropagation();
-                    await onRefresh();
+                    void onRefresh();
                   }}
                   className={cn(
                     "p-0.5 rounded hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground transition",
@@ -4006,14 +4014,15 @@ export function parseSequentialText(text: string): { type: 'thinking' | 'finalOu
       }
     }
 
-    const openMarkerLength = selectedMarker!.open.length;
+    if (!selectedMarker) continue;
+    const openMarkerLength = selectedMarker.open.length;
     const contentStartIdx = earliestOpenIdx + openMarkerLength;
-    const closeIdx = text.indexOf(selectedMarker!.close, contentStartIdx);
+    const closeIdx = text.indexOf(selectedMarker.close, contentStartIdx);
 
     if (closeIdx !== -1) {
       const thinkingContent = text.slice(contentStartIdx, closeIdx);
       blocks.push({ type: 'thinking', content: thinkingContent });
-      currentIndex = closeIdx + selectedMarker!.close.length;
+      currentIndex = closeIdx + selectedMarker.close.length;
     } else {
       const thinkingContent = text.slice(contentStartIdx);
       blocks.push({ type: 'thinking', content: thinkingContent });

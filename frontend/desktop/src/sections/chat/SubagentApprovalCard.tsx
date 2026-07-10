@@ -86,7 +86,7 @@ export function SubagentApprovalCard({
       <div className="flex items-center gap-2 pt-1">
         <button
           type="button"
-          onClick={handleApprove}
+          onClick={() => { void handleApprove(); }}
           disabled={loading}
           className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
         >
@@ -99,7 +99,7 @@ export function SubagentApprovalCard({
         </button>
         <button
           type="button"
-          onClick={handleReject}
+          onClick={() => { void handleReject(); }}
           disabled={loading}
           className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-white/[0.06] px-3 py-2 text-xs font-medium hover:bg-white/[0.06] disabled:opacity-50"
         >

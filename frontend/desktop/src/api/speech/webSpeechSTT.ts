@@ -55,11 +55,13 @@ export class WebSpeechSTT implements LiveSTT {
     };
     r.start();
     this.recognition = r;
+    await Promise.resolve(); // keep async for LiveSTT interface conformance
   }
 
   async stop(): Promise<void> {
     this.recognition?.stop();
     this.recognition = null;
+    await Promise.resolve(); // keep async for LiveSTT interface conformance
   }
 
   onPartial(callback: (text: string) => void): () => void {

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, AlertTriangle, Camera, History, ShieldCheck, Wifi } from 'lucide-react';
+import { Activity, AlertTriangle, Camera, History, ShieldCheck, Wifi, type LucideIcon } from 'lucide-react';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusPill, variantForHostStatus, variantForAppPolicy } from '@/components/workspace/StatusPill';
@@ -12,7 +12,6 @@ import {
     getObservabilityOverview,
     getModelAliases,
     getUserModelAliases,
-    type ObservabilityOverview as OverviewPayload
 } from '@/api/api-client';
 import { cn, formatTimeAgo } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -41,8 +40,8 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
     if (!o) return <SettingsEmptyState title="No data" description="Could not load observability overview." />;
 
     const totalTokens30d = usage.data?.totalTokens ?? 0;
-    const activeDays = usage.data?.activeDays ?? 0;
-    const currentStreak = usage.data?.currentStreak ?? 0;
+    const _activeDays = usage.data?.activeDays ?? 0;
+    const _currentStreak = usage.data?.currentStreak ?? 0;
     const criticalCount = o.audit.byCritical.true ?? 0;
     const observations = o.hostAgent.postObservationCount;
     const allowedApps = o.appPolicy.counts.allow;
@@ -248,7 +247,7 @@ export function ObservabilityOverview({ onNavigate }: { onNavigate?: (subtab: 'o
     );
 }
 
-function StatCard({ icon: Icon, label, value, accent }: { icon: any; label: string; value: string; accent?: string }) {
+function StatCard({ icon: Icon, label, value, accent }: { icon: LucideIcon; label: string; value: string; accent?: string }) {
     return (
         <Card>
             <CardContent className="py-4 flex items-start gap-3">

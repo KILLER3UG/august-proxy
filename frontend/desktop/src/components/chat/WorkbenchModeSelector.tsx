@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 /* ── WorkbenchModeSelector — chat-side permission pill dropdown ────── */
 /* The dropdown opens upward from the "Full access" / "Plan mode" /
  * "Ask before changes" pill next to the chat input. It was rendered as

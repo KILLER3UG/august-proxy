@@ -45,7 +45,7 @@ function useExtAccessQuery() {
 function CopyButton({ value, label = 'copy' }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   function copy() {
-    navigator.clipboard?.writeText(value);
+    void navigator.clipboard?.writeText(value);
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   }
@@ -91,8 +91,8 @@ export function ExternalAccessSection() {
   const mutation = useMutation({
     mutationFn: (next: boolean) => updateExternalAccessConfig({ enabled: next }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['external-access'] });
-      qc.invalidateQueries({ queryKey: ['health', 'detailed'] });
+      void qc.invalidateQueries({ queryKey: ['external-access'] });
+      void qc.invalidateQueries({ queryKey: ['health', 'detailed'] });
     },
   });
 
@@ -179,7 +179,7 @@ export function ExternalAccessSection() {
             <p className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
               <span>
-                Could not update: {(mutation.error as Error)?.message ?? 'unknown error'}
+                Could not update: {(mutation.error)?.message ?? 'unknown error'}
               </span>
             </p>
           )}

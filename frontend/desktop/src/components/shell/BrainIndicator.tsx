@@ -103,7 +103,7 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
     const es = openBrainEventStream();
     es.onmessage = (ev: MessageEvent) => {
       try {
-        const event: BrainEvent = JSON.parse(ev.data);
+        const _event: BrainEvent = JSON.parse(ev.data);
         setUnseen((n) => n + 1);
       } catch {
         /* ignore malformed frames */

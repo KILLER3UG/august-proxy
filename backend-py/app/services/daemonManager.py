@@ -16,8 +16,9 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, cast
 from app.typeAliases import DaemonStatusDict
+from app.jsonUtils import as_str, as_dict, as_int
 logger = logging.getLogger(__name__)
 MAX_DAEMONS_PER_SESSION = 3
 RESULT_EXPIRY_TURNS = 5
@@ -57,7 +58,7 @@ class DaemonManager:
     async def spawn(self, spec: DaemonSpec, sessionId: str, context: dict[str, object] | None=None) -> str:
         """Spawn a daemon. Returns daemon_id string or error message."""
         async with self._lock:
-            sessionDaemons = [d for d in self._daemons.values() if d.get('session_id') == sessionId and getattr(d.get('result'), 'status', '') != 'errored']
+            sessionDaemons = [d for d in self._daemons.values() if as_str(d.get('session_id')) == sessionId and getattr(cast('DaemonResult | None', d.get('result')), 'status', '') != 'errored']
             if len(sessionDaemons) >= MAX_DAEMONS_PER_SESSION:
                 return f'Error: max {MAX_DAEMONS_PER_SESSION} daemons per session'
             daemonId = f'{sessionId}_{spec.name}_{int(time.time())}'
@@ -89,9 +90,9 @@ class DaemonManager:
         now = time.time()
         results: list[DaemonStatusDict] = []
         for did, info in list(self._daemons.items()):
-            if sessionId and info.get('session_id') != sessionId:
+            if sessionId and as_str(info.get('session_id')) != sessionId:
                 continue
-            r = info.get('result', DaemonResult())
+            r = cast(DaemonResult, info.get('result')) if isinstance(info.get('result'), DaemonResult) else DaemonResult()
             if r.triggered and r.turns_alive >= RESULT_EXPIRY_TURNS:
                 r.triggered = False
                 r.output = ''
@@ -103,14 +104,15 @@ class DaemonManager:
         """Get the current result for a daemon."""
         info = self._daemons.get(daemonId)
         if info:
-            return info.get('result')
+            r = info.get('result')
+            return cast(DaemonResult, r) if isinstance(r, DaemonResult) else None
         return None
 
     def incrementTurns(self, sessionId: str) -> None:
         """Increment turn counter for all daemons in a session (called after each LLM turn)."""
         for info in self._daemons.values():
-            if info.get('session_id') == sessionId:
-                r = info.get('result', DaemonResult())
+            if as_str(info.get('session_id')) == sessionId:
+                r = cast(DaemonResult, info.get('result')) if isinstance(info.get('result'), DaemonResult) else DaemonResult()
                 if r.triggered:
                     r.turns_alive += 1
 

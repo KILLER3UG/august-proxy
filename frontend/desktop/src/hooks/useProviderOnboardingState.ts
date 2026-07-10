@@ -3,7 +3,6 @@
    The modal is shown when the providers list is empty AND the user has not
    previously dismissed or skipped onboarding. */
 
-import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { providersApi, type Provider } from '@/api/providers';
 
@@ -11,7 +10,6 @@ const SKIP_KEY = 'august-onboarding-skipped';
 
 export function useProviderOnboardingState() {
   const qc = useQueryClient();
-  const [tick, setTick] = useState(0);
 
   const providersQ = useQuery<Provider[]>({
     queryKey: ['providers'],
@@ -25,8 +23,7 @@ export function useProviderOnboardingState() {
 
   const skip = () => {
     localStorage.setItem(SKIP_KEY, 'true');
-    qc.invalidateQueries({ queryKey: ['providers'] });
-    setTick((t) => t + 1);
+    void qc.invalidateQueries({ queryKey: ['providers'] });
   };
 
   const resetDismissed = () => {

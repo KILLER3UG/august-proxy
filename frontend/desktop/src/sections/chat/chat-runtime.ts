@@ -182,7 +182,7 @@ export function createChatRuntime(): ChatRuntime {
     snapshot() {
       return {
         activeTurns: Array.from(turns.values()).filter((turn) => turn.status === 'streaming'),
-        activeTurnIdsBySession: Object.fromEntries(Array.from(turnIdsBySession.entries()) as [string, string[]][]),
+        activeTurnIdsBySession: Object.fromEntries(Array.from(turnIdsBySession.entries())),
       };
     },
   };

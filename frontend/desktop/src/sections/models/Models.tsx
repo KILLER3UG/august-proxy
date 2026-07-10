@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Search, Boxes, ArrowRightLeft, Calculator, Inbox, Gauge, Tag, Plus, Trash2, Save, RefreshCw, Power } from 'lucide-react';
 import { quotaApi, type ModelQuota } from '@/api/quota';
 import {
-  getModelCatalog,
   getModelCapabilities,
   getModelAliases,
   estimateModelCost,
@@ -17,7 +16,6 @@ import {
   updateUserModelAliases,
   restartBackend,
   isFreeModelId,
-  type CatalogModel,
   type ModelAlias,
   type ModelCostEstimate,
   type AggregatedModel,
@@ -75,7 +73,7 @@ function CatalogTab() {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;
-  const { data: skeletonData } = useQuery({
+  const { data: _skeletonData } = useQuery({
     queryKey: ['aggregated-models-skeleton'],
     queryFn: () => getAggregatedModels({ skeleton: true }),
     staleTime: 30_000,
@@ -338,16 +336,16 @@ function UserAliasesTab() {
           Define custom model IDs that route to your chosen backend models. These will appear in the model list and can be selected in the chat dropdown.
         </p>
         <div className="flex items-center gap-2 shrink-0">
-          <Button size="sm" variant="outline" onClick={() => refetchModels()} title="Refresh model list">
+          <Button size="sm" variant="outline" onClick={() => { void refetchModels(); }} title="Refresh model list">
             <RefreshCw className="size-3" /> Refresh
           </Button>
           <Button size="sm" variant="outline" onClick={addAlias}>
             <Plus className="size-3" /> Add alias
           </Button>
-          <Button size="sm" onClick={save} disabled={!dirty || saving}>
+          <Button size="sm" onClick={() => { void save(); }} disabled={!dirty || saving}>
             <Save className="size-3" /> {saving ? 'Saving…' : 'Save'}
           </Button>
-          <Button size="sm" variant="destructive" onClick={handleRestart} disabled={restarting} title="Restart backend to pick up all changes">
+          <Button size="sm" variant="destructive" onClick={() => { void handleRestart(); }} disabled={restarting} title="Restart backend to pick up all changes">
             <Power className="size-3" /> {restarting ? 'Restarting…' : 'Restart'}
           </Button>
         </div>

@@ -18,7 +18,6 @@ import {
   FolderOpen,
   FolderPlus,
   ChevronRight,
-  ChevronDown,
   Edit3,
   Trash2,
   Archive,
@@ -41,7 +40,6 @@ import {
   deleteFolder,
   toggleFolderCollapse,
   findOrCreateSessionForPath,
-  updateSessionWorkspace,
   type Session,
   type Folder,
   type SessionStatus,
@@ -72,8 +70,8 @@ interface Props {
 
 export function SessionList({
   activeId,
-  collapsed,
-  onToggleCollapsed,
+  collapsed: _collapsed,
+  onToggleCollapsed: _onToggleCollapsed,
   onSelect,
   onNew,
   onNewInFolder,
@@ -175,7 +173,7 @@ export function SessionList({
     const normalizedPath = fullPath.replace(/\\/g, "/");
     const folderName = normalizedPath.split("/").pop() || "workspace";
     const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
-    (async () => {
+    void (async () => {
       try {
         const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`);
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Directory not accessible');
@@ -216,7 +214,7 @@ export function SessionList({
 
   const togglePin = (id: string) => {
     const next = new Set(pinnedIds);
-    next.has(id) ? next.delete(id) : next.add(id);
+    void (next.has(id) ? next.delete(id) : next.add(id));
     setPinnedIds(next);
     localStorage.setItem(SESSIONS_KEY, JSON.stringify([...next]));
   };
@@ -357,7 +355,7 @@ export function SessionList({
             title="SESSIONS"
             count={others.length}
             onNewFolder={handleCreateFolder}
-            onUploadFolder={handleFolderUploadClick}
+            onUploadFolder={(e) => { void handleFolderUploadClick(e); }}
           >
             <div className="space-y-2.5">
               {/* Collapsible Folders */}
@@ -585,7 +583,7 @@ function Section({
 function FolderHeader({
   folder,
   count,
-  hasActiveSession,
+  hasActiveSession: _hasActiveSession,
   onToggleCollapse,
   onNewSession,
   onRename,

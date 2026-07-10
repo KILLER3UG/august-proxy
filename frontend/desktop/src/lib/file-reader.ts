@@ -63,7 +63,7 @@ function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
+    reader.onerror = () => reject(new Error(String(reader.error ?? 'FileReader error')));
     reader.readAsText(file);
   });
 }
@@ -72,7 +72,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
+    reader.onerror = () => reject(new Error(String(reader.error ?? 'FileReader error')));
     reader.readAsDataURL(file);
   });
 }
@@ -81,7 +81,7 @@ function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as ArrayBuffer);
-    reader.onerror = () => reject(reader.error);
+    reader.onerror = () => reject(new Error(String(reader.error ?? 'FileReader error')));
     reader.readAsArrayBuffer(file);
   });
 }
@@ -107,7 +107,7 @@ async function extractPdfText(file: File): Promise<{ content: string; truncated:
   for (let i = 1; i <= maxPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const pageText = content.items.map((item: any) => item.str).join(' ');
+    const pageText = content.items.map((item: any) => (item.str || '')).join(' ');
     textParts.push(`--- Page ${i} ---\n${pageText}`);
   }
 
@@ -217,7 +217,7 @@ export async function readFileContent(file: File): Promise<FileReadResult> {
         const { content, truncated } = truncate(raw, TEXT_MAX_CHARS);
         return { type: 'text', content, mimeType, truncated };
       }
-    } catch (_) {}
+    } catch { /* silent */ }
   }
 
   return { type: 'unsupported', mimeType };

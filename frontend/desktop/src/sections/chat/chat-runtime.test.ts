@@ -5,7 +5,7 @@ describe('chat runtime session isolation', () => {
   it('allows different sessions to stream concurrently', () => {
     const runtime = createChatRuntime();
     const a = runtime.startTurn({ sessionId: 'a', assistantMsgId: 'a1' });
-    const b = runtime.startTurn({ sessionId: 'b', assistantMsgId: 'b1' });
+    const _b = runtime.startTurn({ sessionId: 'b', assistantMsgId: 'b1' });
 
     expect(runtime.isSessionStreaming('a')).toBe(true);
     expect(runtime.isSessionStreaming('b')).toBe(true);

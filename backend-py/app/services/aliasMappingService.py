@@ -1,0 +1,327 @@
+"""
+Alias mapping service — consolidated, single-source-of-truth for proxy aliases.
+
+What is an alias?
+=================
+In August Proxy, an *alias* is a **proxy mapping** — not just a nickname.
+It lets the proxy expose a specified model name in ``/v1/models`` while
+routing requests to a completely different provider + model upstream.
+
+Example::
+
+    A user who wants to use ``claude-sonnet`` in Claude Desktop but
+    doesn't have a subscription configures an alias:
+
+        alias: "claude-sonnet-4-6"
+        targetProvider: "DeepSeek"
+        targetModel: "deepseek-chat"
+
+    When the backend runs:
+
+    1. ``GET /v1/models`` returns ``claude-sonnet-4-6`` in the model list
+       (alongside all provider models). See ``modelService._injectAliasModels()``.
+
+    2. ``POST /v1/messages`` with ``model="claude-sonnet-4-6"`` is routed
+       to DeepSeek with ``model="deepseek-chat"`` via ``resolveAlias()``.
+
+    3. Response rewriting ensures the client sees the alias name,
+       not the backend model ID.
+
+Resolution order (documented here so developers don't need to hunt):
+1. User-defined alias (``config.json modelAliases``) → targetProvider + targetModel
+2. Built-in public alias (identity, e.g. ``claude-sonnet-4-6`` → itself)
+3. Direct provider routing (``resolveForModel`` credential-aware)
+4. Fallback to active provider
+"""
+from __future__ import annotations
+
+import logging
+from typing import Optional
+
+from app.config import settings
+from app.models.aliases import AliasMapping, AliasResolutionResult
+from app.providers import resolver as providerResolver
+from app.providers.routeResolver import resolveForModel
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_ALIAS = "default"
+
+# Canonical Claude public model IDs — identity aliases that always work.
+# This ensures clients using official Anthropic model names don't fail
+# even without a user-defined alias.
+BUILTIN_PUBLIC_ALIASES: frozenset[str] = frozenset([
+    "claude-3-7-sonnet-20250219",
+    "claude-3-5-sonnet-20241022",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+])
+
+
+# ── Internal helpers ────────────────────────────────────────────────────
+
+def _normalize(value: object) -> str | None:
+    """Trim and return a string, or None if falsy."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s or None
+
+
+def _hasCredentials(provider: dict[str, object]) -> bool:
+    """Check if a provider has API credentials configured."""
+    from app.providers.clients import getClient
+    client = getClient(provider)
+    if client is None:
+        return False
+    return client.resolveApiKey() is not None
+
+
+def _findUserAlias(inputAlias: str) -> AliasMapping | None:
+    """Look up a user-defined alias from ``config.json modelAliases``.
+
+    Returns an ``AliasMapping`` if found, or ``None``.
+    """
+    if not inputAlias:
+        return None
+    try:
+        aliases = settings.config.get("modelAliases", [])
+        if isinstance(aliases, list):
+            for entry in aliases:
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get("alias") == inputAlias:
+                    return AliasMapping(
+                        alias=entry.get("alias", ""),
+                        targetModel=entry.get("targetModel") or entry.get("target_model", ""),
+                        targetProvider=entry.get("targetProvider") or entry.get("target_provider", ""),
+                        displayAlias=entry.get("displayAlias") or entry.get("display_alias", ""),
+                    )
+    except Exception:
+        logger.exception("Failed to read modelAliases from config")
+    return None
+
+
+def _resolveActiveProvider() -> dict[str, object] | None:
+    """Return the first available provider with credentials."""
+    for p in providerResolver.listAvailable():
+        if _hasCredentials(p):
+            return p
+    return None
+
+
+# ── Public API ──────────────────────────────────────────────────────────
+
+def resolveAlias(
+    inputAlias: str | None,
+    providerHint: str | None = None,
+    defaultAlias: str | None = None,
+) -> AliasResolutionResult:
+    """Resolve a model alias to a concrete provider + model.
+
+    This is the single entry point for all alias resolution in the proxy.
+    Every adapter, router, or service that needs to turn a client-supplied
+    model name into a backend provider+model should call this function.
+
+    Resolution order:
+    1. User-defined alias (``config.json modelAliases``) — exact match
+       → uses ``targetProvider`` + ``targetModel`` from the alias
+    2. Built-in public alias (identity, e.g. ``claude-sonnet-4-6`` → itself)
+    3. Direct provider routing (``resolveForModel`` credential-aware)
+    4. Fallback to default alias or active provider
+
+    Args:
+        inputAlias: The alias or model ID from the client request.
+        providerHint: Preferred provider name (used when multiple match).
+        defaultAlias: Fallback alias if ``inputAlias`` is None/empty.
+
+    Returns:
+        ``AliasResolutionResult`` with the resolved provider, model, and
+        ``displayModel`` (the alias name presented to the client).
+
+    Raises:
+        ValueError: If no provider can be resolved.
+    """
+    normalized = _normalize(inputAlias) or _normalize(defaultAlias) or DEFAULT_ALIAS
+
+    # ── Step 1: User-defined alias ──────────────────────────────────────
+    # The alias defines its OWN targetProvider + targetModel independently
+    # of what the input string looks like. This is the core proxy-mapping
+    # feature: "display claude-sonnet, route to deepseek-chat".
+    userAlias = _findUserAlias(normalized)
+    if userAlias is not None and userAlias.targetModel:
+        routed = resolveForModel(
+            userAlias.targetModel,
+            hint=userAlias.targetProvider or providerHint,
+        )
+        if routed is not None and _hasCredentials(routed):
+            display = userAlias.displayAlias or userAlias.alias
+            return AliasResolutionResult(
+                alias=normalized,
+                provider=userAlias.targetProvider,
+                model=userAlias.targetModel,
+                displayModel=display,
+                isFallback=False,
+                isDirect=False,
+            )
+
+    # ── Step 2: Built-in public alias (identity) ────────────────────────
+    # Canonical Claude model IDs map to themselves. This ensures clients
+    # using official model names work even without a user-defined alias.
+    if normalized in BUILTIN_PUBLIC_ALIASES:
+        routed = resolveForModel(normalized, hint=providerHint)
+        if routed is not None and _hasCredentials(routed):
+            return AliasResolutionResult(
+                alias=normalized,
+                provider=routed.get("name", "unknown"),
+                model=normalized,
+                displayModel=normalized,
+                isFallback=False,
+                isDirect=False,
+            )
+
+    # ── Step 3: Direct provider routing ─────────────────────────────────
+    # If the input looks like a raw model ID (not an alias), try to route
+    # it directly to a provider that supports it.
+    routed = resolveForModel(normalized, hint=providerHint)
+    if routed is not None and _hasCredentials(routed):
+        return AliasResolutionResult(
+            alias=normalized,
+            provider=routed.get("name", "unknown"),
+            model=normalized,
+            displayModel=normalized,
+            isFallback=False,
+            isDirect=True,
+        )
+
+    # ── Step 4: Fallback to active provider ─────────────────────────────
+    active = _resolveActiveProvider()
+    if active is not None and _hasCredentials(active):
+        model = active.get("defaultModel", normalized)
+        provider_name = active.get("name", "active")
+        logger.warning(
+            "Alias fallback: '%s' → active provider '%s' model '%s'",
+            normalized, provider_name, model,
+        )
+        return AliasResolutionResult(
+            alias=normalized,
+            provider=provider_name,
+            model=model,
+            displayModel=normalized,
+            isFallback=True,
+            isDirect=False,
+        )
+
+    # ── Nothing worked ──────────────────────────────────────────────────
+    raise ValueError(
+        f"Cannot resolve alias '{normalized}': no provider available "
+        f"with credentials. Check provider configuration."
+    )
+
+
+def resolveAliasOrNone(
+    inputAlias: str | None,
+    providerHint: str | None = None,
+    defaultAlias: str | None = None,
+) -> AliasResolutionResult | None:
+    """Like ``resolveAlias`` but returns ``None`` instead of raising.
+
+    Safe for use in streaming endpoints or background tasks where
+    a resolution failure should not propagate as an exception.
+    """
+    try:
+        return resolveAlias(inputAlias, providerHint=providerHint, defaultAlias=defaultAlias)
+    except ValueError:
+        return None
+
+
+def getReverseAlias(backendModelId: str) -> str | None:
+    """Reverse lookup: given a backend model ID, find the alias that maps to it.
+
+    Used for response rewriting — when the upstream returns a model ID,
+    the proxy should present the alias name to the client instead.
+
+    Args:
+        backendModelId: The raw model ID returned by the upstream provider.
+
+    Returns:
+        The alias name if found, or ``None``.
+    """
+    if not backendModelId:
+        return None
+    try:
+        aliases = settings.config.get("modelAliases", [])
+        if isinstance(aliases, list):
+            for entry in aliases:
+                if not isinstance(entry, dict):
+                    continue
+                target = entry.get("targetModel") or entry.get("target_model")
+                if target == backendModelId:
+                    return entry.get("alias")
+    except Exception:
+        pass
+    if backendModelId in BUILTIN_PUBLIC_ALIASES:
+        return backendModelId
+    return None
+
+
+def listAliasNames() -> list[str]:
+    """Return every alias name the system knows about, deduplicated."""
+    out: set[str] = set()
+    try:
+        aliases = settings.config.get("modelAliases", [])
+        if isinstance(aliases, list):
+            for entry in aliases:
+                if isinstance(entry, dict) and entry.get("alias"):
+                    out.add(entry["alias"])
+    except Exception:
+        pass
+    out.update(BUILTIN_PUBLIC_ALIASES)
+    return sorted(out)
+
+
+def getAliasModelsForV1Models() -> list[dict[str, object]]:
+    """Return alias entries formatted for the ``/v1/models`` endpoint.
+
+    Each alias is exposed as a model entry so that clients see the alias
+    name alongside real provider models. The ``owned_by`` field is set to
+    the alias's ``targetProvider`` so users can see where it routes.
+
+    Returns:
+        A list of dicts with keys ``id``, ``name``, ``provider``,
+        ``contextWindow``, ``ownedBy``, ``isAlias``.
+    """
+    result: list[dict[str, object]] = []
+    try:
+        aliases = settings.config.get("modelAliases", [])
+        if isinstance(aliases, list):
+            for entry in aliases:
+                if not isinstance(entry, dict):
+                    continue
+                aliasName = entry.get("alias", "")
+                if not aliasName:
+                    continue
+                result.append({
+                    "id": aliasName,
+                    "name": entry.get("displayAlias") or aliasName,
+                    "provider": entry.get("targetProvider", "unknown"),
+                    "contextWindow": 128000,  # conservative default
+                    "ownedBy": entry.get("targetProvider", "unknown"),
+                    "isAlias": True,
+                })
+    except Exception:
+        pass
+    # Also expose built-in public aliases as identity entries
+    for aliasName in BUILTIN_PUBLIC_ALIASES:
+        if not any(r.get("id") == aliasName for r in result):
+            result.append({
+                "id": aliasName,
+                "name": aliasName,
+                "provider": "builtin",
+                "contextWindow": 200000,
+                "ownedBy": "builtin",
+                "isAlias": True,
+            })
+    return result

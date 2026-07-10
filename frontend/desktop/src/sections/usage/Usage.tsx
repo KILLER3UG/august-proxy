@@ -55,7 +55,7 @@ function StatCard({ icon: Icon, label, value, sub, accent = 'default' }: StatCar
 function Heatmap({ cells }: { cells: { date: string; count: number }[] }) {
   // 5 rows × ceil(N/7) cols, oldest at top-left
   const max = Math.max(1, ...cells.map(c => c.count));
-  const cols = Math.ceil(cells.length / 5);
+  const _cols = Math.ceil(cells.length / 5);
   const grid: { count: number; date: string }[][] = Array.from({ length: 5 }, () => []);
   cells.forEach((cell, i) => {
     const col = Math.floor(i / 5);

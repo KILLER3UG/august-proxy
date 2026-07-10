@@ -65,21 +65,21 @@ export function CommandPalette() {
           >
             <Command.Item
               value="action new chat"
-              onSelect={run(() => navigate("/"))}
+              onSelect={run(() => { void navigate("/"); })}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
             >
               <Plus className="size-3.5" /> New chat
             </Command.Item>
             <Command.Item
               value="action open settings"
-              onSelect={run(() => navigate("/settings"))}
+              onSelect={run(() => { void navigate("/settings"); })}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
             >
               <Settings className="size-3.5" /> Settings…
             </Command.Item>
             <Command.Item
               value="action refresh all data"
-              onSelect={run(() => qc.invalidateQueries())}
+              onSelect={run(() => { void qc.invalidateQueries(); })}
               className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
             >
               <RefreshCw className="size-3.5" /> Refresh all data
@@ -117,7 +117,7 @@ export function CommandPalette() {
               <Command.Item
                 key={key}
                 value={`settings ${label}`}
-                onSelect={run(() => navigate(path))}
+                onSelect={run(() => { void navigate(path); })}
                 className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
               >
                 <Icon className="size-3.5" /> {label}
@@ -135,7 +135,7 @@ export function CommandPalette() {
               <Command.Item
                 key={to}
                 value={`tool ${label}`}
-                onSelect={run(() => navigate(to))}
+                onSelect={run(() => { void navigate(to); })}
                 className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
               >
                 <Icon className="size-3.5" /> {label}

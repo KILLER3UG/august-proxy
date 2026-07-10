@@ -179,10 +179,10 @@ function ProvidersTab() {
   const selected = providers.find((p) => p.id === selectedId) ?? null;
 
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['ws-providers'] });
-    qc.invalidateQueries({ queryKey: ['aggregated-models'] });
-    qc.invalidateQueries({ queryKey: ['mp-aggregated-models'] });
-  };
+	    void qc.invalidateQueries({ queryKey: ['ws-providers'] });
+	    void qc.invalidateQueries({ queryKey: ['aggregated-models'] });
+	    void qc.invalidateQueries({ queryKey: ['mp-aggregated-models'] });
+	  };
 
   function selectProvider(id: string) {
     setSelectedId(id);
@@ -204,7 +204,7 @@ function ProvidersTab() {
           <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">Providers</p>
             <button
-              onClick={() => listQ.refetch()}
+              onClick={() => void listQ.refetch()}
               aria-label="Refresh providers"
               className="text-muted-foreground hover:text-foreground transition"
             >
@@ -392,9 +392,9 @@ function AllModelsTab() {
       if (fail.length) {
         toast.error(`Failed for ${fail.length} provider${fail.length === 1 ? '' : 's'}: ${fail.map((f) => f.provider).join(', ')}`);
       }
-      qc.invalidateQueries({ queryKey: ['ws-providers'] });
-      qc.invalidateQueries({ queryKey: ['aggregated-models'] });
-      setDiscovering(false);
+	      void qc.invalidateQueries({ queryKey: ['ws-providers'] });
+	      void qc.invalidateQueries({ queryKey: ['aggregated-models'] });
+	      setDiscovering(false);
     },
     onError: () => {
       setDiscovering(false);
@@ -630,9 +630,9 @@ function AliasesTab() {
       await updateUserModelAliases(payload);
       setAliases(payload);
       setEdits(null);
-      qc.invalidateQueries({ queryKey: ['user-model-aliases'] });
-      qc.invalidateQueries({ queryKey: ['aggregated-models'] });
-      toast.success(`Saved ${payload.length} alias${payload.length === 1 ? '' : 'es'}`);
+	      void qc.invalidateQueries({ queryKey: ['user-model-aliases'] });
+	      void qc.invalidateQueries({ queryKey: ['aggregated-models'] });
+	      toast.success(`Saved ${payload.length} alias${payload.length === 1 ? '' : 'es'}`);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -673,7 +673,7 @@ function AliasesTab() {
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <Button size="sm" variant="outline" onClick={() => aliasQ.refetch()} title="Refresh model list">
+            <Button size="sm" variant="outline" onClick={() => void aliasQ.refetch()} title="Refresh model list">
               <RefreshCw className="size-3" /> Refresh
             </Button>
             {!dirty && (
@@ -689,13 +689,13 @@ function AliasesTab() {
                 <Button size="sm" variant="outline" onClick={cancelEdit}>
                   Cancel
                 </Button>
-                <Button size="sm" onClick={save} disabled={saving}>
+                <Button size="sm" onClick={() => void save()} disabled={saving}>
                   {saving ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
                   {saving ? 'Saving…' : 'Save'}
                 </Button>
               </>
             )}
-            <Button size="sm" variant="destructive" onClick={handleRestart} disabled={restarting} title="Restart backend to pick up alias changes">
+            <Button size="sm" variant="destructive" onClick={() => void handleRestart()} disabled={restarting} title="Restart backend to pick up alias changes">
               <RefreshCw className="size-3" /> {restarting ? 'Restarting…' : 'Restart'}
             </Button>
           </div>
@@ -822,12 +822,13 @@ function FallbackTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: 'probe-non-alias' }),
       });
-      const data = await res.json();
-      if (data?.translationWarning) toast.warning(data.translationWarning);
-      if (data?.ok && data.result?.resolution) {
-        toast.success(`Resolves to ${data.result.resolution.model} via ${data.result.resolution.provider}`);
-      } else if (data?.result?.action && data.result.action.startsWith('reject')) {
-        toast.error(`Fallback rejected: ${data.result.action}`);
+      const data = await res.json() as Record<string, unknown>;
+      if (data?.translationWarning) toast.warning(data.translationWarning as string);
+      if (data?.ok && (data.result as Record<string, unknown>)?.resolution) {
+        const resolution = (data.result as Record<string, unknown>).resolution as Record<string, string>;
+        toast.success(`Resolves to ${resolution.model} via ${resolution.provider}`);
+      } else if ((data.result as Record<string, unknown>)?.action && ((data.result as Record<string, unknown>).action as string).startsWith('reject')) {
+        toast.error(`Fallback rejected: ${(data.result as Record<string, unknown>).action as string}`);
       } else {
         toast.warning('Fallback did not resolve — check config or catalog state');
       }
@@ -868,7 +869,7 @@ function FallbackTab() {
             <WorkspaceSelect
               value={activeFallback.mode}
               onChange={(e) => {
-                const next = { ...activeFallback, mode: e.target.value as any };
+                const next = { ...activeFallback, mode: e.target.value as SubAgentFallbackConfig['mode'] };
                 setFallbackEdits(next);
               }}
               options={[
@@ -914,7 +915,7 @@ function FallbackTab() {
           <Button
             size="sm"
             variant="outline"
-            onClick={testFallback}
+            onClick={() => void testFallback()}
             disabled={testing || !activeFallback.enabled}
           >
             {testing ? <Loader2 className="size-3 animate-spin" /> : <Bot className="size-3" />}
@@ -925,16 +926,18 @@ function FallbackTab() {
               <Button size="sm" variant="outline" onClick={() => setFallbackEdits(null)}>
                 Cancel
               </Button>
-              <Button size="sm" onClick={async () => {
-                try {
-                  await updateSubAgentFallback(activeFallback);
-                  setFallbackConfig(activeFallback);
-                  setFallbackEdits(null);
-                  qc.invalidateQueries({ queryKey: ['subagent-fallback-config'] });
-                  toast.success('Saved fallback settings');
-                } catch (e: unknown) {
-                  toast.error(e instanceof Error ? e.message : 'Save failed');
-                }
+              <Button size="sm" onClick={() => {
+                void (async () => {
+                  try {
+                    await updateSubAgentFallback(activeFallback);
+                    setFallbackConfig(activeFallback);
+                    setFallbackEdits(null);
+                    void qc.invalidateQueries({ queryKey: ['subagent-fallback-config'] });
+                    toast.success('Saved fallback settings');
+                  } catch (e: unknown) {
+                    toast.error(e instanceof Error ? e.message : 'Save failed');
+                  }
+                })();
               }}>
                 <Check className="size-3" /> Save fallback settings
               </Button>
@@ -993,8 +996,8 @@ function BackgroundReflectionTab() {
     try {
       await updateReviewBackgroundConfig(editConfig);
       setEditConfig(null);
-      qc.invalidateQueries({ queryKey: ['review-background-config'] });
-      toast.success('Saved background review settings');
+	      void qc.invalidateQueries({ queryKey: ['review-background-config'] });
+	      toast.success('Saved background review settings');
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -1087,7 +1090,7 @@ function BackgroundReflectionTab() {
       <div className="flex items-center gap-2">
         {dirty && (
           <>
-            <Button size="sm" onClick={handleSave} disabled={saving}>
+            <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
               {saving ? 'Saving...' : 'Save'}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => setEditConfig(null)}>
@@ -1298,7 +1301,7 @@ function ProviderEditor({
     if (field === 'name') setName(value);
     if (field === 'baseUrl') setBaseUrl(value);
     if (field === 'apiKey') setApiKey(value);
-    update.mutate({ [field]: value } as never);
+    update.mutate({ [field]: value });
   }
 
   return (
@@ -1396,17 +1399,19 @@ function ProviderEditor({
               )}
               <button
                 type="button"
-                onClick={async () => {
-                  // If the key isn't loaded yet (e.g. stale cache), fetch it
-                  if (!apiKey && provider.apiKeySet) {
-                    try {
-                      const full = await providersApi.get(provider.id);
-                      if (full.apiKey) setApiKey(full.apiKey);
-                    } catch {
-                      // Best-effort; key stays empty
+                onClick={() => {
+                  void (async () => {
+                    // If the key isn't loaded yet (e.g. stale cache), fetch it
+                    if (!apiKey && provider.apiKeySet) {
+                      try {
+                        const full = await providersApi.get(provider.id);
+                        if (full.apiKey) setApiKey(full.apiKey);
+                      } catch {
+                        // Best-effort; key stays empty
+                      }
                     }
-                  }
-                  setShowKey((v) => !v);
+                    setShowKey((v) => !v);
+                  })();
                 }}
                 aria-label={showKey ? 'Hide API key' : 'Show API key'}
                 className="absolute right-2 top-1/2 -translate-y-1/2 grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground transition"

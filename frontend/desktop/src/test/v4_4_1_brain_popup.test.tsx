@@ -46,10 +46,10 @@ describe('v4.4.1 — BrainIndicator (floating popup)', () => {
   it('clicking the icon opens the popup (floating, no backdrop)', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => EVENTS,
+      json: () => EVENTS,
     });
     withQuery(<BrainIndicator />);
-    await act(async () => {
+    act(() => {
       fireEvent.click(screen.getByTestId('titlebar-brain-button'));
     });
     await waitFor(() => {
@@ -62,11 +62,11 @@ describe('v4.4.1 — BrainIndicator (floating popup)', () => {
   it('clicking the icon again closes the popup', async () => {
     withQuery(<BrainIndicator />);
     const btn = screen.getByTestId('titlebar-brain-button');
-    await act(async () => {
+    act(() => {
       fireEvent.click(btn);
     });
     await waitFor(() => expect(screen.queryByTestId('brain-popup')).toBeTruthy());
-    await act(async () => {
+    act(() => {
       fireEvent.click(btn);
     });
     expect(screen.queryByTestId('brain-popup')).toBeNull();

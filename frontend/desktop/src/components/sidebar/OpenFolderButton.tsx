@@ -21,7 +21,7 @@ export function OpenFolderButton() {
 
       const name = result.name || folderNameFromPath(result.path);
       const { session } = findOrCreateSessionForPath(result.path, name);
-      navigate(`/c/${session.id}`);
+      void navigate(`/c/${session.id}`);
     } catch (err) {
       console.error('Failed to open folder:', err);
     } finally {
@@ -32,7 +32,7 @@ export function OpenFolderButton() {
   return (
     <button
       type="button"
-      onClick={handleOpenFolder}
+      onClick={() => { void handleOpenFolder(); }}
       disabled={loading}
       className={cn(
         'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium',

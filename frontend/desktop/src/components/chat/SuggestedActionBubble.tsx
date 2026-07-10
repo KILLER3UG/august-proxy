@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 /* ── SuggestedActionBubble ─ post-turn follow-up suggestions ──────── */
 /* A single pill anchored top-right of the chat scroll area. Appears     */
 /* when the previous turn just completed and the user hasn't started     */

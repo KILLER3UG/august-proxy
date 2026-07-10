@@ -8,6 +8,7 @@ from app.config import settings
 from app.providers import resolver as providerResolver
 from app.lib import secrets
 from app.services import configService
+from app.jsonUtils import as_dict, as_list, as_str
 router = APIRouter(prefix='/api/config')
 
 @router.get('/activeProvider')
@@ -22,22 +23,22 @@ async def activeProvider():
     active = cfg.get('activeProvider')
     providers = []
     for p in providerResolver.listAvailable():
-        apiKey = cfg.get(p['name'], {}).get('apiKey', '')
+        apiKey = as_str(as_dict(cfg.get(p['name']), {}).get('apiKey'), '')
         if not apiKey:
             from app.providers.clients import getClient
             client = getClient(p)
             if client:
                 apiKey = client.resolveApiKey() or ''
         if apiKey:
-            providers.append({'id': p['name'], 'name': p['name'], 'apiMode': p.get('apiMode', ''), 'isAvailable': True, 'redactedKey': secrets.mask(apiKey)})
+            providers.append({'id': p['name'], 'name': p['name'], 'apiMode': as_str(p.get('apiMode'), ''), 'isAvailable': True, 'redactedKey': secrets.mask(apiKey)})
     store = configService.getProvidersStore()
-    for entry in store.get('providers', []):
-        name = entry.get('name', '')
+    for entry in as_list(store.get('providers'), []):
+        name = as_str(entry.get('name'), '')
         if not name or any((p['id'] == name for p in providers)):
             continue
-        apiKey = entry.get('apiKey', '')
+        apiKey = as_str(entry.get('apiKey'), '')
         if apiKey:
-            providers.append({'id': name, 'name': name, 'apiMode': entry.get('apiFormat', 'openaiChat'), 'isAvailable': True, 'redactedKey': secrets.mask(apiKey)})
+            providers.append({'id': name, 'name': name, 'apiMode': as_str(entry.get('apiFormat'), 'openaiChat'), 'isAvailable': True, 'redactedKey': secrets.mask(apiKey)})
     return {'activeProvider': active, 'providers': providers}
 
 @router.get('/safe')
@@ -184,8 +185,8 @@ async def getExternalAccess():
       - source:         where the key is loaded from ('env'|'config'|null)
     """
     cfg = configService.getConfig()
-    gw = cfg.get('gateway') or {}
-    ea = gw.get('externalAccess') or {}
+    gw = as_dict(cfg.get('gateway'), {})
+    ea = as_dict(gw.get('externalAccess'), {})
     enabled = bool(ea.get('enabled', False))
     apiKey = settings.gatewayApiKey
     return {'enabled': enabled, 'hasKey': bool(apiKey), 'keyPreview': secrets.mask(apiKey) if apiKey else None, 'source': 'env' if apiKey else None, 'endpoints': {'anthropic': f'http://localhost:{settings.port}/v1/messages', 'openai': f'http://localhost:{settings.port}/v1/chat/completions', 'models': f'http://localhost:{settings.port}/v1/models'}}

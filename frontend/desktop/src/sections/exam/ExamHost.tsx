@@ -72,21 +72,21 @@ export function ExamHost(props: ExamHostProps) {
           body: JSON.stringify(body),
         });
         if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          throw new Error(err.detail || `HTTP ${resp.status}`);
+          const err = await resp.json().catch(() => ({})) as Record<string, unknown>;
+          throw new Error(String(err.detail) || `HTTP ${resp.status}`);
         }
-        const data = await resp.json();
+        const data = await resp.json() as { examId?: number; totalQuestions?: number; question?: Question; id?: number; stem?: string; options?: string[]; position?: number };
         if (cancelled) return;
         // Wire format: camelCase (`examId`, `totalQuestions`, …).
         const examIdNum: number | null = data.examId ?? null;
         const total: number = data.totalQuestions ?? 0;
         const rawQ = data.question ?? data;
         const question: Question = {
-          id: rawQ.id,
-          examId: rawQ.examId ?? examIdNum ?? 0,
-          position: rawQ.position ?? 1,
-          stem: rawQ.stem,
-          options: rawQ.options ?? [],
+          id: (rawQ as Question).id,
+          examId: (rawQ as Question).examId ?? examIdNum ?? 0,
+          position: (rawQ as Question).position ?? 1,
+          stem: (rawQ as Question).stem,
+          options: (rawQ as Question).options ?? [],
         };
         setExamId(examIdNum);
         setQuestion(question);
@@ -98,7 +98,7 @@ export function ExamHost(props: ExamHostProps) {
         if (!cancelled) setLoading(false);
       }
     };
-    bootstrap();
+    void bootstrap();
     return () => {
       cancelled = true;
     };
@@ -114,12 +114,12 @@ export function ExamHost(props: ExamHostProps) {
         body: JSON.stringify({ questionId: questionId, selectedIndex: selectedIndex }),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
+      const data = await resp.json() as Record<string, unknown>;
       // Wire format: camelCase (`isCorrect`, `correctIndex`, `rationale`).
       return {
-        isCorrect: data.isCorrect ?? data.correct ?? false,
-        correctIndex: data.correctIndex ?? -1,
-        rationale: data.rationale ?? '',
+        isCorrect: (data.isCorrect ?? data.correct ?? false) as boolean,
+        correctIndex: (data.correctIndex ?? -1) as number,
+        rationale: (data.rationale ?? '') as string,
       };
     },
     [examId],
@@ -143,7 +143,7 @@ export function ExamHost(props: ExamHostProps) {
         }
         throw new Error(`HTTP ${resp.status}`);
       }
-      const q = await resp.json();
+      const q = await resp.json() as Question;
       // Wire format: camelCase (`examId`, `position`, `stem`, `options`).
       const nextQuestion: Question = {
         id: q.id,
@@ -170,10 +170,10 @@ export function ExamHost(props: ExamHostProps) {
         body: JSON.stringify(body),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
+      const data = await resp.json() as { question?: Question; position?: number };
       if (data?.question) {
         setQuestion(data.question);
-        setPosition(data.position);
+        setPosition(data.position ?? position);
         setTotal((t) => (t > 0 ? t + 1 : t));
       }
     },
@@ -207,7 +207,7 @@ export function ExamHost(props: ExamHostProps) {
       examId={examId}
       question={question}
       onAnswer={handleAnswer}
-      onNext={handleNext}
+      onNext={() => { void handleNext(); }}
       onAddQuestion={handleAddQuestion}
       onDismiss={onDismiss}
     />

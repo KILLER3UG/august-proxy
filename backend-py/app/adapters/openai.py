@@ -23,14 +23,24 @@ from app.adapters.caseConverters import snakeToCamel, camelToSnake
 from app.providers import resolver as providerResolver
 from app.providers.modelResolver import resolve, resolveOrFallback
 from app.providers.clients import getClient
+from app.models import ChatCompletionRequest, ChatMessage, ToolCall, Usage
 MAX_MANAGED_TOOL_ROUNDS = 10
 
-def deriveSessionIdFromOpenai(body: dict[str, object] | None, request: object | None=None) -> str:
+def deriveSessionIdFromOpenai(body: ChatCompletionRequest | dict[str, object] | None, request: object | None=None) -> str:
     """Extract a session identifier from an OpenAI Chat Completions body.
 
     Order: explicit sessionId → user field → metadata.sessionId → headers → ''.
     """
-    if body and isinstance(body, dict):
+    if isinstance(body, ChatCompletionRequest):
+        from_model = getattr(body, 'sessionId', None) or getattr(body, 'session_id', None)
+        if from_model:
+            return str(from_model)
+        metadata = getattr(body, 'metadata', None)
+        if isinstance(metadata, dict):
+            from_meta = metadata.get('sessionId') or metadata.get('session_id')
+            if from_meta:
+                return str(from_meta)
+    elif body and isinstance(body, dict):
         fromBody = body.get('sessionId') or body.get('session_id') or body.get('metadata', {}).get('sessionId') or body.get('metadata', {}).get('session_id') or body.get('user')
         if fromBody:
             return str(fromBody)
@@ -183,9 +193,12 @@ def buildOpenaiAggregatedFromStream(acc: dict[str, object]) -> dict[str, object]
         message['tool_calls'] = [{'id': tc.get('id') or f'call_{uuid.uuid4().hex[:8]}', 'type': 'function', 'function': {'name': tc.get('function', {}).get('name', ''), 'arguments': tc.get('function', {}).get('arguments', '')}} for tc in acc['tool_calls']]
     return {'id': responseId, 'object': 'chat.completion', 'created': acc.get('created') or int(time.time()), 'model': acc.get('model') or 'unknown', 'choices': [{'index': 0, 'message': message, 'finish_reason': acc.get('finish_reason') or 'stop'}], 'usage': acc.get('usage') or {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}}
 
-def isOpenaiToolResultError(toolMessage: dict[str, object]) -> bool:
+def isOpenaiToolResultError(toolMessage: ChatMessage | dict[str, object]) -> bool:
     """Check if a tool result contains an error pattern."""
-    content = toolMessage.get('content', '')
+    if isinstance(toolMessage, ChatMessage):
+        content = getattr(toolMessage, 'content', '')
+    else:
+        content = toolMessage.get('content', '')
     if isinstance(content, str):
         lower = content.lower()
         return 'error:' in lower or 'exit code' in lower or 'command not found' in lower or ('no such file' in lower) or ('permission denied' in lower)
@@ -231,7 +244,7 @@ async def fallbackClientFailedToolsOpenai(messages: list[dict[str, object]], man
             break
     return updated if changed else messages
 
-async def resolveManagedOpenaiToolCalls(messages: list[dict[str, object]], model: str, upstreamUrl: str, upstreamHeaders: dict[str, str], knownTools: list[dict[str, object]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, object]], None] | None=None, parentSignal: object=None, client: object=None) -> tuple[list[dict[str, object]], dict[str, object] | None]:
+async def resolveManagedOpenaiToolCalls(messages: list[dict[str, object]] | list[ChatMessage], model: str, upstreamUrl: str, upstreamHeaders: dict[str, str], knownTools: list[dict[str, object]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, object]], None] | None=None, parentSignal: object=None, client: object=None) -> tuple[list[dict[str, object]], dict[str, object] | None]:
     """Run the multi-round tool resolution loop.
 
     For each round:
@@ -295,14 +308,15 @@ async def streamOpenaiSseToClient(upstreamUrl: str, upstreamHeaders: dict[str, s
             return
     yield writeOpenaiSseDone()
 
-async def streamUpstreamAndResolveToolsOpenai(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, object], model: str, knownTools: list[dict[str, object]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, object]], None] | None=None) -> AsyncIterator[str]:
+async def streamUpstreamAndResolveToolsOpenai(upstreamUrl: str, upstreamHeaders: dict[str, str], body: ChatCompletionRequest | dict[str, object], model: str, knownTools: list[dict[str, object]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, object]], None] | None=None) -> AsyncIterator[str]:
     """Stream from upstream, intercept tool calls, resolve them, and continue.
 
     This is the key function for handling streaming with managed tool execution.
     """
     acc = createOpenaiStreamAccumulator()
     toolRound = 0
-    currentMessages = list(body.get('messages', []))
+    raw_body = body.model_dump() if isinstance(body, ChatCompletionRequest) else body
+    currentMessages = list(raw_body.get('messages', []))
     responseId = ''
     modelName = model
     async for chunk in _client.streamSse(upstreamUrl, upstreamHeaders, camelToSnake({**body, 'stream': True})):
@@ -348,12 +362,17 @@ async def streamUpstreamAndResolveToolsOpenai(upstreamUrl: str, upstreamHeaders:
             return
     yield writeOpenaiSseDone()
 
-async def handleChatCompletions(body: dict[str, object], request: object=None) -> tuple[dict[str, object] | AsyncIterator[str], dict[str, str] | None]:
+async def handleChatCompletions(body: ChatCompletionRequest | dict[str, object], request: object=None) -> tuple[dict[str, object] | AsyncIterator[str], dict[str, str] | None]:
     """Handle a /v1/chat/completions or /v1/responses request.
 
     Returns a tuple of (response_or_stream, response_headers).
     """
-    model = body.get('model', 'gpt-4o')
+    if isinstance(body, ChatCompletionRequest):
+        model = body.model
+        raw_body: dict[str, object] = body.model_dump()  # type: ignore[assignment]
+    else:
+        model = body.get('model', 'gpt-4o')
+        raw_body = body
     try:
         resolved = resolve(model, default_alias='gpt-4o')
         providerName = resolved['provider']
@@ -373,36 +392,36 @@ async def handleChatCompletions(body: dict[str, object], request: object=None) -
     headers = client.buildAuthHeaders(apiKey)
     baseUrl = client.resolveBaseUrl()
     upstreamUrl = toOpenaiCompatibleTargetUrl(baseUrl)
-    clientWantsStream = body.get('stream', False)
-    isResponsesEndpoint = body.get('_endpoint') == 'responses'
-    sessionId = deriveSessionIdFromOpenai(body, request)
+    clientWantsStream = raw_body.get('stream', False)
+    isResponsesEndpoint = raw_body.get('_endpoint') == 'responses'
+    sessionId = deriveSessionIdFromOpenai(raw_body, request)
     knownTools = getProxyOpenaiToolDefinitions()
-    clientTools = body.get('tools', [])
+    clientTools = raw_body.get('tools', [])
     if clientTools:
         appendMissingOpenaiTools(knownTools, clientTools)
     managedLocalToolNames: set[str] = set()
     clientToolNames: set[str] = {getToolDefinitionName(t) for t in clientTools or [] if t}
     hasManagedTools = any((isProxyManagedLocalToolName(getToolDefinitionName(t)) for t in knownTools))
     if isResponsesEndpoint:
-        body['stream'] = False
-        resp = await client.requestJson('POST', upstreamUrl.replace('/chat/completions', '/responses'), headers, camelToSnake(body))
+        raw_body['stream'] = False
+        resp = await client.requestJson('POST', upstreamUrl.replace('/chat/completions', '/responses'), headers, camelToSnake(raw_body))
         return (snakeToCamel(resp.body) if isinstance(resp.body, (dict, list)) else {'response': str(resp.body)}, None)
     if clientWantsStream:
         if hasManagedTools:
-            stream = streamUpstreamAndResolveToolsOpenai(upstreamUrl, headers, body, model, knownTools, managedLocalToolNames, clientToolNames)
+            stream = streamUpstreamAndResolveToolsOpenai(upstreamUrl, headers, raw_body, model, knownTools, managedLocalToolNames, clientToolNames)
         else:
-            stream = streamOpenaiSseToClient(upstreamUrl, headers, body)
+            stream = streamOpenaiSseToClient(upstreamUrl, headers, raw_body)
         return (stream, writeOpenaiSseHeaders())
     else:
-        body['stream'] = False
+        raw_body['stream'] = False
         if hasManagedTools:
-            messages = body.get('messages', [])
+            messages = raw_body.get('messages', [])
             updatedMessages, usage = await resolveManagedOpenaiToolCalls(messages, model, upstreamUrl, headers, knownTools, managedLocalToolNames, clientToolNames, client=client)
             lastMsg = updatedMessages[-1] if updatedMessages else {}
             response = buildOpenaiAggregatedFromStream({'id': f'chatcmpl-{uuid.uuid4().hex[:12]}', 'model': model, 'created': int(time.time()), 'content': lastMsg.get('content', ''), 'tool_calls': lastMsg.get('tool_calls', []), 'finish_reason': 'stop' if not lastMsg.get('tool_calls') else 'tool_calls', 'usage': usage or {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}})
             return (response, None)
         else:
-            resp = await client.requestJson('POST', upstreamUrl, headers, camelToSnake(body))
+            resp = await client.requestJson('POST', upstreamUrl, headers, camelToSnake(raw_body))
             return (snakeToCamel(resp.body) if isinstance(resp.body, (dict, list)) else {'response': str(resp.body)}, None)
 _client = None
 

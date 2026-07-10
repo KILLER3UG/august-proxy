@@ -38,7 +38,7 @@ export function WorkspaceHeatmap({ cells, className, legend = true }: Props) {
   const max = useMemo(() => Math.max(0, ...cells.map((c) => c.count)), [cells]);
 
   // Reshape into a 5-row grid; columns flow top-to-bottom then left-to-right.
-  const cols = Math.ceil(cells.length / 5);
+  const _cols = Math.ceil(cells.length / 5);
   const grid: HeatmapCell[][] = Array.from({ length: 5 }, () => []);
   cells.forEach((cell, i) => grid[Math.floor(i / 5)].push(cell));
 

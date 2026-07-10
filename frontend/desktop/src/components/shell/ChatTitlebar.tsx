@@ -56,21 +56,21 @@ export function ChatTitlebar({
   // ── Window controls (Tauri only) ──
   useEffect(() => {
     if (!isTauri) return;
-    (async () => {
+    void (async () => {
       try {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         const win = getCurrentWindow();
         setIsMaximized(await win.isMaximized());
-      } catch {}
+      } catch { /* silent */ }
     })();
-  }, [isTauri]);
+  }, /* eslint-disable-line react-hooks/exhaustive-deps */ []);
 
   const handleMinimize = async () => {
     if (!isTauri) return;
     try {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().minimize();
-    } catch {}
+    } catch { /* silent */ }
   };
 
   const handleToggleMaximize = async () => {
@@ -80,7 +80,7 @@ export function ChatTitlebar({
       const win = getCurrentWindow();
       await win.toggleMaximize();
       setIsMaximized(await win.isMaximized());
-    } catch {}
+    } catch { /* silent */ }
   };
 
   const handleClose = async () => {
@@ -88,13 +88,13 @@ export function ChatTitlebar({
     try {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().close();
-    } catch {}
+    } catch { /* silent */ }
   };
 
   // ── Auto-update check (Tauri only) ──
   useEffect(() => {
     if (!isTauri) return;
-    (async () => {
+    void (async () => {
       try {
         const { check } = await import("@tauri-apps/plugin-updater");
         const update = await check();
@@ -105,7 +105,7 @@ export function ChatTitlebar({
         // Silently ignore — update check is best-effort
       }
     })();
-  }, [isTauri]);
+  }, /* eslint-disable-line react-hooks/exhaustive-deps */ []);
 
   const handleInstallUpdate = async () => {
     if (!isTauri || !updateAvailable) return;
@@ -161,7 +161,7 @@ export function ChatTitlebar({
         {/* Update notification button */}
         {updateAvailable && (
           <button
-            onClick={handleInstallUpdate}
+            onClick={() => { void handleInstallUpdate(); }}
             disabled={updating}
             className="flex items-center gap-1.5 px-2.5 py-1 mx-1 text-xs font-medium 
               bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 
@@ -218,21 +218,21 @@ export function ChatTitlebar({
         {/* Windows-style title bar buttons */}
         <div className="flex items-stretch ml-1">
           <button
-            onClick={handleMinimize}
+            onClick={() => { void handleMinimize(); }}
             className="w-[46px] h-[32px] flex items-center justify-center text-muted-foreground hover:bg-white/10 transition-colors"
             aria-label="Minimize"
           >
             <Minus className="size-4" />
           </button>
           <button
-            onClick={handleToggleMaximize}
+            onClick={() => { void handleToggleMaximize(); }}
             className="w-[46px] h-[32px] flex items-center justify-center text-muted-foreground hover:bg-white/10 transition-colors"
             aria-label={isMaximized ? "Restore" : "Maximize"}
           >
             {isMaximized ? <Minimize2 className="size-3.5" /> : <Square className="size-3" />}
           </button>
           <button
-            onClick={handleClose}
+            onClick={() => { void handleClose(); }}
             className="w-[46px] h-[32px] flex items-center justify-center text-muted-foreground hover:bg-red-500 hover:text-white transition-colors"
             aria-label="Close"
           >

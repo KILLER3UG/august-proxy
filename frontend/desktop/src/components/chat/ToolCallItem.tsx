@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, Check, CheckCircle2, ChevronDown, ChevronRight, CircleDot, Code2, Loader2, FileSearch } from 'lucide-react';
-import { cn, fmtElapsed } from '@/lib/utils';
+import { AlertCircle, Check, CheckCircle2, CircleDot, Code2, Loader2, FileSearch } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ToolIcon } from '@/components/ui/ToolIcon';
 import { FileIcon } from '@/components/ui/FileIcon';
@@ -79,11 +79,6 @@ function formatTimer(ms: number): string {
   const seconds = totalSeconds % 60;
   const pad = (num: number) => String(num).padStart(2, '0');
   return `${pad(minutes)}:${pad(seconds)}`;
-}
-
-function truncate(s: string, n: number): string {
-  if (s.length <= n) return s;
-  return `${s.slice(0, n - 1).trimEnd()}…`;
 }
 
 // Above this length the per-character shimmer animation becomes visually
@@ -224,7 +219,7 @@ export function ToolCallItem({
           startedAtMs = parsedDate;
         }
       }
-    } else if ((tool.startedAt as any) instanceof Date) {
+    } else if ((tool.startedAt as unknown) instanceof Date) {
       startedAtMs = (tool.startedAt as Date).getTime();
     }
   }
@@ -249,7 +244,6 @@ export function ToolCallItem({
   // result event, treat it as stalled — show a warning so the user knows
   // something went wrong rather than seeing an infinite spinner.
   const toolStalled = isRunning && startedAtMs !== undefined && (now - startedAtMs) > 120_000;
-  const effectiveStatus = toolStalled ? 'error' : tool.status;
   const isCommand = tool.name.startsWith('@run_command') || tool.name.startsWith('run_command');
   // Strip the @ prefix that the workbench sometimes prepends so the icon
   // mapper matches the canonical tool name (e.g. "read_file" not "@read_file").
@@ -515,15 +509,15 @@ export function ToolCallItem({
                   const token = tool.pendingApproval?.confirmationToken;
                   if (!token) return;
                   setApprovalStatus('confirming');
-                  confirmWorkbenchMutation(token, {
+                  void confirmWorkbenchMutation(token, {
                     onText: ({ content }) => {
-                      tool.summary = `${tool.summary || ''}\n${content}`.trim();
+                      tool.summary = `${tool.summary || ''}\n${typeof content === 'string' ? content : JSON.stringify(content ?? '')}`.trim();
                     },
-                    onToolUse: ({ id, name, input }) => {
+                    onToolUse: ({ id: _id, name, input }) => {
                       tool.summary = `${tool.summary || ''}\nStarted ${name}: ${JSON.stringify(input || {})}`.trim();
                     },
                     onToolResult: ({ content }) => {
-                      tool.summary = `${tool.summary || ''}\n${content}`.trim();
+                      tool.summary = `${tool.summary || ''}\n${typeof content === 'string' ? content : JSON.stringify(content ?? '')}`.trim();
                     },
                     onError: ({ message }) => {
                       tool.error = message;

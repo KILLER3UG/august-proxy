@@ -40,4 +40,5 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     );
   },
 );
+// eslint-disable-next-line react-refresh/only-export-components
 export { buttonVariants };

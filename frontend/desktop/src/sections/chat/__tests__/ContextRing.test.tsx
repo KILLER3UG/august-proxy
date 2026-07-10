@@ -52,7 +52,7 @@ describe('ContextRing tooltip regression', () => {
     const trigger = screen.getByRole('button', { name: /context used/i });
     fireEvent.mouseEnter(trigger);
 
-    const tooltip = document.querySelector('[data-composer-popover]') as HTMLElement | null;
+    const tooltip = document.querySelector('[data-composer-popover]');
     expect(tooltip).toBeInTheDocument();
 
     // jsdom does not run a CSS layout engine, so getBoundingClientRect() returns
@@ -60,8 +60,8 @@ describe('ContextRing tooltip regression', () => {
     // component actually set (style.top/style.left, produced by the clamping
     // logic under test) plus the fixed w-72 width (288px) so the bounds
     // assertions exercise the real positioning rather than jsdom's no-op layout.
-    const top = parseFloat(tooltip!.style.top) || 0;
-    const left = parseFloat(tooltip!.style.left) || 0;
+    const top = parseFloat((tooltip! as HTMLElement).style.top) || 0;
+    const left = parseFloat((tooltip! as HTMLElement).style.left) || 0;
     const width = 288; // w-72
     const height = 180;
     vi.spyOn(tooltip!, 'getBoundingClientRect').mockReturnValue({

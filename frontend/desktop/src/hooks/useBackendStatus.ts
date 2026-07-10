@@ -37,7 +37,7 @@ export function useBackendStatus() {
         if (!tauri) return;
         setStatus((s) => ({ ...s, loading: true }));
         try {
-            const proxy = (await invoke<string>('proxy_status')) as string;
+            const proxy = (await invoke<string>('proxy_status'));
             let proxyState: BackendStatus['proxy'] = 'unknown';
             let port: number | null = null;
             if (proxy.startsWith('ok:')) {
@@ -64,7 +64,7 @@ export function useBackendStatus() {
         if (!tauri) return;
         setStatus((s) => ({ ...s, sync: 'syncing', syncError: null }));
         try {
-            const res = (await invoke<string>('sync_backend_deps')) as string;
+            const res = (await invoke<string>('sync_backend_deps'));
             if (res.startsWith('error')) {
                 setStatus((s) => ({ ...s, sync: 'error', syncError: res.slice(6) }));
             } else if (res === 'needs_setup') {
@@ -72,7 +72,7 @@ export function useBackendStatus() {
             } else if (res === 'syncing') {
                 setStatus((s) => ({ ...s, sync: 'syncing' }));
                 // The sync is detached; re-check shortly after.
-                setTimeout(() => refresh(), 4000);
+                setTimeout(() => { void refresh(); }, 4000);
             } else {
                 setStatus((s) => ({ ...s, sync: 'up-to-date' }));
             }
@@ -87,7 +87,7 @@ export function useBackendStatus() {
 
     useEffect(() => {
         if (!tauri) return;
-        refresh();
+        void refresh();
     }, [tauri, refresh]);
 
     return { status, refresh, sync, isTauri: tauri };

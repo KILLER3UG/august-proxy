@@ -82,7 +82,7 @@ class VoiceCommandEventBus {
         listener(event);
       } catch (err) {
         // Never let one listener break the rest.
-        // eslint-disable-next-line no-console
+         
         console.error('[voice-events] listener threw', err);
       }
     }

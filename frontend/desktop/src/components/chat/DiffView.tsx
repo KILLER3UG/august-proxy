@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 /* ── DiffView ─ inline unified / line-based diff renderer ─────────── */
 /* Renders a diff in the same style as the ZCode reference:              */
 /*   • line numbers in a muted right-aligned column                      */

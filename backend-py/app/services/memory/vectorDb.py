@@ -13,6 +13,7 @@ import re
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
+from app.jsonUtils import as_dict, as_list, as_str
 from app.lib.paths import dataPath
 _DBFile = dataPath('august_vector_memory.json')
 _MAXEntries = 2000
@@ -94,16 +95,16 @@ def search(query: str, namespace: str='default', topK: int=10) -> list[dict[str,
     """Search for similar texts by embedding similarity."""
     db = _read()
     queryVec = _embed(query)
-    entries = [e for e in db['entries'] if e.get('namespace') == namespace]
+    entries = [e for e in db['entries'] if as_str(e.get('namespace')) == namespace]
     scored = []
     for e in entries:
-        score = _cosineSimilarity(queryVec, e.get('embedding', []))
+        score = _cosineSimilarity(queryVec, as_list(e.get('embedding'), []))
         if score > 0:
             scored.append((score, e))
     scored.sort(key=lambda x: x[0], reverse=True)
     results = []
     for score, entry in scored[:topK]:
-        results.append({'id': entry['id'], 'text': entry['text'], 'metadata': entry.get('metadata', {}), 'score': round(score, 4)})
+        results.append({'id': entry['id'], 'text': entry['text'], 'metadata': as_dict(entry.get('metadata'), {}), 'score': round(score, 4)})
     return results
 
 def delete(entryId: str) -> bool:
@@ -120,13 +121,13 @@ def count(namespace: str='') -> int:
     """Count entries, optionally by namespace."""
     db = _read()
     if namespace:
-        return sum((1 for e in db['entries'] if e.get('namespace') == namespace))
+        return sum((1 for e in db['entries'] if as_str(e.get('namespace')) == namespace))
     return len(db['entries'])
 
 def listNamespaces() -> list[str]:
     """List all namespaces."""
     db = _read()
-    return sorted(set((e.get('namespace', 'default') for e in db['entries'])))
+    return sorted(set((as_str(e.get('namespace'), 'default') for e in db['entries'])))
 _COLLECTIONSKey = 'semantic_collections'
 
 def _readCollections() -> dict[str, object]:
@@ -165,4 +166,4 @@ def addToCollection(collectionName: str, text: str, metadata: dict[str, object] 
 def searchCollection(collectionName: str, query: str, topK: int=5) -> list[dict[str, object]]:
     """Search within a semantic collection."""
     results = search(query, namespace='semantic', top_k=topK)
-    return [r for r in results if r.get('metadata', {}).get('collection') == collectionName]
+    return [r for r in results if as_str(as_dict(r.get('metadata'), {}).get('collection')) == collectionName]

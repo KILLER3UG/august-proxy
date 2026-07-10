@@ -26,5 +26,5 @@ async function poll() {
 
 if (typeof window !== 'undefined') {
   void poll();
-  setInterval(poll, 5_000);
+  setInterval(() => { void poll(); }, 5_000);
 }

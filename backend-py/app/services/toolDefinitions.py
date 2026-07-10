@@ -16,6 +16,7 @@ import os
 import re
 from pathlib import Path
 from app.services import toolRegistry
+from app.jsonUtils import as_dict, as_int, as_list, as_str
 _MAXFileSize = 10 * 1024 * 1024
 _MAXSearchResults = 100
 _MAXCommandTimeout = 300
@@ -149,7 +150,7 @@ async def _fetchUrlContent(url: str, maxLength: int=50000) -> str:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             resp = await client.get(url, headers={'User-Agent': 'August-Proxy/1.0', 'Accept': 'text/html,text/markdown,text/plain,*/*'})
             resp.raise_for_status()
-            contentType = resp.headers.get('content-type', '')
+            contentType = as_str(resp.headers.get('content-type'), '')
             text = resp.text
             if 'text/html' in contentType:
                 text = _htmlToMarkdown(text)
@@ -207,9 +208,9 @@ async def _webSearch(query: str, maxResults: int=10) -> str:
         loop = asyncio.get_running_loop()
         rawResults: list[dict[str, str]] = await loop.run_in_executor(None, _search)
         for i, r in enumerate(rawResults):
-            title = (r.get('title') or '').strip()
-            url = (r.get('href') or '').strip()
-            snippet = (r.get('body') or '').strip()
+            title = as_str(r.get('title'), '').strip()
+            url = as_str(r.get('href'), '').strip()
+            snippet = as_str(r.get('body'), '').strip()
             if title and url:
                 searchResults.append({'index': i + 1, 'title': title, 'url': url, 'snippet': snippet})
     except Exception as exc:
@@ -221,9 +222,9 @@ async def _webSearch(query: str, maxResults: int=10) -> str:
                 iaResp = await client.get('https://api.duckduckgo.com/', params={'q': query, 'format': 'json', 'no_html': '1', 'skip_disambig': '1'})
                 iaResp.raise_for_status()
                 iaData = iaResp.json()
-                abstract = iaData.get('Abstract', '')
+                abstract = as_str(iaData.get('Abstract'), '')
                 if abstract:
-                    return _json.dumps({'search_query': query, 'result_count': 0, 'abstract': abstract, 'source': iaData.get('AbstractURL', '')}, ensure_ascii=False)
+                    return _json.dumps({'search_query': query, 'result_count': 0, 'abstract': abstract, 'source': as_str(iaData.get('AbstractURL'), '')}, ensure_ascii=False)
         except Exception:
             pass
     if not searchResults:
@@ -248,7 +249,7 @@ async def _memorySearch(query: str) -> str:
             return f'No memory results for: {query}'
         lines = [f'Memory search results for: {query}\n']
         for r in results:
-            key = r.get('key', '')
+            key = as_str(r.get('key'), '')
             value = r.get('value', '')
             if isinstance(value, dict) or isinstance(value, list):
                 value = json.dumps(value, indent=2)
@@ -307,11 +308,11 @@ async def _diagnoseProxy() -> str:
     from app.config import settings
     parts = [f'Data directory: {settings.dataDir}', f'Web dist: {settings.webDist}', f'Port: {settings.port}', f'Mode: python', f'Environment: {settings.env}']
     try:
-        providers = settings.config.get('providers', {})
+        providers = as_dict(settings.config.get('providers'), {})
         if isinstance(providers, dict):
             for name, info in list(providers.items())[:10]:
                 if isinstance(info, dict):
-                    parts.append(f"Provider '{name}': model={info.get('model', 'unknown')}")
+                    parts.append(f"Provider '{name}': model={as_str(info.get('model'), 'unknown')}")
     except Exception:
         pass
     try:
@@ -395,7 +396,7 @@ async def _writeScratchpad(text: str) -> str:
         session = getSession()
         if not session:
             return 'Error: no active workbench session.'
-        await updateSessionState(session, execution_state={'phase': getattr(session, '_execution_state', {}).get('phase', 'research'), 'step': getattr(session, '_execution_state', {}).get('step', 1), 'completed': getattr(session, '_execution_state', {}).get('completed', []), 'blockers': getattr(session, '_execution_state', {}).get('blockers', [])})
+        await updateSessionState(session, execution_state={'phase': as_str(getattr(session, '_execution_state', {}).get('phase'), 'research'), 'step': as_int(getattr(session, '_execution_state', {}).get('step'), 1), 'completed': as_list(getattr(session, '_execution_state', {}).get('completed'), []), 'blockers': as_list(getattr(session, '_execution_state', {}).get('blockers'), [])})
         session._working_memory = text
         return 'Scratchpad updated.'
     except Exception as exc:
@@ -543,13 +544,13 @@ async def _spawnSubagent(goal: str, agentId: str='', context: str='', toolsets: 
 
     def _emit(ev: dict) -> None:
         try:
-            eventLog.event_log.append(sessionId, ev.get('type', 'subagent_event'), ev)
+            eventLog.event_log.append(sessionId, as_str(ev.get('type'), 'subagent_event'), ev)
         except Exception:
             pass
     result = await executeSubAgent(session, agentId or 'general', goal, context or '', emit=_emit)
-    status = result.get('status', 'completed')
-    text = result.get('result') or result.get('error') or ''
-    return f"Sub-agent '{result.get('agentId', 'general')}' {status}.\n\n{text}"
+    status = as_str(result.get('status'), 'completed')
+    text = as_str(result.get('result')) or as_str(result.get('error')) or ''
+    return f"Sub-agent '{as_str(result.get('agentId'), 'general')}' {status}.\n\n{text}"
 
 async def _loadSkill(name: str) -> str:
     """Load a skill's full instructions."""
@@ -558,7 +559,7 @@ async def _loadSkill(name: str) -> str:
         skill = skillService.get(name)
         if not skill:
             return f"Error: Skill '{name}' not found."
-        return f"# {skill['name']}\n\n{skill.get('description', '')}\n\n{skill.get('instructions', '')}"
+        return f"# {skill['name']}\n\n{as_str(skill.get('description'), '')}\n\n{as_str(skill.get('instructions'), '')}"
     except Exception as exc:
         return f"Error loading skill '{name}': {exc}"
 
@@ -574,7 +575,7 @@ async def _listSkills(query: str='') -> str:
             return 'No skills found.' if not query else f"No skills matching '{query}'."
         lines = [f'Available skills ({len(skills)}):\n']
         for s in skills:
-            lines.append(f"  - {s['name']:30s} {s.get('description', '')[:60]}")
+            lines.append(f"  - {s['name']:30s} {as_str(s.get('description'), '')[:60]}")
         return '\n'.join(lines)
     except Exception as exc:
         return f'Error listing skills: {exc}'

@@ -30,7 +30,7 @@ async function poll(): Promise<void> {
       if (status === 'streaming') next[id] = 'streaming';
     }
     $activeChatSessions.set(next);
-  } catch (_) {
+  } catch (_e: unknown) {
     // Network errors are non-fatal — keep the last known state.
   } finally {
     inFlight = false;
@@ -42,8 +42,8 @@ export function startChatActiveStreamsPoller(): void {
   if (pollHandle) return;
   // Kick off an immediate poll so the first render after a page load
   // shows the right state, then settle into the interval.
-  poll();
-  pollHandle = setInterval(poll, POLL_INTERVAL_MS);
+  void poll();
+  pollHandle = setInterval(() => { void poll(); }, POLL_INTERVAL_MS);
 }
 
 export function stopChatActiveStreamsPoller(): void {

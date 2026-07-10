@@ -78,7 +78,7 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
     try {
       await onAddQuestion(addRequest);
       setAddRequest('');
-    } catch {}
+    } catch { /* silent */ }
     setIsSubmitting(false);
   }, [addRequest, onAddQuestion]);
 
@@ -115,7 +115,7 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
                 className += 'border-border opacity-50';
               }
               return (
-                <button key={i} onClick={() => handleSelect(i)} className={className} disabled={answerResult !== null || isSubmitting}>
+                <button key={i} onClick={() => { void handleSelect(i); }} className={className} disabled={answerResult !== null || isSubmitting}>
                   <span className="flex items-center gap-2">
                     {answerResult !== null && i === answerResult.correctIndex && <CheckCircle2 className="size-3.5 shrink-0" />}
                     {answerResult !== null && i === selected && !isCorrect && <XCircle className="size-3.5 shrink-0" />}
@@ -148,9 +148,9 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
               onChange={(e) => setHelpText(e.target.value)}
               placeholder="Ask the model for help…"
               className="flex-1 bg-muted border border-border rounded-lg px-3 py-1.5 text-xs outline-none focus:border-ring transition"
-              onKeyDown={(e) => e.key === 'Enter' && handleHelp()}
+              onKeyDown={(e) => { if (e.key === 'Enter') { void handleHelp(); } }}
             />
-            <button onClick={handleHelp} disabled={isSubmitting || !helpText.trim()} className="text-primary hover:underline text-xs font-medium shrink-0">
+            <button onClick={() => { void handleHelp(); }} disabled={isSubmitting || !helpText.trim()} className="text-primary hover:underline text-xs font-medium shrink-0">
               <HelpCircle className="size-4" />
             </button>
           </div>
@@ -163,9 +163,9 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
               onChange={(e) => setAddRequest(e.target.value)}
               placeholder="Add a question about…"
               className="flex-1 bg-transparent text-xs text-muted-foreground outline-none placeholder:text-muted-foreground/50"
-              onKeyDown={(e) => e.key === 'Enter' && handleAddQuestion()}
+              onKeyDown={(e) => { if (e.key === 'Enter') { void handleAddQuestion(); } }}
             />
-            <button onClick={handleAddQuestion} disabled={isSubmitting || !addRequest.trim()} className="text-primary hover:underline text-xs font-medium shrink-0">
+            <button onClick={() => { void handleAddQuestion(); }} disabled={isSubmitting || !addRequest.trim()} className="text-primary hover:underline text-xs font-medium shrink-0">
               <Plus className="size-3.5" />
             </button>
           </div>

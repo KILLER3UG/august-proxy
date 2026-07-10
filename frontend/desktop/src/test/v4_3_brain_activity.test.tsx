@@ -53,7 +53,7 @@ describe('v4.3 — BrainActivityTab', () => {
   it('renders events newest-first with their category labels', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => EVENTS,
+      json: () => EVENTS,
     });
     withQuery(<BrainActivityTab />);
     await waitFor(() => {
@@ -66,7 +66,7 @@ describe('v4.3 — BrainActivityTab', () => {
   it('clicking a chip filters the feed to that category only', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => EVENTS,
+      json: () => EVENTS,
     });
     withQuery(<BrainActivityTab />);
     await waitFor(() => screen.getByText(/Sleep cycle merged/i));
@@ -84,7 +84,7 @@ describe('v4.3 — BrainActivityTab', () => {
   it('Pause toggle prevents new events from appending', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => EVENTS,
+      json: () => EVENTS,
     });
     withQuery(<BrainActivityTab />);
     await waitFor(() => screen.getByText(/Sleep cycle merged/i));

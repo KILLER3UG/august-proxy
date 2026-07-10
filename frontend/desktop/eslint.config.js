@@ -124,6 +124,15 @@ export default tseslint.config(
             'thinking_delta', 'timeout_ms', 'tool_call_id', 'tool_calls', 'tool_progress', 'tool_result', 'tool_use', 'tool_use_id', 'top_k', 'top_p',
             'total_tokens', 'update_agent', 'update_alias', 'verification_command', 'workbench_describe_environment', 'workbench_diagnose_proxy', 'workbench_get_activity', 'workbench_get_agent_job', 'workbench_list_agent_jobs', 'workbench_list_agent_registry',
             'workbench_list_proxy_capabilities', 'workbench_run_team', 'workbench_spawn_subagent', 'workbench_system_info',
+            // tool-icon.ts tool name mapping keys
+            'ansible_playbook', 'apply_patch', 'create_file', 'docker_build', 'docker_compose', 'docker_ps', 'docker_run',
+            'edit_file', 'gh_issue', 'gh_pr', 'gh_release', 'git_branch', 'git_checkout', 'git_clone', 'git_commit',
+            'git_diff', 'git_fetch', 'git_init', 'git_log', 'git_pull', 'git_push', 'git_status', 'glab_mr',
+            'kubectl_apply', 'kubectl_get', 'kubectl_logs', 'local_bash', 'proxy_system_prompt',
+            'read_file', 'replace_file', 'run_command', 'terraform_apply', 'terraform_plan',
+            'web_fetch', 'web_search', 'write_file',
+            // BackendMonitorSection category keys
+            'auto_memory',
           ],
         },
       ],

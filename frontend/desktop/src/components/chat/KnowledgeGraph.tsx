@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
-import { Search, ZoomIn, ZoomOut, Maximize2, RotateCcw } from 'lucide-react';
+import { Search, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface GraphEntity {
@@ -55,12 +55,6 @@ interface Node {
   vx: number;
   vy: number;
   score: number;
-}
-
-interface Edge {
-  source: string;
-  target: string;
-  label: string;
 }
 
 export function KnowledgeGraph({ className }: { className?: string }) {
@@ -167,7 +161,7 @@ export function KnowledgeGraph({ className }: { className?: string }) {
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, [nodes.length, edges.length]);
+	  }, [nodes, edges]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();

@@ -1,8 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useStore } from '@nanostores/react';
 import { $sessions, updateSessionWorkspace } from '@/store/sessions';
-import { FolderGit2, ChevronRight, ChevronDown, Folder, FolderOpen, FileText, AlertCircle, Trash2, FolderSearch, Link2, Plus } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { FolderGit2, ChevronRight, ChevronDown, Folder, FolderOpen, FileText, AlertCircle, Trash2, FolderSearch, Link2 } from 'lucide-react';
 import { isTauri } from '@/lib/tauri-detect';
 import { toast } from 'sonner';
 
@@ -27,7 +26,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
   // Sync state with active session's workspace path
   useEffect(() => {
     if (workspacePath) {
-      loadRootFiles(workspacePath);
+      void loadRootFiles(workspacePath);
     } else {
       setFlatTree([]);
       setError(null);
@@ -40,12 +39,12 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
     try {
       const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(dirPath)}`);
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Failed to list directory contents');
+        const errData = await res.json().catch(() => ({})) as Record<string, unknown>;
+        throw new Error((errData.error as string) || 'Failed to list directory contents');
       }
-      const data = await res.json();
+      const data = await res.json() as { files: Array<{ name: string; path: string; isDir: boolean; sizeBytes?: number }> };
       setFlatTree(
-        data.files.map((f: any) => ({
+        data.files.map((f) => ({
           name: f.name,
           path: f.path,
           isDir: f.isDir,
@@ -85,8 +84,8 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
       try {
         const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(node.path)}`);
         if (!res.ok) throw new Error('Failed to load subfolder');
-        const data = await res.json();
-        const subnodes = data.files.map((f: any) => ({
+        const data = await res.json() as { files: Array<{ name: string; path: string; isDir: boolean; sizeBytes?: number }> };
+        const subnodes = data.files.map((f) => ({
           name: f.name,
           path: f.path,
           isDir: f.isDir,
@@ -152,8 +151,8 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
     try {
       const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`);
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Directory does not exist or is not readable');
+        const errData = await res.json().catch(() => ({})) as Record<string, unknown>;
+        throw new Error((errData.error as string) || 'Directory does not exist or is not readable');
       }
 
       toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
@@ -176,10 +175,10 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
     const normalizedPath = fullPath.replace(/\\/g, '/');
     const folderName = normalizedPath.split('/').pop() || 'workspace';
     const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
-    (async () => {
+    void (async () => {
       try {
         const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`);
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Directory not accessible');
+        if (!res.ok) throw new Error(((await res.json().catch(() => ({})) as Record<string, unknown>).error as string) || 'Directory not accessible');
         toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
         if (sessionId) updateSessionWorkspace(sessionId, normalizedPath);
       } catch (err) {
@@ -248,27 +247,29 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
               type="text"
               placeholder="Paste path & press Enter (e.g. C:/my-project)..."
               className="w-full h-8 px-2.5 rounded border border-border/40 bg-muted/20 text-xs text-foreground placeholder:text-muted-foreground/45 outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary transition"
-              onKeyDown={async (e) => {
-                if (e.key === 'Enter') {
-                  const val = (e.target as HTMLInputElement).value.trim();
-                  if (val) {
-                    const normalized = val.replace(/\\/g, '/');
-                    const folderName = normalized.split('/').pop() || 'workspace';
-                    const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
-                    try {
-                      const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalized)}`);
-                      if (!res.ok) throw new Error('Directory does not exist or is not readable');
-                      toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
-                      if (sessionId) {
-                        updateSessionWorkspace(sessionId, normalized);
-                        (e.target as HTMLInputElement).value = '';
+              onKeyDown={(e) => {
+                void (async () => {
+                  if (e.key === 'Enter') {
+                    const val = (e.target as HTMLInputElement).value.trim();
+                    if (val) {
+                      const normalized = val.replace(/\\/g, '/');
+                      const folderName = normalized.split('/').pop() || 'workspace';
+                      const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
+                      try {
+                        const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalized)}`);
+                        if (!res.ok) throw new Error('Directory does not exist or is not readable');
+                        toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
+                        if (sessionId) {
+                          updateSessionWorkspace(sessionId, normalized);
+                          (e.target as HTMLInputElement).value = '';
+                        }
+                      } catch (err) {
+                        const message = err instanceof Error ? err.message : String(err);
+                        toast.error(`Access failed: ${message}`, { id: toastId });
                       }
-                    } catch (err) {
-                      const message = err instanceof Error ? err.message : String(err);
-                      toast.error(`Access failed: ${message}`, { id: toastId });
                     }
                   }
-                }
+                })();
               }}
             />
             <div className="relative flex items-center justify-center my-1">
@@ -276,7 +277,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
               <span className="text-[9px] uppercase px-2 bg-sidebar text-muted-foreground/60 relative font-bold">or</span>
             </div>
             <button
-              onClick={handleSelectFolder}
+              onClick={() => { void handleSelectFolder(); }}
               className="w-full py-1.5 px-3 rounded-lg bg-primary text-primary-foreground font-semibold text-[10.5px] hover:opacity-95 active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <FolderGit2 className="size-3.5" />
@@ -308,7 +309,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
                 key={node.path}
                 className="group flex items-center justify-between rounded px-1.5 py-1 hover:bg-white/5 transition cursor-pointer text-foreground/80 hover:text-foreground"
                 style={{ paddingLeft: `${node.depth * 10 + 6}px` }}
-                onClick={() => node.isDir && toggleFolder(node, i)}
+                onClick={() => { if (node.isDir) { void toggleFolder(node, i); } }}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   {node.isDir ? (

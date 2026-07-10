@@ -45,7 +45,7 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
       if (key.includes('aggregated-models')) return modelsMock;
       return { data: null, isLoading: false };
     },
-    useMutation: (opts: any) => ({
+    useMutation: (_opts: any) => ({
       mutate: vi.fn(),
       mutateAsync: vi.fn(),
       isPending: false,

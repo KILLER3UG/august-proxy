@@ -8,7 +8,7 @@ import { makeStreamHandlers } from './makeStreamHandlers';
 import { gitApi } from '@/api/git';
 import { chatRuntime } from './chat-runtime';
 import { pushBrowserAction } from '@/lib/browser-store';
-import { upsertQueuedMessage, removeQueuedMessage, setQueuedMessages } from './queue-store';
+import { upsertQueuedMessage, removeQueuedMessage } from './queue-store';
 
 export interface SessionStreamState {
   messages: ChatMessage[];
@@ -78,7 +78,7 @@ function readLastSeq(sessionId: string): number {
 
 function writeLastSeq(sessionId: string, seq: number) {
   if (!Number.isFinite(seq) || seq <= 0) return;
-  try { localStorage.setItem(SUB_LAST_SEQ(sessionId), String(seq)); } catch (_) {}
+  try { localStorage.setItem(SUB_LAST_SEQ(sessionId), String(seq)); } catch { /* silent */ }
 }
 
 const MESSAGES_STORAGE_PREFIX = 'chat_messages_';
@@ -92,7 +92,7 @@ export function loadMessagesForSession(sessionId: string | null): ChatMessage[] 
   try {
     const saved = localStorage.getItem(key);
     if (saved) return JSON.parse(saved);
-  } catch {}
+  } catch { /* silent */ }
 
   return [];
 }
@@ -171,7 +171,7 @@ export function updateSessionStreamState(
 function persistMessages(sessionId: string, messages: ChatMessage[]) {
   try {
     localStorage.setItem(`chat_messages_${sessionId}`, JSON.stringify(messages));
-  } catch {}
+  } catch { /* silent */ }
 }
 
 // Check if we are currently streaming a session
@@ -295,7 +295,7 @@ export async function startChatStream(
       // (older backend / proxy without the JSON sinceSeq contract).
     } else {
       const reconnectSinceSeq = Number.isFinite(startResult?.sinceSeq)
-        ? startResult!.sinceSeq
+        ? startResult.sinceSeq
         : undefined;
       if (reconnectSinceSeq === undefined) {
         console.warn('[startChatStream] POST succeeded without a valid sinceSeq — reconnecting from current position as fallback');
@@ -330,7 +330,7 @@ export async function startChatStream(
     }));
     // Also emit an error event through the handler so the onError path
     // in makeStreamHandlers can write the ⚠️ block into streamBlocks.
-    try { handlers.onError?.({ message: errorMsg }); } catch {}
+    try { handlers.onError?.({ message: errorMsg }); } catch { /* silent */ }
     finalize('error');
   } finally {
     activeStreamControllers.delete(sessionId);
@@ -366,7 +366,7 @@ export async function stopChatStream(sessionId: string) {
 // Reconnect/sync stream with the backend
 export async function reconnectChatStream(
   sessionId: string,
-  ensureWorkbenchSession: () => Promise<WorkbenchSession | null>
+  _ensureWorkbenchSession: () => Promise<WorkbenchSession | null>
 ) {
   if (activeStreamControllers.has(sessionId)) {
     // Already active
@@ -457,7 +457,7 @@ export async function reconnectChatStream(
 }
 
 // Sync all active streams with the backend
-export async function syncActiveStreams(ensureWorkbenchSession: () => Promise<WorkbenchSession | null>) {
+export async function syncActiveStreams(_ensureWorkbenchSession: () => Promise<WorkbenchSession | null>) {
   try {
     const res = await fetch('/api/workbench/chat/active');
     if (!res.ok) return;
@@ -861,7 +861,7 @@ export function applySubagentEvent(
       const inner = appendBlockEvent(current.blocks, {
         type: 'toolResult',
         id: event.id,
-        status: (event.status || (event.isError ? 'error' : 'done')) as 'done' | 'error',
+        status: (event.status || (event.isError ? 'error' : 'done')),
         summary: event.summary || resultStr.slice(0, 240),
         error: event.error || (event.isError ? resultStr.slice(0, 240) : ''),
         duration: event.duration,
@@ -902,7 +902,7 @@ export function registerStreamResync(
   const resync = () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     // syncActiveStreams accepts a no-arg ensureWorkbenchSession; wrap ours.
-    syncActiveStreams(() => _registeredEnsureSession
+    void syncActiveStreams(() => _registeredEnsureSession
       ? _registeredEnsureSession('')
       : Promise.resolve(null));
   };

@@ -187,7 +187,7 @@ function OverviewTab({
 }
 
 function ServiceMiniCard({ conn }: { conn: ServiceConnection }) {
-  const Icon = ICON_FOR[conn.name as ServiceName] ?? Network;
+  const Icon = ICON_FOR[conn.name] ?? Network;
   return (
     <div
       className={cn(
@@ -261,7 +261,7 @@ function AccountsTab({ data }: { data: ReturnType<typeof useToolsConnections> })
 }
 
 function AccountCard({ conn }: { conn: ServiceConnection }) {
-  const Icon = ICON_FOR[conn.name as ServiceName] ?? Network;
+  const Icon = ICON_FOR[conn.name] ?? Network;
   return (
     <div
       className={cn(

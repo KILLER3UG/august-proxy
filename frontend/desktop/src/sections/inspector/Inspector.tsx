@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { SectionHeader } from '@/components/SectionHeader';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { StatusPill } from '@/components/StatusPill';
 import { RightRail } from '@/components/shell/RightRail';
 import { PageLoader } from '@/components/PageLoader';
@@ -218,6 +217,10 @@ function safeStringify(v: unknown): string {
   try {
     return JSON.stringify(v, null, 2);
   } catch {
-    return String(v);
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return '{}';
+    }
   }
 }

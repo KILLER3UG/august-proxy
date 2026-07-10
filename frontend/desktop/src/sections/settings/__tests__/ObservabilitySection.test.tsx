@@ -70,7 +70,7 @@ beforeEach(() => {
 });
 
 describe('ObservabilitySection', () => {
-    it('renders the page header and default Overview subtab', async () => {
+    it('renders the page header and default Overview subtab', () => {
         render(<ObservabilitySection />);
         expect(screen.getByRole('heading', { name: /observability/i, level: 1 })).toBeInTheDocument();
         // SettingsTabs renders a tablist

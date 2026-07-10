@@ -41,7 +41,7 @@ export function GitPanel({ sessionId, className }: GitPanelProps) {
   });
 
   const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['git'] });
+    void qc.invalidateQueries({ queryKey: ['git'] });
   };
 
   const handleCommit = async () => {
@@ -154,7 +154,7 @@ export function GitPanel({ sessionId, className }: GitPanelProps) {
                 <button
                   type="button"
                   key={b.name}
-                  onClick={() => handleCheckout(b.name)}
+                  onClick={() => { void handleCheckout(b.name); }}
                   className={cn(
                     'w-full flex items-center gap-2 px-2 py-1.5 text-left text-[11.5px] hover:bg-white/[0.05]',
                     b.current && 'text-primary'
@@ -177,13 +177,13 @@ export function GitPanel({ sessionId, className }: GitPanelProps) {
             disabled={!sessionId}
             className="flex-1 min-w-0 bg-white/[0.04] rounded-md px-2 py-1 text-[12px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:bg-white/[0.07] disabled:opacity-50"
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleCommit();
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { void handleCommit(); }
             }}
           />
           <Button
             type="button"
             size="sm"
-            onClick={handleCommit}
+            onClick={() => { void handleCommit(); }}
             disabled={!commitMessage.trim() || !sessionId}
             className="h-7 px-2"
           >

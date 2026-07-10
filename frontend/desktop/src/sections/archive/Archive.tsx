@@ -7,8 +7,7 @@ import {
   restoreSession, 
   deleteSession, 
   clearAllSessions,
-  type Session, 
-  type Folder 
+  type Session 
 } from '@/store/sessions';
 import { Button } from '@/components/ui/button';
 import { Search, RotateCcw, Trash2, Folder as FolderIcon, MessageSquare } from 'lucide-react';
@@ -39,10 +38,10 @@ export function Archive() {
     if (confirm('Are you sure you want to delete sessions? This will wipe your conversation history and cannot be undone.')) {
       const deleteArchived = confirm('Do you want to delete archived sessions as well? Click OK to delete BOTH active and archived sessions, or Cancel to delete ONLY active sessions.');
       const newSess = clearAllSessions(deleteArchived);
-      navigate(`/c/${newSess.id}`);
+      void navigate(`/c/${newSess.id}`);
       // Close settings by pressing Escape or navigating back
       const preSettingsPath = sessionStorage.getItem('pre-settings-path') || '/';
-      navigate(preSettingsPath);
+      void navigate(preSettingsPath);
     }
   };
 
@@ -72,7 +71,7 @@ export function Archive() {
           </div>
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
+            onChange={(e) => setSortBy(e.target.value as 'newest' | 'oldest' | 'alpha')}
             className="px-2 py-1.5 text-xs bg-popover border border-border/40 rounded-md text-foreground outline-none cursor-pointer focus:border-primary/50"
           >
             <option value="newest">Newest First</option>

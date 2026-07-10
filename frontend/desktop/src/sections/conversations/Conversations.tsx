@@ -44,17 +44,21 @@ function normalize(grouped: ConversationsResponse | undefined): ConversationItem
 function toMessages(raw: unknown): Array<{ role: string; content: string }> {
   if (!Array.isArray(raw)) return [];
   return raw
-    .map((m: any) => {
-      const role = m?.role || 'unknown';
+    .map((m: unknown) => {
+      const msg = m as { role?: string; content?: string | Array<unknown> | { text?: string; content?: string } };
+      const role = msg?.role || 'unknown';
       let content = '';
-      if (typeof m?.content === 'string') content = m.content;
-      else if (Array.isArray(m?.content)) {
-        content = m.content
-          .map((b: any) => (typeof b === 'string' ? b : b?.text || b?.content || b?.type || ''))
+      if (typeof msg?.content === 'string') content = msg.content;
+      else if (Array.isArray(msg?.content)) {
+        content = msg.content
+          .map((b: unknown) => {
+            const block = b as { text?: string; content?: string; type?: string };
+            return typeof b === 'string' ? b : block?.text || block?.content || block?.type || '';
+          })
           .filter(Boolean)
           .join('\n');
-      } else if (m?.content && typeof m.content === 'object') {
-        content = String(m.content.text || m.content.content || '');
+      } else if (msg?.content && typeof msg.content === 'object') {
+        content = String(msg.content.text || msg.content.content || '');
       }
       return { role, content };
     })

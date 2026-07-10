@@ -52,7 +52,7 @@ export function PlansSection() {
   }, [workspacePath]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   async function doDelete(artifact: AugArtifact) {
@@ -80,7 +80,7 @@ export function PlansSection() {
           </p>
         </div>
         <button
-          onClick={load}
+          onClick={() => { void load(); }}
           disabled={loading}
           className="flex items-center gap-1 rounded bg-zinc-700 px-3 py-1.5 text-xs text-zinc-100 hover:bg-zinc-600 disabled:opacity-50"
         >
@@ -128,7 +128,7 @@ export function PlansSection() {
                 {confirming === `${a.kind}/${a.slug}` ? (
                   <>
                     <button
-                      onClick={() => doDelete(a)}
+                      onClick={() => { void doDelete(a); }}
                       className="rounded bg-rose-600 px-2 py-1 text-xs text-white hover:bg-rose-500"
                     >
                       Delete

@@ -82,7 +82,7 @@ describe('workbench API client: queue endpoints', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({
+      json: () => ({
         id: 'qm_abc',
         text: 'use postgres',
         attachments: [],
@@ -119,7 +119,7 @@ describe('workbench API client: queue endpoints', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({
+      json: () => ({
         sessionId: 'wb_sess',
         messages: [
           { id: 'qm_1', text: 'a', queuedAt: '' },

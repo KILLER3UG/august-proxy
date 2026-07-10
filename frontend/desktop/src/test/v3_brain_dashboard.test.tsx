@@ -9,7 +9,7 @@ function mockFetchSequence(responses: Array<unknown>) {
   let i = 0;
   return vi.fn().mockImplementation(() => {
     const data = responses[Math.min(i++, responses.length - 1)];
-    return Promise.resolve({ ok: true, json: async () => data });
+    return Promise.resolve({ ok: true, json: () => data });
   });
 }
 

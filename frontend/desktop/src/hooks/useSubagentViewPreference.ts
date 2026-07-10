@@ -32,7 +32,7 @@ export function useSubagentViewPreference() {
       setViewState((prev) => {
         const next =
           typeof newView === 'function'
-            ? (newView as (prev: SubagentView) => SubagentView)(prev)
+            ? (newView)(prev)
             : newView;
         savePreference(next);
         return next;

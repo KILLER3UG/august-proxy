@@ -61,7 +61,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_SECTIONS.map((sect
   label: section.label,
   Icon: section.icon,
   path: `/settings/${section.id}`,
-})) as readonly SettingsTab[];
+}));
 
 /* Settings is now a FULL-SCREEN page (no modal). The SettingsPage
  * component owns the left rail + content area; ChatLayout renders it
@@ -97,13 +97,13 @@ export const SECTION_NAV_ITEMS: readonly NavItem[] = SECTION_ROUTES.filter((rout
   to: route.path,
   label: route.label,
   Icon: route.Icon,
-})) as readonly NavItem[];
+}));
 
 export const SETTINGS_NAV_ITEMS: readonly NavItem[] = SETTINGS_TABS.map((tab) => ({
   to: tab.path,
   label: tab.label,
   Icon: tab.Icon,
-})) as readonly NavItem[];
+}));
 
 export const NAV_ITEMS: readonly NavItem[] = SECTION_NAV_ITEMS;
 

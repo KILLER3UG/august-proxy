@@ -78,7 +78,7 @@ export function LogsSubtab() {
             if (/key|token|secret|password|authorization|cookie/i.test(k)) return '[REDACTED]';
             return v;
         }, 2);
-        navigator.clipboard?.writeText(safe);
+        void navigator.clipboard?.writeText(safe);
         setCopied(l.id);
         setTimeout(() => setCopied(null), 1200);
     }

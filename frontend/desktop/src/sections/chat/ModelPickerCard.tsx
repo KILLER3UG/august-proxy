@@ -7,7 +7,7 @@
  * Implements VoiceCommandCardProps so it plugs into the registry.
  */
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, X, Zap, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useModels } from '@/hooks/useModels';
@@ -45,6 +45,15 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
     }));
   }, [models, searchQuery]);
 
+  const handleSelect = useCallback((modelId: string, provider: string) => {
+    window.dispatchEvent(
+      new CustomEvent('august:model-selected', {
+        detail: { modelId, provider },
+      }),
+    );
+    onDismiss();
+  }, [onDismiss]);
+
   // Flatten the grouped items so focusedIndex maps to a linear list.
   const flatItems = useMemo(
     () => grouped.flatMap(g => g.items),
@@ -72,7 +81,7 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [focusedIndex, flatItems, onDismiss]);
+  }, [focusedIndex, flatItems, onDismiss, handleSelect]);
 
   useEffect(() => {
     setFocusedIndex(0);
@@ -87,17 +96,6 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
       }
     }
   }, [focusedIndex]);
-
-  const handleSelect = (modelId: string, provider: string) => {
-    // v4.5: Wire to session model-update store mutation.
-    // For now, emit a custom event so ChatThread can catch it.
-    window.dispatchEvent(
-      new CustomEvent('august:model-selected', {
-        detail: { modelId, provider },
-      }),
-    );
-    onDismiss();
-  };
 
   // ── Empty / Error states ──────────────────────────────────────────────
 
@@ -131,7 +129,7 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
           <button
             type="button"
             onClick={() => {
-              navigate('/settings/providers');
+              void navigate('/settings/providers');
               onDismiss();
             }}
             className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
@@ -205,12 +203,12 @@ export function ModelPickerCard({ onDismiss }: VoiceCommandCardProps) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">{model.name}</span>
-                        {(model as any).isFree && (
+                        {model.isFree && (
                           <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400">
                             Free
                           </span>
                         )}
-                        {(model as any).supportsReasoning && (
+                        {model.supportsReasoning && (
                           <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400">
                             Reasoning
                           </span>
