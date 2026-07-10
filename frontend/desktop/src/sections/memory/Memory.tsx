@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { SectionHeader } from '@/components/SectionHeader';
@@ -6,8 +6,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { KnowledgeGraph } from '@/components/chat/KnowledgeGraph';
 import {
-  Brain, Database, Sparkles, Activity, Clock, Search,
-  Shield, Zap, Network, Tag, Box, Layers, Eye, EyeOff
+  Brain, Database, Activity, Search,
+  Shield, Network, Tag, Box, Eye, EyeOff
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -166,7 +166,7 @@ export function Memory() {
   const learning = learningData.data;
   const prompt = promptData.data?.prompt;
   const graphCounts = graph?.stats?.counts;
-  const graphTypes = graph?.stats?.entityTypes;
+  const _graphTypes = graph?.stats?.entityTypes;
 
   const statusTone = learning?.status === 'learning' ? 'warn'
     : learning?.status === 'evolved' ? 'default'
@@ -257,7 +257,7 @@ export function Memory() {
                   <Activity className="size-4 text-muted-foreground" />
                   <span className="text-sm font-semibold">Learning Status</span>
                 </div>
-                <Badge variant={statusTone as any}>{learning?.status ?? 'idle'}</Badge>
+                <Badge variant={statusTone as 'default' | 'secondary' | 'destructive' | 'outline'}>{learning?.status ?? 'idle'}</Badge>
                 {learning?.lastTopic && (
                   <p className="text-xs text-muted-foreground mt-2">Last: {learning.lastTopic}</p>
                 )}

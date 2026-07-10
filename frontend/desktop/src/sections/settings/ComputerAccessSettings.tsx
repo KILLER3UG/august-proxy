@@ -10,7 +10,7 @@
  * widens host filesystem access — explicitly opt-in.
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ShieldCheck, FolderTree, Cpu, Camera, Eye } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -21,7 +21,6 @@ import {
   deleteAugustAppPolicy,
   putSecurity,
   getHostAgentHealth,
-  type AugustSnapshot,
 } from '@/api/api-client';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
 

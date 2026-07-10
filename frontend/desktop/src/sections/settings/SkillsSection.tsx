@@ -93,7 +93,7 @@ const EMPTY_FORM = { name: '', description: '', body: '', trigger: '', category:
 export function SkillsSection() {
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [usage, setUsage] = useState<SkillUsage[]>([]);
-  const [total, setTotal] = useState(0);
+  const [_total, _setTotal] = useState(0);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -112,7 +112,7 @@ export function SkillsSection() {
       const path = q ? `/api/skills?q=${encodeURIComponent(q)}` : '/api/skills';
       const data = await api.get<{ skills: SkillSummary[]; total: number }>(path);
       setSkills(data.skills ?? []);
-      setTotal(data.total ?? 0);
+      _setTotal(data.total ?? 0);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load skills');
     }

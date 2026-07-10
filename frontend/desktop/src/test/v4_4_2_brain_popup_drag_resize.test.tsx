@@ -9,7 +9,7 @@ function withQuery(ui: React.ReactNode) {
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
 
-const EVENTS = [
+const _EVENTS = [
   {
     id: 'e1',
     category: 'consolidation' as const,

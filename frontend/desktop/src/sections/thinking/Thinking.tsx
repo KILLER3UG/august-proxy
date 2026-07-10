@@ -44,7 +44,7 @@ function stringifyThinking(v: unknown): string {
     if (Array.isArray(v)) {
       // Anthropic thinking blocks: [{ type: 'thinking', thinking: '...' }]
       return v
-        .map((b: any) => (typeof b === 'string' ? b : b?.thinking || b?.text || ''))
+        .map((b: unknown) => (typeof b === 'string' ? b : (b as { thinking?: string; text?: string })?.thinking || (b as { thinking?: string; text?: string })?.text || ''))
         .filter(Boolean)
         .join('\n');
     }

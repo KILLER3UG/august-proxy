@@ -331,7 +331,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         id,
         context: JSON.stringify(input || {}, null, 2),
         status: 'running',
-      } as any);
+      });
       scheduleUpdate();
     },
     onToolResult: ({ id, content, isError }) => {
@@ -359,7 +359,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       const toolEntry = toolResults.find(t => t.id === id);
       if (toolEntry && (toolEntry.name === 'web_search' || toolEntry.name === 'WebSearch')) {
         if (parsedResult && Array.isArray(parsedResult.results)) {
-          searchHits = parsedResult.results.map((r: any) => ({
+          searchHits = parsedResult.results.map((r: { title?: string; url?: string; snippet?: string }) => ({
             title: r.title || r.snippet || '',
             url: r.url || '',
             snippet: r.snippet || '',

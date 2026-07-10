@@ -63,7 +63,7 @@ export function ChatTitlebar({
         setIsMaximized(await win.isMaximized());
       } catch { /* silent */ }
     })();
-  }, [isTauri]);
+  }, /* eslint-disable-line react-hooks/exhaustive-deps */ []);
 
   const handleMinimize = async () => {
     if (!isTauri) return;
@@ -105,7 +105,7 @@ export function ChatTitlebar({
         // Silently ignore — update check is best-effort
       }
     })();
-  }, [isTauri]);
+  }, /* eslint-disable-line react-hooks/exhaustive-deps */ []);
 
   const handleInstallUpdate = async () => {
     if (!isTauri || !updateAvailable) return;

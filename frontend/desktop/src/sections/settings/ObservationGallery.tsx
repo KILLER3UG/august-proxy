@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
 import { StatusPill, variantForAppPolicy } from '@/components/workspace/StatusPill';
 import { getObservations, getObservationUrl, type PostObservation } from '@/api/api-client';

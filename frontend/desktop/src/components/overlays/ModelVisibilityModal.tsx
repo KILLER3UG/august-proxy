@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Search, Check } from 'lucide-react';
@@ -48,7 +50,7 @@ export function ModelVisibilityModal({ open, onClose, models, loading, hiddenMod
       setInternalLoading(true);
       onRefreshModels?.();
     }
-  }, [open, models.length]);
+  }, [open, models.length, onRefreshModels]);
 
   useEffect(() => {
     if (models.length > 0) setInternalLoading(false);

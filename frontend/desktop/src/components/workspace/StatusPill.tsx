@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 /* ── StatusPill — small status badge used across Observability ────────── */
 /* Variants:
  *   ok       — green dot  (audit 'ok', connected)

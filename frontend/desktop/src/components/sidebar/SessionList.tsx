@@ -18,7 +18,6 @@ import {
   FolderOpen,
   FolderPlus,
   ChevronRight,
-  ChevronDown,
   Edit3,
   Trash2,
   Archive,
@@ -41,7 +40,6 @@ import {
   deleteFolder,
   toggleFolderCollapse,
   findOrCreateSessionForPath,
-  updateSessionWorkspace,
   type Session,
   type Folder,
   type SessionStatus,
@@ -72,8 +70,8 @@ interface Props {
 
 export function SessionList({
   activeId,
-  collapsed,
-  onToggleCollapsed,
+  collapsed: _collapsed,
+  onToggleCollapsed: _onToggleCollapsed,
   onSelect,
   onNew,
   onNewInFolder,
@@ -585,7 +583,7 @@ function Section({
 function FolderHeader({
   folder,
   count,
-  hasActiveSession,
+  hasActiveSession: _hasActiveSession,
   onToggleCollapse,
   onNewSession,
   onRename,

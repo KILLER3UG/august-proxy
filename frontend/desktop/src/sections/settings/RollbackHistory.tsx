@@ -32,7 +32,7 @@ export function RollbackHistory() {
             void qc.invalidateQueries({ queryKey: ['audit'] });
             toast.success('Rollback undone');
         },
-        onError: (e: any) => toast.error(`Undo failed: ${e?.message || e}`)
+        onError: (e: unknown) => toast.error(`Undo failed: ${e instanceof Error ? e.message : String(e)}`)
     });
 
     const items = list.data?.items ?? [];

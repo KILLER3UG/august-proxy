@@ -21,7 +21,7 @@ const ANSWER_OK = { isCorrect: true, correctIndex: 1, rationale: '2+2=4.' };
 
 function mockFetchSequence(responses: Array<{ ok?: boolean; body?: unknown; status?: number }>) {
   let i = 0;
-  return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+  return vi.fn().mockImplementation((_url: string, _init?: RequestInit) => {
     const r = responses[Math.min(i++, responses.length - 1)];
     return Promise.resolve({
       ok: r.ok ?? true,

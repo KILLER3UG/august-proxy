@@ -8,7 +8,7 @@ import { makeStreamHandlers } from './makeStreamHandlers';
 import { gitApi } from '@/api/git';
 import { chatRuntime } from './chat-runtime';
 import { pushBrowserAction } from '@/lib/browser-store';
-import { upsertQueuedMessage, removeQueuedMessage, setQueuedMessages } from './queue-store';
+import { upsertQueuedMessage, removeQueuedMessage } from './queue-store';
 
 export interface SessionStreamState {
   messages: ChatMessage[];
@@ -366,7 +366,7 @@ export async function stopChatStream(sessionId: string) {
 // Reconnect/sync stream with the backend
 export async function reconnectChatStream(
   sessionId: string,
-  ensureWorkbenchSession: () => Promise<WorkbenchSession | null>
+  _ensureWorkbenchSession: () => Promise<WorkbenchSession | null>
 ) {
   if (activeStreamControllers.has(sessionId)) {
     // Already active
@@ -457,7 +457,7 @@ export async function reconnectChatStream(
 }
 
 // Sync all active streams with the backend
-export async function syncActiveStreams(ensureWorkbenchSession: () => Promise<WorkbenchSession | null>) {
+export async function syncActiveStreams(_ensureWorkbenchSession: () => Promise<WorkbenchSession | null>) {
   try {
     const res = await fetch('/api/workbench/chat/active');
     if (!res.ok) return;

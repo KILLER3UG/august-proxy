@@ -1,8 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useStore } from '@nanostores/react';
 import { $sessions, updateSessionWorkspace } from '@/store/sessions';
-import { FolderGit2, ChevronRight, ChevronDown, Folder, FolderOpen, FileText, AlertCircle, Trash2, FolderSearch, Link2, Plus } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { FolderGit2, ChevronRight, ChevronDown, Folder, FolderOpen, FileText, AlertCircle, Trash2, FolderSearch, Link2 } from 'lucide-react';
 import { isTauri } from '@/lib/tauri-detect';
 import { toast } from 'sonner';
 
@@ -45,7 +44,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
       }
       const data = await res.json();
       setFlatTree(
-        data.files.map((f: any) => ({
+        data.files.map((f: { name: string; path: string; isDir: boolean; sizeBytes?: number }) => ({
           name: f.name,
           path: f.path,
           isDir: f.isDir,
@@ -86,7 +85,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
         const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(node.path)}`);
         if (!res.ok) throw new Error('Failed to load subfolder');
         const data = await res.json();
-        const subnodes = data.files.map((f: any) => ({
+        const subnodes = data.files.map((f: { name: string; path: string; isDir: boolean; sizeBytes?: number }) => ({
           name: f.name,
           path: f.path,
           isDir: f.isDir,

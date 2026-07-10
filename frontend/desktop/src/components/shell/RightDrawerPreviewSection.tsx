@@ -56,7 +56,7 @@ export function RightDrawerPreviewSection({
 
   const start = useMutation({
     mutationFn: () => startPreviewSession({ command, cwd: workspacePath || undefined, approved: false }),
-    onSuccess: (result: any) => {
+    onSuccess: (result: { status?: string }) => {
       if (result?.status === 'approval_required') {
         void qc.invalidateQueries({ queryKey: ['preview-sessions', sessionId] });
         return;

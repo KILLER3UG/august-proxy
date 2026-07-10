@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Search, Boxes, ArrowRightLeft, Calculator, Inbox, Gauge, Tag, Plus, Trash2, Save, RefreshCw, Power } from 'lucide-react';
 import { quotaApi, type ModelQuota } from '@/api/quota';
 import {
-  getModelCatalog,
   getModelCapabilities,
   getModelAliases,
   estimateModelCost,
@@ -17,7 +16,6 @@ import {
   updateUserModelAliases,
   restartBackend,
   isFreeModelId,
-  type CatalogModel,
   type ModelAlias,
   type ModelCostEstimate,
   type AggregatedModel,
@@ -75,7 +73,7 @@ function CatalogTab() {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;
-  const { data: skeletonData } = useQuery({
+  const { data: _skeletonData } = useQuery({
     queryKey: ['aggregated-models-skeleton'],
     queryFn: () => getAggregatedModels({ skeleton: true }),
     staleTime: 30_000,

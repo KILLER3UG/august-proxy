@@ -15,13 +15,13 @@ import {
   SiPython, SiRuby, SiGo, SiRust, SiOpenjdk, SiKotlin, SiSwift,
   SiC, SiCplusplus, SiSharp, SiPhp, SiScala, SiElixir, SiDart,
   // Shell / scripting
-  SiGnubash, SiZsh, SiPowers, SiLua, SiPerl, SiHaskell, SiClojure,
+  SiGnubash, SiPowers, SiLua, SiPerl, SiHaskell, SiClojure,
   // Web markup / styles
   SiHtml5, SiCss3, SiSass, SiLess, SiPostcss,
   // Data / config
   SiYaml, SiMarkdown, SiDotenv,
   // Query / schema
-  SiSqlite, SiPostgresql, SiMysql, SiGraphql,
+  SiSqlite, SiGraphql,
   // Build / tooling
   SiDocker, SiApachemaven, SiGradle,
   // VCS / meta
@@ -30,7 +30,7 @@ import {
 import {
   FileText, FileCode, FileCog, FileJson, FileImage, FileVideo, FileMusic,
   FileType, FileArchive, FileSpreadsheet, FileLock, File as FileGeneric,
-  Settings, BookOpen, ScrollText, Hash, BookText, Globe, Network,
+  Settings, BookOpen, ScrollText, Hash, BookText, Network,
 } from 'lucide-react';
 
 type IconComp = ComponentType<{ size?: number; color?: string } & SVGProps<SVGSVGElement>>;

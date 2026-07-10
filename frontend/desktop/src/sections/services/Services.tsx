@@ -31,7 +31,6 @@ import {
   Plus,
   RotateCcw,
   Save,
-  Server,
   Trash2,
   Wrench,
 } from "lucide-react";
@@ -696,7 +695,7 @@ function ServiceConnectionCard({
   const [slackTeamId, setSlackTeamId] = useState(service.teamId || "");
   const [showToken, setShowToken] = useState(false);
   const [showTokenField, setShowTokenField] = useState(!service.connected);
-  const [error, setError] = useState<string | null>(null);
+  const [_error, _setError] = useState<string | null>(null);
 
   const env = linesToObject(envText);
   const googleClientId = envValue(env, "GOOGLE_OAUTH_CLIENT_ID");
@@ -728,7 +727,7 @@ function ServiceConnectionCard({
       : { label: "needs auth", tone: "muted" as const };
 
   function handleConnect() {
-    setError(null);
+    _setError(null);
     if (isSlack) {
       onConnectSlack(token, teamId);
     } else {

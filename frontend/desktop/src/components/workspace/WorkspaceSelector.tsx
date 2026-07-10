@@ -17,7 +17,7 @@ interface WorkspaceSelectorProps {
   onWorkspaceChange?: (workspace: Workspace | null) => void;
 }
 
-export function WorkspaceSelector({ sessionId, onWorkspaceChange }: WorkspaceSelectorProps) {
+export function WorkspaceSelector({ sessionId: _sessionId, onWorkspaceChange }: WorkspaceSelectorProps) {
   const [open, setOpen] = useState(false);
   const workspaces = useStore($workspaces);
   const currentWorkspaceId = useStore($currentWorkspaceId);

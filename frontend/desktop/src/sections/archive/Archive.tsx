@@ -7,8 +7,7 @@ import {
   restoreSession, 
   deleteSession, 
   clearAllSessions,
-  type Session, 
-  type Folder 
+  type Session 
 } from '@/store/sessions';
 import { Button } from '@/components/ui/button';
 import { Search, RotateCcw, Trash2, Folder as FolderIcon, MessageSquare } from 'lucide-react';
@@ -72,7 +71,7 @@ export function Archive() {
           </div>
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
+            onChange={(e) => setSortBy(e.target.value as 'newest' | 'oldest' | 'alpha')}
             className="px-2 py-1.5 text-xs bg-popover border border-border/40 rounded-md text-foreground outline-none cursor-pointer focus:border-primary/50"
           >
             <option value="newest">Newest First</option>

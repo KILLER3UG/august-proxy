@@ -16,7 +16,7 @@ import {
 import { useProviderAvailability } from '@/hooks/useProviderAvailability';
 import { useModels, type ModelItem } from '@/hooks/useModels';
 
-interface Field<T = string> {
+interface Field {
   key: keyof LiveConfig;
   label: string;
   hint: string;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useLayoutEffect, useCallback, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { Paperclip, AtSign, Mic, Send, StopCircle, X } from 'lucide-react';
+import { Paperclip, AtSign, Mic, Send, StopCircle, X, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
@@ -133,7 +133,6 @@ export function ChatComposer({
   }, [taRef, onInsertText]);
 
   // v4 §16.2: Auto-grow textarea — value-driven, not event-driven
-  const MIN_H = 64;
   const MAX_H = 360;
   const resizeTextarea = useCallback(() => {
     const el = taRef.current;
@@ -281,7 +280,7 @@ export function ChatComposer({
   );
 }
 
-function ToolBtn({ Icon, label, onClick }: { Icon: any; label: string; onClick?: () => void }) {
+function ToolBtn({ Icon, label, onClick }: { Icon: LucideIcon; label: string; onClick?: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -301,7 +300,7 @@ function ModelDropdown({
   onSelect,
   onRefresh,
   onEditModels,
-  onToggleModelVisibility,
+  onToggleModelVisibility: _onToggleModelVisibility,
   onSetModelVisibilityOpen,
   onSetSessionModel,
   sessionId,
@@ -465,6 +464,7 @@ export interface ContextBreakdown {
  * scaleToTotal`, keeping the tooltip breakdown perfectly consistent with
  * the ring's numerator.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function estimateContextBreakdown(args: {
   messages: Array<{ content: string; role: string }>;
   input: string;

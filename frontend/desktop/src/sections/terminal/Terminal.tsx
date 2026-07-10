@@ -11,7 +11,6 @@ import {
   submitTerminalCommand,
   approveTerminalRequest,
   type TerminalSession,
-  type TerminalApproval,
 } from '@/api/api-client';
 import { api } from '@/api/client';
 
@@ -45,8 +44,8 @@ export function Terminal() {
   });
 
   const run = useMutation({
-    mutationFn: () => submitTerminalCommand(activeId || '', command),
-    onSuccess: (res: any) => {
+    mutationFn: () => submitTerminalCommand(activeId || '', command) as Promise<{ status?: string }>,
+    onSuccess: (res: { status?: string }) => {
       setCommand('');
       void qc.invalidateQueries({ queryKey: ['terminal-sessions'] });
       if (res?.status === 'approval_required') {

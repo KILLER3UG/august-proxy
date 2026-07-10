@@ -19,9 +19,8 @@
 /*   • Enter  → submit the freeform input (when focused)                 */
 /*   • Esc    → close (sends a "User skipped" stub to the model)         */
 
-import { useState, useEffect, useCallback, useRef, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react';
 import { ChevronLeft, ChevronRight, X, Paperclip, SkipForward } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export interface ClarifyQuestion {

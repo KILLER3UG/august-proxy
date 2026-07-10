@@ -3,7 +3,7 @@
  * live frames, dedupes by event id, and exposes pause/resume/clear.
  * Reconnects with exponential backoff (1s → 30s). Capped at MAX_EVENTS. */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { atom, onMount } from 'nanostores';
 import { useStore } from '@nanostores/react';
 import { getRecentLogs, type LogEvent } from '@/api/api-client';
@@ -104,7 +104,7 @@ function scheduleRetry() {
         try {
             const backfill = await getRecentLogs(BACKFILL_LIMIT);
             pushEvents(backfill.events || []);
-        } catch (e) {
+        } catch (_e) {
             // Backfill is best-effort; live stream still works
         }
     };

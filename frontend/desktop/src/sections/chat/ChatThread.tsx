@@ -1,9 +1,11 @@
+/* eslint-disable react-refresh/only-export-components */
+
 /* ── Chat thread ─────────────────────────────────────────────────────── */
 /* The main view. User/assistant messages with proper avatars + bubbles.  */
 /* Tool calls render as inline cards. Right rail optional.                  */
 
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type Dispatch, type KeyboardEvent, type SetStateAction } from 'react';
-import { Send, Paperclip, Mic, AtSign, Plus, ChevronDown, Wrench, Check, AlertCircle, StopCircle, X, Zap, HelpCircle, Loader2, Bug, Play, Pause, RefreshCw, Eye } from 'lucide-react';
+import { Send, Paperclip, Mic, AtSign, Plus, ChevronDown, Check, StopCircle, X, Loader2, Bug, Play, Pause, RefreshCw, Eye, type LucideIcon } from 'lucide-react';
 import { cn, formatClockTime, workspaceBaseName } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
@@ -19,15 +21,13 @@ import { FileIcon as NewFileIcon } from '@/components/ui/FileIcon';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
 import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
-import { applyToolProgress, visibleProgress, type ToolProgressEvent } from '@/lib/tool-progress';
+import { visibleProgress } from '@/lib/tool-progress';
 import { getToolLabel } from '@/lib/tool-labels';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { SubagentBlock } from '@/components/chat/SubagentBlock';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
 import { ExamHost } from '@/sections/exam/ExamHost';
-import { Statusbar } from '@/components/shell/Statusbar';
-import { dispatchFocusComposer, dispatchInsertComposerText } from '@/api/ui-events';
 import { useModels } from '@/hooks/useModels';
 import { useProviderAvailability } from '@/hooks/useProviderAvailability';
 import { useQueryClient } from '@tanstack/react-query';
@@ -48,14 +48,11 @@ import {
   startChatStream,
   stopChatStream,
   syncActiveStreams,
-  ensureSessionSubscriber,
   appendBlockEvent,
-  applySubagentEvent,
   activeStreamControllers,
 } from './chat-stream-manager';
 import {
   $queuedMessagesBySession,
-  type QueuedUserMessage,
   setQueuedMessages,
   clearQueuedMessages,
 } from './queue-store';
@@ -65,8 +62,6 @@ import { getFileIcon } from '@/lib/file-icon';
 import { makeStreamHandlers } from './makeStreamHandlers';
 import {
   createWorkbenchSession,
-  streamWorkbenchChat,
-  confirmWorkbenchMutation,
   approveWorkbenchPlan,
   rejectWorkbenchPlan,
   setWorkbenchGuardMode,
@@ -80,7 +75,7 @@ import {
   dequeueWorkbenchMessage,
   getQueuedWorkbenchMessages,
 } from '@/api/workbench';
-import type { WorkbenchBtwResult, WorkbenchSession } from '@/types/workbench';
+import type { WorkbenchSession } from '@/types/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
 import { WorkbenchModeSelector, WORKBENCH_GUARD_MODES, applyWorkbenchGuardMode, type WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
 import { ContextRing, estimateContextBreakdown, type ContextBreakdown } from './ChatComposer';
@@ -91,7 +86,6 @@ import { InitAugCard } from './InitAugCard';
 import { gitApi, type GitDiffResult } from '@/api/git';
 import { usageApi } from '@/api/usage';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
-import { addWorkspace } from '@/store/workspaces';
 import { ModelPickerCard } from './ModelPickerCard';
 // Chat domain types live in `@/types/chat` (Phase 2 refactor). Re-export
 // from the canonical location so existing `from './ChatThread'` imports
@@ -100,6 +94,7 @@ import type {
   ChatMessage,
   MessageBlock,
   FileAttachment,
+  WorkbenchBtwState,
 } from '@/types/chat';
 export type {
   ChatMessage,
@@ -113,7 +108,6 @@ export type {
 } from '@/types/chat';
 
 let visibleSessionId: string | null = null;
-const visibleGeneration = 0;
 
 const STREAM_UPDATE_INTERVAL_MS = 24;
 
@@ -366,18 +360,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [sessionId]);
 
   const messages = streamState.messages;
-  const setMessages = (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+  const setMessages = useCallback((updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
     if (!sessionId) return;
     updateSessionStreamState(sessionId, prev => {
       const next = typeof updater === 'function' ? updater(prev.messages) : updater;
       persistMessages(sessionId, next);
       return { messages: next };
     });
-  };
+  }, [sessionId]);
 
   const [input, setInput] = useState(() => loadComposerDraft(sessionId));
   const [loadedSessionId, setLoadedSessionId] = useState<string | null>(sessionId);
-  const [runtimeVersion, setRuntimeVersion] = useState(0);
+  const [_runtimeVersion, _setRuntimeVersion] = useState(0);
   const streaming = chatRuntime.isSessionStreaming(sessionId);
   // Sub-agent prompt disclosures, keyed by the parent toolUse id. The
   // backend emits a `prompt` SSE event only for august__spawn_subagent /
@@ -385,7 +379,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // store those payloads here so each one can be rendered directly under
   // the matching tool call block. Cleared on each new turn.
   const subagentPrompts = streamState.subagentPrompts;
-  const setSubagentPrompts = (updater: any) => {
+  const setSubagentPrompts = (updater: unknown) => {
     if (!sessionId) return;
     updateSessionStreamState(sessionId, prev => {
       const next = typeof updater === 'function' ? updater(prev.subagentPrompts) : updater;
@@ -401,7 +395,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // entries, used to render the "Reading X" / "Read X" sub-list under
   // in-flight tool calls. Reset on each new turn.
   const toolProgress = streamState.toolProgress;
-  const setToolProgress = (updater: any) => {
+  const setToolProgress = (updater: unknown) => {
     if (!sessionId) return;
     updateSessionStreamState(sessionId, prev => {
       const next = typeof updater === 'function' ? updater(prev.toolProgress) : updater;
@@ -446,9 +440,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(loadHiddenModels);
   const [showModelVisibility, setShowModelVisibility] = useState(false);
   const workbenchSession = streamState.workbenchSession;
-  const setWorkbenchSession = (session: any) => {
+  const setWorkbenchSession = (session: WorkbenchSession | null | ((prev: WorkbenchSession | null) => WorkbenchSession | null)) => {
     if (!sessionId) return;
-    updateSessionStreamState(sessionId, () => ({ workbenchSession: session }));
+    if (typeof session === 'function') {
+      updateSessionStreamState(sessionId, (prev) => ({ workbenchSession: session(prev.workbenchSession ?? null) }));
+    } else {
+      updateSessionStreamState(sessionId, () => ({ workbenchSession: session }));
+    }
   };
 
   // Whether a plan is awaiting the user's decision. When true, the composer
@@ -463,7 +461,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'full';
   });
   const workbenchBtw = streamState.workbenchBtw;
-  const setWorkbenchBtw = (btw: any) => {
+  const setWorkbenchBtw = (btw: WorkbenchBtwState | null) => {
     if (!sessionId) return;
     updateSessionStreamState(sessionId, () => ({ workbenchBtw: btw }));
   };
@@ -672,10 +670,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     chatRuntime.finishTurn(turn.turnId, status);
   };
 
-  const abortTurn = (turn: ChatTurnRecord) => {
-    chatRuntime.abortTurn(turn.turnId);
-  };
-
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -737,7 +731,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return () => { cancelled = true; };
   }, [sessionId]);
 
-  useEffect(() => chatRuntime.subscribe(() => setRuntimeVersion((value) => value + 1)), []);
+  useEffect(() => chatRuntime.subscribe(() => _setRuntimeVersion((value) => value + 1)), []);
 
 
 
@@ -948,7 +942,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       }
     });
     return unsubscribe;
-  }, [sessionId, attachments, send]);
+  }, [sessionId, attachments, send, activeSession?.workspacePath, setMessages]);
 
   useLayoutEffect(() => {
     if (!sessionId || loadedSessionId !== sessionId) return;
@@ -1007,7 +1001,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       if (prev?.id === activeSession.model && prev.provider === activeSession.provider) return prev;
       return modelFromSession(activeSession || null) || prev;
     });
-  }, [sessionId, activeSession?.model, activeSession?.provider]);
+  }, [sessionId, activeSession, activeSession?.model, activeSession?.provider]);
 
   // ── Model loading ──────────────────────────────────────────────────
   // Phase 1 (instant): read config only — fast, small payload.
@@ -1093,7 +1087,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const modelForRequest = currentModel || modelFromSession(activeSession || null);
 
 
-  const updateAssistantMessage = useCallback((
+  const _updateAssistantMessage = useCallback((
     turnSessionId: string | null,
     assistantMsgId: string,
     updater: (messages: ChatMessage[]) => ChatMessage[]
@@ -1115,9 +1109,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     } catch {
       persistMessages(turnSessionId, updater([]));
     }
-  }, [sessionId]);
+  }, [sessionId, setMessages]);
 
-  const createAssistantPlaceholder = (assistantMsgId: string): ChatMessage => ({
+  const _createAssistantPlaceholder = (assistantMsgId: string): ChatMessage => ({
     id: assistantMsgId,
     role: 'assistant',
     content: '',
@@ -1182,6 +1176,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // requests to codex and everything else to claude.
   const getWorkbenchProvider = () => modelForRequest?.provider === 'codex' ? 'codex' as const : 'claude' as const;
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const ensureWorkbenchSession = async () => {
     if (!sessionId) return null;
     const existingId = workbenchSession?.id || activeSession?.workbenchSessionId;
@@ -1226,7 +1221,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [ensureWorkbenchSession]);
 
   /**
    * Helper for banner/panel click handlers. Wraps the streaming
@@ -1237,7 +1232,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
    * the appropriate `stream*` call (e.g. `streamPlanDecision`).
    */
   const streamPlanTurn = async (
-    run: (handlers: { onError?: (data: { message: string }) => void } & Record<string, any>, signal: AbortSignal) => Promise<any>,
+    run: (handlers: { onError?: (data: { message: string }) => void } & Record<string, unknown>, signal: AbortSignal) => Promise<unknown>,
     overrideMessages?: ChatMessage[],
     targetWorkbenchSessionId?: string
   ) => {
@@ -1282,14 +1277,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     };
     try {
       chatRuntime.setTransport(turn.turnId, 'http');
-      const startResult = await run(wrappedHandlers as any, abortController.signal);
+      const startResult = await run(wrappedHandlers, abortController.signal);
       const wbSessionId = targetWorkbenchSessionId || workbenchSession?.id || sessionId;
-      if (startResult && Number.isFinite((startResult).sinceSeq)) {
+      const resultWithSeq = startResult as { sinceSeq?: number } | null;
+      if (resultWithSeq && Number.isFinite(resultWithSeq.sinceSeq)) {
         await streamWorkbenchReconnect(
           wbSessionId,
           wrappedHandlers,
           abortController.signal,
-          (startResult).sinceSeq
+          resultWithSeq.sinceSeq
         );
       }
       finalize(abortController.signal.aborted ? 'aborted' : 'done');
@@ -1408,6 +1404,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     return () => clearTimeout(timer);
   }, [streaming, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   async function send(textOverride?: string) {
     if (!sessionId || loadedSessionId !== sessionId) return;
 
@@ -1595,7 +1592,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         action: {
           label: "Undo",
           onClick: () => {
-            setMessages(prev => {
+            setMessages(_prev => {
               persistMessages(sessionId, originalMessages);
               return originalMessages;
             });
@@ -1808,9 +1805,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const fullCmd = name + ' ';
     const ta = taRef.current;
     if (!ta) {
-      setInput(prev => {
-        const replaced = prev.replace(/^\s*\/[\w-]*/, '');
-        const trimmed = replaced.trimStart();
+      setInput(_prev => {
         return '/' + name + ' ';
       });
       return;
@@ -1977,7 +1972,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 sessionId={sessionId}
                 onWorkspaceChange={(ws) => {
                   if (!sessionId || !ws) return;
-                  void import('@/store/sessions').then(({ createSession, updateSessionWorkspace, $sessions }) => {
+                  void import('@/store/sessions').then(({ createSession, $sessions }) => {
                     // Check if any existing session already uses this workspace path
                     const existing = $sessions.get().find(s => s.workspacePath === ws.path);
                     if (existing) {
@@ -2609,7 +2604,7 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
 }
 
 // ── Tool execution block ──
-function ToolBlock({
+function _ToolBlock({
   tools,
   toolProgress,
 }: {
@@ -3269,7 +3264,7 @@ function SubagentApprovalInline({
 
 function ToolCallCard({
   tool,
-  timestamp,
+  timestamp: _timestamp,
   progress,
 }: {
   tool: NonNullable<ChatMessage['tool']>;
@@ -3514,7 +3509,7 @@ function ChatCheckpoints({ messages, scrollRef }: {
   );
 }
 
-function ToolBtn({ Icon, label, onClick, className, buttonRef }: { Icon: any; label: string; onClick?: () => void; className?: string; buttonRef?: React.RefObject<HTMLButtonElement | null> }) {
+function ToolBtn({ Icon, label, onClick, className, buttonRef }: { Icon: LucideIcon; label: string; onClick?: () => void; className?: string; buttonRef?: React.RefObject<HTMLButtonElement | null> }) {
   return (
     <button
       ref={buttonRef ?? undefined}
@@ -3547,7 +3542,7 @@ export function formatContextWindow(num?: number): string {
  * main column — without this, the dropdown was clipped at the chat-thread
  * boundary when opened in the empty/centered composer state. */
 
-function ModelDropdown({ models, visibleModels, loading, selected, onSelect, onRefresh, onEditModels }: {
+function ModelDropdown({ models: _models, visibleModels, loading, selected, onSelect, onRefresh, onEditModels }: {
   models: ModelItem[];
   visibleModels: ModelItem[];
   loading?: boolean;

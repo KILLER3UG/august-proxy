@@ -6,6 +6,14 @@ import { RotateCw, Download, CheckCircle, AlertTriangle, RefreshCw, Database } f
 import { Button } from '@/components/ui/button';
 import { useBackendStatus } from '@/hooks/useBackendStatus';
 
+/** Local shape for the Tauri updater's `Update` object. */
+interface TauriUpdate {
+  version: string;
+  body?: string;
+  date?: string;
+  downloadAndInstall(): Promise<void>;
+}
+
 type UpdateState =
   | { status: 'idle' }
   | { status: 'checking' }
@@ -16,7 +24,7 @@ type UpdateState =
 
 export function UpdateSection() {
   const [state, setState] = useState<UpdateState>({ status: 'idle' });
-  const [update, setUpdate] = useState<any>(null);
+  const [update, setUpdate] = useState<TauriUpdate | null>(null);
   const isTauri =
     typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
   const { status: backend, sync, isTauri: backendTauri } = useBackendStatus();

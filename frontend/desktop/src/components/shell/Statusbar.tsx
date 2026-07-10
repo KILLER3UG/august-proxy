@@ -6,7 +6,7 @@ import { StatusDot, type StatusTone } from '@/components/StatusDot';
 import { $gateway } from '@/store/gateway';
 import { $sessions } from '@/store/sessions';
 import { api } from '@/api/client';
-import { getActiveSessionIds, subscribeActiveSessions } from '@/sections/chat/chat-runtime';
+import { subscribeActiveSessions } from '@/sections/chat/chat-runtime';
 
 interface LearningStatus {
   status: 'idle' | 'learning' | 'evolved' | 'skipped' | 'failed';
@@ -57,7 +57,7 @@ export function Statusbar() {
       .filter((label, index, labels) => label && labels.indexOf(label) === index);
   }, [activeSessionIds, sessions]);
 
-  const { data: learning, error } = useQuery<LearningStatus>({
+  const { data: learning, error: _error } = useQuery<LearningStatus>({
     queryKey: ['memory-learning-status'],
     queryFn: () => api.get<LearningStatus>('/api/brain/learning'),
     refetchInterval: 15_000,

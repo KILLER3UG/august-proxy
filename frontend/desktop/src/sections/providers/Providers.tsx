@@ -58,7 +58,7 @@ export function Providers() {
     queryKey: ['providers'],
     queryFn: () => api.get<ActiveProviderData>('/api/config/activeProvider'),
   });
-  const { byProvider: healthByProvider, loaded: healthLoaded, refresh: refreshHealth } = useProviderHealth(60_000);
+  const { byProvider: healthByProvider, loaded: healthLoaded, refresh: _refreshHealth } = useProviderHealth(60_000);
   const { templates } = useProviderTemplates();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);

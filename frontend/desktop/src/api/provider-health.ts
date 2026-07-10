@@ -28,7 +28,7 @@ export function useProviderHealth(pollMs = 60_000) {
       const res = await api.get<ProviderHealthResponse>(`/api/providers/health${qs}`);
       setHealth(res.results || []);
       setLoaded(true);
-    } catch (err) {
+    } catch (_err) {
       // Network error or backend not running — don't blow up the UI
       setLoaded(true);
     }

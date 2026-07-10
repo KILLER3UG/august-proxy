@@ -107,7 +107,7 @@ export function useTrafficActivity(period: Period) {
 
   const reqData = reqQuery.data as { pending?: unknown; completed?: unknown } | undefined;
   const pending = asArray<PendingRequest>(reqData?.pending);
-  const rows = useMemo(() => asArray<RequestEntry>(reqData?.completed).map(toRow), [reqQuery.data]);
+  const rows = useMemo(() => asArray<RequestEntry>(reqData?.completed).map(toRow), [reqData?.completed]);
   const activity = asArray<ActivityEntry>(activityQuery.data);
   const stats = statsQuery.data;
 

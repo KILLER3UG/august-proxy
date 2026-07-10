@@ -39,9 +39,9 @@ export function SessionSidebar({
   onNewInFolder,
   onNavigate,
 }: SessionSidebarProps) {
-  const sessions = useStore($sessions);
-  const folders = useStore($folders);
-  const sessionStates = useStore($sessionStates);
+  const _sessions = useStore($sessions);
+  const _folders = useStore($folders);
+  const _sessionStates = useStore($sessionStates);
   const [width, setWidth] = useState<number>(loadStoredWidth);
   const [isDragging, setIsDragging] = useState(false);
 

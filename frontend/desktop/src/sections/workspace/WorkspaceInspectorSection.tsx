@@ -9,7 +9,6 @@ import {
   Search,
   Brain,
   Inbox,
-  ScrollText,
   Activity,
 } from 'lucide-react';
 import { useConversationInspector } from '@/sections/settings/useConversationInspector';

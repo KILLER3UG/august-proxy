@@ -147,7 +147,7 @@ function convertLatexToUnicode(input: string): string {
 
 const mathInlineExtension = {
   name: 'mathInline',
-  level: 'inline',
+  level: 'inline' as const,
   start(src: string) {
     // Look for \( or $ (but not digit-adjacent $)
     const idx1 = src.indexOf('\\(');
@@ -184,14 +184,14 @@ const mathInlineExtension = {
     }
     return undefined;
   },
-  renderer(token: any) {
+  renderer(token: { body: string }) {
     return renderMath(token.body, false);
   },
-};
+} as const;
 
 const mathBlockExtension = {
   name: 'mathBlock',
-  level: 'block',
+  level: 'block' as const,
   start(src: string) {
     return src.indexOf('$$');
   },
@@ -216,10 +216,10 @@ const mathBlockExtension = {
     }
     return undefined;
   },
-  renderer(token: any) {
+  renderer(token: { body: string }) {
     return renderMath(token.body, true);
   },
-};
+} as const;
 
 marked.use({
   gfm: true,
@@ -281,6 +281,7 @@ export function Markdown({ content }: { content: string }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function renderMarkdown(content: string): string {
   if (!content) return '';
   // v1.1: convert common LaTeX math to unicode before marked parsing

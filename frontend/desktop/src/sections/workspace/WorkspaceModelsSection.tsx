@@ -868,7 +868,7 @@ function FallbackTab() {
             <WorkspaceSelect
               value={activeFallback.mode}
               onChange={(e) => {
-                const next = { ...activeFallback, mode: e.target.value as any };
+                const next = { ...activeFallback, mode: e.target.value as SubAgentFallbackConfig['mode'] };
                 setFallbackEdits(next);
               }}
               options={[

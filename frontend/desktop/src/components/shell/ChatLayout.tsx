@@ -8,7 +8,7 @@ import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "@nanostores/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { $sessions, createSession, type Session } from "@/store/sessions";
+import { $sessions, createSession } from "@/store/sessions";
 import { $currentWorkspaceId, $workspaces } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";

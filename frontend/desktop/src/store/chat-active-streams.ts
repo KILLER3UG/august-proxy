@@ -30,7 +30,7 @@ async function poll(): Promise<void> {
       if (status === 'streaming') next[id] = 'streaming';
     }
     $activeChatSessions.set(next);
-  } catch (_) {
+  } catch (_e: unknown) {
     // Network errors are non-fatal — keep the last known state.
   } finally {
     inFlight = false;

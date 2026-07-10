@@ -39,7 +39,7 @@ export function InitAugCard({ draft, existing, workspacePath, sessionId }: InitA
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentDraft, setCurrentDraft] = useState(draft);
-  const [currentExisting, setCurrentExisting] = useState(existing);
+  const [currentExisting, _setCurrentExisting] = useState(existing);
   const [savedPath, setSavedPath] = useState<string | null>(null);
 
   async function regenerate() {

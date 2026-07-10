@@ -10,7 +10,7 @@
  * - If no MCP calendar server configured, shows only internal events with a hint
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from 'lucide-react';
 import { useMcpTools, type McpTool } from '@/hooks/useMcpTools';
 import type { VoiceCommandCardProps } from '@/api/voice/registry';
@@ -81,7 +81,7 @@ export function CalendarCard({ onDismiss }: VoiceCommandCardProps) {
         setEvents(data.events ?? []);
         setLoading(false);
       })
-      .catch((err) => {
+      .catch((_err) => {
         setError('Failed to load events');
         setLoading(false);
       });
@@ -98,7 +98,7 @@ export function CalendarCard({ onDismiss }: VoiceCommandCardProps) {
     eventsByDay.get(key)!.push(ev);
   }
 
-  const todayKey = dateKey(new Date());
+  const _todayKey = dateKey(new Date());
 
   return (
     <div

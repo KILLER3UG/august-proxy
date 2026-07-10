@@ -5,7 +5,7 @@
  * Facts / Vectors / Graph / Search / Prompt tabs. */
 
 import { useQuery } from '@tanstack/react-query';
-import { Database, Tag, Network, Activity, Shield, Sparkles } from 'lucide-react';
+import { Database, Tag, Network, Shield, Sparkles } from 'lucide-react';
 import { api } from '@/api/client';
 import { Memory } from '@/sections/memory/Memory';
 import { WorkspaceStatCard } from '@/components/workspace/WorkspaceStatCard';

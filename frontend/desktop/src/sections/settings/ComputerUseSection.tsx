@@ -18,7 +18,7 @@ interface HealthCheck {
   name: string;
   status: 'ok' | 'warning' | 'error';
   message: string;
-  details: Record<string, any>;
+  details: Record<string, unknown>;
 }
 
 interface HealthReport {
@@ -154,9 +154,9 @@ export function ComputerUseSection() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium">{check.name}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{check.message}</p>
-                {check.details.solution && (
+                {check.details.solution != null && (
                   <p className="text-xs text-muted-foreground mt-1 italic">
-                    Solution: {check.details.solution}
+                    Solution: {check.details.solution as string}
                   </p>
                 )}
               </div>
@@ -237,7 +237,7 @@ function StatusCard({
   icon,
   label,
   value,
-  tone,
+  tone: _tone,
 }: {
   icon: React.ReactNode;
   label: string;
