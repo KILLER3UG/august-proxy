@@ -62,9 +62,9 @@ def resolveClaudePublicModelAlias(requestedModel: str | None) -> str:
     if not normalized:
         return CLAUDE_PUBLIC_MODEL_ALIAS
     lowered = normalized.lower()
-    if lowered in ('sonnet', 'sonnet[1m]'):
+    if lowered in ('sonnet',):
         return 'claude-sonnet-4-6'
-    if lowered in ('opus', 'opus[1m]', 'best', 'opusplan'):
+    if lowered in ('opus', 'best', 'opusplan'):
         return 'claude-opus-4-6'
     if normalized in KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES:
         return normalized
@@ -540,7 +540,7 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, JsonValue], state: dict[str, J
             anthropicStopReason = 'tool_use'
         elif finishReason == 'length':
             anthropicStopReason = 'max_tokens'
-        events.append(writeAnthropicSseData('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': anthropicStopReason, 'stop_sequence': None}, 'usage': {'output_tokens': 0}}))
+        events.append(writeAnthropicSseData('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': anthropicStopReason, 'stop_sequence': None}, 'usage': {'input_tokens': as_int(state.get('input_tokens'), 0), 'output_tokens': as_int(state.get('output_tokens'), 0)}}))
         events.append(writeAnthropicSseData('message_stop', {'type': 'message_stop'}))
     usage = as_dict(chunk.get('usage'), {})
     if usage:
@@ -585,6 +585,8 @@ async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], 
             reqBody['system'] = currentSystem
         if knownTools:
             reqBody['tools'] = knownTools
+        if not client:
+            return (currentMessages, {'error': 'No client available for tool resolution'})
         if isAnthropicUpstream:
             resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, camelToSnake(reqBody))
         else:

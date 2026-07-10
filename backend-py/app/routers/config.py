@@ -41,6 +41,84 @@ async def activeProvider():
             providers.append({'id': name, 'name': name, 'apiMode': as_str(entry.get('apiFormat'), 'openaiChat'), 'isAvailable': True, 'redactedKey': secrets.mask(apiKey)})
     return {'activeProvider': active, 'providers': providers}
 
+class ProviderDetailsUpdate(BaseModel):
+    provider: str
+    config: dict[str, str] = {}
+
+@router.get('/provider-details')
+async def providerDetails(provider: str = ''):
+    """Return resolver-derived details for a provider (custom entry or template).
+
+    Used by the provider settings UI to show description, auth type, env
+    readiness, signup link, and any config overrides (api key / base url).
+    """
+    import os
+    from app.providers import resolver as providerResolver
+    from app.providers.template_loader import getTemplates, getTemplate
+    store = configService.getProvidersStore()
+    entry = None
+    for e in store.get('providers', []):
+        if e.get('id') == provider or e.get('name') == provider:
+            entry = e
+            break
+    if entry:
+        pd = providerResolver._customEntryToProviderDict(entry)
+        configOverrides = {
+            'apiKey': entry.get('apiKey', ''),
+            'baseUrl': entry.get('baseUrl', ''),
+        }
+        isAvailable = bool(entry.get('enabled')) and bool(entry.get('apiKey'))
+        providerId = entry.get('id', provider)
+    else:
+        tmpl = getTemplate(provider)
+        if not tmpl:
+            for t in getTemplates():
+                if t.get('id') == provider or t.get('name') == provider:
+                    tmpl = t
+                    break
+        if not tmpl:
+            raise HTTPException(status_code=404, detail='Provider not found')
+        pd = providerResolver._templateToProviderDict(tmpl)
+        configOverrides = {}
+        isAvailable = False
+        providerId = tmpl.get('id', provider)
+    envVars = pd.get('envVars') or []
+    envStatus = {v: bool(os.getenv(v)) for v in envVars}
+    cfg = configService.getConfig()
+    active = cfg.get('activeProvider')
+    return {
+        'id': providerId,
+        'name': pd.get('displayName') or pd.get('name', ''),
+        'description': pd.get('description', ''),
+        'baseUrl': pd.get('baseUrl', ''),
+        'apiMode': pd.get('apiMode', ''),
+        'authType': pd.get('authType', 'api_key'),
+        'envVars': envVars,
+        'envStatus': envStatus,
+        'isAvailable': isAvailable,
+        'defaultModel': pd.get('defaultModel', ''),
+        'signupUrl': pd.get('signupUrl', ''),
+        'supportsHealthCheck': pd.get('supportsHealthCheck', False),
+        'isActive': active == providerId,
+        'configOverrides': configOverrides,
+    }
+
+@router.post('/provider-details')
+async def updateProviderDetails(body: ProviderDetailsUpdate):
+    """Apply config overrides (api key / base url) to a custom provider entry."""
+    from app.services import modelService
+    store = configService.getProvidersStore()
+    for e in store.get('providers', []):
+        if e.get('id') == body.provider or e.get('name') == body.provider:
+            if 'apiKey' in body.config:
+                e['apiKey'] = body.config['apiKey']
+            if body.config.get('baseUrl'):
+                e['baseUrl'] = body.config['baseUrl']
+            configService.saveProvidersStore(store)
+            modelService.invalidateCache()
+            return {'status': 'success', 'id': e.get('id')}
+    raise HTTPException(status_code=404, detail='Provider not found')
+
 @router.get('/safe')
 async def configSafe():
     """Get full config (safe endpoint — returns everything the UI needs).

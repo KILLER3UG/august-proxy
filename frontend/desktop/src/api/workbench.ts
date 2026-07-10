@@ -655,6 +655,19 @@ function dispatchWorkbenchEvent(
     case 'error':
       handlers.onError?.({ message: typeof p?.message === 'string' ? p.message : JSON.stringify(p?.message ?? 'Unknown error') });
       break;
+    case 'clarifyProposed': {
+      const c = (p?.clarify ?? {}) as Record<string, unknown>;
+      handlers.onClarifyProposed?.({
+        question: typeof c?.question === 'string' ? c.question : undefined,
+        choices: Array.isArray(c?.choices) ? (c.choices as string[]) : undefined,
+        questions: Array.isArray(c?.questions)
+          ? (c.questions as Array<{ question: string; choices?: string[] }>)
+          : undefined,
+        currentIndex: typeof c?.currentIndex === 'number' ? c.currentIndex : undefined,
+        contextSummary: typeof c?.contextSummary === 'string' ? c.contextSummary : undefined,
+      });
+      break;
+    }
   }
 }
 

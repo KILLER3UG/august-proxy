@@ -18,30 +18,35 @@ from __future__ import annotations
 from app.typeAliases import JsonValue
 
 
-def as_str(value: JsonValue | None, default: str = '') -> str:
+def as_str(value: object, default: str = '') -> str:
     """Return ``value`` as a ``str``, or ``default`` if it is not a str/None."""
     return value if isinstance(value, str) else default
 
 
-def as_dict(value: JsonValue | None, default: dict[str, JsonValue] | None = None) -> dict[str, JsonValue]:
+def as_dict(value: object, default: dict[str, JsonValue] | None = None) -> dict[str, JsonValue]:
     """Return ``value`` as a ``dict``, or ``default``/``{}`` if it is not a dict."""
     if isinstance(value, dict):
         return value
     return default if default is not None else {}
 
 
-def as_list(value: JsonValue | None, default: list[JsonValue] | None = None) -> list[JsonValue]:
+def as_list(value: object, default: list[JsonValue] | None = None) -> list[JsonValue]:
     """Return ``value`` as a ``list``, or ``default``/``[]`` if it is not a list."""
     if isinstance(value, list):
         return value
     return default if default is not None else []
 
 
-def as_int(value: JsonValue | None, default: int = 0) -> int:
+def as_int(value: object, default: int = 0) -> int:
     """Return ``value`` as an ``int`` (excluding ``bool``), or ``default``."""
     return value if isinstance(value, int) and not isinstance(value, bool) else default
 
 
-def as_float(value: JsonValue | None, default: float = 0.0) -> float:
+def as_float(value: object, default: float = 0.0) -> float:
     """Return ``value`` as a ``float``/``int`` (excluding ``bool``), or ``default``."""
     return value if isinstance(value, (int, float)) and not isinstance(value, bool) else default
+
+
+def as_bool(value: object, default: bool = False) -> bool:
+    """Return ``value`` as a ``bool``, or ``default`` if it is not a bool."""
+    return value if isinstance(value, bool) else default
