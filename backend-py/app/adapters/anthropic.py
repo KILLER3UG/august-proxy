@@ -573,6 +573,8 @@ async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], 
 
     Similar to the OpenAI version but works with Anthropic's content block format.
     """
+    if not client:
+        return (currentMessages, {'error': 'No client available for tool resolution'})
     currentMessages = list(messages)
     currentSystem = list(system) if system else []
     finalUsage: dict[str, JsonValue] | None = None
@@ -599,7 +601,6 @@ async def resolveManagedAnthropicToolUses(messages: list[dict[str, JsonValue]], 
             finalUsage = as_dict(responseBody.get('usage'), {})
         if isAnthropicUpstream:
             content = as_list(responseBody.get('content'), [])
-            stopReason = as_str(responseBody.get('stop_reason'), 'end_turn')
             assistantMsg: dict[str, JsonValue] = {'role': 'assistant', 'content': content}
             toolUses = [b for b in content if isinstance(b, dict) and b.get('type') == 'tool_use']
         else:
@@ -655,7 +656,7 @@ async def handleMessages(body: AnthropicRequest | dict[str, JsonValue], request:
     """
     if isinstance(body, AnthropicRequest):
         model: str = body.model
-        raw_body: dict[str, JsonValue] = body.model_dump()  # type: ignore[assignment]
+        raw_body = cast('dict[str, JsonValue]', body.model_dump())
     else:
         model = body.get('model', 'claude-sonnet-4-7')
         raw_body = body

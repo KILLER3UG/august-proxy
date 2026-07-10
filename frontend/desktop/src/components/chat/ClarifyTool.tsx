@@ -116,7 +116,7 @@ export function ClarifyTool({
         setDraft('');
       } else if (/^[1-9]$/.test(e.key)) {
         const idx = parseInt(e.key, 10) - 1;
-        if (current.choices && idx < current.choices.length) {
+        if (current.choices && idx < Math.min(current.choices.length, 5)) {
           e.preventDefault();
           pickChoice(current.choices[idx]);
         }
@@ -240,7 +240,7 @@ export function ClarifyTool({
         {/* Numbered choice list */}
         {current.choices && current.choices.length > 0 && (
           <div className="px-3 pb-1">
-            {current.choices.map((choice, i) => (
+            {current.choices.slice(0, 5).map((choice, i) => (
               <button
                 type="button"
                 key={`${currentIndex}-${i}-${choice}`}

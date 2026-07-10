@@ -135,7 +135,7 @@ export interface WorkbenchEventHandlers {
   onThinking?: (data: { content: string }) => void;
   onText?: (data: { content: string }) => void;
   onToolUse?: (data: { id: string; name: string; input: Record<string, unknown> }) => void;
-  onToolResult?: (data: { id: string; content: unknown; isError?: boolean }) => void;
+  onToolResult?: (data: { id: string; content: unknown; isError?: boolean; providerSetup?: unknown }) => void;
   onToolProgress?: (data: {
     id: string;
     name: string;
