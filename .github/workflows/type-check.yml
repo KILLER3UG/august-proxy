@@ -27,7 +27,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run mypy
-        run: python -m mypy app/ || true
+        run: python -m mypy app/
 
       - name: Run pytest
         run: pytest -q || true
