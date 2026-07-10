@@ -39,12 +39,12 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
     try {
       const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(dirPath)}`);
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Failed to list directory contents');
+        const errData = await res.json().catch(() => ({})) as Record<string, unknown>;
+        throw new Error((errData.error as string) || 'Failed to list directory contents');
       }
-      const data = await res.json();
+      const data = await res.json() as { files: Array<{ name: string; path: string; isDir: boolean; sizeBytes?: number }> };
       setFlatTree(
-        data.files.map((f: { name: string; path: string; isDir: boolean; sizeBytes?: number }) => ({
+        data.files.map((f) => ({
           name: f.name,
           path: f.path,
           isDir: f.isDir,
@@ -84,8 +84,8 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
       try {
         const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(node.path)}`);
         if (!res.ok) throw new Error('Failed to load subfolder');
-        const data = await res.json();
-        const subnodes = data.files.map((f: { name: string; path: string; isDir: boolean; sizeBytes?: number }) => ({
+        const data = await res.json() as { files: Array<{ name: string; path: string; isDir: boolean; sizeBytes?: number }> };
+        const subnodes = data.files.map((f) => ({
           name: f.name,
           path: f.path,
           isDir: f.isDir,
@@ -151,8 +151,8 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
     try {
       const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`);
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Directory does not exist or is not readable');
+        const errData = await res.json().catch(() => ({})) as Record<string, unknown>;
+        throw new Error((errData.error as string) || 'Directory does not exist or is not readable');
       }
 
       toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
@@ -178,7 +178,7 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
     void (async () => {
       try {
         const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`);
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Directory not accessible');
+        if (!res.ok) throw new Error(((await res.json().catch(() => ({})) as Record<string, unknown>).error as string) || 'Directory not accessible');
         toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
         if (sessionId) updateSessionWorkspace(sessionId, normalizedPath);
       } catch (err) {

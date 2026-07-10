@@ -114,8 +114,8 @@ function convertLatexToUnicode(input: string): string {
     '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
     '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
   };
-  s = s.replace(/\^(\d)/g, (_m, d) => supMap[d] || _m);
-  s = s.replace(/\^\{([^}]+)\}/g, (_m, body) =>
+  s = s.replace(/\^(\d)/g, (_m: string, d: string) => supMap[d] || _m);
+  s = s.replace(/\^\{([^}]+)\}/g, (_m: string, body: string) =>
     body.split('').map((c: string) => supMap[c] || c).join('')
   );
 
@@ -124,8 +124,8 @@ function convertLatexToUnicode(input: string): string {
     '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
     '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
   };
-  s = s.replace(/_(\d)/g, (_m, d) => subMap[d] || _m);
-  s = s.replace(/_\{([^}]+)\}/g, (_m, body) =>
+  s = s.replace(/_(\d)/g, (_m: string, d: string) => subMap[d] || _m);
+  s = s.replace(/_\{([^}]+)\}/g, (_m: string, body: string) =>
     body.split('').map((c: string) => subMap[c] || c).join('')
   );
 

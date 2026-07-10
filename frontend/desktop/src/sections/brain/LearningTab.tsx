@@ -49,28 +49,28 @@ export function LearningTab() {
       try {
         const resp = await fetch(`${API_BASE}/learning`);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const json = await resp.json();
+        const json = await resp.json() as Record<string, unknown>;
         // Wire format is camelCase (`heuristics`, `heuristicCount`,
         // `sleepCycle`, `deltaEngine`, `pendingSkills`, …) per the v3
         // brain API contract.
         const normalized: LearningData = {
-          heuristics: json.heuristics ?? [],
-          heuristicCount: json.heuristicCount ?? 0,
+          heuristics: (json.heuristics ?? []) as Heuristic[],
+          heuristicCount: (json.heuristicCount ?? 0) as number,
           coreFacts: json.coreFacts ?? null,
           userProfile: json.userProfile ?? null,
-          autoMemories: json.autoMemories ?? [],
+          autoMemories: (json.autoMemories ?? []) as AutoMemory[],
           sleepCycle: {
-            lastRunAt: json.sleepCycle?.lastRunAt ?? null,
-            lastMerged: json.sleepCycle?.lastMerged ?? 0,
-            lastPromoted: json.sleepCycle?.lastPromoted ?? 0,
-            lastDeleted: json.sleepCycle?.lastDeleted ?? 0,
+            lastRunAt: ((json.sleepCycle as Record<string, unknown>)?.lastRunAt ?? null) as string | null,
+            lastMerged: ((json.sleepCycle as Record<string, unknown>)?.lastMerged ?? 0) as number,
+            lastPromoted: ((json.sleepCycle as Record<string, unknown>)?.lastPromoted ?? 0) as number,
+            lastDeleted: ((json.sleepCycle as Record<string, unknown>)?.lastDeleted ?? 0) as number,
           },
           deltaEngine: {
-            consentGranted: json.deltaEngine?.consentGranted ?? false,
-            queueSize: json.deltaEngine?.queueSize ?? 0,
-            lastFlushAt: json.deltaEngine?.lastFlushAt ?? null,
+            consentGranted: ((json.deltaEngine as Record<string, unknown>)?.consentGranted ?? false) as boolean,
+            queueSize: ((json.deltaEngine as Record<string, unknown>)?.queueSize ?? 0) as number,
+            lastFlushAt: ((json.deltaEngine as Record<string, unknown>)?.lastFlushAt ?? null) as string | null,
           },
-          pendingSkills: json.pendingSkills ?? [],
+          pendingSkills: (json.pendingSkills ?? []) as PendingSkill[],
         };
         if (!cancelled) setData(normalized);
       } catch (e) {

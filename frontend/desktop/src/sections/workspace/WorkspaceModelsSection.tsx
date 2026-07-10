@@ -822,12 +822,13 @@ function FallbackTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: 'probe-non-alias' }),
       });
-      const data = await res.json();
-      if (data?.translationWarning) toast.warning(data.translationWarning);
-      if (data?.ok && data.result?.resolution) {
-        toast.success(`Resolves to ${data.result.resolution.model} via ${data.result.resolution.provider}`);
-      } else if (data?.result?.action && data.result.action.startsWith('reject')) {
-        toast.error(`Fallback rejected: ${data.result.action}`);
+      const data = await res.json() as Record<string, unknown>;
+      if (data?.translationWarning) toast.warning(data.translationWarning as string);
+      if (data?.ok && (data.result as Record<string, unknown>)?.resolution) {
+        const resolution = (data.result as Record<string, unknown>).resolution as Record<string, string>;
+        toast.success(`Resolves to ${resolution.model} via ${resolution.provider}`);
+      } else if ((data.result as Record<string, unknown>)?.action && ((data.result as Record<string, unknown>).action as string).startsWith('reject')) {
+        toast.error(`Fallback rejected: ${(data.result as Record<string, unknown>).action as string}`);
       } else {
         toast.warning('Fallback did not resolve — check config or catalog state');
       }

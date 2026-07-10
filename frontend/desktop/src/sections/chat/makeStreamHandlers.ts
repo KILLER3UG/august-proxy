@@ -335,18 +335,18 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       scheduleUpdate();
     },
     onToolResult: ({ id, content, isError }) => {
-      let parsedResult: any;
+      let parsedResult: Record<string, unknown> | null;
       try {
-        parsedResult = typeof content === 'string' ? JSON.parse(content) : content;
+        parsedResult = typeof content === 'string' ? JSON.parse(content) as Record<string, unknown> : content as Record<string, unknown>;
       } catch {
         parsedResult = null;
       }
 
       if (parsedResult?.type === 'mutation_pending_confirmation') {
         pendingConfirmations.set(id, {
-          message: parsedResult.message,
-          detail: parsedResult.detail,
-          confirmationToken: parsedResult.confirmationToken,
+          message: parsedResult.message as string | undefined,
+          detail: parsedResult.detail as string | undefined,
+          confirmationToken: parsedResult.confirmationToken as string | undefined,
         });
       } else {
         pendingConfirmations.delete(id);
@@ -359,7 +359,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       const toolEntry = toolResults.find(t => t.id === id);
       if (toolEntry && (toolEntry.name === 'web_search' || toolEntry.name === 'WebSearch')) {
         if (parsedResult && Array.isArray(parsedResult.results)) {
-          searchHits = parsedResult.results.map((r: { title?: string; url?: string; snippet?: string }) => ({
+          searchHits = (parsedResult.results as Array<{ title?: string; url?: string; snippet?: string }>).map((r) => ({
             title: r.title || r.snippet || '',
             url: r.url || '',
             snippet: r.snippet || '',
@@ -370,22 +370,22 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       toolResults = toolResults.map(t => t.id === id ? {
         ...t,
         pendingApproval: parsedResult?.type === 'mutation_pending_confirmation' ? {
-          message: parsedResult.message,
-          detail: parsedResult.detail,
-          confirmationToken: parsedResult.confirmationToken,
+          message: parsedResult.message as string | undefined,
+          detail: parsedResult.detail as string | undefined,
+          confirmationToken: parsedResult.confirmationToken as string | undefined,
         } : undefined,
-        status: isError && !parsedResult?.type ? 'error' : 'done',
+        status: isError && parsedResult?.type !== 'mutation_pending_confirmation' ? 'error' : 'done',
         result: resultText,
-        error: isError && !parsedResult?.type ? resultText : '',
+        error: isError && parsedResult?.type !== 'mutation_pending_confirmation' ? resultText : '',
         duration: t.startedAt ? Date.now() - t.startedAt : undefined,
         searchHits: searchHits ?? t.searchHits,
       } : t);
       streamBlocks = appendBlockEvent(streamBlocks, {
         type: 'toolResult',
         id,
-        status: isError && !parsedResult?.type ? 'error' : 'done',
+        status: isError && parsedResult?.type !== 'mutation_pending_confirmation' ? 'error' : 'done',
         summary: resultText.slice(0, 240),
-        error: isError && !parsedResult?.type ? resultText.slice(0, 240) : '',
+        error: isError && parsedResult?.type !== 'mutation_pending_confirmation' ? resultText.slice(0, 240) : '',
         duration: toolResults.find(t => t.id === id)?.duration,
         searchHits,
       });

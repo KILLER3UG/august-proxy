@@ -94,6 +94,7 @@ import type {
   ChatMessage,
   MessageBlock,
   FileAttachment,
+  ToolProgressEntry,
   WorkbenchBtwState,
 } from '@/types/chat';
 export type {
@@ -295,7 +296,7 @@ function loadMessagesForSession(sessionId: string | null): ChatMessage[] {
 
   try {
     const saved = localStorage.getItem(key);
-    if (saved) return JSON.parse(saved);
+    if (saved) return JSON.parse(saved) as ChatMessage[];
   } catch { /* ignore parse errors */ }
 
   return buildDemoThread(sessionId);
@@ -379,7 +380,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // store those payloads here so each one can be rendered directly under
   // the matching tool call block. Cleared on each new turn.
   const subagentPrompts = streamState.subagentPrompts;
-  const setSubagentPrompts = (updater: unknown) => {
+  const setSubagentPrompts = (updater: React.SetStateAction<Map<string, { content: string; systemPrompt: string; userMessage: string; tokens: number; subagentId?: string; jobId?: string }>>) => {
     if (!sessionId) return;
     updateSessionStreamState(sessionId, prev => {
       const next = typeof updater === 'function' ? updater(prev.subagentPrompts) : updater;
@@ -395,7 +396,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // entries, used to render the "Reading X" / "Read X" sub-list under
   // in-flight tool calls. Reset on each new turn.
   const toolProgress = streamState.toolProgress;
-  const setToolProgress = (updater: unknown) => {
+  const setToolProgress = (updater: React.SetStateAction<Map<string, ReadonlyArray<ToolProgressEntry>>>) => {
     if (!sessionId) return;
     updateSessionStreamState(sessionId, prev => {
       const next = typeof updater === 'function' ? updater(prev.toolProgress) : updater;
@@ -804,7 +805,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         }
         case 'load-skill': {
           fetch(`/api/skills?q=${encodeURIComponent(event.skillName)}`)
-            .then(r => r.json())
+            .then(r => r.json() as Promise<{ total: number; skills: Array<{ name: string; description: string; trigger: string; category: string }> }>)
             .then(data => {
               if (data.total === 0) {
                 toast.error(
@@ -834,7 +835,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           const url =
             '/api/skills' + (event.query ? '?q=' + encodeURIComponent(event.query) : '');
           fetch(url)
-            .then(r => r.json())
+            .then(r => r.json() as Promise<{ total: number; skills: Array<{ name: string; category: string; enabled: boolean; description: string }> }>)
             .then(data => {
               if (data.total === 0) {
                 toast.info(
@@ -894,7 +895,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             '/api/aug/context' + (ws ? `?workspacePath=${encodeURIComponent(ws)}` : ''),
             { method: 'GET' },
           )
-            .then(r => (r.ok ? r.json() : { exists: false }))
+            .then(r => (r.ok ? r.json() as Promise<{ exists: boolean }> : Promise.resolve({ exists: false })))
             .then(c => (c && c.exists ? 'refine' : 'create'))
             .catch(() => 'create');
           decideMode
@@ -906,8 +907,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               }),
             )
             .then(r => {
-              if (!r.ok) return r.json().then(err => { throw new Error(err?.error || err?.detail || 'generation failed'); });
-              return r.json();
+              if (!r.ok) return r.json().then((err: { error?: string; detail?: string }) => { throw new Error(err?.error || err?.detail || 'generation failed'); });
+              return r.json() as Promise<{ draft: string; existing: boolean }>;
             })
             .then(data => {
               setAugPreview({
@@ -1021,12 +1022,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 	    void (async () => {
       // Phase 1: quick config fetch for initial model selection
       try {
-        const configRes = await fetch('/api/config/safe');
+          const configRes = await fetch('/api/config/safe');
         if (configRes.ok) {
-          const config = await configRes.json();
-          const activeProvider = config?.activeProvider || '';
-          const pConfig = config?.[activeProvider] || {};
-          const activeModelId: string | null = pConfig.model || pConfig._upstreamModel || pConfig.currentModel || null;
+          const config = await configRes.json() as Record<string, unknown>;
+          const activeProvider = (config?.activeProvider as string) || '';
+          const pConfig = (config?.[activeProvider] as Record<string, unknown>) || {};
+          const activeModelId: string | null = (pConfig?.model as string) || (pConfig?._upstreamModel as string) || (pConfig?.currentModel as string) || null;
           if (activeModelId && activeProvider && !userSelectedRef.current) {
             const placeholder: ModelItem = {
               id: activeModelId,
@@ -1717,13 +1718,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     let finalTranscript = '';
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event) => {
       let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
+      const results = event.results;
+      for (let i = event.resultIndex; i < results.length; i++) {
+        if (results[i].isFinal) {
+          finalTranscript += results[i][0].transcript;
         } else {
-          interim += event.results[i][0].transcript;
+          interim += results[i][0].transcript;
         }
       }
       if (finalTranscript || interim) {
@@ -1774,7 +1776,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       // No match (or below threshold): transcript stays as dictation.
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event) => {
       setVoiceActive(false);
       if (event.error !== 'no-speech') {
         toast.error(`Speech error: ${event.error}`);
@@ -1826,7 +1828,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   useEffect(() => {
     const handleInsertText = (e: Event) => {
-      const customEvent = e as CustomEvent;
+      const customEvent = e as CustomEvent<string>;
       if (customEvent.detail) {
         insertText(customEvent.detail);
       }
@@ -1835,7 +1837,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
     // Handle model selection from ModelPickerCard (Phase 1C).
     const handleModelSelected = (e: Event) => {
-      const { modelId, provider } = (e as CustomEvent).detail ?? {};
+      const { modelId, provider } = (e as CustomEvent<{ modelId?: string; provider?: string }>).detail ?? {};
       if (!modelId || !provider) return;
       const model = models.find(m => m.id === modelId);
       if (model) {
@@ -3279,7 +3281,7 @@ function ToolCallCard({
   let legacyFilename: string | null = null;
   if (!isCommand && tool.args) {
     try {
-      const parsed = JSON.parse(tool.args);
+      const parsed = JSON.parse(tool.args) as Record<string, unknown>;
       for (const key of ['filePath', 'file_path', 'path', 'filename', 'file', 'filepath']) {
         const v = parsed?.[key];
         if (typeof v === 'string' && v.length > 0) { legacyFilename = v; break; }
