@@ -21,16 +21,16 @@ services:
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
       - SUPERMEMORY_API_KEY=${SUPERMEMORY_API_KEY}
     volumes:
-      # Live-mount all source code so changes take effect on container restart (no rebuild needed)
-      - ./backend:/app/backend
+      # Live-mount source for dev (changes take effect on container restart, no rebuild)
+      - ./backend-py:/app/backend-py
       - ./web-dist:/app/web-dist
       - ./data:/app/data
       - ./host_files:/app/host_files
       # Mount skills directories so the agent can discover them
       - ./skills:/app/skills
-      - ${USERPROFILE}/.august/skills:/root/.august/skills
+      - ${HOME}/.august/skills:/root/.august/skills
     ports:
-      - "8085:8080"
+      - "8085:8085"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: always
