@@ -171,7 +171,7 @@ def appendTextToSystemBlocks(blocks: list[dict[str, JsonValue]] | None, text: st
 def deriveSessionIdFromAnthropic(body: AnthropicRequest | dict[str, JsonValue] | None, request: object | None=None) -> str:
     """Extract a session identifier from an Anthropic Messages body."""
     if isinstance(body, AnthropicRequest):
-        from_model = body.sessionId or body.session_id
+        from_model = getattr(body, 'sessionId', None) or getattr(body, 'session_id', None)
         if from_model:
             return str(from_model)
         metadata = as_dict(body.metadata, {})

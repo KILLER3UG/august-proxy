@@ -57,7 +57,6 @@ class ChatCompletionRequest(ExtraAllowBaseModel):
     messages: JsonValue | None = None
     user: JsonValue | None = None
     metadata: JsonValue | None = None
-    sessionId: JsonValue | None = None
     session_id: JsonValue | None = None
 
 

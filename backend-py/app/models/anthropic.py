@@ -69,7 +69,6 @@ class AnthropicRequest(ExtraAllowBaseModel):
     system: JsonValue | None = None
     metadata: JsonValue | None = None
     thinking: JsonValue | None = None
-    sessionId: JsonValue | None = None
     session_id: JsonValue | None = None
 
 
