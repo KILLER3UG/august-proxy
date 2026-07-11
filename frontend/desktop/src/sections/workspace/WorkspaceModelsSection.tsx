@@ -1231,7 +1231,6 @@ function ProviderEditor({
   const [apiFormat, setApiFormat] = useState<ApiFormat>(provider.apiFormat);
   const [apiKey, setApiKey] = useState(provider.apiKey ?? '');
   const [showKey, setShowKey] = useState(false);
-  const [confirmClearKey, setConfirmClearKey] = useState(false);
   const [autoFetch, setAutoFetch] = useState(!!provider.autoFetch);
   const [editingName, setEditingName] = useState(false);
 
@@ -1243,7 +1242,6 @@ function ProviderEditor({
     setApiKey(provider.apiKey ?? '');
     setAutoFetch(!!provider.autoFetch);
     setShowAddModel(false);
-    setConfirmClearKey(false);
   }, [provider.id, provider.name, provider.baseUrl, provider.apiFormat, provider.apiKey, provider.autoFetch, setShowAddModel]);
 
   const update = useMutation({
@@ -1274,18 +1272,6 @@ function ProviderEditor({
     },
     onError: (e: unknown) => {
       toast.error(e instanceof Error ? e.message : 'Refresh failed');
-    },
-  });
-
-  const clearKeyMutation = useMutation({
-    mutationFn: () => providersApi.update(provider.id, { apiKey: '' }),
-    onSuccess: () => {
-      toast.success('API key cleared');
-      setConfirmClearKey(false);
-      onChanged();
-    },
-    onError: (e: unknown) => {
-      toast.error(e instanceof Error ? e.message : 'Failed to clear key');
     },
   });
 
@@ -1382,21 +1368,10 @@ function ProviderEditor({
                 type={showKey ? 'text' : 'password'}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                onBlur={() => apiKey && flushField('apiKey', apiKey)}
+                onBlur={() => apiKey !== provider.apiKey && flushField('apiKey', apiKey)}
                 placeholder={provider.apiKeySet ? '••••••••••••••••' : 'sk-…'}
                 autoComplete="off"
               />
-              {provider.apiKeySet && (
-                <button
-                  type="button"
-                  onClick={() => setConfirmClearKey(true)}
-                  className="absolute right-9 top-1/2 -translate-y-1/2 inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-destructive transition"
-                  aria-label="Clear stored API key"
-                >
-                  <Trash2 className="size-3" />
-                  Clear
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => {
@@ -1419,40 +1394,6 @@ function ProviderEditor({
                 {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
               </button>
             </div>
-            {confirmClearKey && provider.apiKeySet && (
-              <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 space-y-2">
-                <p className="text-xs text-warning">
-                  Clear the stored API key? The provider will fall back to the
-                  <code className="mx-1 px-1 rounded bg-black/30 text-[10px] font-mono">
-                    {provider.id.toUpperCase().replace(/-/g, '_')}_API_KEY
-                  </code>
-                  environment variable if it is set.
-                </p>
-                <div className="flex items-center justify-end gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setConfirmClearKey(false)}
-                    disabled={clearKeyMutation.isPending}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => clearKeyMutation.mutate()}
-                    disabled={clearKeyMutation.isPending}
-                  >
-                    {clearKeyMutation.isPending ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : (
-                      <Trash2 className="size-3" />
-                    )}
-                    Clear key
-                  </Button>
-                </div>
-              </div>
-            )}
           </div>
         </WorkspaceField>
 

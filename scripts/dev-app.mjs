@@ -17,33 +17,51 @@ const port = process.env.AUGUST_PROXY_PORT || '8085';
 
 // ── Detect Python (preferred) or fall back to Node.js ──────────────
 
-function findPython() {
-    // Check your exact Python 3.13 installation first
-    const exactPath = 'C:\\Users\\rober\\AppData\\Local\\Programs\\Python\\Python313\\python.exe';
-    if (existsSync(exactPath)) return exactPath;
-
-    // Then check other common paths
-    if (process.platform === 'win32') {
-        const commonPaths = [
-            'C:\\Users\\rober\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
-            'C:\\Python313\\python.exe',
-            'C:\\Python312\\python.exe',
-            `${process.env.LOCALAPPDATA || ''}\\Programs\\Python\\Python313\\python.exe`,
-            `${process.env.LOCALAPPDATA || ''}\\Programs\\Python\\Python312\\python.exe`,
-        ];
-        for (const p of commonPaths) {
-            if (existsSync(p)) return p;
-        }
+// Returns the {major, minor} of an interpreter, or null if it can't run.
+function pythonVersionAt(interp) {
+    try {
+        const out = execFileSync(
+            interp,
+            ['-c', 'import sys;print(sys.version_info[0], sys.version_info[1])'],
+            { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+        );
+        const [majorStr, minorStr] = out.trim().split(/\s+/);
+        const major = Number(majorStr);
+        const minor = Number(minorStr);
+        if (Number.isNaN(major) || Number.isNaN(minor)) return null;
+        return { major, minor };
+    } catch {
+        return null;
     }
-    // Fall back to PATH lookup
+}
+
+// The project requires Python 3.12+ (see backend-py/app/main.py). Never
+// return an interpreter older than this — e.g. the hermes-agent 3.11 venv
+// that happens to sit first on PATH.
+const MIN_PY = { major: 3, minor: 12 };
+
+function isAcceptedVersion(interp) {
+    const v = pythonVersionAt(interp);
+    if (!v) return false;
+    return v.major > MIN_PY.major ||
+        (v.major === MIN_PY.major && v.minor >= MIN_PY.minor);
+}
+
+function findPython() {
+    // 1. Prefer the project's own virtualenv (has the exact backend deps).
+    const venvPath = resolve(root, 'backend-py', '.venv', 'Scripts', 'python.exe');
+    if (process.platform === 'win32' && existsSync(venvPath) && isAcceptedVersion(venvPath)) {
+        return venvPath;
+    }
+
+    // 2. Fall back to a PATH lookup — but only accept 3.12+. The `py`
+    //    launcher (already on PATH) selects the newest installed 3.x, so
+    //    this naturally picks whatever Python >=3.12 is installed.
     const names = process.platform === 'win32'
-        ? ['python.exe', 'python3.exe', 'py.exe']
+        ? ['py.exe', 'python3.exe', 'python.exe']
         : ['python3', 'python'];
     for (const name of names) {
-        try {
-            execFileSync(name, ['--version'], { stdio: 'ignore' });
-            return name;
-        } catch { /* try next */ }
+        if (isAcceptedVersion(name)) return name;
     }
     return null;
 }

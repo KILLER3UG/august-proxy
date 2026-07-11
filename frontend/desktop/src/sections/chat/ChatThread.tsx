@@ -1171,11 +1171,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     [messages, input, toolCountForBreakdown, toolTokenEstimate, hasServerTruth, serverContextTokens, hasContentToSend]
   );
 
-  // ── Workbench chat client ─────────────────────────────────────────
-  // Workbench only accepts claude/codex engine ids. The normal provider/model
-  // selector still controls regular model display, but Workbench routes codex
-  // requests to codex and everything else to claude.
-  const getWorkbenchProvider = () => modelForRequest?.provider === 'codex' ? 'codex' as const : 'claude' as const;
+  // The Workbench chat uses the provider of the model the user selected in the
+  // model dropdown (passed as `provider` / `modelProvider` below). There is no
+  // hardcoded claude/codex engine fallback — the backend resolves the real
+  // provider and routes by its apiMode.
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const ensureWorkbenchSession = async () => {
@@ -1197,7 +1196,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }
 
     const created = await createWorkbenchSession({
-      provider: getWorkbenchProvider(),
+      provider: modelForRequest?.provider,
       agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
       guardMode: workbenchMode,
     });
@@ -1363,7 +1362,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       effort,
       model: modelForRequest?.id,
       modelProvider: modelForRequest?.provider,
-      getWorkbenchProvider,
+      provider: modelForRequest?.provider,
       ensureWorkbenchSession,
     });
   };
@@ -2254,7 +2253,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               void (async () => {
                 const active = workbenchSession || (activeSession?.workbenchSessionId ? {
                   id: activeSession.workbenchSessionId,
-                  provider: activeSession.workbenchProvider || "claude",
+                  provider: activeSession.workbenchProvider || "",
                   agentId: activeSession.workbenchAgentId || "build",
                   agentRole: activeSession.workbenchAgentId || "build",
                   agentMode: "assistant",
@@ -2273,7 +2272,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 const result = await answerWorkbenchBtw({
                   sessionId: active.id,
                   question,
-                  provider: active.provider === "codex" ? "codex" : "claude",
+                  provider: active.provider || "",
                   agentId: active.agentId,
                 });
                 setWorkbenchBtw(result);

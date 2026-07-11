@@ -121,7 +121,7 @@ export function getOrInitSessionStreamState(sessionId: string | null): SessionSt
   if (activeSession?.workbenchSessionId) {
     workbenchSession = {
       id: activeSession.workbenchSessionId,
-      provider: (activeSession.workbenchProvider || 'claude'),
+      provider: (activeSession.workbenchProvider || ''),
       agentId: activeSession.workbenchAgentId || 'build',
       agentRole: activeSession.workbenchAgentId || 'build',
       agentMode: 'assistant',
@@ -190,7 +190,7 @@ export async function startChatStream(
     effort: EffortLevel;
     model: string | undefined;
     modelProvider: string | undefined;
-    getWorkbenchProvider: () => 'claude' | 'codex';
+    provider?: string;
     ensureWorkbenchSession: () => Promise<WorkbenchSession | null>;
   }
 ) {
@@ -273,7 +273,7 @@ export async function startChatStream(
     const startResult = await streamWorkbenchChat({
       sessionId: session.id,
       message: params.message,
-      provider: params.getWorkbenchProvider(),
+      provider: params.provider,
       effort: params.effort,
       model: params.model,
       modelProvider: params.modelProvider,

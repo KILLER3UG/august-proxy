@@ -8,7 +8,7 @@ import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "@nanostores/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { $sessions, createSession } from "@/store/sessions";
+import { $sessions, createSession, updateSessionWorkbenchMetadata } from "@/store/sessions";
 import { $currentWorkspaceId, $workspaces } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
@@ -131,12 +131,24 @@ export function ChatLayout() {
   // thread also fetches this independently, so this is the layout-level mirror.
   const workbench = useQuery({
     queryKey: ['workbench-session', active?.workbenchSessionId],
-    queryFn: () =>
-      active?.workbenchSessionId
-        ? getWorkbenchSession(active.workbenchSessionId)
-        : Promise.resolve(null),
+    queryFn: async () => {
+      if (!active?.workbenchSessionId) return null;
+      try {
+        return await getWorkbenchSession(active.workbenchSessionId);
+      } catch {
+        // The backend Workbench session is gone — e.g. the backend was
+        // restarted and its in-memory store was wiped, leaving a stale id in
+        // localStorage. Drop the dead id so we stop polling it; the chat
+        // thread recreates a fresh Workbench session on the next message.
+        if (active?.id) {
+          updateSessionWorkbenchMetadata(active.id, { workbenchSessionId: undefined });
+        }
+        return null;
+      }
+    },
     enabled: !!active?.workbenchSessionId,
     refetchInterval: 2_000,
+    retry: false,
   });
   const workbenchSession: WorkbenchSession | null = workbench.data || null;
 

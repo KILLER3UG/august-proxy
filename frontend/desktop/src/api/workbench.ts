@@ -13,7 +13,7 @@ import type { FileAttachment } from '@/types/chat';
 import { WorkbenchEventSchema } from './schemas/workbench';
 
 export interface CreateWorkbenchSessionParams {
-  provider?: 'claude' | 'codex';
+  provider?: string;
   agentId?: string;
   guardMode?: WorkbenchGuardMode;
 }
@@ -63,7 +63,7 @@ export async function createWorkbenchSession(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      provider: params.provider || 'claude',
+      provider: params.provider || '',
       agentId: params.agentId || 'build',
       guardMode: params.guardMode,
     }),
@@ -92,7 +92,7 @@ function throwIfAborted(signal?: AbortSignal): void {
 export interface StreamWorkbenchChatParams {
   sessionId: string;
   message: string;
-  provider?: 'claude' | 'codex';
+  provider?: string;
   agentId?: string;
   guardMode?: WorkbenchGuardMode;
   effort?: 'low' | 'medium' | 'high' | 'max';
@@ -122,7 +122,7 @@ export async function streamWorkbenchChat(
     body: JSON.stringify({
       sessionId: params.sessionId,
       message: params.message,
-      provider: params.provider || 'claude',
+      provider: params.provider || '',
       agentId: params.agentId,
       guardMode: params.guardMode,
       effort: params.effort,
@@ -763,7 +763,7 @@ export async function streamPlanDecision(
 
 export interface ResetWorkbenchSessionParams {
   sessionId?: string;
-  provider?: 'claude' | 'codex';
+  provider?: string;
   agentId?: string;
 }
 
@@ -776,7 +776,7 @@ export async function resetWorkbenchSession(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       sessionId: params.sessionId,
-      provider: params.provider || 'claude',
+      provider: params.provider || '',
       agentId: params.agentId || 'build',
     }),
   });
@@ -799,7 +799,7 @@ export async function listWorkbenchCapabilities(): Promise<WorkbenchCapabilities
 export interface AnswerWorkbenchBtwParams {
   sessionId: string;
   question: string;
-  provider?: 'claude' | 'codex';
+  provider?: string;
   agentId?: string;
 }
 
@@ -812,7 +812,7 @@ export async function answerWorkbenchBtw(
     body: JSON.stringify({
       sessionId: params.sessionId,
       question: params.question,
-      provider: params.provider || 'claude',
+      provider: params.provider || '',
       agentId: params.agentId,
     }),
   });

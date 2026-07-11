@@ -29,9 +29,13 @@ type Props = {
     onStatusChange?: (status: SessionStatus | null) => void;
 };
 
-async function fetchStatus(sessionId: string): Promise<SessionStatus | null> {
+async function fetchStatus(sessionId: string): Promise<SessionStatus | null | 'gone'> {
     try {
         const r = await fetch(`/api/workbench/session/${encodeURIComponent(sessionId)}/status`, { credentials: 'same-origin' });
+        // A 404 means the Workbench session no longer exists (e.g. the backend
+        // restarted and wiped its in-memory store). Signal "gone" so the caller
+        // stops polling a dead id instead of 404-ing every interval.
+        if (r.status === 404) return 'gone';
         if (!r.ok) return null;
         return r.json() as Promise<SessionStatus>;
     } catch {
@@ -76,17 +80,27 @@ export function ApprovalBanner({ sessionId, pollIntervalMs = 2000, onStatusChang
             return;
         }
         let cancelled = false;
+        let timer: ReturnType<typeof setInterval> | undefined;
         const tick = async () => {
+            if (cancelled) return;
             const next = await fetchStatus(sessionId);
             if (cancelled) return;
+            // The session is gone (404) — stop polling a dead id instead of
+            // 404-ing on every interval.
+            if (next === 'gone') {
+                setStatus(null);
+                onStatusChange?.(null);
+                if (timer) { clearInterval(timer); timer = undefined; }
+                return;
+            }
             setStatus(next);
             onStatusChange?.(next);
         };
         void tick();
-        const t = setInterval(() => { void tick(); }, pollIntervalMs);
+        timer = setInterval(() => { void tick(); }, pollIntervalMs);
         return () => {
             cancelled = true;
-            clearInterval(t);
+            if (timer) clearInterval(timer);
         };
     }, [sessionId, pollIntervalMs, onStatusChange]);
 
