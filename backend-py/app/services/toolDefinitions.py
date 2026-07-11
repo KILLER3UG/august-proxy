@@ -610,6 +610,40 @@ async def _skillManage(action: str, name: str, body: str='', description: str=''
     except Exception as exc:
         return f'Error in skill_manage({action}): {exc}'
 
+
+async def _deleteSession(sessionId: str) -> str:
+    """Delete a chat session and its messages from the brain database."""
+    from app.services import memoryStore
+    try:
+        i = memoryStore.deleteSessionRecord(sessionId)
+        msgCount = memoryStore.deleteSessionMessages(sessionId)
+        if i:
+            return f"Deleted session {sessionId} (+ {msgCount} message(s))."
+        return f"Session {sessionId} not found — it may have already been deleted."
+    except Exception as exc:
+        return f"Error deleting session {sessionId}: {exc}"
+
+
+async def _deleteFolder(folderId: str) -> str:
+    """Delete all sessions in a folder and their messages from the brain database."""
+    from app.services import memoryStore
+    try:
+        sessions = memoryStore.listSessions()
+        folderSessions = [s for s in sessions if s.get('folderId') == folderId]
+        if not folderSessions:
+            return f"No sessions found in folder '{folderId}'."
+        count = 0
+        msgCount = 0
+        for s in folderSessions:
+            sid = s['id']
+            if memoryStore.deleteSessionRecord(sid):
+                count += 1
+                msgCount += memoryStore.deleteSessionMessages(sid)
+        return f"Deleted {count} session(s) from folder '{folderId}' (+ {msgCount} message(s))."
+    except Exception as exc:
+        return f"Error deleting folder '{folderId}': {exc}"
+
+
 def registerAll() -> None:
     """Register all core tool definitions with real handlers."""
     toolRegistry.register('read_file', 'Read a file from the filesystem. Path must be absolute. Max file size ~10 MB.', _readFile, {'type': 'object', 'properties': {'path': {'type': 'string', 'description': 'Absolute path to the file to read.'}}, 'required': ['path']})
@@ -657,6 +691,8 @@ def registerAll() -> None:
     toolRegistry.register('load_skill', "Load a skill's full instructions by name. Use list_skills first to discover available skill names.", _loadSkill, {'type': 'object', 'properties': {'name': {'type': 'string', 'description': 'The skill name to load.'}}, 'required': ['name']})
     toolRegistry.register('list_skills', "List available skills with optional search query. Use load_skill to load a skill's full instructions.", _listSkills, {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'Optional search query.'}}, 'required': []})
     toolRegistry.register('skill_manage', 'Author and maintain skills: create a new skill, patch an existing one, write/remove support files (scripts/, references/, templates/), or delete. Captured lessons live as skills the model loads via load_skill.', _skillManage, {'type': 'object', 'properties': {'action': {'type': 'string', 'enum': ['create', 'patch', 'write_file', 'remove_file', 'delete'], 'description': 'What to do.'}, 'name': {'type': 'string', 'description': 'Skill name (lowercase, dotted/hyphenated).'}, 'body': {'type': 'string', 'description': 'SKILL.md body markdown (create/patch).'}, 'description': {'type': 'string', 'description': 'One-sentence description ≤ 60 chars (create/patch).'}, 'trigger': {'type': 'string', 'description': 'Optional trigger phrase (create/patch).'}, 'category': {'type': 'string', 'description': 'Skill category (create/patch).'}, 'filePath': {'type': 'string', 'description': 'Relative path within the skill dir (write_file/remove_file).'}, 'content': {'type': 'string', 'description': 'File contents (write_file).'}}, 'required': ['action', 'name']})
+    toolRegistry.register('delete_session', 'Delete a chat session by its session ID (e.g. sess_abc123). Messages are also deleted. Use brain_query(store=sessions) to list sessions first. IMPORTANT: Before calling this tool, list the sessions, present to the user exactly which session(s) you intend to delete, and wait for explicit user confirmation ("yes", "go ahead", "delete it") before proceeding. Never delete without confirmation.', _deleteSession, {'type': 'object', 'properties': {'sessionId': {'type': 'string', 'description': 'The session ID to delete.'}}, 'required': ['sessionId']})
+    toolRegistry.register('delete_folder', 'Delete all sessions in a folder by folder ID. All messages in those sessions are also deleted. Use brain_query(store=sessions) to list sessions and their folderId values first. IMPORTANT: Before calling this tool, list the folder contents, present to the user exactly which folder and sessions you intend to delete, and wait for explicit user confirmation ("yes", "go ahead", "delete it") before proceeding. Never delete without confirmation.', _deleteFolder, {'type': 'object', 'properties': {'folderId': {'type': 'string', 'description': 'The folder ID whose sessions to delete.'}}, 'required': ['folderId']})
     from app.services import selfConfigTools
     selfConfigTools.register()
     from app.services import providerSetupTool

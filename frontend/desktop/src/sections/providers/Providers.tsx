@@ -70,7 +70,6 @@ export function Providers() {
   const [baseUrls, setBaseUrls] = useState<Record<string, string>>({});
   const [showKeyFor, setShowKeyFor] = useState<Record<string, boolean>>({});
   const [showKeyFieldFor, setShowKeyFieldFor] = useState<Record<string, boolean>>({});
-  const [showEndpointFor, setShowEndpointFor] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [saveMsg, setSaveMsg] = useState<{ id: string; type: 'ok' | 'err'; text: string } | null>(null);
   const queryClient = useQueryClient();
@@ -263,9 +262,6 @@ export function Providers() {
             const authType = providerDetails?.authType || p.authType || 'api_key';
             const hasKey = p.isAvailable || Boolean(providerDetails?.configOverrides?.apiKey);
             const showKeyField = showKeyFieldFor[p.id] || !hasKey || authType === 'api_key' && !hasKey;
-            const hasEndpointOverride = Boolean(providerDetails?.configOverrides?.baseUrl || providerDetails?.configOverrides?.targetUrl);
-            const showEndpointField = showEndpointFor[p.id] || hasEndpointOverride || p.id === 'custom';
-
             return (
               <div
                 key={p.id}
@@ -404,23 +400,17 @@ export function Providers() {
                             </div>
                           )}
 
-                          {showEndpointField ? (
-                            <div>
-                              <label className="block text-[10px] text-muted-foreground mb-1 font-medium">Endpoint override</label>
-                              <input
-                                type="text"
-                                value={baseUrls[p.id] ?? providerDetails?.configOverrides?.baseUrl ?? ''}
-                                onChange={(e) => setBaseUrls(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                placeholder="https://api.example.com"
-                                className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition"
-                              />
-                            </div>
-                          ) : (
-                            <Button type="button" variant="ghost" size="sm" onClick={() => setShowEndpointFor(prev => ({ ...prev, [p.id]: true }))}>
-                              <Globe className="size-3 mr-1" />
-                              Optional endpoint
-                            </Button>
-                          )}
+                          <div>
+                            <label className="block text-[10px] text-muted-foreground mb-1 font-medium">Base URL</label>
+                            <input
+                              type="text"
+                              value={baseUrls[p.id] ?? providerDetails?.configOverrides?.baseUrl ?? ''}
+                              onChange={(e) => setBaseUrls(prev => ({ ...prev, [p.id]: e.target.value }))}
+                              onBlur={(e) => { const v = e.target.value; providersApi.update(p.id, { baseUrl: v }).catch(() => {}); }}
+                              placeholder="https://api.example.com"
+                              className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition"
+                            />
+                          </div>
                         </div>
                       )}
 

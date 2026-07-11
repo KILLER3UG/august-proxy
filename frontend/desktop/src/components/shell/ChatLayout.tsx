@@ -8,7 +8,7 @@ import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "@nanostores/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { $sessions, createSession, updateSessionWorkbenchMetadata } from "@/store/sessions";
+import { $sessions, createSession, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend } from "@/store/sessions";
 import { $currentWorkspaceId, $workspaces } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
@@ -66,6 +66,16 @@ export function ChatLayout() {
 
   useEffect(() => {
     localStorage.removeItem("august-show-right-sidebar");
+  }, []);
+
+  // Reconcile the sidebar session list with the backend brain database so
+  // sessions deleted by the model (via delete_session / delete_folder tools)
+  // are automatically removed from the frontend. Polls every 30 s while the
+  // layout is mounted.
+  useEffect(() => {
+    void reconcileSessionsFromBackend();
+    const t = setInterval(() => { void reconcileSessionsFromBackend(); }, 30_000);
+    return () => clearInterval(t);
   }, []);
 
   // Listen for the "open right sidebar" event dispatched by the PlanProposalBanner

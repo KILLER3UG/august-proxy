@@ -1,4 +1,5 @@
 import { atom } from 'nanostores';
+import { listManageSessions } from '@/api/api-client';
 
 export interface Session {
   id: string;
@@ -184,6 +185,68 @@ export function clearAllSessions(includeArchived: boolean = true) {
   $sessions.set(finalSessions);
   saveSessionsToStorage(finalSessions);
   return newSess;
+}
+
+/**
+ * Fetch sessions from the backend brain database and reconcile with the
+ * frontend's localStorage store. Sessions deleted by the model (via the
+ * delete_session / delete_folder tools) are removed from the sidebar;
+ * new sessions created on the backend are added. Frontend-only fields
+ * (lastMessage, workbenchSessionId, …) are preserved during merge.
+ *
+ * Call this periodically or after the model reports a deletion.
+ * Silently falls back to local state if the backend is unavailable.
+ */
+export async function reconcileSessionsFromBackend(): Promise<void> {
+  try {
+    const backendSessions = await listManageSessions();
+    const backendMap = new Map(backendSessions.map(s => [s.id, s]));
+
+    const current = $sessions.get();
+    const merged: Session[] = [];
+    const now = new Date().toISOString();
+
+    for (const local of current) {
+      const backend = backendMap.get(local.id);
+      if (backend) {
+        // Merge frontend-only fields with authoritative backend fields.
+        merged.push({
+          ...local,
+          title: (backend.title as string) ?? local.title,
+          startedAt: (backend['startedAt'] as string) ?? local.startedAt,
+          messageCount: (backend['messageCount'] as number) ?? local.messageCount,
+          provider: (backend.provider as string) ?? local.provider,
+          model: (backend.model as string) ?? local.model,
+          folderId: (backend['folderId'] as string) ?? local.folderId ?? null,
+          isArchived: (backend['isArchived'] as boolean) ?? local.isArchived ?? false,
+          workspacePath: (backend['workspacePath'] as string) ?? local.workspacePath ?? null,
+        });
+        backendMap.delete(local.id);
+      }
+      // Session not in backend → was deleted by the model → drop it.
+    }
+
+    // Add sessions that exist on the backend but not yet in local state.
+    for (const [, bs] of backendMap) {
+      merged.push({
+        id: bs.id,
+        title: (bs.title as string) ?? 'New Session',
+        startedAt: (bs['startedAt'] as string) ?? now,
+        messageCount: (bs['messageCount'] as number) ?? 0,
+        lastMessage: 'Conversation started.',
+        provider: (bs.provider as string) ?? '',
+        model: (bs.model as string) ?? '',
+        folderId: (bs['folderId'] as string) ?? null,
+        isArchived: (bs['isArchived'] as boolean) ?? false,
+        workspacePath: (bs['workspacePath'] as string) ?? null,
+      });
+    }
+
+    $sessions.set(merged);
+    saveSessionsToStorage(merged);
+  } catch {
+    // Backend unreachable — keep local state intact.
+  }
 }
 
 export function createFolder(name: string, workspacePath?: string | null): Folder {
