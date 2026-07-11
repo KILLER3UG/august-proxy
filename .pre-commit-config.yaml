@@ -1,0 +1,31 @@
+# Pre-commit hooks for August Proxy.
+# Install once (from repo root, with backend-py dev deps):
+#   pip install pre-commit
+#   pre-commit install
+# Run all:  pre-commit run --all-files
+#
+# Naming policy (Phase 0 sign-off): Python identifiers stay camelCase.
+# pep8-naming is intentionally not enabled. Frontend lint stays with ESLint.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      # Lint critical rules only (see [tool.ruff] in backend-py/pyproject.toml).
+      - id: ruff
+        name: ruff (backend-py)
+        args: [--fix]
+        files: ^backend-py/
+        exclude: |
+          (?x)(
+            \.bak$
+            | __pycache__
+            | august_proxy\.egg-info
+            | scripts/
+          )
+
+      # Formatter intentionally not forced yet — avoids a repo-wide reformat
+      # on first install. Enable in a dedicated formatting PR later:
+      # - id: ruff-format
+      #   name: ruff-format (backend-py)
+      #   files: ^backend-py/

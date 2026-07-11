@@ -13,7 +13,7 @@ async def retryWithBackoff(coroFactory: Callable[[], Awaitable[_T]], maxRetries:
     for attempt in range(maxRetries + 1):
         try:
             return await coroFactory()
-        except (ConnectionError, TimeoutError) as exc:
+        except (ConnectionError, TimeoutError):
             if attempt >= maxRetries:
                 raise
             delay = baseDelay * 2 ** attempt + random.uniform(0, 0.5)
