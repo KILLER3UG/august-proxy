@@ -83,15 +83,15 @@ def testUnknownProviderReturnsNone(fakeProvidersStore):
 
 
 def testBuiltInRegistryFallbackWhenCustomStoreEmpty(tmp_path, monkeypatch):
-    """With empty providers.json, built-in MiniMax resolves via env_key."""
+    """With empty providers.json, built-in Anthropic resolves via env_key."""
     from app.services import config_service, provider_credentials
 
     path = tmp_path / 'providers.json'
     path.write_text(json.dumps({'providers': []}), encoding='utf-8')
     monkeypatch.setattr(config_service, 'dataPath', lambda name, *a, **kw: path if name == 'providers.json' else path)
     provider_credentials.invalidate()
-    monkeypatch.setenv('MINIMAX_API_KEY', 'sk-from-env')
-    creds = provider_credentials.resolve('MiniMax (Global)')
+    monkeypatch.setenv('ANTHROPIC_API_KEY', 'sk-from-env')
+    creds = provider_credentials.resolve('Anthropic')
     assert creds is not None
     assert creds['api_key'] == 'sk-from-env'
     provider_credentials.invalidate()
@@ -118,8 +118,8 @@ def testResolveDisabledProviderFallsBackToRegistry(tmp_path, monkeypatch):
             {
                 'providers': [
                     {
-                        'id': 'custom-minimax-abc123',
-                        'name': 'MiniMax (Global)',
+                        'id': 'custom-disabled-abc123',
+                        'name': 'Disabled Provider',
                         'baseUrl': 'https://api.custom.example/anthropic',
                         'apiFormat': 'anthropicMessages',
                         'apiKey': 'sk-custom-key-12345',
@@ -132,8 +132,8 @@ def testResolveDisabledProviderFallsBackToRegistry(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(config_service, 'dataPath', lambda name, *a, **kw: path if name == 'providers.json' else path)
     provider_credentials.invalidate()
-    monkeypatch.setenv('MINIMAX_API_KEY', 'sk-from-env')
-    creds = provider_credentials.resolve('MiniMax (Global)')
+    monkeypatch.setenv('ANTHROPIC_API_KEY', 'sk-from-env')
+    creds = provider_credentials.resolve('Anthropic')
     assert creds is not None
     assert creds['source'] == 'registry'
     assert creds['api_key'] == 'sk-from-env'
@@ -151,8 +151,8 @@ def testResolveEmptyApiKeyFallsBackToRegistry(tmp_path, monkeypatch):
             {
                 'providers': [
                     {
-                        'id': 'custom-minimax-abc123',
-                        'name': 'MiniMax (Global)',
+                        'id': 'custom-anthropic-empty-key',
+                        'name': 'Anthropic',
                         'baseUrl': 'https://api.custom.example/anthropic',
                         'apiFormat': 'anthropicMessages',
                         'apiKey': '',
@@ -165,8 +165,8 @@ def testResolveEmptyApiKeyFallsBackToRegistry(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(config_service, 'dataPath', lambda name, *a, **kw: path if name == 'providers.json' else path)
     provider_credentials.invalidate()
-    monkeypatch.setenv('MINIMAX_API_KEY', 'sk-from-env')
-    creds = provider_credentials.resolve('MiniMax (Global)')
+    monkeypatch.setenv('ANTHROPIC_API_KEY', 'sk-from-env')
+    creds = provider_credentials.resolve('Anthropic')
     assert creds is not None
     assert creds['source'] == 'registry'
     assert creds['api_key'] == 'sk-from-env'

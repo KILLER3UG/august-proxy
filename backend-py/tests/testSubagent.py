@@ -23,7 +23,7 @@ def testExecuteSubAgentRunsAndEmits(monkeypatch, isolatedData):
     monkeypatch.setattr(wb, '_callAnthropicWorkbench', fakeCaller)
     monkeypatch.setattr(wb, '_callOpenaiWorkbench', fakeCaller)
     monkeypatch.setattr(
-        wb, '_resolveWorkbenchProvider', lambda *a, **k: {'name': 'Test', 'api_mode': 'anthropicMessages'}
+        wb, '_resolveWorkbenchProvider', lambda *a, **k: {'name': 'Test', 'apiMode': 'anthropicMessages'}
     )
     monkeypatch.setattr(wb, '_resolveModel', lambda p, m='': 'test-model')
     monkeypatch.setattr(wb, 'toolDefinitions', lambda s: [])

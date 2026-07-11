@@ -61,7 +61,7 @@ class StubClient:
 
 STUB_PROVIDER = {
     'name': 'stub-anthropic',
-    'api_mode': 'anthropicMessages',
+    'apiMode': 'anthropicMessages',
     'default_model': 'stub-claude',
     'model_profiles': {},
 }

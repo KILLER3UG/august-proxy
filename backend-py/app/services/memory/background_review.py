@@ -138,9 +138,10 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
                 except Exception:
                     pass
             elif action == 'patch':
-                skill_service.patchSkill(
-                    name, body=as_str(recDict.get('body')), description=as_str(recDict.get('description'))
-                )
+                patch_kwargs: dict[str, object] = {'body': as_str(recDict.get('body'))}
+                if 'description' in recDict:
+                    patch_kwargs['description'] = as_str(recDict['description'])
+                skill_service.patchSkill(name, **patch_kwargs)
                 as_list(result['skills_patched']).append(name)
                 try:
                     from app.services.skills.curator import SkillCurator

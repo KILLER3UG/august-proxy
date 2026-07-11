@@ -168,7 +168,7 @@ async def testDoReviewSavesMemoryFacts(isolatedData):
 
     result = await _doReview([{'role': 'user'}], llm_client=stubLlm)
     assert len(result['facts_added']) == 2
-    facts = getMemory('core_memory') or []
+    facts = getMemory('coreMemory') or []
     assert len(facts) == 2
     assert any(('python' in f['fact'] for f in facts))
 
@@ -205,7 +205,7 @@ class TestParseRecommendations:
 
 
 class TestSaveFact:
-    KEY = 'core_memory'
+    KEY = 'coreMemory'
 
     def _facts(self):
         return getMemory(self.KEY) or []

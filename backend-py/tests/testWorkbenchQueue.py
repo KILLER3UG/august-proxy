@@ -150,7 +150,7 @@ class TestChatLoopInjection:
             '_resolveWorkbenchProvider',
             lambda *a, **kw: {
                 'name': 'stub-anthropic',
-                'api_mode': 'anthropicMessages',
+                'apiMode': 'anthropicMessages',
                 'default_model': 'stub-claude',
                 'model_profiles': {},
             },

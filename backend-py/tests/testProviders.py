@@ -22,7 +22,7 @@ async def testTemplatesEndpointReturnsTemplates():
         ids = {t['id'] for t in data}
         assert 'anthropic' in ids
         assert 'openai' in ids
-        assert 'deepseek' in ids
+        assert 'openai-compatible' in ids
 
 
 async def testCreateProvider(monkeypatch):
