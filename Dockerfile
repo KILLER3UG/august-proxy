@@ -1,15 +1,48 @@
-FROM node:22-slim
+# August Proxy — Python/FastAPI backend with Node.js for MCP servers
+FROM python:3.12-slim
+
 WORKDIR /app
-# Install uv/uvx plus Python for Python-based MCP servers such as MiniMax and fetch.
-RUN apt-get update && apt-get install -y curl ca-certificates python3 git sqlite3 && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 22 (for MCP server processes), system deps, and uv
+RUN apt-get update && apt-get install -y \
+    curl \
+    ca-certificates \
+    git \
+    sqlite3 \
+    nodejs \
+    npm \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast Python dependency management
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL="/usr/local/bin" sh
-RUN npm install http-proxy @modelcontextprotocol/sdk officeparser
-RUN git clone https://github.com/olbboy/claudekit-blender-mcp.git /app/claudekit-blender-mcp
-RUN cd /app/claudekit-blender-mcp && npm install && npm run build
-COPY backend/ ./backend/
-COPY docs/ ./docs/
-COPY scripts/ ./scripts/
-COPY data/ ./data/
-COPY web-dist/ ./web-dist/
-EXPOSE 8080
-CMD ["node", "backend/index.js"]
+
+# Install Node.js MCP dependencies (used by Python backend when spawning MCP servers)
+RUN npm install -g http-proxy @modelcontextprotocol/sdk officeparser
+
+# Clone claudekit-blender-mcp (MCP server for Blender integration)
+RUN git clone https://github.com/olbboy/claudekit-blender-mcp.git /app/claudekit-blender-mcp && \
+    cd /app/claudekit-blender-mcp && \
+    npm install && \
+    npm run build
+
+# Copy Python backend and install dependencies
+COPY backend-py/ /app/backend-py/
+WORKDIR /app/backend-py
+RUN uv sync --no-dev
+
+# Install Playwright browsers (optional, for browser automation)
+RUN uv run playwright install chromium --with-deps || echo "Playwright install skipped (non-critical)"
+
+# Copy frontend build output, data, skills, host_files, docs, scripts
+WORKDIR /app
+COPY web-dist/ /app/web-dist/
+COPY data/ /app/data/
+COPY skills/ /app/skills/
+COPY host_files/ /app/host_files/
+COPY docs/ /app/docs/
+COPY scripts/ /app/scripts/
+
+EXPOSE 8085
+
+# Run the FastAPI backend via uvicorn
+CMD ["uv", "run", "--directory", "/app/backend-py", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8085"]
