@@ -1,7 +1,7 @@
 """v1.1 — End-to-end smoke test: a real chat session, no crashes."""
 import pytest
 import uuid
-from app.services.memory import context_builder, autoMemory
+from app.services.memory import context_builder, auto_memory
 from app.services.workbench import workbench
 from app.services import memoryStore
 
