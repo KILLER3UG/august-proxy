@@ -492,7 +492,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     Phase 3: If progressive disclosure is active and the tool set exceeds
     the threshold, BM25 pre-loads the most relevant tools and defers the rest.
     """
-    from app.adapters.proxyTools import sanitizeAnthropicToolDefinition
+    from app.adapters.proxy_tools import sanitizeAnthropicToolDefinition
     from app.services.toolRegistry import listTools
     tools: list[dict[str, object]] = []
     seen: set[str] = set()
@@ -524,7 +524,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     OpenAI/Anthropic format) are normalized to OpenAI format and deduped
     by name, then real MCP server tools are appended.
     """
-    from app.adapters.proxyTools import anthropicToOpenaiToolDefinition
+    from app.adapters.proxy_tools import anthropicToOpenaiToolDefinition
     from app.services.toolRegistry import listTools
     tools: list[dict[str, object]] = []
     seen: set[str] = set()
@@ -545,7 +545,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
 
 def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, object]]:
     """Real MCP server tools in Anthropic format, deduped against ``seen``."""
-    from app.adapters.proxyTools import openaiToAnthropicToolDefinition
+    from app.adapters.proxy_tools import openaiToAnthropicToolDefinition
     from app.services.tools.mcpClient import getMcpToolDefinitionsSync
     out: list[dict[str, object]] = []
     for raw in getMcpToolDefinitionsSync():

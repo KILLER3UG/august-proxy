@@ -19,10 +19,10 @@ from typing import AsyncIterator, Callable, cast
 from app.typeAliases import JsonValue
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 from app.adapters.base import streamSse, buildHeaders, extractRequestHeaders, _scanHeadersForSessionId
-from app.adapters.proxyTools import getProxyOpenaiToolDefinitions, appendMissingOpenaiTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, isProxyManagedLocalToolName
-from app.adapters.toolClassification import classifyOpenaiToolCalls, getToolNameFromOpenaiTool
+from app.adapters.proxy_tools import getProxyOpenaiToolDefinitions, appendMissingOpenaiTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, isProxyManagedLocalToolName
+from app.adapters.tool_classification import classifyOpenaiToolCalls, getToolNameFromOpenaiTool
 from app.adapters.stream_state import OpenaiStreamAccumulator, ToolCallDelta
-from app.adapters.caseConverters import snakeToCamel, camelToSnake
+from app.adapters.case_converters import snakeToCamel, camelToSnake
 from app.providers import resolver as providerResolver
 from app.providers.modelResolver import resolve, resolveOrFallback
 from app.providers.clients import getClient

@@ -106,7 +106,7 @@ def testManagedToolLoopRunsThroughAnthropicAdapter(externalProvider):
     / managed-tool interception works end-to-end against a real model)."""
     import asyncio
     from app.adapters import anthropic as anthropicAdapter
-    from app.adapters.proxyTools import getManagedAnthropicWebToolDefinitions
+    from app.adapters.proxy_tools import getManagedAnthropicWebToolDefinitions
     body = {
         'model': TEST_MODEL,
         'messages': [{'role': 'user', 'content': 'Use the WebSearch tool to look up the current capital of France, then tell me the answer in one sentence.'}],
