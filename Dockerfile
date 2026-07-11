@@ -33,12 +33,12 @@ RUN uv sync --no-dev
 # Install Playwright browsers (optional, for browser automation)
 RUN uv run playwright install chromium --with-deps || echo "Playwright install skipped (non-critical)"
 
-# Copy frontend build output, data, skills, host_files, docs, scripts
+# Copy frontend build output, data, skills, docs, scripts
+# (host_files/ is dockerignored and live-mounted via docker-compose at runtime)
 WORKDIR /app
 COPY web-dist/ /app/web-dist/
 COPY data/ /app/data/
 COPY skills/ /app/skills/
-COPY host_files/ /app/host_files/
 COPY docs/ /app/docs/
 COPY scripts/ /app/scripts/
 
