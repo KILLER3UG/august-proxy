@@ -63,7 +63,7 @@ configService.dataPath = lambda name, *a, **kw: path_obj if name == 'providers.j
 providerCredentials.invalidate()
 
 from app.adapters import openai as openaiAdapter
-from app.adapters.proxyTools import getManagedAnthropicWebToolDefinitions
+from app.adapters.proxy_tools import getManagedAnthropicWebToolDefinitions
 
 async def _collect(it):
     out = []

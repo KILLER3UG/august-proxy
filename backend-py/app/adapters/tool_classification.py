@@ -7,7 +7,7 @@ This module classifies tool call/use arrays so the adapters know which
 tools to execute locally vs. forward to the client.
 """
 from __future__ import annotations
-from app.adapters.proxyTools import isProxyManagedLocalToolName
+from app.adapters.proxy_tools import isProxyManagedLocalToolName
 from app.models import ToolCall, ToolUseBlock, ToolClassificationResult
 
 def getToolNameFromOpenaiTool(tool: ToolCall | dict[str, object] | None) -> str | None:

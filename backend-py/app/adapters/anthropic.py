@@ -25,10 +25,10 @@ from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.adapters.base import streamSse, buildHeaders, extractRequestHeaders as _extractRequestHeaders, _scanHeadersForSessionId
 from app.adapters.stream_state import AnthropicNativeStreamState, OpenaiToAnthropicStreamState
 from app.providers.clients.base import BaseProviderClient
-from app.adapters.proxyTools import getProxyOpenaiToolDefinitionsForAnthropic, appendMissingAnthropicTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, dedupeAndCanonicalizeAnthropicTools, getManagedAnthropicWebToolDefinitions, openaiToAnthropicToolDefinition, anthropicToOpenaiToolDefinition, isProxyManagedLocalToolName, isBrowserAutomationToolName
-from app.adapters.toolClassification import classifyAnthropicToolUses, classifyOpenaiToolCalls, getToolNameFromAnthropicTool, getToolNameFromOpenaiTool
+from app.adapters.proxy_tools import getProxyOpenaiToolDefinitionsForAnthropic, appendMissingAnthropicTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, dedupeAndCanonicalizeAnthropicTools, getManagedAnthropicWebToolDefinitions, openaiToAnthropicToolDefinition, anthropicToOpenaiToolDefinition, isProxyManagedLocalToolName, isBrowserAutomationToolName
+from app.adapters.tool_classification import classifyAnthropicToolUses, classifyOpenaiToolCalls, getToolNameFromAnthropicTool, getToolNameFromOpenaiTool
 from app.models import AnthropicRequest, AnthropicMessage, AnthropicResponse, AnthropicUsage, ContentBlock, ToolUseBlock, ToolResultBlock, ChatCompletionRequest, ChatMessage, ToolCall, Usage, StreamChunk
-from app.adapters.caseConverters import snakeToCamel, camelToSnake
+from app.adapters.case_converters import snakeToCamel, camelToSnake
 from app.providers import resolver as providerResolver
 from app.providers.modelResolver import resolve, resolveOrFallback
 from app.providers.clients import getClient
