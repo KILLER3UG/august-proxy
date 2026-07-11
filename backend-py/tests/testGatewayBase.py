@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 import pytest
 from app.services.gateway.base import BasePlatformAdapter, MessageEvent, SessionSource, buildSessionKey, shouldBypassActiveSession
-from app.services.gateway.sessionBridge import SessionBridge, TurnResult
+from app.services.gateway.session_bridge import SessionBridge, TurnResult
 
 class StubRunner:
     """Injected workbench runner: blocks on a gate until released."""

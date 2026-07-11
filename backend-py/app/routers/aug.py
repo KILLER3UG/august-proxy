@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Body
 
-from app.services import augDirectiveService
-from app.services import augArtifactService
+from app.services import aug_directive_service
+from app.services import aug_artifact_service
 
 router = APIRouter(prefix='/api/aug')
 
@@ -21,7 +21,7 @@ router = APIRouter(prefix='/api/aug')
 @router.get('/context')
 async def getAugContext(workspacePath: str = Query('', description='Workspace path (falls back to project root)')):
     """Return the current AUG.md for a workspace."""
-    loaded = augDirectiveService.load(workspacePath or None)
+    loaded = aug_directive_service.load(workspacePath or None)
     if not loaded:
         return {'exists': False, 'body': '', 'frontmatter': {}, 'path': ''}
     return {
@@ -42,14 +42,14 @@ async def initAug(payload: dict = Body(...)):
     workspacePath = payload.get('workspacePath') or ''
     mode = payload.get('mode') or 'create'
     model = payload.get('model') or ''
-    if mode == 'refine' and not augDirectiveService.exists(workspacePath or None):
+    if mode == 'refine' and not aug_directive_service.exists(workspacePath or None):
         mode = 'create'
     existing = None
     if mode == 'refine':
-        loaded = augDirectiveService.load(workspacePath or None)
+        loaded = aug_directive_service.load(workspacePath or None)
         existing = loaded['body'] if loaded else None
     try:
-        result = await augDirectiveService.generate(
+        result = await aug_directive_service.generate(
             workspacePath, mode=mode, existing=existing, model=model
         )
     except Exception as exc:  # pragma: no cover - defensive
@@ -65,13 +65,13 @@ async def putAugContent(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail='content is required')
     workspacePath = payload.get('workspacePath') or None
     try:
-        result = augDirectiveService.write(workspacePath, content)
+        result = aug_directive_service.write(workspacePath, content)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     sessionId = payload.get('sessionId')
     if sessionId:
         try:
-            from app.services.workbench.promptCache import getCache
+            from app.services.workbench.prompt_cache import getCache
             getCache().invalidate(sessionId)
         except Exception:
             pass
@@ -81,20 +81,20 @@ async def putAugContent(payload: dict = Body(...)):
 @router.delete('/content')
 async def deleteAugContent(workspacePath: str = Query('')):
     """Remove the workspace AUG.md if present."""
-    return augDirectiveService.delete(workspacePath or None)
+    return aug_directive_service.delete(workspacePath or None)
 
 
 @router.get('/plans')
 async def listAugPlans(workspacePath: str = Query('', description='Workspace path (falls back to project root)')):
     """List `.aug` plan/todo artifacts for manual cleanup."""
-    artifacts = augArtifactService.listArtifacts(workspacePath or None)
+    artifacts = aug_artifact_service.listArtifacts(workspacePath or None)
     return {'artifacts': artifacts}
 
 
 @router.delete('/plans/{kind}/{slug}')
 async def deleteAugPlan(kind: str, slug: str, workspacePath: str = Query('')):
     """Manually delete a single `.aug` artifact."""
-    result = augArtifactService.deleteArtifact(workspacePath or None, kind, slug)
+    result = aug_artifact_service.deleteArtifact(workspacePath or None, kind, slug)
     if not result.get('removed') and result.get('error'):
         raise HTTPException(status_code=400, detail=result['error'])
     return result

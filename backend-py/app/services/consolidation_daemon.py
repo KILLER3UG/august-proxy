@@ -54,10 +54,10 @@ async def _callHippocampus(prompt: str) -> str:
     no-op for environments without a configured LLM.
     """
     try:
-        from app.services.workbench import modelFleet
+        from app.services.workbench import model_fleet
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
-        model = modelFleet.getModelForRole('hippocampus')
+        model = model_fleet.getModelForRole('hippocampus')
         if not model:
             return ''
         provider = providerResolver.resolve(model)
@@ -77,10 +77,10 @@ async def _callHippocampus(prompt: str) -> str:
 async def _callPrefrontal(prompt: str) -> str:
     """v2: Call the Prefrontal model. Returns raw text response."""
     try:
-        from app.services.workbench import modelFleet
+        from app.services.workbench import model_fleet
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
-        model = modelFleet.getModelForRole('prefrontal')
+        model = model_fleet.getModelForRole('prefrontal')
         if not model:
             return ''
         provider = providerResolver.resolve(model)
@@ -113,11 +113,11 @@ async def runConsolidation() -> ConsolidationSummaryDict:
     Returns stats about what was done.
     """
     stats: ConsolidationSummaryDict = {'merged': 0, 'promoted': 0, 'deleted_stale': 0, 'errors': []}
-    from app.services.brainEventBus import emitBrainEvent
+    from app.services.brain_event_bus import emitBrainEvent
     emitBrainEvent(category='consolidation', layer='consolidation_daemon', summary=f'Sleep cycle started over {0} heuristics (will update on completion)')
     try:
-        from app.services.memoryStore import _conn
-        from app.services.dbWriter import enqueueWrite
+        from app.services.memory_store import _conn
+        from app.services.db_writer import enqueueWrite
         conn = _conn()
         autoMemories = [dict(r) for r in conn.execute('SELECT * FROM autoMemories ORDER BY id DESC LIMIT 100').fetchall()]
         heuristics = [dict(r) for r in conn.execute('SELECT * FROM learnedHeuristics ORDER BY id DESC').fetchall()]
@@ -164,7 +164,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
         logger.error('Consolidation error: %s', exc)
     global _last_run
     _lastRun = {'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'merged': stats['merged'], 'promoted': stats['promoted'], 'deletedStale': stats['deleted_stale']}
-    from app.services.brainEventBus import emitBrainEvent
+    from app.services.brain_event_bus import emitBrainEvent
     summaryParts = []
     if stats['merged']:
         summaryParts.append(f"merged {stats['merged']} duplicate{('s' if stats['merged'] != 1 else '')}")
@@ -184,7 +184,7 @@ async def draftSkillForSession(sessionId: str) -> str | None:
     Quality guard: skip if we already drafted a skill today.
     """
     try:
-        from app.services.memoryStore import _conn
+        from app.services.memory_store import _conn
         conn = _conn()
         today = time.strftime('%Y-%m-%d')
         recent = conn.execute("SELECT COUNT(*) as c FROM pendingSkills WHERE createdAt >= ? AND createdBy = 'auto-gen'", (today,)).fetchone()
@@ -222,11 +222,11 @@ async def draftSkillForSession(sessionId: str) -> str | None:
 def approvePendingSkill(name: str) -> bool:
     """v2: Approve a pending skill — move from staging to active."""
     try:
-        from app.services.brainEventBus import emitBrainEvent
+        from app.services.brain_event_bus import emitBrainEvent
     except Exception:
         pass
     try:
-        from app.services.memoryStore import _conn
+        from app.services.memory_store import _conn
         conn = _conn()
         row = conn.execute('SELECT draftPath FROM pendingSkills WHERE name = ?', (name,)).fetchone()
         if not row:
@@ -248,11 +248,11 @@ def approvePendingSkill(name: str) -> bool:
 def rejectPendingSkill(name: str) -> bool:
     """v2: Reject a pending skill — delete the staging file."""
     try:
-        from app.services.brainEventBus import emitBrainEvent
+        from app.services.brain_event_bus import emitBrainEvent
     except Exception:
         pass
     try:
-        from app.services.memoryStore import _conn
+        from app.services.memory_store import _conn
         conn = _conn()
         row = conn.execute('SELECT draftPath FROM pendingSkills WHERE name = ?', (name,)).fetchone()
         if not row:

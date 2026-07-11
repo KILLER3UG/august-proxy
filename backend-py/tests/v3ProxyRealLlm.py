@@ -36,7 +36,7 @@ pytestmark = pytest.mark.skipif(
 
 def _registerExternalProvider(tmp_path, monkeypatch):
     """Point the proxy's provider resolution at the external test endpoint."""
-    from app.services import configService, providerCredentials
+    from app.services import config_service, providerCredentials
     path = tmp_path / 'providers.json'
     store = {
         'providers': [
@@ -52,7 +52,7 @@ def _registerExternalProvider(tmp_path, monkeypatch):
         ]
     }
     path.write_text(json.dumps(store), encoding='utf-8')
-    monkeypatch.setattr(configService, 'dataPath', lambda name, *a, **kw: path if name == 'providers.json' else path)
+    monkeypatch.setattr(config_service, 'dataPath', lambda name, *a, **kw: path if name == 'providers.json' else path)
     providerCredentials.invalidate()
     yield path
     providerCredentials.invalidate()

@@ -1,4 +1,4 @@
-"""Characterization tests for memoryStore — capture current behavior as-is.
+"""Characterization tests for memory_store — capture current behavior as-is.
 
 These tests use the isolatedData fixture so they never touch the real brain DB.
 They intentionally assert the *current* camelCase schema and return shapes
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services import memoryStore as ms
+from app.services import memory_store as ms
 
 
 @pytest.fixture

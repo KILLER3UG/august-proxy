@@ -1,6 +1,6 @@
 """v2 — Test that daemon tool calls reject mutating commands."""
 import pytest
-from app.services.toolRegistry import dispatch, setDaemonContext, clearDaemonContext, isDaemonContext, isCommandBlocked
+from app.services.tool_registry import dispatch, setDaemonContext, clearDaemonContext, isDaemonContext, isCommandBlocked
 
 @pytest.fixture(autouse=True)
 def _cleanupDaemonContext():
@@ -43,7 +43,7 @@ def testEchoAllowed():
 @pytest.mark.asyncio
 async def testDispatchBlocksRmInDaemonContext():
     """When in daemon context, rm is rejected by dispatch."""
-    from app.services import toolRegistry
+    from app.services import tool_registry
     setDaemonContext()
     result = await dispatch('nonexistent_tool', {})
     assert 'not found' in result.lower() or 'error' in result.lower()

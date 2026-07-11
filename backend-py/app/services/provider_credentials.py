@@ -22,7 +22,7 @@ Custom-store entry filtering:
 from __future__ import annotations
 from typing import Callable, Optional
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
-from app.services import configService
+from app.services import config_service
 _storeCache: Optional[dict[str, object]] = None
 _invalidationCallbacks: list[Callable[[], None]] = []
 
@@ -54,7 +54,7 @@ def invalidate() -> None:
 def _loadStore() -> dict[str, object]:
     """Reload the providers.json cache from disk."""
     global _storeCache
-    _storeCache = configService.getProvidersStore()
+    _storeCache = config_service.getProvidersStore()
     return _storeCache
 
 def _customEntry(nameOrId: str) -> Optional[dict[str, object]]:

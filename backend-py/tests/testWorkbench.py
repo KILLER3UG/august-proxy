@@ -1,8 +1,8 @@
 """Workbench service unit tests."""
 import pytest
 from app.services.workbench.workbench import createWorkbenchSession, getWorkbenchSession, listWorkbenchSessions, summarizeSession, deleteWorkbenchSession, normalizeGuardMode, isPlanModeBlocked, buildSystemPrompt, submitPlan, approveWorkbenchPlan, rejectWorkbenchPlan, createPendingMutation, consumePendingMutation, setWorkbenchGoal, getWorkbenchGoalStatus, getWorkbenchActivity, resolveEffectiveEffort, effortToThinkingBudget, effortToOpenaiReasoningEffort
-from app.services.workbench.managedToolPolicy import isManagedToolParallelSafe, parseOpenaiToolArgs
-from app.services.workbench.toolExecutor import executeToolBatch
+from app.services.workbench.managed_tool_policy import isManagedToolParallelSafe, parseOpenaiToolArgs
+from app.services.workbench.tool_executor import executeToolBatch
 from app.services.workbench.selfheal import detectError, buildHints, enhanceToolResult, applySelfHealToMessages
 from app.services.workbench.validator import validateToolArguments, buildValidationErrorToolMessage
 
@@ -338,7 +338,7 @@ class TestAnthropicWorkbenchStreaming:
         def fakeRecordUsage(sessionId, model, inputTokens=0, outputTokens=0, contextTokens=0):
             recorded.append({'session_id': sessionId, 'model': model, 'input_tokens': inputTokens, 'output_tokens': outputTokens, 'context_tokens': contextTokens})
             return 1
-        import app.services.memoryStore as memoryStore
+        import app.services.memory_store as memoryStore
         monkeypatch.setattr(memoryStore, 'recordUsage', fakeRecordUsage)
         providerConfig = {'name': 'anthropic', 'model_profiles': {'*': {}}, 'api_mode': 'anthropicMessages'}
         monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **k: providerConfig)

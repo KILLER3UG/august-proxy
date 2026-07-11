@@ -9,8 +9,8 @@ the Python backend.
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from app.services import aliasService
-from app.services.memoryStore import listConfigAudit
+from app.services import alias_service
+from app.services.memory_store import listConfigAudit
 router = APIRouter(prefix='/api/august')
 
 class AliasManageItem(BaseModel):
@@ -32,20 +32,20 @@ async def manageAliases(body: AliasManageRequest):
     """Unified alias action endpoint used by the frontend's AliasesTab."""
     action = (body.action or '').lower()
     if action == 'list':
-        return {'aliases': aliasService.listAliases()}
+        return {'aliases': alias_service.listAliases()}
     if action == 'upsert':
         alias = (body.alias or '').strip()
         if not alias:
             raise HTTPException(400, detail={'code': 'bad_request', 'message': 'alias is required'})
         try:
-            entry = aliasService.createAlias(alias=alias, target_model=body.targetModel or '', target_provider=body.targetProvider or '', display_alias=body.displayAlias or '', actor='ui')
+            entry = alias_service.createAlias(alias=alias, target_model=body.targetModel or '', target_provider=body.targetProvider or '', display_alias=body.displayAlias or '', actor='ui')
         except ValueError as exc:
             raise HTTPException(400, detail={'code': 'validation', 'message': str(exc)})
         return {'alias': entry}
     if action == 'delete':
         if not body.alias:
             raise HTTPException(400, detail={'code': 'bad_request', 'message': 'alias is required'})
-        removed = aliasService.delete_alias(body.alias, actor='ui')
+        removed = alias_service.delete_alias(body.alias, actor='ui')
         return {'deleted': removed, 'alias': body.alias}
     raise HTTPException(400, detail={'code': 'bad_request', 'message': f"Unknown action '{action}'"})
 

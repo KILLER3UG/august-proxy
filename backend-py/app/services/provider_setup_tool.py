@@ -85,10 +85,10 @@ async def setupProvider(
 
     api_format = _normalize_format(apiFormat)
 
-    from app.services import configService, modelService
+    from app.services import config_service, modelService
     from app.providers.template_loader import getTemplates
 
-    store = configService.getProvidersStore()
+    store = config_service.getProvidersStore()
     if 'providers' not in store:
         store['providers'] = []
 
@@ -103,7 +103,7 @@ async def setupProvider(
                 p['apiFormat'] = api_format
                 if apiKey:
                     p['apiKey'] = apiKey
-                configService.saveProvidersStore(store)
+                config_service.saveProvidersStore(store)
                 modelService.invalidateCache()
                 return _ok(
                     providerId=p['id'],
@@ -158,7 +158,7 @@ async def setupProvider(
         'models': models,
     }
     store['providers'].append(entry)
-    configService.saveProvidersStore(store)
+    config_service.saveProvidersStore(store)
     modelService.invalidateCache()
     return _ok(
         providerId=new_id,
@@ -173,8 +173,8 @@ async def setupProvider(
 
 def register() -> None:
     """Register the setup_provider tool with the tool registry."""
-    from app.services import toolRegistry
-    toolRegistry.register(
+    from app.services import tool_registry
+    tool_registry.register(
         'setup_provider',
         (
             'Configure a model provider hands-free. First use web_search / web_fetch to find the '

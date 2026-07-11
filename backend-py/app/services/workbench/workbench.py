@@ -157,8 +157,8 @@ def deleteWorkbenchSession(sessionId: str) -> bool:
         return False
     session = _sessions[sessionId]
     try:
-        from app.services import augArtifactService
-        augArtifactService.deleteForSession(session.workspacePath or None, sessionId)
+        from app.services import aug_artifact_service
+        aug_artifact_service.deleteForSession(session.workspacePath or None, sessionId)
     except Exception:
         pass
     del _sessions[sessionId]
@@ -229,7 +229,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     whats-new, and guard mode rules — achieving Node.js parity.
     """
     from app.services.memory.context_builder import buildSystemPrompt as ctxBuild
-    from app.services.memoryStore import getMemory
+    from app.services.memory_store import getMemory
     memory = {}
     profile = getMemory('userProfile')
     if profile:
@@ -253,7 +253,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     except Exception:
         pass
     try:
-        from app.services.memoryStore import _conn as brainConn
+        from app.services.memory_store import _conn as brainConn
         conn = brainConn()
         heuristicsRows = conn.execute('SELECT rule, source, category FROM learnedHeuristics ORDER BY updatedAt DESC').fetchall()
         if heuristicsRows:
@@ -266,7 +266,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     agentContext = None
     if session.agentId:
         try:
-            from app.services.tools.agentRegistry import renderAgentContext
+            from app.services.tools.agent_registry import renderAgentContext
             agentContext = renderAgentContext(session.agentId)
         except Exception:
             pass
@@ -295,7 +295,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
             pass
     memoryStats = {}
     try:
-        from app.services.memoryStore import getStats as memStats
+        from app.services.memory_store import getStats as memStats
         memoryStats = memStats()
     except Exception:
         pass
@@ -311,8 +311,8 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
             pass
     skillsManifest = ''
     try:
-        from app.services import skillService
-        cat = skillService.catalogue()
+        from app.services import skill_service
+        cat = skill_service.catalogue()
         if cat:
             lines = []
             for s in cat:
@@ -327,7 +327,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
         pass
     cognitiveBudget = None
     try:
-        from app.services.workbench.tokenBudget import computeBudget
+        from app.services.workbench.token_budget import computeBudget
         provider = getattr(session, 'provider', None) or ''
         model = getattr(session, 'model', None) or ''
         providerName = provider.get('name', '') if isinstance(provider, dict) else str(provider)
@@ -345,15 +345,15 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     augMdBody = ''
     if workspacePath:
         try:
-            from app.services import augDirectiveService
-            loaded = augDirectiveService.load(workspacePath)
+            from app.services import aug_directive_service
+            loaded = aug_directive_service.load(workspacePath)
             if loaded and loaded.get('body'):
                 augMdBody = loaded['body']
         except Exception:
             pass
     sessionDict['augMd'] = augMdBody
     sessionDict['todos'] = session.todos
-    from app.services.workbench.promptCache import getCache
+    from app.services.workbench.prompt_cache import getCache
     promptCache = getCache()
     cacheKey = getattr(session, 'id', '') or ''
     cachedT12 = promptCache.get(cacheKey)
@@ -374,8 +374,8 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
             pass
     extraParts: list[str] = []
     try:
-        from app.services import skillService
-        cat = skillService.catalogue()
+        from app.services import skill_service
+        cat = skill_service.catalogue()
         if cat:
             intro = "Skills are on-demand capability extensions. Each entry below lists a skill's name, description, and optional trigger. To use a skill, call the `load_skill` tool with its name to load the full instructions, then follow them."
             lines = [intro, '']
@@ -420,7 +420,7 @@ def _buildDaemonUpdates(sessionId: str) -> str:
     can detect critical alerts and pause to inform the user.
     """
     try:
-        from app.services.daemonManager import getManager
+        from app.services.daemon_manager import getManager
         manager = getManager()
         daemons = manager.list_daemons(sessionId)
         if not daemons:
@@ -493,7 +493,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     the threshold, BM25 pre-loads the most relevant tools and defers the rest.
     """
     from app.adapters.proxy_tools import sanitizeAnthropicToolDefinition
-    from app.services.toolRegistry import listTools
+    from app.services.tool_registry import listTools
     tools: list[dict[str, object]] = []
     seen: set[str] = set()
     for raw in listTools():
@@ -506,7 +506,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         tools.append(t)
     tools.extend(_mcpToolDefinitionsAnthropic(seen))
     try:
-        from app.services.tools.modelTools import assembleToolDefs
+        from app.services.tools.model_tools import assembleToolDefs
         messages = getattr(session, 'messages', None) or []
         contextMsgs = list(messages) if isinstance(messages, list) else []
         result = assembleToolDefs(all_tool_defs=tools, context_messages=contextMsgs)
@@ -525,7 +525,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     by name, then real MCP server tools are appended.
     """
     from app.adapters.proxy_tools import anthropicToOpenaiToolDefinition
-    from app.services.toolRegistry import listTools
+    from app.services.tool_registry import listTools
     tools: list[dict[str, object]] = []
     seen: set[str] = set()
     for raw in listTools():
@@ -546,7 +546,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
 def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, object]]:
     """Real MCP server tools in Anthropic format, deduped against ``seen``."""
     from app.adapters.proxy_tools import openaiToAnthropicToolDefinition
-    from app.services.tools.mcpClient import getMcpToolDefinitionsSync
+    from app.services.tools.mcp_client import getMcpToolDefinitionsSync
     out: list[dict[str, object]] = []
     for raw in getMcpToolDefinitionsSync():
         t = openaiToAnthropicToolDefinition(raw)
@@ -558,7 +558,7 @@ def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, object]]:
 
 def _mcpToolDefinitionsOpenai(seen: set[str]) -> list[dict[str, object]]:
     """Real MCP server tools in OpenAI format, deduped against ``seen``."""
-    from app.services.tools.mcpClient import getMcpToolDefinitionsSync
+    from app.services.tools.mcp_client import getMcpToolDefinitionsSync
     out: list[dict[str, object]] = []
     for raw in getMcpToolDefinitionsSync():
         fn = raw.get('function', {}) if raw.get('type') == 'function' else {}
@@ -615,8 +615,8 @@ def enqueueUserMessage(sessionId: str, text: str, attachments: list[dict[str, ob
     session.updatedAt = _now()
     saveSessions()
     try:
-        from app.services import eventLog
-        eventLog.eventLog.append(sessionId, 'user_message_queued', {'sessionId': sessionId, 'messageId': entry['id'], 'text': text, 'queuedAt': entry['queuedAt']})
+        from app.services import event_log
+        event_log.event_log.append(sessionId, 'user_message_queued', {'sessionId': sessionId, 'messageId': entry['id'], 'text': text, 'queuedAt': entry['queuedAt']})
     except Exception:
         pass
     return entry
@@ -640,8 +640,8 @@ def dequeueUserMessage(sessionId: str, messageId: str) -> bool:
     session.updatedAt = _now()
     saveSessions()
     try:
-        from app.services import eventLog
-        eventLog.eventLog.append(sessionId, 'user_message_dequeued', {'sessionId': sessionId, 'messageId': messageId})
+        from app.services import event_log
+        event_log.event_log.append(sessionId, 'user_message_dequeued', {'sessionId': sessionId, 'messageId': messageId})
     except Exception:
         pass
     return True
@@ -671,9 +671,9 @@ def drainQueuedMessages(sessionId: str, emit: Callable[[dict[str, object]], None
     saveSessions()
     if emit is not None:
         try:
-            from app.services import eventLog
+            from app.services import event_log
             for entry in entries:
-                eventLog.eventLog.append(sessionId, 'userMessageInjected', {'sessionId': sessionId, 'messageId': entry.get('id', ''), 'text': entry.get('text', ''), 'queuedAt': entry.get('queuedAt', '')})
+                event_log.event_log.append(sessionId, 'userMessageInjected', {'sessionId': sessionId, 'messageId': entry.get('id', ''), 'text': entry.get('text', ''), 'queuedAt': entry.get('queuedAt', '')})
         except Exception:
             pass
     return entries
@@ -718,8 +718,8 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
     if emit:
         emit({'type': 'started', 'sessionId': sessionId, 'model': resolvedModel})
     if resolvedProvider:
-        from app.services import providerCredentials
-        creds = providerCredentials.resolve(resolvedProvider.get('name') or resolvedProvider.get('id') or '')
+        from app.services import provider_credentials
+        creds = provider_credentials.resolve(resolvedProvider.get('name') or resolvedProvider.get('id') or '')
         apiKey = (creds or {}).get('api_key') if creds else None
         if not apiKey:
             if emit:
@@ -890,7 +890,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
             if emit:
                 emit({'type': 'toolCall', 'id': toolUseId, 'name': toolName, 'input': toolInput, 'status': 'running'})
             try:
-                from app.services.workbench.toolGuardrails import ToolCallTracker
+                from app.services.workbench.tool_guardrails import ToolCallTracker
                 if not hasattr(session, '_tool_tracker') or session._tool_tracker is None:
                     session._tool_tracker = ToolCallTracker()
                 tracker = session._tool_tracker
@@ -931,13 +931,13 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
             toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': result})
         if not toolResults:
             try:
-                from app.services.workbench.toolGuardrails import ToolCallTracker
+                from app.services.workbench.tool_guardrails import ToolCallTracker
                 if hasattr(session, '_tool_tracker') and session._tool_tracker:
                     session._tool_tracker.record_text_response()
             except Exception:
                 pass
             try:
-                from app.services.daemonManager import getManager
+                from app.services.daemon_manager import getManager
                 manager = getManager()
                 manager.increment_turns(session.id)
             except Exception:
@@ -961,7 +961,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
         _emitSessionStatus(sessionId)
         if totalInputTokens > 0 or totalOutputTokens > 0:
             try:
-                from app.services.memoryStore import recordUsage
+                from app.services.memory_store import recordUsage
                 recordUsage(sessionId=session.id, model=resolvedModel, inputTokens=totalInputTokens, outputTokens=totalOutputTokens, contextTokens=finalContextTokens)
                 session.totalInputTokens += totalInputTokens
                 session.totalOutputTokens += totalOutputTokens
@@ -996,7 +996,7 @@ def _backgroundTaskModel(taskKey: str, chatModel: str) -> str:
     chat session's model.
     """
     try:
-        from app.services.backgroundReviewService import getConfig
+        from app.services.background_review_service import getConfig
         cfg = getConfig()
         if cfg.get('enabled') and cfg.get(taskKey):
             return cfg[taskKey]
@@ -1050,7 +1050,7 @@ def _makeReviewLlmClient(mainProvider: dict[str, object] | None, reviewModelHint
         provider = None
         reviewConfig: dict[str, object] | None = None
         try:
-            from app.services.backgroundReviewService import getConfig
+            from app.services.background_review_service import getConfig
             reviewConfig = getConfig()
             reviewModel = reviewConfig.get('reviewModel', '') or reviewModelHint
             if reviewModel:
@@ -1342,11 +1342,11 @@ async def _executeTool(toolName: str, args: dict[str, object], session: Workbenc
         server subprocess over JSON-RPC.
       * everything else dispatches through ``tool_registry``.
     """
-    from app.services.toolRegistry import dispatch as dispatchTool
+    from app.services.tool_registry import dispatch as dispatchTool
     from app.services.workbench.context import currentSessionId
     token = currentSessionId.set(session.id)
     try:
-        from app.services.tools.mcpClient import executeMcpToolCall, isMcpToolName
+        from app.services.tools.mcp_client import executeMcpToolCall, isMcpToolName
         if isMcpToolName(toolName):
             return str(await executeMcpToolCall(toolName, args))
         result = await dispatchTool(toolName, args)
@@ -1381,8 +1381,8 @@ def submitPlan(session: WorkbenchSession, planData: dict[str, object]) -> None:
     session._working_memory = None
     session.updatedAt = _now()
     try:
-        from app.services import augArtifactService
-        augArtifactService.savePlan(session.workspacePath or None, session.id, planData, status='pending')
+        from app.services import aug_artifact_service
+        aug_artifact_service.savePlan(session.workspacePath or None, session.id, planData, status='pending')
     except Exception:
         pass
     _emitSessionStatus(session.id)
@@ -1432,8 +1432,8 @@ def submitTodos(session: WorkbenchSession, todosData: list[dict[str, object]], *
     session.todos = todosData
     session.updatedAt = _now()
     try:
-        from app.services import augArtifactService
-        augArtifactService.saveTodos(session.workspacePath or None, session.id, todosData, title=title, status='active')
+        from app.services import aug_artifact_service
+        aug_artifact_service.saveTodos(session.workspacePath or None, session.id, todosData, title=title, status='active')
     except Exception:
         pass
     _emitSessionStatus(session.id)
@@ -1454,8 +1454,8 @@ def approveWorkbenchPlan(sessionId: str) -> bool:
     # Reflect the approval on the persisted .aug artifact so the Plans
     # section doesn't keep showing it as "pending".
     try:
-        from app.services import augArtifactService
-        augArtifactService.updatePlanStatus(session.workspacePath or None, sessionId, 'approved')
+        from app.services import aug_artifact_service
+        aug_artifact_service.updatePlanStatus(session.workspacePath or None, sessionId, 'approved')
     except Exception:
         pass
     _emitSessionStatus(sessionId)
@@ -1472,8 +1472,8 @@ def rejectWorkbenchPlan(sessionId: str) -> bool:
     session._working_memory = None
     session.updatedAt = _now()
     try:
-        from app.services import augArtifactService
-        augArtifactService.deleteForSession(session.workspacePath or None, sessionId)
+        from app.services import aug_artifact_service
+        aug_artifact_service.deleteForSession(session.workspacePath or None, sessionId)
     except Exception:
         pass
     saveSessions()
@@ -1554,7 +1554,7 @@ def listProxyCapabilities() -> dict[str, object]:
     - Estimates per-tool schema token cost
     - Includes agent registry count
     """
-    from app.services.toolRegistry import listTools as regListTools
+    from app.services.tool_registry import listTools as regListTools
     _MUTATINGTools = frozenset({'write_file', 'edit_file', 'delete_file', 'create_file', 'run_command', 'save_memory', 'save_fact', 'update_heuristics', 'update_state', 'write_scratchpad', 'delete_memory', 'submit_plan', 'approve_plan', 'reject_plan', 'load_skill', 'skill_manage', 'spawn_subagent', 'spawn_daemon', 'kill_daemon', 'write_blackboard', 'clear_blackboard'})
     allTools = regListTools()
     grouped: dict[str, list[dict[str, object]]] = {}
@@ -1589,7 +1589,7 @@ def listProxyCapabilities() -> dict[str, object]:
         grouped[group].append(entry)
     agentCount = 0
     try:
-        from app.services.tools.agentRegistry import listAgents
+        from app.services.tools.agent_registry import listAgents
         agentCount = len(listAgents())
     except Exception:
         pass

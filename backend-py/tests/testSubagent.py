@@ -24,7 +24,7 @@ def testExecuteSubAgentRunsAndEmits(monkeypatch, isolatedData):
     monkeypatch.setattr(wb, 'openaiToolDefinitions', lambda s: [])
     import app.providers.modelResolver as mr
     monkeypatch.setattr(mr, 'resolveOrFallback', lambda *a, **k: {'model': 'm', 'provider': 'Test', 'is_fallback': False})
-    import app.services.fallbackService as fs
+    import app.services.fallback_service as fs
     monkeypatch.setattr(fs, 'getFallback', lambda: {'enabled': False, 'mode': 'off', 'provider': '', 'model': ''})
     session = types.SimpleNamespace(id='sess1', model='m', agent_id='', provider='')
     result = asyncio.run(executeSubAgent(session, 'general', 'do the thing', 'ctx', emit=emit))

@@ -131,11 +131,11 @@ def listNamespaces() -> list[str]:
 _COLLECTIONSKey = 'semantic_collections'
 
 def _readCollections() -> dict[str, object]:
-    from app.services.memoryStore import getMemory
+    from app.services.memory_store import getMemory
     return getMemory(_COLLECTIONSKey) or {}
 
 def _writeCollections(data: dict[str, object]) -> None:
-    from app.services.memoryStore import saveMemory
+    from app.services.memory_store import saveMemory
     saveMemory(_COLLECTIONSKey, data)
 
 def createCollection(name: str, description: str='') -> dict[str, object]:

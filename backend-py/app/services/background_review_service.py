@@ -19,7 +19,7 @@ import json
 from app.config import settings
 from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.lib.paths import dataPath
-from app.services.memoryStore import recordConfigAudit
+from app.services.memory_store import recordConfigAudit
 _DEFAULTConfig: dict[str, object] = {'enabled': False, 'reviewModel': '', 'reflectionModel': '', 'autoMemoryModel': ''}
 
 def getConfig() -> dict[str, object]:

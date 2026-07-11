@@ -9,12 +9,12 @@ from __future__ import annotations
 import json
 import re
 import time
-from app.services.memoryStore import saveMemory, getMemory
+from app.services.memory_store import saveMemory, getMemory
 _MAXMemories = 100
 
 def _conn():
     """Get the thread-local brain DB connection."""
-    from app.services.memoryStore import _conn as getConn
+    from app.services.memory_store import _conn as getConn
     return getConn()
 
 def saveAutoMemory(key: str, content: object, category: str='auto', importance: float=0.5) -> None:

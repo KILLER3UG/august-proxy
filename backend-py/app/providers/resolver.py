@@ -74,8 +74,8 @@ def resolve(name: str) -> Optional[dict[str, object]]:
         providers = listAvailable()
         return providers[0] if providers else None
     nameStr = str(name)
-    from app.services import providerCredentials
-    customEntry = providerCredentials._customEntry(nameStr)
+    from app.services import provider_credentials
+    customEntry = provider_credentials._customEntry(nameStr)
     if customEntry and customEntry.get('enabled') and customEntry.get('apiKey'):
         return _customEntryToProviderDict(customEntry)
     canonical = aliases.normalize(nameStr)
@@ -129,8 +129,8 @@ def listAvailable() -> list[dict[str, object]]:
     templates = getTemplates()
     providers = [_templateToProviderDict(t) for t in templates]
     try:
-        from app.services import configService
-        store = configService.getProvidersStore()
+        from app.services import config_service
+        store = config_service.getProvidersStore()
     except Exception:
         store = {}
     for entry in store.get('providers', []):

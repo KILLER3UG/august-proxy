@@ -1,21 +1,21 @@
 """v2 — Test [CRITICAL] prefix preservation through Tier 3 injection."""
 import pytest
-from app.services import daemonManager
+from app.services import daemon_manager
 from app.services.workbench.workbench import _buildDaemonUpdates
 
 @pytest.fixture(autouse=True)
 def _cleanup():
-    if hasattr(daemonManager, '_daemons'):
-        daemonManager._daemons.clear()
+    if hasattr(daemon_manager, '_daemons'):
+        daemon_manager._daemons.clear()
     yield
-    if hasattr(daemonManager, '_daemons'):
-        daemonManager._daemons.clear()
+    if hasattr(daemon_manager, '_daemons'):
+        daemon_manager._daemons.clear()
 
 def testCriticalPrefixPreservedInDaemonOutput():
     """When a daemon output starts with [CRITICAL], the prefix is in the XML."""
-    mgr = daemonManager.get_manager()
+    mgr = daemon_manager.get_manager()
     mgr._daemons.clear()
-    result = daemonManager.DaemonResult()
+    result = daemon_manager.DaemonResult()
     result.status = 'triggered'
     result.triggered = True
     result.output = '[CRITICAL] Database is down'
@@ -28,16 +28,16 @@ def testCriticalPrefixPreservedInDaemonOutput():
 
 def testNoSubconsciousUpdatesBlockWhenNoDaemons():
     """When no daemons exist for the session, the block is empty."""
-    mgr = daemonManager.get_manager()
+    mgr = daemon_manager.get_manager()
     mgr._daemons.clear()
     xml = _buildDaemonUpdates('empty-session')
     assert xml == ''
 
 def testNonCriticalOutputIncluded():
     """Non-critical daemon output is also rendered (not just metadata)."""
-    mgr = daemonManager.get_manager()
+    mgr = daemon_manager.get_manager()
     mgr._daemons.clear()
-    result = daemonManager.DaemonResult()
+    result = daemon_manager.DaemonResult()
     result.status = 'triggered'
     result.triggered = True
     result.output = 'Build passed, version 1.2.3'

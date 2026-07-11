@@ -2,28 +2,28 @@
 import asyncio
 import json
 import pytest
-from app.services import daemonManager, blackboardService, consolidationDaemon
-from app.services.memoryStore import init, _conn
+from app.services import daemon_manager, blackboardService, consolidationDaemon
+from app.services.memory_store import init, _conn
 from app.services.workbench import workbench
 from app.services.memory import context_builder
-from app.services.workbench import modelFleet
+from app.services.workbench import model_fleet
 
 @pytest.fixture(autouse=True)
 def _initDb():
     init()
-    if hasattr(daemonManager, '_daemons'):
-        daemonManager._daemons.clear()
+    if hasattr(daemon_manager, '_daemons'):
+        daemon_manager._daemons.clear()
     yield
-    if hasattr(daemonManager, '_daemons'):
-        daemonManager._daemons.clear()
+    if hasattr(daemon_manager, '_daemons'):
+        daemon_manager._daemons.clear()
 
 def testChatWithDaemonBlackboardAndVerifier():
     """A chat turn integrates daemons, blackboard, and verifier gate."""
     import uuid
     sid = f'v2-e2e-{uuid.uuid4().hex[:8]}'
-    mgr = daemonManager.get_manager()
+    mgr = daemon_manager.get_manager()
     mgr._daemons.clear()
-    result = daemonManager.DaemonResult()
+    result = daemon_manager.DaemonResult()
     result.status = 'triggered'
     result.triggered = True
     result.output = '3 failures in auth.py'
@@ -39,9 +39,9 @@ def testChatWithDaemonBlackboardAndVerifier():
 
 def testModelFleetResolution():
     """getModelForRole returns proper models for each cognitive role."""
-    assert modelFleet.getModelForRole('cerebellum') == 'claude-3-haiku-20240307'
-    assert modelFleet.getModelForRole('hippocampus') == 'claude-3-haiku-20240307'
-    assert modelFleet.getModelForRole('prefrontal') == 'claude-3-5-sonnet-20240620'
+    assert model_fleet.getModelForRole('cerebellum') == 'claude-3-haiku-20240307'
+    assert model_fleet.getModelForRole('hippocampus') == 'claude-3-haiku-20240307'
+    assert model_fleet.getModelForRole('prefrontal') == 'claude-3-5-sonnet-20240620'
 
 @pytest.mark.asyncio
 async def testConsolidationRunsEndToEnd(monkeypatch):
@@ -57,7 +57,7 @@ async def testConsolidationRunsEndToEnd(monkeypatch):
 
 def testEnvWatcherIgnorePatterns():
     """Environment watcher correctly filters noise files."""
-    from app.services.environmentWatcher import shouldIgnore
+    from app.services.environment_watcher import shouldIgnore
     assert shouldIgnore('__pycache__/foo.pyc') is True
     assert shouldIgnore('node_modules/x.js') is True
     assert shouldIgnore('.git/objects/abc') is True
@@ -81,7 +81,7 @@ def testPendingSkillsTableExists():
 
 def testDaemonContextBlocksMutatingCommands():
     """run_command blocked in daemon context (tool blocklist)."""
-    from app.services.toolRegistry import setDaemonContext, clearDaemonContext, isCommandBlocked
+    from app.services.tool_registry import setDaemonContext, clearDaemonContext, isCommandBlocked
     setDaemonContext()
     assert isCommandBlocked('rm -rf /tmp') is True
     assert isCommandBlocked('mv x y') is True

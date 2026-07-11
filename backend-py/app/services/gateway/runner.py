@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Callable
 from app.services.gateway.base import BasePlatformAdapter
-from app.services.gateway.sessionBridge import SessionBridge
+from app.services.gateway.session_bridge import SessionBridge
 log = logging.getLogger(__name__)
 _adapterFactories: dict[str, Callable[..., BasePlatformAdapter]] = {}
 

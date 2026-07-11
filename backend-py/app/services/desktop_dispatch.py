@@ -9,7 +9,7 @@ while the browser layer drives an invisible Playwright page.
 from __future__ import annotations
 from typing import Any, Awaitable, Callable
 from app.jsonUtils import as_str, as_int
-from app.services.desktopAutomation import takeScreenshot, getMousePosition, getScreenSize, clickMouse, typeText, pressKey, openUrl, listWindows
+from app.services.desktop_automation import takeScreenshot, getMousePosition, getScreenSize, clickMouse, typeText, pressKey, openUrl, listWindows
 
 async def automateAction(action: str, params: dict[str, object] | None=None) -> dict[str, object] | list[dict[str, object]]:
     """Execute a desktop automation action by name.

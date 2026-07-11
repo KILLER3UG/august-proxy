@@ -108,9 +108,9 @@ async def testApiUsage(client):
 async def testApiUsageSessionRecordsAndReturnsContextTokens(client, isolatedData):
     """POST /api/usage records an event; GET /api/usage/session?id= returns
     contextTokens = the recorded context_tokens (true current context fill)."""
-    from app.services import memoryStore
+    from app.services import memory_store
     sid = 'test-ctx-session'
-    memoryStore.recordUsage(sessionId=sid, model='claude-sonnet', inputTokens=12000, outputTokens=900, contextTokens=4823)
+    memory_store.recordUsage(sessionId=sid, model='claude-sonnet', inputTokens=12000, outputTokens=900, contextTokens=4823)
     resp = await client.get(f'/api/usage/session?id={sid}')
     assert resp.status_code == 200
     data = resp.json()
@@ -138,9 +138,9 @@ async def testApiUsageSessionUnknownSessionReturnsZeros(client, isolatedData):
 async def testApiUsageSessionContextTokensFallsBackToInputTokens(client, isolatedData):
     """For rows recorded before the context_tokens column existed (value 0),
     the endpoint falls back to input_tokens so the gauge still has a value."""
-    from app.services import memoryStore
+    from app.services import memory_store
     sid = 'test-fallback-session'
-    memoryStore.recordUsage(sessionId=sid, model='claude-sonnet', inputTokens=7777, outputTokens=100, contextTokens=0)
+    memory_store.recordUsage(sessionId=sid, model='claude-sonnet', inputTokens=7777, outputTokens=100, contextTokens=0)
     resp = await client.get(f'/api/usage/session?id={sid}')
     data = resp.json()
     assert resp.status_code == 200

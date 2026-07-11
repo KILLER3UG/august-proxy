@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 async def _callPrefrontal(prompt: str, model: str='', provider: str='') -> str:
     """v3: Call the Prefrontal model. Returns raw text response (may include code fences)."""
     try:
-        from app.services.workbench import modelFleet
+        from app.services.workbench import model_fleet
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
         from app.config import settings
@@ -30,7 +30,7 @@ async def _callPrefrontal(prompt: str, model: str='', provider: str='') -> str:
                         provider = targetProvider
                     break
         if not model:
-            model = modelFleet.getModelForRole('prefrontal')
+            model = model_fleet.getModelForRole('prefrontal')
         if not model:
             logger.warning('_call_prefrontal: no prefrontal model configured. Set one in Settings > Model Fleet.')
             return ''

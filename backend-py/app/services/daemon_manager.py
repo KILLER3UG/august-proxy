@@ -174,7 +174,7 @@ class DaemonManager:
         try:
             modelRole = 'cerebellum'
             try:
-                from app.services.workbench.modelFleet import getModelForRole
+                from app.services.workbench.model_fleet import getModelForRole
                 cerebellumModel = getModelForRole(modelRole)
             except Exception:
                 cerebellumModel = None

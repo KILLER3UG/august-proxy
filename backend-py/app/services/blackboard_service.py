@@ -15,7 +15,7 @@ from app.typeAliases import BlackboardNoteDict
 from app.jsonUtils import as_str, as_dict, as_list, as_int
 
 def _conn():
-    from app.services.memoryStore import _conn as getConn
+    from app.services.memory_store import _conn as getConn
     return getConn()
 
 def computeTtl(pollInterval: int) -> str:

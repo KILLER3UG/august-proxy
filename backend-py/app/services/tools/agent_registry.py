@@ -8,7 +8,7 @@ import asyncio
 import uuid
 from datetime import datetime
 from typing import cast
-from app.services.memoryStore import saveMemory, getMemory, recordConfigAudit
+from app.services.memory_store import saveMemory, getMemory, recordConfigAudit
 from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
 _AGENTSKey = 'agent_registry'
 _JOBSKey = 'agent_jobs'

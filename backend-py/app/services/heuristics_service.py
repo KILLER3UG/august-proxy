@@ -11,7 +11,7 @@ from __future__ import annotations
 
 def _conn():
     """Get the thread-local brain DB connection."""
-    from app.services.memoryStore import _conn as getConn
+    from app.services.memory_store import _conn as getConn
     return getConn()
 
 def listHeuristics(category: str='') -> list[dict[str, object]]:
@@ -38,7 +38,7 @@ def addHeuristic(rule: str, source: str='auto', category: str='general') -> int 
     conn.commit()
     rowId = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
     try:
-        from app.services.brainEventBus import emitBrainEvent
+        from app.services.brain_event_bus import emitBrainEvent
         emitBrainEvent(category='heuristic', layer='heuristics_service.add_heuristic', summary=f'Added heuristic [{source}]: {rule.strip()[:120]}', meta={'rule_id': rowId, 'source': source, 'category': category})
     except Exception:
         pass

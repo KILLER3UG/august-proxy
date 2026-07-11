@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from app.services import skillService
+from app.services import skill_service
 from app.services.skills.curator import SkillCurator, UsageRecord, makeBackgroundCurator
 
 @pytest.fixture
@@ -24,9 +24,9 @@ def curator(isolatedData, isolatedSkills, monkeypatch):
 def seededSkills(curator, isolatedSkills):
     """Create fixture skills for lifecycle tests."""
     agentRoot, __ = isolatedSkills
-    skillService.createSkill('active-skill', 'Recently used.', 'body.', createdBy='agent', category='test')
-    skillService.createSkill('old-skill', 'No activity.', 'body.', createdBy='agent', category='test')
-    skillService.createSkill('bundled-ish', 'Should not appear.', 'body.', createdBy='', category='test')
+    skill_service.createSkill('active-skill', 'Recently used.', 'body.', createdBy='agent', category='test')
+    skill_service.createSkill('old-skill', 'No activity.', 'body.', createdBy='agent', category='test')
+    skill_service.createSkill('bundled-ish', 'Should not appear.', 'body.', createdBy='', category='test')
     rec = curator._ensure('old-skill')
     rec.lastUsedAt = time.time() - 15 * 86400
     curator._save()
@@ -60,24 +60,24 @@ class TestCurator:
         assert 'x' in names
 
     def testPinAndUnpin(self, curator, isolatedSkills, seededSkills):
-        skillService.createSkill('pin-me', 'Desc.', 'body.', createdBy='agent')
+        skill_service.createSkill('pin-me', 'Desc.', 'body.', createdBy='agent')
         assert curator.pin('pin-me') is True
         assert curator.getRecord('pin-me').pinned is True
         assert curator.unpin('pin-me') is True
         assert curator.getRecord('pin-me').pinned is False
 
     def testPinRefusesBundled(self, curator, isolatedSkills, seededSkills):
-        skillService.createSkill('not-agent', 'Desc.', 'body.', createdBy='user')
+        skill_service.createSkill('not-agent', 'Desc.', 'body.', createdBy='user')
         assert curator.pin('not-agent') is False
 
     def testArchiveAndRestore(self, curator, isolatedSkills, seededSkills):
-        skillService.createSkill('arch-me', 'Desc.', 'body.', createdBy='agent')
+        skill_service.createSkill('arch-me', 'Desc.', 'body.', createdBy='agent')
         assert curator.archive('arch-me') is True
         rec = curator.getRecord('arch-me')
         assert rec is not None
         assert rec.state == 'archived'
         assert rec.archivedAt is not None
-        agentRoot = skillService._agentSkillsDir()
+        agentRoot = skill_service._agentSkillsDir()
         assert (agentRoot / '.archive' / 'arch-me').exists()
         assert not (agentRoot / 'arch-me').exists()
         assert curator.restore('arch-me') is True
@@ -85,12 +85,12 @@ class TestCurator:
         assert (agentRoot / 'arch-me').exists()
 
     def testArchiveRefusesPinned(self, curator, isolatedSkills):
-        skillService.createSkill('pinned-s', 'Desc.', 'body.', createdBy='agent')
+        skill_service.createSkill('pinned-s', 'Desc.', 'body.', createdBy='agent')
         curator.pin('pinned-s')
         assert curator.archive('pinned-s') is False
 
     def testArchiveRefusesBundled(self, curator, isolatedSkills):
-        skillService.createSkill('bundled', 'Desc.', 'body.', createdBy='')
+        skill_service.createSkill('bundled', 'Desc.', 'body.', createdBy='')
         assert curator.archive('bundled') is False
 
     def testArchiveRefusesNonexistent(self, curator):
@@ -136,14 +136,14 @@ def testListUsageViaApi(curator, seededSkills):
     assert 'active-skill' in names
 
 def testPinViaApi(curator, seededSkills):
-    skillService.createSkill('api-pin', 'Desc.', 'body.', createdBy='agent')
+    skill_service.createSkill('api-pin', 'Desc.', 'body.', createdBy='agent')
     client = TestClient(_app(curator))
     r = client.post('/api/curator/pin/api-pin')
     assert r.status_code == 200
     assert curator.getRecord('api-pin').pinned is True
 
 def testArchiveAndRestoreViaApi(curator, seededSkills):
-    skillService.createSkill('api-arch', 'Desc.', 'body.', createdBy='agent')
+    skill_service.createSkill('api-arch', 'Desc.', 'body.', createdBy='agent')
     client = TestClient(_app(curator))
     r = client.post('/api/curator/archive/api-arch')
     assert r.status_code == 200

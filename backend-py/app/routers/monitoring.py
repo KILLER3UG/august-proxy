@@ -27,8 +27,8 @@ dropped the `python` field); it was removed.
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from app.services.logger import getActivityLog, getPendingRequests, getFilteredRequests, getStats as getUsageStats, getRequestDetails, getRequestDetail as getReqDetail, getRecentLogEvents, addLogWsClient, removeLogWsClient
-from app.services.loggerConversations import getConversations
-from app.services.hostAgent import getHostInfo
+from app.services.logger_conversations import getConversations
+from app.services.host_agent import getHostInfo
 router = APIRouter(prefix='/api')
 
 @router.get('/activity')

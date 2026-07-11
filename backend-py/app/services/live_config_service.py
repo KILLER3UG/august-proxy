@@ -6,12 +6,12 @@ a partial dict and validates each field's shape.
 """
 from __future__ import annotations
 from app.jsonUtils import as_dict, as_str
-from app.services import configService
+from app.services import config_service
 FIELDS = ('sttProvider', 'sttModel', 'ttsProvider', 'ttsModel', 'ttsVoice')
 DEFAULTS: dict[str, str] = {'sttProvider': '', 'sttModel': '', 'ttsProvider': '', 'ttsModel': '', 'ttsVoice': ''}
 
 def getLiveConfig() -> dict[str, str]:
-    cfg = configService.getConfig()
+    cfg = config_service.getConfig()
     user = as_dict(as_dict(cfg.get('auxiliary'), {}).get('live'), {})
     out = DEFAULTS.copy()
     for f in FIELDS:
@@ -31,9 +31,9 @@ def updateLiveConfig(patch: dict[str, object]) -> tuple[bool, str, dict[str, str
     ok, err = validatePatch(patch)
     if not ok:
         return (False, err, getLiveConfig())
-    cfg = configService.getConfig()
+    cfg = config_service.getConfig()
     aux = cfg.setdefault('auxiliary', {})
     live = aux.setdefault('live', {})
     live.update(patch)
-    configService.saveConfig(cfg)
+    config_service.saveConfig(cfg)
     return (True, '', getLiveConfig())

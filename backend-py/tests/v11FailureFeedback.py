@@ -19,8 +19,8 @@ async def testToolErrorPopulatesFailureFeedback(monkeypatch):
 
     async def fakeDispatch(toolName, args):
         raise SyntaxError('invalid syntax')
-    from app.services import toolRegistry
-    monkeypatch.setattr(toolRegistry, 'dispatch', fakeDispatch)
+    from app.services import tool_registry
+    monkeypatch.setattr(tool_registry, 'dispatch', fakeDispatch)
     session = FakeSession()
     result = await _executeTool(tool_name='run_command', args={'command': 'def foo(:', 'cwd': '/tmp'}, session=session)
     assert isinstance(result, str)
@@ -37,8 +37,8 @@ async def testToolSuccessDoesNotSetFailureFeedback(monkeypatch):
 
     async def fakeDispatch(toolName, args):
         return 'ok'
-    from app.services import toolRegistry
-    monkeypatch.setattr(toolRegistry, 'dispatch', fakeDispatch)
+    from app.services import tool_registry
+    monkeypatch.setattr(tool_registry, 'dispatch', fakeDispatch)
     session = FakeSession()
     result = await _executeTool(tool_name='read_file', args={'path': '/tmp/x'}, session=session)
     assert result == 'ok'

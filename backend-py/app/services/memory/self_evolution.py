@@ -14,7 +14,7 @@ by ``background_review.py`` which runs interval-gated.
 from __future__ import annotations
 import re
 import time
-from app.services.memoryStore import saveMemory, getMemory
+from app.services.memory_store import saveMemory, getMemory
 from app.services.memory.auto_memory import saveAutoMemory
 _REFLECTIONKey = 'self_evolution_log'
 _MAXReflections = 50

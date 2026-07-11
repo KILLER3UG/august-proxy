@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from typing import Callable
 from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
-from app.services.tools.agentRegistry import _MAXAgentDepth, createJob, deriveChildPermissions, evaluateAgentTool, getAgent, renderAgentContext, updateJob
+from app.services.tools.agent_registry import _MAXAgentDepth, createJob, deriveChildPermissions, evaluateAgentTool, getAgent, renderAgentContext, updateJob
 from app.services.workbench.context import currentSessionId
 
 def _toolName(t: dict[str, object]) -> str:
@@ -37,8 +37,8 @@ async def executeSubAgent(session: object, agentId: str, goal: str, context: str
     """Execute a sub-agent task and return ``{jobId, agentId, status, result}``."""
     from app.providers.modelResolver import resolveOrFallback
     from app.providers.routeResolver import resolveForModel
-    from app.services.fallbackService import getFallback
-    from app.services.toolRegistry import dispatch as dispatchTool
+    from app.services.fallback_service import getFallback
+    from app.services.tool_registry import dispatch as dispatchTool
     from app.services.workbench.workbench import MAX_MANAGED_TOOL_ROUNDS, _callAnthropicWorkbench, _callOpenaiWorkbench, _extractText, _isAnthropicProvider, _isOpenaiProvider, _resolveModel, _resolveWorkbenchProvider, openaiToolDefinitions, toolDefinitions
     parentAlias = getattr(session, 'model', '') or ''
     agent = _agentOrGeneral(agentId, parentAlias)

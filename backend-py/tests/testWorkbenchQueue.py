@@ -133,7 +133,7 @@ class TestChatLoopInjection:
     def _stubCommon(self, monkeypatch, tmp_path):
         """Default stubs applied to every test in this class."""
         from app.config import settings
-        from app.services import providerCredentials as providerCredsMod
+        from app.services import provider_credentials as providerCredsMod
         monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
         monkeypatch.setattr(settings, 'dataDir', tmp_path)
         settings.reload()
@@ -147,7 +147,7 @@ class TestChatLoopInjection:
     def stubModel(self, monkeypatch):
         """Stub the per-provider model calls with a controllable sequence."""
         calls = []
-        from app.services import providerCredentials as providerCredsMod
+        from app.services import provider_credentials as providerCredsMod
         monkeypatch.setattr(providerCredsMod, 'resolve', lambda name: {'api_key': 'stub-key'})
         monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session: 'stub system prompt')
 

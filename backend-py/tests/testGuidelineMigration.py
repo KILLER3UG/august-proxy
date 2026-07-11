@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import pytest
 from app.services.memory import context_builder
-from app.services.memoryStore import getMemory, saveMemory
+from app.services.memory_store import getMemory, saveMemory
 
 class TestContextBuilder:
 
@@ -20,10 +20,10 @@ async def testMigrationScriptRoundTrip(isolatedData, isolatedSkills):
     This tests the core logic of ``scripts/migrate_guidelines_to_skills.py``
     without actually spawning a subprocess.
     """
-    from app.services import skillService
+    from app.services import skill_service
     guidelines = [{'id': 'gl_1', 'text': 'Use PowerShell syntax not bash.', 'source': 'correction', 'category': 'behavior', 'active': True}, {'id': 'gl_2', 'text': 'User prefers short answers.', 'source': 'preference', 'category': 'style', 'active': True}, {'id': 'gl_3', 'text': 'Deactivated old rule.', 'source': 'correction', 'category': 'behavior', 'active': False}]
     saveMemory('learned_guidelines', guidelines)
-    from app.services.memoryStore import getMemory
+    from app.services.memory_store import getMemory
     active = [g for g in guidelines if g.get('active', True)]
     created = 0
     for g in active:
@@ -32,12 +32,12 @@ async def testMigrationScriptRoundTrip(isolatedData, isolatedSkills):
         description = text[:55].rstrip('.') + '.'
         body = f'## When to Use\n\n{text}\n\n## Procedure\n\n1. Apply this lesson.\n'
         category = g.get('category', 'learned')
-        skillService.createSkill(name, description, body, category=category)
+        skill_service.createSkill(name, description, body, category=category)
         created += 1
     assert created == 2
-    matching = skillService.search(query='powershell')
+    matching = skill_service.search(query='powershell')
     assert len(matching) >= 1
-    matching = skillService.search(query='prefers short')
+    matching = skill_service.search(query='prefers short')
     assert len(matching) >= 1
     saveMemory('learned_guidelines', [])
     remaining = getMemory('learned_guidelines') or []

@@ -23,8 +23,8 @@ async def testTemplatesEndpointReturnsTemplates():
         assert 'deepseek' in ids
 
 async def testCreateProvider(monkeypatch):
-    from app.services import modelService
-    monkeypatch.setattr(modelService, 'invalidate_cache', modelService.invalidateCache, raising=False)
+    from app.services import model_service
+    monkeypatch.setattr(model_service, 'invalidate_cache', model_service.invalidateCache, raising=False)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as client:
         resp = await client.post('/api/providers', json={'name': 'Test Provider', 'baseUrl': 'https://test.api.com/v1', 'apiFormat': 'openaiChat', 'apiKey': 'sk-test123', 'enabled': True})
@@ -35,8 +35,8 @@ async def testCreateProvider(monkeypatch):
 
 async def testCreateProviderWithTemplate(monkeypatch):
     """Creating a provider with a template id pre-fills baseUrl and models."""
-    from app.services import modelService
-    monkeypatch.setattr(modelService, 'invalidate_cache', modelService.invalidateCache, raising=False)
+    from app.services import model_service
+    monkeypatch.setattr(model_service, 'invalidate_cache', model_service.invalidateCache, raising=False)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as client:
         resp = await client.post('/api/providers', json={'name': 'My Anthropic', 'template': 'anthropic', 'apiKey': 'sk-ant-test123', 'enabled': True})
@@ -61,8 +61,8 @@ async def testActiveProviderReturnsEmptyWhenNoneConfigured(isolatedData):
 
 async def testImportProviderConfig(monkeypatch):
     """Importing a provider config works."""
-    from app.services import modelService
-    monkeypatch.setattr(modelService, 'invalidate_cache', modelService.invalidateCache, raising=False)
+    from app.services import model_service
+    monkeypatch.setattr(model_service, 'invalidate_cache', model_service.invalidateCache, raising=False)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as client:
         resp = await client.post('/api/providers/import-config', json={'name': 'Imported Provider', 'baseUrl': 'https://imported.api.com/v1', 'apiFormat': 'openaiChat', 'apiKey': 'sk-imported', 'models': [{'id': 'model-1', 'name': 'Model 1'}]})
