@@ -50,7 +50,7 @@ def getProvidersAsModels() -> list[ProviderConfig]:
                 models.append(ModelConfig(
                     id=str(m.get('id', '')),
                     name=str(m.get('name', '')),
-                    contextWindow=as_int(m.get('contextWindow'), 128000),
+                    context_window=as_int(m.get('contextWindow'), 128000),
                     reasoning=bool(m.get('reasoning', False)),
                     free=bool(m.get('free', False)),
                     source=str(m.get('source', 'manual')),
@@ -58,11 +58,11 @@ def getProvidersAsModels() -> list[ProviderConfig]:
         result.append(ProviderConfig(
             id=str(raw.get('id', '')),
             name=str(raw.get('name', '')),
-            apiFormat=str(raw.get('apiFormat', 'openaiChat')),
-            apiKey=str(raw.get('apiKey', '')),
-            baseUrl=str(raw.get('baseUrl', '')),
+            api_format=str(raw.get('apiFormat', 'openaiChat')),
+            api_key=str(raw.get('apiKey', '')),
+            base_url=str(raw.get('baseUrl', '')),
             enabled=bool(raw.get('enabled', True)),
-            autoFetch=bool(raw.get('autoFetch', False)),
+            auto_fetch=bool(raw.get('autoFetch', False)),
             models=models,
         ))
     return result
