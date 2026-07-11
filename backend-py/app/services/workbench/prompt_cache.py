@@ -3,14 +3,16 @@ Prompt cache — in-memory LRU for Tier 1 + Tier 2 system prompt content (Phase 
 
 Keyed by session ID with 5-minute TTL. Max 100 sessions.
 """
+
 from __future__ import annotations
 import time
 from collections import OrderedDict
 
+
 class PromptCache:
     """LRU cache for system prompt tiers with TTL eviction."""
 
-    def __init__(self, maxSessions: int=100, ttlSeconds: int=300):
+    def __init__(self, maxSessions: int = 100, ttlSeconds: int = 300):
         self.maxSessions = maxSessions
         self.ttlSeconds = ttlSeconds
         self._cache: OrderedDict[str, tuple[float, str]] = OrderedDict()
@@ -44,7 +46,10 @@ class PromptCache:
     def stats(self) -> dict[str, object]:
         """Return cache statistics."""
         return {'size': len(self._cache), 'max_sessions': self.maxSessions, 'ttl_seconds': self.ttlSeconds}
+
+
 _cache = PromptCache()
+
 
 def getCache() -> PromptCache:
     """Get the global prompt cache singleton."""

@@ -20,14 +20,17 @@ Usage
     await bus.publish("task:t1:progress", {"step": 1, "done": 50})
     sub.unsubscribe()
 """
+
 from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
 from typing import Any, Callable, Coroutine, Optional
+
 logger = logging.getLogger(__name__)
 MAX_QUEUE_PER_TOPIC = 256
 Handler = Callable[[dict[str, Any]], Coroutine[Any, Any, None] | None]
+
 
 class Subscription:
     """Handle returned by ``subscribe()`` — call ``unsubscribe()`` to cancel."""
@@ -39,6 +42,7 @@ class Subscription:
 
     def unsubscribe(self) -> None:
         self._bus._unsubscribe(self._topic, self._handler)
+
 
 class AgentMessageBus:
     """In-process async pub/sub message bus."""
@@ -87,7 +91,7 @@ class AgentMessageBus:
         """Return all queued messages for *topic* (for late-joining consumers)."""
         return list(self._queues.get(topic, []))
 
-    async def waitForMessage(self, topic: str, timeout: float | None=None) -> dict[str, Any] | None:
+    async def waitForMessage(self, topic: str, timeout: float | None = None) -> dict[str, Any] | None:
         """Block until a new message arrives on *topic*, then return it.
 
         If *timeout* is set and no message arrives, returns ``None``.

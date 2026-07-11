@@ -15,6 +15,7 @@ Design (per plan Task 2.2):
 The hub must be started from the asyncio event loop (``start_hub()``) once
 at app lifespan; ``emitLogEvent`` is safe to call before/after start.
 """
+
 from __future__ import annotations
 
 import asyncio

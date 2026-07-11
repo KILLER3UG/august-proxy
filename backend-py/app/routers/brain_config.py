@@ -19,16 +19,20 @@ must stay backward-compatible).
 Port of the deleted Node.js ``backend/index.js`` brain-config block
 (commit 6d61910, 2026-06-21).
 """
+
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 from app.services import brain_config_service
+
 router = APIRouter(prefix='/api/brain', tags=['brain-config'])
+
 
 @router.get('/config')
 async def getBrainConfig():
     """Return the effective brain config + defaults + source tag + session
     info. The React ``BrainSettings`` page calls this on mount."""
     return brain_config_service.getBrainConfigForSettings()
+
 
 @router.put('/config')
 async def putBrainConfig(body: dict[str, object]):
@@ -40,8 +44,11 @@ async def putBrainConfig(body: dict[str, object]):
     """
     ok, err, merged = brain_config_service.saveBrainConfig(body or {})
     if not ok:
-        raise HTTPException(status_code=400, detail={'code': 'EBRAIN_UNKNOWN_KEY' if 'unknown' in err else 'validation', 'message': err})
+        raise HTTPException(
+            status_code=400, detail={'code': 'EBRAIN_UNKNOWN_KEY' if 'unknown' in err else 'validation', 'message': err}
+        )
     return {'ok': True, 'config': merged, 'defaults': brain_config_service.getDefaults()}
+
 
 @router.post('/config/reset')
 async def postBrainConfigReset():
@@ -49,10 +56,13 @@ async def postBrainConfigReset():
     ok, defaults = brain_config_service.resetBrainConfig()
     return {'ok': ok, 'config': defaults, 'defaults': defaults}
 
+
 @router.get('/config/from-session')
-async def getBrainConfigFromSession(sessionId: str=Query(..., min_length=1)):
+async def getBrainConfigFromSession(sessionId: str = Query(..., min_length=1)):
     """Return the brain config tagged ``source='session'`` for a specific
     workbench session. ``sessionId`` is required (400 if missing)."""
     if not sessionId:
-        raise HTTPException(status_code=400, detail={'code': 'validation', 'message': 'sessionId query param is required'})
+        raise HTTPException(
+            status_code=400, detail={'code': 'validation', 'message': 'sessionId query param is required'}
+        )
     return brain_config_service.getBrainConfigFromSession(sessionId)

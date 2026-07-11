@@ -23,6 +23,7 @@ Scenarios covered:
 
 No network access or API credentials are required.
 """
+
 from __future__ import annotations
 import asyncio
 import json
@@ -51,7 +52,7 @@ STUB_PROVIDER = {
 
 # Port pool for the resource-allocation scenario.
 PORT_MIN, PORT_MAX = 8000, 8009
-MAX_POLLS = 6   # how many times an adopter re-reads before giving up
+MAX_POLLS = 6  # how many times an adopter re-reads before giving up
 MAX_WRITES = 6  # how many times a claimer rewrites its port before giving up
 
 
@@ -59,10 +60,11 @@ def _ev_tool(self, name: str, inp: dict[str, Any]) -> list[dict[str, Any]]:
     uid = f'toolu_{id(self)}_{self.call_count}_{self._seq}'
     self._seq += 1
     return [
-        {'_event_type': 'content_block_start',
-         'content_block': {'type': 'tool_use', 'id': uid, 'name': name, 'input': inp}},
-        {'_event_type': 'content_block_delta',
-         'delta': {'type': 'input_json_delta', 'partial_json': json.dumps(inp)}},
+        {
+            '_event_type': 'content_block_start',
+            'content_block': {'type': 'tool_use', 'id': uid, 'name': name, 'input': inp},
+        },
+        {'_event_type': 'content_block_delta', 'delta': {'type': 'input_json_delta', 'partial_json': json.dumps(inp)}},
         {'_event_type': 'content_block_stop'},
         {'_event_type': 'message_delta', 'usage': {'input_tokens': 10, 'output_tokens': 5}},
     ]
@@ -70,8 +72,7 @@ def _ev_tool(self, name: str, inp: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _ev_text(self, text: str) -> list[dict[str, Any]]:
     return [
-        {'_event_type': 'content_block_start',
-         'content_block': {'type': 'text', 'text': text}},
+        {'_event_type': 'content_block_start', 'content_block': {'type': 'text', 'text': text}},
         {'_event_type': 'message_delta', 'usage': {'input_tokens': 10, 'output_tokens': 5}},
     ]
 
@@ -85,8 +86,7 @@ class CoordinationStub:
     deterministic even when two sub-agents interleave on the shared event loop.
     """
 
-    def __init__(self, session_id: str, execution_log: list | None = None,
-                 busy_sleep: float = 0.0) -> None:
+    def __init__(self, session_id: str, execution_log: list | None = None, busy_sleep: float = 0.0) -> None:
         self.session_id = session_id
         self.call_count = 0
         self._seq = 0
@@ -107,8 +107,7 @@ class CoordinationStub:
             if isinstance(c, str):
                 return c
             if isinstance(c, list):
-                txt = ' '.join(b.get('text', '') for b in c
-                               if isinstance(b, dict) and b.get('type') == 'text')
+                txt = ' '.join(b.get('text', '') for b in c if isinstance(b, dict) and b.get('type') == 'text')
                 if txt:
                     return txt
         return ''
@@ -154,15 +153,13 @@ class CoordinationStub:
         import os
         import sqlite3
         from app.services.memory_store import _DEFAULTBrainFile
+
         data_dir = os.environ.get('AUGUST_DATA_DIR', '')
         db_path = os.path.join(data_dir, _DEFAULTBrainFile)
         try:
             conn = sqlite3.connect(db_path, timeout=5)
             conn.row_factory = sqlite3.Row
-            cur = conn.execute(
-                'SELECT value FROM blackboard WHERE sessionId=? AND key=?',
-                (self.session_id, 'decided')
-            )
+            cur = conn.execute('SELECT value FROM blackboard WHERE sessionId=? AND key=?', (self.session_id, 'decided'))
             row = cur.fetchone()
             conn.close()
             if row:
@@ -175,14 +172,14 @@ class CoordinationStub:
         """Read claimed ports from the blackboard using a fresh DB connection."""
         import sqlite3
         from app.services.memory_store import _dbPath
+
         ports: set[int] = set()
         db = _dbPath()
         try:
             conn = sqlite3.connect(str(db), timeout=5)
             conn.row_factory = sqlite3.Row
             cur = conn.execute(
-                'SELECT key, value FROM blackboard WHERE sessionId=? AND key LIKE ?',
-                (self.session_id, 'port_%')
+                'SELECT key, value FROM blackboard WHERE sessionId=? AND key LIKE ?', (self.session_id, 'port_%')
             )
             for row in cur.fetchall():
                 try:
@@ -210,8 +207,7 @@ class CoordinationStub:
             decided = re.search(r'DECIDED=(\S+)', goal)
             decided_val = decided.group(1) if decided else '/api/v1'
             if writes == 0:
-                return _ev_tool(self, 'write_blackboard',
-                                {'key': 'decided', 'value': decided_val})
+                return _ev_tool(self, 'write_blackboard', {'key': 'decided', 'value': decided_val})
             return _ev_text(self, f'Agreed base path: {decided_val}')
 
         if 'ROLE:ADOPTER' in goal:
@@ -234,30 +230,26 @@ class CoordinationStub:
                 if reads == 0:
                     return _ev_tool(self, 'read_blackboard', {'key': 'port'})
                 candidate = self._lowest_free(self._claimed_ports(messages))
-                return _ev_tool(self, 'write_blackboard',
-                                {'key': f'port_{wid}', 'value': str(candidate)})
+                return _ev_tool(self, 'write_blackboard', {'key': f'port_{wid}', 'value': str(candidate)})
             # Already wrote at least once: check for collision.
             taken = self._claimed_ports(messages)
             others = taken - {last_val}
             if last_val in others and writes < MAX_WRITES:
                 candidate = self._lowest_free(taken)
-                return _ev_tool(self, 'write_blackboard',
-                                {'key': f'port_{wid}', 'value': str(candidate)})
+                return _ev_tool(self, 'write_blackboard', {'key': f'port_{wid}', 'value': str(candidate)})
             return _ev_text(self, f'Claimed port {last_val}')
 
         # Default: just finish.
         return _ev_text(self, 'done')
 
     # -- async generator interface used by _callAnthropicWorkbench --------
-    async def messagesStream(self, body: dict[str, Any]):
+    async def messages_stream(self, body: dict[str, Any]):
         self.call_count += 1
         messages = body.get('messages', [])
         if self.busy_sleep:
             await asyncio.sleep(self.busy_sleep)
         events = self._decide(messages)
-        is_final = not any(
-            e.get('content_block', {}).get('type') == 'tool_use' for e in events
-        )
+        is_final = not any(e.get('content_block', {}).get('type') == 'tool_use' for e in events)
         if self.execution_log is not None:
             worker = self._worker(messages)
             if worker not in self._started_workers:
@@ -276,6 +268,7 @@ class CoordinationStub:
 def coord_env(monkeypatch, tmp_path):
     monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
     from app.config import settings
+
     monkeypatch.setattr(settings, 'dataDir', tmp_path)
     try:
         settings.reload()
@@ -292,11 +285,14 @@ def coord_env(monkeypatch, tmp_path):
     monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **kw: STUB_PROVIDER)
     monkeypatch.setattr(wb, '_resolveModel', lambda p, hint='': 'stub-claude')
     import app.providers.modelResolver as modelResolver
+
     monkeypatch.setattr(
-        modelResolver, 'resolveOrFallback',
+        modelResolver,
+        'resolveOrFallback',
         lambda *a, **kw: {'provider': 'stub-anthropic', 'model': 'stub-claude'},
     )
     import app.services.fallback_service as fallbackService
+
     monkeypatch.setattr(fallbackService, 'getFallback', lambda *a, **kw: {'enabled': False})
 
     # Wire the stub model: getClient returns whatever the test puts in the holder.
@@ -306,6 +302,7 @@ def coord_env(monkeypatch, tmp_path):
         return holder.get('client')
 
     import app.providers.clients as clientsMod
+
     monkeypatch.setattr(clientsMod, 'getClient', fake_get_client)
     monkeypatch.setattr('app.providers.clients.getClient', fake_get_client)
 
@@ -345,8 +342,7 @@ async def _spawn_and_wait(coord_env, goals, execution_log=None, busy_sleep=0.0):
     each taskId to the lifecycle messages published on the AgentMessageBus
     (captured before the bus is closed).
     """
-    stub = CoordinationStub(coord_env['session_id'], execution_log=execution_log,
-                            busy_sleep=busy_sleep)
+    stub = CoordinationStub(coord_env['session_id'], execution_log=execution_log, busy_sleep=busy_sleep)
     coord_env['holder']['client'] = stub
     bus = AgentMessageBus()
     orch = SubagentOrchestrator(bus)
@@ -370,14 +366,9 @@ async def _spawn_and_wait(coord_env, goals, execution_log=None, busy_sleep=0.0):
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_shared_decision_coordinated_via_blackboard(coord_env):
-    proposer_goal = (
-        'ROLE:PROPOSER DECIDED=/api/v2-K3p '
-        'Decide the shared API base path and record it on the blackboard.'
-    )
+    proposer_goal = 'ROLE:PROPOSER DECIDED=/api/v2-K3p Decide the shared API base path and record it on the blackboard.'
     adopter_goal = (
-        'ROLE:ADOPTER '
-        'Read the shared decision from the blackboard and adopt exactly that '
-        'base path in your answer.'
+        'ROLE:ADOPTER Read the shared decision from the blackboard and adopt exactly that base path in your answer.'
     )
     handles, results, _, _ = await _spawn_and_wait(coord_env, [proposer_goal, adopter_goal])
 
@@ -402,15 +393,9 @@ async def test_shared_decision_coordinated_via_blackboard(coord_env):
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_shared_decision_contradicts_without_coordination(coord_env):
-    proposer_goal = (
-        'ROLE:PROPOSER DECIDED=/api/v2-K3p '
-        'Decide the shared API base path and record it on the blackboard.'
-    )
+    proposer_goal = 'ROLE:PROPOSER DECIDED=/api/v2-K3p Decide the shared API base path and record it on the blackboard.'
     # IGNORE_BB -> the adopter never reads the blackboard and uses its own value.
-    adopter_goal = (
-        'ROLE:ADOPTER IGNORE_BB '
-        'Choose your own API base path without consulting the blackboard.'
-    )
+    adopter_goal = 'ROLE:ADOPTER IGNORE_BB Choose your own API base path without consulting the blackboard.'
     handles, results, _, _ = await _spawn_and_wait(coord_env, [proposer_goal, adopter_goal])
 
     for h in handles:
@@ -470,15 +455,13 @@ async def test_parallel_resource_allocation_no_contradiction(coord_env):
 @pytest.mark.asyncio
 async def test_subagents_run_concurrently(coord_env):
     execution_log: list[tuple[str, float, str]] = []
-    proposer_goal = (
-        'ROLE:PROPOSER DECIDED=/api/v2-K3p Record the shared API base path.'
-    )
-    adopter_goal = (
-        'ROLE:ADOPTER Read the shared decision from the blackboard and adopt it.'
-    )
+    proposer_goal = 'ROLE:PROPOSER DECIDED=/api/v2-K3p Record the shared API base path.'
+    adopter_goal = 'ROLE:ADOPTER Read the shared decision from the blackboard and adopt it.'
     handles, results, _, bus_events = await _spawn_and_wait(
-        coord_env, [proposer_goal, adopter_goal],
-        execution_log=execution_log, busy_sleep=0.03,
+        coord_env,
+        [proposer_goal, adopter_goal],
+        execution_log=execution_log,
+        busy_sleep=0.03,
     )
 
     for h in handles:
@@ -486,10 +469,8 @@ async def test_subagents_run_concurrently(coord_env):
 
     # Both sub-agents must have published lifecycle events on the bus.
     for h in handles:
-        assert bus_events[h.taskId]['progress'], \
-            f'no progress event for {h.taskId}'
-        assert bus_events[h.taskId]['result'], \
-            f'no result event for {h.taskId}'
+        assert bus_events[h.taskId]['progress'], f'no progress event for {h.taskId}'
+        assert bus_events[h.taskId]['result'], f'no result event for {h.taskId}'
 
     # Execution intervals must overlap -> they ran concurrently, not serially.
     by_worker: dict[str, list[float]] = {}
@@ -501,6 +482,4 @@ async def test_subagents_run_concurrently(coord_env):
     w0, w1 = workers[0], workers[1]
     start0, end0 = min(by_worker[w0]), max(by_worker[w0])
     start1, end1 = min(by_worker[w1]), max(by_worker[w1])
-    assert start0 < end1 and start1 < end0, (
-        f'workers did not overlap: {w0}=({start0},{end0}) {w1}=({start1},{end1})'
-    )
+    assert start0 < end1 and start1 < end0, f'workers did not overlap: {w0}=({start0},{end0}) {w1}=({start1},{end1})'

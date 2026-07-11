@@ -9,34 +9,67 @@ Agent-authored skills carry ``created_by: agent`` provenance so the curator
 (C3) can manage their lifecycle without touching built-ins. Both roots are
 read by list_all/get so the model can load lessons as skills.
 """
+
 from __future__ import annotations
 import re
 import shutil
 from pathlib import Path
 from typing import Optional
 from app.jsonUtils import as_str, as_dict, as_list, as_int
+
 SKILLS_DIR = Path(__file__).resolve().parent.parent.parent.parent / 'skills'
+
 
 def _agentSkillsDir() -> Path:
     """Agent-authored skills root. Lazily reads the configured data_dir."""
     try:
         from app.config import settings
+
         base = Path(settings.dataDir)
     except Exception:
         base = SKILLS_DIR.parent / 'data'
     return base / 'skills'
 
+
 def _skillRoots() -> list[Path]:
     """Search roots in precedence order — agent first wins on name clash."""
     return [_agentSkillsDir(), SKILLS_DIR]
+
+
 _NAMEPattern = re.compile('^[a-z0-9][a-z0-9._-]*$')
 _NAMEMax = 64
 _DESCRIPTIONMax = 60
-_MARKETINGWords = ['revolutionary', 'cutting-edge', 'state-of-the-art', 'best-in-class', 'game-changing', 'transformative', 'innovative', 'powerful', 'advanced', 'seamless', 'intuitive', 'robust', 'enterprise-grade', 'world-class']
-_BODYSectionOrder = ['Title', 'When to Use', 'Prerequisites', 'How to Run', 'Quick Reference', 'Procedure', 'Pitfalls', 'Verification']
+_MARKETINGWords = [
+    'revolutionary',
+    'cutting-edge',
+    'state-of-the-art',
+    'best-in-class',
+    'game-changing',
+    'transformative',
+    'innovative',
+    'powerful',
+    'advanced',
+    'seamless',
+    'intuitive',
+    'robust',
+    'enterprise-grade',
+    'world-class',
+]
+_BODYSectionOrder = [
+    'Title',
+    'When to Use',
+    'Prerequisites',
+    'How to Run',
+    'Quick Reference',
+    'Procedure',
+    'Pitfalls',
+    'Verification',
+]
+
 
 class SkillValidationError(ValueError):
     """Raised when a skill fails authoring-standards validation."""
+
 
 def _validateName(name: str) -> None:
     if not name:
@@ -45,6 +78,7 @@ def _validateName(name: str) -> None:
         raise SkillValidationError(f'Skill name exceeds {_NAMEMax} chars.')
     if not _NAMEPattern.match(name):
         raise SkillValidationError('Skill name must match ^[a-z0-9][a-z0-9._-]*$ (lowercase, dotted/hyphenated).')
+
 
 def _validateDescription(description: str) -> None:
     if not description:
@@ -55,7 +89,8 @@ def _validateDescription(description: str) -> None:
     lowered = desc.lower()
     found = [w for w in _MARKETINGWords if w in lowered]
     if found:
-        raise SkillValidationError(f"Skill description contains marketing words: {', '.join(found)}.")
+        raise SkillValidationError(f'Skill description contains marketing words: {", ".join(found)}.')
+
 
 def _parseSkill(path: Path) -> Optional[dict[str, object]]:
     try:
@@ -74,7 +109,18 @@ def _parseSkill(path: Path) -> Optional[dict[str, object]]:
     if not body:
         return None
     stat = path.stat()
-    return {'name': frontmatter.get('name', path.parent.name), 'description': frontmatter.get('description', ''), 'trigger': frontmatter.get('trigger', ''), 'category': frontmatter.get('category', 'uncategorized'), 'enabled': frontmatter.get('disabled', 'false').lower() != 'true', 'created_by': frontmatter.get('created_by', ''), 'instructions': body, 'path': str(path), 'updatedAt': stat.st_mtime}
+    return {
+        'name': frontmatter.get('name', path.parent.name),
+        'description': frontmatter.get('description', ''),
+        'trigger': frontmatter.get('trigger', ''),
+        'category': frontmatter.get('category', 'uncategorized'),
+        'enabled': frontmatter.get('disabled', 'false').lower() != 'true',
+        'created_by': frontmatter.get('created_by', ''),
+        'instructions': body,
+        'path': str(path),
+        'updatedAt': stat.st_mtime,
+    }
+
 
 def _renderSkillMd(frontmatter: dict[str, str], body: str) -> str:
     lines = ['---']
@@ -87,7 +133,8 @@ def _renderSkillMd(frontmatter: dict[str, str], body: str) -> str:
     lines.append(body.strip())
     return '\n'.join(lines) + '\n'
 
-def _skillMdPath(name: str, *, createRoots: bool=False) -> Optional[Path]:
+
+def _skillMdPath(name: str, *, createRoots: bool = False) -> Optional[Path]:
     """Resolve the SKILL.md path for an existing skill across roots."""
     for root in _skillRoots():
         md = root / name / 'SKILL.md'
@@ -95,8 +142,10 @@ def _skillMdPath(name: str, *, createRoots: bool=False) -> Optional[Path]:
             return md
     return None
 
+
 def _agentSkillDir(name: str) -> Path:
     return _agentSkillsDir() / name
+
 
 def listAll() -> list[dict[str, object]]:
     """Discover all skills from both the agent and bundled roots."""
@@ -120,7 +169,8 @@ def listAll() -> list[dict[str, object]]:
             skills.append(parsed)
     return skills
 
-def search(query: str='', category: str='', enabledOnly: bool=True) -> list[dict[str, object]]:
+
+def search(query: str = '', category: str = '', enabledOnly: bool = True) -> list[dict[str, object]]:
     """Search skills by name, description, trigger, or category."""
     allSkills = listAll()
     q = query.lower().strip()
@@ -131,11 +181,16 @@ def search(query: str='', category: str='', enabledOnly: bool=True) -> list[dict
         if category and s.get('category', '') != category:
             continue
         if q:
-            if q in as_str(s['name'], '').lower() or q in as_str(s.get('description'), '').lower() or q in as_str(s.get('trigger'), '').lower():
+            if (
+                q in as_str(s['name'], '').lower()
+                or q in as_str(s.get('description'), '').lower()
+                or q in as_str(s.get('trigger'), '').lower()
+            ):
                 results.append(s)
         else:
             results.append(s)
     return results
+
 
 def get(name: str) -> Optional[dict[str, object]]:
     """Get a single skill by name (agent root takes precedence)."""
@@ -143,6 +198,7 @@ def get(name: str) -> Optional[dict[str, object]]:
         if s['name'] == name:
             return s
     return None
+
 
 def catalogue() -> list[dict[str, object]]:
     """Compact metadata for every discoverable skill — the skill catalogue.
@@ -157,12 +213,22 @@ def catalogue() -> list[dict[str, object]]:
     discovery is the standard. Returns entries sorted by name for stable
     prompt output.
     """
-    return [{'name': s['name'], 'description': s.get('description', ''), 'trigger': s.get('trigger', ''), 'category': s.get('category', 'uncategorized')} for s in listAll()]
+    return [
+        {
+            'name': s['name'],
+            'description': s.get('description', ''),
+            'trigger': s.get('trigger', ''),
+            'category': s.get('category', 'uncategorized'),
+        }
+        for s in listAll()
+    ]
+
 
 def _ensureAgentRoot() -> Path:
     root = _agentSkillsDir()
     root.mkdir(parents=True, exist_ok=True)
     return root
+
 
 def _copyOnWrite(name: str) -> Path:
     """If a skill only exists in the bundled root, copy it to the agent root
@@ -179,6 +245,7 @@ def _copyOnWrite(name: str) -> Path:
     shutil.copytree(bundledDir, agentDir)
     return agentDir
 
+
 def _safeJoin(skillDir: Path, relPath: str) -> Path:
     """Join rel_path under skill_dir, refusing traversal escapes."""
     target = (skillDir / relPath).resolve()
@@ -186,7 +253,16 @@ def _safeJoin(skillDir: Path, relPath: str) -> Path:
         raise SkillValidationError(f"file_path '{relPath}' escapes the skill directory.")
     return target
 
-def createSkill(name: str, description: str, body: str, *, trigger: str='', category: str='uncategorized', createdBy: str='agent') -> dict[str, object]:
+
+def createSkill(
+    name: str,
+    description: str,
+    body: str,
+    *,
+    trigger: str = '',
+    category: str = 'uncategorized',
+    createdBy: str = 'agent',
+) -> dict[str, object]:
     """Create a new agent-authored skill."""
     _validateName(name)
     _validateDescription(description)
@@ -196,12 +272,26 @@ def createSkill(name: str, description: str, body: str, *, trigger: str='', cate
         raise SkillValidationError(f"Skill '{name}' already exists.")
     agentDir = _ensureAgentRoot() / name
     agentDir.mkdir(parents=True, exist_ok=False)
-    frontmatter = {'name': name, 'description': description.strip(), 'trigger': trigger.strip(), 'category': category.strip() or 'uncategorized', 'created_by': createdBy}
+    frontmatter = {
+        'name': name,
+        'description': description.strip(),
+        'trigger': trigger.strip(),
+        'category': category.strip() or 'uncategorized',
+        'created_by': createdBy,
+    }
     (agentDir / 'SKILL.md').write_text(_renderSkillMd(frontmatter, body), 'utf-8')
     parsed = _parseSkill(agentDir / 'SKILL.md')
     return parsed or {'name': name, 'description': description}
 
-def patchSkill(name: str, *, body: Optional[str]=None, description: Optional[str]=None, trigger: Optional[str]=None, category: Optional[str]=None) -> dict[str, object]:
+
+def patchSkill(
+    name: str,
+    *,
+    body: Optional[str] = None,
+    description: Optional[str] = None,
+    trigger: Optional[str] = None,
+    category: Optional[str] = None,
+) -> dict[str, object]:
     """Patch an existing skill (copy-on-write for bundled skills)."""
     existing = get(name)
     if not existing:
@@ -232,6 +322,7 @@ def patchSkill(name: str, *, body: Optional[str]=None, description: Optional[str
     parsed = _parseSkill(md)
     return parsed or {'name': name, 'description': frontmatter.get('description', '')}
 
+
 def writeSkillFile(name: str, filePath: str, content: str) -> dict[str, object]:
     """Write a support file (scripts/ references/ templates/) into a skill dir."""
     if not get(name):
@@ -241,6 +332,7 @@ def writeSkillFile(name: str, filePath: str, content: str) -> dict[str, object]:
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, 'utf-8')
     return {'name': name, 'file': filePath, 'bytes': len(content)}
+
 
 def removeSkillFile(name: str, filePath: str) -> dict[str, object]:
     """Remove a support file from a skill dir (SKILL.md itself is untouched)."""
@@ -254,6 +346,7 @@ def removeSkillFile(name: str, filePath: str) -> dict[str, object]:
         raise SkillValidationError(f"File '{filePath}' not found in skill '{name}'.")
     target.unlink()
     return {'name': name, 'removed': filePath}
+
 
 def deleteSkill(name: str) -> dict[str, object]:
     """Delete an agent-authored skill. Refuses bundled skills."""

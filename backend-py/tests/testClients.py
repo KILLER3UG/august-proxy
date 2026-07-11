@@ -1,10 +1,19 @@
 """Provider client unit tests."""
+
 import pytest
-from app.providers.clients.base import SseStreamParser, ProviderResponse, estimateStringTokens, estimateTokens, formatTokenCount, parseRetryAfterMs, isRetryableStatus
+from app.providers.clients.base import (
+    SseStreamParser,
+    ProviderResponse,
+    estimateStringTokens,
+    estimateTokens,
+    formatTokenCount,
+    parseRetryAfterMs,
+    isRetryableStatus,
+)
 from app.providers.clients import getClient, AnthropicClient, OpenAIClient, GeminiClient, MiniMaxClient, BedrockClient
 
-class TestBaseClient:
 
+class TestBaseClient:
     def testSseParser(self):
         events = []
         parser = SseStreamParser(onEvent=lambda e, d: events.append((e, d)))
@@ -41,15 +50,15 @@ class TestBaseClient:
 
     def testProviderResponse(self):
         resp = ProviderResponse(status=200, body={'ok': True})
-        assert resp.isSuccess is True
-        assert resp.isError is False
-        assert resp.bodyJson == {'ok': True}
+        assert resp.is_success is True
+        assert resp.is_error is False
+        assert resp.body_json == {'ok': True}
         resp2 = ProviderResponse(status=429, body='rate limited')
-        assert resp2.isSuccess is False
-        assert resp2.isError is True
+        assert resp2.is_success is False
+        assert resp2.is_error is True
+
 
 class TestAnthropicClient:
-
     def testAuthHeaders(self):
         client = AnthropicClient({'name': 'Anthropic'})
         headers = client.buildAuthHeaders('sk-test')
@@ -67,8 +76,8 @@ class TestAnthropicClient:
         key = client.resolveApiKey()
         assert key is None or key.startswith('sk-')
 
-class TestOpenAIClient:
 
+class TestOpenAIClient:
     def testAuthHeaders(self):
         client = OpenAIClient({'name': 'OpenAI'})
         headers = client.buildAuthHeaders('sk-test')
@@ -79,8 +88,8 @@ class TestOpenAIClient:
         url = client.resolveBaseUrl()
         assert url == 'https://custom.api.com/v1'
 
-class TestGeminiClient:
 
+class TestGeminiClient:
     def testAuthHeaders(self):
         client = GeminiClient({'name': 'Google AI Studio'})
         headers = client.buildAuthHeaders('gemini-key')
@@ -93,8 +102,8 @@ class TestGeminiClient:
         url = client.resolveBaseUrl()
         assert 'googleapis.com' in url
 
-class TestMiniMaxClient:
 
+class TestMiniMaxClient:
     def testExtendsAnthropic(self):
         client = MiniMaxClient({'name': 'MiniMax'})
         assert isinstance(client, AnthropicClient)
@@ -104,8 +113,8 @@ class TestMiniMaxClient:
         url = client.resolveBaseUrl()
         assert 'minimax.io' in url
 
-class TestBedrockClient:
 
+class TestBedrockClient:
     def testAuthHeaders(self):
         client = BedrockClient({'name': 'AWS Bedrock'})
         headers = client.buildAuthHeaders(None)
@@ -116,8 +125,8 @@ class TestBedrockClient:
         key = client.resolveApiKey()
         assert key is None or key == '__aws_sdk__'
 
-class TestFactory:
 
+class TestFactory:
     def testAnthropicMessages(self):
         client = getClient({'name': 'Anthropic', 'api_mode': 'anthropicMessages'})
         assert isinstance(client, AnthropicClient)

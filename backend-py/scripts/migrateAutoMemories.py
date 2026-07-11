@@ -11,6 +11,7 @@ key "autoMemories" in the memory_store table. This script:
 Usage:
     python scripts/migrate_auto_memories.py [--dry-run]
 """
+
 from __future__ import annotations
 import argparse
 import json
@@ -19,12 +20,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+
 def _dbPath() -> Path:
     envPath = __import__('os').environ.get('AUGUST_BRAIN_SQLITE_FILE')
     if envPath:
         return Path(envPath)
     from app.lib.paths import dataPath
+
     return dataPath('august_brain.sqlite')
+
 
 def _connect() -> sqlite3.Connection:
     db = _dbPath()
@@ -33,10 +37,12 @@ def _connect() -> sqlite3.Connection:
     conn.execute('PRAGMA journal_mode=WAL')
     return conn
 
+
 def _normalizeIso(ts: str | None) -> str:
     if not ts:
         return datetime.utcnow().isoformat()
     return ts.replace('Z', '').split('+')[0].split('.')[0] or datetime.utcnow().isoformat()
+
 
 def _readBlob(conn: sqlite3.Connection) -> list[dict] | None:
     """Read the old auto_memories JSON blob from memory_store."""
@@ -51,9 +57,18 @@ def _readBlob(conn: sqlite3.Connection) -> list[dict] | None:
     except (json.JSONDecodeError, TypeError):
         return None
 
-def runMigration(dryRun: bool=False) -> dict[str, Any]:
+
+def runMigration(dryRun: bool = False) -> dict[str, Any]:
     """Run the auto_memories migration. Returns stats dict."""
-    stats = {'blob_found': False, 'blob_entry_count': 0, 'existing_auto_count': 0, 'inserted': 0, 'skipped_duplicates': 0, 'blob_deleted': False, 'errors': []}
+    stats = {
+        'blob_found': False,
+        'blob_entry_count': 0,
+        'existing_auto_count': 0,
+        'inserted': 0,
+        'skipped_duplicates': 0,
+        'blob_deleted': False,
+        'errors': [],
+    }
     conn = _connect()
     existing = conn.execute('SELECT COUNT(*) FROM auto_memories').fetchone()
     stats['existing_auto_count'] = existing[0] if existing else 0
@@ -90,7 +105,10 @@ def runMigration(dryRun: bool=False) -> dict[str, Any]:
             print(f'[dry-run] Would insert: key={key}, importance={importance}')
             stats['inserted'] += 1
             continue
-        conn.execute('INSERT INTO auto_memories (key, content, category, importance, source, created_at) VALUES (?, ?, ?, ?, ?, ?)', (key, content, category, importance, source, created))
+        conn.execute(
+            'INSERT INTO auto_memories (key, content, category, importance, source, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+            (key, content, category, importance, source, created),
+        )
         stats['inserted'] += 1
     if not dryRun and stats['inserted'] > 0:
         conn.execute("DELETE FROM memory_store WHERE key = 'autoMemories'")
@@ -108,6 +126,7 @@ def runMigration(dryRun: bool=False) -> dict[str, Any]:
     conn.close()
     return stats
 
+
 def main():
     parser = argparse.ArgumentParser(description='Migrate auto_memories JSON blob to individual FTS-indexed rows')
     parser.add_argument('--dry-run', action='store_true', help='Show what would change without writing')
@@ -122,5 +141,7 @@ def main():
         print('\nMigration complete.')
     else:
         print('\nDry-run complete — no data written.')
+
+
 if __name__ == '__main__':
     main()

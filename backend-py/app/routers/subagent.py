@@ -84,10 +84,8 @@ async def spawnSubagents(body: SpawnRequest, request: Request):
 
 
 @router.get('/active')
-async def listActive(sessionId: Optional[str] = None, request: Request | None = None):
+async def listActive(request: Request, sessionId: Optional[str] = None):
     """List active sub-agents. Optionally filter by sessionId."""
-    if request is None:
-        raise HTTPException(status_code=400, detail='request is required')
     orch = _getOrchestrator(request)
     return {'agents': orch.listActive(sessionId=sessionId)}
 
@@ -113,7 +111,7 @@ async def proposeBreakdown(body: ProposeBreakdownRequest, request: Request):
 
 
 @router.get('/stream')
-async def streamSubagentEvents(sessionId: Optional[str] = None, request: Request | None = None):
+async def streamSubagentEvents(request: Request, sessionId: Optional[str] = None):
     """SSE stream of sub-agent events for a session.
 
     Uses the existing ``event_log.py`` SSE pattern: yields ``data:`` lines

@@ -1,7 +1,9 @@
 """EventLog fan-out tests."""
+
 import asyncio
 import pytest
 from app.services.event_log import EventLog
+
 
 @pytest.mark.asyncio
 async def testSubscribeReplaysPastThenDeliversLive():
@@ -16,6 +18,7 @@ async def testSubscribeReplaysPastThenDeliversLive():
     log.append('s1', 'msg', {'n': 3})
     assert (await gen.__anext__())['payload'] == {'n': 3}
     await gen.aclose()
+
 
 @pytest.mark.asyncio
 async def testSubscribeDeliversEventsAppendedDuringReplay():

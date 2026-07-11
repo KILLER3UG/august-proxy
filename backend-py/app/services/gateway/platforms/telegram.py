@@ -130,7 +130,7 @@ class TelegramAdapter(BasePlatformAdapter):
             await asyncio.sleep(1.0)
 
     async def sendMessage(self, chat_id: str, text: str, **kwargs: object) -> None:
-        params: dict[str, str] = {'chat_id': chat_id, 'text': text}
+        params: dict[str, object] = {'chat_id': chat_id, 'text': text}
         reply_id = kwargs.get('reply_to_message_id')
         if reply_id:
             params['reply_to_message_id'] = as_str(reply_id, str(reply_id))
@@ -142,9 +142,9 @@ class TelegramAdapter(BasePlatformAdapter):
             params['parse_mode'] = as_str(parse_mode, str(parse_mode))
         await self._request('sendMessage', **params)
 
-    async def getChatInfo(self, chatId: str) -> dict[str, object]:
-        r = await self._request('getChat', chat_id=chatId)
-        return as_dict(r.get('result'), {}) if r.get('ok') else {'name': str(chatId), 'type': 'dm'}
+    async def getChatInfo(self, chat_id: str) -> dict[str, object]:
+        r = await self._request('getChat', chat_id=chat_id)
+        return as_dict(r.get('result'), {}) if r.get('ok') else {'name': str(chat_id), 'type': 'dm'}
 
     async def normalize(self, raw: object) -> Optional[MessageEvent]:
         """Convert a Telegram webhook update dict into a MessageEvent."""

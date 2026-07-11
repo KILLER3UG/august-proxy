@@ -1,14 +1,17 @@
 """v1.1 — Test that save_auto_memory supports duplicate keys with updated_at."""
+
 import pytest
 import uuid
 from app.services.memory import auto_memory
 from app.services import memory_store
+
 
 @pytest.fixture(autouse=True)
 def _initDb():
     """Run init() so the migration is applied (idempotent)."""
     memory_store.init()
     yield
+
 
 @pytest.fixture
 def _testKey():
@@ -22,6 +25,7 @@ def _testKey():
     except Exception:
         pass
 
+
 def testSaveAutoMemoryTwiceWithSameKey(_testKey):
     """First save inserts, second save updates — no error."""
     key = _testKey
@@ -34,6 +38,7 @@ def testSaveAutoMemoryTwiceWithSameKey(_testKey):
     assert row['importance'] == 0.7
     assert row['updated_at'] is not None
     assert row['updated_at'] != ''
+
 
 def testAutoMemoriesTableHasUpdatedAtColumn():
     """Schema check: the column must exist after init()."""

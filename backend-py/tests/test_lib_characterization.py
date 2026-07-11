@@ -2,6 +2,7 @@
 
 Documents current behavior before any lib refactor. No network, no real DB.
 """
+
 from __future__ import annotations
 
 import asyncio

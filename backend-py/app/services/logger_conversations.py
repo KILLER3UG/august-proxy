@@ -5,11 +5,13 @@ request/response details (messages, response, thinking, toolCalls,
 finishReason, error) to each entry. Mirrors the Node contract consumed by
 the frontend's ConversationsResponse type.
 """
+
 from __future__ import annotations
 from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.services.logger import getFilteredRequests, getRequestDetail
 
-def getConversations(period: str='all') -> dict[str, list[dict[str, object]]]:
+
+def getConversations(period: str = 'all') -> dict[str, list[dict[str, object]]]:
     """Group request log entries by clientType, with attached details."""
     entries = getFilteredRequests(period)
     grouped: dict[str, list[dict[str, object]]] = {}
@@ -25,6 +27,7 @@ def getConversations(period: str='all') -> dict[str, list[dict[str, object]]]:
             if isinstance(reqBody, str):
                 try:
                     import json
+
                     reqBody = json.loads(reqBody)
                 except Exception:
                     reqBody = None
@@ -33,15 +36,32 @@ def getConversations(period: str='all') -> dict[str, list[dict[str, object]]]:
                     messages = reqBody['messages']
                 elif reqBody.get('system'):
                     sysv = reqBody['system']
-                    messages = [{'role': 'system', 'content': sysv if isinstance(sysv, str) else __import__('json').dumps(sysv)}]
+                    messages = [
+                        {'role': 'system', 'content': sysv if isinstance(sysv, str) else __import__('json').dumps(sysv)}
+                    ]
             resBody = detail.get('response') or detail.get('responseBody')
             if isinstance(resBody, str):
                 try:
                     import json
+
                     resBody = json.loads(resBody)
                 except Exception:
                     resBody = None
             if resBody:
                 response = resBody
-        grouped[client].append({**entry, 'details': {'messages': messages, 'response': response, 'thinking': detail.get('thinking') if detail else None, 'toolCalls': detail.get('toolCalls') if detail else None, 'finishReason': detail.get('finishReason') if detail else None, 'error': detail.get('error') if detail else None} if detail else None})
+        grouped[client].append(
+            {
+                **entry,
+                'details': {
+                    'messages': messages,
+                    'response': response,
+                    'thinking': detail.get('thinking') if detail else None,
+                    'toolCalls': detail.get('toolCalls') if detail else None,
+                    'finishReason': detail.get('finishReason') if detail else None,
+                    'error': detail.get('error') if detail else None,
+                }
+                if detail
+                else None,
+            }
+        )
     return grouped

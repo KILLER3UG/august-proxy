@@ -6,11 +6,13 @@ path (``function.name``/``function.parameters``), and that the proxy
 passthrough-only ``mcp__workspace__*`` / ``WebSearch`` / ``WebFetch``
 tools are NOT presented (they aren't dispatchable in the workbench).
 """
+
 from __future__ import annotations
 import pytest
 from app.services import tool_definitions as toolDefsModule
 from app.services import tool_registry
 from app.services.workbench.workbench import WorkbenchSession, openaiToolDefinitions, toolDefinitions
+
 
 @pytest.fixture(scope='module', autouse=True)
 def _registerTools():
@@ -19,12 +21,13 @@ def _registerTools():
         toolDefsModule.registerAll()
     yield
 
+
 @pytest.fixture
 def session() -> WorkbenchSession:
     return WorkbenchSession(id='wb_test_tooldefs')
 
-class TestAnthropicFormat:
 
+class TestAnthropicFormat:
     def testAllRegistryToolsPresentAnthropic(self, session):
         tools = toolDefinitions(session)
         names = {t['name'] for t in tools}
@@ -36,7 +39,7 @@ class TestAnthropicFormat:
         for t in toolDefinitions(session):
             assert 'name' in t and isinstance(t['name'], str) and t['name']
             assert 'description' in t
-            assert 'input_schema' in t, f"{t.get('name')} missing input_schema"
+            assert 'input_schema' in t, f'{t.get("name")} missing input_schema'
             assert 'type' not in t, f"{t.get('name')} has OpenAI 'type' wrapper"
             assert 'function' not in t, f"{t.get('name')} has OpenAI 'function' wrapper"
 
@@ -44,8 +47,8 @@ class TestAnthropicFormat:
         names = [t['name'] for t in toolDefinitions(session)]
         assert len(names) == len(set(names))
 
-class TestOpenAIFormat:
 
+class TestOpenAIFormat:
     def testAllRegistryToolsPresentOpenai(self, session):
         tools = openaiToolDefinitions(session)
         names = {t['function']['name'] for t in tools}
@@ -62,10 +65,12 @@ class TestOpenAIFormat:
     def testNoDuplicates(self, session):
         names = [t['function']['name'] for t in openaiToolDefinitions(session)]
         assert len(names) == len(set(names))
+
+
 PASSTHROUGH_NAMES = {'mcp__workspace__bash', 'WebSearch', 'WebFetch'}
 
-class TestNoPassthroughTools:
 
+class TestNoPassthroughTools:
     def testAbsentFromAnthropic(self, session):
         names = {t['name'] for t in toolDefinitions(session)}
         for n in PASSTHROUGH_NAMES:
@@ -81,6 +86,7 @@ class TestNoPassthroughTools:
         anthNames = {t['name'] for t in toolDefinitions(session)}
         for expected in ('web_search', 'web_fetch', 'run_command'):
             assert expected in anthNames, f'workbench tool {expected} missing'
+
 
 @pytest.mark.parametrize('toolName', ['read_file', 'list_skills', 'desktop_screenshot', 'spawn_subagent'])
 def testToolSchemaSurvivesConversion(session, toolName):

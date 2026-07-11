@@ -1,12 +1,15 @@
 """v2 — Test skill approval flow (move staging to active, reject cleanup)."""
+
 import pytest
 from app.services import consolidation_daemon
 from app.services.memory_store import init, _conn
+
 
 @pytest.fixture(autouse=True)
 def _initDb():
     init()
     yield
+
 
 def testApprovalMovesSkillToActiveDir(monkeypatch, tmp_path):
     """Approving a pending skill moves it from staging to active."""
@@ -19,7 +22,10 @@ def testApprovalMovesSkillToActiveDir(monkeypatch, tmp_path):
     draft = staging / 'v2-approve-test.md'
     draft.write_text('---\nname: v2-approve-test\n---\nbody')
     conn = _conn()
-    conn.execute('INSERT INTO pending_skills (name, draft_path, status) VALUES (?, ?, ?)', ('v2-approve-test', str(draft), 'pending'))
+    conn.execute(
+        'INSERT INTO pending_skills (name, draft_path, status) VALUES (?, ?, ?)',
+        ('v2-approve-test', str(draft), 'pending'),
+    )
     conn.commit()
     consolidation_daemon.approve_pending_skill('v2-approve-test')
     assert (active / 'v2-approve-test.md').exists()
@@ -30,6 +36,7 @@ def testApprovalMovesSkillToActiveDir(monkeypatch, tmp_path):
     conn.commit()
     (active / 'v2-approve-test.md').unlink(missing_ok=True)
 
+
 def testRejectionDeletesStagingFile(monkeypatch, tmp_path):
     """Rejecting a pending skill cleans up the staging file."""
     staging = tmp_path / 'staging'
@@ -38,7 +45,10 @@ def testRejectionDeletesStagingFile(monkeypatch, tmp_path):
     draft = staging / 'v2-reject-test.md'
     draft.write_text('body')
     conn = _conn()
-    conn.execute('INSERT INTO pending_skills (name, draft_path, status) VALUES (?, ?, ?)', ('v2-reject-test', str(draft), 'pending'))
+    conn.execute(
+        'INSERT INTO pending_skills (name, draft_path, status) VALUES (?, ?, ?)',
+        ('v2-reject-test', str(draft), 'pending'),
+    )
     conn.commit()
     consolidation_daemon.reject_pending_skill('v2-reject-test')
     assert not draft.exists()
@@ -47,6 +57,7 @@ def testRejectionDeletesStagingFile(monkeypatch, tmp_path):
     conn.execute("DELETE FROM pending_skills WHERE name = 'v2-reject-test'")
     conn.commit()
 
+
 def testSkillGenesisRespectsRateLimit(monkeypatch, tmp_path):
     """A second skill in the same day is rejected."""
     staging = tmp_path / 'staging'
@@ -54,16 +65,22 @@ def testSkillGenesisRespectsRateLimit(monkeypatch, tmp_path):
     monkeypatch.setattr(consolidation_daemon, '_staging_dir', str(staging))
     import time
     from app.services.memory_store import _conn
+
     conn = _conn()
     today = time.strftime('%Y-%m-%d')
-    conn.execute('INSERT INTO pending_skills (name, draft_path, created_by, created_at) VALUES (?, ?, ?, ?)', ('v2-rate-existing', str(staging / 'x.md'), 'auto-gen', today))
+    conn.execute(
+        'INSERT INTO pending_skills (name, draft_path, created_by, created_at) VALUES (?, ?, ?, ?)',
+        ('v2-rate-existing', str(staging / 'x.md'), 'auto-gen', today),
+    )
     conn.commit()
 
     async def fakeCall(prompt, **kwargs):
         return '{"name": "v2-rate-new", "description": "x", "trigger": "y", "body": "z"}'
+
     monkeypatch.setattr(consolidation_daemon, '_call_prefrontal', fakeCall)
     monkeypatch.setattr(consolidation_daemon, '_get_session_summary', lambda sid: 'x')
     import asyncio
+
     result = asyncio.run(consolidation_daemon.draft_skill_for_session('v2-rate-test'))
     assert result is None
     conn.execute("DELETE FROM pending_skills WHERE name = 'v2-rate-existing'")

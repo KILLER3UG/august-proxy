@@ -11,12 +11,15 @@ This module handles the JSON-blob side: scans ``memory_store`` rows, finds
 legacy snake_case keys, and rewrites the row in place. It is safe to call
 on every startup (no-op if migration is already applied).
 """
+
 from __future__ import annotations
 import logging
 import sqlite3
 from pathlib import Path
+
 logger = logging.getLogger(__name__)
 BLOB_KEY_RENAMES = {'core_memory': 'coreMemory', 'user_profile': 'userProfile'}
+
 
 def migrate_storage_keys(db_path: Path) -> None:
     """Walk the brain SQLite database and migrate legacy snake_case keys.
@@ -42,6 +45,7 @@ def migrate_storage_keys(db_path: Path) -> None:
         conn.commit()
     finally:
         conn.close()
+
 
 def is_already_migrated(db_path: Path) -> bool:
     """True if the DB has at least one camelCase row and no snake_case rows.

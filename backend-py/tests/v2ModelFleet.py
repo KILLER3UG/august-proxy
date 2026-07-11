@@ -1,6 +1,8 @@
 """v2 — Test the model fleet module."""
+
 import pytest
 from app.services.workbench import model_fleet
+
 
 def testGetModelForRoleUsesDefaults():
     """Without config override, defaults from DEFAULT_FLEET apply."""
@@ -9,13 +11,16 @@ def testGetModelForRoleUsesDefaults():
     assert model_fleet.getModelForRole('hippocampus') == 'claude-3-haiku-20240307'
     assert model_fleet.getModelForRole('prefrontal') == 'claude-3-5-sonnet-20240620'
 
+
 def testGetModelForRoleCortexEmpty():
     """Cortex role returns empty string (caller uses session's primary model)."""
     assert model_fleet.getModelForRole('cortex') == ''
 
+
 def testGetModelForRoleUnknownReturnsCortexDefault():
     """Unknown role falls back to cortex (empty string)."""
     assert model_fleet.getModelForRole('nonexistent_role') == ''
+
 
 def testGetModelForRoleConfigOverride(monkeypatch, tmp_path):
     """User config override takes precedence over defaults."""

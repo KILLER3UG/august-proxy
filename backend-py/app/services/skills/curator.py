@@ -4,6 +4,7 @@ Modeled on Hermes ``agent/curator.py`` (skill maintenance) + ``tools/skill_usage
 (usage telemetry).  Only touches skills with ``created_by: "agent"`` provenance;
 never deletes (archives only); pinned skills are exempt from every auto-transition.
 """
+
 from __future__ import annotations
 import asyncio
 import json
@@ -14,12 +15,14 @@ from pathlib import Path
 from typing import Optional
 from app.services import skill_service
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
+
 log = logging.getLogger(__name__)
 _STALEAfterDays = 14
 _ARCHIVEAfterDays = 60
 _CURATIONIntervalSeconds = 3600
 _USAGEFilename = '.usage.json'
 _AGENTCreatedTag = 'agent'
+
 
 @dataclass
 class UsageRecord:
@@ -34,13 +37,15 @@ class UsageRecord:
     pinned: bool = False
     archivedAt: Optional[float] = None
 
+
 class SkillCurator:
     """Manages the sidecar usage file and lifecycle transitions."""
 
-    def __init__(self, dataDir: Path | str | None=None) -> None:
+    def __init__(self, dataDir: Path | str | None = None) -> None:
         if dataDir is None:
             try:
                 from app.config import settings
+
                 dataDir = Path(settings.dataDir)
             except Exception:
                 dataDir = Path.cwd()
@@ -60,7 +65,21 @@ class SkillCurator:
     def _save(self) -> None:
         try:
             self._usagePath.parent.mkdir(parents=True, exist_ok=True)
-            raw = {k: {'name': v.name, 'useCount': v.useCount, 'viewCount': v.viewCount, 'patchCount': v.patchCount, 'lastUsedAt': v.lastUsedAt, 'lastViewedAt': v.lastViewedAt, 'lastPatchedAt': v.lastPatchedAt, 'state': v.state, 'pinned': v.pinned, 'archivedAt': v.archivedAt} for k, v in self._usage.items()}
+            raw = {
+                k: {
+                    'name': v.name,
+                    'useCount': v.useCount,
+                    'viewCount': v.viewCount,
+                    'patchCount': v.patchCount,
+                    'lastUsedAt': v.lastUsedAt,
+                    'lastViewedAt': v.lastViewedAt,
+                    'lastPatchedAt': v.lastPatchedAt,
+                    'state': v.state,
+                    'pinned': v.pinned,
+                    'archivedAt': v.archivedAt,
+                }
+                for k, v in self._usage.items()
+            }
             tmp = self._usagePath.with_suffix('.tmp')
             tmp.write_text(json.dumps(raw, indent=2), 'utf-8')
             tmp.replace(self._usagePath)
@@ -94,7 +113,19 @@ class SkillCurator:
         return self._usage.get(name)
 
     def listUsage(self) -> list[dict[str, object]]:
-        return [{'name': v.name, 'useCount': v.useCount, 'viewCount': v.viewCount, 'patchCount': v.patchCount, 'lastUsedAt': v.lastUsedAt, 'state': v.state, 'pinned': v.pinned, 'archivedAt': v.archivedAt} for v in sorted(self._usage.values(), key=lambda r: r.lastUsedAt or 0, reverse=True)]
+        return [
+            {
+                'name': v.name,
+                'useCount': v.useCount,
+                'viewCount': v.viewCount,
+                'patchCount': v.patchCount,
+                'lastUsedAt': v.lastUsedAt,
+                'state': v.state,
+                'pinned': v.pinned,
+                'archivedAt': v.archivedAt,
+            }
+            for v in sorted(self._usage.values(), key=lambda r: r.lastUsedAt or 0, reverse=True)
+        ]
 
     def pin(self, name: str) -> bool:
         """Pin a skill (exempt from auto-transitions).  Only agent-authored."""
@@ -125,6 +156,7 @@ class SkillCurator:
         archiveBase = agentSkillsBase / '.archive'
         if skillDir.exists():
             import shutil
+
             archiveBase.mkdir(parents=True, exist_ok=True)
             target = archiveBase / name
             shutil.move(str(skillDir), str(target))
@@ -140,6 +172,7 @@ class SkillCurator:
         if not archiveDir.exists():
             return False
         import shutil
+
         target = agentSkillsBase / name
         shutil.move(str(archiveDir), str(target))
         rec = self._ensure(name)
@@ -154,7 +187,7 @@ class SkillCurator:
             return False
         return sk.get('created_by', '') == _AGENTCreatedTag
 
-    def runCuration(self, dryRun: bool=False) -> dict[str, object]:
+    def runCuration(self, dryRun: bool = False) -> dict[str, object]:
         """Iterate all agent-authored skills and transition stale / archiveable ones.
 
         Returns a report dict::
@@ -190,7 +223,8 @@ class SkillCurator:
                 report['active'] = as_int(report['active'], 0) + 1
         return report
 
-def makeBackgroundCurator(dataDir: Path | None=None) -> tuple[SkillCurator, asyncio.Task]:
+
+def makeBackgroundCurator(dataDir: Path | None = None) -> tuple[SkillCurator, asyncio.Task]:
     """Create a curator and start its background curation loop.
 
     Returns (curator, task) — caller should cancel the task on shutdown.
@@ -206,5 +240,6 @@ def makeBackgroundCurator(dataDir: Path | None=None) -> tuple[SkillCurator, asyn
             except Exception as exc:
                 log.warning('curator: curation run failed: %s', exc)
             await asyncio.sleep(_CURATIONIntervalSeconds)
+
     task = asyncio.create_task(_loop())
     return (curator, task)

@@ -1,6 +1,8 @@
 """Health endpoint tests."""
+
 from httpx import AsyncClient, ASGITransport
 from app.main import app
+
 
 async def testHealthReturnsOk():
     transport = ASGITransport(app=app)
@@ -10,6 +12,7 @@ async def testHealthReturnsOk():
         data = resp.json()
         assert data['status'] == 'ok'
         assert data['python'] is True
+
 
 async def testHealthDetailed():
     transport = ASGITransport(app=app)

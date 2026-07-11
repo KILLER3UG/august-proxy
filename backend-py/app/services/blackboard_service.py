@@ -7,6 +7,7 @@ a SQLite table. TTL-based cleanup. Session-scoped.
 v2: Adaptive TTL (`max(poll_interval*2, 60s)` or 3 turns), `ack` parameter
 on read to delete-on-read, and Tier 3 injection support.
 """
+
 from __future__ import annotations
 import json
 import time
@@ -15,9 +16,12 @@ from typing import cast
 from app.typeAliases import BlackboardNoteDict
 from app.jsonUtils import as_str, as_dict, as_list, as_int
 
+
 def _conn():
     from app.services.memory_store import _conn as getConn
+
     return getConn()
+
 
 def computeTtl(pollInterval: int) -> str:
     """v2: Adaptive TTL = max(poll_interval * 2, 60). Returns ISO timestamp string.
@@ -29,7 +33,16 @@ def computeTtl(pollInterval: int) -> str:
     expires = datetime.utcnow() + timedelta(seconds=ttlSeconds)
     return expires.strftime('%Y-%m-%d %H:%M:%S')
 
-def writeNote(sessionId: str, agent: str, key: str, value: object, priority: int=0, ttlSeconds: int | None=None, pollInterval: int | None=None) -> None:
+
+def writeNote(
+    sessionId: str,
+    agent: str,
+    key: str,
+    value: object,
+    priority: int = 0,
+    ttlSeconds: int | None = None,
+    pollInterval: int | None = None,
+) -> None:
     """Write a note to the blackboard.
 
     v2: If `poll_interval` is provided, the TTL is computed adaptively
@@ -41,10 +54,14 @@ def writeNote(sessionId: str, agent: str, key: str, value: object, priority: int
         expires = computeTtl(pollInterval)
     elif ttlSeconds and ttlSeconds > 0:
         expires = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(time.time() + ttlSeconds))
-    conn.execute('INSERT INTO blackboard (sessionId, agent, key, value, priority, expiresAt) VALUES (?, ?, ?, ?, ?, ?)', (sessionId, agent, key, json.dumps(value) if not isinstance(value, str) else value, priority, expires))
+    conn.execute(
+        'INSERT INTO blackboard (sessionId, agent, key, value, priority, expiresAt) VALUES (?, ?, ?, ?, ?, ?)',
+        (sessionId, agent, key, json.dumps(value) if not isinstance(value, str) else value, priority, expires),
+    )
     conn.commit()
 
-def readNotes(sessionId: str, agent: str='', key: str='', ack: bool=False) -> list[BlackboardNoteDict]:
+
+def readNotes(sessionId: str, agent: str = '', key: str = '', ack: bool = False) -> list[BlackboardNoteDict]:
     """Read notes from the blackboard, with optional agent/key filters.
 
     v2: If `ack=True`, the read notes are deleted on read (acknowledged
@@ -71,7 +88,8 @@ def readNotes(sessionId: str, agent: str='', key: str='', ack: bool=False) -> li
         conn.commit()
     return cast('list[BlackboardNoteDict]', notes)
 
-def clearNotes(sessionId: str, agent: str='') -> int:
+
+def clearNotes(sessionId: str, agent: str = '') -> int:
     """Clear blackboard notes, optionally for a specific agent."""
     conn = _conn()
     if agent:
@@ -80,6 +98,7 @@ def clearNotes(sessionId: str, agent: str='') -> int:
         cursor = conn.execute('DELETE FROM blackboard WHERE sessionId = ?', (sessionId,))
     conn.commit()
     return cursor.rowcount
+
 
 def _cleanupExpired(conn) -> None:
     """Delete expired notes."""

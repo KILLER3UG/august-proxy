@@ -4,20 +4,36 @@ August "brain" memory system.
 
 Port of backend/services/memory/brain-orchestrator.js (255 lines).
 """
+
 from __future__ import annotations
 import re
-DEFAULT_FEATURES: dict[str, object] = {'enabled': True, 'adaptive_policy': True, 'failure_learning': True, 'graph_memory': True, 'agent_jobs': True, 'hierarchical_agents': True, 'adapter_parallel_tools': True, 'parallel_read_tools': True, 'max_agent_depth': 4, 'max_workbench_tool_loops': 100}
+
+DEFAULT_FEATURES: dict[str, object] = {
+    'enabled': True,
+    'adaptive_policy': True,
+    'failure_learning': True,
+    'graph_memory': True,
+    'agent_jobs': True,
+    'hierarchical_agents': True,
+    'adapter_parallel_tools': True,
+    'parallel_read_tools': True,
+    'max_agent_depth': 4,
+    'max_workbench_tool_loops': 100,
+}
+
 
 def getBrainConfig() -> dict[str, object]:
     """Get the brain configuration, merging defaults with user config."""
     from app.config import settings
+
     cfg = settings.config
     brainCfg = cfg.get('brain_orchestrator', {})
     if isinstance(brainCfg, dict):
         return {**DEFAULT_FEATURES, **brainCfg}
     return dict(DEFAULT_FEATURES)
 
-def extractTextFromMessages(messages: list[dict[str, object]] | None=None) -> str:
+
+def extractTextFromMessages(messages: list[dict[str, object]] | None = None) -> str:
     """Extract text content from the last 8 messages."""
     if not messages:
         return ''
@@ -36,11 +52,12 @@ def extractTextFromMessages(messages: list[dict[str, object]] | None=None) -> st
                     elif btype == 'tool_result':
                         parts.append(str(block.get('content', '')))
                     elif btype == 'tool_use':
-                        parts.append(f"{block.get('name', '')} {jsonDumps(block.get('input', {}))}")
+                        parts.append(f'{block.get("name", "")} {jsonDumps(block.get("input", {}))}')
             texts.append('\n'.join(parts))
         elif content:
             texts.append(str(content))
     return '\n'.join((t for t in texts if t))
+
 
 def classifyTask(text: str) -> str:
     """Classify a task type from user input text."""
@@ -59,21 +76,47 @@ def classifyTask(text: str) -> str:
         return 'system_control'
     return 'chat'
 
+
 def riskForTask(taskType: str) -> str:
     """Determine risk level for a task type."""
     if taskType in ('code_edit', 'system_control'):
         return 'approval_required'
     return 'read_only'
 
-def policyForTask(taskType: str, brainConfig: dict[str, object] | None=None) -> dict[str, object]:
+
+def policyForTask(taskType: str, brainConfig: dict[str, object] | None = None) -> dict[str, object]:
     """Get execution policy for a task type."""
     if brainConfig is None:
         brainConfig = getBrainConfig()
-    base: dict[str, object] = {'mode': 'normal', 'max_tokens': 2048, 'memory_depth': 'standard', 'allow_parallel_reads': brainConfig.get('parallel_read_tools', False), 'allow_subagents': False, 'require_plan': False, 'require_approval': False, 'failure_retry_limit': 2}
+    base: dict[str, object] = {
+        'mode': 'normal',
+        'max_tokens': 2048,
+        'memory_depth': 'standard',
+        'allow_parallel_reads': brainConfig.get('parallel_read_tools', False),
+        'allow_subagents': False,
+        'require_plan': False,
+        'require_approval': False,
+        'failure_retry_limit': 2,
+    }
     if taskType == 'debug':
-        return {**base, 'mode': 'debug', 'max_tokens': 4096, 'memory_depth': 'deep', 'allow_subagents': True, 'failure_retry_limit': 3}
+        return {
+            **base,
+            'mode': 'debug',
+            'max_tokens': 4096,
+            'memory_depth': 'deep',
+            'allow_subagents': True,
+            'failure_retry_limit': 3,
+        }
     if taskType == 'code_edit':
-        return {**base, 'mode': 'build', 'max_tokens': 4096, 'memory_depth': 'deep', 'allow_subagents': True, 'require_plan': True, 'require_approval': True}
+        return {
+            **base,
+            'mode': 'build',
+            'max_tokens': 4096,
+            'memory_depth': 'deep',
+            'allow_subagents': True,
+            'require_plan': True,
+            'require_approval': True,
+        }
     if taskType == 'research':
         return {**base, 'mode': 'research', 'max_tokens': 4096, 'memory_depth': 'targeted', 'allow_subagents': True}
     if taskType == 'memory_question':
@@ -84,9 +127,11 @@ def policyForTask(taskType: str, brainConfig: dict[str, object] | None=None) -> 
         return {**base, 'mode': 'control', 'max_tokens': 2048, 'memory_depth': 'shallow', 'require_approval': True}
     return base
 
+
 def jsonDumps(value: object) -> str:
     """Safe JSON serialization."""
     import json
+
     try:
         return json.dumps(value)
     except (TypeError, ValueError):

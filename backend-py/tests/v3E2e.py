@@ -1,20 +1,34 @@
 """v3 — End-to-end test: Brain dashboard aggregation + /Exam full lifecycle."""
+
 import json
 from unittest.mock import patch
 import pytest
-VALID_EXAM = [{'stem': 'What is 2+2?', 'options': ['3', '4', '5', '6'], 'correct_index': 1, 'rationale': '2+2=4.'}, {'stem': 'Capital of France?', 'options': ['Berlin', 'Madrid', 'Paris', 'Rome'], 'correct_index': 2, 'rationale': 'Paris.'}]
+
+VALID_EXAM = [
+    {'stem': 'What is 2+2?', 'options': ['3', '4', '5', '6'], 'correct_index': 1, 'rationale': '2+2=4.'},
+    {
+        'stem': 'Capital of France?',
+        'options': ['Berlin', 'Madrid', 'Paris', 'Rome'],
+        'correct_index': 2,
+        'rationale': 'Paris.',
+    },
+]
+
 
 @pytest.fixture(autouse=True)
 def _initDb():
     from app.services.memory_store import init
+
     init()
     yield
+
 
 def testBrainDashboardAggregatesRealData():
     """Learning + health endpoints surface real data; mutation flow works end-to-end."""
     from fastapi.testclient import TestClient
     from app.main import app
     from app.services.heuristics_service import addHeuristic
+
     client = TestClient(app)
     learning = client.get('/api/brain/learning').json()
     assert 'heuristics' in learning
@@ -35,11 +49,13 @@ def testBrainDashboardAggregatesRealData():
     assert resp.status_code == 200
     assert resp.json().get('deleted') is True
 
+
 def testExamFullLifecycle():
     """Generate → fetch → answer → help — full /Exam flow with Prefrontal mocked."""
     from fastapi.testclient import TestClient
     from app.main import app
     from app.services.memory_store import _conn
+
     client = TestClient(app)
     with patch('app.services.exam_service._call_prefrontal', return_value=json.dumps(VALID_EXAM)):
         gen = client.post('/api/exam/generate', json={'topic': 'math+geography', 'count': 2, 'difficulty': 'easy'})
@@ -69,10 +85,12 @@ def testExamFullLifecycle():
     attempts = _conn().execute('SELECT COUNT(*) FROM exam_attempts WHERE exam_id = ?', (examId,)).fetchone()[0]
     assert attempts == 1
 
+
 def testAddQuestionAuthorsAndAppends():
     """User adds a custom question mid-exam; the model authors it."""
     from fastapi.testclient import TestClient
     from app.main import app
+
     client = TestClient(app)
     with patch('app.services.exam_service._call_prefrontal', return_value=json.dumps(VALID_EXAM)):
         gen = client.post('/api/exam/generate', json={'topic': 'x', 'count': 2, 'difficulty': 'easy'})

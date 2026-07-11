@@ -12,18 +12,20 @@ Coverage:
 - The chat-loop iteration-boundary drain via sendWorkbenchMessageStream
   with mocked model calls (no real provider).
 """
+
 from __future__ import annotations
 import asyncio
 import pytest
 from app.services.workbench import workbench as wb
+
 
 @pytest.fixture
 def session():
     """Fresh workbench session per test."""
     return wb.createWorkbenchSession(provider='test')
 
-class TestSessionField:
 
+class TestSessionField:
     def testToDictIncludesQueue(self, session):
         data = session.toDict()
         assert 'queuedUserMessages' in data
@@ -32,8 +34,8 @@ class TestSessionField:
     def testQueueDefaultsToEmpty(self, session):
         assert session.queuedUserMessages == []
 
-class TestEnqueueDequeueList:
 
+class TestEnqueueDequeueList:
     def testEnqueueAppends(self, session):
         entry = wb.enqueueUserMessage(session.id, 'follow-up text')
         assert entry is not None
@@ -76,8 +78,8 @@ class TestEnqueueDequeueList:
         listed.clear()
         assert len(session.queuedUserMessages) == 2
 
-class TestDrain:
 
+class TestDrain:
     def testDrainReturnsAndClears(self, session):
         first = wb.enqueueUserMessage(session.id, 'first')
         wb.enqueueUserMessage(session.id, 'second')
@@ -101,8 +103,8 @@ class TestDrain:
         drained = wb.drainQueuedMessages('wb_nope')
         assert drained == []
 
-class TestFormatter:
 
+class TestFormatter:
     def testEmptyEntriesReturnEmpty(self):
         result = wb._formatQueuedMessagesAsUserTurn([])
         assert result == {'role': 'user', 'content': ''}
@@ -117,12 +119,16 @@ class TestFormatter:
         assert '</queued_message>' in result['content']
 
     def testMultipleEntriesAllTagged(self):
-        entries = [{'id': 'qm_1', 'text': 'a', 'attachments': [], 'queuedAt': '2026-07-01T00:00:00Z'}, {'id': 'qm_2', 'text': 'b', 'attachments': [{'name': 'x'}], 'queuedAt': '2026-07-01T00:00:01Z'}]
+        entries = [
+            {'id': 'qm_1', 'text': 'a', 'attachments': [], 'queuedAt': '2026-07-01T00:00:00Z'},
+            {'id': 'qm_2', 'text': 'b', 'attachments': [{'name': 'x'}], 'queuedAt': '2026-07-01T00:00:01Z'},
+        ]
         result = wb._formatQueuedMessagesAsUserTurn(entries)
         assert result['content'].count('<queued_message') == 2
         assert 'attachments="1"' in result['content']
         assert 'a' in result['content']
         assert 'b' in result['content']
+
 
 class TestChatLoopInjection:
     """Verify queued messages appear in the model-call payload without
@@ -134,11 +140,21 @@ class TestChatLoopInjection:
         """Default stubs applied to every test in this class."""
         from app.config import settings
         from app.services import provider_credentials as providerCredsMod
+
         monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
         monkeypatch.setattr(settings, 'dataDir', tmp_path)
         settings.reload()
         monkeypatch.setattr(wb, '_sessions', {})
-        monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **kw: {'name': 'stub-anthropic', 'api_mode': 'anthropicMessages', 'default_model': 'stub-claude', 'model_profiles': {}})
+        monkeypatch.setattr(
+            wb,
+            '_resolveWorkbenchProvider',
+            lambda *a, **kw: {
+                'name': 'stub-anthropic',
+                'api_mode': 'anthropicMessages',
+                'default_model': 'stub-claude',
+                'model_profiles': {},
+            },
+        )
         monkeypatch.setattr(wb, '_resolveModel', lambda p, hint='': 'stub-claude')
         monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session: 'stub system prompt')
         monkeypatch.setattr(providerCredsMod, 'resolve', lambda name: {'api_key': 'stub-key'})
@@ -148,14 +164,28 @@ class TestChatLoopInjection:
         """Stub the per-provider model calls with a controllable sequence."""
         calls = []
         from app.services import provider_credentials as providerCredsMod
+
         monkeypatch.setattr(providerCredsMod, 'resolve', lambda name: {'api_key': 'stub-key'})
         monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session: 'stub system prompt')
 
         async def fakeAnthropic(messages, systemText, model, tools, effort, provider=None, emit=None):
             calls.append({'provider': 'anthropic', 'messages': [dict(m) for m in messages]})
             if len(calls) == 1:
-                return {'content': [{'type': 'text', 'text': 'first response'}], 'text': 'first response', 'thinking': '', 'tool_uses': [], 'usage': {'input_tokens': 10, 'output_tokens': 5}}
-            return {'content': [{'type': 'text', 'text': 'second response'}], 'text': 'second response', 'thinking': '', 'tool_uses': [], 'usage': {'input_tokens': 20, 'output_tokens': 6}}
+                return {
+                    'content': [{'type': 'text', 'text': 'first response'}],
+                    'text': 'first response',
+                    'thinking': '',
+                    'tool_uses': [],
+                    'usage': {'input_tokens': 10, 'output_tokens': 5},
+                }
+            return {
+                'content': [{'type': 'text', 'text': 'second response'}],
+                'text': 'second response',
+                'thinking': '',
+                'tool_uses': [],
+                'usage': {'input_tokens': 20, 'output_tokens': 6},
+            }
+
         monkeypatch.setattr(wb, '_callAnthropicWorkbench', fakeAnthropic)
         return calls
 
@@ -168,8 +198,11 @@ class TestChatLoopInjection:
 
         async def runOnce():
             emitted = []
-            await wb.sendWorkbenchMessageStream(sessionId=session.id, message='build the auth service', provider='anthropic', emit=emitted.append)
+            await wb.sendWorkbenchMessageStream(
+                sessionId=session.id, message='build the auth service', provider='anthropic', emit=emitted.append
+            )
             return emitted
+
         emitted = asyncio.run(runOnce())
         assert len(stubModel) == 2, f'expected 2 model calls, got {len(stubModel)}'
         firstMessages = stubModel[0]['messages']
@@ -188,13 +221,29 @@ class TestChatLoopInjection:
         async def fakeAnthropic(messages, systemText, model, tools, effort, provider=None, emit=None):
             calls.append(len(messages))
             if len(calls) == 1:
-                return {'content': [{'type': 'text', 'text': 'first'}], 'text': 'first', 'thinking': '', 'tool_uses': [], 'usage': {}}
-            return {'content': [{'type': 'text', 'text': 'second'}], 'text': 'second', 'thinking': '', 'tool_uses': [], 'usage': {}}
+                return {
+                    'content': [{'type': 'text', 'text': 'first'}],
+                    'text': 'first',
+                    'thinking': '',
+                    'tool_uses': [],
+                    'usage': {},
+                }
+            return {
+                'content': [{'type': 'text', 'text': 'second'}],
+                'text': 'second',
+                'thinking': '',
+                'tool_uses': [],
+                'usage': {},
+            }
+
         monkeypatch.setattr(wb, '_callAnthropicWorkbench', fakeAnthropic)
         wb.enqueueUserMessage(session.id, 'queued text')
 
         async def run():
-            await wb.sendWorkbenchMessageStream(sessionId=session.id, message='original prompt', provider='anthropic', emit=lambda e: None)
+            await wb.sendWorkbenchMessageStream(
+                sessionId=session.id, message='original prompt', provider='anthropic', emit=lambda e: None
+            )
+
         asyncio.run(run())
         assert len(calls) == 2
         assert calls[1] > calls[0]
@@ -206,11 +255,21 @@ class TestChatLoopInjection:
 
         async def fakeAnthropic(messages, systemText, model, tools, effort, provider=None, emit=None):
             calls.append(len(messages))
-            return {'content': [{'type': 'text', 'text': 'only'}], 'text': 'only', 'thinking': '', 'tool_uses': [], 'usage': {}}
+            return {
+                'content': [{'type': 'text', 'text': 'only'}],
+                'text': 'only',
+                'thinking': '',
+                'tool_uses': [],
+                'usage': {},
+            }
+
         monkeypatch.setattr(wb, '_callAnthropicWorkbench', fakeAnthropic)
 
         async def run():
-            await wb.sendWorkbenchMessageStream(sessionId=session.id, message='hello', provider='anthropic', emit=lambda e: None)
+            await wb.sendWorkbenchMessageStream(
+                sessionId=session.id, message='hello', provider='anthropic', emit=lambda e: None
+            )
+
         asyncio.run(run())
         assert len(calls) == 1
 
@@ -223,17 +282,36 @@ class TestChatLoopInjection:
         async def fakeAnthropic(messages, systemText, model, tools, effort, provider=None, emit=None):
             calls.append([dict(m) for m in messages])
             if len(calls) == 1:
-                return {'content': [{'type': 'text', 'text': 'investigating'}, {'type': 'tool_use', 'id': 'tu_1', 'name': 'read_file', 'input': {'path': 'x'}}], 'text': 'investigating', 'thinking': '', 'tool_uses': [{'type': 'tool_use', 'id': 'tu_1', 'name': 'read_file', 'input': {'path': 'x'}}], 'usage': {}}
-            return {'content': [{'type': 'text', 'text': 'done'}], 'text': 'done', 'thinking': '', 'tool_uses': [], 'usage': {}}
+                return {
+                    'content': [
+                        {'type': 'text', 'text': 'investigating'},
+                        {'type': 'tool_use', 'id': 'tu_1', 'name': 'read_file', 'input': {'path': 'x'}},
+                    ],
+                    'text': 'investigating',
+                    'thinking': '',
+                    'tool_uses': [{'type': 'tool_use', 'id': 'tu_1', 'name': 'read_file', 'input': {'path': 'x'}}],
+                    'usage': {},
+                }
+            return {
+                'content': [{'type': 'text', 'text': 'done'}],
+                'text': 'done',
+                'thinking': '',
+                'tool_uses': [],
+                'usage': {},
+            }
 
         async def fakeExec(name, args, sess):
             return 'file contents'
+
         monkeypatch.setattr(wb, '_callAnthropicWorkbench', fakeAnthropic)
         monkeypatch.setattr(wb, '_executeTool', fakeExec)
         wb.enqueueUserMessage(session.id, 'use a different approach')
 
         async def run():
-            await wb.sendWorkbenchMessageStream(sessionId=session.id, message='read the file', provider='anthropic', emit=lambda e: None)
+            await wb.sendWorkbenchMessageStream(
+                sessionId=session.id, message='read the file', provider='anthropic', emit=lambda e: None
+            )
+
         asyncio.run(run())
         assert len(calls) == 2
         second = calls[1]
@@ -248,4 +326,6 @@ class TestChatLoopInjection:
                 toolIdx = i
         assert queuedIdx is not None, f'queued wrapper missing in {second}'
         assert toolIdx is not None, f'tool_result missing in {second}'
-        assert toolIdx < queuedIdx, f'queued wrapper must come AFTER tool_result (paired with the prior assistant tool_use). Got roles={roles}'
+        assert toolIdx < queuedIdx, (
+            f'queued wrapper must come AFTER tool_result (paired with the prior assistant tool_use). Got roles={roles}'
+        )

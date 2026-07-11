@@ -21,6 +21,7 @@ Notes:
   as ``tests/testProviderCredentials.py``) pointing the external model alias at
   the external endpoint, then invalidating the provider cache.
 """
+
 from __future__ import annotations
 import json
 import os
@@ -37,6 +38,7 @@ pytestmark = pytest.mark.skipif(
 def _registerExternalProvider(tmp_path, monkeypatch):
     """Point the proxy's provider resolution at the external test endpoint."""
     from app.services import config_service, provider_credentials
+
     path = tmp_path / 'providers.json'
     store = {
         'providers': [
@@ -66,6 +68,7 @@ def externalProvider(tmp_path, monkeypatch):
 def testNonStreamingChatCompletesThroughAdapter(externalProvider):
     """Full path: /v1/chat/completions (non-streaming) -> external LLM -> Anthropic-translated reply."""
     from app.adapters import openai as openaiAdapter
+
     body = {
         'model': TEST_MODEL,
         'messages': [{'role': 'user', 'content': 'Reply with exactly the word "pong" and nothing else.'}],
@@ -73,7 +76,7 @@ def testNonStreamingChatCompletesThroughAdapter(externalProvider):
     }
     result, _headers = openaiAdapter.handleChatCompletions(body, request=None)
     assert isinstance(result, dict), f'expected dict response, got {type(result)}'
-    assert result.get('type') == 'message', f"unexpected response shape: {result}"
+    assert result.get('type') == 'message', f'unexpected response shape: {result}'
     content = result.get('content', [])
     text = ''.join(b.get('text', '') for b in content if isinstance(b, dict))
     assert 'pong' in text.lower(), f'expected pong in reply, got: {text!r}'
@@ -83,6 +86,7 @@ def testStreamingChatYieldsContentThroughAdapter(externalProvider):
     """Full path: /v1/chat/completions (streaming) -> external LLM SSE -> Anthropic events."""
     import asyncio
     from app.adapters import openai as openaiAdapter
+
     body = {
         'model': TEST_MODEL,
         'messages': [{'role': 'user', 'content': 'Say "hello" in exactly one word.'}],
@@ -91,9 +95,11 @@ def testStreamingChatYieldsContentThroughAdapter(externalProvider):
     result, _headers = openaiAdapter.handleChatCompletions(body, request=None)
     assert hasattr(result, '__aiter__'), 'expected an async iterator for streaming'
     events: list[str] = []
+
     async def _collect():
         async for chunk in result:
             events.append(chunk)
+
     asyncio.run(_collect())
     joined = ''.join(events)
     assert 'hello' in joined.lower(), f'expected hello in stream, got: {joined[:300]!r}'
@@ -107,18 +113,26 @@ def testManagedToolLoopRunsThroughAnthropicAdapter(externalProvider):
     import asyncio
     from app.adapters import anthropic as anthropicAdapter
     from app.adapters.proxy_tools import getManagedAnthropicWebToolDefinitions
+
     body = {
         'model': TEST_MODEL,
-        'messages': [{'role': 'user', 'content': 'Use the WebSearch tool to look up the current capital of France, then tell me the answer in one sentence.'}],
+        'messages': [
+            {
+                'role': 'user',
+                'content': 'Use the WebSearch tool to look up the current capital of France, then tell me the answer in one sentence.',
+            }
+        ],
         'stream': True,
         'tools': getManagedAnthropicWebToolDefinitions(),
     }
     result, _headers = anthropicAdapter.handleMessages(body, request=None)
     assert hasattr(result, '__aiter__'), 'expected an async iterator for streaming'
     events: list[str] = []
+
     async def _collect():
         async for chunk in result:
             events.append(chunk)
+
     asyncio.run(_collect())
     joined = ''.join(events)
     # The managed tool is executed locally and the loop must return a final

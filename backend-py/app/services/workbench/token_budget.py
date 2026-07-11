@@ -10,14 +10,17 @@ Provides ``estimate_tokens()`` with a priority chain:
 When using the heuristic fallback, the critical threshold is set to 85%
 instead of the default 90% to provide a safety buffer.
 """
+
 from __future__ import annotations
 import logging
+
 logger = logging.getLogger(__name__)
 _CHARSPerTokenHeuristic = 3.5
 _CRITICALThresholdHeuristic = 0.85
 _CRITICALThresholdDefault = 0.9
 
-def estimateTokens(text: str, model: str | None=None, provider: str | None=None) -> int:
+
+def estimateTokens(text: str, model: str | None = None, provider: str | None = None) -> int:
     """Estimate the number of tokens in ``text``.
 
     Uses the highest-accuracy tokenizer available for the given model/provider.
@@ -34,7 +37,8 @@ def estimateTokens(text: str, model: str | None=None, provider: str | None=None)
         return _geminiTokens(text, model)
     return _heuristicTokens(text)
 
-def getCriticalThreshold(model: str | None=None, provider: str | None=None) -> float:
+
+def getCriticalThreshold(model: str | None = None, provider: str | None = None) -> float:
     """Return the critical attention-pressure threshold.
 
     Returns 90% when an accurate tokenizer is available (Anthropic/OpenAI),
@@ -46,7 +50,13 @@ def getCriticalThreshold(model: str | None=None, provider: str | None=None) -> f
         return _CRITICALThresholdDefault
     return _CRITICALThresholdHeuristic
 
-def computeBudget(messages: list[dict[str, object]] | str, model: str | None=None, provider: str | None=None, maxContext: int=200000) -> dict[str, object]:
+
+def computeBudget(
+    messages: list[dict[str, object]] | str,
+    model: str | None = None,
+    provider: str | None = None,
+    maxContext: int = 200000,
+) -> dict[str, object]:
     """Compute a full cognitive budget dict for a conversation or text.
 
     Returns:
@@ -82,12 +92,21 @@ def computeBudget(messages: list[dict[str, object]] | str, model: str | None=Non
         tokenizer = 'tiktoken'
     elif model and _isGeminiModel(model):
         tokenizer = 'gemini'
-    return {'context_used_pct': round(pct, 1), 'remaining_tokens': remaining, 'attention_pressure': pressure, 'total_tokens': total, 'max_context': maxContext, 'tokenizer': tokenizer}
+    return {
+        'context_used_pct': round(pct, 1),
+        'remaining_tokens': remaining,
+        'attention_pressure': pressure,
+        'total_tokens': total,
+        'max_context': maxContext,
+        'tokenizer': tokenizer,
+    }
+
 
 def _anthropicTokens(text: str) -> int:
     """Count tokens using the Anthropic SDK."""
     try:
         from anthropic import Anthropic
+
         client = Anthropic(api_key='dummy')
         return client.count_tokens(text)
     except ImportError:
@@ -97,10 +116,12 @@ def _anthropicTokens(text: str) -> int:
         logger.debug('anthropic count_tokens failed: %s', exc)
         return _heuristicTokens(text)
 
+
 def _openaiTokens(text: str, model: str) -> int:
     """Count tokens using tiktoken."""
     try:
         import tiktoken
+
         encodingName = _getTiktokenEncoding(model)
         enc = tiktoken.get_encoding(encodingName)
         return len(enc.encode(text))
@@ -111,10 +132,12 @@ def _openaiTokens(text: str, model: str) -> int:
         logger.debug('tiktoken failed for %s: %s', model, exc)
         return _heuristicTokens(text)
 
+
 def _geminiTokens(text: str, model: str) -> int:
     """Count tokens for Gemini models."""
     try:
         from tokenizers import Tokenizer
+
         tokenizer = Tokenizer.from_pretrained('google/gemma-tokenizer')
         return len(tokenizer.encode(text))
     except ImportError:
@@ -124,17 +147,21 @@ def _geminiTokens(text: str, model: str) -> int:
         logger.debug('gemini tokenizer failed: %s', exc)
         return _heuristicTokens(text)
 
+
 def _heuristicTokens(text: str) -> int:
     """Fallback: 3.5 characters per token."""
     return max(1, int(len(text) / _CHARSPerTokenHeuristic))
+
 
 def _isOpenaiModel(model: str) -> bool:
     modelLower = model.lower()
     return any((modelLower.startswith(p) for p in ('gpt-', 'o1-', 'o3-', 'o4-')))
 
+
 def _isGeminiModel(model: str) -> bool:
     modelLower = model.lower()
     return 'gemini' in modelLower or 'gemma' in modelLower
+
 
 def _getTiktokenEncoding(model: str) -> str:
     """Return the tiktoken encoding name for a given model."""
@@ -146,6 +173,7 @@ def _getTiktokenEncoding(model: str) -> str:
     if 'gpt-4o' in modelLower:
         return 'o200k_base'
     return 'cl100k_base'
+
 
 def _flattenMessages(messages: list[dict[str, object]]) -> str:
     """Flatten a list of chat messages into a single text string."""
@@ -160,11 +188,11 @@ def _flattenMessages(messages: list[dict[str, object]]) -> str:
                 if isinstance(block, dict):
                     btype = block.get('type', '')
                     if btype == 'text':
-                        parts.append(f"{role}: {block.get('text', '')}")
+                        parts.append(f'{role}: {block.get("text", "")}')
                     elif btype == 'toolResult':
                         parts.append(str(block.get('content', '')))
                     elif btype == 'tool_use':
-                        parts.append(f"{role}: {block.get('name', '')}")
+                        parts.append(f'{role}: {block.get("name", "")}')
         else:
             parts.append(str(content))
     return '\n'.join(parts)

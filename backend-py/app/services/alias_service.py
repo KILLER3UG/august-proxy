@@ -130,7 +130,13 @@ def createAlias(
         beforeCopy = None
         aliases.append(entry)
     _writeAliases(aliases)
-    recordConfigAudit('alias', 'create' if beforeCopy is None else 'upsert', actor, before=cast('JsonValue', beforeCopy), after=cast('JsonValue', entry))
+    recordConfigAudit(
+        'alias',
+        'create' if beforeCopy is None else 'upsert',
+        actor,
+        before=cast('JsonValue', beforeCopy),
+        after=cast('JsonValue', entry),
+    )
     return entry
 
 

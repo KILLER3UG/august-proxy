@@ -7,6 +7,7 @@ learned_heuristics table. Idempotent — checks for existing rows first.
 Usage:
     python scripts/migrate_learned_heuristics.py [--dry-run]
 """
+
 from __future__ import annotations
 import argparse
 import json
@@ -15,12 +16,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+
 def _dbPath() -> Path:
     envPath = __import__('os').environ.get('AUGUST_BRAIN_SQLITE_FILE')
     if envPath:
         return Path(envPath)
     from app.lib.paths import dataPath
+
     return dataPath('august_brain.sqlite')
+
 
 def _connect() -> sqlite3.Connection:
     db = _dbPath()
@@ -29,16 +33,25 @@ def _connect() -> sqlite3.Connection:
     conn.execute('PRAGMA journal_mode=WAL')
     return conn
 
+
 def _normalizeIso(ts: str | None) -> str:
     """Normalize an ISO timestamp to SQLite datetime format."""
     if not ts:
         return datetime.utcnow().isoformat()
     return ts.replace('Z', '').split('+')[0].split('.')[0] or datetime.utcnow().isoformat()
 
-def runMigration(dryRun: bool=False) -> dict[str, Any]:
+
+def runMigration(dryRun: bool = False) -> dict[str, Any]:
     """Run the learned guidelines migration. Returns stats dict."""
     jsonPath = Path('data/august_learned_guidelines.json')
-    stats = {'json_found': False, 'json_count': 0, 'existing_count': 0, 'inserted': 0, 'skipped_duplicates': 0, 'errors': []}
+    stats = {
+        'json_found': False,
+        'json_count': 0,
+        'existing_count': 0,
+        'inserted': 0,
+        'skipped_duplicates': 0,
+        'errors': [],
+    }
     if not jsonPath.exists():
         stats['errors'].append(f'File not found: {jsonPath}')
         return stats
@@ -71,7 +84,10 @@ def runMigration(dryRun: bool=False) -> dict[str, Any]:
             print(f'[dry-run] Would insert rule: {text[:80]}...')
             stats['inserted'] += 1
             continue
-        conn.execute('INSERT INTO learned_heuristics (rule, source, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?)', (text, source, category, created, created))
+        conn.execute(
+            'INSERT INTO learned_heuristics (rule, source, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+            (text, source, category, created, created),
+        )
         stats['inserted'] += 1
     if not dryRun:
         conn.commit()
@@ -79,6 +95,7 @@ def runMigration(dryRun: bool=False) -> dict[str, Any]:
     stats['total_after'] = after[0] if after else 0
     conn.close()
     return stats
+
 
 def main():
     parser = argparse.ArgumentParser(description='Migrate august_learned_guidelines.json to learned_heuristics table')
@@ -94,5 +111,7 @@ def main():
         print('\nMigration complete.')
     else:
         print('\nDry-run complete — no data written.')
+
+
 if __name__ == '__main__':
     main()

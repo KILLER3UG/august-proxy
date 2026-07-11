@@ -15,11 +15,13 @@ Locks in the response-shape contract that the frontend relies on:
   /api/brain/* namespace with resource sub-paths (no "memory" nesting inside
   "brain").
 """
+
 from __future__ import annotations
 import pytest
 from httpx import AsyncClient, ASGITransport
 from app.main import app
 from app.services import logger as traffic
+
 
 @pytest.fixture
 async def client():
@@ -27,13 +29,25 @@ async def client():
     async with AsyncClient(transport=transport, base_url='http://test') as ac:
         yield ac
 
+
 def _seedTraffic():
     """Seed one completed request and an activity entry."""
-    rid = traffic.startRequest({'model': 'claude-sonnet-4-7', 'provider': 'anthropic', 'clientType': 'anthropic', 'endpoint': '/v1/messages', 'method': 'POST', 'path': '/v1/messages', 'sessionId': 's1'})
+    rid = traffic.startRequest(
+        {
+            'model': 'claude-sonnet-4-7',
+            'provider': 'anthropic',
+            'clientType': 'anthropic',
+            'endpoint': '/v1/messages',
+            'method': 'POST',
+            'path': '/v1/messages',
+            'sessionId': 's1',
+        }
+    )
     traffic.captureRequest(rid, {'model': 'claude-sonnet-4-7'})
     traffic.endRequest(rid, {'usage': {'prompt_tokens': 5, 'completion_tokens': 3}})
     traffic.logActivity('request_complete', 'regression test entry')
     return rid
+
 
 @pytest.mark.asyncio
 async def testApiActivityReturnsBareArray(client):
@@ -46,6 +60,7 @@ async def testApiActivityReturnsBareArray(client):
     assert len(body) >= 1
     e = body[0]
     assert 'time' in e and 'type' in e and ('detail' in e)
+
 
 @pytest.mark.asyncio
 async def testApiRequestsHasPendingAndCompleted(client):
@@ -62,6 +77,7 @@ async def testApiRequestsHasPendingAndCompleted(client):
     for k in ('reqId', 'clientType', 'endpoint', 'model', 'status', 'timestamp'):
         assert k in entry, f'missing {k} in completed entry'
 
+
 @pytest.mark.asyncio
 async def testApiStatsHasFullShape(client):
     """GET /api/stats must expose the full StatsResponse field set."""
@@ -69,8 +85,25 @@ async def testApiStatsHasFullShape(client):
     r = await client.get('/api/stats?period=all')
     assert r.status_code == 200
     body = r.json()
-    for k in ('totalRequests', 'completedRequests', 'errorRequests', 'totalInputTokens', 'totalOutputTokens', 'totalTokens', 'estimatedInputCost', 'estimatedOutputCost', 'estimatedTotalCost', 'avgDurationMs', 'pendingRequests', 'mostUsedModel', 'mostUsedCount', 'modelBreakdown', 'profileStats'):
+    for k in (
+        'totalRequests',
+        'completedRequests',
+        'errorRequests',
+        'totalInputTokens',
+        'totalOutputTokens',
+        'totalTokens',
+        'estimatedInputCost',
+        'estimatedOutputCost',
+        'estimatedTotalCost',
+        'avgDurationMs',
+        'pendingRequests',
+        'mostUsedModel',
+        'mostUsedCount',
+        'modelBreakdown',
+        'profileStats',
+    ):
         assert k in body, f'missing {k} in stats'
+
 
 @pytest.mark.asyncio
 async def testApiLogsRecentShape(client):
@@ -80,11 +113,13 @@ async def testApiLogsRecentShape(client):
     assert isinstance(body.get('events'), list)
     assert body.get('count') == len(body['events'])
 
+
 @pytest.mark.asyncio
 async def testApiDetailsIsArray(client):
     r = await client.get('/api/details?period=all')
     assert r.status_code == 200
     assert isinstance(r.json(), list)
+
 
 @pytest.mark.asyncio
 async def testApiConversationsIsDict(client):
@@ -94,9 +129,11 @@ async def testApiConversationsIsDict(client):
     body = r.json()
     assert isinstance(body, dict)
 
+
 @pytest.mark.asyncio
 async def testApiBrainStatus(client, isolatedData):
     from app.services import memory_store
+
     memory_store.saveMemory('k1', {'summary': 'v1'})
     r = await client.get('/api/brain/status')
     assert r.status_code == 200
@@ -105,9 +142,11 @@ async def testApiBrainStatus(client, isolatedData):
     assert body.get('driver') == 'sqlite'
     assert isinstance(body.get('count'), int)
 
+
 @pytest.mark.asyncio
 async def testApiBrainItems(client, isolatedData):
     from app.services import memory_store
+
     memory_store.saveMemory('k1', {'summary': 'hello'})
     r = await client.get('/api/brain/items')
     assert r.status_code == 200
@@ -115,11 +154,13 @@ async def testApiBrainItems(client, isolatedData):
     assert isinstance(items, list)
     assert any((it.get('key') == 'k1' for it in items))
 
+
 @pytest.mark.asyncio
 async def testApiBrainVectors(client):
     r = await client.get('/api/brain/vectors')
     assert r.status_code == 200
     assert isinstance(r.json().get('entries'), list)
+
 
 @pytest.mark.asyncio
 async def testApiBrainPrompt(client):
@@ -128,14 +169,17 @@ async def testApiBrainPrompt(client):
     body = r.json()
     assert 'prompt' in body and isinstance(body.get('length'), int)
 
+
 @pytest.mark.asyncio
 async def testApiBrainSearch(client, isolatedData):
     from app.services import memory_store
+
     memory_store.saveMemory('greeting', {'summary': 'hello world'})
     r = await client.get('/api/brain/search?q=hello')
     assert r.status_code == 200
     results = r.json().get('results', [])
     assert isinstance(results, list)
+
 
 @pytest.mark.asyncio
 async def testApiBrainLearning(client):
@@ -144,15 +188,18 @@ async def testApiBrainLearning(client):
     body = r.json()
     assert 'status' in body
 
+
 @pytest.mark.asyncio
 async def testApiBrainGuidelines(client, isolatedData):
     from app.services import memory_store
+
     memory_store.saveFact('g1', {'text': 'Be concise'}, category='guideline')
     r = await client.get('/api/brain/guidelines')
     assert r.status_code == 200
     guidelines = r.json().get('guidelines', [])
     assert isinstance(guidelines, list)
     assert any((g.get('id') == 'g1' for g in guidelines))
+
 
 @pytest.mark.asyncio
 async def testApiBrainGraph(client):
@@ -162,6 +209,7 @@ async def testApiBrainGraph(client):
     assert 'stats' in body
     assert 'counts' in body['stats']
 
+
 @pytest.mark.asyncio
 async def testApiBrainDiagnostics(client):
     r = await client.get('/api/brain/diagnostics')
@@ -169,6 +217,7 @@ async def testApiBrainDiagnostics(client):
     body = r.json()
     for k in ('injectedChars', 'maxChars', 'guidelines', 'semanticFacts', 'vectorEntries'):
         assert k in body, f'missing {k} in diagnostics'
+
 
 @pytest.mark.asyncio
 async def testLegacyUiRoutesAreGone(client):
@@ -186,4 +235,6 @@ async def testLegacyUiRoutesAreGone(client):
         isHtml = 'text/html' in ct or '<!doctype' in body.lower() or '<html' in body.lower()
         isApi404 = r.status_code == 404 and 'application/json' in ct
         assert isHtml or isApi404, f'{path} should be SPA HTML or a JSON 404, got {r.status_code} ({ct})'
-        assert not ('"driver"' in body and '"available"' in body), f'{path} is still serving brain JSON — a stale /ui/* router remains'
+        assert not ('"driver"' in body and '"available"' in body), (
+            f'{path} is still serving brain JSON — a stale /ui/* router remains'
+        )

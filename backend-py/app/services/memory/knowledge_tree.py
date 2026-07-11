@@ -3,26 +3,39 @@ Knowledge tree — hierarchical topic organization with parent-child relationshi
 
 Port of backend/services/memory/knowledge-tree.js.
 """
+
 from __future__ import annotations
 from app.services.memory_store import saveMemory, getMemory
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
+
 _TREEKey = 'knowledge_tree'
+
 
 def _read() -> dict[str, object]:
     return as_dict(getMemory(_TREEKey), {'nodes': {}, 'root': None})
 
+
 def _write(tree: dict[str, object]) -> None:
     saveMemory(_TREEKey, tree)
 
-def createNode(topic: str, parentTopic: str | None=None, content: str='') -> dict[str, object]:
+
+def createNode(topic: str, parentTopic: str | None = None, content: str = '') -> dict[str, object]:
     """Create a knowledge tree node."""
     tree = _read()
     import uuid
+
     nodeId = f'kn_{uuid.uuid4().hex[:8]}'
     nodes = as_dict(tree.get('nodes'))
     if topic in nodes:
         return as_dict(nodes[topic])
-    node = {'id': nodeId, 'topic': topic, 'parent': parentTopic, 'content': content, 'children': [], 'createdAt': __import__('datetime').datetime.utcnow().isoformat() + 'Z'}
+    node = {
+        'id': nodeId,
+        'topic': topic,
+        'parent': parentTopic,
+        'content': content,
+        'children': [],
+        'createdAt': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
+    }
     nodes[topic] = node
     tree['nodes'] = nodes
     if parentTopic and parentTopic in nodes:
@@ -37,6 +50,7 @@ def createNode(topic: str, parentTopic: str | None=None, content: str='') -> dic
     _write(tree)
     return node
 
+
 def getNode(topic: str) -> dict[str, object] | None:
     tree = _read()
     nodes = as_dict(tree.get('nodes'))
@@ -44,6 +58,7 @@ def getNode(topic: str) -> dict[str, object] | None:
     if node is None:
         return None
     return as_dict(node)
+
 
 def getChildren(topic: str) -> list[dict[str, object]]:
     tree = _read()
@@ -55,6 +70,7 @@ def getChildren(topic: str) -> list[dict[str, object]]:
         if cid in nodes:
             result.append(as_dict(nodes[cid]))
     return result
+
 
 def getPath(topic: str) -> list[dict[str, object]]:
     """Get the path from root to the given topic."""
@@ -68,6 +84,7 @@ def getPath(topic: str) -> list[dict[str, object]]:
         current = as_str(node.get('parent')) or None
     return list(reversed(path))
 
+
 def searchNodes(query: str) -> list[dict[str, object]]:
     """Search knowledge tree nodes by topic or content."""
     tree = _read()
@@ -79,7 +96,8 @@ def searchNodes(query: str) -> list[dict[str, object]]:
             results.append(node_d)
     return results
 
-def updateNode(topic: str, content: str | None=None) -> bool:
+
+def updateNode(topic: str, content: str | None = None) -> bool:
     """Update a knowledge tree node's content."""
     tree = _read()
     nodes = as_dict(tree.get('nodes'))

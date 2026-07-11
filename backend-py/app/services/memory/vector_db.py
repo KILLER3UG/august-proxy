@@ -186,7 +186,12 @@ def createCollection(name: str, description: str = '') -> dict[str, object]:
     cols = _readCollections()
     import uuid
 
-    col: dict[str, object] = {'id': f'sc_{uuid.uuid4().hex[:8]}', 'name': name, 'description': description, 'createdAt': _now()}
+    col: dict[str, object] = {
+        'id': f'sc_{uuid.uuid4().hex[:8]}',
+        'name': name,
+        'description': description,
+        'createdAt': _now(),
+    }
     cols[name] = col
     _writeCollections(cols)
     return col

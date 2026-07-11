@@ -1,4 +1,5 @@
 """Tests for the AUG.md directive service and router."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -59,11 +60,14 @@ def testGenerateReturnsDraft(tmp_path, monkeypatch):
     """generate() should run workspace analysis even if the LLM is unavailable."""
     ws = str(tmp_path)
     (tmp_path / 'README.md').write_text('# Demo\n\nA demo project.', 'utf-8')
+
     # Force the LLM call to return a deterministic draft (no provider needed).
     async def fakeLlm(messages, model=''):
         return '## Build\nrun build\n\n## Test\nrun test'
+
     monkeypatch.setattr(aug_directive_service, '_callLlm', fakeLlm)
     import asyncio
+
     result = asyncio.run(aug_directive_service.generate(ws, mode='create'))
     assert result['mode'] == 'create'
     assert 'Build' in result['draft']
@@ -74,10 +78,13 @@ def testGenerateReturnsDraft(tmp_path, monkeypatch):
 def testGenerateRefineMode(tmp_path, monkeypatch):
     ws = str(tmp_path)
     aug_directive_service.write(ws, '# Existing\n\nold directives')
+
     async def fakeLlm(messages, model=''):
         return '# Refined\n\nnew directives'
+
     monkeypatch.setattr(aug_directive_service, '_callLlm', fakeLlm)
     import asyncio
+
     result = asyncio.run(aug_directive_service.generate(ws, mode='refine'))
     assert result['mode'] == 'refine'
     assert result['existing'] is True

@@ -1,4 +1,5 @@
 """Tests for the AUG plan/todo artifact persistence service."""
+
 from __future__ import annotations
 
 from pathlib import Path

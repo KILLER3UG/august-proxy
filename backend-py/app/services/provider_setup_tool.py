@@ -17,6 +17,7 @@ This keeps the secret out of the model's reasoning text: the key is only ever
 written by the UI / a direct follow-up call, never echoed back in the tool
 result beyond a boolean ``needsApiKey`` flag.
 """
+
 from __future__ import annotations
 import hashlib
 import json
@@ -125,7 +126,8 @@ async def setupProvider(
     # Apply template defaults when the chosen name matches a known template.
     resolved_url = baseUrl
     models: list[dict] = []
-    for tmpl in getTemplates():
+    for rawTmpl in getTemplates():
+        tmpl = as_dict(rawTmpl)
         tmpl_name = (as_str(tmpl.get('name'), '') or '').lower()
         tmpl_id = (as_str(tmpl.get('id'), '') or '').lower()
         if tmpl_name == display_name.lower() or tmpl_id == display_name.lower():
@@ -138,14 +140,16 @@ async def setupProvider(
                 if key == '*':
                     continue
                 prof = as_dict(profiles.get(key), {})
-                models.append({
-                    'id': key,
-                    'name': key,
-                    'contextWindow': prof.get('contextWindow', 128000),
-                    'reasoning': prof.get('supportsReasoning', False),
-                    'free': False,
-                    'source': 'template',
-                })
+                models.append(
+                    {
+                        'id': key,
+                        'name': key,
+                        'contextWindow': prof.get('contextWindow', 128000),
+                        'reasoning': prof.get('supportsReasoning', False),
+                        'free': False,
+                        'source': 'template',
+                    }
+                )
             break
 
     entry = {
@@ -175,6 +179,7 @@ async def setupProvider(
 def register() -> None:
     """Register the setup_provider tool with the tool registry."""
     from app.services import tool_registry
+
     tool_registry.register(
         'setup_provider',
         (

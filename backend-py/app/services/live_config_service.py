@@ -4,11 +4,14 @@ v4.2 — Live (STT/TTS) config service — read/write auxiliary.live in config.j
 Mirrors `model_fleet_service` — read returns defaults+overrides, write accepts
 a partial dict and validates each field's shape.
 """
+
 from __future__ import annotations
 from app.jsonUtils import as_dict, as_str
 from app.services import config_service
+
 FIELDS = ('sttProvider', 'sttModel', 'ttsProvider', 'ttsModel', 'ttsVoice')
 DEFAULTS: dict[str, str] = {'sttProvider': '', 'sttModel': '', 'ttsProvider': '', 'ttsModel': '', 'ttsVoice': ''}
+
 
 def getLiveConfig() -> dict[str, str]:
     cfg = config_service.getConfig()
@@ -19,6 +22,7 @@ def getLiveConfig() -> dict[str, str]:
             out[f] = as_str(user.get(f))
     return out
 
+
 def validatePatch(patch: dict[str, object]) -> tuple[bool, str]:
     for field, value in patch.items():
         if field not in FIELDS:
@@ -26,6 +30,7 @@ def validatePatch(patch: dict[str, object]) -> tuple[bool, str]:
         if not isinstance(value, str):
             return (False, f'{field!r} must be a string (got {type(value).__name__})')
     return (True, '')
+
 
 def updateLiveConfig(patch: dict[str, object]) -> tuple[bool, str, dict[str, str]]:
     ok, err = validatePatch(patch)

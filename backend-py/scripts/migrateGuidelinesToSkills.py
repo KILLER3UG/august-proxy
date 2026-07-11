@@ -9,14 +9,18 @@ Run once::
 
 Environment: set AUGUST_DATA_DIR if needed (default: <project>/data).
 """
+
 from __future__ import annotations
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 
 def main() -> None:
     from app.services.memory_store import getMemory, saveMemory
     from app.services import skill_service
+
     GUIDELINES_KEY = 'learned_guidelines'
     guidelines = getMemory(GUIDELINES_KEY) or []
     if not isinstance(guidelines, list):
@@ -56,15 +60,19 @@ def main() -> None:
     else:
         print(f'Migrated {created} guidelines with {len(errors)} errors. KV store NOT cleared.')
 
+
 def _textToName(text: str) -> str:
     """Convert a guideline text to a valid skill name."""
     name = text.lower().strip()
     import re
+
     name = re.sub('[^a-z0-9.\\s-]', '', name)
     parts = [p for p in name.split() if p]
     name = '.'.join(parts[:4]) if len(parts) > 4 else '.'.join(parts)
     if len(name) > 60:
         name = name[:60].rstrip('-.')
     return name or 'guideline'
+
+
 if __name__ == '__main__':
     main()

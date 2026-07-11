@@ -1,29 +1,38 @@
 """Tests for the sub-agent orchestrator."""
+
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.agent_message_bus import AgentMessageBus
 from app.services.subagent_orchestrator import SubagentOrchestrator, SubagentSpawnRequest, SubagentHandle
 
+
 @pytest.fixture
 def bus():
     return AgentMessageBus()
 
+
 @pytest.fixture
 def orchestrator(bus):
-    return SubagentOrchestrator(bus, maxWorkers=5)
+    return SubagentOrchestrator(bus, max_workers=5)
+
 
 @pytest.mark.asyncio
 async def testSpawnReturnsHandles(orchestrator):
     """Spawning creates handles for each work item."""
     session = MagicMock()
-    request = SubagentSpawnRequest(session=session, workItems=[{'goal': 'do thing 1', 'agentId': 'general'}, {'goal': 'do thing 2', 'agentId': 'coder'}], mode='auto')
+    request = SubagentSpawnRequest(
+        session=session,
+        workItems=[{'goal': 'do thing 1', 'agentId': 'general'}, {'goal': 'do thing 2', 'agentId': 'coder'}],
+        mode='auto',
+    )
     handles = await orchestrator.spawn(request)
     assert len(handles) == 2
     assert handles[0].status == 'pending'
     assert handles[1].status == 'pending'
     assert handles[0].agentId == 'general'
     assert handles[1].agentId == 'coder'
+
 
 @pytest.mark.asyncio
 async def testListactive(orchestrator):
@@ -35,11 +44,14 @@ async def testListactive(orchestrator):
     assert len(active) >= 1
     assert active[0]['taskId'] == handles[0].taskId
 
+
 @pytest.mark.asyncio
 async def testTerminateCancelsTask(orchestrator):
     """Terminate cancels a running task."""
     session = MagicMock()
-    request = SubagentSpawnRequest(session=session, workItems=[{'goal': 'long task', 'agentId': 'general'}], mode='auto')
+    request = SubagentSpawnRequest(
+        session=session, workItems=[{'goal': 'long task', 'agentId': 'general'}], mode='auto'
+    )
     handles = await orchestrator.spawn(request)
     taskId = handles[0].taskId
     await asyncio.sleep(0.05)
@@ -49,27 +61,32 @@ async def testTerminateCancelsTask(orchestrator):
     handle = orchestrator.getHandle(taskId)
     assert handle is not None
 
+
 @pytest.mark.asyncio
 async def testOrchestratorEvents(bus):
     """Orchestrator-level event handlers fire on completion/failure."""
     events: list[str] = []
-    orch = SubagentOrchestrator(bus, maxWorkers=5)
+    orch = SubagentOrchestrator(bus, max_workers=5)
 
     async def onComplete(data):
         events.append(('completed', data.get('status')))
 
     async def onFail(data):
         events.append(('failed', data.get('status')))
+
     orch.on('subagentCompleted', onComplete)
     orch.on('subagentFailed', onFail)
     session = MagicMock()
-    request = SubagentSpawnRequest(session=session, workItems=[{'goal': 'quick test', 'agentId': 'general'}], mode='auto')
+    request = SubagentSpawnRequest(
+        session=session, workItems=[{'goal': 'quick test', 'agentId': 'general'}], mode='auto'
+    )
     with patch('app.services.subagent_orchestrator.runSubagent', new_callable=AsyncMock) as mockRun:
         mockRun.return_value = {'status': 'completed', 'result': 'done', 'error': ''}
         handles = await orch.spawn(request)
         await asyncio.sleep(0.2)
     completedEvents = [e for e in events if e[0] == 'completed']
     assert len(completedEvents) > 0
+
 
 @pytest.mark.asyncio
 async def testCloseCancelsAll(orchestrator):

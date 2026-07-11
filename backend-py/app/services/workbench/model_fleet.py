@@ -11,16 +11,20 @@ Four roles:
                  context compaction (default: session model)
   - prefrontal:  highest reasoning — for skill genesis (default: session model)
 """
+
 import json
 import os
+
 DEFAULT_FLEET: dict[str, str] = {'cortex': '', 'cerebellum': '', 'hippocampus': '', 'prefrontal': ''}
 _configCache: dict[str, object] | None = None
 _configPath = os.path.join('data', 'config.json')
+
 
 def _resetCache() -> None:
     """Reset the cached config (for tests)."""
     global _configCache
     _configCache = None
+
 
 def _loadConfig() -> dict[str, object]:
     """Load the user config, cached after first load."""
@@ -36,6 +40,7 @@ def _loadConfig() -> dict[str, object]:
     except (OSError, json.JSONDecodeError):
         _configCache = {}
     return _configCache
+
 
 def getModelForRole(role: str) -> str:
     """Return the configured model for a role.

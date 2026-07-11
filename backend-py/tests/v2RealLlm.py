@@ -22,26 +22,37 @@ This validates that the *prompts* the v2 code uses produce sensible
 LLM output. To exercise the full v2 code path, the v2 caller must
 have a properly-configured provider (see data/config.json).
 """
+
 import json
 import os
 import httpx
 import pytest
-pytestmark = pytest.mark.skipif(not os.environ.get('RUN_REAL_LLM'), reason='Real-LLM tests skipped by default. Set RUN_REAL_LLM=1 to enable (requires network access).')
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get('RUN_REAL_LLM'),
+    reason='Real-LLM tests skipped by default. Set RUN_REAL_LLM=1 to enable (requires network access).',
+)
 EXTERNAL_API_URL = 'https://opencode.ai/zen/v1/chat/completions'
 EXTERNAL_API_KEY = 'sk-LTe2jmtwB5VQe0J5jWoqrshlE0SJKN0zVkpOSpLySLbmzAT1uSOOyu5UIG5UEMZM'
 TEST_MODEL = 'deepseek-v4-flash-free'
 
-def callExternalLlm(prompt: str, system: str | None=None, *, timeout: float=60.0) -> str:
+
+def callExternalLlm(prompt: str, system: str | None = None, *, timeout: float = 60.0) -> str:
     """Call the external test endpoint and return the assistant text."""
     messages: list[dict[str, str]] = []
     if system:
         messages.append({'role': 'system', 'content': system})
     messages.append({'role': 'user', 'content': prompt})
     with httpx.Client(timeout=timeout) as client:
-        resp = client.post(EXTERNAL_API_URL, headers={'Authorization': f'Bearer {EXTERNAL_API_KEY}', 'Content-Type': 'application/json'}, json={'model': TEST_MODEL, 'messages': messages})
+        resp = client.post(
+            EXTERNAL_API_URL,
+            headers={'Authorization': f'Bearer {EXTERNAL_API_KEY}', 'Content-Type': 'application/json'},
+            json={'model': TEST_MODEL, 'messages': messages},
+        )
         resp.raise_for_status()
         data = resp.json()
         return data['choices'][0]['message']['content']
+
 
 def _stripCodeFence(text: str) -> str:
     """Strip leading/trailing ```json ... ``` fences if present."""
@@ -55,6 +66,7 @@ def _stripCodeFence(text: str) -> str:
         text = '\n'.join(lines).strip()
     return text
 
+
 def testExternalEndpointResponds():
     """Sanity check: the external endpoint is reachable and returns text."""
     response = callExternalLlm("Reply with exactly the word 'pong' and nothing else.")
@@ -62,11 +74,20 @@ def testExternalEndpointResponds():
     assert len(response) > 0
     print(f'\n[LLM] Sanity response: {response[:200]}')
 
+
 def testConsolidationRealHippocampusProducesValidJson():
     """Run consolidation's prompt with the real LLM. The response should be
     parseable JSON with the expected schema (merge/promote/delete)."""
-    sampleHeuristics = [{'id': 1, 'rule': 'User prefers Yarn over NPM', 'category': 'build'}, {'id': 2, 'rule': 'Use Yarn not NPM', 'category': 'build'}, {'id': 3, 'rule': 'JWT tokens should expire in 1 hour', 'category': 'auth'}, {'id': 4, 'rule': 'Always run pytest before commit', 'category': 'test'}]
-    sampleMemories = [{'id': 1, 'content': 'Fixed JWT expiry bug in auth.py', 'importance': 0.8}, {'id': 2, 'content': 'Added Yarn to project dependencies', 'importance': 0.6}]
+    sampleHeuristics = [
+        {'id': 1, 'rule': 'User prefers Yarn over NPM', 'category': 'build'},
+        {'id': 2, 'rule': 'Use Yarn not NPM', 'category': 'build'},
+        {'id': 3, 'rule': 'JWT tokens should expire in 1 hour', 'category': 'auth'},
+        {'id': 4, 'rule': 'Always run pytest before commit', 'category': 'test'},
+    ]
+    sampleMemories = [
+        {'id': 1, 'content': 'Fixed JWT expiry bug in auth.py', 'importance': 0.8},
+        {'id': 2, 'content': 'Added Yarn to project dependencies', 'importance': 0.6},
+    ]
     prompt = f"""Review these auto_memories and learned_heuristics. Return a JSON plan:\n{{'merge': [{{'keep_id': int, 'remove_ids': [int, ...], 'merged_rule': str}}],\n 'promote': [{{'pattern': str, 'fact_key': str, 'fact_value': str}}],\n 'delete': [int, ...]}}\nAuto memories ({len(sampleMemories)}):\n{json.dumps(sampleMemories, default=str)[:1500]}\n\nHeuristics ({len(sampleHeuristics)}):\n{json.dumps(sampleHeuristics, default=str)[:1500]}\n\nPreserve the most recent 20 rules (do not delete them).\nIf there's nothing to do, return {{"merge": [], "promote": [], "delete": []}}.\nReturn ONLY the JSON object, no other text or markdown."""
     response = callExternalLlm(prompt)
     cleaned = _stripCodeFence(response)
@@ -84,6 +105,7 @@ def testConsolidationRealHippocampusProducesValidJson():
             allMergedIds.update(m.get('remove_ids', []))
         assert allMergedIds & {1, 2}, f'Expected LLM to detect Yarn/Use-Yarn merge, got: {mergeOps}'
 
+
 def testSkillGenesisRealPrefrontalProducesSkillJson():
     """Run skill genesis's prompt with the real LLM. Response should be a
     valid SKILL.md draft JSON."""
@@ -98,9 +120,18 @@ def testSkillGenesisRealPrefrontalProducesSkillJson():
         assert 'body' in parsed and len(parsed['body']) > 0
         assert 'description' in parsed
         name = parsed['name']
-        isCamelCase = ' ' not in name and '-' not in name and ('_' not in name) and name[0].islower() and all((c.isalnum() for c in name))
+        isCamelCase = (
+            ' ' not in name
+            and '-' not in name
+            and ('_' not in name)
+            and name[0].islower()
+            and all((c.isalnum() for c in name))
+        )
         if not isCamelCase:
-            print(f"\n[NOTE] LLM produced non-camelCase name: {name!r}. v2 prompt asks for camelCase, but the LLM didn't comply. Consider sanitizing the name in production.")
+            print(
+                f"\n[NOTE] LLM produced non-camelCase name: {name!r}. v2 prompt asks for camelCase, but the LLM didn't comply. Consider sanitizing the name in production."
+            )
+
 
 def testDeltaEngineRealHippocampusInfersRules():
     """Run delta engine's prompt with the real LLM. Response should be a
@@ -117,6 +148,8 @@ def testDeltaEngineRealHippocampusInfersRules():
         for rule in parsed['rules']:
             assert 'rule' in rule
             assert len(rule['rule']) > 0
+
+
 if __name__ == '__main__':
     print('=' * 60)
     print('v2 Real-LLM Integration Tests')

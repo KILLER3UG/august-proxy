@@ -587,7 +587,13 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     promptCache = getCache()
     cacheKey = getattr(session, 'id', '') or ''
     cachedT12 = promptCache.get(cacheKey)
-    base = ctxBuild(session=sessionDict, memory=cast('dict[str, object]', memory), tools=tools, agentContext=agentContext, cachedT12=cachedT12)
+    base = ctxBuild(
+        session=sessionDict,
+        memory=cast('dict[str, object]', memory),
+        tools=tools,
+        agentContext=agentContext,
+        cachedT12=cachedT12,
+    )
     if cachedT12 is None:
         try:
             from app.services.memory.context_builder import buildTier1, buildTier2
@@ -1025,7 +1031,9 @@ async def sendWorkbenchMessageStream(
     if resolvedProvider:
         from app.services import provider_credentials
 
-        creds = provider_credentials.resolve(as_str(resolvedProvider.get('name')) or as_str(resolvedProvider.get('id')) or '')
+        creds = provider_credentials.resolve(
+            as_str(resolvedProvider.get('name')) or as_str(resolvedProvider.get('id')) or ''
+        )
         apiKey = (creds or {}).get('api_key') if creds else None
         if not apiKey:
             if emit:

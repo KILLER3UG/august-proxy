@@ -3,13 +3,16 @@ Memory curator — autonomous memory management: eviction, consolidation, archiv
 
 Port of backend/services/memory/memory-curator.js.
 """
+
 from __future__ import annotations
 from typing import cast
 from app.jsonUtils import as_float, as_int, as_str
 from app.services.memory_store import listMemory, saveMemory, deleteMemory
 from app.services.memory.memory_quality import scoreQuality, deduplicate
+
 _MAXMemoryEntries = 500
 _MAXFacts = 200
+
 
 def curate() -> dict[str, object]:
     """Run curation cycle on memory store."""
@@ -34,7 +37,7 @@ def curate() -> dict[str, object]:
         entries = listMemory()
         if len(entries) > limit:
             sortedEntries = sorted(entries, key=lambda e: as_str(e.get('updated_at', '')))
-            for old in sortedEntries[:len(entries) - limit]:
+            for old in sortedEntries[: len(entries) - limit]:
                 deleteMemory(old['key'])
                 stats['archived'] = as_int(stats['archived']) + 1
     return stats

@@ -1,6 +1,7 @@
 """
 Settings — loads config.json, providers.json, and .env into Pydantic models.
 """
+
 from __future__ import annotations
 import json
 import os
@@ -8,10 +9,12 @@ from pathlib import Path
 from typing import Dict, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 def _findProjectRoot() -> Path:
     """Walk up from this file's location to find the project root."""
     here = Path(__file__).resolve().parent.parent.parent
     return here
+
 
 def _loadJson(path: Path) -> Dict[str, object]:
     try:
@@ -19,8 +22,10 @@ def _loadJson(path: Path) -> Dict[str, object]:
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
+
 class Settings(BaseSettings):
     """Global settings loaded from config.json, providers.json, and .env."""
+
     port: int = int(os.environ.get('AUGUST_PROXY_PORT', '8085'))
     projectRoot: Path = _findProjectRoot()
     dataDir: Path = Path(os.environ.get('AUGUST_DATA_DIR', str(_findProjectRoot() / 'data')))
@@ -47,5 +52,8 @@ class Settings(BaseSettings):
         if not self._providers:
             self.reload()
         return self._providers
+
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
+
+
 settings = Settings()

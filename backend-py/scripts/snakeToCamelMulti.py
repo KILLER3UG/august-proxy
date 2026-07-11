@@ -27,6 +27,7 @@ Usage:
 
 In-place modification with .bak backup.
 """
+
 from __future__ import annotations
 import argparse
 import difflib
@@ -35,8 +36,10 @@ import re
 import sys
 from pathlib import Path
 from typing import Iterable
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from snakeToCamel import _DENYList, _isUpperSnake, _loadDenyList, _snakeToCamel
+
 
 def _iterStringSpans(text: str, lang: str) -> Iterable[tuple[int, int]]:
     """Yield (start, end) char spans of source text that are string literals.
@@ -84,7 +87,14 @@ def _iterStringSpans(text: str, lang: str) -> Iterable[tuple[int, int]]:
             yield (i, j)
             i = j
             continue
-        if lang == 'rust' and c == 'b' and (i + 1 < n) and (text[i + 1] in ('r', 'R')) and (i + 2 < n) and (text[i + 2] == '"'):
+        if (
+            lang == 'rust'
+            and c == 'b'
+            and (i + 1 < n)
+            and (text[i + 1] in ('r', 'R'))
+            and (i + 2 < n)
+            and (text[i + 2] == '"')
+        ):
             k = i + 3
             hashes = 0
             while k < n and text[k] == '#':
@@ -123,7 +133,27 @@ def _iterStringSpans(text: str, lang: str) -> Iterable[tuple[int, int]]:
                 k -= 1
             if k >= 0:
                 prev = text[k]
-            isRegexStart = prev in ('', '(', ',', '=', ':', ';', '!', '&', '|', '?', '{', '}', '[', '~', '+', '-', '*', '%', '^')
+            isRegexStart = prev in (
+                '',
+                '(',
+                ',',
+                '=',
+                ':',
+                ';',
+                '!',
+                '&',
+                '|',
+                '?',
+                '{',
+                '}',
+                '[',
+                '~',
+                '+',
+                '-',
+                '*',
+                '%',
+                '^',
+            )
             if isRegexStart:
                 j = i + 1
                 inClass = False
@@ -159,13 +189,17 @@ def _iterStringSpans(text: str, lang: str) -> Iterable[tuple[int, int]]:
             continue
         i += 1
 
+
 def _isStringPosition(text: str, pos: int, lang: str) -> bool:
     """Return True if pos is inside a string literal or comment."""
     for start, end in _iterStringSpans(text, lang):
         if start <= pos < end:
             return True
     return False
+
+
 _IDENTRe = re.compile('\\b([a-z][a-zA-Z0-9_]*)\\b')
+
 
 def _isCamel(s: str) -> bool:
     """Conservative: a name is already camelCase if it has no underscores and
@@ -173,6 +207,7 @@ def _isCamel(s: str) -> bool:
     if '_' in s:
         return False
     return True
+
 
 def _renameInCode(text: str, lang: str, deny: set[str]) -> tuple[str, list[dict]]:
     """Return (new_text, rename_log) where rename_log is a list of changes."""
@@ -184,6 +219,7 @@ def _renameInCode(text: str, lang: str, deny: set[str]) -> tuple[str, list[dict]
             if s <= pos < e:
                 return True
         return False
+
     out: list[str] = []
     i = 0
     n = len(text)
@@ -229,7 +265,8 @@ def _renameInCode(text: str, lang: str, deny: set[str]) -> tuple[str, list[dict]
         i = end
     return (''.join(out), log)
 
-def convertFile(path: Path, lang: str, deny: set[str], *, dryRun: bool=False, showDiff: bool=False) -> dict:
+
+def convertFile(path: Path, lang: str, deny: set[str], *, dryRun: bool = False, showDiff: bool = False) -> dict:
     original = path.read_text(encoding='utf-8')
     newText, log = _renameInCode(original, lang, deny)
     result = {'file': str(path), 'status': 'unchanged' if original == newText else 'modified', 'renames': log}
@@ -238,18 +275,25 @@ def convertFile(path: Path, lang: str, deny: set[str], *, dryRun: bool=False, sh
     if dryRun:
         print(f'[DRY-RUN] {path} — {len(log)} rename(s)')
         for r in log[:10]:
-            print(f"  off {r['offset']}: {r['old']} → {r['new']}")
+            print(f'  off {r["offset"]}: {r["old"]} → {r["new"]}')
         if len(log) > 10:
             print(f'  … +{len(log) - 10} more')
         return result
     if showDiff:
-        diff = difflib.unified_diff(original.splitlines(keepends=True), newText.splitlines(keepends=True), fromfile=str(path), tofile=str(path), lineterm='')
+        diff = difflib.unified_diff(
+            original.splitlines(keepends=True),
+            newText.splitlines(keepends=True),
+            fromfile=str(path),
+            tofile=str(path),
+            lineterm='',
+        )
         sys.stdout.writelines(diff)
     backup = path.with_suffix(path.suffix + '.bak')
     backup.write_text(original, encoding='utf-8')
     path.write_text(newText, encoding='utf-8')
     result['backup'] = str(backup)
     return result
+
 
 def convertDirectory(dirPath: Path, lang: str, deny: set[str], **kw) -> list[dict]:
     if lang == 'ts':
@@ -262,10 +306,16 @@ def convertDirectory(dirPath: Path, lang: str, deny: set[str], **kw) -> list[dic
     for f in sorted(dirPath.rglob('*')):
         if not f.is_file() or f.suffix not in exts:
             continue
-        if any((part in {'node_modules', 'dist', 'build', 'target', '.git', '__pycache__', 'web-dist', 'tsbuildinfo'} for part in f.parts)):
+        if any(
+            (
+                part in {'node_modules', 'dist', 'build', 'target', '.git', '__pycache__', 'web-dist', 'tsbuildinfo'}
+                for part in f.parts
+            )
+        ):
             continue
         results.append(convertFile(f, lang, deny, **kw))
     return results
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description='Multi-language snake_case → camelCase (TS/TSX/JS/Rust)')
@@ -294,5 +344,7 @@ def main() -> None:
     unchanged = sum((1 for r in allResults if r['status'] == 'unchanged'))
     totalRenames = sum((len(r.get('renames', [])) for r in allResults))
     print(f'\nSummary: {modified} modified, {unchanged} unchanged, {totalRenames} renames')
+
+
 if __name__ == '__main__':
     main()

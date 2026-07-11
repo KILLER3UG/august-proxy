@@ -3,6 +3,7 @@ Scheduler — manages recurring job execution using asyncio.
 
 Port of backend/services/scheduler/index.js + missing/cron-tools.js.
 """
+
 from __future__ import annotations
 import asyncio
 import json
@@ -14,13 +15,17 @@ from pathlib import Path
 from typing import Awaitable, Callable
 from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.lib.paths import dataPath
+
 _JOBSFile = dataPath('scheduled-jobs.json')
+
 
 def _jobsPath() -> Path:
     return _JOBSFile
 
+
 def _now() -> str:
     return datetime.utcnow().isoformat() + 'Z'
+
 
 def _parseCron(expression: str) -> tuple[list[int], list[int], list[int], list[int], list[int]]:
     """Parse a cron expression into field values.
@@ -47,17 +52,34 @@ def _parseCron(expression: str) -> tuple[list[int], list[int], list[int], list[i
             else:
                 values.append(int(part))
         return sorted(set((v for v in values if minVal <= v <= maxVal)))
-    return (parseField(fields[0], 0, 59), parseField(fields[1], 0, 23), parseField(fields[2], 1, 31), parseField(fields[3], 1, 12), parseField(fields[4], 0, 6))
 
-def _matchesCron(expr: str, dt: datetime | None=None) -> bool:
+    return (
+        parseField(fields[0], 0, 59),
+        parseField(fields[1], 0, 23),
+        parseField(fields[2], 1, 31),
+        parseField(fields[3], 1, 12),
+        parseField(fields[4], 0, 6),
+    )
+
+
+def _matchesCron(expr: str, dt: datetime | None = None) -> bool:
     """Check if the current time matches a cron expression."""
     if dt is None:
         dt = datetime.utcnow()
     minutes, hours, days, months, weekdays = _parseCron(expr)
-    return dt.minute in minutes and dt.hour in hours and (dt.day in days) and (dt.month in months) and (dt.weekday() in weekdays)
+    return (
+        dt.minute in minutes
+        and dt.hour in hours
+        and (dt.day in days)
+        and (dt.month in months)
+        and (dt.weekday() in weekdays)
+    )
+
+
 _jobs: dict[str, dict[str, object]] = {}
 _tasks: dict[str, asyncio.Task] = {}
 _running = False
+
 
 def _loadJobs() -> None:
     p = _jobsPath()
@@ -72,22 +94,37 @@ def _loadJobs() -> None:
     except (json.JSONDecodeError, OSError):
         pass
 
+
 def _saveJobs() -> None:
     p = _jobsPath()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(list(_jobs.values()), indent=2, default=str), 'utf-8')
 
+
 def listJobs() -> list[dict[str, object]]:
     return list(_jobs.values())
 
-def createJob(name: str, schedule: str, command: str, enabled: bool=True) -> dict[str, object]:
+
+def createJob(name: str, schedule: str, command: str, enabled: bool = True) -> dict[str, object]:
     """Create a scheduled job."""
     import uuid
+
     jobId = f'sch_{uuid.uuid4().hex[:8]}'
-    job = {'id': jobId, 'name': name, 'schedule': schedule, 'command': command, 'enabled': enabled, 'status': 'idle', 'lastRun': None, 'nextRun': None, 'createdAt': _now()}
+    job = {
+        'id': jobId,
+        'name': name,
+        'schedule': schedule,
+        'command': command,
+        'enabled': enabled,
+        'status': 'idle',
+        'lastRun': None,
+        'nextRun': None,
+        'createdAt': _now(),
+    }
     _jobs[jobId] = job
     _saveJobs()
     return job
+
 
 def deleteJob(jobId: str) -> bool:
     if jobId not in _jobs:
@@ -99,12 +136,14 @@ def deleteJob(jobId: str) -> bool:
     _saveJobs()
     return True
 
+
 def updateJob(jobId: str, updates: dict[str, object]) -> dict[str, object] | None:
     if jobId not in _jobs:
         return None
     _jobs[jobId].update(updates)
     _saveJobs()
     return _jobs[jobId]
+
 
 async def runJobNow(jobId: str) -> dict[str, object]:
     """Execute a job immediately."""
@@ -115,7 +154,10 @@ async def runJobNow(jobId: str) -> dict[str, object]:
     try:
         import subprocess
         import shlex
-        proc = await asyncio.create_subprocess_shell(as_str(job['command'], ''), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+
+        proc = await asyncio.create_subprocess_shell(
+            as_str(job['command'], ''), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
         job['lastRun'] = _now()
         job['status'] = 'idle'
@@ -133,15 +175,17 @@ async def runJobNow(jobId: str) -> dict[str, object]:
         job['lastError'] = str(exc)
         return job
 
+
 def _make_done_callback(job_id: str) -> Callable[[asyncio.Task], None]:
     """Return a callback that removes *job_id* from ``_tasks`` when done."""
+
     def _cleanup(t: asyncio.Task) -> None:
         _tasks.pop(job_id, None)
 
     return _cleanup
 
 
-async def startScheduler(intervalS: int=60) -> None:
+async def startScheduler(intervalS: int = 60) -> None:
     """Start the scheduler loop."""
     global _running
     if _running:
@@ -159,12 +203,14 @@ async def startScheduler(intervalS: int=60) -> None:
                 task.add_done_callback(_make_done_callback(jobId))
         await asyncio.sleep(intervalS)
 
+
 def stopScheduler() -> None:
     global _running
     _running = False
     for t in _tasks.values():
         t.cancel()
     _tasks.clear()
+
 
 class Scheduler:
     """v2: In-process scheduler for cognitive-layer tasks.
@@ -187,7 +233,7 @@ class Scheduler:
         """Register a task to run every `interval_seconds`."""
         self._periodic.append((name, fn, intervalSeconds))
 
-    def registerIdle(self, name: str, fn: Callable[[], Awaitable[None]], idleThresholdSeconds: float=300.0) -> None:
+    def registerIdle(self, name: str, fn: Callable[[], Awaitable[None]], idleThresholdSeconds: float = 300.0) -> None:
         """Register a task to run when no activity for `idle_threshold_seconds`."""
         self._idle.append((name, fn, idleThresholdSeconds))
 
