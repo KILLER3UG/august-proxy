@@ -53,7 +53,7 @@ async def testActionDispatchesToAutomationLayer(client, monkeypatch):
         seen['action'] = action
         seen['params'] = params or {}
         return {'ok': True, 'echo': action}
-    monkeypatch.setattr('app.routers.desktopAutomation.automateAction', fakeAutomateAction)
+    monkeypatch.setattr('app.routers.desktop_automation.automateAction', fakeAutomateAction)
     resp = await client.post('/api/desktop-automation/action', json={'action': 'screenshot', 'params': {'x': 1}})
     assert resp.status_code == 200
     assert resp.json() == {'ok': True, 'echo': 'screenshot'}
