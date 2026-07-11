@@ -4,9 +4,12 @@ August Live — voice + command execution router (v4 §14).
 Reuses the existing workbench turn engine. No new tool loop.
 Guard mode, brain access, daemons, verifier reflex all carry over for free.
 """
+
 from __future__ import annotations
 from fastapi import APIRouter
+
 router = APIRouter(prefix='/api/live')
+
 
 @router.post('/session')
 async def liveSession(body: dict[str, object]) -> dict[str, object]:
@@ -18,6 +21,7 @@ async def liveSession(body: dict[str, object]) -> dict[str, object]:
     if action == 'stop':
         return {'status': 'stopped'}
     return {'sessionId': 'live_' + str(hash(str(body))), 'status': 'started'}
+
 
 @router.post('/turn')
 async def liveTurn(body: dict[str, object]) -> dict[str, object]:
@@ -33,6 +37,7 @@ async def liveTurn(body: dict[str, object]) -> dict[str, object]:
         return {'error': 'No transcript provided'}
     return {'sessionId': sessionId, 'type': 'text', 'content': f'Processing: {transcript[:100]}...'}
 
+
 @router.post('/stt')
 async def liveStt(body: dict[str, object]) -> dict[str, object]:
     """Speech-to-text endpoint.
@@ -42,6 +47,7 @@ async def liveStt(body: dict[str, object]) -> dict[str, object]:
     can talk directly to the STT provider and post final text only.
     """
     return {'transcript': '', 'partial': True}
+
 
 @router.post('/tts')
 async def liveTts(body: dict[str, object]) -> dict[str, object]:

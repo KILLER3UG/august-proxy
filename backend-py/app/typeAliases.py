@@ -1,10 +1,13 @@
 """Shared type aliases and TypedDicts for type safety across the codebase."""
+
 from __future__ import annotations
 from typing import TypedDict
 
-# PEP 695 `type` alias — requires Python 3.12+. This is intentional: the project
-# targets 3.12+ (see requires-python in pyproject.toml) and CI pins 3.12.
-type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
+# PEP 695 ``type`` alias — requires Python 3.12+. This is intentional: the
+# project targets 3.12+ (see requires-python in pyproject.toml) and CI pins
+# 3.12. Pydantic 2.13+ uses PEP 695 aliases to resolve self-references.
+type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, object]
+
 
 class BrainConfigDict(TypedDict, total=False):
     enabled: bool
@@ -19,11 +22,13 @@ class BrainConfigDict(TypedDict, total=False):
     maxAgentDepth: int
     maxWorkbenchToolLoops: int
 
+
 class AliasDict(TypedDict, total=False):
     alias: str
     targetModel: str
     targetProvider: str
     displayAlias: str
+
 
 class ProviderConfigDict(TypedDict, total=False):
     id: str
@@ -31,6 +36,7 @@ class ProviderConfigDict(TypedDict, total=False):
     apiFormat: str
     apiKey: str
     baseUrl: str
+
 
 class WorkbenchSessionDict(TypedDict, total=False):
     id: str
@@ -47,10 +53,12 @@ class WorkbenchSessionDict(TypedDict, total=False):
     task: str
     status: str
 
+
 class MemoryEntryDict(TypedDict, total=False):
     key: str
     value: str
     updatedAt: str
+
 
 class FactDict(TypedDict, total=False):
     id: int
@@ -62,6 +70,7 @@ class FactDict(TypedDict, total=False):
     createdAt: str
     updatedAt: str
 
+
 class ProposalDict(TypedDict, total=False):
     id: int
     sessionId: str
@@ -71,6 +80,7 @@ class ProposalDict(TypedDict, total=False):
     createdAt: str
     decidedAt: str | None
     decidedBy: str | None
+
 
 class SessionRecord(TypedDict, total=False):
     id: str
@@ -83,6 +93,7 @@ class SessionRecord(TypedDict, total=False):
     isArchived: bool
     workspacePath: str | None
 
+
 class UsageEventDict(TypedDict, total=False):
     id: int
     sessionId: str
@@ -92,6 +103,7 @@ class UsageEventDict(TypedDict, total=False):
     contextTokens: int
     createdAt: str
 
+
 class MessageDict(TypedDict, total=False):
     id: int
     sessionId: str
@@ -99,10 +111,12 @@ class MessageDict(TypedDict, total=False):
     content: str
     createdAt: str
 
+
 class ToolCallDict(TypedDict, total=False):
     id: str
     type: str
     function: dict[str, str]
+
 
 class ProviderResponse(TypedDict, total=False):
     status: int
@@ -110,12 +124,14 @@ class ProviderResponse(TypedDict, total=False):
     bodyJson: JsonValue
     headers: dict[str, str]
 
+
 class BrowserSessionDict(TypedDict, total=False):
     id: str
     url: str
     title: str
     state: str
     createdAt: str
+
 
 class BlackboardNoteDict(TypedDict, total=False):
     id: int
@@ -127,11 +143,13 @@ class BlackboardNoteDict(TypedDict, total=False):
     createdAt: str
     expiresAt: str | None
 
+
 class BrainEventMetaDict(TypedDict, total=False):
     """Free-form metadata attached to brain events. Most call sites
     attach a small JSON-friendly summary (counts, ids) but the shape
     is heterogeneous across subsystems, so consumers should narrow via
     `as` or runtime validation."""
+
     ruleId: int
     source: str
     category: str
@@ -143,6 +161,7 @@ class BrainEventMetaDict(TypedDict, total=False):
     skills: int
     facts: int
 
+
 class ConsolidationSummaryDict(TypedDict, total=False):
     merged: int
     promoted: int
@@ -150,6 +169,7 @@ class ConsolidationSummaryDict(TypedDict, total=False):
     heuristics: int
     durationMs: int
     errors: list[str]
+
 
 class DaemonStatusDict(TypedDict, total=False):
     id: str

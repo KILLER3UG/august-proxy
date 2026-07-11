@@ -4,12 +4,18 @@ before execution.
 
 Port of backend/services/workbench/validator.js (136 lines).
 """
+
 from __future__ import annotations
 import json
 import re
 from app.typeAliases import JsonValue
 
-def validateToolArguments(toolCall: dict[str, JsonValue], toolDefinitions: list[dict[str, JsonValue]], messages: list[dict[str, JsonValue]] | None=None) -> dict[str, JsonValue]:
+
+def validateToolArguments(
+    toolCall: dict[str, object],
+    toolDefinitions: list[dict[str, object]],
+    messages: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
     """Validate a tool call against its schema.
 
     Args:
@@ -76,7 +82,10 @@ def validateToolArguments(toolCall: dict[str, JsonValue], toolDefinitions: list[
         allowed = set(props.keys())
         extra = set(args.keys()) - allowed
         if extra:
-            return {'valid': False, 'error': f"Unknown fields: {', '.join(sorted(extra))}. Allowed fields: {', '.join(sorted(allowed))}"}
+            return {
+                'valid': False,
+                'error': f'Unknown fields: {", ".join(sorted(extra))}. Allowed fields: {", ".join(sorted(allowed))}',
+            }
     properties = schema.get('properties', {})
     assert isinstance(properties, dict)
     for field, value in args.items():
@@ -97,11 +106,17 @@ def validateToolArguments(toolCall: dict[str, JsonValue], toolDefinitions: list[
             return {'valid': False, 'error': f"Field '{field}' must be an object"}
     return {'valid': True}
 
-def buildValidationErrorToolMessage(toolCallId: str, toolName: str, errorMsg: str) -> dict[str, JsonValue]:
-    """Build a tool result message for a validation error."""
-    return {'tool_call_id': toolCallId, 'role': 'tool', 'content': f"[Validation Error] Tool '{toolName}' rejected before execution:\n{errorMsg}\n\n[Proxy Self-Heal]: Fix the tool arguments and retry. Do NOT stop."}
 
-def _findToolDefinition(name: str, definitions: list[dict[str, JsonValue]]) -> dict[str, JsonValue] | None:
+def buildValidationErrorToolMessage(toolCallId: str, toolName: str, errorMsg: str) -> dict[str, object]:
+    """Build a tool result message for a validation error."""
+    return {
+        'tool_call_id': toolCallId,
+        'role': 'tool',
+        'content': f"[Validation Error] Tool '{toolName}' rejected before execution:\n{errorMsg}\n\n[Proxy Self-Heal]: Fix the tool arguments and retry. Do NOT stop.",
+    }
+
+
+def _findToolDefinition(name: str, definitions: list[dict[str, object]]) -> dict[str, object] | None:
     """Find a tool definition by name, supporting both Anthropic and OpenAI formats."""
     for t in definitions:
         func = t.get('function', {})
@@ -113,7 +128,8 @@ def _findToolDefinition(name: str, definitions: list[dict[str, JsonValue]]) -> d
             return t
     return None
 
-def _applyCompatibilityShims(toolName: str, args: dict[str, JsonValue]) -> dict[str, JsonValue]:
+
+def _applyCompatibilityShims(toolName: str, args: dict[str, object]) -> dict[str, object]:
     """Apply compatibility shims for common tool name mappings."""
     if toolName in ('WebFetch', 'web_fetch', 'mcp__workspace__web_fetch'):
         if 'prompt' in args and 'url' not in args:
@@ -124,9 +140,17 @@ def _applyCompatibilityShims(toolName: str, args: dict[str, JsonValue]) -> dict[
             args = dict(args)
             args['query'] = args['prompt']
     return args
-_MUTATINGToolPatterns = re.compile('^(StrReplaceEditTool|BashTool|MCP.*(?:write|create|move|edit|delete|rename|copy)|mcp__.*(?:write|create|move|edit|delete))', re.IGNORECASE)
 
-def _checkProxyExecutionGate(toolName: str, args: dict[str, JsonValue], messages: list[dict[str, JsonValue]]) -> dict[str, JsonValue]:
+
+_MUTATINGToolPatterns = re.compile(
+    '^(StrReplaceEditTool|BashTool|MCP.*(?:write|create|move|edit|delete|rename|copy)|mcp__.*(?:write|create|move|edit|delete))',
+    re.IGNORECASE,
+)
+
+
+def _checkProxyExecutionGate(
+    toolName: str, args: dict[str, object], messages: list[dict[str, object]]
+) -> dict[str, object]:
     """Proxy Execution Gate: block mutating tools if no plan.md in context.
 
     This prevents the model from making changes before a plan has been
@@ -144,4 +168,7 @@ def _checkProxyExecutionGate(toolName: str, args: dict[str, JsonValue], messages
                     text = block.get('text', '')
                     if isinstance(text, str) and 'plan.md' in text:
                         return {'valid': True}
-    return {'valid': False, 'error': f"Tool '{toolName}' is blocked by the Proxy Execution Gate. No plan.md was found in the conversation. Create and approve a plan before using mutating tools."}
+    return {
+        'valid': False,
+        'error': f"Tool '{toolName}' is blocked by the Proxy Execution Gate. No plan.md was found in the conversation. Create and approve a plan before using mutating tools.",
+    }

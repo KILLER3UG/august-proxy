@@ -36,6 +36,7 @@ Resolution order (see aliasMappingService.py):
 3. Direct provider routing (``resolveForModel`` credential-aware)
 4. Fallback to active provider
 """
+
 from __future__ import annotations
 
 from app.models.base import ExtraAllowBaseModel
@@ -54,10 +55,11 @@ class AliasMapping(ExtraAllowBaseModel):
         displayAlias: Optional friendlier name shown in UI dropdown.
             Defaults to ``alias`` if empty.
     """
+
     alias: str
-    targetModel: str
-    targetProvider: str
-    displayAlias: str = ""
+    target_model: str
+    target_provider: str
+    display_alias: str = ''
 
 
 class AliasResolutionResult(ExtraAllowBaseModel):
@@ -74,9 +76,10 @@ class AliasResolutionResult(ExtraAllowBaseModel):
         isFallback: Whether this was a fallback (no matching alias found).
         isDirect: Whether this was a direct model ID (not an alias at all).
     """
+
     alias: str
     provider: str
     model: str
-    displayModel: str = ""
+    displayModel: str = ''
     isFallback: bool = False
     isDirect: bool = False

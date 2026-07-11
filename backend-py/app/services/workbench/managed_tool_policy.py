@@ -6,14 +6,23 @@ Port of backend/services/workbench/managed-tool-policy.js (63 lines).
 Determines which tools are safe to run in parallel vs. mutating
 (read-only vs. write).
 """
+
 from __future__ import annotations
 import json
 import re
 from app.typeAliases import JsonValue
-MUTATING_NAME_PATTERN = re.compile('^(write|edit|create|delete|install|run|bash|launch|click|type|focus|set|add|remove|rename|copy|move|mkdir|touch|chmod|kill|uninstall|stop|restart|upload|download|patch|apply|commit|push|merge|deploy|start|reboot|shutdown|format|mount|unmount|browser_navigate|browser_click|browser_type|browser_snapshot)', re.IGNORECASE)
-SAFE_NAME_PATTERN = re.compile('^(read|list|search|fetch|get|describe|diagnose|status|recall|view|find|show|check|inspect|lookup|resolve|ping|health|info|memory_search|fact_search|context_read|list_skills)', re.IGNORECASE)
 
-def isManagedToolParallelSafe(toolName: str, args: dict[str, JsonValue] | None=None) -> bool:
+MUTATING_NAME_PATTERN = re.compile(
+    '^(write|edit|create|delete|install|run|bash|launch|click|type|focus|set|add|remove|rename|copy|move|mkdir|touch|chmod|kill|uninstall|stop|restart|upload|download|patch|apply|commit|push|merge|deploy|start|reboot|shutdown|format|mount|unmount|browser_navigate|browser_click|browser_type|browser_snapshot)',
+    re.IGNORECASE,
+)
+SAFE_NAME_PATTERN = re.compile(
+    '^(read|list|search|fetch|get|describe|diagnose|status|recall|view|find|show|check|inspect|lookup|resolve|ping|health|info|memory_search|fact_search|context_read|list_skills)',
+    re.IGNORECASE,
+)
+
+
+def isManagedToolParallelSafe(toolName: str, args: dict[str, object] | None = None) -> bool:
     """Check if a managed tool is safe to run in parallel.
 
     Returns True for:
@@ -25,7 +34,14 @@ def isManagedToolParallelSafe(toolName: str, args: dict[str, JsonValue] | None=N
     """
     if not toolName:
         return False
-    if toolName in ('WebSearch', 'WebFetch', 'web_search', 'web_fetch', 'mcp__workspace__web_search', 'mcp__workspace__web_fetch'):
+    if toolName in (
+        'WebSearch',
+        'WebFetch',
+        'web_search',
+        'web_fetch',
+        'mcp__workspace__web_search',
+        'mcp__workspace__web_fetch',
+    ):
         return True
     if MUTATING_NAME_PATTERN.match(toolName):
         return False
@@ -33,7 +49,8 @@ def isManagedToolParallelSafe(toolName: str, args: dict[str, JsonValue] | None=N
         return True
     return False
 
-def isOpenaiToolCallParallelSafe(toolCall: dict[str, JsonValue]) -> bool:
+
+def isOpenaiToolCallParallelSafe(toolCall: dict[str, object]) -> bool:
     """Check if an OpenAI-format tool call is parallel-safe."""
     func = toolCall.get('function', {})
     assert isinstance(func, dict)
@@ -47,7 +64,8 @@ def isOpenaiToolCallParallelSafe(toolCall: dict[str, JsonValue]) -> bool:
     assert isinstance(args, dict)
     return isManagedToolParallelSafe(name, args)
 
-def isAnthropicToolUseParallelSafe(toolUse: dict[str, JsonValue]) -> bool:
+
+def isAnthropicToolUseParallelSafe(toolUse: dict[str, object]) -> bool:
     """Check if an Anthropic-format tool use is parallel-safe."""
     name = toolUse.get('name', '')
     assert isinstance(name, str)
@@ -55,7 +73,8 @@ def isAnthropicToolUseParallelSafe(toolUse: dict[str, JsonValue]) -> bool:
     assert isinstance(args, dict)
     return isManagedToolParallelSafe(name, args)
 
-def parseOpenaiToolArgs(toolCall: dict[str, JsonValue]) -> dict[str, JsonValue]:
+
+def parseOpenaiToolArgs(toolCall: dict[str, object]) -> dict[str, object]:
     """Parse the function.arguments JSON string from an OpenAI tool call."""
     func = toolCall.get('function', {})
     if not isinstance(func, dict):

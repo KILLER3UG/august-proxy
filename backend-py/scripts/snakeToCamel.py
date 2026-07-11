@@ -10,6 +10,7 @@ Usage:
 
 In-place modification with .bak backup.
 """
+
 import ast
 import difflib
 import json
@@ -18,7 +19,81 @@ import re
 import sys
 from pathlib import Path
 from typing import Any
-_DENYList: set[str] = {'__init__', '__str__', '__repr__', '__enter__', '__exit__', '__aenter__', '__aexit__', '__call__', '__getattr__', '__setattr__', '__del__', '__add__', '__eq__', '__hash__', '__len__', '__getitem__', '__setitem__', '__iter__', '__next__', '__contains__', '__bool__', '__anext__', '__aiter__', '__delattr__', '__delitem__', '__format__', '__ge__', '__gt__', '__le__', '__lt__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__sizeof__', '__sub__', '__mul__', '__truediv__', '__floordiv__', '__mod__', '__pow__', '__neg__', '__pos__', '__abs__', '__invert__', '__and__', '__or__', '__xor__', '__iadd__', '__isub__', '__imul__', '__itruediv__', '__ifloordiv__', '__imod__', '__ipow__', '__iand__', '__ior__', '__ixor__', 'tmp_path', 'monkeypatch', 'capsys', 'caplog', 'request', 'ConfigDict', 'model_validator', 'field_validator', 'model_dump', 'model_validate', 'field_serializer', 'model_config', 'logger'}
+
+_DENYList: set[str] = {
+    '__init__',
+    '__str__',
+    '__repr__',
+    '__enter__',
+    '__exit__',
+    '__aenter__',
+    '__aexit__',
+    '__call__',
+    '__getattr__',
+    '__setattr__',
+    '__del__',
+    '__add__',
+    '__eq__',
+    '__hash__',
+    '__len__',
+    '__getitem__',
+    '__setitem__',
+    '__iter__',
+    '__next__',
+    '__contains__',
+    '__bool__',
+    '__anext__',
+    '__aiter__',
+    '__delattr__',
+    '__delitem__',
+    '__format__',
+    '__ge__',
+    '__gt__',
+    '__le__',
+    '__lt__',
+    '__ne__',
+    '__new__',
+    '__reduce__',
+    '__reduce_ex__',
+    '__sizeof__',
+    '__sub__',
+    '__mul__',
+    '__truediv__',
+    '__floordiv__',
+    '__mod__',
+    '__pow__',
+    '__neg__',
+    '__pos__',
+    '__abs__',
+    '__invert__',
+    '__and__',
+    '__or__',
+    '__xor__',
+    '__iadd__',
+    '__isub__',
+    '__imul__',
+    '__itruediv__',
+    '__ifloordiv__',
+    '__imod__',
+    '__ipow__',
+    '__iand__',
+    '__ior__',
+    '__ixor__',
+    'tmp_path',
+    'monkeypatch',
+    'capsys',
+    'caplog',
+    'request',
+    'ConfigDict',
+    'model_validator',
+    'field_validator',
+    'model_dump',
+    'model_validate',
+    'field_serializer',
+    'model_config',
+    'logger',
+}
+
 
 def _loadDenyList(path: str) -> set[str]:
     """Extend deny-list from a file (one identifier per line, # comments ignored)."""
@@ -33,9 +108,11 @@ def _loadDenyList(path: str) -> set[str]:
         print(f'Warning: deny-list file not found: {path} — using built-in list', file=sys.stderr)
     return result
 
+
 def _isUpperSnake(name: str) -> bool:
     """Return True if name looks like an UPPER_SNAKE constant."""
     return re.fullmatch('[A-Z][A-Z0-9]*(_[A-Z0-9]+)*', name) is not None
+
 
 def _snakeToCamel(name: str) -> str:
     """Convert snake_case to camelCase. Preserves leading underscores."""
@@ -52,6 +129,7 @@ def _snakeToCamel(name: str) -> str:
         return leading
     result = leading + parts[0] + ''.join((p.capitalize() for p in parts[1:]))
     return result
+
 
 class SnakeToCamelTransformer(ast.NodeTransformer):
     """Rename snake_case identifiers to camelCase."""
@@ -82,9 +160,13 @@ class SnakeToCamelTransformer(ast.NodeTransformer):
         for arg in node.args.kwonlyargs:
             arg.arg = self._rename(arg.arg, 'parameter', (arg.lineno or node.lineno, arg.col_offset or 0))
         if node.args.vararg:
-            node.args.vararg.arg = self._rename(node.args.vararg.arg, 'parameter', (node.args.vararg.lineno or node.lineno, 0))
+            node.args.vararg.arg = self._rename(
+                node.args.vararg.arg, 'parameter', (node.args.vararg.lineno or node.lineno, 0)
+            )
         if node.args.kwarg:
-            node.args.kwarg.arg = self._rename(node.args.kwarg.arg, 'parameter', (node.args.kwarg.lineno or node.lineno, 0))
+            node.args.kwarg.arg = self._rename(
+                node.args.kwarg.arg, 'parameter', (node.args.kwarg.lineno or node.lineno, 0)
+            )
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         node.name = self._rename(node.name, 'function', (node.lineno, node.col_offset))
@@ -138,7 +220,8 @@ class SnakeToCamelTransformer(ast.NodeTransformer):
         self.generic_visit(node)
         return node
 
-def convertFile(path: Path, deny: set[str], *, dryRun: bool=False, showDiff: bool=False) -> dict[str, Any]:
+
+def convertFile(path: Path, deny: set[str], *, dryRun: bool = False, showDiff: bool = False) -> dict[str, Any]:
     """Process a single Python file. Returns audit info."""
     original = path.read_text(encoding='utf-8')
     try:
@@ -152,13 +235,17 @@ def convertFile(path: Path, deny: set[str], *, dryRun: bool=False, showDiff: boo
         newSource = ast.unparse(modifiedTree)
     except Exception as e:
         return {'file': str(path), 'status': 'error', 'error': str(e), 'renames': []}
-    result = {'file': str(path), 'status': 'unchanged' if original == newSource else 'modified', 'renames': transformer.renames}
+    result = {
+        'file': str(path),
+        'status': 'unchanged' if original == newSource else 'modified',
+        'renames': transformer.renames,
+    }
     if original == newSource:
         return result
     if dryRun:
         print(f'[DRY-RUN] Would modify: {path}')
         for r in transformer.renames:
-            print(f"  L{r['line']}: {r['old']} → {r['new']}  ({r['type']})")
+            print(f'  L{r["line"]}: {r["old"]} → {r["new"]}  ({r["type"]})')
         return result
     if showDiff:
         linesOrig = original.splitlines(keepends=True)
@@ -171,6 +258,7 @@ def convertFile(path: Path, deny: set[str], *, dryRun: bool=False, showDiff: boo
     result['backup'] = str(backup)
     return result
 
+
 def convertDirectory(dirPath: Path, deny: set[str], **kwargs) -> list[dict[str, Any]]:
     """Process all .py files in a directory recursively."""
     results = []
@@ -181,8 +269,10 @@ def convertDirectory(dirPath: Path, deny: set[str], **kwargs) -> list[dict[str, 
         results.append(result)
     return results
 
+
 def main():
     import argparse
+
     parser = argparse.ArgumentParser(description='Convert snake_case to camelCase in Python files')
     parser.add_argument('targets', nargs='+', help='Files or directories to convert')
     parser.add_argument('--dry-run', action='store_true', help='Preview changes without modifying')
@@ -211,5 +301,7 @@ def main():
     errors = sum((1 for r in allResults if r['status'] == 'error'))
     totalRenames = sum((len(r.get('renames', [])) for r in allResults))
     print(f'\nSummary: {modified} modified, {unchanged} unchanged, {errors} errors, {totalRenames} renames')
+
+
 if __name__ == '__main__':
     main()

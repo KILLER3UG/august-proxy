@@ -4,9 +4,12 @@ External calendar events are fetched via MCP tools on the frontend side.
 
 Spec: docs/superpowers/specs/2026-06-30-voice-subagent-provider-overhaul-design.md
 """
+
 from __future__ import annotations
 from fastapi import APIRouter
+
 router = APIRouter(prefix='/api/calendar')
+
 
 @router.get('/internal')
 async def listInternalEvents() -> dict[str, object]:

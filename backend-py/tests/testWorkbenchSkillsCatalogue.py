@@ -8,20 +8,23 @@ Asserts the Claude-Code-style pattern:
   * The skill tools (load_skill/list_skills/skill_manage) appear in the
     workbench tool list (re-asserted from Chunk 1).
 """
+
 from __future__ import annotations
 import pytest
 from app.services import skill_service
 from app.services.tool_registry import listTools
 from app.services.workbench.workbench import WorkbenchSession, buildSystemPrompt
+
 SKILL_MD = '---\nname: {name}\ndescription: {desc}\ntrigger: {trigger}\ncategory: testing\n---\n\n# {title}\n\nDo the thing:\n1. step one\n2. step two\n'
+
 
 def _makeSkill(bundledRoot, name, desc, trigger='', title=None):
     d = bundledRoot / name
     d.mkdir(parents=True, exist_ok=True)
     (d / 'SKILL.md').write_text(SKILL_MD.format(name=name, desc=desc, trigger=trigger, title=title or name), 'utf-8')
 
-class TestCatalogue:
 
+class TestCatalogue:
     def testCatalogueListsAllDiscoverableSkills(self, isolatedSkills):
         agentRoot, bundledRoot = isolatedSkills
         _makeSkill(bundledRoot, 'alpha', 'Alpha skill does X.')
@@ -43,8 +46,8 @@ class TestCatalogue:
         assert 'instructions' not in gamma
         assert set(gamma.keys()) <= {'name', 'description', 'trigger', 'category'}
 
-class TestSystemPromptSkillsSection:
 
+class TestSystemPromptSkillsSection:
     def testPromptContainsSkillsSection(self, isolatedSkills):
         __, bundledRoot = isolatedSkills
         _makeSkill(bundledRoot, 'alpha', 'Alpha skill does X.')
@@ -69,23 +72,25 @@ class TestSystemPromptSkillsSection:
         prompt = buildSystemPrompt(WorkbenchSession(id='wb_skills'))
         assert '## Available Skills' not in prompt
 
-class TestLoadSkillReturnsBody:
 
+class TestLoadSkillReturnsBody:
     @pytest.mark.asyncio
     async def testLoadSkillReturnsFullBody(self, isolatedSkills):
         __, bundledRoot = isolatedSkills
         _makeSkill(bundledRoot, 'alpha', 'Alpha skill does X.', title='Alpha')
         from app.services.tool_definitions import _loadSkill
+
         result = await _loadSkill('alpha')
         assert 'Alpha' in result
         assert 'step one' in result
         assert 'step two' in result
         assert '---' not in result
 
-class TestSkillToolsPresent:
 
+class TestSkillToolsPresent:
     def testSkillToolsInRegistry(self):
         from app.services import tool_definitions as toolDefsModule
+
         if not listTools():
             toolDefsModule.registerAll()
         names = {t['function']['name'] for t in listTools()}

@@ -11,6 +11,7 @@ Key responsibilities:
 - Tool call interception and managed execution
 - Multi-round tool resolution loop
 """
+
 from __future__ import annotations
 import json
 import time
@@ -19,17 +20,29 @@ from typing import AsyncIterator, Callable, cast
 from app.typeAliases import JsonValue
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 from app.adapters.base import streamSse, buildHeaders, extractRequestHeaders, _scanHeadersForSessionId
-from app.adapters.proxy_tools import getProxyOpenaiToolDefinitions, appendMissingOpenaiTools, formatManagedToolResult, executeManagedProxyTool, executeManagedOpenaiToolCalls, getToolDefinitionName, isProxyManagedLocalToolName
+from app.adapters.proxy_tools import (
+    getProxyOpenaiToolDefinitions,
+    appendMissingOpenaiTools,
+    formatManagedToolResult,
+    executeManagedProxyTool,
+    executeManagedOpenaiToolCalls,
+    getToolDefinitionName,
+    isProxyManagedLocalToolName,
+)
 from app.adapters.tool_classification import classifyOpenaiToolCalls, getToolNameFromOpenaiTool
 from app.adapters.stream_state import OpenaiStreamAccumulator, ToolCallDelta
 from app.adapters.case_converters import snakeToCamel, camelToSnake
 from app.providers import resolver as providerResolver
 from app.providers.modelResolver import resolve, resolveOrFallback
-from app.providers.clients import getClient
+from app.providers.clients import getClient, BaseProviderClient
 from app.models import ChatCompletionRequest, ChatMessage, ToolCall, Usage
+
 MAX_MANAGED_TOOL_ROUNDS = 10
 
-def deriveSessionIdFromOpenai(body: ChatCompletionRequest | dict[str, object] | None, request: object | None=None) -> str:
+
+def deriveSessionIdFromOpenai(
+    body: ChatCompletionRequest | dict[str, object] | None, request: object | None = None
+) -> str:
     """Extract a session identifier from an OpenAI Chat Completions body.
 
     Order: explicit sessionId → user field → metadata.sessionId → headers → ''.
@@ -45,22 +58,37 @@ def deriveSessionIdFromOpenai(body: ChatCompletionRequest | dict[str, object] | 
                 return str(from_meta)
     elif body and isinstance(body, dict):
         metadata = as_dict(body.get('metadata'), {})
-        fromBody = body.get('sessionId') or body.get('session_id') or metadata.get('sessionId') or metadata.get('session_id') or body.get('user')
+        fromBody = (
+            body.get('sessionId')
+            or body.get('session_id')
+            or metadata.get('sessionId')
+            or metadata.get('session_id')
+            or body.get('user')
+        )
         if fromBody:
             return str(fromBody)
     if request and hasattr(request, 'headers'):
-        headerKeys = ['x-session-id', 'x-conversation-id', 'x-claude-code-session-id', 'x-request-id', 'x-correlation-id']
+        headerKeys = [
+            'x-session-id',
+            'x-conversation-id',
+            'x-claude-code-session-id',
+            'x-request-id',
+            'x-correlation-id',
+        ]
         for key in headerKeys:
             value = request.headers.get(key)
             if value:
                 return str(value)
     return ''
 
-def deriveModelInheritanceSessionId(body: dict[str, object] | None, request: object | None=None) -> str:
+
+def deriveModelInheritanceSessionId(body: dict[str, object] | None, request: object | None = None) -> str:
     """Extract session ID specifically for model inheritance lookups."""
     if body and isinstance(body, dict):
         metadata = as_dict(body.get('metadata'), {})
-        fromBody = body.get('sessionId') or body.get('session_id') or metadata.get('sessionId') or metadata.get('session_id')
+        fromBody = (
+            body.get('sessionId') or body.get('session_id') or metadata.get('sessionId') or metadata.get('session_id')
+        )
         if fromBody:
             return str(fromBody)
     if request and hasattr(request, 'headers'):
@@ -70,10 +98,6 @@ def deriveModelInheritanceSessionId(body: dict[str, object] | None, request: obj
                 return str(value)
     return ''
 
-def extractRequestHeaders(request: object) -> dict[str, str]:
-    """Backward-compat: re-export from base module."""
-    from app.adapters.base import extractRequestHeaders as _baseExtract
-    return _baseExtract(request)
 
 def getOpenaiCompatibleProfile(providerName: str | None, model: str) -> dict[str, object] | None:
     """Resolve an OpenAI-compatible provider profile for a model."""
@@ -85,7 +109,10 @@ def getOpenaiCompatibleProfile(providerName: str | None, model: str) -> dict[str
         return resolved
     return None
 
-def mergeOpenaiCompatibleProfile(profile: dict[str, object], baseUrl: str | None=None, apiKey: str | None=None) -> dict[str, object]:
+
+def mergeOpenaiCompatibleProfile(
+    profile: dict[str, object], baseUrl: str | None = None, apiKey: str | None = None
+) -> dict[str, object]:
     """Merge override values into a provider profile."""
     merged = dict(profile)
     if baseUrl:
@@ -93,6 +120,7 @@ def mergeOpenaiCompatibleProfile(profile: dict[str, object], baseUrl: str | None
     if apiKey:
         merged['api_key'] = apiKey
     return merged
+
 
 def toOpenaiCompatibleTargetUrl(baseUrl: str) -> str:
     """Ensure the base URL ends with /chat/completions.
@@ -112,25 +140,35 @@ def toOpenaiCompatibleTargetUrl(baseUrl: str) -> str:
         return f'{base}/chat/completions'
     return f'{base}/v1/chat/completions'
 
+
 def writeOpenaiSseHeaders() -> dict[str, str]:
     """Return SSE response headers for OpenAI-compatible streaming."""
-    return {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no'}
+    return {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+    }
+
 
 def writeOpenaiSseData(chunk: dict[str, object]) -> str:
     """Serialize a chunk as SSE data line."""
     return f'data: {json.dumps(chunk)}\n\n'
 
+
 def writeOpenaiSseError(error: str) -> str:
     """Serialize an error as SSE."""
     return writeOpenaiSseData({'error': {'message': error}})
+
 
 def writeOpenaiSseDone() -> str:
     """Return the terminal SSE event."""
     return 'data: [DONE]\n\n'
 
+
 def sendSimulatedOpenaiStream(response: dict[str, object]) -> list[str]:
     """Create SSE events from a full JSON response, simulating a stream."""
-    events: list[str] = [writeOpenaiSseHeaders()]
+    events: list[str] = []
     responseId = as_str(response.get('id'), f'chatcmpl-{uuid.uuid4().hex[:12]}')
     created = as_int(response.get('created'), int(time.time()))
     model = as_str(response.get('model'), 'unknown')
@@ -141,16 +179,55 @@ def sendSimulatedOpenaiStream(response: dict[str, object]) -> list[str]:
         choiceDict = cast('dict[str, object]', choice)
         index = as_int(choiceDict.get('index'), 0)
         delta = as_dict(choiceDict.get('delta'), {}) or as_dict(choiceDict.get('message'), {})
-        events.append(writeOpenaiSseData({'id': responseId, 'object': 'chat.completion.chunk', 'created': created, 'model': model, 'choices': [{'index': index, 'delta': delta, 'finish_reason': None}]}))
-        events.append(writeOpenaiSseData({'id': responseId, 'object': 'chat.completion.chunk', 'created': created, 'model': model, 'choices': [{'index': index, 'delta': {}, 'finish_reason': cast('dict[str, object]', choiceDict).get('finish_reason', 'stop')}]}))
+        events.append(
+            writeOpenaiSseData(
+                {
+                    'id': responseId,
+                    'object': 'chat.completion.chunk',
+                    'created': created,
+                    'model': model,
+                    'choices': [{'index': index, 'delta': delta, 'finish_reason': None}],
+                }
+            )
+        )
+        events.append(
+            writeOpenaiSseData(
+                {
+                    'id': responseId,
+                    'object': 'chat.completion.chunk',
+                    'created': created,
+                    'model': model,
+                    'choices': [
+                        {
+                            'index': index,
+                            'delta': {},
+                            'finish_reason': cast('dict[str, object]', choiceDict).get('finish_reason', 'stop'),
+                        }
+                    ],
+                }
+            )
+        )
     if response.get('usage'):
-        events.append(writeOpenaiSseData({'id': responseId, 'object': 'chat.completion.chunk', 'created': created, 'model': model, 'choices': [], 'usage': response['usage']}))
+        events.append(
+            writeOpenaiSseData(
+                {
+                    'id': responseId,
+                    'object': 'chat.completion.chunk',
+                    'created': created,
+                    'model': model,
+                    'choices': [],
+                    'usage': response['usage'],
+                }
+            )
+        )
     events.append(writeOpenaiSseDone())
     return events
+
 
 def createOpenaiStreamAccumulator() -> OpenaiStreamAccumulator:
     """Backward-compat: return a new OpenaiStreamAccumulator instance."""
     return OpenaiStreamAccumulator()
+
 
 def accumulateOpenaiChunk(acc: OpenaiStreamAccumulator, chunk: dict[str, object]) -> None:
     """Backward-compat: delegate to OpenaiStreamAccumulator.accumulate."""
@@ -161,6 +238,7 @@ def buildOpenaiAggregatedFromStream(acc: OpenaiStreamAccumulator) -> dict[str, o
     """Backward-compat: delegate to OpenaiStreamAccumulator.build_response."""
     return acc.build_response()  # type: ignore[return-value]
 
+
 def isOpenaiToolResultError(toolMessage: ChatMessage | dict[str, object]) -> bool:
     """Check if a tool result contains an error pattern."""
     if isinstance(toolMessage, ChatMessage):
@@ -169,10 +247,19 @@ def isOpenaiToolResultError(toolMessage: ChatMessage | dict[str, object]) -> boo
         content = toolMessage.get('content', '')
     if isinstance(content, str):
         lower = content.lower()
-        return 'error:' in lower or 'exit code' in lower or 'command not found' in lower or ('no such file' in lower) or ('permission denied' in lower)
+        return (
+            'error:' in lower
+            or 'exit code' in lower
+            or 'command not found' in lower
+            or ('no such file' in lower)
+            or ('permission denied' in lower)
+        )
     return False
 
-async def fallbackClientFailedToolsOpenai(messages: list[dict[str, object]], managedLocalToolNames: set[str]) -> list[dict[str, object]]:
+
+async def fallbackClientFailedToolsOpenai(
+    messages: list[dict[str, object]], managedLocalToolNames: set[str]
+) -> list[dict[str, object]]:
     """Detect and retry client-failed managed tools.
 
     Scans trailing tool messages for error patterns and re-executes
@@ -193,26 +280,48 @@ async def fallbackClientFailedToolsOpenai(messages: list[dict[str, object]], man
             prev = updated[j]
             if prev.get('role') != 'assistant':
                 break
-            for tc in prev.get('tool_calls', []):
-                if tc.get('id') == toolCallId and as_dict(tc.get('function', {})).get('name'):
-                    name = tc['function']['name']
+            for tc in cast('list[dict[str, object]]', as_list(prev.get('tool_calls'), [])):
+                fn = as_dict(tc.get('function', {}))
+                if tc.get('id') == toolCallId and fn.get('name'):
+                    name = as_str(fn.get('name'), '')
                     if name in managedLocalToolNames:
                         try:
-                            args = json.loads(tc['function'].get('arguments', '{}'))
+                            args = json.loads(as_str(fn.get('arguments'), '{}'))
                         except (json.JSONDecodeError, TypeError):
                             args = {}
                         try:
                             result = await executeManagedProxyTool(name, args)
-                            updated[i] = {'tool_call_id': toolCallId, 'role': 'tool', 'content': formatManagedToolResult(name, result)}
+                            updated[i] = {
+                                'tool_call_id': toolCallId,
+                                'role': 'tool',
+                                'content': formatManagedToolResult(name, result),
+                            }
                             changed = True
                         except Exception as exc:
-                            updated[i] = {'tool_call_id': toolCallId, 'role': 'tool', 'content': f'Fallback error: {exc}'}
+                            updated[i] = {
+                                'tool_call_id': toolCallId,
+                                'role': 'tool',
+                                'content': f'Fallback error: {exc}',
+                            }
                             changed = True
                     break
             break
     return updated if changed else messages
 
-async def resolveManagedOpenaiToolCalls(messages: list[dict[str, object]] | list[ChatMessage], model: str, upstreamUrl: str, upstreamHeaders: dict[str, str], knownTools: list[dict[str, object]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, object]], None] | None=None, parentSignal: object=None, client: object=None) -> tuple[list[dict[str, object]], dict[str, object] | None]:
+
+async def resolveManagedOpenaiToolCalls(
+    messages: list[dict[str, object]] | list[ChatMessage],
+    model: str,
+    upstreamUrl: str,
+    upstreamHeaders: dict[str, str],
+    knownTools: list[dict[str, object]],
+    managedLocalToolNames: set[str],
+    clientToolNames: set[str],
+    workspacePath: str | None = None,
+    onToolEvent: Callable[[dict[str, object]], None] | None = None,
+    parentSignal: object = None,
+    client: object = None,
+) -> tuple[list[dict[str, object]], dict[str, object] | None]:
     """Run the multi-round tool resolution loop.
 
     For each round:
@@ -222,14 +331,17 @@ async def resolveManagedOpenaiToolCalls(messages: list[dict[str, object]] | list
     4. If client tools are present, return the response for passthrough
     5. Repeat until no managed tools remain or max rounds reached
     """
-    currentMessages = list(messages)
+    currentMessages = cast('list[dict[str, object]]', list(messages))
     finalUsage: dict[str, object] | None = None
     for _round in range(MAX_MANAGED_TOOL_ROUNDS):
-        reqBody = cast(dict[str, object], camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': False}))
-        resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, reqBody)
-        if resp.isError:
+        reqBody = cast(
+            dict[str, object],
+            camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': False}),
+        )
+        resp = await cast('BaseProviderClient', client).requestJson('POST', upstreamUrl, upstreamHeaders, reqBody)
+        if resp.is_error:
             return (currentMessages, None)
-        responseBody = as_dict(snakeToCamel(cast(JsonValue, resp.bodyJson)), {})
+        responseBody = as_dict(snakeToCamel(cast(JsonValue, resp.body_json)), {})
         if responseBody.get('usage'):
             finalUsage = cast('dict[str, object]', responseBody['usage'])
         choices = as_list(responseBody.get('choices'), [])
@@ -238,7 +350,7 @@ async def resolveManagedOpenaiToolCalls(messages: list[dict[str, object]] | list
         choice = as_dict(choices[0], {})
         message = as_dict(choice.get('message'), {})
         finishReason = as_str(choice.get('finish_reason'), 'stop')
-        toolCalls = as_list(message.get('tool_calls'), [])
+        toolCalls = cast('list[dict[str, object]]', as_list(message.get('tool_calls'), []))
         if not toolCalls:
             currentMessages.append(message)
             break
@@ -246,14 +358,19 @@ async def resolveManagedOpenaiToolCalls(messages: list[dict[str, object]] | list
         if not classification['has_managed']:
             currentMessages.append(message)
             break
-        toolResults = await executeManagedOpenaiToolCalls(classification['managed_tool_calls'], knownTools, currentMessages, workspacePath, onToolEvent, parentSignal)
+        toolResults = await executeManagedOpenaiToolCalls(
+            classification['managed_tool_calls'], knownTools, currentMessages, workspacePath, onToolEvent, parentSignal
+        )
         currentMessages.append(message)
         currentMessages.extend(toolResults)
         if classification['has_client_or_unknown']:
             break
     return (currentMessages, finalUsage)
 
-async def streamOpenaiSseToClient(upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, object]) -> AsyncIterator[str]:
+
+async def streamOpenaiSseToClient(
+    upstreamUrl: str, upstreamHeaders: dict[str, str], body: dict[str, object]
+) -> AsyncIterator[str]:
     """Pipe SSE events directly from upstream to client.
 
     Response headers (including Content-Type: text/event-stream) are supplied
@@ -262,7 +379,7 @@ async def streamOpenaiSseToClient(upstreamUrl: str, upstreamHeaders: dict[str, s
     """
     body['stream'] = True
     bodyJson = cast(dict[str, object], as_dict(camelToSnake(body), {}))
-    async for rawEvent in _client.streamSse(upstreamUrl, upstreamHeaders, bodyJson):
+    async for rawEvent in _getClient().streamSse(upstreamUrl, upstreamHeaders, bodyJson):
         event = cast('dict[str, object]', rawEvent)
         if as_str(event.get('type'), '') == 'error':
             yield writeOpenaiSseError(as_str(event.get('body'), as_str(event.get('error'), '')))
@@ -279,7 +396,18 @@ async def streamOpenaiSseToClient(upstreamUrl: str, upstreamHeaders: dict[str, s
             return
     yield writeOpenaiSseDone()
 
-async def streamUpstreamAndResolveToolsOpenai(upstreamUrl: str, upstreamHeaders: dict[str, str], body: ChatCompletionRequest | dict[str, object], model: str, knownTools: list[dict[str, object]], managedLocalToolNames: set[str], clientToolNames: set[str], workspacePath: str | None=None, onToolEvent: Callable[[dict[str, object]], None] | None=None) -> AsyncIterator[str]:
+
+async def streamUpstreamAndResolveToolsOpenai(
+    upstreamUrl: str,
+    upstreamHeaders: dict[str, str],
+    body: ChatCompletionRequest | dict[str, object],
+    model: str,
+    knownTools: list[dict[str, object]],
+    managedLocalToolNames: set[str],
+    clientToolNames: set[str],
+    workspacePath: str | None = None,
+    onToolEvent: Callable[[dict[str, object]], None] | None = None,
+) -> AsyncIterator[str]:
     """Stream from upstream, intercept tool calls, resolve them, and continue.
 
     This is the key function for handling streaming with managed tool execution.
@@ -287,19 +415,24 @@ async def streamUpstreamAndResolveToolsOpenai(upstreamUrl: str, upstreamHeaders:
     acc = OpenaiStreamAccumulator()
     toolRound = 0
     raw_body = body.model_dump() if isinstance(body, ChatCompletionRequest) else body
-    currentMessages = list(raw_body.get('messages', []))
+    currentMessages = cast('list[dict[str, object]]', as_list(raw_body.get('messages'), []))
     responseId = ''
     modelName = model
-    async for chunk in _client.streamSse(upstreamUrl, upstreamHeaders, camelToSnake({**body, 'stream': True})):
+    streamBody = cast('dict[str, object]', camelToSnake({**raw_body, 'stream': True}))
+    async for chunk in _getClient().streamSse(upstreamUrl, upstreamHeaders, streamBody):
         if chunk.get('type') == 'error':
-            yield writeOpenaiSseError(chunk.get('body', str(chunk.get('error', ''))))
+            yield writeOpenaiSseError(as_str(chunk.get('body'), as_str(chunk.get('error'), '')))
             yield writeOpenaiSseDone()
             return
         acc.accumulate(chunk)
         yield writeOpenaiSseData(chunk)
-        choices = chunk.get('choices', [])
-        if choices and choices[0].get('finish_reason') in ('tool_calls', 'stop'):
-            responseId = acc.id or chunk.get('id', '')
+        choices = as_list(chunk.get('choices'), [])
+        if (
+            choices
+            and isinstance(choices[0], dict)
+            and as_dict(choices[0], {}).get('finish_reason') in ('tool_calls', 'stop')
+        ):
+            responseId = acc.id or as_str(chunk.get('id'), '')
             modelName = acc.model or model
             if acc.tool_calls:
                 toolRound += 1
@@ -313,33 +446,48 @@ async def streamUpstreamAndResolveToolsOpenai(upstreamUrl: str, upstreamHeaders:
                     assistantMsg['tool_calls'] = toolCallDicts
                 currentMessages.append(assistantMsg)
                 classification = classifyOpenaiToolCalls(toolCallDicts, managedLocalToolNames, clientToolNames)
-                if classification['has_managed'] and (classification['can_execute_managed'] or toolRound < MAX_MANAGED_TOOL_ROUNDS):
-                    toolResults = await executeManagedOpenaiToolCalls(classification['managed_tool_calls'], knownTools, currentMessages, workspacePath, onToolEvent)
+                if classification['has_managed'] and (
+                    classification['can_execute_managed'] or toolRound < MAX_MANAGED_TOOL_ROUNDS
+                ):
+                    toolResults = await executeManagedOpenaiToolCalls(
+                        classification['managed_tool_calls'], knownTools, currentMessages, workspacePath, onToolEvent
+                    )
                     currentMessages.extend(toolResults)
                     acc = OpenaiStreamAccumulator()
-                    async for nextChunk in _client.streamSse(upstreamUrl, upstreamHeaders, camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': True})):
+                    nextBody = cast(
+                        'dict[str, object]',
+                        camelToSnake(
+                            {'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': True}
+                        ),
+                    )
+                    async for nextChunk in _getClient().streamSse(upstreamUrl, upstreamHeaders, nextBody):
                         if nextChunk.get('type') == 'error':
-                            yield writeOpenaiSseError(nextChunk.get('body', ''))
+                            yield writeOpenaiSseError(as_str(nextChunk.get('body'), ''))
                             yield writeOpenaiSseDone()
                             return
                         acc.accumulate(nextChunk)
                         yield writeOpenaiSseData(nextChunk)
-                        nchoices = nextChunk.get('choices', [])
-                        if nchoices and nchoices[0].get('finish_reason'):
+                        nchoices = as_list(nextChunk.get('choices'), [])
+                        if nchoices and isinstance(nchoices[0], dict) and as_dict(nchoices[0], {}).get('finish_reason'):
                             break
                     nextToolDicts = [tc.to_openai_dict() for tc in acc.tool_calls] if acc.tool_calls else []
-                    currentMessages.append({
-                        'role': 'assistant',
-                        'content': acc.content,
-                        **({'tool_calls': nextToolDicts} if nextToolDicts else {}),
-                    })
+                    currentMessages.append(
+                        {
+                            'role': 'assistant',
+                            'content': acc.content,
+                            **({'tool_calls': nextToolDicts} if nextToolDicts else {}),
+                        }
+                    )
                     if acc.usage:
                         yield writeOpenaiSseData({'choices': [], 'usage': acc.usage})
             yield writeOpenaiSseDone()
             return
     yield writeOpenaiSseDone()
 
-async def handleChatCompletions(body: ChatCompletionRequest | dict[str, object], request: object=None) -> tuple[dict[str, object] | AsyncIterator[str], dict[str, str] | None]:
+
+async def handleChatCompletions(
+    body: ChatCompletionRequest | dict[str, object], request: object = None
+) -> tuple[dict[str, object] | AsyncIterator[str], dict[str, str] | None]:
     """Handle a /v1/chat/completions or /v1/responses request.
 
     Returns a tuple of (response_or_stream, response_headers).
@@ -348,12 +496,12 @@ async def handleChatCompletions(body: ChatCompletionRequest | dict[str, object],
         model = body.model
         raw_body = cast('dict[str, object]', body.model_dump())
     else:
-        model = body.get('model', 'gpt-4o')
+        model = as_str(body.get('model'), 'gpt-4o')
         raw_body = body
     try:
         resolved = resolve(model, default_alias='gpt-4o')
-        providerName = resolved['provider']
-        resolvedModel = resolved['model']
+        providerName = as_str(resolved.get('provider'), '')
+        resolvedModel = as_str(resolved.get('model'), model)
     except Exception:
         providerName = model
         resolvedModel = model
@@ -362,7 +510,7 @@ async def handleChatCompletions(body: ChatCompletionRequest | dict[str, object],
         return ({'error': 'No provider available for model', 'model': model}, None)
     client = getClient(provider)
     if not client:
-        return ({'error': f"No client for provider: {provider.get('name')}"}, None)
+        return ({'error': f'No client for provider: {provider.get("name")}'}, None)
     apiKey = client.resolveApiKey()
     if not apiKey:
         return ({'error': 'API key not configured for provider'}, None)
@@ -372,7 +520,7 @@ async def handleChatCompletions(body: ChatCompletionRequest | dict[str, object],
     clientWantsStream = raw_body.get('stream', False)
     isResponsesEndpoint = raw_body.get('_endpoint') == 'responses'
     knownTools = getProxyOpenaiToolDefinitions()
-    clientTools = raw_body.get('tools', [])
+    clientTools = cast('list[dict[str, object]]', as_list(raw_body.get('tools'), []))
     if clientTools:
         appendMissingOpenaiTools(knownTools, clientTools)
     managedLocalToolNames: set[str] = set()
@@ -392,19 +540,34 @@ async def handleChatCompletions(body: ChatCompletionRequest | dict[str, object],
     hasManagedTools = len(managedLocalToolNames) > 0
     if isResponsesEndpoint:
         raw_body['stream'] = False
-        resp = await client.requestJson('POST', upstreamUrl.replace('/chat/completions', '/responses'), headers, camelToSnake(raw_body))
-        return (snakeToCamel(resp.body) if isinstance(resp.body, (dict, list)) else {'response': str(resp.body)}, None)
+        resp = await client.requestJson(
+            'POST',
+            upstreamUrl.replace('/chat/completions', '/responses'),
+            headers,
+            cast('dict[str, object]', camelToSnake(raw_body)),
+        )
+        return (
+            cast(
+                'dict[str, object]',
+                snakeToCamel(resp.body) if isinstance(resp.body, (dict, list)) else {'response': str(resp.body)},
+            ),
+            None,
+        )
     if clientWantsStream:
         if hasManagedTools:
-            stream = streamUpstreamAndResolveToolsOpenai(upstreamUrl, headers, raw_body, model, knownTools, managedLocalToolNames, clientToolNames)
+            stream = streamUpstreamAndResolveToolsOpenai(
+                upstreamUrl, headers, raw_body, model, knownTools, managedLocalToolNames, clientToolNames
+            )
         else:
             stream = streamOpenaiSseToClient(upstreamUrl, headers, raw_body)
         return (stream, writeOpenaiSseHeaders())
     else:
         raw_body['stream'] = False
         if hasManagedTools:
-            messages = raw_body.get('messages', [])
-            updatedMessages, usage = await resolveManagedOpenaiToolCalls(messages, model, upstreamUrl, headers, knownTools, managedLocalToolNames, clientToolNames, client=client)
+            messages = cast('list[dict[str, object]]', as_list(raw_body.get('messages'), []))
+            updatedMessages, usage = await resolveManagedOpenaiToolCalls(
+                messages, model, upstreamUrl, headers, knownTools, managedLocalToolNames, clientToolNames, client=client
+            )
             lastMsg = updatedMessages[-1] if updatedMessages else {}
             response_acc = OpenaiStreamAccumulator(
                 id=f'chatcmpl-{uuid.uuid4().hex[:12]}',
@@ -414,25 +577,41 @@ async def handleChatCompletions(body: ChatCompletionRequest | dict[str, object],
                 finish_reason='stop' if not lastMsg.get('tool_calls') else 'tool_calls',
                 usage=usage or {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0},
             )
-            for tc in (lastMsg.get('tool_calls') or []):
+            for tc in as_list(lastMsg.get('tool_calls'), []):
                 if isinstance(tc, dict):
                     fn = tc.get('function', {}) or {}
-                    response_acc.tool_calls.append(ToolCallDelta(
-                        id=tc.get('id', ''),
-                        function_name=fn.get('name', '') if isinstance(fn, dict) else '',
-                        function_arguments=fn.get('arguments', '') if isinstance(fn, dict) else '',
-                    ))
+                    response_acc.tool_calls.append(
+                        ToolCallDelta(
+                            id=tc.get('id', ''),
+                            function_name=fn.get('name', '') if isinstance(fn, dict) else '',
+                            function_arguments=fn.get('arguments', '') if isinstance(fn, dict) else '',
+                        )
+                    )
             response = response_acc.build_response()
             return (response, None)
         else:
-            resp = await client.requestJson('POST', upstreamUrl, headers, camelToSnake(raw_body))
-            return (snakeToCamel(resp.body) if isinstance(resp.body, (dict, list)) else {'response': str(resp.body)}, None)
-_client = None
+            resp = await client.requestJson(
+                'POST', upstreamUrl, headers, cast('dict[str, object]', camelToSnake(raw_body))
+            )
+            return (
+                cast(
+                    'dict[str, object]',
+                    snakeToCamel(resp.body) if isinstance(resp.body, (dict, list)) else {'response': str(resp.body)},
+                ),
+                None,
+            )
 
-def _getClient() -> object:
+
+_client: BaseProviderClient | None = None
+
+
+def _getClient() -> BaseProviderClient:
     global _client
     if _client is None:
         from app.providers.clients.openai import OpenAIClient
+
         _client = OpenAIClient({})
     return _client
+
+
 _getClient()

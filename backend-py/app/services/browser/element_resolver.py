@@ -8,7 +8,13 @@ Supports the four selection strategies the spec requires:
   or ``(/``.
 - ``text``: visible text → ``page.get_by_text``.
 """
+
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from playwright.async_api import Locator, Page
+
 
 def _refToSelector(ref: str) -> str | None:
     """Map an ``@eN`` ref to the ``[data-august-ref="N"]`` attribute selector."""
@@ -23,11 +29,15 @@ def _refToSelector(ref: str) -> str | None:
         return f'[data-august-ref="{s}"]'
     return None
 
+
 def _isXpath(selector: str) -> bool:
     s = selector.lstrip()
     return s.startswith('//') or s.startswith('(')
 
-async def resolveLocator(page: object, *, ref: str | None=None, selector: str | None=None, text: str | None=None) -> object:
+
+async def resolveLocator(
+    page: Page, *, ref: str | None = None, selector: str | None = None, text: str | None = None
+) -> Locator:
     """Return a Playwright Locator for the given spec, or raise.
 
     Exactly one of ``ref``/``selector``/``text`` should be provided. Playwright

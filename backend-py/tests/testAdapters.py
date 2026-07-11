@@ -1,12 +1,51 @@
 """Adapter unit tests."""
+
 import pytest
-from app.adapters.tool_classification import getToolNameFromOpenaiTool, getToolNameFromAnthropicTool, classifyOpenaiToolCalls, classifyAnthropicToolUses
-from app.adapters.proxy_tools import isManagedWebToolName, isManagedBashToolName, openaiToAnthropicToolDefinition, anthropicToOpenaiToolDefinition, getManagedAnthropicWebToolDefinitions, sanitizeAnthropicToolDefinition, dedupeAndCanonicalizeAnthropicTools, isBrowserAutomationToolName, formatManagedWebResult
-from app.adapters.openai import deriveSessionIdFromOpenai, writeOpenaiSseData, writeOpenaiSseDone, createOpenaiStreamAccumulator, accumulateOpenaiChunk, buildOpenaiAggregatedFromStream, isOpenaiToolResultError
-from app.adapters.anthropic import isClaudeFamilyModel, resolveClaudePublicModelAlias, resolveClaudeClientFacingModel, normalizeSystemBlocks, systemBlocksToText, buildAnthropicSystemBlocks, translateMessages, translateMessagesToAnthropic, buildOpenaiRequest, writeAnthropicSseData, sendSimulatedAnthropicStream, streamOpenaiDeltaAsAnthropic, createOpenaiToAnthropicStreamState, handleCountTokens
+from app.adapters.tool_classification import (
+    getToolNameFromOpenaiTool,
+    getToolNameFromAnthropicTool,
+    classifyOpenaiToolCalls,
+    classifyAnthropicToolUses,
+)
+from app.adapters.proxy_tools import (
+    isManagedWebToolName,
+    isManagedBashToolName,
+    openaiToAnthropicToolDefinition,
+    anthropicToOpenaiToolDefinition,
+    getManagedAnthropicWebToolDefinitions,
+    sanitizeAnthropicToolDefinition,
+    dedupeAndCanonicalizeAnthropicTools,
+    isBrowserAutomationToolName,
+    formatManagedWebResult,
+)
+from app.adapters.openai import (
+    deriveSessionIdFromOpenai,
+    writeOpenaiSseData,
+    writeOpenaiSseDone,
+    createOpenaiStreamAccumulator,
+    accumulateOpenaiChunk,
+    buildOpenaiAggregatedFromStream,
+    isOpenaiToolResultError,
+)
+from app.adapters.anthropic import (
+    isClaudeFamilyModel,
+    resolveClaudePublicModelAlias,
+    resolveClaudeClientFacingModel,
+    normalizeSystemBlocks,
+    systemBlocksToText,
+    buildAnthropicSystemBlocks,
+    translateMessages,
+    translateMessagesToAnthropic,
+    buildOpenaiRequest,
+    writeAnthropicSseData,
+    sendSimulatedAnthropicStream,
+    streamOpenaiDeltaAsAnthropic,
+    createOpenaiToAnthropicStreamState,
+    handleCountTokens,
+)
+
 
 class TestToolClassification:
-
     def testGetToolName(self):
         assert getToolNameFromOpenaiTool({'function': {'name': 'test'}}) == 'test'
         assert getToolNameFromOpenaiTool({'name': 'test'}) == 'test'
@@ -14,22 +53,29 @@ class TestToolClassification:
         assert getToolNameFromOpenaiTool(None) is None
 
     def testClassifyOpenai(self):
-        result = classifyOpenaiToolCalls([{'function': {'name': 'WebSearch'}, 'id': '1'}], managedLocalToolNames={'WebSearch'})
+        result = classifyOpenaiToolCalls(
+            [{'function': {'name': 'WebSearch'}, 'id': '1'}], managedLocalToolNames={'WebSearch'}
+        )
         assert result['has_managed'] is True
         assert result['can_execute_managed'] is True
 
     def testClassifyOpenaiMixed(self):
-        result = classifyOpenaiToolCalls([{'function': {'name': 'WebSearch'}, 'id': '1'}, {'function': {'name': 'client_tool'}, 'id': '2'}], managedLocalToolNames={'WebSearch'})
+        result = classifyOpenaiToolCalls(
+            [{'function': {'name': 'WebSearch'}, 'id': '1'}, {'function': {'name': 'client_tool'}, 'id': '2'}],
+            managedLocalToolNames={'WebSearch'},
+        )
         assert result['has_managed'] is True
         assert result['has_client_or_unknown'] is True
         assert result['can_execute_managed'] is False
 
     def testClassifyAnthropic(self):
-        result = classifyAnthropicToolUses([{'name': 'bash', 'input': {'command': 'ls'}}], managedLocalToolNames={'bash'})
+        result = classifyAnthropicToolUses(
+            [{'name': 'bash', 'input': {'command': 'ls'}}], managedLocalToolNames={'bash'}
+        )
         assert result['has_managed'] is True
 
-class TestProxyTools:
 
+class TestProxyTools:
     def testManagedToolNames(self):
         assert isManagedWebToolName('WebSearch') is True
         assert isManagedWebToolName('WebFetch') is True
@@ -49,7 +95,10 @@ class TestProxyTools:
         assert 'mcp__workspace__bash' in names
 
     def testFormatConverters(self):
-        openai = {'type': 'function', 'function': {'name': 'test', 'description': 'desc', 'parameters': {'type': 'object'}}}
+        openai = {
+            'type': 'function',
+            'function': {'name': 'test', 'description': 'desc', 'parameters': {'type': 'object'}},
+        }
         anthropic = openaiToAnthropicToolDefinition(openai)
         assert anthropic['name'] == 'test'
         assert anthropic['description'] == 'desc'
@@ -66,7 +115,11 @@ class TestProxyTools:
         assert result2['name'] == 'fn_test'
 
     def testDedupeTools(self):
-        tools = [{'name': 'WebSearch', 'description': '', 'input_schema': {'type': 'object', 'properties': {}}}, {'name': 'WebSearch', 'description': '', 'input_schema': {'type': 'object', 'properties': {}}}, {'name': 'my_tool', 'description': '', 'input_schema': {'type': 'object', 'properties': {}}}]
+        tools = [
+            {'name': 'WebSearch', 'description': '', 'input_schema': {'type': 'object', 'properties': {}}},
+            {'name': 'WebSearch', 'description': '', 'input_schema': {'type': 'object', 'properties': {}}},
+            {'name': 'my_tool', 'description': '', 'input_schema': {'type': 'object', 'properties': {}}},
+        ]
         result = dedupeAndCanonicalizeAnthropicTools(tools)
         names = [t['name'] for t in result]
         assert names.count('WebSearch') == 1
@@ -77,8 +130,8 @@ class TestProxyTools:
         assert 'R1' in result
         assert 'test' in result
 
-class TestOpenAIAdapter:
 
+class TestOpenAIAdapter:
     def testSessionDerivation(self):
         sid = deriveSessionIdFromOpenai({'sessionId': 'test-123'})
         assert sid == 'test-123'
@@ -92,8 +145,16 @@ class TestOpenAIAdapter:
 
     def testStreamAccumulation(self):
         acc = createOpenaiStreamAccumulator()
-        accumulateOpenaiChunk(acc, {'id': 'test', 'model': 'gpt-4', 'choices': [{'delta': {'content': 'Hello'}, 'finish_reason': None}]})
-        accumulateOpenaiChunk(acc, {'choices': [{'delta': {'content': ' world'}, 'finish_reason': 'stop'}], 'usage': {'prompt_tokens': 5, 'completion_tokens': 3}})
+        accumulateOpenaiChunk(
+            acc, {'id': 'test', 'model': 'gpt-4', 'choices': [{'delta': {'content': 'Hello'}, 'finish_reason': None}]}
+        )
+        accumulateOpenaiChunk(
+            acc,
+            {
+                'choices': [{'delta': {'content': ' world'}, 'finish_reason': 'stop'}],
+                'usage': {'prompt_tokens': 5, 'completion_tokens': 3},
+            },
+        )
         assert acc.content == 'Hello world'
         assert acc.finish_reason == 'stop'
         resp = buildOpenaiAggregatedFromStream(acc)
@@ -104,8 +165,8 @@ class TestOpenAIAdapter:
         assert isOpenaiToolResultError({'content': 'Error: file not found'}) is True
         assert isOpenaiToolResultError({'content': 'all good'}) is False
 
-class TestAnthropicAdapter:
 
+class TestAnthropicAdapter:
     def testModelAlias(self):
         assert isClaudeFamilyModel('claude-sonnet-4-7') is True
         assert isClaudeFamilyModel('gpt-4o') is False
@@ -124,7 +185,17 @@ class TestAnthropicAdapter:
         assert any(('August' in b.get('text', '') for b in enriched))
 
     def testMessageTranslation(self):
-        anthropicMsgs = [{'role': 'user', 'content': 'Hello'}, {'role': 'assistant', 'content': [{'type': 'text', 'text': 'Hi!'}, {'type': 'tool_use', 'id': 'tu_1', 'name': 'WebSearch', 'input': {'query': 'test'}}]}, {'role': 'tool', 'content': 'results', 'tool_use_id': 'tu_1'}]
+        anthropicMsgs = [
+            {'role': 'user', 'content': 'Hello'},
+            {
+                'role': 'assistant',
+                'content': [
+                    {'type': 'text', 'text': 'Hi!'},
+                    {'type': 'tool_use', 'id': 'tu_1', 'name': 'WebSearch', 'input': {'query': 'test'}},
+                ],
+            },
+            {'role': 'tool', 'content': 'results', 'tool_use_id': 'tu_1'},
+        ]
         openaiMsgs = translateMessages(anthropicMsgs)
         assert len(openaiMsgs) == 3
         assert openaiMsgs[1]['role'] == 'assistant'
@@ -136,7 +207,17 @@ class TestAnthropicAdapter:
         tool_calls so subsequent role:"tool" tool_call_id values resolve;
         otherwise the upstream provider 400s/empties on the re-call after
         tools (the 'chat aborts during tool use' bug)."""
-        msgs = [{'role': 'user', 'content': 'use a tool'}, {'role': 'assistant', 'content': '', 'tool_calls': [{'id': 'call_1', 'type': 'function', 'function': {'name': 'echo', 'arguments': '{"msg":"hi"}'}}]}, {'role': 'tool', 'tool_use_id': 'call_1', 'content': 'hi'}]
+        msgs = [
+            {'role': 'user', 'content': 'use a tool'},
+            {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [
+                    {'id': 'call_1', 'type': 'function', 'function': {'name': 'echo', 'arguments': '{"msg":"hi"}'}}
+                ],
+            },
+            {'role': 'tool', 'tool_use_id': 'call_1', 'content': 'hi'},
+        ]
         out = translateMessages(msgs)
         asst = out[1]
         tcs = asst.get('tool_calls')
@@ -153,13 +234,31 @@ class TestAnthropicAdapter:
         (signature_delta is not captured). Anthropic rejects assistant
         messages with a signature-less thinking block, aborting the re-call
         after tool execution on Claude models with thinking enabled."""
-        msgs = [{'role': 'user', 'content': 'use a tool'}, {'role': 'assistant', 'content': [{'type': 'thinking', 'text': 'reasoning...'}, {'type': 'tool_use', 'id': 'tu_1', 'name': 'echo', 'input': {}}]}, {'role': 'tool', 'tool_use_id': 'tu_1', 'content': 'hi'}]
+        msgs = [
+            {'role': 'user', 'content': 'use a tool'},
+            {
+                'role': 'assistant',
+                'content': [
+                    {'type': 'thinking', 'text': 'reasoning...'},
+                    {'type': 'tool_use', 'id': 'tu_1', 'name': 'echo', 'input': {}},
+                ],
+            },
+            {'role': 'tool', 'tool_use_id': 'tu_1', 'content': 'hi'},
+        ]
         out = translateMessagesToAnthropic(msgs)
         asst = next((m for m in out if m.get('role') == 'assistant'))
         blocks = asst['content']
         assert not any((b.get('type') == 'thinking' and (not b.get('signature')) for b in blocks))
         assert any((b.get('type') == 'tool_use' and b.get('id') == 'tu_1' for b in blocks))
-        userTool = next((m for m in out if m.get('role') == 'user' and isinstance(m.get('content'), list) and any((isinstance(b, dict) and b.get('type') == 'tool_result' for b in m['content']))))
+        userTool = next(
+            (
+                m
+                for m in out
+                if m.get('role') == 'user'
+                and isinstance(m.get('content'), list)
+                and any((isinstance(b, dict) and b.get('type') == 'tool_result' for b in m['content']))
+            )
+        )
         assert any((b.get('type') == 'tool_result' and b.get('tool_use_id') == 'tu_1' for b in userTool['content']))
 
     def testOpenaiRequestBuilder(self):
@@ -173,12 +272,22 @@ class TestAnthropicAdapter:
         assert 'test' in sse
 
     def testSimulatedStream(self):
-        sim = sendSimulatedAnthropicStream({'id': 'msg_test', 'model': 'claude-3', 'content': [{'type': 'text', 'text': 'Hello!'}], 'usage': {'input_tokens': 10, 'output_tokens': 5}})
+        sim = sendSimulatedAnthropicStream(
+            {
+                'id': 'msg_test',
+                'model': 'claude-3',
+                'content': [{'type': 'text', 'text': 'Hello!'}],
+                'usage': {'input_tokens': 10, 'output_tokens': 5},
+            }
+        )
         assert len(sim) >= 4
 
     def testOpenaiToAnthropicConversion(self):
         state = createOpenaiToAnthropicStreamState()
-        events = streamOpenaiDeltaAsAnthropic({'id': 'cmpl-1', 'model': 'gpt-4', 'choices': [{'delta': {'content': 'Hi'}, 'finish_reason': 'stop'}]}, state)
+        events = streamOpenaiDeltaAsAnthropic(
+            {'id': 'cmpl-1', 'model': 'gpt-4', 'choices': [{'delta': {'content': 'Hi'}, 'finish_reason': 'stop'}]},
+            state,
+        )
         assert len(events) >= 2
 
     @pytest.mark.asyncio

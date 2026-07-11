@@ -32,19 +32,23 @@ Usage
     all_templates = get_templates()
     anthropic = get_template("anthropic")
 """
+
 from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Optional
+
 _TEMPLATES: list[dict[str, object]] | None = None
 _INDEX: dict[str, dict[str, object]] | None = None
 _DATADir = Path(__file__).resolve().parent
+
 
 def _load() -> list[dict[str, object]]:
     """Read ``provider_templates.json`` and return the list of template dicts."""
     path = _DATADir / 'provider_templates.json'
     with open(path, 'r', encoding='utf-8') as f:
         return list(json.load(f))
+
 
 def _buildIndex(templates: list[dict[str, object]]) -> dict[str, dict[str, object]]:
     """Build a case-insensitive id → template lookup map."""
@@ -56,6 +60,7 @@ def _buildIndex(templates: list[dict[str, object]]) -> dict[str, dict[str, objec
             idx[tid.lower()] = t
     return idx
 
+
 def getTemplates() -> list[dict[str, object]]:
     """Return all provider templates (cached after first load)."""
     global _TEMPLATES, _INDEX
@@ -63,6 +68,7 @@ def getTemplates() -> list[dict[str, object]]:
         _TEMPLATES = _load()
         _INDEX = _buildIndex(_TEMPLATES)
     return list(_TEMPLATES)
+
 
 def getTemplate(templateId: str) -> Optional[dict[str, object]]:
     """Look up a single template by id (case-insensitive).
@@ -73,6 +79,7 @@ def getTemplate(templateId: str) -> Optional[dict[str, object]]:
     if _INDEX is None:
         getTemplates()
     return (_INDEX or {}).get(templateId.lower())
+
 
 def invalidateCache() -> None:
     """Clear the cached templates (useful for testing)."""

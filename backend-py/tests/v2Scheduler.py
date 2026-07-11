@@ -1,8 +1,10 @@
 """v2 — Test the centralized scheduler."""
+
 import asyncio
 import time
 import pytest
 from app.services.scheduler import Scheduler
+
 
 @pytest.mark.asyncio
 async def testPeriodicTaskFiresAtInterval():
@@ -13,11 +15,13 @@ async def testPeriodicTaskFiresAtInterval():
     async def task():
         nonlocal callCount
         callCount += 1
+
     sched.register_periodic('test', task, interval_seconds=0.05)
     await sched.start()
     await asyncio.sleep(0.18)
     await sched.stop()
     assert callCount >= 2
+
 
 @pytest.mark.asyncio
 async def testIdleTaskFiresAfterThreshold():
@@ -28,11 +32,13 @@ async def testIdleTaskFiresAfterThreshold():
     async def task():
         nonlocal fired
         fired = True
+
     sched.register_idle('test', task, idle_threshold_seconds=0.1)
     await sched.start()
     await asyncio.sleep(0.25)
     await sched.stop()
     assert fired is True
+
 
 @pytest.mark.asyncio
 async def testRecordActivityResetsIdleTimer():
@@ -43,6 +49,7 @@ async def testRecordActivityResetsIdleTimer():
     async def task():
         nonlocal fired
         fired = True
+
     sched.register_idle('test', task, idle_threshold_seconds=0.1)
     await sched.start()
     for __ in range(5):

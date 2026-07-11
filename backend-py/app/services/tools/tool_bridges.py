@@ -8,18 +8,23 @@ schemas taking up prompt space.
 Reserved names (registry rejects these):
     tool_search, tool_describe, tool_call
 """
+
 from __future__ import annotations
 import json
+
 _RESERVEDNames = frozenset({'tool_search', 'tool_describe', 'tool_call'})
+
 
 def isReserved(name: str) -> bool:
     """Check if a tool name is reserved for bridges."""
     return name in _RESERVEDNames
 
-async def handleToolSearch(query: str, limit: int=5) -> str:
+
+async def handleToolSearch(query: str, limit: int = 5) -> str:
     """Search across ALL deferred tools using BM25."""
     from app.services.tools.retrieval import buildToolCatalog, searchTools
     from app.services.tool_registry import listTools
+
     allTools = listTools()
     catalog = buildToolCatalog(allTools)
     results = searchTools(catalog, query, k=limit)
@@ -39,9 +44,11 @@ async def handleToolSearch(query: str, limit: int=5) -> str:
             lines.append(f'  {name}')
     return '\n'.join(lines)
 
+
 async def handleToolDescribe(name: str) -> str:
     """Return the full JSON schema for one deferred tool."""
     from app.services.tool_registry import getTool
+
     tool = getTool(name)
     if not tool:
         return f"Tool '{name}' not found."
@@ -53,12 +60,14 @@ async def handleToolDescribe(name: str) -> str:
     parts.append(f'Schema:\n{json.dumps(schema, indent=2)}')
     return '\n'.join(parts)
 
+
 async def handleToolCall(name: str, arguments: str) -> str:
     """Invoke a deferred tool by name.
 
     ``arguments`` should be a JSON string matching the tool's schema.
     """
     from app.services.tool_registry import dispatch
+
     try:
         args = json.loads(arguments) if arguments else {}
     except json.JSONDecodeError as e:

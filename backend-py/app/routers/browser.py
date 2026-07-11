@@ -4,12 +4,15 @@ Surfaces the headless Playwright browser layer (distinct from desktop
 automation). Currently provides screenshot retrieval so the frontend's
 browser drawer section can render screenshots captured during tool runs.
 """
+
 from __future__ import annotations
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from app.lib.paths import dataPath
+
 router = APIRouter(prefix='/api/browser', tags=['browser'])
+
 
 @router.get('/screenshot')
 async def getScreenshot(path: str) -> FileResponse:

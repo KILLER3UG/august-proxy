@@ -10,21 +10,38 @@ Covers the four routes mounted by ``app.routers.brain_config``:
 Uses the ``isolated_data`` conftest fixture so config.json and the SQLite
 brain DB never touch the user's real data directory.
 """
+
 from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 from app.main import app
 from app.services.memory_store import listConfigAudit
-_ALLCamelKeys = {'enabled', 'adaptivePolicy', 'failureLearning', 'graphMemory', 'agentJobs', 'hierarchicalAgents', 'adapterParallelTools', 'parallelReadTools', 'reviewLearnedGuidelines', 'maxAgentDepth', 'maxWorkbenchToolLoops'}
+
+_ALLCamelKeys = {
+    'enabled',
+    'adaptivePolicy',
+    'failureLearning',
+    'graphMemory',
+    'agentJobs',
+    'hierarchicalAgents',
+    'adapterParallelTools',
+    'parallelReadTools',
+    'reviewLearnedGuidelines',
+    'maxAgentDepth',
+    'maxWorkbenchToolLoops',
+}
+
 
 @pytest.fixture
 async def client(isolatedData):
     from app.services.workbench import workbench as wb
+
     wb._sessions.clear()
     wb.saveSessions()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as ac:
         yield ac
+
 
 @pytest.mark.asyncio
 async def testGetReturnsDefaultsWhenNoPersisted(client):
@@ -38,11 +55,13 @@ async def testGetReturnsDefaultsWhenNoPersisted(client):
     assert body['sessionId'] in (None, '')
     assert body['session'] in (None, '')
 
+
 @pytest.mark.asyncio
 async def testGetReflectsPersistedOverrides(client, isolatedData, monkeypatch):
     """Manually persist a snake_case override → source='persisted' + camelCase config."""
     import json
     from app.lib.paths import dataPath
+
     cfgPath = dataPath('config.json')
     cfgPath.write_text(json.dumps({'brain_orchestrator': {'enabled': False, 'max_agent_depth': 2}}), 'utf-8')
     resp = await client.get('/api/brain/config')
@@ -53,6 +72,7 @@ async def testGetReflectsPersistedOverrides(client, isolatedData, monkeypatch):
     assert body['config']['maxAgentDepth'] == 2
     assert body['defaults']['enabled'] is True
     assert body['defaults']['maxAgentDepth'] == 4
+
 
 @pytest.mark.asyncio
 async def testPutMergesAndAudits(client, isolatedData):
@@ -71,6 +91,7 @@ async def testPutMergesAndAudits(client, isolatedData):
     assert update['after']['enabled'] is False
     assert update['after']['max_agent_depth'] == 3
 
+
 @pytest.mark.asyncio
 async def testPutRejectsUnknownKey(client, isolatedData):
     """Unknown field → 400, no save, no audit row."""
@@ -82,11 +103,13 @@ async def testPutRejectsUnknownKey(client, isolatedData):
     assert body['source'] == 'fallback'
     assert not listConfigAudit(category='brain')
 
+
 @pytest.mark.asyncio
 async def testPutRejectsWrongType(client, isolatedData):
     """Boolean field given a string → 400."""
     resp = await client.put('/api/brain/config', json={'enabled': 'yes'})
     assert resp.status_code == 400
+
 
 @pytest.mark.asyncio
 async def testPutRejectsOutOfRangeNumber(client, isolatedData):
@@ -95,6 +118,7 @@ async def testPutRejectsOutOfRangeNumber(client, isolatedData):
     assert resp.status_code == 400
     resp = await client.put('/api/brain/config', json={'maxAgentDepth': 0})
     assert resp.status_code == 400
+
 
 @pytest.mark.asyncio
 async def testResetClearsPersistedAndAudits(client, isolatedData):
@@ -114,10 +138,12 @@ async def testResetClearsPersistedAndAudits(client, isolatedData):
     assert resets[0]['before'].get('enabled') is False
     assert resets[0]['after'] == {}
 
+
 @pytest.mark.asyncio
 async def testFromSessionReturnsSessionSource(client, isolatedData):
     """When a workbench session exists, source='session' + session fields populated."""
     from app.services.workbench import workbench as wb
+
     sess = wb.createWorkbenchSession(provider='anthropic', goal='draft release notes')
     resp = await client.get('/api/brain/config/from-session', params={'sessionId': sess.id})
     assert resp.status_code == 200
@@ -126,6 +152,7 @@ async def testFromSessionReturnsSessionSource(client, isolatedData):
     assert body['sessionId'] == sess.id
     assert body['session']['id'] == sess.id
     assert body['session']['task'] == 'draft release notes'
+
 
 @pytest.mark.asyncio
 async def testFromSessionRequiresSessionId(client):

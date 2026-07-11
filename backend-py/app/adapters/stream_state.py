@@ -5,14 +5,17 @@ Replaces ad-hoc dict-based stream states with typed @dataclass classes
 that encapsulate accumulation logic in methods rather than scattered
 functions operating on raw dicts.
 """
+
 from __future__ import annotations
 import json
+import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
 
 # ── SSE formatting helpers ───────────────────────────────────────────────
+
 
 def writeSseEvent(event: str, data: dict[str, Any]) -> str:
     """Serialize an Anthropic-style SSE event line."""
@@ -26,6 +29,7 @@ def writeSseDataOnly(data: dict[str, Any]) -> str:
 
 # ── Tool call accumulation ──────────────────────────────────────────────
 
+
 @dataclass
 class ToolCallDelta:
     """A single tool call accumulated from streaming deltas by index.
@@ -34,6 +38,7 @@ class ToolCallDelta:
     Can be rendered to either OpenAI-format (``to_openai_dict``) or
     Anthropic-format (``to_anthropic_tool_use``).
     """
+
     index: int = 0
     id: str = ''
     type: str = 'function'
@@ -78,6 +83,7 @@ class ToolCallDelta:
 
 # ── OpenAI stream accumulator ────────────────────────────────────────────
 
+
 @dataclass
 class OpenaiStreamAccumulator:
     """Accumulate OpenAI Chat Completions streaming chunks.
@@ -87,6 +93,7 @@ class OpenaiStreamAccumulator:
     - ``accumulateOpenaiChunk``
     - ``buildOpenaiAggregatedFromStream``
     """
+
     id: str = ''
     model: str = ''
     created: int = 0
@@ -154,12 +161,15 @@ class OpenaiStreamAccumulator:
             'object': 'chat.completion',
             'created': self.created or int(time.time()),
             'model': self.model or 'unknown',
-            'choices': [{
-                'index': 0,
-                'message': message,
-                'finish_reason': self.finish_reason or 'stop',
-            }],
-            'usage': self.usage or {
+            'choices': [
+                {
+                    'index': 0,
+                    'message': message,
+                    'finish_reason': self.finish_reason or 'stop',
+                }
+            ],
+            'usage': self.usage
+            or {
                 'prompt_tokens': 0,
                 'completion_tokens': 0,
                 'total_tokens': 0,
@@ -168,6 +178,7 @@ class OpenaiStreamAccumulator:
 
 
 # ── Anthropic shared stream data ────────────────────────────────────────
+
 
 @dataclass
 class AnthropicStreamData:
@@ -178,6 +189,7 @@ class AnthropicStreamData:
     since the two classes process different input formats (Anthropic SSE
     events vs. OpenAI chunks) but share the same output state shape.
     """
+
     message_id: str = ''
     model: str = ''
     role: str = 'assistant'
@@ -190,6 +202,7 @@ class AnthropicStreamData:
 
 # ── Anthropic native stream state ────────────────────────────────────────
 
+
 @dataclass
 class AnthropicNativeStreamState:
     """Tracks state from a native Anthropic SSE stream.
@@ -201,6 +214,7 @@ class AnthropicNativeStreamState:
     Replaces ``createAnthropicNativeStreamState`` and the inline
     event-processing code in ``_streamAnthropicNative``.
     """
+
     data: AnthropicStreamData = field(default_factory=AnthropicStreamData)
 
     def process_message_start(self, event: dict[str, Any]) -> None:
@@ -247,13 +261,11 @@ class AnthropicNativeStreamState:
 
     def get_tool_uses(self) -> list[dict[str, Any]]:
         """Return all content blocks with type='tool_use'."""
-        return [
-            b for b in self.data.content_blocks
-            if isinstance(b, dict) and b.get('type') == 'tool_use'
-        ]
+        return [b for b in self.data.content_blocks if isinstance(b, dict) and b.get('type') == 'tool_use']
 
 
 # ── OpenAI-to-Anthropic stream converter state ───────────────────────────
+
 
 def _make_conversion_data() -> AnthropicStreamData:
     """Factory for the default data in OpenaiToAnthropicStreamState."""
@@ -274,6 +286,7 @@ class OpenaiToAnthropicStreamState:
     Replaces ``createOpenaiToAnthropicStreamState`` and
     ``streamOpenaiDeltaAsAnthropic``.
     """
+
     data: AnthropicStreamData = field(default_factory=_make_conversion_data)
     accumulated_text: str = ''
     accumulated_reasoning: str = ''
@@ -308,19 +321,24 @@ class OpenaiToAnthropicStreamState:
 
         if not self._started:
             self._started = True
-            events.append(writeSseEvent('message_start', {
-                'type': 'message_start',
-                'message': {
-                    'id': self.data.message_id,
-                    'type': 'message',
-                    'role': 'assistant',
-                    'content': [],
-                    'model': self.data.model or 'unknown',
-                    'stop_reason': None,
-                    'stop_sequence': None,
-                    'usage': {'input_tokens': 0, 'output_tokens': 0},
-                },
-            }))
+            events.append(
+                writeSseEvent(
+                    'message_start',
+                    {
+                        'type': 'message_start',
+                        'message': {
+                            'id': self.data.message_id,
+                            'type': 'message',
+                            'role': 'assistant',
+                            'content': [],
+                            'model': self.data.model or 'unknown',
+                            'stop_reason': None,
+                            'stop_sequence': None,
+                            'usage': {'input_tokens': 0, 'output_tokens': 0},
+                        },
+                    },
+                )
+            )
 
         # Text content → Anthropic text_delta
         content = delta.get('content', '')
@@ -329,16 +347,26 @@ class OpenaiToAnthropicStreamState:
                 self._text_block_started = True
                 self.data.current_index += 1
                 idx = self.data.current_index
-                events.append(writeSseEvent('content_block_start', {
-                    'type': 'content_block_start',
-                    'index': idx,
-                    'content_block': {'type': 'text', 'text': ''},
-                }))
-            events.append(writeSseEvent('content_block_delta', {
-                'type': 'content_block_delta',
-                'index': self.data.current_index,
-                'delta': {'type': 'text_delta', 'text': content},
-            }))
+                events.append(
+                    writeSseEvent(
+                        'content_block_start',
+                        {
+                            'type': 'content_block_start',
+                            'index': idx,
+                            'content_block': {'type': 'text', 'text': ''},
+                        },
+                    )
+                )
+            events.append(
+                writeSseEvent(
+                    'content_block_delta',
+                    {
+                        'type': 'content_block_delta',
+                        'index': self.data.current_index,
+                        'delta': {'type': 'text_delta', 'text': content},
+                    },
+                )
+            )
             self.accumulated_text += content
 
         # Reasoning content → Anthropic thinking_delta
@@ -348,16 +376,26 @@ class OpenaiToAnthropicStreamState:
                 self._reasoning_block_started = True
                 self.data.current_index += 1
                 idx = self.data.current_index
-                events.append(writeSseEvent('content_block_start', {
-                    'type': 'content_block_start',
-                    'index': idx,
-                    'content_block': {'type': 'thinking', 'text': ''},
-                }))
-            events.append(writeSseEvent('content_block_delta', {
-                'type': 'content_block_delta',
-                'index': self.data.current_index,
-                'delta': {'type': 'thinking_delta', 'thinking': reasoning},
-            }))
+                events.append(
+                    writeSseEvent(
+                        'content_block_start',
+                        {
+                            'type': 'content_block_start',
+                            'index': idx,
+                            'content_block': {'type': 'thinking', 'text': ''},
+                        },
+                    )
+                )
+            events.append(
+                writeSseEvent(
+                    'content_block_delta',
+                    {
+                        'type': 'content_block_delta',
+                        'index': self.data.current_index,
+                        'delta': {'type': 'thinking_delta', 'thinking': reasoning},
+                    },
+                )
+            )
             self.accumulated_reasoning += reasoning
 
         # Tool call deltas → pending (emitted as tool_use blocks on finish)
@@ -382,14 +420,19 @@ class OpenaiToAnthropicStreamState:
             self._emit_content_block_stops(events)
             self._emit_tool_use_blocks(events)
             anthropic_stop = self._map_finish_reason(finish_reason)
-            events.append(writeSseEvent('message_delta', {
-                'type': 'message_delta',
-                'delta': {'stop_reason': anthropic_stop, 'stop_sequence': None},
-                'usage': {
-                    'input_tokens': self.data.input_tokens,
-                    'output_tokens': self.data.output_tokens,
-                },
-            }))
+            events.append(
+                writeSseEvent(
+                    'message_delta',
+                    {
+                        'type': 'message_delta',
+                        'delta': {'stop_reason': anthropic_stop, 'stop_sequence': None},
+                        'usage': {
+                            'input_tokens': self.data.input_tokens,
+                            'output_tokens': self.data.output_tokens,
+                        },
+                    },
+                )
+            )
             events.append(writeSseEvent('message_stop', {'type': 'message_stop'}))
 
         # Capture upstream usage stats
@@ -406,13 +449,25 @@ class OpenaiToAnthropicStreamState:
         """Close any open text/thinking content blocks."""
         idx = self.data.current_index
         if self._text_block_started:
-            events.append(writeSseEvent('content_block_stop', {
-                'type': 'content_block_stop', 'index': idx,
-            }))
+            events.append(
+                writeSseEvent(
+                    'content_block_stop',
+                    {
+                        'type': 'content_block_stop',
+                        'index': idx,
+                    },
+                )
+            )
         if self._reasoning_block_started:
-            events.append(writeSseEvent('content_block_stop', {
-                'type': 'content_block_stop', 'index': idx,
-            }))
+            events.append(
+                writeSseEvent(
+                    'content_block_stop',
+                    {
+                        'type': 'content_block_stop',
+                        'index': idx,
+                    },
+                )
+            )
 
     def _emit_tool_use_blocks(self, events: list[str]) -> None:
         """Emit tool_use content blocks for all pending tool calls."""
@@ -420,17 +475,35 @@ class OpenaiToAnthropicStreamState:
             self.data.current_index += 1
             idx = self.data.current_index
             tu = tc.to_anthropic_tool_use()
-            events.append(writeSseEvent('content_block_start', {
-                'type': 'content_block_start', 'index': idx,
-                'content_block': tu,
-            }))
-            events.append(writeSseEvent('content_block_delta', {
-                'type': 'content_block_delta', 'index': idx,
-                'delta': {'type': 'input_json_delta', 'partial_json': tc.function_arguments},
-            }))
-            events.append(writeSseEvent('content_block_stop', {
-                'type': 'content_block_stop', 'index': idx,
-            }))
+            events.append(
+                writeSseEvent(
+                    'content_block_start',
+                    {
+                        'type': 'content_block_start',
+                        'index': idx,
+                        'content_block': tu,
+                    },
+                )
+            )
+            events.append(
+                writeSseEvent(
+                    'content_block_delta',
+                    {
+                        'type': 'content_block_delta',
+                        'index': idx,
+                        'delta': {'type': 'input_json_delta', 'partial_json': tc.function_arguments},
+                    },
+                )
+            )
+            events.append(
+                writeSseEvent(
+                    'content_block_stop',
+                    {
+                        'type': 'content_block_stop',
+                        'index': idx,
+                    },
+                )
+            )
             self.data.content_blocks.append(tu)
 
     @staticmethod
@@ -454,11 +527,13 @@ class OpenaiToAnthropicStreamState:
             'object': 'chat.completion',
             'created': int(time.time()),
             'model': self.data.model or 'unknown',
-            'choices': [{
-                'index': 0,
-                'message': {'role': 'assistant', 'content': self.accumulated_text},
-                'finish_reason': self.data.stop_reason or 'stop',
-            }],
+            'choices': [
+                {
+                    'index': 0,
+                    'message': {'role': 'assistant', 'content': self.accumulated_text},
+                    'finish_reason': self.data.stop_reason or 'stop',
+                }
+            ],
             'usage': {
                 'prompt_tokens': self.data.input_tokens,
                 'completion_tokens': self.data.output_tokens,

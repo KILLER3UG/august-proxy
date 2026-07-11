@@ -12,6 +12,7 @@ must authenticate with the ``GATEWAY_API_KEY`` Bearer token. The local SPA
 is unaffected because it uses ``/api/*`` (workbench, sessions, etc.) instead
 of ``/v1/*``.
 """
+
 from __future__ import annotations
 import time
 from typing import AsyncIterator
@@ -23,7 +24,9 @@ from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.lib.gateway_auth import require_gateway_key
 from app.providers import resolver as providerResolver
 from app.services import logger as trafficLogger
+
 router = APIRouter()
+
 
 def _clientTypeFor(endpoint: str) -> str:
     """Map a proxy endpoint to the clientType the UI groups by."""
@@ -34,7 +37,7 @@ def _clientTypeFor(endpoint: str) -> str:
     return 'openai'
 
 
-async def _readJsonBody(request: Request, endpoint: str) -> dict:
+async def _readJsonBody(request: Request, endpoint: str) -> dict[str, object] | JSONResponse:
     """Read and parse the request JSON body, returning a clean 400 on failure.
 
     ``request.json()`` raises ``json.JSONDecodeError`` on malformed input; without
@@ -44,11 +47,13 @@ async def _readJsonBody(request: Request, endpoint: str) -> dict:
     try:
         return await request.json()
     except Exception as exc:  # malformed JSON / empty body
-        trafficLogger.emitLogEvent({
-            'category': 'proxy_error',
-            'level': 'warn',
-            'message': f'[{endpoint}] malformed request JSON: {exc}',
-        })
+        trafficLogger.emitLogEvent(
+            {
+                'category': 'proxy_error',
+                'level': 'warn',
+                'message': f'[{endpoint}] malformed request JSON: {exc}',
+            }
+        )
         return JSONResponse(
             status_code=400,
             content={'error': {'code': 'invalid_json', 'message': 'Request body must be valid JSON'}},
@@ -62,11 +67,13 @@ def _emit(category: str, level: str, message: str, metadata: object = None) -> N
     except Exception:
         pass
 
+
 def _safeInt(v: object) -> int:
     try:
-        return int(v or 0)
+        return int(v) if isinstance(v, (int, float, str)) else 0
     except (TypeError, ValueError):
         return 0
+
 
 async def _trackRequest(endpoint: str, body: dict[str, object], request: Request):
     """Register a pending request and capture its body for observability.
@@ -76,15 +83,31 @@ async def _trackRequest(endpoint: str, body: dict[str, object], request: Request
     until the stale-cleanup sweep.
     """
     model = as_str(body.get('model'), 'unknown')
-    reqId = trafficLogger.startRequest({'model': model, 'provider': model, 'clientType': _clientTypeFor(endpoint), 'endpoint': f'/v1/{endpoint}', 'method': request.method if hasattr(request, 'method') else 'POST', 'path': f'/v1/{endpoint}', 'sessionId': as_str(body.get('sessionId')) or as_str(body.get('session_id')) or ''})
+    reqId = trafficLogger.startRequest(
+        {
+            'model': model,
+            'provider': model,
+            'clientType': _clientTypeFor(endpoint),
+            'endpoint': f'/v1/{endpoint}',
+            'method': request.method if hasattr(request, 'method') else 'POST',
+            'path': f'/v1/{endpoint}',
+            'sessionId': as_str(body.get('sessionId')) or as_str(body.get('session_id')) or '',
+        }
+    )
     trafficLogger.captureRequest(reqId, body)
     trafficLogger.logActivity('request_start', f'{_clientTypeFor(endpoint)} /v1/{endpoint} → {model}')
-    _emit('proxy_incoming', 'info', f'{_clientTypeFor(endpoint)} /v1/{endpoint} → {model}', {
-        'model': model,
-        'endpoint': endpoint,
-        'sessionId': as_str(body.get('sessionId')) or as_str(body.get('session_id')) or '',
-    })
+    _emit(
+        'proxy_incoming',
+        'info',
+        f'{_clientTypeFor(endpoint)} /v1/{endpoint} → {model}',
+        {
+            'model': model,
+            'endpoint': endpoint,
+            'sessionId': as_str(body.get('sessionId')) or as_str(body.get('session_id')) or '',
+        },
+    )
     return reqId
+
 
 def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
     """Finalize a non-streaming request: capture response/tokens, end it."""
@@ -92,7 +115,7 @@ def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
         trafficLogger.capture_error(reqId, as_str(result.get('error'))[:500])
         trafficLogger.capture_response(reqId, result)
         trafficLogger.endRequest(reqId, {'error': as_str(result.get('error'))})
-        trafficLogger.logActivity('request_error', f"[{reqId}] {result.get('error')}")
+        trafficLogger.logActivity('request_error', f'[{reqId}] {result.get("error")}')
         _emit('error', 'error', f'Proxy request failed: {result.get("error")}', {'reqId': reqId})
         return result
     trafficLogger.capture_response(reqId, result)
@@ -102,14 +125,20 @@ def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
     if inT or outT:
         trafficLogger.capture_tokens(reqId, inT, outT)
     trafficLogger.endRequest(reqId, {'usage': usage})
-    trafficLogger.logActivity('request_complete', f"[{reqId}] {_clientTypeFor('')} ok ({inT + outT} tok)")
-    _emit('proxy_upstream', 'info', f'Upstream complete ({inT + outT} tokens)', {
-        'reqId': reqId,
-        'inputTokens': inT,
-        'outputTokens': outT,
-        'model': as_str(result.get('model'), 'unknown'),
-    })
+    trafficLogger.logActivity('request_complete', f'[{reqId}] {_clientTypeFor("")} ok ({inT + outT} tok)')
+    _emit(
+        'proxy_upstream',
+        'info',
+        f'Upstream complete ({inT + outT} tokens)',
+        {
+            'reqId': reqId,
+            'inputTokens': inT,
+            'outputTokens': outT,
+            'model': as_str(result.get('model'), 'unknown'),
+        },
+    )
     return result
+
 
 async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[str]:
     """Wrap an SSE stream so completion finalizes the request entry.
@@ -127,6 +156,7 @@ async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[s
                     lower = chunk
                     if '"usage"' in lower or '"message_delta"' in lower:
                         import re
+
                         mIn = re.search('"input_tokens"[:\\s]+(\\d+)', lower)
                         mOut = re.search('"output_tokens"[:\\s]+(\\d+)', lower)
                         if mIn:
@@ -149,8 +179,9 @@ async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[s
     finally:
         pass
 
+
 @router.post('/v1/messages')
-async def anthropicMessages(request: Request, _auth: bool=Depends(require_gateway_key)):
+async def anthropicMessages(request: Request, _auth: bool = Depends(require_gateway_key)):
     """Anthropic Messages API proxy.
 
     Delegates to the Anthropic adapter which handles:
@@ -168,12 +199,17 @@ async def anthropicMessages(request: Request, _auth: bool=Depends(require_gatewa
     if isinstance(result, dict):
         return _endNonStream(reqId, result)
     if isinstance(result, AsyncIterator):
-        return StreamingResponse(_wrapStream(reqId, result), media_type='text/event-stream', headers=headers or {'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no'})
+        return StreamingResponse(
+            _wrapStream(reqId, result),
+            media_type='text/event-stream',
+            headers=headers or {'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no'},
+        )
     trafficLogger.endRequest(reqId, {})
     return result
 
+
 @router.post('/v1/chat/completions')
-async def openaiChat(request: Request, _auth: bool=Depends(require_gateway_key)):
+async def openaiChat(request: Request, _auth: bool = Depends(require_gateway_key)):
     """OpenAI Chat Completions API proxy.
 
     Delegates to the OpenAI adapter which handles:
@@ -190,12 +226,17 @@ async def openaiChat(request: Request, _auth: bool=Depends(require_gateway_key))
     if isinstance(result, dict):
         return _endNonStream(reqId, result)
     if isinstance(result, AsyncIterator):
-        return StreamingResponse(_wrapStream(reqId, result), media_type='text/event-stream', headers=headers or {'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no'})
+        return StreamingResponse(
+            _wrapStream(reqId, result),
+            media_type='text/event-stream',
+            headers=headers or {'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no'},
+        )
     trafficLogger.endRequest(reqId, {})
     return result
 
+
 @router.post('/v1/responses')
-async def openaiResponses(request: Request, _auth: bool=Depends(require_gateway_key)):
+async def openaiResponses(request: Request, _auth: bool = Depends(require_gateway_key)):
     """OpenAI Responses API proxy.
 
     Translates the chat completion response to the Responses API format.
@@ -213,36 +254,74 @@ async def openaiResponses(request: Request, _auth: bool=Depends(require_gateway_
         translated = _translateToResponsesFormat(result)
         return _endNonStream(reqId, translated)
     if isinstance(result, AsyncIterator):
-        return StreamingResponse(_wrapStream(reqId, result), media_type='text/event-stream', headers=headers or {'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no'})
+        return StreamingResponse(
+            _wrapStream(reqId, result),
+            media_type='text/event-stream',
+            headers=headers or {'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no'},
+        )
     trafficLogger.endRequest(reqId, {})
     return result
+
 
 def _translateToResponsesFormat(chatCompletion: dict) -> dict:
     """Translate a Chat Completions response to Responses API format."""
     import uuid
     import time
+
     choices = as_list(chatCompletion.get('choices'), [])
-    choice = choices[0] if choices else {}
+    choice = as_dict(choices[0] if choices else None, {})
     message = as_dict(choice.get('message'), {})
     finishReason = as_str(choice.get('finish_reason'), 'stop')
     usage = as_dict(chatCompletion.get('usage'), {})
-    outputItems = []
+    outputItems: list[dict[str, object]] = []
     reasoning = as_str(message.get('reasoning')) or as_str(message.get('reasoning_content'), '')
     if reasoning:
-        outputItems.append({'id': f'item_{uuid.uuid4().hex[:8]}', 'type': 'reasoning', 'status': 'completed', 'content': reasoning})
+        outputItems.append(
+            {'id': f'item_{uuid.uuid4().hex[:8]}', 'type': 'reasoning', 'status': 'completed', 'content': reasoning}
+        )
     for tc_raw in as_list(message.get('tool_calls'), []):
         tc = as_dict(tc_raw)
         func = as_dict(tc.get('function'), {})
-        outputItems.append({'id': as_str(tc.get('id'), f'call_{uuid.uuid4().hex[:8]}'), 'type': 'function_call', 'status': 'completed', 'name': as_str(func.get('name'), ''), 'arguments': as_str(func.get('arguments'), ''), 'call_id': as_str(tc.get('id'), '')})
+        outputItems.append(
+            {
+                'id': as_str(tc.get('id'), f'call_{uuid.uuid4().hex[:8]}'),
+                'type': 'function_call',
+                'status': 'completed',
+                'name': as_str(func.get('name'), ''),
+                'arguments': as_str(func.get('arguments'), ''),
+                'call_id': as_str(tc.get('id'), ''),
+            }
+        )
     content = as_str(message.get('content'), '')
     if content:
-        outputItems.append({'id': f'msg_{uuid.uuid4().hex[:8]}', 'type': 'message', 'status': 'completed', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': content}]})
-    return {'id': f'resp_{uuid.uuid4().hex[:12]}', 'object': 'response', 'created_at': int(time.time()), 'status': 'completed', 'model': as_str(chatCompletion.get('model'), ''), 'output': outputItems, 'usage': {'input_tokens': as_int(usage.get('prompt_tokens'), 0), 'output_tokens': as_int(usage.get('completion_tokens'), 0), 'total_tokens': as_int(usage.get('total_tokens'), 0)}}
+        outputItems.append(
+            {
+                'id': f'msg_{uuid.uuid4().hex[:8]}',
+                'type': 'message',
+                'status': 'completed',
+                'role': 'assistant',
+                'content': [{'type': 'output_text', 'text': content}],
+            }
+        )
+    return {
+        'id': f'resp_{uuid.uuid4().hex[:12]}',
+        'object': 'response',
+        'created_at': int(time.time()),
+        'status': 'completed',
+        'model': as_str(chatCompletion.get('model'), ''),
+        'output': outputItems,
+        'usage': {
+            'input_tokens': as_int(usage.get('prompt_tokens'), 0),
+            'output_tokens': as_int(usage.get('completion_tokens'), 0),
+            'total_tokens': as_int(usage.get('total_tokens'), 0),
+        },
+    }
+
 
 @router.get('/v1/models')
-async def listModels(_auth: bool=Depends(require_gateway_key)):
+async def listModels(_auth: bool = Depends(require_gateway_key)):
     """List available models from all configured providers."""
-    providers = providerResolver.listAvailable()
+    providers = providerResolver.list_available()
     models = []
     for p in providers:
         name = as_str(p.get('name'), '')
@@ -250,5 +329,14 @@ async def listModels(_auth: bool=Depends(require_gateway_key)):
         for modelId, profile in modelProfiles.items():
             if modelId == '*':
                 continue
-            models.append({'id': modelId, 'provider': name, 'object': 'model', 'context_window': as_int(profile.get('contextWindow'), 0), 'max_output_tokens': as_int(profile.get('maxOutputTokens'), 0)})
+            profileDict = as_dict(profile, {})
+            models.append(
+                {
+                    'id': modelId,
+                    'provider': name,
+                    'object': 'model',
+                    'context_window': as_int(profileDict.get('contextWindow'), 0),
+                    'max_output_tokens': as_int(profileDict.get('maxOutputTokens'), 0),
+                }
+            )
     return {'object': 'list', 'data': models}

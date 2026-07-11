@@ -6,10 +6,13 @@ header (``Bearer`` with a MiniMax-specific key) and default parameters.
 Port of the MiniMax-specific portions of backend/adapters/base.js and
 backend/providers/minimax.js / minimax-cn.js.
 """
+
 from __future__ import annotations
 from typing import AsyncIterator
+from app.jsonUtils import as_str
 from app.providers.clients.anthropic import AnthropicClient
 from app.providers.clients.base import ProviderResponse
+
 
 class MiniMaxClient(AnthropicClient):
     """Client for MiniMax's Anthropic-compatible endpoint.
@@ -19,6 +22,7 @@ class MiniMaxClient(AnthropicClient):
     - Default parameters (temperature=1, top_p=0.95, top_k=40)
     - Combined thinking/output budget
     """
+
     apiFormat = 'minimax'
 
     def resolveBaseUrl(self) -> str:
@@ -29,5 +33,5 @@ class MiniMaxClient(AnthropicClient):
         """
         base = super().resolveBaseUrl()
         if not base:
-            base = self.config.get('baseUrl', 'https://api.minimax.io/anthropic')
+            base = as_str(self.config.get('baseUrl'), 'https://api.minimax.io/anthropic')
         return base.rstrip('/')

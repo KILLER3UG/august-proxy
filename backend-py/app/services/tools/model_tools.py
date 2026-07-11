@@ -10,15 +10,51 @@ The ``assemble_tool_defs()`` function is the orchestrator:
 
 This is a pure function — trivially testable.
 """
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from app.services.tools.retrieval import buildToolCatalog, searchTools, buildQueryFromMessages
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
-AUGUST_CORE_TOOLS: frozenset[str] = frozenset({'read_file', 'write_file', 'list_directory', 'search_files', 'run_command', 'web_fetch', 'web_search', 'memory_search', 'fact_search', 'context_read', 'brain_query', 'load_skill', 'list_skills', 'skill_manage', 'spawn_subagent', 'diagnose_proxy', 'describe_environment', 'tool_search', 'tool_describe', 'tool_call', 'update_heuristics', 'update_state', 'write_scratchpad', 'spawn_daemon', 'list_daemons', 'kill_daemon', 'write_blackboard', 'read_blackboard', 'clear_blackboard', 'setup_provider'})
+
+AUGUST_CORE_TOOLS: frozenset[str] = frozenset(
+    {
+        'read_file',
+        'write_file',
+        'list_directory',
+        'search_files',
+        'run_command',
+        'web_fetch',
+        'web_search',
+        'memory_search',
+        'fact_search',
+        'context_read',
+        'brain_query',
+        'load_skill',
+        'list_skills',
+        'skill_manage',
+        'spawn_subagent',
+        'diagnose_proxy',
+        'describe_environment',
+        'tool_search',
+        'tool_describe',
+        'tool_call',
+        'update_heuristics',
+        'update_state',
+        'write_scratchpad',
+        'spawn_daemon',
+        'list_daemons',
+        'kill_daemon',
+        'write_blackboard',
+        'read_blackboard',
+        'clear_blackboard',
+        'setup_provider',
+    }
+)
+
 
 @dataclass
 class AssemblyResult:
-    toolDefs: list[dict] = field(default_factory=list)
+    tool_defs: list[dict] = field(default_factory=list)
     activated: bool = False
     preloadedTools: list[str] = field(default_factory=list)
     preloadedToolCount: int = 0
@@ -27,7 +63,44 @@ class AssemblyResult:
     deferredCount: int = 0
     deferredTokens: int = 0
     thresholdTokens: int = 0
-_BRIDGEToolDefs: list[dict[str, object]] = [{'name': 'tool_search', 'description': "Search across ALL available tools using BM25. Use this when you need a tool you don't see listed.", 'input_schema': {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'Search query describing what you need.'}, 'limit': {'type': 'integer', 'description': 'Max results (1-10).', 'default': 5}}, 'required': ['query']}}, {'name': 'tool_describe', 'description': 'Get the full JSON schema for any tool.', 'input_schema': {'type': 'object', 'properties': {'name': {'type': 'string', 'description': 'The tool name to describe.'}}, 'required': ['name']}}, {'name': 'tool_call', 'description': "Call a tool by name with JSON arguments. Use this to invoke a tool that isn't directly visible.", 'input_schema': {'type': 'object', 'properties': {'name': {'type': 'string', 'description': 'The tool name to call.'}, 'arguments': {'type': 'string', 'description': "JSON arguments matching the tool's schema."}}, 'required': ['name', 'arguments']}}]
+
+
+_BRIDGEToolDefs: list[dict[str, object]] = [
+    {
+        'name': 'tool_search',
+        'description': "Search across ALL available tools using BM25. Use this when you need a tool you don't see listed.",
+        'input_schema': {
+            'type': 'object',
+            'properties': {
+                'query': {'type': 'string', 'description': 'Search query describing what you need.'},
+                'limit': {'type': 'integer', 'description': 'Max results (1-10).', 'default': 5},
+            },
+            'required': ['query'],
+        },
+    },
+    {
+        'name': 'tool_describe',
+        'description': 'Get the full JSON schema for any tool.',
+        'input_schema': {
+            'type': 'object',
+            'properties': {'name': {'type': 'string', 'description': 'The tool name to describe.'}},
+            'required': ['name'],
+        },
+    },
+    {
+        'name': 'tool_call',
+        'description': "Call a tool by name with JSON arguments. Use this to invoke a tool that isn't directly visible.",
+        'input_schema': {
+            'type': 'object',
+            'properties': {
+                'name': {'type': 'string', 'description': 'The tool name to call.'},
+                'arguments': {'type': 'string', 'description': "JSON arguments matching the tool's schema."},
+            },
+            'required': ['name', 'arguments'],
+        },
+    },
+]
+
 
 def _estimateToolTokens(toolDef: dict) -> int:
     """Rough estimate of how many tokens a tool schema consumes."""
@@ -35,7 +108,18 @@ def _estimateToolTokens(toolDef: dict) -> int:
     desc = toolDef.get('description', '')
     return (len(desc) + len(schemaStr)) // 4 + 20
 
-def assembleToolDefs(allToolDefs: list[dict], contextMessages: list[dict] | None=None, coreToolNames: set[str] | None=None, contextLength: int=200000, *, thresholdPct: float=10.0, preloadK: int=10, skillIndex: list[dict] | None=None, autoPrimeJ: int=2) -> AssemblyResult:
+
+def assembleToolDefs(
+    all_tool_defs: list[dict],
+    context_messages: list[dict] | None = None,
+    coreToolNames: set[str] | None = None,
+    contextLength: int = 200000,
+    *,
+    thresholdPct: float = 10.0,
+    preloadK: int = 10,
+    skillIndex: list[dict] | None = None,
+    autoPrimeJ: int = 2,
+) -> AssemblyResult:
     """Assemble the tool definitions the model will see.
 
     Returns an ``AssemblyResult`` with the assembled tool list and metadata.
@@ -47,7 +131,7 @@ def assembleToolDefs(allToolDefs: list[dict], contextMessages: list[dict] | None
     coreDefs: list[dict] = []
     deferrableDefs: list[dict] = []
     deferrableTokens = 0
-    for td in allToolDefs:
+    for td in all_tool_defs:
         name = td.get('name', '') if isinstance(td, dict) else ''
         if name in coreToolNames or name.startswith('mcp__'):
             coreDefs.append(td)
@@ -56,14 +140,14 @@ def assembleToolDefs(allToolDefs: list[dict], contextMessages: list[dict] | None
             deferrableTokens += _estimateToolTokens(td)
     result.deferredTokens = deferrableTokens
     if deferrableTokens < result.thresholdTokens or not deferrableDefs:
-        result.toolDefs = coreDefs + deferrableDefs
+        result.tool_defs = coreDefs + deferrableDefs
         result.activated = False
         return result
     result.activated = True
     result.deferredCount = len(deferrableDefs)
     query = ''
-    if contextMessages:
-        query = buildQueryFromMessages(contextMessages)
+    if context_messages:
+        query = buildQueryFromMessages(context_messages)
     if query:
         catalog = buildToolCatalog(deferrableDefs)
         preloadedNames = searchTools(catalog, query, k=preloadK)
@@ -74,6 +158,7 @@ def assembleToolDefs(allToolDefs: list[dict], contextMessages: list[dict] | None
     autoSkills: list[str] = []
     if skillIndex and query:
         from app.services.tools.retrieval import buildSkillCatalog, searchSkills
+
         skCatalog = buildSkillCatalog(skillIndex)
         autoSkills = searchSkills(skCatalog, query, j=autoPrimeJ)
     elif skillIndex:
@@ -95,5 +180,5 @@ def assembleToolDefs(allToolDefs: list[dict], contextMessages: list[dict] | None
         removed = preloadedDefs.pop()
         totalTokens -= _estimateToolTokens(removed)
         result.preloadedToolCount = len(preloadedDefs)
-    result.toolDefs = coreDefs + preloadedDefs + _BRIDGEToolDefs
+    result.tool_defs = coreDefs + preloadedDefs + _BRIDGEToolDefs
     return result

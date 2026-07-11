@@ -11,6 +11,7 @@ Contract notes (observed against the real OpenAI adapter):
   managedLocalToolNames set, local execution does not fire and the stream passes
   the tool call through and stops at the tool_calls finish_reason.
 """
+
 from __future__ import annotations
 import asyncio
 import json
@@ -18,11 +19,13 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import sys, os
+
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 LOCAL_URL = 'http://127.0.0.1:8753/v1/chat/completions'
 LOCAL_KEY = 'sk-local-test'
+
 
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -39,12 +42,17 @@ class Handler(BaseHTTPRequestHandler):
             ]
             data = ''.join(f'data: {json.dumps(c)}\n\n' for c in chunks) + 'data: [DONE]\n\n'
         else:
-            data = json.dumps({'choices': [{'message': {'role': 'assistant', 'content': 'pong'}}], 'model': body.get('model', 'x')})
+            data = json.dumps(
+                {'choices': [{'message': {'role': 'assistant', 'content': 'pong'}}], 'model': body.get('model', 'x')}
+            )
         self.send_response(200)
         self.send_header('Content-Type', 'application/json' if not stream else 'text/event-stream')
         self.end_headers()
         self.wfile.write(data.encode() if not stream else data.encode())
-    def log_message(self, *a): pass
+
+    def log_message(self, *a):
+        pass
+
 
 srv = HTTPServer(('127.0.0.1', 8753), Handler)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -55,21 +63,41 @@ from unittest import mock
 
 # Register provider pointing at local mock
 from app.services import config_service, provider_credentials
+
 tmp = tempfile.mkdtemp()
 path = os.path.join(tmp, 'providers.json')
 path_obj = __import__('pathlib').Path(path)
-path_obj.write_text(json.dumps({'providers': [{'id': 'local', 'name': 'test-model', 'baseUrl': 'http://127.0.0.1:8753/v1', 'apiFormat': 'openaiChat', 'apiKey': LOCAL_KEY, 'enabled': True, 'aliases': ['test-model']}]}), encoding='utf-8')
+path_obj.write_text(
+    json.dumps(
+        {
+            'providers': [
+                {
+                    'id': 'local',
+                    'name': 'test-model',
+                    'baseUrl': 'http://127.0.0.1:8753/v1',
+                    'apiFormat': 'openaiChat',
+                    'apiKey': LOCAL_KEY,
+                    'enabled': True,
+                    'aliases': ['test-model'],
+                }
+            ]
+        }
+    ),
+    encoding='utf-8',
+)
 config_service.dataPath = lambda name, *a, **kw: path_obj if name == 'providers.json' else path_obj
 provider_credentials.invalidate()
 
 from app.adapters import openai as openaiAdapter
 from app.adapters.proxy_tools import getManagedAnthropicWebToolDefinitions
 
+
 async def _collect(it):
     out = []
     async for c in it:
         out.append(c)
     return out
+
 
 # --- Non-streaming: raw choices shape ---
 body = {'model': 'test-model', 'messages': [{'role': 'user', 'content': 'x'}], 'stream': False}
@@ -90,7 +118,12 @@ assert joined.strip().endswith('data: [DONE]'), 'stream must terminate with [DON
 assert 'websearch' in joined.lower(), 'mock tool call (WebSearch) should pass through'
 
 # --- Managed-tool path: OpenAI adapter, tools supplied; stream stays wired ---
-body3 = {'model': 'test-model', 'messages': [{'role': 'user', 'content': 'search'}], 'stream': True, 'tools': getManagedAnthropicWebToolDefinitions()}
+body3 = {
+    'model': 'test-model',
+    'messages': [{'role': 'user', 'content': 'search'}],
+    'stream': True,
+    'tools': getManagedAnthropicWebToolDefinitions(),
+}
 res3, _ = asyncio.run(openaiAdapter.handleChatCompletions(body3, request=None))
 ev3 = asyncio.run(_collect(res3))
 joined3 = ''.join(ev3)

@@ -1,25 +1,69 @@
 """Memory system unit tests."""
+
 import pytest
-from app.services.memory_store import init, close, saveMemory, getMemory, deleteMemory, listMemory, searchMemory, saveFact, getFact, searchFacts, listFacts, deleteFact, saveProposal, getProposal, listProposals, decideProposal, recordLifecycle, listLifecycle, indexSessionTopic, getSessionTopic, listTopics, saveSession, getSession, listSessions, deleteSessionRecord, saveMessage, getMessages, recordUsage, getUsage, getStats, vacuum
+from app.services.memory_store import (
+    init,
+    close,
+    saveMemory,
+    getMemory,
+    deleteMemory,
+    listMemory,
+    searchMemory,
+    saveFact,
+    getFact,
+    searchFacts,
+    listFacts,
+    deleteFact,
+    saveProposal,
+    getProposal,
+    listProposals,
+    decideProposal,
+    recordLifecycle,
+    listLifecycle,
+    indexSessionTopic,
+    getSessionTopic,
+    listTopics,
+    saveSession,
+    getSession,
+    listSessions,
+    deleteSessionRecord,
+    saveMessage,
+    getMessages,
+    recordUsage,
+    getUsage,
+    getStats,
+    vacuum,
+)
 from app.services.memory.brain_orchestrator import getBrainConfig, classifyTask, riskForTask, extractTextFromMessages
 from app.adapters.anthropic import normalizeSystemBlocks, systemBlocksToText
 from app.services.memory.context_builder import buildSlimCoreContext
-from app.services.memory.context_compressor import compressMessages, localSummarize, buildSummaryMessage, _isSummaryMessage, _extractSummaryText, DEFAULT_SUMMARY_MARKER
+from app.services.memory.context_compressor import (
+    compressMessages,
+    localSummarize,
+    buildSummaryMessage,
+    _isSummaryMessage,
+    _extractSummaryText,
+    DEFAULT_SUMMARY_MARKER,
+)
 from app.services.memory.context_scrubber import ContextScrubber, stripMemoryBlocks
 from app.services.memory.topic_index import classifyTopic
+
 
 @pytest.fixture(autouse=True)
 def setupDb():
     init()
     yield
     from app.services.memory_store import _conn
+
     conn = _conn()
-    conn.executescript('\n        PRAGMA foreign_keys = OFF;\n        DELETE FROM messages;\n        DELETE FROM sessions;\n        DELETE FROM usageEvents;\n        DELETE FROM lifecycle;\n        DELETE FROM proposals;\n        DELETE FROM sessionTopics;\n        DELETE FROM facts;\n        DELETE FROM memoryStore;\n        PRAGMA foreign_keys = ON;\n    ')
+    conn.executescript(
+        '\n        PRAGMA foreign_keys = OFF;\n        DELETE FROM messages;\n        DELETE FROM sessions;\n        DELETE FROM usageEvents;\n        DELETE FROM lifecycle;\n        DELETE FROM proposals;\n        DELETE FROM sessionTopics;\n        DELETE FROM facts;\n        DELETE FROM memoryStore;\n        PRAGMA foreign_keys = ON;\n    '
+    )
     conn.commit()
     close()
 
-class TestMemoryKV:
 
+class TestMemoryKV:
     def testSaveAndGet(self):
         saveMemory('test_key', {'hello': 'world'})
         val = getMemory('test_key')
@@ -47,13 +91,13 @@ class TestMemoryKV:
         results = searchMemory('hello')
         assert len(results) >= 1
 
-class TestFacts:
 
+class TestFacts:
     def testSaveAndGet(self):
         saveFact('user_name', 'Alice', category='identity')
         fact = getFact('user_name')
         assert fact is not None
-        assert fact['fact_key'] == 'user_name'
+        assert fact['factKey'] == 'user_name'
         assert fact['category'] == 'identity'
 
     def testSearchFacts(self):
@@ -70,8 +114,8 @@ class TestFacts:
         allFacts = listFacts()
         assert len(allFacts) >= 3
 
-class TestProposals:
 
+class TestProposals:
     def testCreateAndGet(self):
         pid = saveProposal('session_1', 'plan', {'steps': ['Do X']})
         prop = getProposal(pid)
@@ -91,17 +135,17 @@ class TestProposals:
         s1Props = listProposals('s1')
         assert len(s1Props) == 2
 
-class TestLifecycle:
 
+class TestLifecycle:
     def testRecordAndList(self):
         lid = recordLifecycle('session_1', 'session_started', {'task': 'test'})
         assert lid > 0
         events = listLifecycle('session_1')
         assert len(events) == 1
-        assert events[0]['event_type'] == 'session_started'
+        assert events[0]['eventType'] == 'session_started'
+
 
 class TestTopicIndex:
-
     def testIndexAndGet(self):
         assert indexSessionTopic('s1', 'debug') is True
         topic = getSessionTopic('s1')
@@ -114,8 +158,8 @@ class TestTopicIndex:
         topics = listTopics()
         assert len(topics) >= 2
 
-class TestSessionPersistence:
 
+class TestSessionPersistence:
     def testSaveAndGetSession(self):
         session = {'id': 'test-session-1', 'title': 'Test', 'startedAt': 'now', 'messageCount': 0}
         saveSession(session)
@@ -141,8 +185,8 @@ class TestSessionPersistence:
         assert len(msgs) == 2
         assert msgs[0]['role'] == 'user'
 
-class TestUsage:
 
+class TestUsage:
     def testRecordAndGet(self):
         recordUsage('session_u1', 'gpt-4', 100, 50)
         recordUsage('session_u1', 'gpt-4', 200, 30)
@@ -151,8 +195,8 @@ class TestUsage:
         assert usage['totalOutputTokens'] >= 80
         assert usage['totalEvents'] >= 2
 
-class TestBrainOrchestrator:
 
+class TestBrainOrchestrator:
     def testGetConfig(self):
         config = getBrainConfig()
         assert config['enabled'] is True
@@ -173,8 +217,8 @@ class TestBrainOrchestrator:
         assert riskForTask('chat') == 'read_only'
         assert riskForTask('research') == 'read_only'
 
-class TestContextBuilder:
 
+class TestContextBuilder:
     def testNormalizeBlocks(self):
         blocks = normalizeSystemBlocks('Hello')
         assert len(blocks) == 1
@@ -192,8 +236,8 @@ class TestContextBuilder:
         assert 'Test User' in ctx
         assert 'Working on X' in ctx
 
-class TestContextCompressor:
 
+class TestContextCompressor:
     def testLocalSummarize(self):
         msgs = [{'role': 'user', 'content': 'Hello'}, {'role': 'assistant', 'content': 'Hi there!'}]
         summary = localSummarize(msgs)
@@ -201,8 +245,13 @@ class TestContextCompressor:
         assert '[user]' in summary or 'Hello' in summary
 
     def testCompress(self):
-        msgs = [{'role': 'user', 'content': 'A'}, {'role': 'assistant', 'content': 'B'}, {'role': 'user', 'content': 'C'}, {'role': 'assistant', 'content': 'D'}]
-        compressed = compressMessages(msgs, threshold=1, headCount=1, tailCount=1)
+        msgs = [
+            {'role': 'user', 'content': 'A'},
+            {'role': 'assistant', 'content': 'B'},
+            {'role': 'user', 'content': 'C'},
+            {'role': 'assistant', 'content': 'D'},
+        ]
+        compressed = compressMessages(msgs, threshold=1, head_count=1, tail_count=1)
         assert len(compressed) <= len(msgs)
 
     def testSummaryHelpersDetectAndExtract(self):
@@ -222,16 +271,20 @@ class TestContextCompressor:
         compactions) and fold the prior summary's text into the survivor so
         no information is lost."""
         priorSummary = buildSummaryMessage([{'role': 'user', 'content': 'old'}], 'PRIOR SUMMARY BODY')
-        msgs = [{'role': 'system', 'content': 'You are helpful.'}, priorSummary] + [{'role': 'user', 'content': f'turn {i}'} for i in range(20)] + [{'role': 'assistant', 'content': f'reply {i}'} for i in range(20)]
-        out = compressMessages(msgs, threshold=1, headCount=2, tailCount=2)
+        msgs = (
+            [{'role': 'system', 'content': 'You are helpful.'}, priorSummary]
+            + [{'role': 'user', 'content': f'turn {i}'} for i in range(20)]
+            + [{'role': 'assistant', 'content': f'reply {i}'} for i in range(20)]
+        )
+        out = compressMessages(msgs, threshold=1, head_count=2, tail_count=2)
         summaries = [m for m in out if _isSummaryMessage(m)]
         assert len(summaries) == 1, f're-compaction must not accumulate summary blocks (s4); got {len(summaries)}'
         assert 'PRIOR SUMMARY BODY' in summaries[0]['content']
         assert 'Earlier summary' in summaries[0]['content']
         assert any((m.get('role') == 'system' and 'You are helpful.' in m.get('content', '') for m in out))
 
-class TestContextScrubber:
 
+class TestContextScrubber:
     def testBatchStrip(self):
         result = stripMemoryBlocks('Hello <memory_context>secret</memory_context> world')
         assert 'secret' not in result
@@ -254,8 +307,8 @@ class TestContextScrubber:
         s = ContextScrubber()
         assert s.feed('') == ''
 
-class TestTopicIndex:
 
+class TestTopicIndex:
     def testClassify(self):
         assert classifyTopic('fix bug') == 'debug'
         assert classifyTopic('search the web') == 'research'

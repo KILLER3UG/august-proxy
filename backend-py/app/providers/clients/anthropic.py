@@ -7,12 +7,16 @@ Handles:
 - Anthropic-specific headers (``anthropic-version``)
 - Content-block SSE event parsing
 """
+
 from __future__ import annotations
 from typing import AsyncIterator
+from app.jsonUtils import as_str
 from app.providers.clients.base import BaseProviderClient, ProviderResponse
+
 
 class AnthropicClient(BaseProviderClient):
     """Client for the Anthropic Messages API (``api_mode: anthropic_messages``)."""
+
     apiFormat = 'anthropicMessages'
 
     def buildAuthHeaders(self, apiKey: str | None) -> dict[str, str]:
@@ -23,7 +27,7 @@ class AnthropicClient(BaseProviderClient):
         """
         headers = super().buildAuthHeaders(apiKey)
         headers.setdefault('anthropic-version', '2023-06-01')
-        beta = self.config.get('anthropic_beta')
+        beta = as_str(self.config.get('anthropic_beta'))
         if beta:
             headers['anthropic-beta'] = beta
         return headers
@@ -38,7 +42,7 @@ class AnthropicClient(BaseProviderClient):
             base = 'https://api.anthropic.com'
         return base.rstrip('/') + '/v1'
 
-    async def messages(self, body: dict[str, object], apiKey: str | None=None) -> ProviderResponse:
+    async def messages(self, body: dict[str, object], apiKey: str | None = None) -> ProviderResponse:
         """Non-streaming call to POST /v1/messages."""
         if apiKey is None:
             apiKey = self.resolveApiKey()
@@ -46,9 +50,13 @@ class AnthropicClient(BaseProviderClient):
         url = f'{self.resolveBaseUrl()}/messages'
         return await self.requestJson('POST', url, headers, body)
 
-    async def generate(self, prompt: str, system: str | None=None) -> str:
+    async def generate(self, prompt: str, system: str | None = None) -> str:
         """v2: Anthropic-specific generate using the messages API."""
-        body: dict[str, object] = {'model': self.config.get('model', ''), 'max_tokens': 2048, 'messages': [{'role': 'user', 'content': prompt}]}
+        body: dict[str, object] = {
+            'model': self.config.get('model', ''),
+            'max_tokens': 2048,
+            'messages': [{'role': 'user', 'content': prompt}],
+        }
         if system:
             body['system'] = system
         try:
@@ -65,7 +73,9 @@ class AnthropicClient(BaseProviderClient):
                 return block.get('text', '')
         return ''
 
-    async def messagesStream(self, body: dict[str, object], apiKey: str | None=None) -> AsyncIterator[dict[str, object]]:
+    async def messages_stream(
+        self, body: dict[str, object], apiKey: str | None = None
+    ) -> AsyncIterator[dict[str, object]]:
         """Streaming call to POST /v1/messages (``stream: true``).
 
         Yields parsed content-block SSE events as dicts.
@@ -78,7 +88,7 @@ class AnthropicClient(BaseProviderClient):
         async for event in self.streamSse(url, headers, body):
             yield event
 
-    async def countTokens(self, body: dict[str, object], apiKey: str | None=None) -> ProviderResponse:
+    async def countTokens(self, body: dict[str, object], apiKey: str | None = None) -> ProviderResponse:
         """Call POST /v1/messages/count_tokens (token estimation endpoint)."""
         if apiKey is None:
             apiKey = self.resolveApiKey()

@@ -3,6 +3,7 @@ Agent registry — hierarchical agent management, job tracking, and sub-agent di
 
 Port of backend/services/tools/agent-registry.js + agent-sessions.js + agent-jobs.js + agent-tree.js.
 """
+
 from __future__ import annotations
 import asyncio
 import uuid
@@ -10,16 +11,21 @@ from datetime import datetime
 from typing import cast
 from app.services.memory_store import saveMemory, getMemory, recordConfigAudit
 from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
+from app.typeAliases import JsonValue
+
 _AGENTSKey = 'agent_registry'
 _JOBSKey = 'agent_jobs'
 _MAXAgentDepth = 4
 
+
 def _now() -> str:
     return datetime.utcnow().isoformat() + 'Z'
+
 
 def listAgents() -> list[dict[str, object]]:
     raw = getMemory(_AGENTSKey) or []
     return cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
+
 
 def getAgent(agentId: str) -> dict[str, object] | None:
     agents = listAgents()
@@ -28,42 +34,73 @@ def getAgent(agentId: str) -> dict[str, object] | None:
             return a
     return None
 
-def createAgent(name: str, parentId: str='', permissions: list[str] | None=None, toolsets: list[str] | None=None, model: str='', provider: str='', description: str='', role: str='', tools: list[str] | None=None, modelAlias: str='', parentAgent: str='', actor: str='system') -> dict[str, object]:
+
+def createAgent(
+    name: str,
+    parentId: str = '',
+    permissions: list[str] | None = None,
+    toolsets: list[str] | None = None,
+    model: str = '',
+    provider: str = '',
+    description: str = '',
+    role: str = '',
+    tools: list[str] | None = None,
+    model_alias: str = '',
+    parent_agent: str = '',
+    actor: str = 'system',
+) -> dict[str, object]:
     """Create a new agent in the hierarchy.
 
     Extended schema fields (description, role, tools, modelAlias) align with
     the autonomous-creation spec; ``parent_agent`` is an alias for
     ``parent_id`` (spec uses ``parentAgent``).
     """
-    resolvedParent = parentId or parentAgent
+    resolvedParent = parentId or parent_agent
     agents = listAgents()
     agentId = f'agent_{uuid.uuid4().hex[:8]}'
-    agent = {'id': agentId, 'name': name, 'description': description, 'role': role, 'parentId': resolvedParent or None, 'permissions': permissions or [], 'toolsets': toolsets or [], 'tools': tools or [], 'model': model, 'provider': provider, 'modelAlias': modelAlias, 'createdAt': _now(), 'depth': _calculateDepth(resolvedParent, agents)}
+    agent: dict[str, object] = {
+        'id': agentId,
+        'name': name,
+        'description': description,
+        'role': role,
+        'parentId': resolvedParent or None,
+        'permissions': permissions or [],
+        'toolsets': toolsets or [],
+        'tools': tools or [],
+        'model': model,
+        'provider': provider,
+        'modelAlias': model_alias,
+        'createdAt': _now(),
+        'depth': _calculateDepth(resolvedParent, agents),
+    }
     agents.append(agent)
-    saveMemory(_AGENTSKey, agents)
+    saveMemory(_AGENTSKey, cast(JsonValue, agents))
     recordConfigAudit('agent', 'create', actor, before=None, after=agent)
     return agent
 
-def updateAgent(agentId: str, updates: dict[str, object], actor: str='system') -> dict[str, object] | None:
+
+def updateAgent(agentId: str, updates: dict[str, object], actor: str = 'system') -> dict[str, object] | None:
     agents = listAgents()
     for a in agents:
         if a['id'] == agentId:
             before = dict(a)
             a.update(updates)
-            saveMemory(_AGENTSKey, agents)
+            saveMemory(_AGENTSKey, cast(JsonValue, agents))
             recordConfigAudit('agent', 'update', actor, before=before, after=a)
             return a
     return None
 
-def deleteAgent(agentId: str, actor: str='system') -> bool:
+
+def deleteAgent(agentId: str, actor: str = 'system') -> bool:
     agents = listAgents()
     before = next((a for a in agents if a['id'] == agentId), None)
     newAgents = [a for a in agents if a['id'] != agentId]
     if len(newAgents) == len(agents):
         return False
-    saveMemory(_AGENTSKey, newAgents)
+    saveMemory(_AGENTSKey, cast(JsonValue, newAgents))
     recordConfigAudit('agent', 'delete', actor, before=before, after=None)
     return True
+
 
 def getAgentTree(agentId: str) -> dict[str, object] | None:
     """Get an agent and its children as a tree."""
@@ -74,7 +111,8 @@ def getAgentTree(agentId: str) -> dict[str, object] | None:
     children = [a for a in allAgents if as_str(a.get('parentId')) == agentId]
     return {'agent': agent, 'children': children}
 
-def getAgentTreeRooted(root: str='', maxDepth: int=4) -> dict[str, object]:
+
+def getAgentTreeRooted(root: str = '', maxDepth: int = 4) -> dict[str, object]:
     """Build a recursive agent tree from ``root`` (or all roots if empty).
 
     Used by the frontend AgentTree via ``GET /api/agents/tree?root=&maxDepth=``.
@@ -88,6 +126,7 @@ def getAgentTreeRooted(root: str='', maxDepth: int=4) -> dict[str, object]:
                 if as_str(a.get('parentId')) == as_str(agent.get('id')):
                     children.append(buildNode(a, depth + 1))
         return {'agent': agent, 'children': children}
+
     if root:
         rootAgent = next((a for a in allAgents if as_str(a.get('id')) == root), None)
         if not rootAgent:
@@ -95,6 +134,7 @@ def getAgentTreeRooted(root: str='', maxDepth: int=4) -> dict[str, object]:
         return buildNode(rootAgent, 0)
     roots = [a for a in allAgents if not as_str(a.get('parentId'))]
     return {'agent': None, 'children': [buildNode(a, 0) for a in roots]}
+
 
 def evaluateAgentTool(agentId: str, toolName: str) -> dict[str, object]:
     """Check if an agent is permitted to use a tool."""
@@ -107,12 +147,13 @@ def evaluateAgentTool(agentId: str, toolName: str) -> dict[str, object]:
     if toolName in permissions:
         return {'allowed': True}
     for perm in permissions:
-        if toolName.startswith(perm):
+        if toolName.startswith(as_str(perm)):
             return {'allowed': True}
     parentId = as_str(agent.get('parentId'))
     if parentId:
         return evaluateAgentTool(parentId, toolName)
     return {'allowed': False, 'reason': f"tool '{toolName}' not in permissions"}
+
 
 def _effectivePermissions(agentId: str) -> set[str] | None:
     """Resolve the effective permission set, walking parents.
@@ -123,7 +164,7 @@ def _effectivePermissions(agentId: str) -> set[str] | None:
     agent = getAgent(agentId)
     if not agent:
         return set()
-    perms = set(as_list(agent.get('permissions'), []))
+    perms = {as_str(p) for p in as_list(agent.get('permissions'), [])}
     if 'all' in perms:
         return None
     parentId = as_str(agent.get('parentId'))
@@ -133,6 +174,7 @@ def _effectivePermissions(agentId: str) -> set[str] | None:
             return perms
         return perms & parentEff
     return perms
+
 
 def deriveChildPermissions(parentId: str, childId: str) -> list[str]:
     """Most-restrictive merge of a child's permissions under its parent.
@@ -149,21 +191,31 @@ def deriveChildPermissions(parentId: str, childId: str) -> list[str]:
         return sorted(childEff)
     return sorted(childEff & parentEff)
 
-def listJobs(agentId: str='') -> list[dict[str, object]]:
+
+def listJobs(agentId: str = '') -> list[dict[str, object]]:
     raw = getMemory(_JOBSKey) or []
     jobs = cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
     if agentId:
         return [j for j in jobs if as_str(j.get('agentId')) == agentId]
     return jobs
 
-def createJob(agentId: str, goal: str, context: str='') -> dict[str, object]:
+
+def createJob(agentId: str, goal: str, context: str = '') -> dict[str, object]:
     raw = getMemory(_JOBSKey) or []
     jobs: list[dict[str, object]] = cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
     jobId = f'job_{uuid.uuid4().hex[:8]}'
-    job = {'id': jobId, 'agentId': agentId, 'goal': goal, 'context': context, 'status': 'pending', 'createdAt': _now()}
+    job: dict[str, object] = {
+        'id': jobId,
+        'agentId': agentId,
+        'goal': goal,
+        'context': context,
+        'status': 'pending',
+        'createdAt': _now(),
+    }
     jobs.append(job)
-    saveMemory(_JOBSKey, jobs)
+    saveMemory(_JOBSKey, cast(JsonValue, jobs))
     return job
+
 
 def updateJob(jobId: str, updates: dict[str, object]) -> dict[str, object] | None:
     raw = getMemory(_JOBSKey) or []
@@ -171,21 +223,24 @@ def updateJob(jobId: str, updates: dict[str, object]) -> dict[str, object] | Non
     for j in jobs:
         if j['id'] == jobId:
             j.update(updates)
-            saveMemory(_JOBSKey, jobs)
+            saveMemory(_JOBSKey, cast(JsonValue, jobs))
             return j
     return None
 
-async def executeSubAgent(agentId: str, goal: str, context: str='') -> dict[str, object]:
+
+async def executeSubAgent(agentId: str, goal: str, context: str = '') -> dict[str, object]:
     """Execute a sub-agent task."""
     job = createJob(agentId, goal, context)
-    updateJob(job['id'], {'status': 'running'})
+    jobId = as_str(job['id'])
+    updateJob(jobId, {'status': 'running'})
     try:
         result = f"Sub-agent '{agentId}' completed task: {goal[:100]}"
-        updateJob(job['id'], {'status': 'completed', 'result': result})
+        updateJob(jobId, {'status': 'completed', 'result': result})
         return {'job': job, 'result': result}
     except Exception as exc:
-        updateJob(job['id'], {'status': 'failed', 'error': str(exc)})
+        updateJob(jobId, {'status': 'failed', 'error': str(exc)})
         return {'job': job, 'error': str(exc)}
+
 
 def _calculateDepth(parentId: str | None, agents: list[dict[str, object]]) -> int:
     if not parentId:
@@ -195,22 +250,29 @@ def _calculateDepth(parentId: str | None, agents: list[dict[str, object]]) -> in
             return as_int(a.get('depth', 0)) + 1
     return 0
 
+
 def renderAgentContext(agentId: str) -> str:
     """Build a context string for an agent."""
     agent = getAgent(agentId)
     if not agent:
         return ''
-    parts = [f"Agent: {as_str(agent.get('name'), 'unknown')}"]
-    if as_str(agent.get('role')):
-        parts.append(f"Role: {agent['role']}")
-    if as_str(agent.get('description')):
-        parts.append(f"Description: {agent['description']}")
-    if as_list(agent.get('tools'), []):
-        parts.append(f"Tools: {', '.join(agent['tools'])}")
-    if as_list(agent.get('permissions'), []):
-        parts.append(f"Permissions: {', '.join(agent['permissions'])}")
-    if as_list(agent.get('toolsets'), []):
-        parts.append(f"Toolsets: {', '.join(agent['toolsets'])}")
-    if as_str(agent.get('modelAlias')):
-        parts.append(f"Model alias: {agent['modelAlias']}")
+    parts = [f'Agent: {as_str(agent.get("name"), "unknown")}']
+    role = as_str(agent.get('role'))
+    if role:
+        parts.append(f'Role: {role}')
+    description = as_str(agent.get('description'))
+    if description:
+        parts.append(f'Description: {description}')
+    tools = [as_str(t) for t in as_list(agent.get('tools'), [])]
+    if tools:
+        parts.append(f'Tools: {", ".join(tools)}')
+    permissions = [as_str(p) for p in as_list(agent.get('permissions'), [])]
+    if permissions:
+        parts.append(f'Permissions: {", ".join(permissions)}')
+    toolsets = [as_str(t) for t in as_list(agent.get('toolsets'), [])]
+    if toolsets:
+        parts.append(f'Toolsets: {", ".join(toolsets)}')
+    model_alias = as_str(agent.get('modelAlias'))
+    if model_alias:
+        parts.append(f'Model alias: {model_alias}')
     return '\n'.join(parts)

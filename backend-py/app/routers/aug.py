@@ -8,10 +8,12 @@ Endpoints:
   GET  /api/aug/plans                   → list .aug artifacts { artifacts: [...] }
   DELETE /api/aug/plans/{kind}/{slug}   → manual delete { removed }
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Body
 
+from app.jsonUtils import as_str
 from app.services import aug_directive_service
 from app.services import aug_artifact_service
 
@@ -47,11 +49,9 @@ async def initAug(payload: dict = Body(...)):
     existing = None
     if mode == 'refine':
         loaded = aug_directive_service.load(workspacePath or None)
-        existing = loaded['body'] if loaded else None
+        existing = as_str(loaded['body']) if loaded else None
     try:
-        result = await aug_directive_service.generate(
-            workspacePath, mode=mode, existing=existing, model=model
-        )
+        result = await aug_directive_service.generate(workspacePath, mode=mode, existing=existing, model=model)
     except Exception as exc:  # pragma: no cover - defensive
         raise HTTPException(status_code=500, detail=f'AUG.md generation failed: {exc}')
     return result
@@ -72,6 +72,7 @@ async def putAugContent(payload: dict = Body(...)):
     if sessionId:
         try:
             from app.services.workbench.prompt_cache import getCache
+
             getCache().invalidate(sessionId)
         except Exception:
             pass

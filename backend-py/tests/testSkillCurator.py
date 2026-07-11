@@ -4,6 +4,7 @@ Tests usage telemetry, lifecycle transitions (active→stale→archived),
 pin/archive/restore, ``_is_agent_skill`` gating, and the curator API routes.
 Uses ``isolated_skills`` + ``isolated_data`` fixtures.
 """
+
 from __future__ import annotations
 import time
 from pathlib import Path
@@ -14,11 +15,13 @@ from fastapi.testclient import TestClient
 from app.services import skill_service
 from app.services.skills.curator import SkillCurator, UsageRecord, makeBackgroundCurator
 
+
 @pytest.fixture
 def curator(isolatedData, isolatedSkills, monkeypatch):
     """Curator with isolated data/skills dirs."""
     dataDir = isolatedData
     return SkillCurator(dataDir=dataDir)
+
 
 @pytest.fixture
 def seededSkills(curator, isolatedSkills):
@@ -35,8 +38,8 @@ def seededSkills(curator, isolatedSkills):
     curator._save()
     return agentRoot
 
-class TestCurator:
 
+class TestCurator:
     def testBumpCreatesAndIncrements(self, curator):
         curator.bumpUse('my-skill')
         rec = curator.getRecord('my-skill')
@@ -118,15 +121,19 @@ class TestCurator:
             task.cancel()
         except RuntimeError:
             from app.services.skills.curator import SkillCurator
+
             cur = SkillCurator(dataDir=dataDir)
             assert cur is not None
+
 
 def _app(curator) -> FastAPI:
     app = FastAPI()
     from app.routers import curator as curatorRouter
+
     app.include_router(curatorRouter.router)
     app.state.curator = curator
     return app
+
 
 def testListUsageViaApi(curator, seededSkills):
     client = TestClient(_app(curator))
@@ -135,12 +142,14 @@ def testListUsageViaApi(curator, seededSkills):
     names = [e['name'] for e in r.json().get('usage', [])]
     assert 'active-skill' in names
 
+
 def testPinViaApi(curator, seededSkills):
     skill_service.createSkill('api-pin', 'Desc.', 'body.', createdBy='agent')
     client = TestClient(_app(curator))
     r = client.post('/api/curator/pin/api-pin')
     assert r.status_code == 200
     assert curator.getRecord('api-pin').pinned is True
+
 
 def testArchiveAndRestoreViaApi(curator, seededSkills):
     skill_service.createSkill('api-arch', 'Desc.', 'body.', createdBy='agent')
@@ -151,6 +160,7 @@ def testArchiveAndRestoreViaApi(curator, seededSkills):
     r = client.post('/api/curator/restore/api-arch')
     assert r.status_code == 200
     assert curator.getRecord('api-arch').state == 'active'
+
 
 def testRunCurationViaApi(curator, seededSkills):
     client = TestClient(_app(curator))

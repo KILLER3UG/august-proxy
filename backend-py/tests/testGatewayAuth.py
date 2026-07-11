@@ -10,6 +10,7 @@ Covers:
 These tests use the existing ``isolatedData`` fixture from
 ``tests/conftest.py`` so they don't touch the user's real ``config.json``.
 """
+
 from __future__ import annotations
 import json
 from pathlib import Path
@@ -20,6 +21,7 @@ from app.lib.gateway_auth import require_gateway_key
 from app.routers.config import router as configRouter
 from app.routers.proxy import router as proxyRouter
 
+
 @pytest.fixture(autouse=True)
 def _resetGatewayKey(isolatedData):
     """Reset the in-process ``settings.gatewayApiKey`` between tests.
@@ -29,12 +31,14 @@ def _resetGatewayKey(isolatedData):
     reset it explicitly so each test starts from a known state.
     """
     from app.config import settings
+
     prev = settings.gatewayApiKey
     settings.gatewayApiKey = None
     settings.reload()
     yield
     settings.gatewayApiKey = prev
     settings.reload()
+
 
 class TestRequireGatewayKey:
     """Behavioural coverage of the ``require_gateway_key`` dependency."""
@@ -53,6 +57,7 @@ class TestRequireGatewayKey:
     async def testEnabledWithoutKeyReturns503(self, isolatedData):
         _writeCfg(isolatedData, {'gateway': {'externalAccess': {'enabled': True}}})
         from app.config import settings
+
         settings.reload()
         with pytest.raises(HTTPException) as exc:
             await require_gateway_key(authorization='Bearer x')
@@ -62,6 +67,7 @@ class TestRequireGatewayKey:
     async def testEnabledNoHeaderReturns401(self, isolatedData):
         _writeCfg(isolatedData, {'gateway': {'externalAccess': {'enabled': True}}})
         from app.config import settings
+
         settings.reload()
         settings.gatewayApiKey = 's3cret'
         with pytest.raises(HTTPException) as exc:
@@ -73,6 +79,7 @@ class TestRequireGatewayKey:
     async def testEnabledWrongKeyReturns401(self, isolatedData):
         _writeCfg(isolatedData, {'gateway': {'externalAccess': {'enabled': True}}})
         from app.config import settings
+
         settings.reload()
         settings.gatewayApiKey = 's3cret'
         with pytest.raises(HTTPException) as exc:
@@ -83,6 +90,7 @@ class TestRequireGatewayKey:
     async def testEnabledMalformedHeaderReturns401(self, isolatedData):
         _writeCfg(isolatedData, {'gateway': {'externalAccess': {'enabled': True}}})
         from app.config import settings
+
         settings.reload()
         settings.gatewayApiKey = 's3cret'
         with pytest.raises(HTTPException) as exc:
@@ -92,6 +100,7 @@ class TestRequireGatewayKey:
     async def testEnabledCorrectKeyReturnsTrue(self, isolatedData):
         _writeCfg(isolatedData, {'gateway': {'externalAccess': {'enabled': True}}})
         from app.config import settings
+
         settings.reload()
         settings.gatewayApiKey = 's3cret'
         result = await require_gateway_key(authorization='Bearer s3cret')
@@ -101,10 +110,12 @@ class TestRequireGatewayKey:
         """Bearer is case-insensitive per RFC 7235."""
         _writeCfg(isolatedData, {'gateway': {'externalAccess': {'enabled': True}}})
         from app.config import settings
+
         settings.reload()
         settings.gatewayApiKey = 's3cret'
         result = await require_gateway_key(authorization='bearer s3cret')
         assert result is True
+
 
 @pytest.fixture
 def client(isolatedData):
@@ -113,6 +124,7 @@ def client(isolatedData):
     app.include_router(configRouter)
     app.include_router(proxyRouter)
     return TestClient(app)
+
 
 class TestExternalAccessConfigEndpoint:
     """GET/PUT /api/config/external-access round-trips the toggle."""
@@ -130,6 +142,7 @@ class TestExternalAccessConfigEndpoint:
 
     def testPutEnabledPersistsToConfigJson(self, client, isolatedData, monkeypatch):
         from app.config import settings
+
         settings.gatewayApiKey = 'top-secret'
         r = client.put('/api/config/external-access', json={'enabled': True})
         assert r.status_code == 200
@@ -143,6 +156,7 @@ class TestExternalAccessConfigEndpoint:
 
     def testPutEnabledWithoutKeyReturns400(self, client):
         from app.config import settings
+
         settings.gatewayApiKey = None
         r = client.put('/api/config/external-access', json={'enabled': True})
         assert r.status_code == 400
@@ -150,6 +164,7 @@ class TestExternalAccessConfigEndpoint:
 
     def testPutDisabledClearsState(self, client, isolatedData):
         from app.config import settings
+
         settings.gatewayApiKey = 'top-secret'
         client.put('/api/config/external-access', json={'enabled': True})
         r = client.put('/api/config/external-access', json={'enabled': False})
@@ -160,11 +175,13 @@ class TestExternalAccessConfigEndpoint:
 
     def testToggleSurvivesSettingsReload(self, client, isolatedData):
         from app.config import settings
+
         settings.gatewayApiKey = 'top-secret'
         client.put('/api/config/external-access', json={'enabled': True})
         settings.reload()
         r = client.get('/api/config/external-access')
         assert r.json()['enabled'] is True
+
 
 class TestProxyRoutesAreProtected:
     """The full proxy stack rejects unauthenticated calls when required."""
@@ -176,6 +193,7 @@ class TestProxyRoutesAreProtected:
     def testEnabledNoHeaderReturns401(self, client, isolatedData):
         _writeCfg(isolatedData, {'gateway': {'externalAccess': {'enabled': True}}})
         from app.config import settings
+
         settings.reload()
         settings.gatewayApiKey = 'top-secret'
         r = client.get('/v1/models')
@@ -184,6 +202,7 @@ class TestProxyRoutesAreProtected:
     def testEnabledWrongKeyReturns401(self, client, isolatedData):
         _writeCfg(isolatedData, {'gateway': {'externalAccess': {'enabled': True}}})
         from app.config import settings
+
         settings.reload()
         settings.gatewayApiKey = 'top-secret'
         r = client.get('/v1/models', headers={'Authorization': 'Bearer wrong'})
@@ -195,6 +214,7 @@ class TestProxyRoutesAreProtected:
         didn't short-circuit. Anything except 401/403 means auth passed."""
         _writeCfg(isolatedData, {'gateway': {'externalAccess': {'enabled': True}}})
         from app.config import settings
+
         settings.reload()
         settings.gatewayApiKey = 'top-secret'
         r = client.get('/v1/models', headers={'Authorization': 'Bearer top-secret'})
@@ -203,10 +223,12 @@ class TestProxyRoutesAreProtected:
     def testToggleOffKillsAccessEvenForValidKey(self, client, isolatedData):
         _writeCfg(isolatedData, {'gateway': {'externalAccess': {'enabled': False}}})
         from app.config import settings
+
         settings.reload()
         settings.gatewayApiKey = 'top-secret'
         r = client.get('/v1/models', headers={'Authorization': 'Bearer top-secret'})
         assert r.status_code == 403
+
 
 class TestProxyRequestBodyValidation:
     """Malformed request bodies should yield a clean 400, not a 500."""
@@ -214,6 +236,7 @@ class TestProxyRequestBodyValidation:
     def testMessagesMalformedJsonReturns400(self, client, isolatedData):
         _writeCfg(isolatedData, {'gateway': {'externalAccess': {'enabled': True}}})
         from app.config import settings
+
         settings.reload()
         settings.gatewayApiKey = 'top-secret'
         r = client.post(
@@ -227,6 +250,7 @@ class TestProxyRequestBodyValidation:
     def testChatCompletionsMalformedJsonReturns400(self, client, isolatedData):
         _writeCfg(isolatedData, {'gateway': {'externalAccess': {'enabled': True}}})
         from app.config import settings
+
         settings.reload()
         settings.gatewayApiKey = 'top-secret'
         r = client.post(
@@ -236,6 +260,7 @@ class TestProxyRequestBodyValidation:
         )
         assert r.status_code == 400
         assert r.json()['error']['code'] == 'invalid_json'
+
 
 def _writeCfg(dataDir, cfg):
     """Write a complete config.json into the isolated data dir."""

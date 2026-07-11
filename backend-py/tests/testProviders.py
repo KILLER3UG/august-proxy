@@ -1,6 +1,8 @@
 """Provider and config endpoint tests."""
+
 from httpx import AsyncClient, ASGITransport
 from app.main import app
+
 
 async def testTemplatesEndpointReturnsTemplates():
     """Templates endpoint returns the full list of provider templates."""
@@ -19,27 +21,43 @@ async def testTemplatesEndpointReturnsTemplates():
         assert 'modelProfiles' in tmpl
         ids = {t['id'] for t in data}
         assert 'anthropic' in ids
-        assert 'openai-api' in ids
+        assert 'openai' in ids
         assert 'deepseek' in ids
+
 
 async def testCreateProvider(monkeypatch):
     from app.services import model_service
+
     monkeypatch.setattr(model_service, 'invalidate_cache', model_service.invalidateCache, raising=False)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as client:
-        resp = await client.post('/api/providers', json={'name': 'Test Provider', 'baseUrl': 'https://test.api.com/v1', 'apiFormat': 'openaiChat', 'apiKey': 'sk-test123', 'enabled': True})
+        resp = await client.post(
+            '/api/providers',
+            json={
+                'name': 'Test Provider',
+                'baseUrl': 'https://test.api.com/v1',
+                'apiFormat': 'openaiChat',
+                'apiKey': 'sk-test123',
+                'enabled': True,
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data['name'] == 'Test Provider'
         assert data['apiKeySet'] is True
 
+
 async def testCreateProviderWithTemplate(monkeypatch):
     """Creating a provider with a template id pre-fills baseUrl and models."""
     from app.services import model_service
+
     monkeypatch.setattr(model_service, 'invalidate_cache', model_service.invalidateCache, raising=False)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as client:
-        resp = await client.post('/api/providers', json={'name': 'My Anthropic', 'template': 'anthropic', 'apiKey': 'sk-ant-test123', 'enabled': True})
+        resp = await client.post(
+            '/api/providers',
+            json={'name': 'My Anthropic', 'template': 'anthropic', 'apiKey': 'sk-ant-test123', 'enabled': True},
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data['name'] == 'My Anthropic'
@@ -47,7 +65,8 @@ async def testCreateProviderWithTemplate(monkeypatch):
         assert data['apiFormat'] == 'anthropicMessages'
         assert len(data['models']) > 0
         modelIds = {m['id'] for m in data['models']}
-        assert 'claude-sonnet-4' in modelIds or 'claude-opus-4' in modelIds
+        assert 'claude-sonnet-4-7' in modelIds or 'claude-opus-4' in modelIds
+
 
 async def testActiveProviderReturnsEmptyWhenNoneConfigured(isolatedData):
     """With no providers configured, activeProvider returns empty list."""
@@ -59,13 +78,24 @@ async def testActiveProviderReturnsEmptyWhenNoneConfigured(isolatedData):
         assert 'providers' in data
         assert len(data['providers']) == 0
 
+
 async def testImportProviderConfig(monkeypatch):
     """Importing a provider config works."""
     from app.services import model_service
+
     monkeypatch.setattr(model_service, 'invalidate_cache', model_service.invalidateCache, raising=False)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as client:
-        resp = await client.post('/api/providers/import-config', json={'name': 'Imported Provider', 'baseUrl': 'https://imported.api.com/v1', 'apiFormat': 'openaiChat', 'apiKey': 'sk-imported', 'models': [{'id': 'model-1', 'name': 'Model 1'}]})
+        resp = await client.post(
+            '/api/providers/import-config',
+            json={
+                'name': 'Imported Provider',
+                'baseUrl': 'https://imported.api.com/v1',
+                'apiFormat': 'openaiChat',
+                'apiKey': 'sk-imported',
+                'models': [{'id': 'model-1', 'name': 'Model 1'}],
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data['name'] == 'Imported Provider'

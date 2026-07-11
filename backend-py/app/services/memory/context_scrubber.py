@@ -4,9 +4,12 @@ from text output. Prevents raw memory content from leaking to the UI.
 
 Port of backend/services/memory/context-scrubber.js (189 lines).
 """
+
 from __future__ import annotations
 import re
+
 _PATTERN = re.compile('<memory_context>.*?</memory_context>', re.DOTALL)
+
 
 def stripMemoryBlocks(text: str) -> str:
     """Strip all <memory_context>...</memory_context> blocks from text.
@@ -15,8 +18,11 @@ def stripMemoryBlocks(text: str) -> str:
     where all tags are known to be paired.
     """
     return _PATTERN.sub('', text)
+
+
 OUTSIDE = 0
 INSIDE = 1
+
 
 class ContextScrubber:
     """Streaming state machine that strips <memory_context> blocks on-the-fly.
@@ -74,10 +80,10 @@ class ContextScrubber:
                 closeIdx = self._buffer.find('</memory_context>')
                 if closeIdx == -1:
                     self._state = INSIDE
-                    self._buffer = self._buffer[len('<memory_context>'):]
+                    self._buffer = self._buffer[len('<memory_context>') :]
                     break
                 else:
-                    self._buffer = self._buffer[closeIdx + len('</memory_context>'):]
+                    self._buffer = self._buffer[closeIdx + len('</memory_context>') :]
             processed = output
         elif self._state == INSIDE:
             while True:
@@ -86,7 +92,7 @@ class ContextScrubber:
                     processed = ''
                     break
                 else:
-                    remaining = self._buffer[closeIdx + len('</memory_context>'):]
+                    remaining = self._buffer[closeIdx + len('</memory_context>') :]
                     self._buffer = remaining
                     self._state = OUTSIDE
                     processed = self._processBuffer()

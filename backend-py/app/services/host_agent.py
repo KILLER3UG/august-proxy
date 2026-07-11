@@ -2,9 +2,11 @@
 
 Port of backend/lib/host-agent.js.
 """
+
 from __future__ import annotations
 import os
 import httpx
+
 
 async def getHostInfo() -> dict[str, object]:
     baseUrl = os.environ.get('AUGUST_HOST_AGENT_URL', '')
@@ -17,7 +19,8 @@ async def getHostInfo() -> dict[str, object]:
     except httpx.RequestError as exc:
         return {'available': False, 'error': str(exc)}
 
-async def executeHostCommand(command: str, args: list[str] | None=None) -> dict[str, object]:
+
+async def executeHostCommand(command: str, args: list[str] | None = None) -> dict[str, object]:
     baseUrl = os.environ.get('AUGUST_HOST_AGENT_URL', '')
     if not baseUrl:
         return {'error': 'Host agent not available'}

@@ -1,12 +1,16 @@
 """
 Filesystem path access control.
 """
+
 from __future__ import annotations
 from pathlib import Path
+
 ALLOWED_ROOTS: list[Path] = []
+
 
 def allowPath(path: str | Path) -> None:
     ALLOWED_ROOTS.append(Path(path).resolve())
+
 
 def isAllowed(path: str | Path) -> bool:
     target = Path(path).resolve()

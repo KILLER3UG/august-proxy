@@ -8,6 +8,7 @@ accumulates the assistant reply from ``final_output`` events.
 The workbench runner, session factory, and delete fn are injectable so the
 bridge is unit-testable without touching real workbench state.
 """
+
 from __future__ import annotations
 import asyncio
 import json
@@ -15,23 +16,29 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
+from app.jsonUtils import as_str
+
 log = logging.getLogger(__name__)
 WorkbenchRunner = Callable[..., Awaitable[None]]
 SessionFactory = Callable[..., object]
 DeleteSession = Callable[[str], bool]
+
 
 @dataclass
 class TurnResult:
     text: str = ''
     cancelled: bool = False
 
+
 def _defaultMapPath() -> Path:
     try:
         from app.config import settings
+
         base = Path(settings.dataDir)
     except Exception:
         base = Path.cwd()
     return base / 'gateway' / 'session_map.json'
+
 
 def _loadMap(path: Path) -> dict[str, str]:
     try:
@@ -42,6 +49,7 @@ def _loadMap(path: Path) -> dict[str, str]:
         pass
     return {}
 
+
 def _saveMap(path: Path, mapping: dict[str, str]) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -49,11 +57,25 @@ def _saveMap(path: Path, mapping: dict[str, str]) -> None:
     except Exception as exc:
         log.warning('gateway: could not persist session map: %s', exc)
 
+
 class SessionBridge:
     """Maps gateway session keys to workbench sessions and runs agent turns."""
 
-    def __init__(self, *, runner: WorkbenchRunner | None=None, sessionFactory: SessionFactory | None=None, deleteSession: DeleteSession | None=None, provider: str='', model: str='', agentId: str='', modelProvider: str='', guardMode: str='full', mapPath: Path | None=None) -> None:
+    def __init__(
+        self,
+        *,
+        runner: WorkbenchRunner | None = None,
+        sessionFactory: SessionFactory | None = None,
+        deleteSession: DeleteSession | None = None,
+        provider: str = '',
+        model: str = '',
+        agentId: str = '',
+        modelProvider: str = '',
+        guardMode: str = 'full',
+        mapPath: Path | None = None,
+    ) -> None:
         from app.services.workbench import workbench as wb
+
         self._runner = runner or wb.sendWorkbenchMessageStream
         self._sessionFactory = sessionFactory or wb.createWorkbenchSession
         self._deleteSession = deleteSession or wb.deleteWorkbenchSession
@@ -80,7 +102,9 @@ class SessionBridge:
         """Return the mapped workbench session id, or None if never mapped."""
         return self._map.get(sessionKey)
 
-    async def invokeAgent(self, sessionKey: str, text: str, *, onEvent: Callable[[dict[str, object]], None] | None=None) -> TurnResult:
+    async def invokeAgent(
+        self, sessionKey: str, text: str, *, onEvent: Callable[[dict[str, object]], None] | None = None
+    ) -> TurnResult:
         """Run one agent turn for the session; return accumulated reply text."""
         sessionId = self.sessionIdFor(sessionKey)
         cancel = asyncio.Event()
@@ -89,14 +113,25 @@ class SessionBridge:
 
         def emit(event: dict[str, object]) -> None:
             if event.get('type') == 'final_output' and event.get('content'):
-                parts.append(event['content'])
+                parts.append(as_str(event['content']))
             if onEvent:
                 try:
                     onEvent(event)
                 except Exception:
                     pass
+
         try:
-            await self._runner(sessionId=sessionId, message=text, provider=self._provider, agentId=self._agentId, model=self._model, modelProvider=self._modelProvider, guardMode=self._guardMode, emit=emit, signal=cancel)
+            await self._runner(
+                sessionId=sessionId,
+                message=text,
+                provider=self._provider,
+                agentId=self._agentId,
+                model=self._model,
+                modelProvider=self._modelProvider,
+                guardMode=self._guardMode,
+                emit=emit,
+                signal=cancel,
+            )
         finally:
             self._cancels.pop(sessionKey, None)
         return TurnResult(text=''.join(parts), cancelled=cancel.is_set())

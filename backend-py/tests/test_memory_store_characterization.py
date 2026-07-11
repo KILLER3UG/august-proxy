@@ -6,6 +6,7 @@ They intentionally assert the *current* camelCase schema and return shapes
 
 Do not "improve" assertions to preferred shapes without an approved behavior change.
 """
+
 from __future__ import annotations
 
 import pytest

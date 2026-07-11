@@ -22,22 +22,27 @@ The webhook URL is set by calling ``setWebhook`` when the adapter ``start()``-s
 if a ``base_url`` is provided in config (your server's public HTTPS URL).
 For local dev, set the webhook manually via the Bot API or use polling.
 """
+
 from __future__ import annotations
 import asyncio
 import logging
 import os
 from typing import Optional
+import httpx
 from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.services.gateway.base import BasePlatformAdapter, MessageEvent, SessionSource
+
 log = logging.getLogger(__name__)
 _TELEGRAMApi = 'https://api.telegram.org/bot'
 _TIMEOUT = 30
 
+
 class TelegramAdapter(BasePlatformAdapter):
     """Telegram bot adapter — inbound via webhook, outbound via sendMessage."""
+
     platform = 'telegram'
 
-    def __init__(self, config: dict[str, object] | None=None, bridge=None):
+    def __init__(self, config: dict[str, object] | None = None, bridge=None):
         super().__init__(config, bridge)
         self._token: str = os.environ.get('AUGUST_TELEGRAM_BOT_TOKEN', '')
         self._client: httpx.AsyncClient | None = None
@@ -62,6 +67,7 @@ class TelegramAdapter(BasePlatformAdapter):
             log.error('telegram: AUGUST_TELEGRAM_BOT_TOKEN not set')
             return False
         import httpx
+
         self._client = httpx.AsyncClient()
         me = await self._request('getMe')
         if not me.get('ok'):
@@ -84,7 +90,7 @@ class TelegramAdapter(BasePlatformAdapter):
         baseUrl = as_str(self.config.get('baseUrl'), '')
         webhookPath = as_str(self.config.get('webhook_path'), '/api/gateway/telegram/webhook')
         if baseUrl:
-            webhookUrl = f"{baseUrl.rstrip('/')}/{webhookPath.lstrip('/')}"
+            webhookUrl = f'{baseUrl.rstrip("/")}/{webhookPath.lstrip("/")}'
             r = await self._request('setWebhook', url=webhookUrl)
             if r.get('ok'):
                 log.info('telegram: webhook set to %s', webhookUrl)
@@ -109,7 +115,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 if r.get('ok'):
                     for update in as_list(r.get('result'), []):
                         await self.handleIncoming(update)
-                        offset = as_int(update.get('update_id'), offset) + 1
+                        offset = as_int(as_dict(update).get('update_id'), offset) + 1
                     retries = 0
                 else:
                     retries += 1
@@ -123,22 +129,27 @@ class TelegramAdapter(BasePlatformAdapter):
                 break
             await asyncio.sleep(1.0)
 
-    async def sendMessage(self, chatId: str, text: str, **kwargs: object) -> None:
-        params = {'chat_id': chatId, 'text': text}
-        if kwargs.get('reply_to_message_id'):
-            params['reply_to_message_id'] = kwargs['reply_to_message_id']
-        if kwargs.get('message_thread_id'):
-            params['message_thread_id'] = kwargs['message_thread_id']
-        if kwargs.get('parse_mode'):
-            params['parse_mode'] = kwargs['parse_mode']
+    async def sendMessage(self, chat_id: str, text: str, **kwargs: object) -> None:
+        params: dict[str, object] = {'chat_id': chat_id, 'text': text}
+        reply_id = kwargs.get('reply_to_message_id')
+        if reply_id:
+            params['reply_to_message_id'] = as_str(reply_id, str(reply_id))
+        thread_id = kwargs.get('message_thread_id')
+        if thread_id:
+            params['message_thread_id'] = as_str(thread_id, str(thread_id))
+        parse_mode = kwargs.get('parse_mode')
+        if parse_mode:
+            params['parse_mode'] = as_str(parse_mode, str(parse_mode))
         await self._request('sendMessage', **params)
 
-    async def getChatInfo(self, chatId: str) -> dict[str, object]:
-        r = await self._request('getChat', chat_id=chatId)
-        return as_dict(r.get('result'), {}) if r.get('ok') else {'name': str(chatId), 'type': 'dm'}
+    async def getChatInfo(self, chat_id: str) -> dict[str, object]:
+        r = await self._request('getChat', chat_id=chat_id)
+        return as_dict(r.get('result'), {}) if r.get('ok') else {'name': str(chat_id), 'type': 'dm'}
 
-    async def normalize(self, raw: dict[str, object]) -> Optional[MessageEvent]:
+    async def normalize(self, raw: object) -> Optional[MessageEvent]:
         """Convert a Telegram webhook update dict into a MessageEvent."""
+        if not isinstance(raw, dict):
+            return None
         message = as_dict(raw.get('message')) or as_dict(raw.get('edited_message'))
         if not message:
             return None
@@ -147,4 +158,15 @@ class TelegramAdapter(BasePlatformAdapter):
             return None
         chat = as_dict(message.get('chat'), {})
         _from = as_dict(message.get('from'), {})
-        return MessageEvent(source=SessionSource(platform='telegram', chatId=as_str(chat.get('id'), ''), userId=as_str(_from.get('id'), ''), threadId=as_str(message.get('message_thread_id'), ''), messageId=as_str(message.get('message_id'), ''), chatType=as_str(chat.get('type'), 'dm')), text=text, raw=raw)
+        return MessageEvent(
+            source=SessionSource(
+                platform='telegram',
+                chat_id=str(chat.get('id', '')),
+                user_id=str(_from.get('id', '')),
+                thread_id=str(message.get('message_thread_id', '')),
+                message_id=str(message.get('message_id', '')),
+                chat_type=as_str(chat.get('type', 'dm')),
+            ),
+            text=text,
+            raw=raw,
+        )

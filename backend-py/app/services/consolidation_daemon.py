@@ -7,6 +7,7 @@ then merges duplicates, promotes recurring patterns to facts, and deletes
 stale entries. Also drafts new SKILL.md files from successful complex
 sessions (Phase 10.4) using the Prefrontal model.
 """
+
 from __future__ import annotations
 import asyncio
 import json
@@ -15,6 +16,7 @@ import os
 import time
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 from app.typeAliases import ConsolidationSummaryDict
+
 logger = logging.getLogger(__name__)
 _CONSOLIDATIONInterval = 86400
 _RECENTProtectionCount = 20
@@ -22,6 +24,7 @@ _SKILLDraftRateLimit = 1
 _stagingDir = os.path.join('data', 'skills', 'staging')
 _activeSkillsDir = os.path.join('skills')
 _lastRun: dict[str, object] | None = None
+
 
 def _sanitizeSkillName(name: str) -> str:
     """v2 hardening: Convert any name to a valid camelCase identifier.
@@ -37,6 +40,7 @@ def _sanitizeSkillName(name: str) -> str:
     if not name:
         return ''
     import re
+
     s = name.strip()
     parts = re.split('[^A-Za-z0-9]+', s)
     parts = [p for p in parts if p]
@@ -46,6 +50,7 @@ def _sanitizeSkillName(name: str) -> str:
     for p in parts[1:]:
         result += p[0].upper() + p[1:].lower() if len(p) > 0 else ''
     return result[:50]
+
 
 async def _callHippocampus(prompt: str) -> str:
     """v2: Call the Hippocampus model. Returns raw text response.
@@ -57,12 +62,13 @@ async def _callHippocampus(prompt: str) -> str:
         from app.services.workbench import model_fleet
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
+
         model = model_fleet.getModelForRole('hippocampus')
         if not model:
             return ''
         provider = providerResolver.resolve(model)
         if not provider:
-            available = [p for p in providerResolver.listAvailable() if p.get('api_key')]
+            available = [p for p in providerResolver.list_available() if p.get('api_key')]
             provider = available[0] if available else None
         if not provider:
             return ''
@@ -73,6 +79,7 @@ async def _callHippocampus(prompt: str) -> str:
     except Exception:
         pass
     return ''
+
 
 async def _callPrefrontal(prompt: str) -> str:
     """v2: Call the Prefrontal model. Returns raw text response."""
@@ -80,12 +87,13 @@ async def _callPrefrontal(prompt: str) -> str:
         from app.services.workbench import model_fleet
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
+
         model = model_fleet.getModelForRole('prefrontal')
         if not model:
             return ''
         provider = providerResolver.resolve(model)
         if not provider:
-            available = [p for p in providerResolver.listAvailable() if p.get('api_key')]
+            available = [p for p in providerResolver.list_available() if p.get('api_key')]
             provider = available[0] if available else None
         if not provider:
             return ''
@@ -97,9 +105,11 @@ async def _callPrefrontal(prompt: str) -> str:
         pass
     return ''
 
+
 def _getSessionSummary(sessionId: str) -> str:
     """v2: Get a brief summary of a session's activity. Default impl returns empty."""
     return ''
+
 
 async def runConsolidation() -> ConsolidationSummaryDict:
     """Run one Hippocampus-driven consolidation cycle.
@@ -112,14 +122,22 @@ async def runConsolidation() -> ConsolidationSummaryDict:
 
     Returns stats about what was done.
     """
-    stats: ConsolidationSummaryDict = {'merged': 0, 'promoted': 0, 'deleted_stale': 0, 'errors': []}
+    stats: ConsolidationSummaryDict = {'merged': 0, 'promoted': 0, 'deletedStale': 0, 'errors': []}
     from app.services.brain_event_bus import emitBrainEvent
-    emitBrainEvent(category='consolidation', layer='consolidation_daemon', summary=f'Sleep cycle started over {0} heuristics (will update on completion)')
+
+    emitBrainEvent(
+        category='consolidation',
+        layer='consolidation_daemon',
+        summary=f'Sleep cycle started over {0} heuristics (will update on completion)',
+    )
     try:
         from app.services.memory_store import _conn
         from app.services.db_writer import enqueueWrite
+
         conn = _conn()
-        autoMemories = [dict(r) for r in conn.execute('SELECT * FROM autoMemories ORDER BY id DESC LIMIT 100').fetchall()]
+        autoMemories = [
+            dict(r) for r in conn.execute('SELECT * FROM autoMemories ORDER BY id DESC LIMIT 100').fetchall()
+        ]
         heuristics = [dict(r) for r in conn.execute('SELECT * FROM learnedHeuristics ORDER BY id DESC').fetchall()]
         if not heuristics:
             return stats
@@ -133,49 +151,89 @@ async def runConsolidation() -> ConsolidationSummaryDict:
             return stats
         if not isinstance(plan, dict):
             return stats
-        recentIds = {r['id'] for r in conn.execute('SELECT id FROM learnedHeuristics ORDER BY id DESC LIMIT ?', (_RECENTProtectionCount,)).fetchall()}
-        for merge in plan.get('merge', []):
+        recentIds = {
+            r['id']
+            for r in conn.execute(
+                'SELECT id FROM learnedHeuristics ORDER BY id DESC LIMIT ?', (_RECENTProtectionCount,)
+            ).fetchall()
+        }
+        for mergeRaw in as_list(plan.get('merge'), []):
+            merge = as_dict(mergeRaw)
             keepId = merge.get('keepId')
-            removeIds = merge.get('removeIds', [])
+            removeIds = as_list(merge.get('removeIds'), [])
             mergedRule = merge.get('mergedRule')
             if keepId is None or not removeIds:
                 continue
             for rid in removeIds:
                 if rid == keepId:
                     continue
-                await enqueueWrite(lambda i=rid: conn.execute('DELETE FROM learnedHeuristics WHERE id = ?', (i,)))
+
+                def _deleteMerged(i: object = rid) -> object:
+                    return conn.execute('DELETE FROM learnedHeuristics WHERE id = ?', (i,))
+
+                await enqueueWrite(_deleteMerged)
             if mergedRule:
-                await enqueueWrite(lambda k=keepId, m=mergedRule: conn.execute("UPDATE learnedHeuristics SET rule = ?, updatedAt = datetime('now') WHERE id = ?", (m, k)))
+
+                def _updateMerged(k: object = keepId, m: object = mergedRule) -> object:
+                    return conn.execute(
+                        "UPDATE learnedHeuristics SET rule = ?, updatedAt = datetime('now') WHERE id = ?", (m, k)
+                    )
+
+                await enqueueWrite(_updateMerged)
             stats['merged'] += 1
-        for promo in plan.get('promote', []):
+        for promoRaw in as_list(plan.get('promote'), []):
+            promo = as_dict(promoRaw)
             factKey = promo.get('factKey')
             factValue = promo.get('factValue')
             if not factKey or not factValue:
                 continue
-            await enqueueWrite(lambda k=factKey, v=factValue: conn.execute('INSERT INTO facts (factKey, factValue, category, source, confidence) VALUES (?, ?, ?, ?, ?)', (k, v, 'auto-promoted', 'consolidation', 0.8)))
+
+            def _insertFact(k: object = factKey, v: object = factValue) -> object:
+                return conn.execute(
+                    'INSERT INTO facts (factKey, factValue, category, source, confidence) VALUES (?, ?, ?, ?, ?)',
+                    (k, v, 'auto-promoted', 'consolidation', 0.8),
+                )
+
+            await enqueueWrite(_insertFact)
             stats['promoted'] += 1
-        for did in plan.get('delete', []):
+        for did in as_list(plan.get('delete'), []):
             if did in recentIds:
                 continue
-            await enqueueWrite(lambda i=did: conn.execute('DELETE FROM learnedHeuristics WHERE id = ?', (i,)))
-            stats['deleted_stale'] += 1
+
+            def _deleteStale(i: object = did) -> object:
+                return conn.execute('DELETE FROM learnedHeuristics WHERE id = ?', (i,))
+
+            await enqueueWrite(_deleteStale)
+            stats['deletedStale'] += 1
     except Exception as exc:
         stats['errors'].append(str(exc))
         logger.error('Consolidation error: %s', exc)
     global _last_run
-    _lastRun = {'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'merged': stats['merged'], 'promoted': stats['promoted'], 'deletedStale': stats['deleted_stale']}
+    _lastRun = {
+        'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        'merged': stats['merged'],
+        'promoted': stats['promoted'],
+        'deletedStale': stats['deletedStale'],
+    }
     from app.services.brain_event_bus import emitBrainEvent
+
     summaryParts = []
     if stats['merged']:
-        summaryParts.append(f"merged {stats['merged']} duplicate{('s' if stats['merged'] != 1 else '')}")
+        summaryParts.append(f'merged {stats["merged"]} duplicate{("s" if stats["merged"] != 1 else "")}')
     if stats['promoted']:
-        summaryParts.append(f"promoted {stats['promoted']} pattern{('s' if stats['promoted'] != 1 else '')} to facts")
-    if stats['deleted_stale']:
-        summaryParts.append(f"deleted {stats['deleted_stale']} stale rule{('s' if stats['deleted_stale'] != 1 else '')}")
+        summaryParts.append(f'promoted {stats["promoted"]} pattern{("s" if stats["promoted"] != 1 else "")} to facts')
+    if stats['deletedStale']:
+        summaryParts.append(f'deleted {stats["deletedStale"]} stale rule{("s" if stats["deletedStale"] != 1 else "")}')
     if not summaryParts:
         summaryParts.append('no changes — sleep cycle healthy')
-    emitBrainEvent(category='consolidation', layer='consolidation_daemon', summary=f"Sleep cycle done: {', '.join(summaryParts)}", meta={'merged': stats['merged'], 'promoted': stats['promoted'], 'deleted_stale': stats['deleted_stale']})
+    emitBrainEvent(
+        category='consolidation',
+        layer='consolidation_daemon',
+        summary=f'Sleep cycle done: {", ".join(summaryParts)}',
+        meta={'merged': stats['merged'], 'promoted': stats['promoted'], 'deleted_stale': stats['deletedStale']},
+    )
     return stats
+
 
 async def draftSkillForSession(sessionId: str) -> str | None:
     """v2: Draft a SKILL.md from a successful session.
@@ -185,9 +243,12 @@ async def draftSkillForSession(sessionId: str) -> str | None:
     """
     try:
         from app.services.memory_store import _conn
+
         conn = _conn()
         today = time.strftime('%Y-%m-%d')
-        recent = conn.execute("SELECT COUNT(*) as c FROM pendingSkills WHERE createdAt >= ? AND createdBy = 'auto-gen'", (today,)).fetchone()
+        recent = conn.execute(
+            "SELECT COUNT(*) as c FROM pendingSkills WHERE createdAt >= ? AND createdBy = 'auto-gen'", (today,)
+        ).fetchone()
         if recent['c'] >= _SKILLDraftRateLimit:
             return None
         summary = _getSessionSummary(sessionId)
@@ -209,15 +270,21 @@ async def draftSkillForSession(sessionId: str) -> str | None:
             return None
         os.makedirs(_stagingDir, exist_ok=True)
         draftPath = os.path.join(_stagingDir, f'{name}.md')
-        content = f'---\nname: {name}\ndescription: {description}\ntrigger: {trigger}\ncreated_by: auto-gen\n---\n\n{body}\n'
+        content = (
+            f'---\nname: {name}\ndescription: {description}\ntrigger: {trigger}\ncreated_by: auto-gen\n---\n\n{body}\n'
+        )
         with open(draftPath, 'w', encoding='utf-8') as f:
             f.write(content)
-        conn.execute('INSERT INTO pendingSkills (name, description, triggerText, draftPath, sourceSessionId, sourceWorkflow) VALUES (?, ?, ?, ?, ?, ?)', (name, description, trigger, draftPath, sessionId, summary[:500]))
+        conn.execute(
+            'INSERT INTO pendingSkills (name, description, triggerText, draftPath, sourceSessionId, sourceWorkflow) VALUES (?, ?, ?, ?, ?, ?)',
+            (name, description, trigger, draftPath, sessionId, summary[:500]),
+        )
         conn.commit()
         return name
     except Exception as exc:
         logger.error('Skill drafting error: %s', exc)
         return None
+
 
 def approvePendingSkill(name: str) -> bool:
     """v2: Approve a pending skill — move from staging to active."""
@@ -227,6 +294,7 @@ def approvePendingSkill(name: str) -> bool:
         pass
     try:
         from app.services.memory_store import _conn
+
         conn = _conn()
         row = conn.execute('SELECT draftPath FROM pendingSkills WHERE name = ?', (name,)).fetchone()
         if not row:
@@ -236,14 +304,20 @@ def approvePendingSkill(name: str) -> bool:
             return False
         os.makedirs(_activeSkillsDir, exist_ok=True)
         import shutil
+
         shutil.move(draftPath, os.path.join(_activeSkillsDir, f'{name}.md'))
         conn.execute("UPDATE pendingSkills SET status = 'approved' WHERE name = ?", (name,))
         conn.commit()
-        emitBrainEvent(category='skill_genesis', layer='consolidation_daemon.approved_pending_skill', summary=f'Approved skill: {name[:80]}')
+        emitBrainEvent(
+            category='skill_genesis',
+            layer='consolidation_daemon.approved_pending_skill',
+            summary=f'Approved skill: {name[:80]}',
+        )
         return True
     except Exception as exc:
         logger.error('Skill approval error: %s', exc)
         return False
+
 
 def rejectPendingSkill(name: str) -> bool:
     """v2: Reject a pending skill — delete the staging file."""
@@ -253,6 +327,7 @@ def rejectPendingSkill(name: str) -> bool:
         pass
     try:
         from app.services.memory_store import _conn
+
         conn = _conn()
         row = conn.execute('SELECT draftPath FROM pendingSkills WHERE name = ?', (name,)).fetchone()
         if not row:
@@ -262,7 +337,11 @@ def rejectPendingSkill(name: str) -> bool:
             os.remove(draftPath)
         conn.execute("UPDATE pendingSkills SET status = 'rejected' WHERE name = ?", (name,))
         conn.commit()
-        emitBrainEvent(category='skill_genesis', layer='consolidation_daemon.rejected_pending_skill', summary=f'Rejected skill: {name[:80]}')
+        emitBrainEvent(
+            category='skill_genesis',
+            layer='consolidation_daemon.rejected_pending_skill',
+            summary=f'Rejected skill: {name[:80]}',
+        )
         return True
     except Exception as exc:
         logger.error('Skill rejection error: %s', exc)

@@ -1,7 +1,9 @@
 """v1.1 — Test that tool errors populate session._failure_feedback with structured info."""
+
 import pytest
 from app.services.workbench.workbench import _executeTool
 from app.services import workbench as wbMod
+
 
 class FakeSession:
     """Minimal WorkbenchSession stand-in for testing."""
@@ -13,13 +15,16 @@ class FakeSession:
         self.status = 'idle'
         self.sessionId = 'test-session'
 
+
 @pytest.mark.asyncio
 async def testToolErrorPopulatesFailureFeedback(monkeypatch):
     """When dispatch_tool raises, _failure_feedback is set with structured info."""
 
     async def fakeDispatch(toolName, args):
         raise SyntaxError('invalid syntax')
+
     from app.services import tool_registry
+
     monkeypatch.setattr(tool_registry, 'dispatch', fakeDispatch)
     session = FakeSession()
     result = await _executeTool(tool_name='run_command', args={'command': 'def foo(:', 'cwd': '/tmp'}, session=session)
@@ -31,13 +36,16 @@ async def testToolErrorPopulatesFailureFeedback(monkeypatch):
     assert fb['error_type'] == 'SyntaxError'
     assert 'invalid syntax' in fb['error_message']
 
+
 @pytest.mark.asyncio
 async def testToolSuccessDoesNotSetFailureFeedback(monkeypatch):
     """Happy path: no failure_feedback is set."""
 
     async def fakeDispatch(toolName, args):
         return 'ok'
+
     from app.services import tool_registry
+
     monkeypatch.setattr(tool_registry, 'dispatch', fakeDispatch)
     session = FakeSession()
     result = await _executeTool(tool_name='read_file', args={'path': '/tmp/x'}, session=session)

@@ -3,8 +3,10 @@ Fuzzy matching — string similarity and approximate search.
 
 Port of backend/services/memory/fuzzy-match.js.
 """
+
 from __future__ import annotations
 import re
+
 
 def levenshtein(a: str, b: str) -> int:
     """Compute Levenshtein distance between two strings."""
@@ -20,6 +22,7 @@ def levenshtein(a: str, b: str) -> int:
         prev = curr
     return prev[-1]
 
+
 def similarity(a: str, b: str) -> float:
     """Compute similarity ratio (0.0 to 1.0) between two strings."""
     if not a and (not b):
@@ -30,7 +33,8 @@ def similarity(a: str, b: str) -> float:
     maxLen = max(len(a), len(b))
     return 1.0 - dist / maxLen
 
-def fuzzySearch(query: str, candidates: list[str], threshold: float=0.6) -> list[tuple[str, float]]:
+
+def fuzzySearch(query: str, candidates: list[str], threshold: float = 0.6) -> list[tuple[str, float]]:
     """Find candidates that match the query above a similarity threshold."""
     results = []
     for c in candidates:
@@ -39,6 +43,7 @@ def fuzzySearch(query: str, candidates: list[str], threshold: float=0.6) -> list
             results.append((c, score))
     results.sort(key=lambda x: x[1], reverse=True)
     return results
+
 
 def tokenSortRatio(a: str, b: str) -> float:
     """Compare strings by sorting their tokens first."""

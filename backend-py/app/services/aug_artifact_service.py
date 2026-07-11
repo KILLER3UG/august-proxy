@@ -16,6 +16,7 @@ user can delete them manually.
 The leading-dot ``.aug`` form from the original spec is normalized for both
 kinds so the directory stays hidden and consistent.
 """
+
 from __future__ import annotations
 
 import json
@@ -38,6 +39,7 @@ def _augDir(workspacePath: str | None) -> Path:
             return ws / '.aug'
     try:
         from app.config import settings
+
         return Path(settings.projectRoot) / '.aug'
     except Exception:
         return Path.cwd() / '.aug'
@@ -67,6 +69,7 @@ def _sessionSuffix(sessionId: str) -> str:
 
 def _now() -> str:
     from datetime import datetime, timezone
+
     return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
@@ -86,7 +89,9 @@ def _titleFromPlan(plan: dict[str, object]) -> str:
     return 'plan'
 
 
-def savePlan(workspacePath: str | None, sessionId: str, plan: dict[str, object], *, status: str = 'pending') -> dict[str, object]:
+def savePlan(
+    workspacePath: str | None, sessionId: str, plan: dict[str, object], *, status: str = 'pending'
+) -> dict[str, object]:
     """Persist a plan to ``.aug/plans/<slug>/plan.json``."""
     base = _augDir(workspacePath)
     title = _titleFromPlan(plan)
@@ -107,7 +112,14 @@ def savePlan(workspacePath: str | None, sessionId: str, plan: dict[str, object],
     return meta
 
 
-def saveTodos(workspacePath: str | None, sessionId: str, todos: list[dict[str, object]], *, title: str = '', status: str = 'active') -> dict[str, object]:
+def saveTodos(
+    workspacePath: str | None,
+    sessionId: str,
+    todos: list[dict[str, object]],
+    *,
+    title: str = '',
+    status: str = 'active',
+) -> dict[str, object]:
     """Persist a todo list to ``.aug/todoList/<slug>/todos.json``."""
     base = _augDir(workspacePath)
     effectiveTitle = title or 'todo list'
@@ -170,16 +182,18 @@ def listArtifacts(workspacePath: str | None) -> list[dict[str, object]]:
                 meta = json.loads(metaFile.read_text('utf-8'))
             except Exception:
                 continue
-            artifacts.append({
-                'kind': kind,
-                'slug': meta.get('slug', entry.name),
-                'title': meta.get('title', entry.name),
-                'status': meta.get('status', 'unknown'),
-                'createdAt': meta.get('createdAt', ''),
-                'updatedAt': meta.get('updatedAt', ''),
-                'sessionId': meta.get('sessionId', ''),
-                'path': str(metaFile),
-            })
+            artifacts.append(
+                {
+                    'kind': kind,
+                    'slug': meta.get('slug', entry.name),
+                    'title': meta.get('title', entry.name),
+                    'status': meta.get('status', 'unknown'),
+                    'createdAt': meta.get('createdAt', ''),
+                    'updatedAt': meta.get('updatedAt', ''),
+                    'sessionId': meta.get('sessionId', ''),
+                    'path': str(metaFile),
+                }
+            )
     return artifacts
 
 

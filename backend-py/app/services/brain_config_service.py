@@ -32,7 +32,9 @@ Response shapes (match the frontend types):
 
 ``source`` is one of ``"persisted" | "session" | "fallback"``.
 """
+
 from __future__ import annotations
+from typing import cast
 from app.config import settings
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 from app.services import config_service
@@ -40,58 +42,88 @@ from app.services.memory.brain_orchestrator import DEFAULT_FEATURES
 from app.services.memory_store import recordConfigAudit
 from app.services.workbench import workbench as workbenchSvc
 from app.typeAliases import BrainConfigDict, JsonValue
-boolKeys: tuple[str, ...] = ('enabled', 'adaptivePolicy', 'failureLearning', 'graphMemory', 'agentJobs', 'hierarchicalAgents', 'adapterParallelTools', 'parallelReadTools', 'reviewLearnedGuidelines')
+
+boolKeys: tuple[str, ...] = (
+    'enabled',
+    'adaptivePolicy',
+    'failureLearning',
+    'graphMemory',
+    'agentJobs',
+    'hierarchicalAgents',
+    'adapterParallelTools',
+    'parallelReadTools',
+    'reviewLearnedGuidelines',
+)
 numKeys: tuple[str, ...] = ('maxAgentDepth', 'maxWorkbenchToolLoops')
 allowedKeys: frozenset[str] = frozenset(boolKeys + numKeys)
 maxAgentDepthRange = (1, 5)
 maxWorkbenchLoopsRange = (1, 500)
-fieldTable: tuple[tuple[str, str, object, str], ...] = (('enabled', 'enabled', DEFAULT_FEATURES.get('enabled', True), 'bool'), ('adaptivePolicy', 'adaptive_policy', DEFAULT_FEATURES.get('adaptive_policy', True), 'bool'), ('failureLearning', 'failure_learning', DEFAULT_FEATURES.get('failure_learning', True), 'bool'), ('graphMemory', 'graph_memory', DEFAULT_FEATURES.get('graph_memory', True), 'bool'), ('agentJobs', 'agent_jobs', DEFAULT_FEATURES.get('agent_jobs', True), 'bool'), ('hierarchicalAgents', 'hierarchical_agents', DEFAULT_FEATURES.get('hierarchical_agents', True), 'bool'), ('adapterParallelTools', 'adapter_parallel_tools', DEFAULT_FEATURES.get('adapter_parallel_tools', True), 'bool'), ('parallelReadTools', 'parallel_read_tools', DEFAULT_FEATURES.get('parallel_read_tools', True), 'bool'), ('reviewLearnedGuidelines', 'review_learned_guidelines', True, 'bool'), ('maxAgentDepth', 'max_agent_depth', DEFAULT_FEATURES.get('max_agent_depth', 4), 'num'), ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', DEFAULT_FEATURES.get('max_workbench_tool_loops', 100), 'num'))
+fieldTable: tuple[tuple[str, str, object, str], ...] = (
+    ('enabled', 'enabled', DEFAULT_FEATURES.get('enabled', True), 'bool'),
+    ('adaptivePolicy', 'adaptive_policy', DEFAULT_FEATURES.get('adaptive_policy', True), 'bool'),
+    ('failureLearning', 'failure_learning', DEFAULT_FEATURES.get('failure_learning', True), 'bool'),
+    ('graphMemory', 'graph_memory', DEFAULT_FEATURES.get('graph_memory', True), 'bool'),
+    ('agentJobs', 'agent_jobs', DEFAULT_FEATURES.get('agent_jobs', True), 'bool'),
+    ('hierarchicalAgents', 'hierarchical_agents', DEFAULT_FEATURES.get('hierarchical_agents', True), 'bool'),
+    ('adapterParallelTools', 'adapter_parallel_tools', DEFAULT_FEATURES.get('adapter_parallel_tools', True), 'bool'),
+    ('parallelReadTools', 'parallel_read_tools', DEFAULT_FEATURES.get('parallel_read_tools', True), 'bool'),
+    ('reviewLearnedGuidelines', 'review_learned_guidelines', True, 'bool'),
+    ('maxAgentDepth', 'max_agent_depth', DEFAULT_FEATURES.get('max_agent_depth', 4), 'num'),
+    ('maxWorkbenchToolLoops', 'max_workbench_tool_loops', DEFAULT_FEATURES.get('max_workbench_tool_loops', 100), 'num'),
+)
 snakeToCamel: dict[str, str] = {snake: camel for camel, snake, _d, _k in fieldTable}
 camelToSnake: dict[str, str] = {camel: snake for camel, snake, _d, _k in fieldTable}
 fieldKind: dict[str, str] = {camel: kind for camel, _s, _d, kind in fieldTable}
 
+
 def _defaultsCamel() -> BrainConfigDict:
     """Return the full defaults dict in camelCase (matches ``BrainConfig``)."""
-    out: BrainConfigDict = {}
+    raw: dict[str, object] = {}
     for camel, _snake, default, _kind in fieldTable:
-        out[camel] = default
-    return out
+        raw[camel] = default
+    return cast(BrainConfigDict, raw)
+
 
 def getDefaults() -> BrainConfigDict:
     """Public accessor — returns the camelCase defaults the frontend renders."""
     return _defaultsCamel()
 
-def _loadPersisted() -> dict[str, JsonValue]:
+
+def _loadPersisted() -> dict[str, object]:
     """Read ``cfg.brain_orchestrator`` (snake_case) from disk. Always fresh."""
     cfg = config_service.getConfig()
     val = cfg.get('brain_orchestrator')
     return val if isinstance(val, dict) else {}
 
-def _savePersisted(snakeCfg: dict[str, JsonValue]) -> None:
+
+def _savePersisted(snakeCfg: dict[str, object]) -> None:
     """Write snake_case ``cfg.brain_orchestrator`` and refresh the in-memory cache."""
     cfg = config_service.getConfig()
     cfg['brain_orchestrator'] = snakeCfg
     config_service.saveConfig(cfg)
     settings.reload()
 
-def _snakeToCamel(snakeCfg: dict[str, JsonValue]) -> BrainConfigDict:
+
+def _snakeToCamel(snakeCfg: dict[str, object]) -> BrainConfigDict:
     """Translate a snake_case persisted dict into the camelCase response shape."""
     out = _defaultsCamel()
     for snakeKey, value in snakeCfg.items():
         camelKey = snakeToCamel.get(snakeKey)
         if camelKey is None:
             continue
-        out[camelKey] = value
+        cast(dict, out)[camelKey] = value
     return out
 
-def _camelPatchToSnake(patch: dict[str, JsonValue]) -> dict[str, JsonValue]:
+
+def _camelPatchToSnake(patch: dict[str, object]) -> dict[str, object]:
     """Translate a camelCase patch (from the React form) into the snake_case
     dict we persist. Validation happens in :func:`validatePatch` first."""
-    out: dict[str, JsonValue] = {}
+    out: dict[str, object] = {}
     for camelKey, value in patch.items():
         snakeKey = camelToSnake[camelKey]
         out[snakeKey] = value
     return out
+
 
 def validatePatch(patch: object) -> tuple[bool, str]:
     """Return (ok, error_message). Reject non-dicts, unknown keys, wrong types
@@ -116,7 +148,8 @@ def validatePatch(patch: object) -> tuple[bool, str]:
                 return (False, f'{key!r} must be between {lo} and {hi} (got {value})')
     return (True, '')
 
-def _sessionInfo(sessionId: str | None=None) -> dict[str, JsonValue] | None:
+
+def _sessionInfo(sessionId: str | None = None) -> dict[str, object] | None:
     """Return ``{id, task}`` for the most-recent workbench session, or ``None``
     when none exist. ``task`` is mapped from ``WorkbenchSession.goal`` because
     the dataclass has no ``task`` field (see workbench.py:41-69)."""
@@ -126,7 +159,7 @@ def _sessionInfo(sessionId: str | None=None) -> dict[str, JsonValue] | None:
         return None
     if not sessions:
         return None
-    target: dict[str, JsonValue] | None = None
+    target: dict[str, object] | None = None
     if sessionId:
         for s in sessions:
             if s.get('id') == sessionId:
@@ -138,7 +171,8 @@ def _sessionInfo(sessionId: str | None=None) -> dict[str, JsonValue] | None:
         return None
     return {'id': target.get('id', ''), 'task': target.get('goal') or None}
 
-def _resolveSource(*, forceSession: bool=False) -> str:
+
+def _resolveSource(*, forceSession: bool = False) -> str:
     """Return the ``source`` tag for the current settings view.
 
     * ``forceSession=True`` is set by ``/config/from-session`` — the
@@ -157,7 +191,8 @@ def _resolveSource(*, forceSession: bool=False) -> str:
         return 'session'
     return 'fallback'
 
-def getBrainConfigForSettings(*, sessionId: str | None=None) -> dict[str, JsonValue]:
+
+def getBrainConfigForSettings(*, sessionId: str | None = None) -> dict[str, object]:
     """Shape returned to the React ``useQuery(['brain-config'])`` call.
 
     Always includes the full default set so the UI can render a meaningful
@@ -166,9 +201,16 @@ def getBrainConfigForSettings(*, sessionId: str | None=None) -> dict[str, JsonVa
     persistedSnake = _loadPersisted()
     source = _resolveSource()
     sess = _sessionInfo(sessionId)
-    return {'source': source, 'config': _snakeToCamel(persistedSnake), 'defaults': _defaultsCamel(), 'sessionId': sess['id'] if sess else None, 'session': sess}
+    return {
+        'source': source,
+        'config': _snakeToCamel(persistedSnake),
+        'defaults': _defaultsCamel(),
+        'sessionId': sess['id'] if sess else None,
+        'session': sess,
+    }
 
-def saveBrainConfig(patch: dict[str, JsonValue]) -> tuple[bool, str, BrainConfigDict]:
+
+def saveBrainConfig(patch: dict[str, object]) -> tuple[bool, str, BrainConfigDict]:
     """Apply a partial camelCase patch. Returns (ok, error_message, merged)."""
     ok, err = validatePatch(patch)
     if not ok:
@@ -181,6 +223,7 @@ def saveBrainConfig(patch: dict[str, JsonValue]) -> tuple[bool, str, BrainConfig
     recordConfigAudit('brain', 'update', 'user', before=before, after=dict(mergedSnake))
     return (True, '', _snakeToCamel(mergedSnake))
 
+
 def resetBrainConfig() -> tuple[bool, BrainConfigDict]:
     """Drop the persisted override entirely. Returns (ok, defaults_camel)."""
     before = _loadPersisted()
@@ -191,7 +234,8 @@ def resetBrainConfig() -> tuple[bool, BrainConfigDict]:
     recordConfigAudit('brain', 'reset', 'user', before=before, after={})
     return (True, _defaultsCamel())
 
-def getBrainConfigFromSession(sessionId: str) -> dict[str, JsonValue]:
+
+def getBrainConfigFromSession(sessionId: str) -> dict[str, object]:
     """Return the brain config tagged ``source='session'`` for the requested
     session. Falls back to the most-recent session when ``sessionId`` is
     unknown (matches the lenient lookup in :func:`_sessionInfo`)."""
@@ -199,4 +243,10 @@ def getBrainConfigFromSession(sessionId: str) -> dict[str, JsonValue]:
     if not sess:
         return getBrainConfigForSettings()
     persistedSnake = _loadPersisted()
-    return {'source': 'session', 'config': _snakeToCamel(persistedSnake), 'defaults': _defaultsCamel(), 'sessionId': sess['id'], 'session': sess}
+    return {
+        'source': 'session',
+        'config': _snakeToCamel(persistedSnake),
+        'defaults': _defaultsCamel(),
+        'sessionId': sess['id'],
+        'session': sess,
+    }

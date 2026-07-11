@@ -4,11 +4,22 @@ Replace `Any` type annotations with proper types across the codebase.
 Uses regex on annotation patterns, then cleans up imports.
 Safe approach: replaces only well-known annotation patterns.
 """
+
 from __future__ import annotations
 import re
 import os
 import sys
-ANNOTATION_REPLACEMENTS = [('\\bdict\\[str,\\s*Any\\]', 'dict[str, object]'), ('\\bDict\\[str,\\s*Any\\]', 'Dict[str, object]'), ('\\blist\\[dict\\[str,\\s*Any\\]\\]', 'list[dict[str, object]]'), ('\\bList\\[Dict\\[str,\\s*Any\\]\\]', 'List[Dict[str, object]]'), ('\\bAsyncIterator\\[dict\\[str,\\s*Any\\]\\]', 'AsyncIterator[dict[str, object]]'), ('\\blist\\[Any\\]', 'list[object]'), ('\\bList\\[Any\\]', 'List[object]')]
+
+ANNOTATION_REPLACEMENTS = [
+    ('\\bdict\\[str,\\s*Any\\]', 'dict[str, object]'),
+    ('\\bDict\\[str,\\s*Any\\]', 'Dict[str, object]'),
+    ('\\blist\\[dict\\[str,\\s*Any\\]\\]', 'list[dict[str, object]]'),
+    ('\\bList\\[Dict\\[str,\\s*Any\\]\\]', 'List[Dict[str, object]]'),
+    ('\\bAsyncIterator\\[dict\\[str,\\s*Any\\]\\]', 'AsyncIterator[dict[str, object]]'),
+    ('\\blist\\[Any\\]', 'list[object]'),
+    ('\\bList\\[Any\\]', 'List[object]'),
+]
+
 
 def replaceAnnotations(content: str) -> tuple[str, int]:
     """Replace known annotation patterns. Returns (new_content, count)."""
@@ -19,6 +30,7 @@ def replaceAnnotations(content: str) -> tuple[str, int]:
             total += count
             content = newContent
     return (content, total)
+
 
 def replaceAnyInParamRet(content: str) -> tuple[str, int]:
     """
@@ -42,7 +54,11 @@ def replaceAnyInParamRet(content: str) -> tuple[str, int]:
     total += c
     content, c = re.subn('->\\s*Any\\s*,', '-> object,', content)
     total += c
-    content, c = re.subn('Callable\\[\\[(?:[^\\[\\]]+|\\[[^\\[\\]]*\\])*\\]\\s*,\\s*Any\\]', lambda m: m.group(0).replace(', Any]', ', object]'), content)
+    content, c = re.subn(
+        'Callable\\[\\[(?:[^\\[\\]]+|\\[[^\\[\\]]*\\])*\\]\\s*,\\s*Any\\]',
+        lambda m: m.group(0).replace(', Any]', ', object]'),
+        content,
+    )
     total += c
     content, c = re.subn(':\\s*Any\\s*$', ': object', content, flags=re.MULTILINE)
     total += c
@@ -52,6 +68,7 @@ def replaceAnyInParamRet(content: str) -> tuple[str, int]:
     total += c
     return (content, total)
 
+
 def cleanImports(content: str) -> str:
     """Remove `Any` from typing imports if it's no longer used."""
     lines = content.split('\n')
@@ -60,7 +77,7 @@ def cleanImports(content: str) -> str:
         if 'from typing import' in line or 'import typing' in line:
             newLine = line
             if 'from typing import' in line:
-                importsPart = line[line.index('import') + len('import'):].strip()
+                importsPart = line[line.index('import') + len('import') :].strip()
                 parts = [p.strip() for p in importsPart.split(',')]
                 parts = [p for p in parts if p != 'Any' and p != "'Any'" and (p != '"Any"')]
                 if parts:
@@ -73,6 +90,7 @@ def cleanImports(content: str) -> str:
             newLines.append(line)
     return '\n'.join(newLines)
 
+
 def needsAny(content: str) -> bool:
     """Check if `Any` is still used in code (not in imports)."""
     lines = content.split('\n')
@@ -84,6 +102,7 @@ def needsAny(content: str) -> bool:
             if re.search('\\bAny\\b', stripped):
                 return True
     return False
+
 
 def processFile(filepath: str) -> int:
     """Process a single file, return number of replacements."""
@@ -98,6 +117,7 @@ def processFile(filepath: str) -> int:
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(content)
     return total
+
 
 def main():
     root = sys.argv[1] if len(sys.argv) > 1 else 'C:/Dev/august-proxy/backend-py'
@@ -126,5 +146,7 @@ def main():
         except Exception as e:
             print(f'  ERROR {os.path.relpath(fp, root)}: {e}')
     print(f'\nTotal: {totalReplacements} replacements across {changedFiles} files')
+
+
 if __name__ == '__main__':
     main()

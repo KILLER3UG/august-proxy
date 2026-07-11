@@ -3,6 +3,7 @@
 Covers the ProviderConfig / ModelConfig shapes used by the provider
 CRUD endpoints and the config service.
 """
+
 from __future__ import annotations
 
 from app.models.base import ExtraAllowBaseModel, JsonValue
@@ -10,12 +11,13 @@ from app.models.base import ExtraAllowBaseModel, JsonValue
 
 class ModelConfig(ExtraAllowBaseModel):
     """A single model entry within a provider configuration."""
+
     id: str
-    name: str = ""
+    name: str = ''
     context_window: int = 128000
     reasoning: bool = False
     free: bool = False
-    source: str = "manual"
+    source: str = 'manual'
 
 
 class ProviderConfig(ExtraAllowBaseModel):
@@ -23,11 +25,12 @@ class ProviderConfig(ExtraAllowBaseModel):
 
     Maps to the ProviderConfigDict TypedDict in typeAliases.
     """
-    id: str = ""
-    name: str = ""
-    api_format: str = "openaiChat"
-    api_key: str = ""
-    base_url: str = ""
+
+    id: str = ''
+    name: str = ''
+    api_format: str = 'openaiChat'
+    api_key: str = ''
+    base_url: str = ''
     enabled: bool = True
     auto_fetch: bool = False
     models: list[ModelConfig] = []
@@ -35,16 +38,18 @@ class ProviderConfig(ExtraAllowBaseModel):
 
 class ProviderCreate(ExtraAllowBaseModel):
     """Request body for creating a new provider."""
+
     name: str
-    base_url: str = ""
-    api_format: str = "openaiChat"
-    api_key: str = ""
+    base_url: str = ''
+    api_format: str = 'openaiChat'
+    api_key: str = ''
     enabled: bool = True
     template: str | None = None
 
 
 class ProviderUpdate(ExtraAllowBaseModel):
     """Request body for updating an existing provider."""
+
     name: str | None = None
     base_url: str | None = None
     api_format: str | None = None
@@ -54,6 +59,7 @@ class ProviderUpdate(ExtraAllowBaseModel):
 
 class ModelCreate(ExtraAllowBaseModel):
     """Request body for creating a new model."""
+
     id: str
     name: str | None = None
     context_window: int | None = None
@@ -63,6 +69,7 @@ class ModelCreate(ExtraAllowBaseModel):
 
 class ModelUpdate(ExtraAllowBaseModel):
     """Request body for updating an existing model."""
+
     name: str | None = None
     context_window: int | None = None
     reasoning: bool | None = None

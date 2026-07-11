@@ -1,7 +1,9 @@
 """v2 — Test daemon watch conditions."""
+
 import pytest
 from app.services import daemon_manager
 from app.services.tool_registry import clearDaemonContext
+
 
 @pytest.fixture(autouse=True)
 def _cleanup():
@@ -12,9 +14,11 @@ def _cleanup():
     if hasattr(daemon_manager, '_daemons'):
         daemon_manager._daemons.clear()
 
+
 def testMaxThreeConcurrentDaemons():
     """spawn() returns an error string on 4th daemon (caller checks for "Error: max")."""
     import asyncio
+
     mgr = daemon_manager.DaemonManager()
     sid = 'test-max-session'
     for d in list(mgr._tasks.values()):
@@ -39,7 +43,9 @@ def testMaxThreeConcurrentDaemons():
         assert not r3.startswith('Error'), f'r3 unexpected: {r3}'
         assert r4.startswith('Error'), f'r4 should be error: {r4}'
         assert 'max' in r4.lower() or '3' in r4
+
     asyncio.run(go())
+
 
 def testOnCompletionFiresAfterFirstRun():
     """`on_completion` triggers after the daemon's first run completes."""
@@ -47,6 +53,7 @@ def testOnCompletionFiresAfterFirstRun():
     info = {'result': type('R', (), {'output': 'first run output'})(), 'watch_condition': 'on_completion'}
     fired = mgr._evaluate_watch(info)
     assert fired is True
+
 
 def testOnMatchKeywordSubstringCaseInsensitive():
     """`on_match:ERROR` fires when output contains 'error' (case-insensitive)."""
@@ -60,6 +67,7 @@ def testOnMatchKeywordSubstringCaseInsensitive():
     infoUpper = {'result': type('R', (), {'output': 'ERROR FOUND'})(), 'watch_condition': 'on_match:ERROR'}
     fired = mgr._evaluate_watch(infoUpper)
     assert fired is True
+
 
 def testOnChangeFiresOnHashDiff():
     """`on_change` fires when output md5 differs from previous cycle."""

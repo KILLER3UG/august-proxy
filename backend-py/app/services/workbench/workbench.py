@@ -14,6 +14,7 @@ Key subsystems:
 - Goal system (stubbed)
 - Subagent dispatch (stubbed)
 """
+
 from __future__ import annotations
 import asyncio
 import json
@@ -24,12 +25,18 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncIterator, Callable
+from typing import AsyncIterator, Callable, TYPE_CHECKING, cast
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float, as_bool
+from app.typeAliases import JsonValue
+
+if TYPE_CHECKING:
+    from app.services.workbench.tool_guardrails import ToolCallTracker
 from app.models import AnthropicRequest, ChatCompletionRequest, ChatMessage, ToolDefinition, FunctionDefinition, Usage
+
 logger = logging.getLogger('workbench')
 MAX_MANAGED_TOOL_ROUNDS = 10
 WORKBENCH_TOKEN_BUDGET = 2000000
+
 
 @dataclass
 class WorkbenchSession:
@@ -37,6 +44,7 @@ class WorkbenchSession:
 
     Persisted to disk as JSON via saveSessions().
     """
+
     id: str = ''
     title: str = 'New Session'
     provider: str = ''
@@ -63,23 +71,92 @@ class WorkbenchSession:
     totalOutputTokens: int = 0
     totalCost: float = 0.0
     queuedUserMessages: list[dict[str, object]] = field(default_factory=list)
+    # Dynamically-set instance attrs (declared so mypy can track them)
+    _tool_assembly: object | None = None
+    _failure_feedback: object | None = None
+    _failure_feedback_age: int | None = None
+    _last_compaction_turn: int | None = None
+    _tool_tracker: 'ToolCallTracker | None' = None
+    _execution_state: object | None = None
+    _working_memory: object | None = None
+    _state_lock: 'asyncio.Lock | None' = None
 
     def toDict(self) -> dict[str, object]:
-        return {'id': self.id, 'title': self.title, 'provider': self.provider, 'model': self.model, 'agentId': self.agentId, 'guardMode': self.guardMode, 'createdAt': self.createdAt, 'updatedAt': self.updatedAt, 'startedAt': self.startedAt, 'messageCount': self.messageCount, 'mutationCount': self.mutationCount, 'workspacePath': self.workspacePath, 'goal': self.goal, 'plan': self.plan, 'planApproved': self.planApproved, 'clarify': self.clarify, 'todos': self.todos, 'messages': self.messages, 'pendingMutations': self.pendingMutations, 'mutationLog': self.mutationLog, 'status': self.status, 'metadata': self.metadata, 'totalInputTokens': self.totalInputTokens, 'totalOutputTokens': self.totalOutputTokens, 'totalCost': self.totalCost, 'queuedUserMessages': self.queuedUserMessages}
+        return {
+            'id': self.id,
+            'title': self.title,
+            'provider': self.provider,
+            'model': self.model,
+            'agentId': self.agentId,
+            'guardMode': self.guardMode,
+            'createdAt': self.createdAt,
+            'updatedAt': self.updatedAt,
+            'startedAt': self.startedAt,
+            'messageCount': self.messageCount,
+            'mutationCount': self.mutationCount,
+            'workspacePath': self.workspacePath,
+            'goal': self.goal,
+            'plan': self.plan,
+            'planApproved': self.planApproved,
+            'clarify': self.clarify,
+            'todos': self.todos,
+            'messages': self.messages,
+            'pendingMutations': self.pendingMutations,
+            'mutationLog': self.mutationLog,
+            'status': self.status,
+            'metadata': self.metadata,
+            'totalInputTokens': self.totalInputTokens,
+            'totalOutputTokens': self.totalOutputTokens,
+            'totalCost': self.totalCost,
+            'queuedUserMessages': self.queuedUserMessages,
+        }
 
     @staticmethod
     def fromDict(d: dict[str, object]) -> WorkbenchSession:
-	        return WorkbenchSession(id=as_str(d.get('id', '')), title=as_str(d.get('title', 'New Session')), provider=as_str(d.get('provider', '')), model=as_str(d.get('model', '')), agentId=as_str(d.get('agentId', '')), guardMode=as_str(d.get('guardMode', 'full')), createdAt=as_str(d.get('createdAt', '')), updatedAt=as_str(d.get('updatedAt', '')), startedAt=as_str(d.get('startedAt', '')), messageCount=as_int(d.get('messageCount', 0)), mutationCount=as_int(d.get('mutationCount', 0)), workspacePath=as_str(d.get('workspacePath', '')), goal=as_str(d.get('goal', '')), plan=as_dict(d.get('plan')), planApproved=as_bool(d.get('planApproved', False)), clarify=as_dict(d.get('clarify')), todos=as_list(d.get('todos')), messages=as_list(d.get('messages', [])), pendingMutations=as_list(d.get('pendingMutations', [])), mutationLog=as_list(d.get('mutationLog', [])), status=as_str(d.get('status', 'idle')), metadata=as_dict(d.get('metadata', {})), totalInputTokens=as_int(d.get('totalInputTokens', 0)), totalOutputTokens=as_int(d.get('totalOutputTokens', 0)), totalCost=as_float(d.get('totalCost', 0.0)), queuedUserMessages=as_list(d.get('queuedUserMessages', [])))
+        return WorkbenchSession(
+            id=as_str(d.get('id', '')),
+            title=as_str(d.get('title', 'New Session')),
+            provider=as_str(d.get('provider', '')),
+            model=as_str(d.get('model', '')),
+            agentId=as_str(d.get('agentId', '')),
+            guardMode=as_str(d.get('guardMode', 'full')),
+            createdAt=as_str(d.get('createdAt', '')),
+            updatedAt=as_str(d.get('updatedAt', '')),
+            startedAt=as_str(d.get('startedAt', '')),
+            messageCount=as_int(d.get('messageCount', 0)),
+            mutationCount=as_int(d.get('mutationCount', 0)),
+            workspacePath=as_str(d.get('workspacePath', '')),
+            goal=as_str(d.get('goal', '')),
+            plan=as_dict(d.get('plan')),
+            planApproved=as_bool(d.get('planApproved', False)),
+            clarify=as_dict(d.get('clarify')),
+            todos=cast('list[dict[str, object]]', as_list(d.get('todos'))),
+            messages=cast('list[dict[str, object]]', as_list(d.get('messages', []))),
+            pendingMutations=cast('list[dict[str, object]]', as_list(d.get('pendingMutations', []))),
+            mutationLog=cast('list[dict[str, object]]', as_list(d.get('mutationLog', []))),
+            status=as_str(d.get('status', 'idle')),
+            metadata=as_dict(d.get('metadata', {})),
+            totalInputTokens=as_int(d.get('totalInputTokens', 0)),
+            totalOutputTokens=as_int(d.get('totalOutputTokens', 0)),
+            totalCost=as_float(d.get('totalCost', 0.0)),
+            queuedUserMessages=cast('list[dict[str, object]]', as_list(d.get('queuedUserMessages', []))),
+        )
+
+
 _SESSIONFile = 'workbench-sessions.json'
 _sessions: dict[str, WorkbenchSession] = {}
 _statusSubscribers: list[Callable[[dict[str, object]], None]] = []
 
+
 def _sessionsPath() -> Path:
     from app.lib.paths import dataPath
+
     return dataPath(_SESSIONFile)
+
 
 def _now() -> str:
     return datetime.utcnow().isoformat() + 'Z'
+
 
 def _loadSessions() -> None:
     """Load sessions from disk."""
@@ -94,6 +171,7 @@ def _loadSessions() -> None:
     except (json.JSONDecodeError, OSError):
         pass
 
+
 def saveSessions() -> None:
     """Persist all sessions to disk (keeps last 50)."""
     sortedSessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
@@ -101,29 +179,49 @@ def saveSessions() -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps([s.toDict() for s in sortedSessions], indent=2), 'utf-8')
 
+
 def _emitSessionStatus(sessionId: str) -> None:
     """Notify status subscribers of a session status change."""
     session = _sessions.get(sessionId)
     if not session:
         return
-    event = {'type': 'session_status', 'sessionId': sessionId, 'status': session.status, 'guardMode': session.guardMode, 'pendingMutations': len(session.pendingMutations) > 0}
+    event = {
+        'type': 'session_status',
+        'sessionId': sessionId,
+        'status': session.status,
+        'guardMode': session.guardMode,
+        'pendingMutations': len(session.pendingMutations) > 0,
+    }
     for cb in _statusSubscribers:
         try:
             cb(event)
         except Exception:
             pass
 
-def createWorkbenchSession(provider: str='', agentId: str='', guardMode: str='', task: str='', goal: str='') -> WorkbenchSession:
+
+def createWorkbenchSession(
+    provider: str = '', agentId: str = '', guardMode: str = '', task: str = '', goal: str = ''
+) -> WorkbenchSession:
     """Create a new workbench session."""
     sessionId = f'wb_{uuid.uuid4().hex[:12]}'
     now = _now()
-    session = WorkbenchSession(id=sessionId, provider=provider, agentId=agentId, guardMode=normalizeGuardMode(guardMode or 'full'), goal=goal, createdAt=now, updatedAt=now, startedAt=now)
+    session = WorkbenchSession(
+        id=sessionId,
+        provider=provider,
+        agentId=agentId,
+        guardMode=normalizeGuardMode(guardMode or 'full'),
+        goal=goal,
+        createdAt=now,
+        updatedAt=now,
+        startedAt=now,
+    )
     if goal:
         session.goal = goal
     _sessions[sessionId] = session
     saveSessions()
     _emitSessionStatus(sessionId)
     return session
+
 
 def getWorkbenchSession(sessionId: str | None) -> WorkbenchSession | None:
     """Get a session by ID. Returns None if not found."""
@@ -132,6 +230,7 @@ def getWorkbenchSession(sessionId: str | None) -> WorkbenchSession | None:
     if not _sessions:
         _loadSessions()
     return _sessions.get(sessionId)
+
 
 def setWorkbenchSessionAgent(sessionId: str, agentId: str) -> WorkbenchSession | None:
     """Bind (or clear) an agent on a session so its context shapes the prompt."""
@@ -144,12 +243,14 @@ def setWorkbenchSessionAgent(sessionId: str, agentId: str) -> WorkbenchSession |
     _emitSessionStatus(sessionId)
     return session
 
+
 def listWorkbenchSessions() -> list[dict[str, object]]:
     """Return all sessions summarized."""
     if not _sessions:
         _loadSessions()
     sortedSessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)
     return [summarizeSession(s) for s in sortedSessions]
+
 
 def deleteWorkbenchSession(sessionId: str) -> bool:
     """Delete a session."""
@@ -158,6 +259,7 @@ def deleteWorkbenchSession(sessionId: str) -> bool:
     session = _sessions[sessionId]
     try:
         from app.services import aug_artifact_service
+
         aug_artifact_service.deleteForSession(session.workspacePath or None, sessionId)
     except Exception:
         pass
@@ -165,14 +267,34 @@ def deleteWorkbenchSession(sessionId: str) -> bool:
     saveSessions()
     return True
 
-def resetWorkbenchSession(sessionId: str, provider: str='', agentId: str='') -> WorkbenchSession | None:
+
+def resetWorkbenchSession(sessionId: str, provider: str = '', agentId: str = '') -> WorkbenchSession | None:
     """Delete and recreate a session."""
     deleteWorkbenchSession(sessionId)
     return createWorkbenchSession(provider=provider, agentId=agentId)
 
+
 def summarizeSession(session: WorkbenchSession) -> dict[str, object]:
     """Return a lightweight summary of a session."""
-    return {'id': session.id, 'title': session.title, 'provider': session.provider, 'model': session.model, 'agentId': session.agentId, 'guardMode': session.guardMode, 'goal': session.goal, 'plan': session.plan is not None, 'planApproved': session.planApproved, 'messageCount': session.messageCount, 'mutationCount': session.mutationCount, 'status': session.status, 'createdAt': session.createdAt, 'updatedAt': session.updatedAt, 'startedAt': session.startedAt, 'workspacePath': session.workspacePath}
+    return {
+        'id': session.id,
+        'title': session.title,
+        'provider': session.provider,
+        'model': session.model,
+        'agentId': session.agentId,
+        'guardMode': session.guardMode,
+        'goal': session.goal,
+        'plan': session.plan is not None,
+        'planApproved': session.planApproved,
+        'messageCount': session.messageCount,
+        'mutationCount': session.mutationCount,
+        'status': session.status,
+        'createdAt': session.createdAt,
+        'updatedAt': session.updatedAt,
+        'startedAt': session.startedAt,
+        'workspacePath': session.workspacePath,
+    }
+
 
 def getWorkbenchSessionStatus(sessionId: str) -> dict[str, object] | None:
     """Return flat status for the UI's approval banner."""
@@ -180,7 +302,16 @@ def getWorkbenchSessionStatus(sessionId: str) -> dict[str, object] | None:
     if not session:
         return None
     hasPending = len(session.pendingMutations) > 0
-    return {'sessionId': sessionId, 'status': session.status, 'guardMode': session.guardMode, 'pendingMutation': session.pendingMutations[-1] if hasPending else None, 'plan': session.plan, 'planApproved': session.planApproved, 'todos': session.todos}
+    return {
+        'sessionId': sessionId,
+        'status': session.status,
+        'guardMode': session.guardMode,
+        'pendingMutation': session.pendingMutations[-1] if hasPending else None,
+        'plan': session.plan,
+        'planApproved': session.planApproved,
+        'todos': session.todos,
+    }
+
 
 def subscribeSessionStatus(callback: Callable[[dict[str, object]], None]) -> Callable[[], None]:
     """Register a session status subscriber. Returns unsubscribe function."""
@@ -189,7 +320,9 @@ def subscribeSessionStatus(callback: Callable[[dict[str, object]], None]) -> Cal
     def unsubscribe() -> None:
         if callback in _statusSubscribers:
             _statusSubscribers.remove(callback)
+
     return unsubscribe
+
 
 def normalizeGuardMode(mode: str) -> str:
     """Normalize guard mode to one of: plan, full, ask."""
@@ -198,7 +331,8 @@ def normalizeGuardMode(mode: str) -> str:
         return lower
     return 'full'
 
-def isPlanModeBlocked(toolName: str, args: dict[str, object] | None=None) -> bool:
+
+def isPlanModeBlocked(toolName: str, args: dict[str, object] | None = None) -> bool:
     """In plan mode, only DESTRUCTIVE tools are blocked.
 
     Everything else — read-only file tools, search, web, memory, agent,
@@ -211,11 +345,63 @@ def isPlanModeBlocked(toolName: str, args: dict[str, object] | None=None) -> boo
     if not toolName:
         return False
     name = toolName.lower()
-    destructive = {'write_file', 'edit_file', 'create_file', 'str_replace', 'str_replace_editor', 'strreplaceeditttool', 'apply_patch', 'patch_file', 'delete_file', 'remove_file', 'move_file', 'rename_file', 'mkdir', 'makedirs', 'run_command', 'bash', 'bashtool', 'shell', 'exec', 'execute', 'terminal', 'install', 'uninstall', 'pip_install', 'npm_install', 'pnpm_add', 'browser_click', 'browser_type', 'browser_select', 'browser_evaluate', 'create_agent', 'update_agent', 'delete_agent', 'create_alias', 'update_alias', 'delete_alias', 'configure_fallback'}
+    destructive = {
+        'write_file',
+        'edit_file',
+        'create_file',
+        'str_replace',
+        'str_replace_editor',
+        'strreplaceeditttool',
+        'apply_patch',
+        'patch_file',
+        'delete_file',
+        'remove_file',
+        'move_file',
+        'rename_file',
+        'mkdir',
+        'makedirs',
+        'run_command',
+        'bash',
+        'bashtool',
+        'shell',
+        'exec',
+        'execute',
+        'terminal',
+        'install',
+        'uninstall',
+        'pip_install',
+        'npm_install',
+        'pnpm_add',
+        'browser_click',
+        'browser_type',
+        'browser_select',
+        'browser_evaluate',
+        'create_agent',
+        'update_agent',
+        'delete_agent',
+        'create_alias',
+        'update_alias',
+        'delete_alias',
+        'configure_fallback',
+    }
     if name in destructive:
         return True
-    destructiveMarkers = ('write', 'edit', 'delete', 'remove', 'install', 'uninstall', 'exec', 'command', 'bash', 'shell', 'patch', 'rename')
+    destructiveMarkers = (
+        'write',
+        'edit',
+        'delete',
+        'remove',
+        'install',
+        'uninstall',
+        'exec',
+        'command',
+        'bash',
+        'shell',
+        'patch',
+        'rename',
+    )
     return any((marker in name for marker in destructiveMarkers))
+
 
 def buildSystemPrompt(session: WorkbenchSession) -> str:
     """Assemble the 3-tier XML system prompt for a workbench session (Phase 1).
@@ -230,6 +416,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     """
     from app.services.memory.context_builder import buildSystemPrompt as ctxBuild
     from app.services.memory_store import getMemory
+
     memory = {}
     profile = getMemory('userProfile')
     if profile:
@@ -242,20 +429,30 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
         memory['active_projects'] = projects
     try:
         from app.services.memory.auto_memory import getRelevantMemories
+
         recentText = ''
         if session.messages:
             recent = session.messages[-6:] if len(session.messages) > 6 else session.messages
-            recentText = ' '.join((str(m.get('content', '') or '') for m in recent if isinstance(m, dict) and m.get('role') in ('user', 'assistant')))
+            recentText = ' '.join(
+                (
+                    str(m.get('content', '') or '')
+                    for m in recent
+                    if isinstance(m, dict) and m.get('role') in ('user', 'assistant')
+                )
+            )
         if recentText:
             prefetched = getRelevantMemories(recentText, limit=5)
             if prefetched:
-                memory['autoMemories'] = prefetched
+                memory['autoMemories'] = cast('list[JsonValue]', prefetched)
     except Exception:
         pass
     try:
         from app.services.memory_store import _conn as brainConn
+
         conn = brainConn()
-        heuristicsRows = conn.execute('SELECT rule, source, category FROM learnedHeuristics ORDER BY updatedAt DESC').fetchall()
+        heuristicsRows = conn.execute(
+            'SELECT rule, source, category FROM learnedHeuristics ORDER BY updatedAt DESC'
+        ).fetchall()
         if heuristicsRows:
             memory['learnedHeuristics'] = [dict(r) for r in heuristicsRows]
     except Exception:
@@ -267,12 +464,14 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     if session.agentId:
         try:
             from app.services.tools.agent_registry import renderAgentContext
+
             agentContext = renderAgentContext(session.agentId)
         except Exception:
             pass
     brainPolicy = None
     try:
         from app.services.memory.brain_orchestrator import extractTextFromMessages, classifyTask, policyForTask
+
         msgs = []
         if hasattr(session, 'messages') and session.messages:
             msgs = session.messages
@@ -286,8 +485,13 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     if workspacePath:
         try:
             import subprocess
-            branch = subprocess.run(['git', 'branch', '--show-current'], cwd=workspacePath, capture_output=True, text=True, timeout=5).stdout.strip()
-            status = subprocess.run(['git', 'status', '--short'], cwd=workspacePath, capture_output=True, text=True, timeout=5).stdout.strip()
+
+            branch = subprocess.run(
+                ['git', 'branch', '--show-current'], cwd=workspacePath, capture_output=True, text=True, timeout=5
+            ).stdout.strip()
+            status = subprocess.run(
+                ['git', 'status', '--short'], cwd=workspacePath, capture_output=True, text=True, timeout=5
+            ).stdout.strip()
             if branch:
                 dirty = ' (dirty)' if status else ' (clean)'
                 vcsInfo = f'{branch}{dirty}'
@@ -296,6 +500,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     memoryStats = {}
     try:
         from app.services.memory_store import getStats as memStats
+
         memoryStats = memStats()
     except Exception:
         pass
@@ -303,7 +508,14 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     if workspacePath:
         try:
             import subprocess
-            log = subprocess.run(['git', 'log', '--oneline', '--since=24 hours ago', '--max-count=10'], cwd=workspacePath, capture_output=True, text=True, timeout=5).stdout.strip()
+
+            log = subprocess.run(
+                ['git', 'log', '--oneline', '--since=24 hours ago', '--max-count=10'],
+                cwd=workspacePath,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip()
             if log:
                 lines = log.split('\n')
                 whatsNew = 'Recent git activity:\n' + '\n'.join((f'  - {l}' for l in lines))
@@ -312,13 +524,14 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     skillsManifest = ''
     try:
         from app.services import skill_service
+
         cat = skill_service.catalogue()
         if cat:
             lines = []
             for s in cat:
                 desc = s.get('description', '')
                 trigger = s.get('trigger', '')
-                entry = f"{s['name']}: {desc}" if desc else f"{s['name']}"
+                entry = f'{s["name"]}: {desc}' if desc else f'{s["name"]}'
                 if trigger:
                     entry += f' (trigger: {trigger})'
                 lines.append(entry)
@@ -328,6 +541,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     cognitiveBudget = None
     try:
         from app.services.workbench.token_budget import computeBudget
+
         provider = getattr(session, 'provider', None) or ''
         model = getattr(session, 'model', None) or ''
         providerName = provider.get('name', '') if isinstance(provider, dict) else str(provider)
@@ -336,7 +550,21 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
         cognitiveBudget = computeBudget(msgsForBudget, model=modelName or None, provider=providerName or None)
     except Exception:
         pass
-    sessionDict = {'goal': session.goal, 'plan': session.plan.to_dict() if hasattr(session.plan, 'to_dict') else session.plan, 'planApproved': session.planApproved, 'workspacePath': workspacePath, 'vcs': vcsInfo, 'brainPolicy': brainPolicy, 'cognitiveBudget': cognitiveBudget, 'memoryStats': memoryStats, 'whatsNew': whatsNew, 'skillsManifest': skillsManifest, 'executionState': getattr(session, '_execution_state', None), 'workingMemory': getattr(session, '_working_memory', None), 'subconsciousUpdates': _buildDaemonUpdates(getattr(session, 'id', ''))}
+    sessionDict = {
+        'goal': session.goal,
+        'plan': session.plan,
+        'planApproved': session.planApproved,
+        'workspacePath': workspacePath,
+        'vcs': vcsInfo,
+        'brainPolicy': brainPolicy,
+        'cognitiveBudget': cognitiveBudget,
+        'memoryStats': memoryStats,
+        'whatsNew': whatsNew,
+        'skillsManifest': skillsManifest,
+        'executionState': getattr(session, '_execution_state', None),
+        'workingMemory': getattr(session, '_working_memory', None),
+        'subconsciousUpdates': _buildDaemonUpdates(getattr(session, 'id', '')),
+    }
     for k in ('coreMemory', 'learnedHeuristics', 'autoMemories'):
         if k in memory:
             sessionDict[k] = memory[k]
@@ -346,21 +574,30 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     if workspacePath:
         try:
             from app.services import aug_directive_service
+
             loaded = aug_directive_service.load(workspacePath)
             if loaded and loaded.get('body'):
-                augMdBody = loaded['body']
+                augMdBody = as_str(loaded.get('body', ''))
         except Exception:
             pass
     sessionDict['augMd'] = augMdBody
     sessionDict['todos'] = session.todos
     from app.services.workbench.prompt_cache import getCache
+
     promptCache = getCache()
     cacheKey = getattr(session, 'id', '') or ''
     cachedT12 = promptCache.get(cacheKey)
-    base = ctxBuild(session=sessionDict, memory=memory, tools=tools, agentContext=agentContext, cachedT12=cachedT12)
+    base = ctxBuild(
+        session=sessionDict,
+        memory=cast('dict[str, object]', memory),
+        tools=tools,
+        agentContext=agentContext,
+        cachedT12=cachedT12,
+    )
     if cachedT12 is None:
         try:
             from app.services.memory.context_builder import buildTier1, buildTier2
+
             t1 = buildTier1(sessionDict)
             t2 = buildTier2(sessionDict)
             t12Parts = []
@@ -375,6 +612,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     extraParts: list[str] = []
     try:
         from app.services import skill_service
+
         cat = skill_service.catalogue()
         if cat:
             intro = "Skills are on-demand capability extensions. Each entry below lists a skill's name, description, and optional trigger. To use a skill, call the `load_skill` tool with its name to load the full instructions, then follow them."
@@ -382,7 +620,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
             for s in cat:
                 desc = s.get('description', '')
                 trigger = s.get('trigger', '')
-                entry = f"- {s['name']}: {desc}" if desc else f"- {s['name']}"
+                entry = f'- {s["name"]}: {desc}' if desc else f'- {s["name"]}'
                 if trigger:
                     entry += f' (trigger: {trigger})'
                 lines.append(entry)
@@ -390,19 +628,20 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     except Exception:
         pass
     extraParts.append(
-        "## Clarifying questions when uncertain\n"
+        '## Clarifying questions when uncertain\n'
         "When you are genuinely uncertain about the user's intent, requirements, or a decision "
-        "that would change your approach, DO NOT guess or invent requirements. Instead, call the "
-        "`submit_clarify` tool with a concise `question` (1-2 sentences) and up to 5 short `choices` "
-        "(options the user can pick from). You may also pass a `questions` array to ask several "
-        "related questions at once. The UI presents your choices as numbered options and adds its own "
+        'that would change your approach, DO NOT guess or invent requirements. Instead, call the '
+        '`submit_clarify` tool with a concise `question` (1-2 sentences) and up to 5 short `choices` '
+        '(options the user can pick from). You may also pass a `questions` array to ask several '
+        'related questions at once. The UI presents your choices as numbered options and adds its own '
         "free-text input for anything not covered, so do NOT include a 'something else' option yourself. "
         "Ask at most one round of clarifying questions unless the user's answer reveals new ambiguity. "
-        "This applies in every guard mode, including plan mode."
+        'This applies in every guard mode, including plan mode.'
     )
     if extraParts:
         return base + '\n\n' + '\n\n'.join(extraParts)
     return base
+
 
 def _shouldAutoCompact(attentionPressure: str, turnsSinceCompaction: int) -> bool:
     """v1.1: Compaction triggers only at critical pressure and after 5-turn cooldown.
@@ -413,6 +652,7 @@ def _shouldAutoCompact(attentionPressure: str, turnsSinceCompaction: int) -> boo
     """
     return attentionPressure == 'critical' and turnsSinceCompaction >= 5
 
+
 def _buildDaemonUpdates(sessionId: str) -> str:
     """Build the <subconscious_updates> XML block from daemon results.
 
@@ -421,6 +661,7 @@ def _buildDaemonUpdates(sessionId: str) -> str:
     """
     try:
         from app.services.daemon_manager import getManager
+
         manager = getManager()
         daemons = manager.list_daemons(sessionId)
         if not daemons:
@@ -430,9 +671,9 @@ def _buildDaemonUpdates(sessionId: str) -> str:
             attrs = f'''name="{_xmlEscape(d['name'])}" status="{d['status']}"'''
             if d.get('triggered'):
                 attrs += ' triggered="true"'
-            output = d.get('output') or ''
+            output = as_str(d.get('output'), '')
             if d.get('error'):
-                attrs += f''' error="{_xmlEscape(str(d['error']))}"'''
+                attrs += f''' error="{_xmlEscape(as_str(d.get('error')))}"'''
                 lines.append(f'  <daemon {attrs} />')
             elif output:
                 lines.append(f'  <daemon {attrs}>{_xmlEscape(output)}</daemon>')
@@ -443,32 +684,50 @@ def _buildDaemonUpdates(sessionId: str) -> str:
     except Exception:
         return ''
 
+
 def _xmlEscape(s: str) -> str:
     """Minimal XML attribute/text escape."""
     return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
 
-def resolveEffectiveEffort(incoming: str | None, session: WorkbenchSession, modelEntry: dict[str, object] | None=None) -> str:
+
+def resolveEffectiveEffort(
+    incoming: str | None, session: WorkbenchSession, modelEntry: dict[str, object] | None = None
+) -> str:
     """Resolve the effort level from incoming param, session, or model default."""
     if incoming and incoming in ('low', 'medium', 'high', 'max'):
         return incoming
     if session.metadata.get('effort') in ('low', 'medium', 'high', 'max'):
-        return session.metadata['effort']
+        return as_str(session.metadata.get('effort'))
     return 'medium'
 
-def effortToThinkingBudget(effort: str, modelMax: int=32000, maxTokens: int=8192) -> int:
+
+def effortToThinkingBudget(effort: str, modelMax: int = 32000, maxTokens: int = 8192) -> int:
     """Map effort to Anthropic thinking budget tokens."""
-    mapping = {'low': min(4096, maxTokens), 'medium': min(8192, maxTokens), 'high': min(16000, maxTokens), 'max': min(modelMax, maxTokens * 2)}
+    mapping = {
+        'low': min(4096, maxTokens),
+        'medium': min(8192, maxTokens),
+        'high': min(16000, maxTokens),
+        'max': min(modelMax, maxTokens * 2),
+    }
     return mapping.get(effort, 8192)
+
 
 def effortToPromptInstruction(effort: str) -> str:
     """Map effort to a system-prompt instruction."""
-    instructions = {'low': 'Provide quick, concise responses. Minimize analysis.', 'medium': 'Provide balanced responses with moderate analysis.', 'high': 'Provide thorough, detailed analysis. Take your time.', 'max': 'Provide exhaustive, comprehensive analysis. Leave nothing out.'}
+    instructions = {
+        'low': 'Provide quick, concise responses. Minimize analysis.',
+        'medium': 'Provide balanced responses with moderate analysis.',
+        'high': 'Provide thorough, detailed analysis. Take your time.',
+        'max': 'Provide exhaustive, comprehensive analysis. Leave nothing out.',
+    }
     return instructions.get(effort, instructions['medium'])
+
 
 def effortToOpenaiReasoningEffort(effort: str) -> str:
     """Map August's 4-level effort to OpenAI's 3-level reasoning_effort."""
     mapping = {'low': 'low', 'medium': 'medium', 'high': 'high', 'max': 'high'}
     return mapping.get(effort, 'medium')
+
 
 def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     """Return tool definitions in Anthropic format for a session.
@@ -494,6 +753,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     """
     from app.adapters.proxy_tools import sanitizeAnthropicToolDefinition
     from app.services.tool_registry import listTools
+
     tools: list[dict[str, object]] = []
     seen: set[str] = set()
     for raw in listTools():
@@ -502,11 +762,12 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
             continue
         if t['name'] in seen:
             continue
-        seen.add(t['name'])
+        seen.add(as_str(t['name']))
         tools.append(t)
     tools.extend(_mcpToolDefinitionsAnthropic(seen))
     try:
         from app.services.tools.model_tools import assembleToolDefs
+
         messages = getattr(session, 'messages', None) or []
         contextMsgs = list(messages) if isinstance(messages, list) else []
         result = assembleToolDefs(all_tool_defs=tools, context_messages=contextMsgs)
@@ -517,6 +778,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         pass
     return tools
 
+
 def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     """Return tool definitions in OpenAI format for a session.
 
@@ -526,47 +788,53 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     """
     from app.adapters.proxy_tools import anthropicToOpenaiToolDefinition
     from app.services.tool_registry import listTools
+
     tools: list[dict[str, object]] = []
     seen: set[str] = set()
     for raw in listTools():
-        if raw.get('type') == 'function' and isinstance(raw.get('function'), dict):
-            name = raw['function'].get('name', '')
+        if as_str(raw.get('type')) == 'function' and isinstance(raw.get('function'), dict):
+            name = as_str(as_dict(raw.get('function')).get('name', ''))
             if name and name not in seen:
                 seen.add(name)
                 tools.append(raw)
             continue
         t = anthropicToOpenaiToolDefinition(raw)
-        name = as_dict(t.get('function', {})).get('name', '')
+        name = as_str(as_dict(t.get('function', {})).get('name', ''))
         if name and name not in seen:
             seen.add(name)
             tools.append(t)
     tools.extend(_mcpToolDefinitionsOpenai(seen))
     return tools
 
+
 def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, object]]:
     """Real MCP server tools in Anthropic format, deduped against ``seen``."""
     from app.adapters.proxy_tools import openaiToAnthropicToolDefinition
     from app.services.tools.mcp_client import getMcpToolDefinitionsSync
+
     out: list[dict[str, object]] = []
     for raw in getMcpToolDefinitionsSync():
         t = openaiToAnthropicToolDefinition(raw)
-        name = t.get('name', '')
+        name = as_str(t.get('name', ''))
         if name and name not in seen:
             seen.add(name)
             out.append(t)
     return out
 
+
 def _mcpToolDefinitionsOpenai(seen: set[str]) -> list[dict[str, object]]:
     """Real MCP server tools in OpenAI format, deduped against ``seen``."""
     from app.services.tools.mcp_client import getMcpToolDefinitionsSync
+
     out: list[dict[str, object]] = []
     for raw in getMcpToolDefinitionsSync():
-        fn = raw.get('function', {}) if raw.get('type') == 'function' else {}
-        name = fn.get('name', '')
+        fn = as_dict(raw.get('function', {})) if raw.get('type') == 'function' else {}
+        name = as_str(fn.get('name', ''))
         if name and name not in seen:
             seen.add(name)
             out.append(raw)
     return out
+
 
 def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[str, object]:
     """Build a single user-role message that wraps one or more queued entries.
@@ -580,12 +848,14 @@ def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[st
     if not entries:
         return {'role': 'user', 'content': ''}
     parts: list[str] = []
-    parts.append('[The following message(s) were queued by the user while you were responding. They did NOT interrupt your current work — they were added as follow-up(s). Consider whether each one changes your current approach, supersedes the original request, or should simply be acknowledged for later. Continue with whatever is most helpful given this new context.]')
+    parts.append(
+        '[The following message(s) were queued by the user while you were responding. They did NOT interrupt your current work — they were added as follow-up(s). Consider whether each one changes your current approach, supersedes the original request, or should simply be acknowledged for later. Continue with whatever is most helpful given this new context.]'
+    )
     parts.append('')
     for entry in entries:
         queuedAt = entry.get('queuedAt') or ''
-        text = entry.get('text') or ''
-        attachmentCount = len(entry.get('attachments') or [])
+        text = as_str(entry.get('text'), '')
+        attachmentCount = len(as_list(entry.get('attachments'), []))
         attrParts = []
         if queuedAt:
             attrParts.append(f'timestamp="{queuedAt}"')
@@ -598,7 +868,10 @@ def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[st
         parts.append('')
     return {'role': 'user', 'content': '\n'.join(parts).strip()}
 
-def enqueueUserMessage(sessionId: str, text: str, attachments: list[dict[str, object]] | None=None) -> dict[str, object] | None:
+
+def enqueueUserMessage(
+    sessionId: str, text: str, attachments: list[dict[str, object]] | None = None
+) -> dict[str, object] | None:
     """Append a user message to the session's pending queue.
 
     Returns the queued entry on success, or None if the session does not
@@ -610,16 +883,27 @@ def enqueueUserMessage(sessionId: str, text: str, attachments: list[dict[str, ob
         return None
     if not hasattr(session, 'queuedUserMessages') or session.queuedUserMessages is None:
         session.queuedUserMessages = []
-    entry: dict[str, object] = {'id': f'qm_{uuid.uuid4().hex[:12]}', 'text': text, 'attachments': list(attachments or []), 'queuedAt': _now()}
+    entry: dict[str, object] = {
+        'id': f'qm_{uuid.uuid4().hex[:12]}',
+        'text': text,
+        'attachments': list(attachments or []),
+        'queuedAt': _now(),
+    }
     session.queuedUserMessages.append(entry)
     session.updatedAt = _now()
     saveSessions()
     try:
         from app.services import event_log
-        event_log.event_log.append(sessionId, 'user_message_queued', {'sessionId': sessionId, 'messageId': entry['id'], 'text': text, 'queuedAt': entry['queuedAt']})
+
+        event_log.event_log.append(
+            sessionId,
+            'user_message_queued',
+            {'sessionId': sessionId, 'messageId': entry['id'], 'text': text, 'queuedAt': entry['queuedAt']},
+        )
     except Exception:
         pass
     return entry
+
 
 def dequeueUserMessage(sessionId: str, messageId: str) -> bool:
     """Remove a single queued message by id. Emits ``user_message_dequeued``."""
@@ -641,10 +925,12 @@ def dequeueUserMessage(sessionId: str, messageId: str) -> bool:
     saveSessions()
     try:
         from app.services import event_log
+
         event_log.event_log.append(sessionId, 'user_message_dequeued', {'sessionId': sessionId, 'messageId': messageId})
     except Exception:
         pass
     return True
+
 
 def listQueuedMessages(sessionId: str) -> list[dict[str, object]]:
     """Return the current queued messages for a session."""
@@ -653,7 +939,10 @@ def listQueuedMessages(sessionId: str) -> list[dict[str, object]]:
         return []
     return list(getattr(session, 'queuedUserMessages', None) or [])
 
-def drainQueuedMessages(sessionId: str, emit: Callable[[dict[str, object]], None] | None=None) -> list[dict[str, object]]:
+
+def drainQueuedMessages(
+    sessionId: str, emit: Callable[[dict[str, object]], None] | None = None
+) -> list[dict[str, object]]:
     """Pop all queued messages and return them in FIFO order.
 
     Also emits a ``user_message_injected`` event per entry so the
@@ -672,13 +961,35 @@ def drainQueuedMessages(sessionId: str, emit: Callable[[dict[str, object]], None
     if emit is not None:
         try:
             from app.services import event_log
+
             for entry in entries:
-                event_log.event_log.append(sessionId, 'userMessageInjected', {'sessionId': sessionId, 'messageId': entry.get('id', ''), 'text': entry.get('text', ''), 'queuedAt': entry.get('queuedAt', '')})
+                event_log.event_log.append(
+                    sessionId,
+                    'userMessageInjected',
+                    {
+                        'sessionId': sessionId,
+                        'messageId': entry.get('id', ''),
+                        'text': entry.get('text', ''),
+                        'queuedAt': entry.get('queuedAt', ''),
+                    },
+                )
         except Exception:
             pass
     return entries
 
-async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str='', agentId: str='', effort: str='', model: str='', modelProvider: str='', guardMode: str='', emit: Callable[[dict[str, object]], None] | None=None, signal: asyncio.Event | None=None) -> None:
+
+async def sendWorkbenchMessageStream(
+    sessionId: str,
+    message: str,
+    provider: str = '',
+    agentId: str = '',
+    effort: str = '',
+    model: str = '',
+    modelProvider: str = '',
+    guardMode: str = '',
+    emit: Callable[[dict[str, object]], None] | None = None,
+    signal: asyncio.Event | None = None,
+) -> None:
     """The primary streaming entry point for workbench chat.
 
     This is the main chat loop that:
@@ -704,7 +1015,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
     _emitSessionStatus(sessionId)
     session.messages.append({'role': 'user', 'content': message})
     session.messageCount += 1
-    effectiveEffort = resolveEffectiveEffort(effort or session.metadata.get('effort', ''), session)
+    effectiveEffort = resolveEffectiveEffort(effort or as_str(session.metadata.get('effort', '')), session)
     resolvedProvider = None
     if modelProvider:
         resolvedProvider = _resolveWorkbenchProvider(modelProvider, '')
@@ -719,16 +1030,24 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
         emit({'type': 'started', 'sessionId': sessionId, 'model': resolvedModel})
     if resolvedProvider:
         from app.services import provider_credentials
-        creds = provider_credentials.resolve(resolvedProvider.get('name') or resolvedProvider.get('id') or '')
+
+        creds = provider_credentials.resolve(
+            as_str(resolvedProvider.get('name')) or as_str(resolvedProvider.get('id')) or ''
+        )
         apiKey = (creds or {}).get('api_key') if creds else None
         if not apiKey:
             if emit:
-                emit({'type': 'error', 'message': f"API key not configured for {resolvedProvider.get('name', 'unknown')}"})
+                emit(
+                    {
+                        'type': 'error',
+                        'message': f'API key not configured for {resolvedProvider.get("name", "unknown")}',
+                    }
+                )
             session.status = 'idle'
             if emit:
                 emit({'type': 'done', 'sessionId': sessionId})
             return
-    if getattr(session, '_failure_feedback_age', None) is not None:
+    if session._failure_feedback_age is not None:
         session._failure_feedback_age += 1
         if session._failure_feedback_age >= 3:
             session._failure_feedback = None
@@ -741,9 +1060,11 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
 
     def _isCancelled() -> bool:
         return signal is not None and signal.is_set()
+
     try:
         from app.services.memory.context_compressor import compressMessages, isFeatureEnabled
         from app.providers.clients.base import estimateTokens
+
         if isFeatureEnabled():
             originalTokens = estimateTokens(session.messages)
             ratio = originalTokens / WORKBENCH_TOKEN_BUDGET if WORKBENCH_TOKEN_BUDGET else 0.0
@@ -768,7 +1089,16 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
                     currentMessages = compressed
                     session._last_compaction_turn = currentTurn
                     if emit:
-                        emit({'type': 'compaction', 'originalTokens': originalTokens, 'compressedTokens': compressedTokens, 'compressedCount': compressedCount, 'headCount': 4, 'tailCount': 6})
+                        emit(
+                            {
+                                'type': 'compaction',
+                                'originalTokens': originalTokens,
+                                'compressedTokens': compressedTokens,
+                                'compressedCount': compressedCount,
+                                'headCount': 4,
+                                'tailCount': 6,
+                            }
+                        )
         else:
             currentMessages = list(session.messages)
     except Exception:
@@ -786,46 +1116,75 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
             if queued:
                 logger.debug('workbench round %d: injecting %d queued user message(s)', toolRound, len(queued))
                 currentMessages.append(_formatQueuedMessagesAsUserTurn(queued))
-        logger.debug('workbench round %d start (model=%s, in=%d, out=%d)', toolRound, resolvedModel, totalInputTokens, totalOutputTokens)
+        logger.debug(
+            'workbench round %d start (model=%s, in=%d, out=%d)',
+            toolRound,
+            resolvedModel,
+            totalInputTokens,
+            totalOutputTokens,
+        )
         if toolRound == 1:
-            toolNames = [t.get('name') for t in tools] if isAnthropic else [as_dict(t.get('function', {})).get('name') for t in openaiTools]
+            toolNames = (
+                [t.get('name') for t in tools]
+                if isAnthropic
+                else [as_dict(t.get('function', {})).get('name') for t in openaiTools]
+            )
             logger.debug('workbench presenting %d tools to model: %s', len(toolNames), toolNames)
         if isAnthropic:
-            response = await _callAnthropicWorkbench(currentMessages, systemText, resolvedModel, tools, effectiveEffort, provider=resolvedProvider, emit=emit)
+            response = await _callAnthropicWorkbench(
+                currentMessages, systemText, resolvedModel, tools, effectiveEffort, provider=resolvedProvider, emit=emit
+            )
         elif isOpenai:
-            response = await _callOpenaiWorkbench(currentMessages, systemText, resolvedModel, openaiTools, effectiveEffort, provider=resolvedProvider, emit=emit)
+            response = await _callOpenaiWorkbench(
+                currentMessages,
+                systemText,
+                resolvedModel,
+                openaiTools,
+                effectiveEffort,
+                provider=resolvedProvider,
+                emit=emit,
+            )
         else:
             if emit:
                 emit({'type': 'error', 'message': f'Unknown provider format for {resolvedProvider}'})
             break
         if response.get('error'):
             if toolRound > 1:
-                logger.warning('workbench model re-call failed after tool round %d: %s', toolRound - 1, response['error'])
+                logger.warning(
+                    'workbench model re-call failed after tool round %d: %s', toolRound - 1, response['error']
+                )
             if emit:
                 emit({'type': 'error', 'message': response['error']})
             break
-        respUsage = response.get('usage', {})
+        respUsage = as_dict(response.get('usage'), {})
         if respUsage:
-            totalInputTokens += respUsage.get('input_tokens', 0)
-            totalOutputTokens += respUsage.get('output_tokens', 0)
-            finalContextTokens = respUsage.get('input_tokens', 0)
+            totalInputTokens += as_int(respUsage.get('input_tokens', 0))
+            totalOutputTokens += as_int(respUsage.get('output_tokens', 0))
+            finalContextTokens = as_int(respUsage.get('input_tokens', 0))
         if isAnthropic:
             assistantMsg = {'role': 'assistant', 'content': response.get('content', [])}
-            contentBlocks = response.get('content', [])
+            contentBlocks = cast('list[dict[str, object]]', as_list(response.get('content', []), []))
             textContent = _extractText(contentBlocks)
             thinkingContent = _extractThinking(contentBlocks)
             toolUses = [b for b in contentBlocks if b.get('type') == 'tool_use']
         else:
-            choices = response.get('choices', [])
-            choice = choices[0] if choices else {}
-            msg = choice.get('message', {})
-            assistantMsg = {'role': 'assistant', 'content': msg.get('content', ''), 'tool_calls': msg.get('tool_calls', [])}
-            textContent = response.get('text', '')
-            thinkingContent = response.get('thinking', '')
-            toolUses = response.get('tool_uses', [])
+            choices = as_list(response.get('choices', []), [])
+            choice = as_dict(choices[0]) if choices else {}
+            msg = as_dict(choice.get('message', {}))
+            assistantMsg = {
+                'role': 'assistant',
+                'content': msg.get('content', ''),
+                'tool_calls': msg.get('tool_calls', []),
+            }
+            textContent = as_str(response.get('text', ''))
+            thinkingContent = as_str(response.get('thinking', ''))
+            toolUses = cast('list[dict[str, object]]', as_list(response.get('tool_uses', []), []))
         if not toolUses:
             if toolRound > 1 and (not textContent) and (not thinkingContent):
-                logger.warning('workbench model re-call returned empty content after tool round %d (no text, no tools)', toolRound - 1)
+                logger.warning(
+                    'workbench model re-call returned empty content after tool round %d (no text, no tools)',
+                    toolRound - 1,
+                )
             currentMessages.append(assistantMsg)
             queued = drainQueuedMessages(sessionId, emit=emit)
             if queued:
@@ -839,46 +1198,86 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
         for tu in toolUses:
             if _isCancelled():
                 break
-            toolName = tu.get('name', '')
-            toolInput = tu.get('input', {})
-            toolUseId = tu.get('id', f'toolu_{uuid.uuid4().hex[:16]}')
+            toolName = as_str(tu.get('name', ''))
+            toolInput = as_dict(tu.get('input', {}))
+            toolUseId = as_str(tu.get('id', f'toolu_{uuid.uuid4().hex[:16]}'))
             if toolName in ('submit_plan', 'submitPlan'):
                 planPayload = toolInput.get('plan') or toolInput.get('steps') or toolInput
                 submitPlan(session, planPayload if isinstance(planPayload, dict) else {'plan': planPayload})
                 if emit:
                     emit({'type': 'planProposed', 'plan': session.plan})
-                    emit({'type': 'toolResult', 'id': toolUseId, 'name': toolName, 'content': 'Plan submitted. Awaiting user approval.', 'status': 'done'})
-                toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': 'Plan submitted. Awaiting user approval.'})
+                    emit(
+                        {
+                            'type': 'toolResult',
+                            'id': toolUseId,
+                            'name': toolName,
+                            'content': 'Plan submitted. Awaiting user approval.',
+                            'status': 'done',
+                        }
+                    )
+                toolResults.append(
+                    {'tool_use_id': toolUseId, 'role': 'tool', 'content': 'Plan submitted. Awaiting user approval.'}
+                )
                 planSubmittedThisRound = True
                 continue
             if toolName in ('submit_clarify', 'ask_clarify'):
                 submitClarify(session, toolInput)
                 if emit:
                     emit({'type': 'clarifyProposed', 'clarify': session.clarify})
-                    emit({'type': 'toolResult', 'id': toolUseId, 'name': toolName, 'content': 'Question sent to the user. Awaiting their answer.', 'status': 'done'})
-                toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': 'Question sent to the user. Awaiting their answer.'})
+                    emit(
+                        {
+                            'type': 'toolResult',
+                            'id': toolUseId,
+                            'name': toolName,
+                            'content': 'Question sent to the user. Awaiting their answer.',
+                            'status': 'done',
+                        }
+                    )
+                toolResults.append(
+                    {
+                        'tool_use_id': toolUseId,
+                        'role': 'tool',
+                        'content': 'Question sent to the user. Awaiting their answer.',
+                    }
+                )
                 clarifySubmittedThisRound = True
                 continue
             if toolName in ('submit_todos', 'submitTodos'):
                 todosPayload = toolInput.get('todos') or toolInput.get('items') or toolInput
                 if not isinstance(todosPayload, list):
                     todosPayload = [todosPayload] if todosPayload else []
-                title = toolInput.get('title') or ''
-                submitTodos(session, todosPayload, title=title)
+                title = as_str(toolInput.get('title'), '')
+                submitTodos(session, cast('list[dict[str, object]]', todosPayload), title=title)
                 if emit:
                     emit({'type': 'todosUpdated', 'todos': session.todos})
-                    emit({'type': 'toolResult', 'id': toolUseId, 'name': toolName, 'content': 'Todo list saved.', 'status': 'done'})
+                    emit(
+                        {
+                            'type': 'toolResult',
+                            'id': toolUseId,
+                            'name': toolName,
+                            'content': 'Todo list saved.',
+                            'status': 'done',
+                        }
+                    )
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': 'Todo list saved.'})
                 continue
             if toolName in ('update_todos', 'updateTodos'):
                 todosPayload = toolInput.get('todos') or toolInput.get('items') or toolInput
                 if not isinstance(todosPayload, list):
                     todosPayload = [todosPayload] if todosPayload else []
-                title = toolInput.get('title') or ''
-                updateTodos(session, todosPayload, title=title)
+                title = as_str(toolInput.get('title'), '')
+                updateTodos(session, cast('list[dict[str, object]]', todosPayload), title=title)
                 if emit:
                     emit({'type': 'todosUpdated', 'todos': session.todos})
-                    emit({'type': 'toolResult', 'id': toolUseId, 'name': toolName, 'content': 'Todo list updated.', 'status': 'done'})
+                    emit(
+                        {
+                            'type': 'toolResult',
+                            'id': toolUseId,
+                            'name': toolName,
+                            'content': 'Todo list updated.',
+                            'status': 'done',
+                        }
+                    )
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': 'Todo list updated.'})
                 continue
             blockedReason = _checkToolGuard(session, toolName, toolInput)
@@ -891,19 +1290,20 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
                 emit({'type': 'toolCall', 'id': toolUseId, 'name': toolName, 'input': toolInput, 'status': 'running'})
             try:
                 from app.services.workbench.tool_guardrails import ToolCallTracker
-                if not hasattr(session, '_tool_tracker') or session._tool_tracker is None:
+
+                if session._tool_tracker is None:
                     session._tool_tracker = ToolCallTracker()
                 tracker = session._tool_tracker
-                status, msg = tracker.check(toolName, toolInput)
-                if status == 'block':
-                    result = msg
+                guardStatus, guardMsg = tracker.check(toolName, toolInput)
+                if guardStatus == 'block':
+                    result = guardMsg
                     tracker.record_failure(toolName)
                 else:
                     result = await _executeTool(toolName, toolInput, session)
                     if isinstance(result, str) and result.startswith('Error:'):
                         tracker.record_failure(toolName)
-                    if status == 'warn':
-                        result = msg + '\n' + result
+                    if guardStatus == 'warn':
+                        result = guardMsg + '\n' + result
             except Exception:
                 result = await _executeTool(toolName, toolInput, session)
             MAX_SSE_CONTENT = 100 * 1024
@@ -920,24 +1320,53 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
                             providerSetup = parsed
                     except Exception:
                         providerSetup = None
-                emit({'type': 'toolResult', 'id': toolUseId, 'name': toolName, 'content': sseContent, 'contentTruncated': contentTruncated, 'contentFullLength': len(result), 'summary': str(result)[:2000], 'status': 'done', 'providerSetup': providerSetup})
+                emit(
+                    {
+                        'type': 'toolResult',
+                        'id': toolUseId,
+                        'name': toolName,
+                        'content': sseContent,
+                        'contentTruncated': contentTruncated,
+                        'contentFullLength': len(result),
+                        'summary': str(result)[:2000],
+                        'status': 'done',
+                        'providerSetup': providerSetup,
+                    }
+                )
                 if toolName.startswith('browser_'):
                     try:
                         parsed = json.loads(result)
                     except Exception:
                         parsed = None
                     if isinstance(parsed, dict) and parsed.get('status') == 'success':
-                        emit({'type': 'browserAction', 'id': toolUseId, 'name': toolName, 'input': toolInput, 'url': parsed.get('url'), 'title': parsed.get('title'), 'target': parsed.get('target'), 'screenshot': parsed.get('screenshot'), 'typed': parsed.get('typed'), 'selected': parsed.get('selected'), 'scrolled': parsed.get('scrolled'), 'status': 'success'})
+                        emit(
+                            {
+                                'type': 'browserAction',
+                                'id': toolUseId,
+                                'name': toolName,
+                                'input': toolInput,
+                                'url': parsed.get('url'),
+                                'title': parsed.get('title'),
+                                'target': parsed.get('target'),
+                                'screenshot': parsed.get('screenshot'),
+                                'typed': parsed.get('typed'),
+                                'selected': parsed.get('selected'),
+                                'scrolled': parsed.get('scrolled'),
+                                'status': 'success',
+                            }
+                        )
             toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': result})
         if not toolResults:
             try:
                 from app.services.workbench.tool_guardrails import ToolCallTracker
+
                 if hasattr(session, '_tool_tracker') and session._tool_tracker:
                     session._tool_tracker.record_text_response()
             except Exception:
                 pass
             try:
                 from app.services.daemon_manager import getManager
+
                 manager = getManager()
                 manager.increment_turns(session.id)
             except Exception:
@@ -962,7 +1391,14 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
         if totalInputTokens > 0 or totalOutputTokens > 0:
             try:
                 from app.services.memory_store import recordUsage
-                recordUsage(sessionId=session.id, model=resolvedModel, inputTokens=totalInputTokens, outputTokens=totalOutputTokens, contextTokens=finalContextTokens)
+
+                recordUsage(
+                    sessionId=session.id,
+                    model=resolvedModel,
+                    inputTokens=totalInputTokens,
+                    outputTokens=totalOutputTokens,
+                    contextTokens=finalContextTokens,
+                )
                 session.totalInputTokens += totalInputTokens
                 session.totalOutputTokens += totalOutputTokens
             except Exception:
@@ -970,23 +1406,33 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
     finally:
         if emit:
             emit({'type': 'done', 'sessionId': sessionId})
-    reviewModel = _backgroundTaskModel('reviewModel', resolvedModel)
-    reflectionModel = _backgroundTaskModel('reflectionModel', resolvedModel)
-    autoMemoryModel = _backgroundTaskModel('autoMemoryModel', resolvedModel)
+    review_model = _backgroundTaskModel('reviewModel', resolvedModel)
+    reflection_model = _backgroundTaskModel('reflectionModel', resolvedModel)
+    auto_memory_model = _backgroundTaskModel('autoMemoryModel', resolvedModel)
     try:
         from app.services.memory.background_review import tryBackgroundReview, ReviewGates
-        asyncio.create_task(tryBackgroundReview(session, list(currentMessages), gates=ReviewGates(turn_interval=3, tool_round_interval=6), llm_client=_makeReviewLlmClient(resolvedProvider, reviewModel)))
+
+        asyncio.create_task(
+            tryBackgroundReview(
+                session,
+                list(currentMessages),
+                gates=ReviewGates(turn_interval=3, tool_round_interval=6),
+                llm_client=_makeReviewLlmClient(resolvedProvider, review_model),
+            )
+        )
     except Exception:
         pass
     try:
-        asyncio.create_task(asyncio.to_thread(_syncAutoMemory, session, list(currentMessages), autoMemoryModel))
+        asyncio.create_task(asyncio.to_thread(_syncAutoMemory, session, list(currentMessages), auto_memory_model))
     except Exception:
         pass
     try:
         from app.services.memory.self_evolution import reflectOnTurn
-        asyncio.create_task(asyncio.to_thread(reflectOnTurn, list(currentMessages), reflectionModel))
+
+        asyncio.create_task(asyncio.to_thread(reflectOnTurn, list(currentMessages), reflection_model))
     except Exception:
         pass
+
 
 def _backgroundTaskModel(taskKey: str, chatModel: str) -> str:
     """Resolve the model to use for a background task.
@@ -997,14 +1443,16 @@ def _backgroundTaskModel(taskKey: str, chatModel: str) -> str:
     """
     try:
         from app.services.background_review_service import getConfig
+
         cfg = getConfig()
         if cfg.get('enabled') and cfg.get(taskKey):
-            return cfg[taskKey]
+            return as_str(cfg[taskKey])
     except Exception:
         pass
     return chatModel
 
-def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]], model: str='') -> None:
+
+def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]], model: str = '') -> None:
     """Auto-memory sync — save conversation summaries and extract todos.
 
     Runs fire-and-forget after each workbench turn so it never delays
@@ -1013,6 +1461,7 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]]
     the resolved auto-memory model (falls back to the chat model) used
     for audit/metadata on the saved memories."""
     from app.services.memory.auto_memory import saveAutoMemory, extractAndSaveTodos
+
     try:
         extractAndSaveTodos(messages)
     except Exception:
@@ -1024,6 +1473,7 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]]
             saveAutoMemory(f'conv_summary_{session.id[:8]}', summary, category='conversation', importance=0.3)
     except Exception:
         pass
+
 
 def _lastUserMessageText(session: WorkbenchSession) -> str:
     """Extract text content from the last user message in a session."""
@@ -1037,7 +1487,8 @@ def _lastUserMessageText(session: WorkbenchSession) -> str:
                 return ' '.join(texts)
     return ''
 
-def _makeReviewLlmClient(mainProvider: dict[str, object] | None, reviewModelHint: str='') -> Callable | None:
+
+def _makeReviewLlmClient(mainProvider: dict[str, object] | None, reviewModelHint: str = '') -> Callable | None:
     """Create an LLM client for background review calls.
 
     Resolves the provider from the ``reviewModel`` config (or the provided
@@ -1047,16 +1498,18 @@ def _makeReviewLlmClient(mainProvider: dict[str, object] | None, reviewModelHint
     """
     try:
         from app.providers import resolver as providerResolver
+
         provider = None
         reviewConfig: dict[str, object] | None = None
         try:
             from app.services.background_review_service import getConfig
+
             reviewConfig = getConfig()
-            reviewModel = reviewConfig.get('reviewModel', '') or reviewModelHint
-            if reviewModel:
-                provider = providerResolver.resolve(reviewModel)
+            review_model = reviewConfig.get('reviewModel', '') or reviewModelHint
+            if review_model:
+                provider = providerResolver.resolve(as_str(review_model))
         except Exception:
-            reviewModel = reviewModelHint
+            review_model = reviewModelHint
         if not provider:
             provider = mainProvider
         if not provider:
@@ -1064,6 +1517,7 @@ def _makeReviewLlmClient(mainProvider: dict[str, object] | None, reviewModelHint
         if not provider:
             return None
         from app.providers.clients import getClient
+
         client = getClient(provider)
         if not client:
             return None
@@ -1071,7 +1525,7 @@ def _makeReviewLlmClient(mainProvider: dict[str, object] | None, reviewModelHint
         if not apiKey:
             return None
         _client = client
-        _reviewModel = reviewModel or 'claude-sonnet-4-20250514'
+        _reviewModel = review_model or 'claude-sonnet-4-20250514'
 
         async def reviewLlm(prompt: list[dict[str, object]]) -> str:
             """Call a cheap/fast model for background review."""
@@ -1081,19 +1535,22 @@ def _makeReviewLlmClient(mainProvider: dict[str, object] | None, reviewModelHint
                 bodyJson = resp.body_json or {}
                 if resp.is_error or 'error' in bodyJson:
                     return ''
-                choices = bodyJson.get('choices', [])
+                choices = as_list(bodyJson.get('choices', []), [])
                 if not choices:
                     return ''
-                return choices[0].get('message', {}).get('content', '')
+                return as_str(as_dict(as_dict(choices[0]).get('message', {})).get('content', ''))
             except Exception:
                 return ''
+
         return reviewLlm
     except Exception:
         return None
 
-def _resolveWorkbenchProvider(providerName: str, modelHint: str='') -> dict[str, object] | None:
+
+def _resolveWorkbenchProvider(providerName: str, modelHint: str = '') -> dict[str, object] | None:
     """Resolve a provider from name or model hint."""
     from app.providers import resolver as providerResolver
+
     if providerName:
         provider = providerResolver.resolve(providerName)
         if provider:
@@ -1105,37 +1562,51 @@ def _resolveWorkbenchProvider(providerName: str, modelHint: str='') -> dict[str,
     providers = providerResolver.list_available()
     return providers[0] if providers else None
 
-def _resolveModel(provider: dict[str, object] | None, modelHint: str='') -> str:
+
+def _resolveModel(provider: dict[str, object] | None, modelHint: str = '') -> str:
     """Resolve the model name from hint or provider default."""
     if modelHint:
         return modelHint
     if provider:
-        return provider.get('defaultModel', '')
+        return as_str(provider.get('defaultModel', ''))
     return ''
 
+
 def _isAnthropicProvider(provider: dict[str, object] | None) -> bool:
-    return provider and provider.get('apiMode') == 'anthropicMessages'
+    return provider is not None and as_str(provider.get('apiMode')) == 'anthropicMessages'
+
 
 def _isOpenaiProvider(provider: dict[str, object] | None) -> bool:
-    return provider and provider.get('apiMode') in ('openaiChat', 'openaiChat', 'codexResponses')
+    return provider is not None and as_str(provider.get('apiMode')) in ('openaiChat', 'openaiChat', 'codexResponses')
+
 
 def _extractText(contentBlocks: list[dict[str, object]]) -> str:
     """Extract text from Anthropic content blocks."""
-    parts = []
+    parts: list[str] = []
     for block in contentBlocks:
         if block.get('type') == 'text':
-            parts.append(block.get('text', ''))
+            parts.append(as_str(block.get('text', '')))
     return '\n'.join(parts)
+
 
 def _extractThinking(contentBlocks: list[dict[str, object]]) -> str:
     """Extract thinking/reasoning from Anthropic content blocks."""
-    parts = []
+    parts: list[str] = []
     for block in contentBlocks:
         if block.get('type') == 'thinking':
-            parts.append(block.get('text', ''))
+            parts.append(as_str(block.get('text', '')))
     return '\n'.join(parts)
 
-async def _callAnthropicWorkbench(messages: list[dict[str, object]], systemText: str, model: str, tools: list[dict[str, object]], effort: str, provider: dict[str, object] | None=None, emit: Callable[[dict[str, object]], None] | None=None) -> dict[str, object]:
+
+async def _callAnthropicWorkbench(
+    messages: list[dict[str, object]],
+    systemText: str,
+    model: str,
+    tools: list[dict[str, object]],
+    effort: str,
+    provider: dict[str, object] | None = None,
+    emit: Callable[[dict[str, object]], None] | None = None,
+) -> dict[str, object]:
     """Call an Anthropic-format model with progressive streaming.
 
     Emits ``thinking``, ``final_output``, and ``tool_use`` events as
@@ -1144,17 +1615,19 @@ async def _callAnthropicWorkbench(messages: list[dict[str, object]], systemText:
     """
     from app.adapters.anthropic import buildAnthropicUpstreamRequest
     from app.providers.clients import getClient
+
     if not provider:
         provider = _resolveWorkbenchProvider('', model)
     if not provider:
         return {'error': 'No provider available'}
     client = getClient(provider)
     if not client:
-        return {'error': f"No client for {provider.get('name')}"}
+        return {'error': f'No client for {provider.get("name")}'}
     apiKey = client.resolveApiKey()
     if not apiKey:
         return {'error': 'API key not configured'}
     from app.adapters.anthropic import translateMessagesToAnthropic
+
     anthropicMessages = translateMessagesToAnthropic(messages)
     req = AnthropicRequest(model=model, max_tokens=8192)
     body = buildAnthropicUpstreamRequest(req, model, [{'type': 'text', 'text': systemText}])
@@ -1172,43 +1645,48 @@ async def _callAnthropicWorkbench(messages: list[dict[str, object]], systemText:
     currentToolInputParts: list[str] = []
     usage: dict[str, int] = {}
     try:
-        async for event in client.messagesStream(body):
+        async for event in client.messages_stream(body):
             eventType = event.get('_event_type', '')
             if eventType == 'content_block_start':
-                block = event.get('content_block', {})
+                block = as_dict(event.get('content_block', {}))
                 blockType = block.get('type', '')
                 if blockType == 'tool_use':
-                    currentToolBlock = {'type': 'tool_use', 'id': block.get('id', f'toolu_{uuid.uuid4().hex[:16]}'), 'name': block.get('name', ''), 'input': {}}
+                    currentToolBlock = {
+                        'type': 'tool_use',
+                        'id': block.get('id', f'toolu_{uuid.uuid4().hex[:16]}'),
+                        'name': block.get('name', ''),
+                        'input': {},
+                    }
                     currentToolInputParts = []
                 elif blockType == 'text':
-                    text = block.get('text', '')
+                    text = as_str(block.get('text', ''))
                     if text:
                         accumulatedText += text
                         if emit:
                             emit({'type': 'finalOutput', 'content': text})
                 elif blockType == 'thinking':
-                    text = block.get('thinking', '')
+                    text = as_str(block.get('thinking', ''))
                     if text:
                         accumulatedThinking += text
                         if emit:
                             emit({'type': 'thinking', 'content': text})
             elif eventType == 'content_block_delta':
-                delta = event.get('delta', {})
+                delta = as_dict(event.get('delta', {}))
                 deltaType = delta.get('type', '')
                 if deltaType == 'text_delta':
-                    text = delta.get('text', '')
+                    text = as_str(delta.get('text', ''))
                     if text:
                         accumulatedText += text
                         if emit:
                             emit({'type': 'finalOutput', 'content': text})
                 elif deltaType == 'thinking_delta':
-                    text = delta.get('thinking', '')
+                    text = as_str(delta.get('thinking', ''))
                     if text:
                         accumulatedThinking += text
                         if emit:
                             emit({'type': 'thinking', 'content': text})
                 elif deltaType == 'input_json_delta':
-                    currentToolInputParts.append(delta.get('partial_json', ''))
+                    currentToolInputParts.append(as_str(delta.get('partial_json', '')))
             elif eventType == 'content_block_stop':
                 if currentToolBlock:
                     raw = ''.join(currentToolInputParts)
@@ -1221,10 +1699,10 @@ async def _callAnthropicWorkbench(messages: list[dict[str, object]], systemText:
                     currentToolBlock = None
                     currentToolInputParts = []
             elif eventType == 'message_delta':
-                msgUsage = event.get('usage', {})
+                msgUsage = as_dict(event.get('usage', {}))
                 if msgUsage:
-                    usage['input_tokens'] = msgUsage.get('input_tokens', 0)
-                    usage['output_tokens'] = msgUsage.get('output_tokens', 0)
+                    usage['input_tokens'] = as_int(msgUsage.get('input_tokens', 0))
+                    usage['output_tokens'] = as_int(msgUsage.get('output_tokens', 0))
             elif eventType == 'error':
                 return {'error': f'Stream error: {event}'}
     except Exception as exc:
@@ -1234,9 +1712,24 @@ async def _callAnthropicWorkbench(messages: list[dict[str, object]], systemText:
     if accumulatedText:
         contentBlocks.append({'type': 'text', 'text': accumulatedText})
     contentBlocks.extend(toolUses)
-    return {'content': contentBlocks, 'text': accumulatedText, 'thinking': accumulatedThinking, 'tool_uses': toolUses, 'usage': usage}
+    return {
+        'content': contentBlocks,
+        'text': accumulatedText,
+        'thinking': accumulatedThinking,
+        'tool_uses': toolUses,
+        'usage': usage,
+    }
 
-async def _callOpenaiWorkbench(messages: list[dict[str, object]], systemText: str, model: str, tools: list[dict[str, object]], effort: str, provider: dict[str, object] | None=None, emit: Callable[[dict[str, object]], None] | None=None) -> dict[str, object]:
+
+async def _callOpenaiWorkbench(
+    messages: list[dict[str, object]],
+    systemText: str,
+    model: str,
+    tools: list[dict[str, object]],
+    effort: str,
+    provider: dict[str, object] | None = None,
+    emit: Callable[[dict[str, object]], None] | None = None,
+) -> dict[str, object]:
     """Call an OpenAI-format model with progressive streaming.
 
     Emits ``thinking`` / ``reasoning`` and ``final_output`` events as
@@ -1244,17 +1737,19 @@ async def _callOpenaiWorkbench(messages: list[dict[str, object]], systemText: st
     ``choices`` (OpenAI format), ``text``, ``thinking``, and ``tool_uses``.
     """
     from app.providers.clients import getClient
+
     if not provider:
         provider = _resolveWorkbenchProvider('', model)
     if not provider:
         return {'error': 'No provider available'}
     client = getClient(provider)
     if not client:
-        return {'error': f"No client for {provider.get('name')}"}
+        return {'error': f'No client for {provider.get("name")}'}
     apiKey = client.resolveApiKey()
     if not apiKey:
         return {'error': 'API key not configured'}
     from app.adapters.anthropic import translateMessages
+
     openaiMessages = translateMessages(messages)
     openaiMessages.insert(0, {'role': 'system', 'content': systemText})
     req = ChatCompletionRequest(model=model)
@@ -1272,43 +1767,48 @@ async def _callOpenaiWorkbench(messages: list[dict[str, object]], systemText: st
         finishReason: str | None = None
         usage: dict[str, int] = {}
         try:
-            async for event in client.chatCompletionsStream(body):
+            async for event in client.chat_completions_stream(body):
                 eventType = event.get('_event_type', '')
                 if eventType not in ('chat.completion.chunk', ''):
                     pass
-                eventUsage = event.get('usage')
+                eventUsage = as_dict(event.get('usage'))
                 if eventUsage:
-                    usage['input_tokens'] = eventUsage.get('prompt_tokens', 0)
-                    usage['output_tokens'] = eventUsage.get('completion_tokens', 0)
-                choices = event.get('choices', [])
+                    usage['input_tokens'] = as_int(eventUsage.get('prompt_tokens', 0))
+                    usage['output_tokens'] = as_int(eventUsage.get('completion_tokens', 0))
+                choices = as_list(event.get('choices', []), [])
                 if not choices:
                     continue
-                choice = choices[0]
-                delta = choice.get('delta', {})
-                reasoner = delta.get('reasoning_content') or delta.get('reasoning')
+                choice = as_dict(choices[0])
+                delta = as_dict(choice.get('delta', {}))
+                reasoner = as_str(delta.get('reasoning_content')) or as_str(delta.get('reasoning'))
                 if reasoner:
                     thinkingText += reasoner
                     if emit:
                         emit({'type': 'thinking', 'content': reasoner})
-                textDelta = delta.get('content', '')
+                textDelta = as_str(delta.get('content', ''))
                 if textDelta:
                     contentText += textDelta
                     if emit:
                         emit({'type': 'finalOutput', 'content': textDelta})
-                for tc in delta.get('tool_calls', []):
-                    idx = tc.get('index', 0)
+                for rawTc in as_list(delta.get('tool_calls', []), []):
+                    tc = as_dict(rawTc)
+                    idx = as_int(tc.get('index', 0))
                     if idx not in toolCallsAccum:
-                        fn = tc.get('function', {})
-                        toolCallsAccum[idx] = {'id': tc.get('id', f'call_{uuid.uuid4().hex[:12]}'), 'type': 'function', 'function': {'name': fn.get('name', ''), 'arguments': fn.get('arguments', '')}}
+                        fn = as_dict(tc.get('function', {}))
+                        toolCallsAccum[idx] = {
+                            'id': tc.get('id', f'call_{uuid.uuid4().hex[:12]}'),
+                            'type': 'function',
+                            'function': {'name': fn.get('name', ''), 'arguments': fn.get('arguments', '')},
+                        }
                     else:
-                        fn = tc.get('function', {})
-                        existing = toolCallsAccum[idx]['function']
+                        fn = as_dict(tc.get('function', {}))
+                        existing = as_dict(toolCallsAccum[idx]['function'])
                         if fn.get('arguments'):
-                            existing['arguments'] += fn['arguments']
+                            existing['arguments'] = as_str(existing.get('arguments')) + as_str(fn.get('arguments'))
                         if fn.get('name'):
-                            existing['name'] += fn['name']
+                            existing['name'] = as_str(existing.get('name')) + as_str(fn.get('name'))
                 if choice.get('finish_reason'):
-                    finishReason = choice['finish_reason']
+                    finishReason = as_str(choice.get('finish_reason'))
         except Exception as exc:
             return {'error': str(exc)}
     assistantMessage: dict[str, object] = {'role': 'assistant', 'content': contentText}
@@ -1317,21 +1817,35 @@ async def _callOpenaiWorkbench(messages: list[dict[str, object]], systemText: st
         tcList = []
         for idx in sorted(toolCallsAccum):
             tc = toolCallsAccum[idx]
-            fn = tc['function']
+            fn = as_dict(tc['function'])
             try:
-                parsedArgs = json.loads(fn['arguments']) if fn['arguments'] else {}
+                parsedArgs = json.loads(as_str(fn.get('arguments'))) if fn.get('arguments') else {}
             except (json.JSONDecodeError, TypeError):
                 parsedArgs = {}
-            tcList.append({'id': tc['id'], 'type': 'function', 'function': {'name': fn['name'], 'arguments': json.dumps(parsedArgs)}})
+            tcList.append(
+                {
+                    'id': tc['id'],
+                    'type': 'function',
+                    'function': {'name': fn['name'], 'arguments': json.dumps(parsedArgs)},
+                }
+            )
             toolUses.append({'type': 'tool_use', 'id': tc['id'], 'name': fn['name'], 'input': parsedArgs})
             assistantMessage['tool_calls'] = tcList
-    return {'choices': [{'index': 0, 'message': assistantMessage, 'finish_reason': finishReason or 'stop'}], 'text': contentText, 'thinking': thinkingText, 'tool_uses': toolUses, 'usage': usage}
+    return {
+        'choices': [{'index': 0, 'message': assistantMessage, 'finish_reason': finishReason or 'stop'}],
+        'text': contentText,
+        'thinking': thinkingText,
+        'tool_uses': toolUses,
+        'usage': usage,
+    }
+
 
 def _supportsThinking(provider: dict[str, object], model: str) -> bool:
     """Check if a provider/model supports Anthropic-style thinking."""
-    profiles = provider.get('modelProfiles', {})
-    profile = profiles.get(model) or profiles.get('*') or {}
-    return profile.get('supportsThinking', False) or profile.get('supportsReasoning', False)
+    profiles = as_dict(provider.get('modelProfiles', {}))
+    profile = as_dict(profiles.get(model) or profiles.get('*') or {})
+    return as_bool(profile.get('supportsThinking')) or as_bool(profile.get('supportsReasoning'))
+
 
 async def _executeTool(toolName: str, args: dict[str, object], session: WorkbenchSession) -> str:
     """Execute a workbench tool by dispatching to the correct handler.
@@ -1344,23 +1858,35 @@ async def _executeTool(toolName: str, args: dict[str, object], session: Workbenc
     """
     from app.services.tool_registry import dispatch as dispatchTool
     from app.services.workbench.context import currentSessionId
+
     token = currentSessionId.set(session.id)
     try:
         from app.services.tools.mcp_client import executeMcpToolCall, isMcpToolName
+
         if isMcpToolName(toolName):
             return str(await executeMcpToolCall(toolName, args))
         result = await dispatchTool(toolName, args)
         return str(result)
     except Exception as exc:
         import traceback as _tb
+
         tbList = _tb.extract_tb(exc.__traceback__)
         lastFrame = tbList[-1] if tbList else None
-        feedback = {'tool': toolName, 'error_type': type(exc).__name__, 'error_message': str(exc), 'file': lastFrame.filename if lastFrame else None, 'line': lastFrame.lineno if lastFrame else None, 'function': lastFrame.name if lastFrame else None, 'offending_code': lastFrame.line if lastFrame else None}
+        feedback = {
+            'tool': toolName,
+            'error_type': type(exc).__name__,
+            'error_message': str(exc),
+            'file': lastFrame.filename if lastFrame else None,
+            'line': lastFrame.lineno if lastFrame else None,
+            'function': lastFrame.name if lastFrame else None,
+            'offending_code': lastFrame.line if lastFrame else None,
+        }
         session._failure_feedback = feedback
         session._failure_feedback_age = 0
-        return f"Tool {toolName} failed: {feedback['error_type']}: {feedback['error_message']}"
+        return f'Tool {toolName} failed: {feedback["error_type"]}: {feedback["error_message"]}'
     finally:
         currentSessionId.reset(token)
+
 
 def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, object]) -> str | None:
     """Check if a tool execution is blocked by guard mode or permissions.
@@ -1373,6 +1899,7 @@ def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, ob
         return f"Tool '{toolName}' requires your approval. Present the intended change to the user and wait for them to approve it before calling this tool again."
     return None
 
+
 def submitPlan(session: WorkbenchSession, planData: dict[str, object]) -> None:
     """Store a plan on the session. v1.1: drop prior execution state and working memory."""
     session.plan = planData
@@ -1382,6 +1909,7 @@ def submitPlan(session: WorkbenchSession, planData: dict[str, object]) -> None:
     session.updatedAt = _now()
     try:
         from app.services import aug_artifact_service
+
         aug_artifact_service.savePlan(session.workspacePath or None, session.id, planData, status='pending')
     except Exception:
         pass
@@ -1433,7 +1961,10 @@ def submitTodos(session: WorkbenchSession, todosData: list[dict[str, object]], *
     session.updatedAt = _now()
     try:
         from app.services import aug_artifact_service
-        aug_artifact_service.saveTodos(session.workspacePath or None, session.id, todosData, title=title, status='active')
+
+        aug_artifact_service.saveTodos(
+            session.workspacePath or None, session.id, todosData, title=title, status='active'
+        )
     except Exception:
         pass
     _emitSessionStatus(session.id)
@@ -1442,6 +1973,7 @@ def submitTodos(session: WorkbenchSession, todosData: list[dict[str, object]], *
 def updateTodos(session: WorkbenchSession, todosData: list[dict[str, object]], *, title: str = '') -> None:
     """Replace the session's todo list in place and re-persist it."""
     submitTodos(session, todosData, title=title)
+
 
 def approveWorkbenchPlan(sessionId: str) -> bool:
     """Approve a pending plan."""
@@ -1455,11 +1987,13 @@ def approveWorkbenchPlan(sessionId: str) -> bool:
     # section doesn't keep showing it as "pending".
     try:
         from app.services import aug_artifact_service
+
         aug_artifact_service.updatePlanStatus(session.workspacePath or None, sessionId, 'approved')
     except Exception:
         pass
     _emitSessionStatus(sessionId)
     return True
+
 
 def rejectWorkbenchPlan(sessionId: str) -> bool:
     """Reject a pending plan. v1.1: drop prior execution state and working memory."""
@@ -1473,6 +2007,7 @@ def rejectWorkbenchPlan(sessionId: str) -> bool:
     session.updatedAt = _now()
     try:
         from app.services import aug_artifact_service
+
         aug_artifact_service.deleteForSession(session.workspacePath or None, sessionId)
     except Exception:
         pass
@@ -1480,12 +2015,16 @@ def rejectWorkbenchPlan(sessionId: str) -> bool:
     _emitSessionStatus(sessionId)
     return True
 
+
 def recordMutation(session: WorkbenchSession, toolName: str, args: dict[str, object], result: str) -> None:
     """Record a mutation in the session's mutation log."""
     session.mutationLog.append({'toolName': toolName, 'args': args, 'result': str(result)[:500], 'timestamp': _now()})
     session.mutationCount += 1
 
-def createPendingMutation(session: WorkbenchSession, toolName: str, args: dict[str, object]) -> dict[str, object] | None:
+
+def createPendingMutation(
+    session: WorkbenchSession, toolName: str, args: dict[str, object]
+) -> dict[str, object] | None:
     """Create a pending mutation token requiring approval."""
     token = f'mt_{uuid.uuid4().hex[:16]}'
     mutation = {'token': token, 'toolName': toolName, 'args': args, 'createdAt': _now(), 'ttl': 300}
@@ -1495,7 +2034,8 @@ def createPendingMutation(session: WorkbenchSession, toolName: str, args: dict[s
     _emitSessionStatus(session.id)
     return mutation
 
-def consumePendingMutation(token: str, reject: bool=False) -> bool:
+
+def consumePendingMutation(token: str, reject: bool = False) -> bool:
     """Approve or reject a pending mutation."""
     for session in _sessions.values():
         for i, pm in enumerate(session.pendingMutations):
@@ -1511,17 +2051,20 @@ def consumePendingMutation(token: str, reject: bool=False) -> bool:
                 return True
     return False
 
+
 def setWorkbenchGoal(session: WorkbenchSession, condition: str) -> None:
     """Set an active goal on the session."""
     session.goal = condition
     session.updatedAt = _now()
     saveSessions()
 
-def clearWorkbenchGoal(session: WorkbenchSession, reason: str='') -> None:
+
+def clearWorkbenchGoal(session: WorkbenchSession, reason: str = '') -> None:
     """Clear the active goal."""
     session.goal = ''
     session.updatedAt = _now()
     saveSessions()
+
 
 def getWorkbenchGoalStatus(sessionId: str) -> dict[str, object] | None:
     """Return current goal status."""
@@ -1530,7 +2073,8 @@ def getWorkbenchGoalStatus(sessionId: str) -> dict[str, object] | None:
         return None
     return {'goal': session.goal, 'active': bool(session.goal)}
 
-def updateWorkbenchGoal(sessionId: str, action: str, condition: str='') -> dict[str, object] | None:
+
+def updateWorkbenchGoal(sessionId: str, action: str, condition: str = '') -> dict[str, object] | None:
     """Set/clear/status for goals."""
     session = _sessions.get(sessionId)
     if not session:
@@ -1541,9 +2085,15 @@ def updateWorkbenchGoal(sessionId: str, action: str, condition: str='') -> dict[
         clearWorkbenchGoal(session, 'user requested')
     return getWorkbenchGoalStatus(sessionId)
 
-def getWorkbenchActivity(args: dict[str, object] | None=None) -> dict[str, object]:
+
+def getWorkbenchActivity(args: dict[str, object] | None = None) -> dict[str, object]:
     """Return recent workbench activity."""
-    return {'sessions': len(_sessions), 'active': sum((1 for s in _sessions.values() if s.status == 'streaming')), 'pending_approvals': sum((1 for s in _sessions.values() if s.status == 'awaiting_approval'))}
+    return {
+        'sessions': len(_sessions),
+        'active': sum((1 for s in _sessions.values() if s.status == 'streaming')),
+        'pending_approvals': sum((1 for s in _sessions.values() if s.status == 'awaiting_approval')),
+    }
+
 
 def listProxyCapabilities() -> dict[str, object]:
     """List all tools grouped by source with mutation flags and token estimates.
@@ -1555,18 +2105,63 @@ def listProxyCapabilities() -> dict[str, object]:
     - Includes agent registry count
     """
     from app.services.tool_registry import listTools as regListTools
-    _MUTATINGTools = frozenset({'write_file', 'edit_file', 'delete_file', 'create_file', 'run_command', 'save_memory', 'save_fact', 'update_heuristics', 'update_state', 'write_scratchpad', 'delete_memory', 'submit_plan', 'approve_plan', 'reject_plan', 'load_skill', 'skill_manage', 'spawn_subagent', 'spawn_daemon', 'kill_daemon', 'write_blackboard', 'clear_blackboard'})
+
+    _MUTATINGTools = frozenset(
+        {
+            'write_file',
+            'edit_file',
+            'delete_file',
+            'create_file',
+            'run_command',
+            'save_memory',
+            'save_fact',
+            'update_heuristics',
+            'update_state',
+            'write_scratchpad',
+            'delete_memory',
+            'submit_plan',
+            'approve_plan',
+            'reject_plan',
+            'load_skill',
+            'skill_manage',
+            'spawn_subagent',
+            'spawn_daemon',
+            'kill_daemon',
+            'write_blackboard',
+            'clear_blackboard',
+        }
+    )
     allTools = regListTools()
     grouped: dict[str, list[dict[str, object]]] = {}
     for tool in allTools:
         name = tool.get('name', '') if isinstance(tool, dict) else str(tool)
         if not name:
             continue
-        if name in ('read_file', 'write_file', 'list_directory', 'search_files', 'edit_file', 'delete_file', 'create_file'):
+        if name in (
+            'read_file',
+            'write_file',
+            'list_directory',
+            'search_files',
+            'edit_file',
+            'delete_file',
+            'create_file',
+        ):
             group = 'file'
         elif name in ('run_command',):
             group = 'shell'
-        elif name in ('memory_search', 'fact_search', 'context_read', 'brain_query', 'save_memory', 'delete_memory', 'save_fact', 'update_heuristics', 'load_skill', 'list_skills', 'skill_manage'):
+        elif name in (
+            'memory_search',
+            'fact_search',
+            'context_read',
+            'brain_query',
+            'save_memory',
+            'delete_memory',
+            'save_fact',
+            'update_heuristics',
+            'load_skill',
+            'list_skills',
+            'skill_manage',
+        ):
             group = 'memory'
         elif name in ('web_fetch', 'web_search'):
             group = 'web'
@@ -1576,7 +2171,7 @@ def listProxyCapabilities() -> dict[str, object]:
             group = 'daemon'
         elif name in ('tool_search', 'tool_describe', 'toolCall'):
             group = 'bridge'
-        elif name.startswith('mcp__'):
+        elif as_str(name).startswith('mcp__'):
             group = 'mcp'
         else:
             group = 'other'
@@ -1590,10 +2185,18 @@ def listProxyCapabilities() -> dict[str, object]:
     agentCount = 0
     try:
         from app.services.tools.agent_registry import listAgents
+
         agentCount = len(listAgents())
     except Exception:
         pass
-    return {'tools_by_group': grouped, 'total_tools': len(allTools), 'mutating_tools': sum((1 for t in allTools if (t.get('name') if isinstance(t, dict) else t) in _MUTATINGTools)), 'estimated_total_tokens': sum((len(str(t)) // 4 + 50 for t in allTools)), 'agent_count': agentCount}
+    return {
+        'tools_by_group': grouped,
+        'total_tools': len(allTools),
+        'mutating_tools': sum((1 for t in allTools if (t.get('name') if isinstance(t, dict) else t) in _MUTATINGTools)),
+        'estimated_total_tokens': sum((len(str(t)) // 4 + 50 for t in allTools)),
+        'agent_count': agentCount,
+    }
+
 
 def getSession() -> WorkbenchSession | None:
     """Get the active workbench session from the current context.
@@ -1610,6 +2213,7 @@ def getSession() -> WorkbenchSession | None:
     except (IndexError, ValueError):
         return None
 
+
 async def updateSessionState(session: WorkbenchSession, executionState: dict) -> None:
     """Update execution state on a session with an asyncio.Lock.
 
@@ -1619,7 +2223,8 @@ async def updateSessionState(session: WorkbenchSession, executionState: dict) ->
     prevents deadlock.
     """
     import asyncio
-    if not hasattr(session, '_state_lock') or session._state_lock is None:
+
+    if session._state_lock is None:
         session._state_lock = asyncio.Lock()
     try:
         await asyncio.wait_for(session._state_lock.acquire(), timeout=5.0)

@@ -1,4 +1,5 @@
 """Tests for the thread-safe log-stream hub (app.services.log_stream)."""
+
 from __future__ import annotations
 
 import pytest
@@ -41,12 +42,14 @@ def testDefaultCategoryIsInfo():
 
 def testRedactionStripsSecrets():
     log_stream._buffer.clear()
-    log_stream.emitLogEvent({
-        'category': 'security',
-        'level': 'warn',
-        'message': 'auth',
-        'metadata': {'apiKey': 'secret', 'note': 'ok', 'password': 'hunter2'},
-    })
+    log_stream.emitLogEvent(
+        {
+            'category': 'security',
+            'level': 'warn',
+            'message': 'auth',
+            'metadata': {'apiKey': 'secret', 'note': 'ok', 'password': 'hunter2'},
+        }
+    )
     meta = log_stream.getRecentLogEvents(1)[0]['metadata']
     assert meta['apiKey'] == '[REDACTED]'
     assert meta['password'] == '[REDACTED]'
@@ -56,6 +59,7 @@ def testRedactionStripsSecrets():
 def testClientManagement():
     class FakeWs:
         pass
+
     ws = FakeWs()
     log_stream.addLogWsClient(ws)
     assert ws in log_stream._clients
