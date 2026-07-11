@@ -3,12 +3,12 @@ import pytest
 import uuid
 from app.services.memory import context_builder, auto_memory
 from app.services.workbench import workbench
-from app.services import memoryStore
+from app.services import memory_store
 
 @pytest.fixture(autouse=True)
 def _initDb():
     """Run init() so schema is current (idempotent)."""
-    memoryStore.init()
+    memory_store.init()
     yield
 
 def testBuildSystemPromptDoesNotCrashWithRealisticPayload():
@@ -33,12 +33,12 @@ def testSaveAutoMemoryThenBrainQueryRoundTrip():
     key = f'v11_e2e_round_trip'
     try:
         auto_memory.save_auto_memory(key=key, content=f'round trip {uniqueMarker}', importance=0.9)
-        result = memoryStore.brain_query(store='auto_memories', query=uniqueMarker, limit=5)
+        result = memory_store.brain_query(store='auto_memories', query=uniqueMarker, limit=5)
         parsed = json.loads(result)
         assert isinstance(parsed, list)
         assert any((uniqueMarker in str(r.get('content', '')) for r in parsed))
     finally:
-        conn = memoryStore._conn()
+        conn = memory_store._conn()
         conn.execute('DELETE FROM auto_memories WHERE key = ?', (key,))
         conn.commit()
 
@@ -47,7 +47,7 @@ def testBrainQueryAllStoresNoException():
     import json
     stores = ['memory', 'auto_memories', 'heuristics', 'facts', 'sessions', 'messages', 'timeline', 'graph', 'blackboard', 'daemons', 'exams', 'exam_attempts']
     for store in stores:
-        result = memoryStore.brain_query(store=store, query='', limit=5)
+        result = memory_store.brain_query(store=store, query='', limit=5)
         assert isinstance(result, str)
         parsed = json.loads(result)
         assert isinstance(parsed, (list, dict)), f'{store}: {type(parsed)}'
@@ -68,18 +68,18 @@ def testFailureFeedbackRoundTrip():
             self.sessionId = 'e2e-feedback'
 
     async def runError():
-        from app.services import toolRegistry
-        originalDispatch = toolRegistry.dispatch
+        from app.services import tool_registry
+        originalDispatch = tool_registry.dispatch
 
         async def boom(toolName, args):
             raise ValueError('e2e test error')
-        toolRegistry.dispatch = boom
+        tool_registry.dispatch = boom
         try:
             session = FakeSession()
             result = await _executeTool(tool_name='run_command', args={'command': 'test'}, session=session)
             return (result, session._failure_feedback)
         finally:
-            toolRegistry.dispatch = originalDispatch
+            tool_registry.dispatch = originalDispatch
     result, feedback = asyncio.run(runError())
     assert 'failed' in result.lower()
     assert feedback is not None

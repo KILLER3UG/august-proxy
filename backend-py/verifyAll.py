@@ -9,7 +9,7 @@ from app.config import settings
 settings.reload()
 print('  CONFIG OK')
 print('\n2. Database initialization...')
-from app.services.memoryStore import init, getStats
+from app.services.memory_store import init, getStats
 init()
 stats = getStats()
 expected = ['memory_store', 'facts', 'proposals', 'sessions', 'messages', 'usage_events', 'session_topics']
@@ -37,7 +37,7 @@ for t in ['memory_store_fts_ai', 'memory_store_fts_ad', 'memory_store_fts_au', '
         errors.append(f'missing trigger: {t}')
 conn.close()
 print('\n5. brain_query...')
-from app.services.memoryStore import brainQuery
+from app.services.memory_store import brainQuery
 stores = ['memory', 'autoMemories', 'heuristics', 'facts', 'sessions', 'messages', 'timeline', 'blackboard']
 for s in stores:
     try:
@@ -49,7 +49,7 @@ for s in stores:
     except Exception as e:
         errors.append(f'brain_query({s}): {e}')
 print('\n6. Heuristics CRUD...')
-from app.services.heuristicsService import addHeuristic, countHeuristics
+from app.services.heuristics_service import addHeuristic, countHeuristics
 n1 = countHeuristics()
 rid = addHeuristic('Test verification rule', source='verification')
 n2 = countHeuristics()
@@ -58,7 +58,7 @@ if rid and n2 > n1:
 else:
     errors.append('heuristics CRUD')
 print('\n7. Blackboard CRUD...')
-from app.services.blackboardService import writeNote, readNotes, clearNotes
+from app.services.blackboard_service import writeNote, readNotes, clearNotes
 writeNote('test_s', 'verify', 'k1', 'v1', priority=5)
 notes = readNotes('test_s')
 if any((n['key'] == 'k1' for n in notes)):
@@ -72,7 +72,7 @@ if any((n['key'] == 'k1' for n in notes)):
 else:
     errors.append('blackboard write/read')
 print('\n8. Token budget...')
-from app.services.workbench.tokenBudget import estimateTokens, computeBudget, getCriticalThreshold
+from app.services.workbench.token_budget import estimateTokens, computeBudget, getCriticalThreshold
 t = estimateTokens('Hello world test')
 budget = computeBudget('Hello world test', model='gpt-4', provider='openai')
 thresh = getCriticalThreshold(model='unknown', provider='local')
@@ -89,7 +89,7 @@ if 'read_file' in results:
 else:
     print(f'  BM25 (warn): {results}')
 print('\n10. Core tools...')
-from app.services.tools.modelTools import AUGUST_CORE_TOOLS
+from app.services.tools.model_tools import AUGUST_CORE_TOOLS
 required = ['brain_query', 'update_heuristics', 'update_state', 'write_scratchpad', 'spawn_daemon', 'list_daemons', 'kill_daemon', 'write_blackboard', 'read_blackboard', 'clear_blackboard']
 for t in required:
     if t in AUGUST_CORE_TOOLS:

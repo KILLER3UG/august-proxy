@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-from app.services import skillService
+from app.services import skill_service
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 log = logging.getLogger(__name__)
 _STALEAfterDays = 14
@@ -120,7 +120,7 @@ class SkillCurator:
         rec = self._ensure(name)
         if rec.pinned:
             return False
-        agentSkillsBase = skillService._agentSkillsDir()
+        agentSkillsBase = skill_service._agentSkillsDir()
         skillDir = agentSkillsBase / name
         archiveBase = agentSkillsBase / '.archive'
         if skillDir.exists():
@@ -135,7 +135,7 @@ class SkillCurator:
 
     def restore(self, name: str) -> bool:
         """Restore an archived skill back to the agent root."""
-        agentSkillsBase = skillService._agentSkillsDir()
+        agentSkillsBase = skill_service._agentSkillsDir()
         archiveDir = agentSkillsBase / '.archive' / name
         if not archiveDir.exists():
             return False
@@ -149,7 +149,7 @@ class SkillCurator:
         return True
 
     def _isAgentSkill(self, name: str) -> bool:
-        sk = skillService.get(name)
+        sk = skill_service.get(name)
         if not sk:
             return False
         return sk.get('created_by', '') == _AGENTCreatedTag
@@ -163,7 +163,7 @@ class SkillCurator:
         """
         now = time.time()
         report: dict[str, object] = {'active': 0, 'staled': [], 'archived': [], 'errors': []}
-        for skill in skillService.listAll():
+        for skill in skill_service.listAll():
             if as_str(skill.get('created_by'), '') != _AGENTCreatedTag:
                 continue
             name = as_str(skill['name'], '')

@@ -54,13 +54,13 @@ import tempfile
 from unittest import mock
 
 # Register provider pointing at local mock
-from app.services import configService, providerCredentials
+from app.services import config_service, provider_credentials
 tmp = tempfile.mkdtemp()
 path = os.path.join(tmp, 'providers.json')
 path_obj = __import__('pathlib').Path(path)
 path_obj.write_text(json.dumps({'providers': [{'id': 'local', 'name': 'test-model', 'baseUrl': 'http://127.0.0.1:8753/v1', 'apiFormat': 'openaiChat', 'apiKey': LOCAL_KEY, 'enabled': True, 'aliases': ['test-model']}]}), encoding='utf-8')
-configService.dataPath = lambda name, *a, **kw: path_obj if name == 'providers.json' else path_obj
-providerCredentials.invalidate()
+config_service.dataPath = lambda name, *a, **kw: path_obj if name == 'providers.json' else path_obj
+provider_credentials.invalidate()
 
 from app.adapters import openai as openaiAdapter
 from app.adapters.proxy_tools import getManagedAnthropicWebToolDefinitions

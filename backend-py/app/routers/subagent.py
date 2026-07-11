@@ -93,7 +93,7 @@ async def streamSubagentEvents(sessionId: Optional[str]=None, request: Request=N
     Uses the existing ``event_log.py`` SSE pattern: yields ``data:`` lines
     as sub-agent events occur.
     """
-    from app.services.eventLog import eventLog
+    from app.services.event_log import eventLog
 
     async def eventGenerator():
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=256)

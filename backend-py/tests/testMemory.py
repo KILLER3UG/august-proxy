@@ -1,6 +1,6 @@
 """Memory system unit tests."""
 import pytest
-from app.services.memoryStore import init, close, saveMemory, getMemory, deleteMemory, listMemory, searchMemory, saveFact, getFact, searchFacts, listFacts, deleteFact, saveProposal, getProposal, listProposals, decideProposal, recordLifecycle, listLifecycle, indexSessionTopic, getSessionTopic, listTopics, saveSession, getSession, listSessions, deleteSessionRecord, saveMessage, getMessages, recordUsage, getUsage, getStats, vacuum
+from app.services.memory_store import init, close, saveMemory, getMemory, deleteMemory, listMemory, searchMemory, saveFact, getFact, searchFacts, listFacts, deleteFact, saveProposal, getProposal, listProposals, decideProposal, recordLifecycle, listLifecycle, indexSessionTopic, getSessionTopic, listTopics, saveSession, getSession, listSessions, deleteSessionRecord, saveMessage, getMessages, recordUsage, getUsage, getStats, vacuum
 from app.services.memory.brain_orchestrator import getBrainConfig, classifyTask, riskForTask, extractTextFromMessages
 from app.adapters.anthropic import normalizeSystemBlocks, systemBlocksToText
 from app.services.memory.context_builder import buildSlimCoreContext
@@ -12,9 +12,9 @@ from app.services.memory.topic_index import classifyTopic
 def setupDb():
     init()
     yield
-    from app.services.memoryStore import _conn
+    from app.services.memory_store import _conn
     conn = _conn()
-    conn.executescript('\n        PRAGMA foreign_keys = OFF;\n        DELETE FROM messages;\n        DELETE FROM sessions;\n        DELETE FROM usage_events;\n        DELETE FROM lifecycle;\n        DELETE FROM proposals;\n        DELETE FROM session_topics;\n        DELETE FROM facts;\n        DELETE FROM memory_store;\n        PRAGMA foreign_keys = ON;\n    ')
+    conn.executescript('\n        PRAGMA foreign_keys = OFF;\n        DELETE FROM messages;\n        DELETE FROM sessions;\n        DELETE FROM usageEvents;\n        DELETE FROM lifecycle;\n        DELETE FROM proposals;\n        DELETE FROM sessionTopics;\n        DELETE FROM facts;\n        DELETE FROM memoryStore;\n        PRAGMA foreign_keys = ON;\n    ')
     conn.commit()
     close()
 
@@ -188,7 +188,7 @@ class TestContextBuilder:
         assert 'World' in text
 
     def testSlimCoreContext(self):
-        ctx = buildSlimCoreContext({'core_memory': {'name': 'Test User'}, 'global_context': 'Working on X'})
+        ctx = buildSlimCoreContext({'coreMemory': {'name': 'Test User'}, 'global_context': 'Working on X'})
         assert 'Test User' in ctx
         assert 'Working on X' in ctx
 

@@ -6,7 +6,7 @@ Port of backend/services/memory/memory-retention.js.
 from __future__ import annotations
 import time
 from datetime import datetime, timezone
-from app.services.memoryStore import listMemory, deleteMemory, listFacts, deleteFact
+from app.services.memory_store import listMemory, deleteMemory, listFacts, deleteFact
 _RETENTION = {'transient': 86400 * 7, 'normal': 86400 * 30, 'important': 86400 * 90, 'critical': 86400 * 365}
 
 def _parseTimestamp(ts: str) -> float:

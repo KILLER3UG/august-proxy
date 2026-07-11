@@ -13,8 +13,8 @@ import time
 from urllib.parse import urlparse
 from app.config import settings
 from app.lib.paths import dataPath
-from app.services.browser.elementResolver import resolveLocator
-from app.services.browser.sessionManager import BrowserUnavailableError, getOrCreateSession, getSession
+from app.services.browser.element_resolver import resolveLocator
+from app.services.browser.session_manager import BrowserUnavailableError, getOrCreateSession, getSession
 from app.services.browser.snapshot import buildCompactSnapshot, runSnapshot
 from app.services.workbench.context import currentSessionId
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float

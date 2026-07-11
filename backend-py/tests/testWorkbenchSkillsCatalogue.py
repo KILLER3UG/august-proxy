@@ -10,8 +10,8 @@ Asserts the Claude-Code-style pattern:
 """
 from __future__ import annotations
 import pytest
-from app.services import skillService
-from app.services.toolRegistry import listTools
+from app.services import skill_service
+from app.services.tool_registry import listTools
 from app.services.workbench.workbench import WorkbenchSession, buildSystemPrompt
 SKILL_MD = '---\nname: {name}\ndescription: {desc}\ntrigger: {trigger}\ncategory: testing\n---\n\n# {title}\n\nDo the thing:\n1. step one\n2. step two\n'
 
@@ -26,7 +26,7 @@ class TestCatalogue:
         agentRoot, bundledRoot = isolatedSkills
         _makeSkill(bundledRoot, 'alpha', 'Alpha skill does X.')
         _makeSkill(bundledRoot, 'beta', 'Beta skill does Y.', trigger='when beta')
-        cat = skillService.catalogue()
+        cat = skill_service.catalogue()
         names = {c['name'] for c in cat}
         assert {'alpha', 'beta'} <= names
         alpha = next((c for c in cat if c['name'] == 'alpha'))
@@ -38,7 +38,7 @@ class TestCatalogue:
         """Catalogue must NOT include the full instructions body."""
         __, bundledRoot = isolatedSkills
         _makeSkill(bundledRoot, 'gamma', 'Gamma skill.')
-        cat = skillService.catalogue()
+        cat = skill_service.catalogue()
         gamma = next((c for c in cat if c['name'] == 'gamma'))
         assert 'instructions' not in gamma
         assert set(gamma.keys()) <= {'name', 'description', 'trigger', 'category'}
@@ -75,7 +75,7 @@ class TestLoadSkillReturnsBody:
     async def testLoadSkillReturnsFullBody(self, isolatedSkills):
         __, bundledRoot = isolatedSkills
         _makeSkill(bundledRoot, 'alpha', 'Alpha skill does X.', title='Alpha')
-        from app.services.toolDefinitions import _loadSkill
+        from app.services.tool_definitions import _loadSkill
         result = await _loadSkill('alpha')
         assert 'Alpha' in result
         assert 'step one' in result
@@ -85,7 +85,7 @@ class TestLoadSkillReturnsBody:
 class TestSkillToolsPresent:
 
     def testSkillToolsInRegistry(self):
-        from app.services import toolDefinitions as toolDefsModule
+        from app.services import tool_definitions as toolDefsModule
         if not listTools():
             toolDefsModule.registerAll()
         names = {t['function']['name'] for t in listTools()}

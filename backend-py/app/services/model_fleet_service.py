@@ -12,13 +12,13 @@ merged fleet for the UI.
 """
 from __future__ import annotations
 from app.jsonUtils import as_dict, as_str
-from app.services import configService
+from app.services import config_service
 ROLES = ('cortex', 'cerebellum', 'hippocampus', 'prefrontal')
 DEFAULTS: dict[str, str] = {'cortex': '', 'cerebellum': 'claude-3-haiku-20240307', 'hippocampus': 'claude-3-haiku-20240307', 'prefrontal': 'claude-3-5-sonnet-20240620'}
 
 def getFleet() -> dict[str, str]:
     """Return the merged fleet (defaults + user overrides)."""
-    cfg = configService.getConfig()
+    cfg = config_service.getConfig()
     user = as_dict(as_dict(cfg.get('auxiliary'), {}).get('model_fleet'), {})
     out = DEFAULTS.copy()
     for role in ROLES:
@@ -43,9 +43,9 @@ def updateFleet(patch: dict[str, object]) -> tuple[bool, str, dict[str, str]]:
     ok, err = validateRoles(patch)
     if not ok:
         return (False, err, getFleet())
-    cfg = configService.getConfig()
+    cfg = config_service.getConfig()
     aux = cfg.setdefault('auxiliary', {})
     fleet = aux.setdefault('model_fleet', {})
     fleet.update(patch)
-    configService.saveConfig(cfg)
+    config_service.saveConfig(cfg)
     return (True, '', getFleet())

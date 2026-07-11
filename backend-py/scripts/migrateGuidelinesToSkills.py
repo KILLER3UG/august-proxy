@@ -15,8 +15,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 def main() -> None:
-    from app.services.memoryStore import getMemory, saveMemory
-    from app.services import skillService
+    from app.services.memory_store import getMemory, saveMemory
+    from app.services import skill_service
     GUIDELINES_KEY = 'learned_guidelines'
     guidelines = getMemory(GUIDELINES_KEY) or []
     if not isinstance(guidelines, list):
@@ -37,13 +37,13 @@ def main() -> None:
         body = f'## When to Use\n\nUser correction: {text}\n\n## Procedure\n\n1. Apply this lesson.\n'
         category = (g.get('category') or 'learned').strip()
         try:
-            if skillService.get(name):
-                existing = skillService.get(name)
+            if skill_service.get(name):
+                existing = skill_service.get(name)
                 newBody = existing['instructions'] + f'\n- {text}'
-                skillService.patch_skill(name, body=newBody)
+                skill_service.patch_skill(name, body=newBody)
                 print(f"  Merged into existing skill '{name}'")
             else:
-                skillService.create_skill(name, description, body, trigger='', category=category)
+                skill_service.create_skill(name, description, body, trigger='', category=category)
                 print(f"  Created skill '{name}'")
             created += 1
         except Exception as exc:

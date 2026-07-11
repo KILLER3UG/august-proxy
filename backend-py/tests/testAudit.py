@@ -1,5 +1,5 @@
 """Config audit log tests (isolated data dir)."""
-from app.services.memoryStore import listConfigAudit, recordConfigAudit
+from app.services.memory_store import listConfigAudit, recordConfigAudit
 
 def testRecordAndList(isolatedData):
     rid = recordConfigAudit('alias', 'create', actor='test', before=None, after={'alias': 'x'})

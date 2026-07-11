@@ -5,20 +5,20 @@ from pathlib import Path
 
 import pytest
 
-from app.services import augDirectiveService
+from app.services import aug_directive_service
 
 
 def testResolveAugPathFallsBackToProjectRoot(tmp_path):
     # workspace provided (tmp_path is a real directory)
-    p = augDirectiveService._resolveAugPath(str(tmp_path))
+    p = aug_directive_service._resolveAugPath(str(tmp_path))
     assert p == tmp_path / 'AUG.md'
 
 
 def testWriteAndLoadRoundTrip(tmp_path):
     ws = str(tmp_path)
-    res = augDirectiveService.write(ws, '# Hello\n\nSome directives.', frontmatter={'description': 'test'})
+    res = aug_directive_service.write(ws, '# Hello\n\nSome directives.', frontmatter={'description': 'test'})
     assert Path(res['path']).exists()
-    loaded = augDirectiveService.load(ws)
+    loaded = aug_directive_service.load(ws)
     assert loaded is not None
     assert loaded['exists'] is True
     assert 'Hello' in loaded['body']
@@ -26,8 +26,8 @@ def testWriteAndLoadRoundTrip(tmp_path):
 
 
 def testLoadMissingReturnsNone(tmp_path):
-    assert augDirectiveService.load(str(tmp_path)) is None
-    assert augDirectiveService.exists(str(tmp_path)) is False
+    assert aug_directive_service.load(str(tmp_path)) is None
+    assert aug_directive_service.exists(str(tmp_path)) is False
 
 
 def testWriteRefusesEscape(tmp_path):
@@ -35,22 +35,22 @@ def testWriteRefusesEscape(tmp_path):
     # resolved file is outside — our resolver always joins under workspace, so
     # simulate by asserting the written file lands inside the workspace.
     ws = str(tmp_path)
-    augDirectiveService.write(ws, 'body')
-    p = augDirectiveService._resolveAugPath(ws)
+    aug_directive_service.write(ws, 'body')
+    p = aug_directive_service._resolveAugPath(ws)
     assert str(p.resolve()).startswith(str(tmp_path.resolve()))
 
 
 def testDelete(tmp_path):
     ws = str(tmp_path)
-    augDirectiveService.write(ws, 'body')
-    res = augDirectiveService.delete(ws)
+    aug_directive_service.write(ws, 'body')
+    res = aug_directive_service.delete(ws)
     assert res['removed'] is True
-    assert augDirectiveService.exists(ws) is False
+    assert aug_directive_service.exists(ws) is False
 
 
 def testParseFrontmatter():
     text = '---\ndescription: x\n---\n\n# Title\nbody text'
-    parsed = augDirectiveService._parseAug(text)
+    parsed = aug_directive_service._parseAug(text)
     assert parsed['frontmatter']['description'] == 'x'
     assert 'Title' in parsed['body']
 
@@ -62,9 +62,9 @@ def testGenerateReturnsDraft(tmp_path, monkeypatch):
     # Force the LLM call to return a deterministic draft (no provider needed).
     async def fakeLlm(messages, model=''):
         return '## Build\nrun build\n\n## Test\nrun test'
-    monkeypatch.setattr(augDirectiveService, '_callLlm', fakeLlm)
+    monkeypatch.setattr(aug_directive_service, '_callLlm', fakeLlm)
     import asyncio
-    result = asyncio.run(augDirectiveService.generate(ws, mode='create'))
+    result = asyncio.run(aug_directive_service.generate(ws, mode='create'))
     assert result['mode'] == 'create'
     assert 'Build' in result['draft']
     assert 'Test' in result['draft']
@@ -73,12 +73,12 @@ def testGenerateReturnsDraft(tmp_path, monkeypatch):
 
 def testGenerateRefineMode(tmp_path, monkeypatch):
     ws = str(tmp_path)
-    augDirectiveService.write(ws, '# Existing\n\nold directives')
+    aug_directive_service.write(ws, '# Existing\n\nold directives')
     async def fakeLlm(messages, model=''):
         return '# Refined\n\nnew directives'
-    monkeypatch.setattr(augDirectiveService, '_callLlm', fakeLlm)
+    monkeypatch.setattr(aug_directive_service, '_callLlm', fakeLlm)
     import asyncio
-    result = asyncio.run(augDirectiveService.generate(ws, mode='refine'))
+    result = asyncio.run(aug_directive_service.generate(ws, mode='refine'))
     assert result['mode'] == 'refine'
     assert result['existing'] is True
     assert 'Refined' in result['draft']

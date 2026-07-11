@@ -1,6 +1,6 @@
 """v3 — Test /api/brain/learning returns all required fields."""
 import pytest
-from app.services.memoryStore import init
+from app.services.memory_store import init
 
 @pytest.fixture(autouse=True)
 def _initDb():
@@ -45,7 +45,7 @@ def testDeleteHeuristic():
     """DELETE /api/brain/heuristics/{id} removes a heuristic."""
     from fastapi.testclient import TestClient
     from app.main import app
-    from app.services.heuristicsService import addHeuristic
+    from app.services.heuristics_service import addHeuristic
     import uuid
     hId = addHeuristic(f'v3 test delete rule {uuid.uuid4().hex[:8]}', source='v3-test')
     assert hId is not None
@@ -58,7 +58,7 @@ def testEditHeuristic():
     """PATCH /api/brain/heuristics/{id} updates the rule."""
     from fastapi.testclient import TestClient
     from app.main import app
-    from app.services.heuristicsService import addHeuristic
+    from app.services.heuristics_service import addHeuristic
     import uuid
     rule = f'v3 original rule {uuid.uuid4().hex[:8]}'
     hId = addHeuristic(rule, source='v3-test')

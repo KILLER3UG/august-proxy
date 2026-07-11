@@ -6,7 +6,7 @@ Port of backend/services/memory/tool-failure-memory.js.
 from __future__ import annotations
 import json
 from app.jsonUtils import as_str
-from app.services.memoryStore import saveMemory, getMemory
+from app.services.memory_store import saveMemory, getMemory
 _FAILURESKey = 'tool_failures'
 
 def recordToolFailure(info: dict[str, object]) -> None:

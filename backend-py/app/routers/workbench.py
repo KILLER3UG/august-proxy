@@ -10,7 +10,7 @@ import json
 import uuid
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from app.services import eventLog
+from app.services import event_log
 from app.services.workbench import workbench as wb
 router = APIRouter(prefix='/api/workbench')
 _chatTasks: set[asyncio.Task] = set()
@@ -98,13 +98,13 @@ async def startChat(request: Request):
     model = body.get('model', '')
     modelProvider = body.get('modelProvider', '')
     guardMode = body.get('guardMode', '')
-    seq = eventLog.eventLog.append(sessionId, 'started', {'sinceSeq': 0})
+    seq = event_log.event_log.append(sessionId, 'started', {'sinceSeq': 0})
     cancelEvent = asyncio.Event()
     _cancelled[sessionId] = cancelEvent
 
     async def safeStream():
         try:
-            await wb.sendWorkbenchMessageStream(sessionId=sessionId, message=message, provider=provider, agentId=agentId, effort=effort, model=model, modelProvider=modelProvider, guardMode=guardMode, emit=lambda event: eventLog.eventLog.append(sessionId, event.get('type', 'message'), event), signal=cancelEvent)
+            await wb.sendWorkbenchMessageStream(sessionId=sessionId, message=message, provider=provider, agentId=agentId, effort=effort, model=model, modelProvider=modelProvider, guardMode=guardMode, emit=lambda event: event_log.event_log.append(sessionId, event.get('type', 'message'), event), signal=cancelEvent)
         except asyncio.CancelledError:
             try:
                 session = wb.getWorkbenchSession(sessionId)
@@ -116,8 +116,8 @@ async def startChat(request: Request):
             except Exception:
                 pass
             try:
-                eventLog.eventLog.append(sessionId, 'aborted', {})
-                eventLog.eventLog.append(sessionId, 'done', {'type': 'done', 'sessionId': sessionId})
+                event_log.event_log.append(sessionId, 'aborted', {})
+                event_log.event_log.append(sessionId, 'done', {'type': 'done', 'sessionId': sessionId})
             except Exception:
                 pass
         except Exception as exc:
@@ -133,8 +133,8 @@ async def startChat(request: Request):
             except Exception:
                 pass
             try:
-                eventLog.eventLog.append(sessionId, 'error', {'type': 'error', 'message': f'Fatal background error: {exc}'})
-                eventLog.eventLog.append(sessionId, 'done', {'type': 'done', 'sessionId': sessionId})
+                event_log.event_log.append(sessionId, 'error', {'type': 'error', 'message': f'Fatal background error: {exc}'})
+                event_log.event_log.append(sessionId, 'done', {'type': 'done', 'sessionId': sessionId})
             except Exception:
                 pass
         finally:
@@ -153,7 +153,7 @@ async def streamChat(sessionId: str=Query(default='', alias='sessionId'), sinceS
     sinceSeq = int(sinceSeqRaw) if sinceSeqRaw and sinceSeqRaw.isdigit() else 0
 
     async def generate():
-        async for event in eventLog.eventLog.subscribe(sessionId, sinceSeq):
+        async for event in event_log.event_log.subscribe(sessionId, sinceSeq):
             if event['type'] == 'keepalive':
                 yield ': keepalive\n\n'
                 continue
@@ -170,7 +170,7 @@ async def stopChat(request: Request):
     cancelEvent = _cancelled.get(sessionId)
     if cancelEvent and (not cancelEvent.is_set()):
         cancelEvent.set()
-    eventLog.eventLog.append(sessionId, 'aborted', {})
+    event_log.event_log.append(sessionId, 'aborted', {})
     return {'status': 'ok'}
 
 @router.get('/chat/active')
@@ -304,8 +304,8 @@ async def proxyCapabilities():
 @router.get('/agents')
 async def workbenchAgents(active: str=''):
     """List agents for the UI's Agents tab (frontend listWorkbenchAgents)."""
-    from app.services.tools import agentRegistry
-    agents = agentRegistry.listAgents()
+    from app.services.tools import agent_registry
+    agents = agent_registry.listAgents()
     if active:
         pass
     return {'agents': agents, 'active': active}

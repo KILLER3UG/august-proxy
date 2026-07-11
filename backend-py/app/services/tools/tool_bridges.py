@@ -19,7 +19,7 @@ def isReserved(name: str) -> bool:
 async def handleToolSearch(query: str, limit: int=5) -> str:
     """Search across ALL deferred tools using BM25."""
     from app.services.tools.retrieval import buildToolCatalog, searchTools
-    from app.services.toolRegistry import listTools
+    from app.services.tool_registry import listTools
     allTools = listTools()
     catalog = buildToolCatalog(allTools)
     results = searchTools(catalog, query, k=limit)
@@ -41,7 +41,7 @@ async def handleToolSearch(query: str, limit: int=5) -> str:
 
 async def handleToolDescribe(name: str) -> str:
     """Return the full JSON schema for one deferred tool."""
-    from app.services.toolRegistry import getTool
+    from app.services.tool_registry import getTool
     tool = getTool(name)
     if not tool:
         return f"Tool '{name}' not found."
@@ -58,7 +58,7 @@ async def handleToolCall(name: str, arguments: str) -> str:
 
     ``arguments`` should be a JSON string matching the tool's schema.
     """
-    from app.services.toolRegistry import dispatch
+    from app.services.tool_registry import dispatch
     try:
         args = json.loads(arguments) if arguments else {}
     except json.JSONDecodeError as e:

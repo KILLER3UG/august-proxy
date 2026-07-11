@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 from app.main import app
-from app.services.memoryStore import listConfigAudit
+from app.services.memory_store import listConfigAudit
 _ALLCamelKeys = {'enabled', 'adaptivePolicy', 'failureLearning', 'graphMemory', 'agentJobs', 'hierarchicalAgents', 'adapterParallelTools', 'parallelReadTools', 'reviewLearnedGuidelines', 'maxAgentDepth', 'maxWorkbenchToolLoops'}
 
 @pytest.fixture

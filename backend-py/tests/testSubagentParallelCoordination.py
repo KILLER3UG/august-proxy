@@ -38,9 +38,9 @@ from app.services.subagent_orchestrator import (
     SubagentSpawnRequest,
 )
 from app.services.agent_message_bus import AgentMessageBus
-from app.services.blackboardService import readNotes
-from app.services import memoryStore
-from app.services import toolDefinitions  # noqa: F401  (defines registerAll)
+from app.services.blackboard_service import readNotes
+from app.services import memory_store
+from app.services import tool_definitions  # noqa: F401  (defines registerAll)
 
 STUB_PROVIDER = {
     'name': 'stub-anthropic',
@@ -153,7 +153,7 @@ class CoordinationStub:
         """Read the decided value from the blackboard using a fresh DB connection."""
         import os
         import sqlite3
-        from app.services.memoryStore import _DEFAULTBrainFile
+        from app.services.memory_store import _DEFAULTBrainFile
         data_dir = os.environ.get('AUGUST_DATA_DIR', '')
         db_path = os.path.join(data_dir, _DEFAULTBrainFile)
         try:
@@ -174,7 +174,7 @@ class CoordinationStub:
     def _claimed_ports(self, messages: list[dict[str, Any]]) -> set[int]:
         """Read claimed ports from the blackboard using a fresh DB connection."""
         import sqlite3
-        from app.services.memoryStore import _dbPath
+        from app.services.memory_store import _dbPath
         ports: set[int] = set()
         db = _dbPath()
         try:
@@ -284,9 +284,9 @@ def coord_env(monkeypatch, tmp_path):
     monkeypatch.setattr(wb, '_sessions', {})
 
     # Ensure the brain/blackboard tables exist in the temp DB.
-    memoryStore.init()
+    memory_store.init()
     # Register all core tools so blackboard tools are available.
-    toolDefinitions.registerAll()  # noqa: F811
+    tool_definitions.registerAll()  # noqa: F811
 
     # Route model resolution / provider selection at the sub-agent layer.
     monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **kw: STUB_PROVIDER)
@@ -296,7 +296,7 @@ def coord_env(monkeypatch, tmp_path):
         modelResolver, 'resolveOrFallback',
         lambda *a, **kw: {'provider': 'stub-anthropic', 'model': 'stub-claude'},
     )
-    import app.services.fallbackService as fallbackService
+    import app.services.fallback_service as fallbackService
     monkeypatch.setattr(fallbackService, 'getFallback', lambda *a, **kw: {'enabled': False})
 
     # Wire the stub model: getClient returns whatever the test puts in the holder.
@@ -317,7 +317,7 @@ def coord_env(monkeypatch, tmp_path):
     yield {'holder': holder, 'session_id': session_id}
 
     try:
-        memoryStore.close()
+        memory_store.close()
     except Exception:
         pass
 

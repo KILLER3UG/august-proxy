@@ -4,7 +4,7 @@ Knowledge tree — hierarchical topic organization with parent-child relationshi
 Port of backend/services/memory/knowledge-tree.js.
 """
 from __future__ import annotations
-from app.services.memoryStore import saveMemory, getMemory
+from app.services.memory_store import saveMemory, getMemory
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 _TREEKey = 'knowledge_tree'
 

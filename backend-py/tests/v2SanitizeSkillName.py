@@ -1,6 +1,6 @@
 """v2 hardening — Test skill name sanitizer (Title Case → camelCase)."""
 import pytest
-from app.services.consolidationDaemon import _sanitizeSkillName
+from app.services.consolidation_daemon import _sanitizeSkillName
 
 def testSanitizeTitleCase():
     """Title Case 'Debug Python Script' → camelCase 'debugPythonScript'."""

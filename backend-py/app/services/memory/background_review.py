@@ -22,7 +22,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 from app.jsonUtils import as_str, as_list
-from app.services import skillService
+from app.services import skill_service
 log = logging.getLogger(__name__)
 _TURNInterval = 3
 _TOOLRoundInterval = 6
@@ -63,7 +63,7 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llmClient: Rev
     if llmClient is None:
         return result
     try:
-        from app.services.brainEventBus import emitBrainEvent
+        from app.services.brain_event_bus import emitBrainEvent
         emitBrainEvent(category='review', layer='background_review._do_review', summary=f'Background review started over {len(messagesSnapshot)} message(s)')
     except Exception:
         pass
@@ -77,7 +77,7 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llmClient: Rev
     recommendations = _parseRecommendations(raw)
     result['reviewed'] = True
     try:
-        from app.services.brainEventBus import emitBrainEvent
+        from app.services.brain_event_bus import emitBrainEvent
         emitBrainEvent(category='review', layer='background_review._do_review', summary=f"Background review done: {len(as_list(recommendations.get('skills'), []))} skill recs, {len(as_list(recommendations.get('facts'), []))} fact recs", meta={'skills': len(as_list(recommendations.get('skills'), [])), 'facts': len(as_list(recommendations.get('facts'), []))})
     except Exception:
         pass
@@ -88,7 +88,7 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llmClient: Rev
             if not name:
                 continue
             if action == 'create':
-                skillService.createSkill(name, as_str(rec.get('description'), ''), as_str(rec.get('body'), ''), trigger=as_str(rec.get('trigger'), ''), category=as_str(rec.get('category'), 'uncategorized'))
+                skill_service.createSkill(name, as_str(rec.get('description'), ''), as_str(rec.get('body'), ''), trigger=as_str(rec.get('trigger'), ''), category=as_str(rec.get('category'), 'uncategorized'))
                 result['skills_created'].append(name)
                 try:
                     from app.services.skills.curator import SkillCurator
@@ -96,7 +96,7 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llmClient: Rev
                 except Exception:
                     pass
             elif action == 'patch':
-                skillService.patchSkill(name, body=as_str(rec.get('body')), description=as_str(rec.get('description')))
+                skill_service.patchSkill(name, body=as_str(rec.get('body')), description=as_str(rec.get('description')))
                 result['skills_patched'].append(name)
                 try:
                     from app.services.skills.curator import SkillCurator
@@ -149,7 +149,7 @@ def _parseRecommendations(raw: str) -> dict[str, object]:
 
 def _saveFact(action: str, content: str) -> None:
     """Save a fact to the core memory KV store."""
-    from app.services.memoryStore import getMemory, saveMemory
+    from app.services.memory_store import getMemory, saveMemory
     KEY = 'coreMemory'
     facts: list[dict] = getMemory(KEY) or []
     if not isinstance(facts, list):

@@ -213,15 +213,15 @@ class RequestTracker:
         event loop. The default category is ``info`` (not ``general``) so
         events are visible under the default filter set.
         """
-        from app.services import logStream
+        from app.services import log_stream
         event = dict(event)
         if not as_str(event.get('category')):
             event['category'] = 'info'
-        logStream.emitLogEvent(event)
+        log_stream.emitLogEvent(event)
 
     def getRecentLogEvents(self, limit: int=100) -> list[dict[str, object]]:
-        from app.services import logStream
-        return logStream.getRecentLogEvents(limit)
+        from app.services import log_stream
+        return log_stream.getRecentLogEvents(limit)
 
     def _finalize(self, reqId: str, pending: dict[str, object], result: dict[str, object]) -> dict[str, object]:
         """Build the final request log entry."""
@@ -304,12 +304,12 @@ def removeSseClient(client: object) -> None:
     _tracker.removeSseClient(client)
 
 def addLogWsClient(ws: object) -> None:
-    from app.services import logStream
-    logStream.addLogWsClient(ws)
+    from app.services import log_stream
+    log_stream.addLogWsClient(ws)
 
 def removeLogWsClient(ws: object) -> None:
-    from app.services import logStream
-    logStream.removeLogWsClient(ws)
+    from app.services import log_stream
+    log_stream.removeLogWsClient(ws)
 
 def emitLogEvent(event: dict[str, object]) -> None:
     _tracker.emitLogEvent(event)

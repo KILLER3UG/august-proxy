@@ -6,7 +6,7 @@ VALID_EXAM = [{'stem': 'What is 2+2?', 'options': ['3', '4', '5', '6'], 'correct
 
 @pytest.fixture(autouse=True)
 def _initDb():
-    from app.services.memoryStore import init
+    from app.services.memory_store import init
     init()
     yield
 
@@ -14,7 +14,7 @@ def testBrainDashboardAggregatesRealData():
     """Learning + health endpoints surface real data; mutation flow works end-to-end."""
     from fastapi.testclient import TestClient
     from app.main import app
-    from app.services.heuristicsService import addHeuristic
+    from app.services.heuristics_service import addHeuristic
     client = TestClient(app)
     learning = client.get('/api/brain/learning').json()
     assert 'heuristics' in learning
@@ -39,7 +39,7 @@ def testExamFullLifecycle():
     """Generate → fetch → answer → help — full /Exam flow with Prefrontal mocked."""
     from fastapi.testclient import TestClient
     from app.main import app
-    from app.services.memoryStore import _conn
+    from app.services.memory_store import _conn
     client = TestClient(app)
     with patch('app.services.exam_service._call_prefrontal', return_value=json.dumps(VALID_EXAM)):
         gen = client.post('/api/exam/generate', json={'topic': 'math+geography', 'count': 2, 'difficulty': 'easy'})

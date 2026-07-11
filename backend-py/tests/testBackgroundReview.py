@@ -10,9 +10,9 @@ import asyncio
 import json
 from pathlib import Path
 import pytest
-from app.services import skillService
+from app.services import skill_service
 from app.services.memory.background_review import ReviewGates, _doReview, _parseRecommendations, _saveFact, _lastRelevantMessages, tryBackgroundReview
-from app.services.memoryStore import getMemory
+from app.services.memory_store import getMemory
 
 class TestReviewGates:
 
@@ -69,7 +69,7 @@ async def testTryBackgroundReviewSpawnsWhenDue(isolatedSkills):
     messages = [{'role': 'user', 'content': 'fix this'}, {'role': 'assistant', 'content': 'done'}]
     await tryBackgroundReview(session, messages, llmClient=stubLlm)
     await asyncio.sleep(0.1)
-    fetched = skillService.get('review-skill')
+    fetched = skill_service.get('review-skill')
     assert fetched is not None, 'background review should have created the skill'
     assert fetched.get('created_by') == 'agent'
 
@@ -90,17 +90,17 @@ async def testDoReviewCreatesSkillFromRecommendation(isolatedSkills):
     result = await _doReview([{'role': 'user'}], llmClient=stubLlm)
     assert result['reviewed'] is True
     assert 'stub-skill' in result['skills_created']
-    assert skillService.get('stub-skill') is not None
+    assert skill_service.get('stub-skill') is not None
 
 @pytest.mark.asyncio
 async def testDoReviewPatchesExistingSkill(isolatedSkills):
-    skillService.createSkill('patch-skill', 'Original.', '## When to Use\n\nOld body.\n')
+    skill_service.createSkill('patch-skill', 'Original.', '## When to Use\n\nOld body.\n')
 
     async def stubLlm(_prompt):
         return json.dumps({'skills': [{'action': 'patch', 'name': 'patch-skill', 'body': '## When to Use\n\nPatched body.\n'}], 'memory': []})
     result = await _doReview([{'role': 'user'}], llmClient=stubLlm)
     assert 'patch-skill' in result['skills_patched']
-    fetched = skillService.get('patch-skill')
+    fetched = skill_service.get('patch-skill')
     assert 'Patched body.' in fetched['instructions']
 
 @pytest.mark.asyncio

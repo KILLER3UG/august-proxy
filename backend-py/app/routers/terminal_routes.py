@@ -10,7 +10,7 @@ Supports:
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
-from app.services.workbench import terminalService
+from app.services.workbench import terminal_service
 router = APIRouter(prefix='/api/terminal')
 
 class CreateSessionBody(BaseModel):
@@ -45,7 +45,7 @@ class ApproveBody(BaseModel):
 @router.get('/sessions')
 async def getSessions():
     """List all terminal sessions and pending approvals."""
-    return {'sessions': terminalService.listTerminalSessions(), 'approvals': terminalService.listTerminalApprovals()}
+    return {'sessions': terminal_service.listTerminalSessions(), 'approvals': terminal_service.listTerminalApprovals()}
 
 @router.post('/sessions')
 async def createSession(body: CreateSessionBody | None=None):
@@ -53,20 +53,20 @@ async def createSession(body: CreateSessionBody | None=None):
     params = {}
     if body:
         params = body.model_dump(exclude_none=True)
-    return await terminalService.create_terminal_session(params)
+    return await terminal_service.create_terminal_session(params)
 
 @router.get('/buffer')
 async def getBuffer(id: str=Query(...)):
     """Get the terminal buffer for a session."""
     try:
-        return terminalService.read_terminal_buffer(id)
+        return terminal_service.read_terminal_buffer(id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
 @router.post('/input')
 async def writeInput(body: InputBody):
     """Write input to a terminal session."""
-    result = await terminalService.write_terminal_input(body.id, body.input, body.approved)
+    result = await terminal_service.write_terminal_input(body.id, body.input, body.approved)
     if 'error' in result:
         raise HTTPException(status_code=400, detail=result['error'])
     return result
@@ -74,12 +74,12 @@ async def writeInput(body: InputBody):
 @router.post('/resize')
 async def resizeTerminal(body: ResizeBody):
     """Resize a terminal session."""
-    return await terminalService.resize_terminal_session(body.sessionId, body.cols, body.rows)
+    return await terminal_service.resize_terminal_session(body.sessionId, body.cols, body.rows)
 
 @router.post('/command')
 async def runCommand(body: CommandBody):
     """Submit a one-shot command for execution."""
-    result = await terminalService.submit_terminal_command(body.model_dump())
+    result = await terminal_service.submit_terminal_command(body.model_dump())
     if 'error' in result:
         raise HTTPException(status_code=400, detail=result['error'])
     return result
@@ -87,7 +87,7 @@ async def runCommand(body: CommandBody):
 @router.post('/approve')
 async def approveRequest(body: ApproveBody):
     """Approve or reject a pending terminal request."""
-    result = await terminalService.approve_terminal_request(body.requestId, body.approve)
+    result = await terminal_service.approve_terminal_request(body.requestId, body.approve)
     if 'error' in result:
         raise HTTPException(status_code=404, detail=result['error'])
     return result
@@ -95,7 +95,7 @@ async def approveRequest(body: ApproveBody):
 @router.delete('/sessions/{session_id}')
 async def deleteSession(sessionId: str):
     """Close and delete a terminal session."""
-    if not terminalService.close_terminal_session(sessionId):
+    if not terminal_service.close_terminal_session(sessionId):
         raise HTTPException(status_code=404, detail='Session not found')
     return {'deleted': True}
 
@@ -104,7 +104,7 @@ async def terminalWebsocket(websocket: WebSocket, id: str=Query(...)):
     """WebSocket connection for live terminal I/O."""
     await websocket.accept()
     try:
-        await terminalService.handle_terminal_connection(websocket, id)
+        await terminal_service.handle_terminal_connection(websocket, id)
     except WebSocketDisconnect:
         pass
     except Exception:

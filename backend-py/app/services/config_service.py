@@ -32,7 +32,7 @@ def getProvidersStore() -> dict[str, JsonValue]:
 
 def saveProvidersStore(data: dict[str, JsonValue]) -> None:
     _writeJson(dataPath('providers.json'), data)
-    from app.services.providerCredentials import _fireInvalidation
+    from app.services.provider_credentials import _fireInvalidation
     _fireInvalidation()
 
 def getProvidersAsModels() -> list[ProviderConfig]:

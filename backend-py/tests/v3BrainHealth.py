@@ -3,7 +3,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _initDb():
-    from app.services.memoryStore import init
+    from app.services.memory_store import init
     init()
     yield
 

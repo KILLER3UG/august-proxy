@@ -2,12 +2,12 @@
 import pytest
 import uuid
 from app.services.memory import auto_memory
-from app.services import memoryStore
+from app.services import memory_store
 
 @pytest.fixture(autouse=True)
 def _initDb():
     """Run init() so the migration is applied (idempotent)."""
-    memoryStore.init()
+    memory_store.init()
     yield
 
 @pytest.fixture

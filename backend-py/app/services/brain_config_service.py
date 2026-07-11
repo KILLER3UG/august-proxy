@@ -35,9 +35,9 @@ Response shapes (match the frontend types):
 from __future__ import annotations
 from app.config import settings
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
-from app.services import configService
+from app.services import config_service
 from app.services.memory.brain_orchestrator import DEFAULT_FEATURES
-from app.services.memoryStore import recordConfigAudit
+from app.services.memory_store import recordConfigAudit
 from app.services.workbench import workbench as workbenchSvc
 from app.typeAliases import BrainConfigDict, JsonValue
 boolKeys: tuple[str, ...] = ('enabled', 'adaptivePolicy', 'failureLearning', 'graphMemory', 'agentJobs', 'hierarchicalAgents', 'adapterParallelTools', 'parallelReadTools', 'reviewLearnedGuidelines')
@@ -63,15 +63,15 @@ def getDefaults() -> BrainConfigDict:
 
 def _loadPersisted() -> dict[str, JsonValue]:
     """Read ``cfg.brain_orchestrator`` (snake_case) from disk. Always fresh."""
-    cfg = configService.getConfig()
+    cfg = config_service.getConfig()
     val = cfg.get('brain_orchestrator')
     return val if isinstance(val, dict) else {}
 
 def _savePersisted(snakeCfg: dict[str, JsonValue]) -> None:
     """Write snake_case ``cfg.brain_orchestrator`` and refresh the in-memory cache."""
-    cfg = configService.getConfig()
+    cfg = config_service.getConfig()
     cfg['brain_orchestrator'] = snakeCfg
-    configService.saveConfig(cfg)
+    config_service.saveConfig(cfg)
     settings.reload()
 
 def _snakeToCamel(snakeCfg: dict[str, JsonValue]) -> BrainConfigDict:
@@ -184,9 +184,9 @@ def saveBrainConfig(patch: dict[str, JsonValue]) -> tuple[bool, str, BrainConfig
 def resetBrainConfig() -> tuple[bool, BrainConfigDict]:
     """Drop the persisted override entirely. Returns (ok, defaults_camel)."""
     before = _loadPersisted()
-    cfg = configService.getConfig()
+    cfg = config_service.getConfig()
     cfg.pop('brain_orchestrator', None)
-    configService.saveConfig(cfg)
+    config_service.saveConfig(cfg)
     settings.reload()
     recordConfigAudit('brain', 'reset', 'user', before=before, after={})
     return (True, _defaultsCamel())

@@ -17,7 +17,7 @@ declared first so FastAPI cannot shadow it.
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from app.services import memoryStore
+from app.services import memory_store
 router = APIRouter(prefix='/api/usage')
 
 class UsageRecord(BaseModel):
@@ -30,7 +30,7 @@ class UsageRecord(BaseModel):
 @router.post('')
 async def recordUsage(body: UsageRecord):
     """Record a usage event."""
-    usageId = memoryStore.recordUsage(body.sessionId, body.model, body.input_tokens, body.output_tokens, body.context_tokens)
+    usageId = memory_store.recordUsage(body.sessionId, body.model, body.input_tokens, body.output_tokens, body.context_tokens)
     return {'id': usageId}
 
 @router.get('/session')
@@ -43,7 +43,7 @@ async def getSessionUsage(id: str=Query(..., description='Session id')):
     """
     if not id:
         raise HTTPException(status_code=400, detail='Missing session id')
-    return memoryStore.getUsage(id)
+    return memory_store.getUsage(id)
 
 @router.get('')
 async def listUsage():

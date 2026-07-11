@@ -47,10 +47,10 @@ class WebSocketLogHandler(logging.Handler):
     }
 
     def emit(self, record: logging.LogRecord) -> None:
-        from app.services import logStream
+        from app.services import log_stream
         try:
             level = self.LEVEL_MAP.get(record.levelname, 'info')
-            logStream.emitLogEvent({
+            log_stream.emitLogEvent({
                 'category': 'info',
                 'level': level,
                 'message': self.format(record),
@@ -63,15 +63,15 @@ class WebSocketLogHandler(logging.Handler):
 async def lifespan(app: FastAPI):
     settings.reload()
     # Start the thread-safe log-stream hub (WS fan-out + ring buffer).
-    from app.services import logStream
-    await logStream.startHub()
+    from app.services import log_stream
+    await log_stream.startHub()
     wsHandler = WebSocketLogHandler()
     wsHandler.setLevel(logging.INFO)
     logging.getLogger().addHandler(wsHandler)
-    from app.services import toolDefinitions
-    toolDefinitions.registerAll()
-    from app.services import memoryStore
-    memoryStore.init()
+    from app.services import tool_definitions
+    tool_definitions.registerAll()
+    from app.services import memory_store
+    memory_store.init()
     from app.lib.paths import dataPath
     _dbPathVal = dataPath('august_brain.sqlite')
     if _dbPathVal.exists():
@@ -87,7 +87,7 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             logger.warning('Storage-key migration skipped: %s', exc)
     try:
-        from app.services.tools.mcpClient import refreshMcpTools
+        from app.services.tools.mcp_client import refreshMcpTools
         asyncio.create_task(refreshMcpTools())
     except Exception:
         pass
@@ -124,7 +124,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     try:
-        await logStream.stopHub()
+        await log_stream.stopHub()
     except Exception:
         pass
     if _orchestrator is not None:
@@ -140,12 +140,12 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
     try:
-        from app.services.browser.sessionManager import close_all as closeBrowsers
+        from app.services.browser.session_manager import close_all as closeBrowsers
         await closeBrowsers()
     except Exception:
         pass
     try:
-        from app.services.daemonManager import shutdownAll
+        from app.services.daemon_manager import shutdownAll
         await shutdownAll()
     except Exception:
         pass

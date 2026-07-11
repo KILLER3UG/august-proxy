@@ -62,7 +62,7 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setattr(wb, '_resolveModel', lambda p, hint='': 'stub-claude')
     monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session: 'stub system prompt')
     import app.providers.clients as clientsMod
-    from app.services import providerCredentials as providerCredsMod
+    from app.services import provider_credentials as providerCredsMod
     monkeypatch.setattr(providerCredsMod, 'resolve', lambda name: {'api_key': 'stub-key'})
     stubHolder: dict[str, object] = {}
 

@@ -14,8 +14,8 @@ Endpoints:
 from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from app.services.desktopAutomation import clickMouse, getMousePosition, getScreenSize, listWindows, openUrl, pressKey, takeScreenshot, typeText
-from app.services.desktopDispatch import automateAction
+from app.services.desktop_automation import clickMouse, getMousePosition, getScreenSize, listWindows, openUrl, pressKey, takeScreenshot, typeText
+from app.services.desktop_dispatch import automateAction
 router = APIRouter(prefix='/api/desktop-automation', tags=['desktop-automation'])
 
 def _isAvailable() -> bool:

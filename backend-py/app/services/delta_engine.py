@@ -20,7 +20,7 @@ import time
 from difflib import unified_diff as unifiedDiff
 from pathlib import Path
 from app.jsonUtils import as_str, as_dict, as_list, as_int
-from app.services.heuristicsService import addHeuristic
+from app.services.heuristics_service import addHeuristic
 logger = logging.getLogger(__name__)
 _TRACKWindowSeconds = 86400
 _BATCHFlushCount = 20
@@ -144,7 +144,7 @@ def flushQueue() -> list[str]:
     _lastFlush = time.monotonic()
     total = localRules + llmRules
     try:
-        from app.services.brainEventBus import emitBrainEvent
+        from app.services.brain_event_bus import emitBrainEvent
         if total:
             emitBrainEvent(category='delta_engine', layer='delta_engine.flush_queue', summary=f'Delta engine inferred {len(total)} preference(s) from your edits', meta={'local': len(localRules), 'llm': len(llmRules)})
     except Exception:
@@ -165,12 +165,12 @@ def _hashPath(filePath: str) -> str:
 
 def _writeHash(key: str, content: str) -> None:
     """Store a content hash (in memory for now, extend to SQLite if needed)."""
-    from app.services.memoryStore import saveMemory
+    from app.services.memory_store import saveMemory
     saveMemory(key, content)
 
 def _readHash(key: str) -> str | None:
     """Read a stored content hash."""
-    from app.services.memoryStore import getMemory
+    from app.services.memory_store import getMemory
     val = getMemory(key)
     if isinstance(val, str):
         return val
@@ -205,10 +205,10 @@ def _callHippocampus(diffText: str) -> str | None:
     model is configured.
     """
     try:
-        from app.services.workbench import modelFleet
+        from app.services.workbench import model_fleet
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
-        model = modelFleet.getModelForRole('hippocampus')
+        model = model_fleet.getModelForRole('hippocampus')
         if not model:
             return None
         provider = providerResolver.resolve(model)

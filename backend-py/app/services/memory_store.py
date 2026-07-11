@@ -464,11 +464,11 @@ def _brainQueryDaemons(query: str, filters: dict | None, limit: int) -> str:
     """
     import json as _json
     try:
-        from app.services import daemonManager
+        from app.services import daemon_manager
     except ImportError:
         return _json.dumps([])
     try:
-        internal = getattr(daemonManager, '_daemons', None)
+        internal = getattr(daemon_manager, '_daemons', None)
         if not isinstance(internal, dict):
             return _json.dumps([])
         rows: list[dict] = []
@@ -592,10 +592,10 @@ def timelineSweep() -> int:
         if not msgs:
             continue
         try:
-            from app.services.workbench import modelFleet
+            from app.services.workbench import model_fleet
             from app.providers import resolver as providerResolver
             from app.providers.clients import getClient
-            model = modelFleet.getModelForRole('hippocampus')
+            model = model_fleet.getModelForRole('hippocampus')
             if not model:
                 continue
             provider = providerResolver.resolve(model)

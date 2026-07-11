@@ -5,7 +5,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _initDb():
-    from app.services.memoryStore import init
+    from app.services.memory_store import init
     init()
     yield
 VALID_EXAM = [{'stem': 'What is 2+2?', 'options': ['3', '4', '5', '6'], 'correct_index': 1, 'rationale': '2+2=4.'}, {'stem': 'Capital of France?', 'options': ['Berlin', 'Madrid', 'Paris', 'Rome'], 'correct_index': 2, 'rationale': 'Paris.'}]
@@ -72,7 +72,7 @@ def testAnswerRecordsAttempt():
     """POST /api/exam/{id}/answer records attempt + returns correctness."""
     from fastapi.testclient import TestClient
     from app.main import app
-    from app.services.memoryStore import _conn
+    from app.services.memory_store import _conn
     with patch('app.services.exam_service._call_prefrontal', return_value=json.dumps(VALID_EXAM)):
         client = TestClient(app)
         gen = client.post('/api/exam/generate', json={'topic': 'x', 'count': 2, 'difficulty': 'easy'})

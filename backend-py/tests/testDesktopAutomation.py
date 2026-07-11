@@ -72,7 +72,7 @@ async def testGracefulDegradationWhenPyautoguiMissing(monkeypatch):
             raise ImportError('simulated: pygetwindow missing')
         return realImport(name, *args, **kwargs)
     monkeypatch.setattr(builtins, '__import__', blockingImport)
-    from app.services import desktopAutomation as da
+    from app.services import desktop_automation as da
     assert (await da.getScreenSize())['error'].startswith('pyautogui not installed')
     assert (await da.takeScreenshot())['error'].startswith('pyautogui not installed')
     assert await da.listWindows() == [{'note': 'pygetwindow not installed. Run `uv sync --extra desktop`.'}]

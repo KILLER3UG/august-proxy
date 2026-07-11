@@ -10,7 +10,7 @@ from __future__ import annotations
 from app.config import settings
 from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.lib.paths import dataPath
-from app.services.memoryStore import recordConfigAudit
+from app.services.memory_store import recordConfigAudit
 _DEFAULTFallback: dict[str, object] = {'enabled': False, 'mode': 'off', 'provider': '', 'model': ''}
 _VALIDModes = {'off', 'session_only', 'marked_subagent_only', 'always'}
 
@@ -49,7 +49,7 @@ def configureFallback(enabled: bool | None=None, mode: str | None=None, provider
         prov = as_str(after.get('provider'), '')
         mdl = as_str(after.get('model'), '')
         if prov or mdl:
-            from app.services.aliasService import validateTarget
+            from app.services.alias_service import validateTarget
             ok, msg = validateTarget(prov, mdl)
             if not ok:
                 raise ValueError(msg)

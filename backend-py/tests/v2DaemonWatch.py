@@ -1,21 +1,21 @@
 """v2 — Test daemon watch conditions."""
 import pytest
-from app.services import daemonManager
-from app.services.toolRegistry import clearDaemonContext
+from app.services import daemon_manager
+from app.services.tool_registry import clearDaemonContext
 
 @pytest.fixture(autouse=True)
 def _cleanup():
     clearDaemonContext()
-    if hasattr(daemonManager, '_daemons'):
-        daemonManager._daemons.clear()
+    if hasattr(daemon_manager, '_daemons'):
+        daemon_manager._daemons.clear()
     yield
-    if hasattr(daemonManager, '_daemons'):
-        daemonManager._daemons.clear()
+    if hasattr(daemon_manager, '_daemons'):
+        daemon_manager._daemons.clear()
 
 def testMaxThreeConcurrentDaemons():
     """spawn() returns an error string on 4th daemon (caller checks for "Error: max")."""
     import asyncio
-    mgr = daemonManager.DaemonManager()
+    mgr = daemon_manager.DaemonManager()
     sid = 'test-max-session'
     for d in list(mgr._tasks.values()):
         try:
@@ -24,10 +24,10 @@ def testMaxThreeConcurrentDaemons():
             pass
     mgr._tasks.clear()
     mgr._daemons.clear()
-    spec1 = daemonManager.DaemonSpec(name='d1', prompt='x', watch_condition='on_completion')
-    spec2 = daemonManager.DaemonSpec(name='d2', prompt='x', watch_condition='on_completion')
-    spec3 = daemonManager.DaemonSpec(name='d3', prompt='x', watch_condition='on_completion')
-    spec4 = daemonManager.DaemonSpec(name='d4', prompt='x', watch_condition='on_completion')
+    spec1 = daemon_manager.DaemonSpec(name='d1', prompt='x', watch_condition='on_completion')
+    spec2 = daemon_manager.DaemonSpec(name='d2', prompt='x', watch_condition='on_completion')
+    spec3 = daemon_manager.DaemonSpec(name='d3', prompt='x', watch_condition='on_completion')
+    spec4 = daemon_manager.DaemonSpec(name='d4', prompt='x', watch_condition='on_completion')
 
     async def go():
         r1 = await mgr.spawn(spec1, session_id=sid)
@@ -43,14 +43,14 @@ def testMaxThreeConcurrentDaemons():
 
 def testOnCompletionFiresAfterFirstRun():
     """`on_completion` triggers after the daemon's first run completes."""
-    mgr = daemonManager.DaemonManager()
+    mgr = daemon_manager.DaemonManager()
     info = {'result': type('R', (), {'output': 'first run output'})(), 'watch_condition': 'on_completion'}
     fired = mgr._evaluate_watch(info)
     assert fired is True
 
 def testOnMatchKeywordSubstringCaseInsensitive():
     """`on_match:ERROR` fires when output contains 'error' (case-insensitive)."""
-    mgr = daemonManager.DaemonManager()
+    mgr = daemon_manager.DaemonManager()
     infoFine = {'result': type('R', (), {'output': 'everything is fine'})(), 'watch_condition': 'on_match:ERROR'}
     fired = mgr._evaluate_watch(infoFine)
     assert fired is False
@@ -63,8 +63,8 @@ def testOnMatchKeywordSubstringCaseInsensitive():
 
 def testOnChangeFiresOnHashDiff():
     """`on_change` fires when output md5 differs from previous cycle."""
-    mgr = daemonManager.DaemonManager()
-    result = daemonManager.DaemonResult()
+    mgr = daemon_manager.DaemonManager()
+    result = daemon_manager.DaemonResult()
     info1 = {'result': result, 'watch_condition': 'on_change'}
     result.output = 'output A'
     fired = mgr._evaluate_watch(info1)

@@ -11,25 +11,25 @@ import pytest
 @pytest.fixture
 def isolatedData(tmp_path, monkeypatch):
     from app.config import settings
-    from app.services import memoryStore
+    from app.services import memory_store
     monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
     monkeypatch.setenv('AUGUST_BRAIN_SQLITE_FILE', str(tmp_path / 'test_brain.sqlite'))
     monkeypatch.setattr(settings, 'dataDir', tmp_path)
     settings.reload()
-    memoryStore.close()
-    memoryStore.init()
+    memory_store.close()
+    memory_store.init()
     yield tmp_path
-    memoryStore.close()
+    memory_store.close()
     settings.reload()
 
 @pytest.fixture
 def isolatedSkills(tmp_path, monkeypatch):
     """Redirect both skill roots to temp dirs (shared via conftest)."""
-    from app.services import skillService
+    from app.services import skill_service
     agentRoot = tmp_path / 'agent-skills'
     bundledRoot = tmp_path / 'bundled-skills'
     agentRoot.mkdir()
     bundledRoot.mkdir()
-    monkeypatch.setattr(skillService, '_agentSkillsDir', lambda: agentRoot)
-    monkeypatch.setattr(skillService, 'SKILLS_DIR', bundledRoot)
+    monkeypatch.setattr(skill_service, '_agentSkillsDir', lambda: agentRoot)
+    monkeypatch.setattr(skill_service, 'SKILLS_DIR', bundledRoot)
     return (agentRoot, bundledRoot)

@@ -4,7 +4,7 @@ Cross-session bridge — links related sessions and provides continuity.
 Port of backend/services/memory/cross-session-bridge.js.
 """
 from __future__ import annotations
-from app.services.memoryStore import saveMemory, getMemory, searchMemory, indexSessionTopic
+from app.services.memory_store import saveMemory, getMemory, searchMemory, indexSessionTopic
 _BRIDGEKey = 'session_bridges'
 
 def bridgeSessions(sourceId: str, targetId: str, reason: str='related') -> None:

@@ -24,7 +24,7 @@ the dropdown refreshes, and records every change to the config audit log.
 from __future__ import annotations
 from app.config import settings
 from app.lib.paths import dataPath
-from app.services.memoryStore import recordConfigAudit
+from app.services.memory_store import recordConfigAudit
 from app.typeAliases import AliasDict
 from app.jsonUtils import as_dict, as_list, as_str
 
@@ -49,8 +49,8 @@ def _writeAliases(aliases: list[AliasDict]) -> None:
     p.write_text(json.dumps(cfg, indent=2), 'utf-8')
     settings.reload()
     try:
-        from app.services import modelService
-        modelService.invalidateCache()
+        from app.services import model_service
+        model_service.invalidateCache()
     except Exception:
         pass
 
@@ -70,8 +70,8 @@ def _providerNames() -> set[str]:
             names.add(as_str(t.get('name'), ''))
             for a in as_list(t.get('aliases'), []):
                 names.add(a)
-        from app.services import configService
-        store = configService.getProvidersStore()
+        from app.services import config_service
+        store = config_service.getProvidersStore()
         for entry in as_list(store.get('providers'), []):
             names.add(as_str(entry.get('name'), ''))
     except Exception:

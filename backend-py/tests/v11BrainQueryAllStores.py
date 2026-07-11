@@ -1,7 +1,7 @@
 """v1.1 — Test that brain_query returns correct shape for all 12 stores."""
 import pytest
 import json
-from app.services.memoryStore import brainQuery
+from app.services.memory_store import brainQuery
 ALL_STORES = ['memory', 'auto_memories', 'heuristics', 'facts', 'sessions', 'messages', 'timeline', 'graph', 'blackboard', 'daemons', 'exams', 'exam_attempts']
 
 @pytest.mark.parametrize('store_name', ALL_STORES)
