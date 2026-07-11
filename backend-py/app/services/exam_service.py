@@ -5,29 +5,33 @@ The defining rule: the model authors every question. No endpoint accepts a
 client-supplied correct_index. Questions are validated (2-5 options, valid
 correct_index, non-empty rationale) before being persisted.
 """
+
 from __future__ import annotations
 import json
 import logging
+
 logger = logging.getLogger(__name__)
 
-async def _callPrefrontal(prompt: str, model: str='', provider: str='') -> str:
+
+async def _callPrefrontal(prompt: str, model: str = '', provider: str = '') -> str:
     """v3: Call the Prefrontal model. Returns raw text response (may include code fences)."""
     try:
         from app.services.workbench import model_fleet
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
         from app.config import settings
+
         if model:
             aliasesCfg = settings.config.get('modelAliases', [])
             for aliasEntry in aliasesCfg if isinstance(aliasesCfg, list) else []:
                 if isinstance(aliasEntry, dict) and aliasEntry.get('alias') == model:
-                    targetModel = aliasEntry.get('targetModel')
-                    if targetModel:
-                        logger.info('_call_prefrontal: resolved model alias %s → %s', model, targetModel)
-                        model = targetModel
-                    targetProvider = aliasEntry.get('targetProvider')
-                    if targetProvider and (not provider):
-                        provider = targetProvider
+                    target_model = aliasEntry.get('targetModel')
+                    if target_model:
+                        logger.info('_call_prefrontal: resolved model alias %s → %s', model, target_model)
+                        model = target_model
+                    target_provider = aliasEntry.get('targetProvider')
+                    if target_provider and (not provider):
+                        provider = target_provider
                     break
         if not model:
             model = model_fleet.getModelForRole('prefrontal')
@@ -51,7 +55,7 @@ async def _callPrefrontal(prompt: str, model: str='', provider: str='') -> str:
         providerConfig = providerResolver.resolve(model)
         if not providerConfig:
             logger.warning('_call_prefrontal: no provider found for model %s, trying first available', model)
-            available = [p for p in providerResolver.listAvailable() if p.get('api_key')]
+            available = [p for p in providerResolver.list_available() if p.get('api_key')]
             providerConfig = available[0] if available else None
         if providerConfig:
             providerConfig['model'] = model
@@ -65,6 +69,7 @@ async def _callPrefrontal(prompt: str, model: str='', provider: str='') -> str:
     except Exception as exc:
         logger.warning('_call_prefrontal failed: %s', exc)
     return ''
+
 
 def _validateQuestion(q: object) -> bool:
     """A valid question has stem, 2-5 options, valid correct_index, non-empty rationale."""
@@ -84,6 +89,7 @@ def _validateQuestion(q: object) -> bool:
         return False
     return True
 
+
 def _stripCodeFences(raw: str) -> str:
     """Remove ```json ... ``` wrappers that models commonly emit."""
     cleaned = (raw or '').strip()
@@ -95,6 +101,7 @@ def _stripCodeFences(raw: str) -> str:
             lines = lines[:-1]
         cleaned = '\n'.join(lines).strip()
     return cleaned
+
 
 def _parseQuestions(raw: str) -> list[dict]:
     """Parse the Prefrontal response into a list of validated questions."""
@@ -108,17 +115,36 @@ def _parseQuestions(raw: str) -> list[dict]:
     valid = [q for q in data if _validateQuestion(q)]
     return valid
 
-def _buildPrompt(topic: str, count: int, difficulty: str, context: str='', similarTo: list[dict] | None=None) -> str:
+
+def _buildPrompt(
+    topic: str, count: int, difficulty: str, context: str = '', similarTo: list[dict] | None = None
+) -> str:
     """Build the Prefrontal prompt for exam authoring."""
-    parts = [f'Generate {count} multiple-choice question(s) on the topic: {topic}.', f'Difficulty: {difficulty}.', '', 'Each question must have:', "  - 'stem': a clear question string", "  - 'options': between 2 and 5 distinct non-empty strings", "  - 'correct_index': integer 0-(n-1) pointing to the correct option (where n is the number of options)", "  - 'rationale': a 1-sentence explanation of the correct answer", '', 'Return ONLY a JSON array (no other text, no markdown fences): [{"stem": str, "options": [str, ...], "correct_index": 0-(n-1), "rationale": str}]']
+    parts = [
+        f'Generate {count} multiple-choice question(s) on the topic: {topic}.',
+        f'Difficulty: {difficulty}.',
+        '',
+        'Each question must have:',
+        "  - 'stem': a clear question string",
+        "  - 'options': between 2 and 5 distinct non-empty strings",
+        "  - 'correct_index': integer 0-(n-1) pointing to the correct option (where n is the number of options)",
+        "  - 'rationale': a 1-sentence explanation of the correct answer",
+        '',
+        'Return ONLY a JSON array (no other text, no markdown fences): [{"stem": str, "options": [str, ...], "correct_index": 0-(n-1), "rationale": str}]',
+    ]
     if context:
         parts.insert(1, f'\nGrounded in the following source material:\n{context}\n')
     if similarTo:
         example = similarTo[0]
-        parts.insert(1, f'''\nSimilar in style to: stem="{example.get('stem', '')}" options={example.get('options', [])}''')
+        parts.insert(
+            1, f'''\nSimilar in style to: stem="{example.get('stem', '')}" options={example.get('options', [])}'''
+        )
     return '\n'.join(parts)
 
-async def generateQuestions(topic: str, count: int, difficulty: str, context: str='', model: str='', provider: str='') -> list[dict]:
+
+async def generateQuestions(
+    topic: str, count: int, difficulty: str, context: str = '', model: str = '', provider: str = ''
+) -> list[dict]:
     """Call Prefrontal, validate, and return up to `count` valid question dicts.
 
     Raises ValueError if the model output can't be made valid.
@@ -132,13 +158,18 @@ async def generateQuestions(topic: str, count: int, difficulty: str, context: st
         raise ValueError(f'Prefrontal produced {len(valid)} valid question(s); need {count}')
     return valid[:count]
 
-async def generateOneQuestion(topic: str, requestText: str, similarTo: list[dict] | None=None, model: str='', provider: str='') -> dict:
+
+async def generateOneQuestion(
+    topic: str, requestText: str, similarTo: list[dict] | None = None, model: str = '', provider: str = ''
+) -> dict:
     """Generate a single question based on a user request (for /api/exam/{id}/questions).
 
     Accepts either a JSON object (preferred — matches the "one question" intent)
     or a JSON array with one element.
     """
-    prompt = _buildPrompt(topic=f'{topic} (specific ask: {requestText})', count=1, difficulty='medium', similarTo=similarTo)
+    prompt = _buildPrompt(
+        topic=f'{topic} (specific ask: {requestText})', count=1, difficulty='medium', similarTo=similarTo
+    )
     raw = await _callPrefrontal(prompt, model=model, provider=provider)
     if not raw:
         raise ValueError('Prefrontal returned empty response')
@@ -156,12 +187,20 @@ async def generateOneQuestion(topic: str, requestText: str, similarTo: list[dict
         raise ValueError('Prefrontal produced no valid question')
     return valid[0]
 
+
 async def helpExplanation(stem: str, options: list[str], userQuestion: str) -> str:
     """Get a model-generated explanation that does NOT reveal the correct answer."""
-    prompt = f"Question: {stem}\nOptions: {' / '.join(options)}\nUser asks: {userQuestion}\n\nExplain the underlying concept so the user can answer the question themselves. Do NOT reveal which option is correct."
+    prompt = f'Question: {stem}\nOptions: {" / ".join(options)}\nUser asks: {userQuestion}\n\nExplain the underlying concept so the user can answer the question themselves. Do NOT reveal which option is correct.'
     explanation = await _callPrefrontal(prompt)
     return explanation or '(no explanation available)'
 
+
 def stripAnswer(question: dict) -> dict:
     """Strip correctIndex and rationale before sending to the client."""
-    return {'id': question.get('id'), 'examId': question.get('examId'), 'position': question.get('position'), 'stem': question.get('stem'), 'options': question.get('options')}
+    return {
+        'id': question.get('id'),
+        'examId': question.get('examId'),
+        'position': question.get('position'),
+        'stem': question.get('stem'),
+        'options': question.get('options'),
+    }

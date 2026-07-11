@@ -20,6 +20,7 @@ API
     active = orchestrator.listActive(sessionId)
     sub = orchestrator.on("failure", handler)
 """
+
 from __future__ import annotations
 import asyncio
 import logging
@@ -28,28 +29,31 @@ import uuid
 from typing import Any, Callable, Optional
 from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.services.agent_message_bus import AgentMessageBus, Subscription, Handler
+
 logger = logging.getLogger(__name__)
 MAX_CONCURRENT_WORKERS = 5
 PEER_HELP_WINDOW_SECONDS = 5.0
 
+
 class SubagentSpawnRequest:
     """Parameters for spawning one or more sub-agents."""
 
-    def __init__(self, session: object, workItems: list[dict[str, Any]], mode: str='auto') -> None:
+    def __init__(self, session: object, workItems: list[dict[str, Any]], mode: str = 'auto') -> None:
         self.session = session
         self.workItems = workItems
         self.mode = mode
 
+
 class SubagentHandle:
     """Handle returned by ``spawn()`` for tracking a sub-agent task."""
 
-    def __init__(self, taskId: str, agentId: str, goal: str, sessionId: str='') -> None:
+    def __init__(self, taskId: str, agentId: str, goal: str, sessionId: str = '') -> None:
         self.taskId = taskId
         self.agentId = agentId
         self.goal = goal
         self.sessionId = sessionId
         self.status: str = 'pending'
-        self.result: str = ''
+        self.result: dict[str, object] | str = ''
         self.error: str = ''
         self.startedAt: float = time.time()
         self.finishedAt: float | None = None
@@ -62,14 +66,26 @@ class SubagentHandle:
         return round(time.time() - self.startedAt, 2)
 
     def toDict(self) -> dict[str, Any]:
-        return {'taskId': self.taskId, 'agentId': self.agentId, 'goal': self.goal, 'sessionId': self.sessionId, 'status': self.status, 'result': self.result, 'error': self.error, 'startedAt': self.startedAt, 'finishedAt': self.finishedAt, 'elapsed': self.elapsed}
+        return {
+            'taskId': self.taskId,
+            'agentId': self.agentId,
+            'goal': self.goal,
+            'sessionId': self.sessionId,
+            'status': self.status,
+            'result': self.result,
+            'error': self.error,
+            'startedAt': self.startedAt,
+            'finishedAt': self.finishedAt,
+            'elapsed': self.elapsed,
+        }
+
 
 class SubagentOrchestrator:
     """Manages concurrent sub-agent execution with failure recovery."""
 
-    def __init__(self, bus: AgentMessageBus, maxWorkers: int=MAX_CONCURRENT_WORKERS) -> None:
+    def __init__(self, bus: AgentMessageBus, max_workers: int = MAX_CONCURRENT_WORKERS) -> None:
         self._bus = bus
-        self._semaphore = asyncio.Semaphore(maxWorkers)
+        self._semaphore = asyncio.Semaphore(max_workers)
         self._handles: dict[str, SubagentHandle] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._eventHandlers: dict[str, list[Handler]] = {}
@@ -98,7 +114,16 @@ class SubagentOrchestrator:
             handle = SubagentHandle(taskId, agentId, goal, sessionId=sid)
             self._handles[taskId] = handle
             handles.append(handle)
-            task = asyncio.create_task(self._runWithSlot(handle=handle, request=request, agentId=agentId, goal=goal, context=context, restrictedTools=restrictedTools))
+            task = asyncio.create_task(
+                self._runWithSlot(
+                    handle=handle,
+                    request=request,
+                    agentId=agentId,
+                    goal=goal,
+                    context=context,
+                    restrictedTools=restrictedTools,
+                )
+            )
             self._tasks[taskId] = task
             handle._future = task
             tasks.append(task)
@@ -119,7 +144,7 @@ class SubagentOrchestrator:
             pass
         return True
 
-    def listActive(self, sessionId: str | None=None) -> list[dict[str, Any]]:
+    def listActive(self, sessionId: str | None = None) -> list[dict[str, Any]]:
         """List active (running/pending) sub-agents, optionally filtered by session."""
         result = []
         for h in self._handles.values():
@@ -142,7 +167,7 @@ class SubagentOrchestrator:
         """Get a handle by taskId."""
         return self._handles.get(taskId)
 
-    def on(self, event: str, handler: Handler) -> Subscription:
+    def on(self, event: str, handler: Handler) -> Callable[[], None]:
         """Subscribe to orchestrator events.
 
         Event types:
@@ -153,7 +178,7 @@ class SubagentOrchestrator:
         if event not in self._eventHandlers:
             self._eventHandlers[event] = []
         self._eventHandlers[event].append(handler)
-        return Subscription(lambda: self._eventHandlers[event].remove(handler))
+        return lambda: self._eventHandlers[event].remove(handler)
 
     async def _fireEvent(self, event: str, data: dict[str, Any]) -> None:
         """Fire an event to all registered handlers."""
@@ -166,14 +191,31 @@ class SubagentOrchestrator:
             except Exception:
                 logger.exception('Subagent event handler failed for %s', event)
 
-    async def _runWithSlot(self, handle: SubagentHandle, request: SubagentSpawnRequest, agentId: str, goal: str, context: str, restrictedTools: list[str] | None) -> None:
+    async def _runWithSlot(
+        self,
+        handle: SubagentHandle,
+        request: SubagentSpawnRequest,
+        agentId: str,
+        goal: str,
+        context: str,
+        restrictedTools: list[str] | None,
+    ) -> None:
         """Acquire semaphore, run the sub-agent task, release."""
         async with self._semaphore:
             handle.status = 'running'
             await self._fireEvent('subagentStarted', {'taskId': handle.taskId, 'agentId': agentId, 'goal': goal})
             try:
                 from app.services.subagent_worker import runSubagent
-                result = await runSubagent(bus=self._bus, session=request.session, agentId=agentId, goal=goal, context=context, restrictedTools=restrictedTools, taskId=handle.taskId)
+
+                result = await runSubagent(
+                    bus=self._bus,
+                    session=request.session,
+                    agentId=agentId,
+                    goal=goal,
+                    context=context,
+                    restrictedTools=restrictedTools,
+                    taskId=handle.taskId,
+                )
                 handle.result = result
                 handle.status = 'completed'
                 handle.finishedAt = time.time()
@@ -197,18 +239,22 @@ class SubagentOrchestrator:
     async def _handleFailure(self, handle: SubagentHandle, request: SubagentSpawnRequest) -> None:
         """Broadcast a failure and open a peer-help window."""
         taskId = handle.taskId
-        await self._bus.publish(f'task:{taskId}:failure', {'taskId': taskId, 'agentId': handle.agentId, 'goal': handle.goal, 'error': handle.error})
+        await self._bus.publish(
+            f'task:{taskId}:failure',
+            {'taskId': taskId, 'agentId': handle.agentId, 'goal': handle.goal, 'error': handle.error},
+        )
         claimed = asyncio.Event()
 
         def onPeerClaim(msg: dict[str, Any]) -> None:
             claimed.set()
+
         unsub = self._bus.subscribe(f'task:{taskId}:peerHelp', onPeerClaim)
         try:
             await asyncio.wait_for(claimed.wait(), timeout=PEER_HELP_WINDOW_SECONDS)
         except asyncio.TimeoutError:
             logger.info('No peer claimed failed task %s', taskId)
         finally:
-            unsub()
+            unsub.unsubscribe()
 
     async def close(self) -> None:
         """Cancel all running tasks and release resources."""

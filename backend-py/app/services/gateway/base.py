@@ -13,23 +13,28 @@ Subclasses implement only the platform-specific bits (connect/disconnect,
 normalize an inbound payload, send_message, get_chat_info, start/stop
 listeners). ``dispatch`` is concrete here.
 """
+
 from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
+from app.jsonUtils import as_bool
+
 if TYPE_CHECKING:
     from app.services.gateway.session_bridge import SessionBridge
 BYPASS_COMMANDS = {'stop', 'new', 'reset', 'approve', 'deny', 'status'}
 
+
 @dataclass
 class SessionSource:
     platform: str
-    chatId: str
-    userId: str = ''
-    threadId: str = ''
-    messageId: str = ''
-    chatType: str = ''
+    chat_id: str
+    user_id: str = ''
+    thread_id: str = ''
+    message_id: str = ''
+    chat_type: str = ''
+
 
 @dataclass
 class MessageEvent:
@@ -50,54 +55,51 @@ class MessageEvent:
         head = head.split('@')[0]
         return head.lower()
 
-def buildSessionKey(source: SessionSource, *, groupPerUser: bool=True) -> str:
+
+def buildSessionKey(source: SessionSource, *, groupPerUser: bool = True) -> str:
     """Deterministic session key.
 
     DMs → ``platform:chat_id``; groups → ``platform:chat_id:user_id`` so each
     user in a shared chat gets their own agent session.
     """
-    if source.chatType == 'dm' or not groupPerUser or (not source.userId):
-        return f'{source.platform}:{source.chatId}'
-    return f'{source.platform}:{source.chatId}:{source.userId}'
+    if source.chat_type == 'dm' or not groupPerUser or (not source.user_id):
+        return f'{source.platform}:{source.chat_id}'
+    return f'{source.platform}:{source.chat_id}:{source.user_id}'
+
 
 def shouldBypassActiveSession(cmd: str) -> bool:
     return cmd in BYPASS_COMMANDS
 
+
 class BasePlatformAdapter(ABC):
     """Abstract base for platform adapters."""
+
     platform: str = 'base'
 
-    def __init__(self, config: dict[str, object] | None=None, bridge: 'SessionBridge | None'=None):
+    def __init__(self, config: dict[str, object] | None = None, bridge: 'SessionBridge | None' = None):
         self.config = config or {}
         self._bridge = bridge
         self._activeSessions: dict[str, asyncio.Task] = {}
         self._pending: dict[str, list[MessageEvent]] = {}
 
     @abstractmethod
-    async def connect(self) -> bool:
-        ...
+    async def connect(self) -> bool: ...
 
     @abstractmethod
-    async def disconnect(self) -> None:
-        ...
+    async def disconnect(self) -> None: ...
 
     @abstractmethod
-    async def sendMessage(self, chatId: str, text: str, **kwargs: object) -> None:
-        ...
+    async def sendMessage(self, chat_id: str, text: str, **kwargs: object) -> None: ...
 
     @abstractmethod
-    async def getChatInfo(self, chatId: str) -> dict[str, object]:
-        ...
+    async def getChatInfo(self, chat_id: str) -> dict[str, object]: ...
 
     @abstractmethod
-    async def normalize(self, raw: object) -> Optional[MessageEvent]:
-        ...
+    async def normalize(self, raw: object) -> Optional[MessageEvent]: ...
 
-    async def start(self) -> None:
-        ...
+    async def start(self) -> None: ...
 
-    async def stop(self) -> None:
-        ...
+    async def stop(self) -> None: ...
 
     async def handleIncoming(self, raw: object) -> None:
         """Entry point for an inbound platform payload."""
@@ -107,7 +109,7 @@ class BasePlatformAdapter(ABC):
         await self.dispatch(event)
 
     async def dispatch(self, event: MessageEvent) -> None:
-        sessionKey = buildSessionKey(event.source, groupPerUser=self.config.get('groupPerUser', True))
+        sessionKey = buildSessionKey(event.source, groupPerUser=as_bool(self.config.get('groupPerUser'), True))
         cmd = event.getCommand()
         if shouldBypassActiveSession(cmd):
             await self._handleBypassCommand(sessionKey, event, cmd)
@@ -124,7 +126,11 @@ class BasePlatformAdapter(ABC):
     def _spawnTurn(self, sessionKey: str, event: MessageEvent) -> None:
         task = asyncio.create_task(self._turnAndDrain(sessionKey, event))
         self._activeSessions[sessionKey] = task
-        task.add_done_callback(lambda _t, k=sessionKey: self._activeSessions.pop(k, None))
+
+        def _onDone(_task: object) -> None:
+            self._activeSessions.pop(sessionKey, None)
+
+        task.add_done_callback(_onDone)
 
     async def _turnAndDrain(self, sessionKey: str, event: MessageEvent) -> None:
         try:
@@ -149,10 +155,10 @@ class BasePlatformAdapter(ABC):
         try:
             result = await self._bridge.invokeAgent(sessionKey, event.text)
             if result.text and (not result.cancelled):
-                await self.sendMessage(event.source.chatId, result.text)
+                await self.sendMessage(event.source.chat_id, result.text)
         except Exception as exc:
             try:
-                await self.sendMessage(event.source.chatId, f'[error] {exc}')
+                await self.sendMessage(event.source.chat_id, f'[error] {exc}')
             except Exception:
                 pass
 
@@ -161,27 +167,29 @@ class BasePlatformAdapter(ABC):
             return
         if cmd in {'stop', 'reset'}:
             await self._bridge.cancelRunning(sessionKey)
-            await self.sendMessage(event.source.chatId, 'Stopped.')
+            await self.sendMessage(event.source.chat_id, 'Stopped.')
         elif cmd == 'new':
             await self._bridge.cancelRunning(sessionKey)
             await self._bridge.resetSession(sessionKey)
-            await self.sendMessage(event.source.chatId, 'New session started.')
+            await self.sendMessage(event.source.chat_id, 'New session started.')
         elif cmd == 'status':
             active = sessionKey in self._activeSessions and (not self._activeSessions[sessionKey].done())
-            await self.sendMessage(event.source.chatId, 'active' if active else 'idle')
+            await self.sendMessage(event.source.chat_id, 'active' if active else 'idle')
         elif cmd == 'approve':
             from app.services.workbench import workbench as wb
+
             sid = self._bridge.getSessionId(sessionKey) if self._bridge else None
             if sid and wb.approveWorkbenchPlan(sid):
-                await self.sendMessage(event.source.chatId, 'Plan approved.')
+                await self.sendMessage(event.source.chat_id, 'Plan approved.')
             else:
-                await self.sendMessage(event.source.chatId, 'No pending plan to approve.')
+                await self.sendMessage(event.source.chat_id, 'No pending plan to approve.')
         elif cmd == 'deny':
             from app.services.workbench import workbench as wb
+
             sid = self._bridge.getSessionId(sessionKey) if self._bridge else None
             if sid and wb.rejectWorkbenchPlan(sid):
-                await self.sendMessage(event.source.chatId, 'Plan rejected.')
+                await self.sendMessage(event.source.chat_id, 'Plan rejected.')
             else:
-                await self.sendMessage(event.source.chatId, 'No pending plan to reject.')
+                await self.sendMessage(event.source.chat_id, 'No pending plan to reject.')
         else:
-            await self.sendMessage(event.source.chatId, f'(command /{cmd} not yet wired)')
+            await self.sendMessage(event.source.chat_id, f'(command /{cmd} not yet wired)')

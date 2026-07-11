@@ -7,6 +7,7 @@ Port of backend/services/tools/mcp-client.js + mcp-registry.js + mcp-config.js +
 Manages MCP server subprocesses, discovers available tools, and
 executes tool calls via JSON-RPC over stdio/SSE.
 """
+
 from __future__ import annotations
 import asyncio
 import json
@@ -14,15 +15,21 @@ import os
 import uuid
 from pathlib import Path
 from app.lib.paths import dataPath
+from app.jsonUtils import as_str, as_list
+
 _mcpCleanupTasks: set[asyncio.Task] = set()
 MCP_CONFIG_FILE = 'mcp-servers.json'
 MCP_TIMEOUT_MS = 30000
 
+
 def _mcpConfigPath() -> Path:
     return dataPath(MCP_CONFIG_FILE)
+
+
 _servers: dict[str, dict[str, object]] = {}
 _toolsCache: dict[str, list[dict[str, object]]] = {}
 _processes: dict[str, asyncio.subprocess.Process] = {}
+
 
 def _loadConfig() -> dict[str, object]:
     """Load MCP server config from disk."""
@@ -34,22 +41,35 @@ def _loadConfig() -> dict[str, object]:
     except (json.JSONDecodeError, OSError):
         return {}
 
+
 def _saveConfig(config: dict[str, object]) -> None:
     """Save MCP server config to disk."""
     path = _mcpConfigPath()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(config, indent=2), 'utf-8')
 
+
 def listRegisteredServers() -> list[dict[str, object]]:
     """List all registered MCP servers."""
     return list(_servers.values())
 
-def registerServer(name: str, command: str, args: list[str] | None=None, env: dict[str, str] | None=None) -> dict[str, object]:
+
+def registerServer(
+    name: str, command: str, args: list[str] | None = None, env: dict[str, str] | None = None
+) -> dict[str, object]:
     """Register an MCP server."""
     serverId = f'mcp_{uuid.uuid4().hex[:8]}'
-    server = {'id': serverId, 'name': name, 'command': command, 'args': args or [], 'env': env or {}, 'status': 'registered'}
+    server: dict[str, object] = {
+        'id': serverId,
+        'name': name,
+        'command': command,
+        'args': args or [],
+        'env': env or {},
+        'status': 'registered',
+    }
     _servers[serverId] = server
     return server
+
 
 def unregisterServer(serverId: str) -> bool:
     """Unregister an MCP server."""
@@ -62,6 +82,7 @@ def unregisterServer(serverId: str) -> bool:
     _toolsCache.pop(serverId, None)
     return True
 
+
 async def _startServerProcess(serverId: str) -> asyncio.subprocess.Process | None:
     """Start an MCP server subprocess."""
     server = _servers.get(serverId)
@@ -70,9 +91,19 @@ async def _startServerProcess(serverId: str) -> asyncio.subprocess.Process | Non
     if serverId in _processes:
         return _processes[serverId]
     env = dict(os.environ)
-    env.update(server.get('env', {}))
+    env_cfg = server.get('env', {})
+    if isinstance(env_cfg, dict):
+        env.update(env_cfg)
+    args_list = [as_str(a) for a in as_list(server.get('args'))]
     try:
-        proc = await asyncio.create_subprocess_exec(server['command'], *server.get('args', []), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env)
+        proc = await asyncio.create_subprocess_exec(
+            as_str(server['command']),
+            *args_list,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
         _processes[serverId] = proc
         server['status'] = 'running'
         return proc
@@ -80,6 +111,7 @@ async def _startServerProcess(serverId: str) -> asyncio.subprocess.Process | Non
         server['status'] = 'error'
         server['error'] = str(exc)
         return None
+
 
 async def _stopServerProcess(serverId: str) -> None:
     """Stop an MCP server subprocess."""
@@ -95,6 +127,7 @@ async def _stopServerProcess(serverId: str) -> None:
                 pass
     if serverId in _servers:
         _servers[serverId]['status'] = 'stopped'
+
 
 async def discoverTools(serverId: str) -> list[dict[str, object]]:
     """Call the tools/list RPC method on an MCP server."""
@@ -114,19 +147,25 @@ async def discoverTools(serverId: str) -> list[dict[str, object]]:
         _servers.get(serverId, {})['error'] = str(exc)
         return []
 
+
 async def executeTool(serverId: str, toolName: str, args: dict[str, object]) -> str:
     """Call a tool on an MCP server via JSON-RPC."""
     proc = await _startServerProcess(serverId)
     if not proc or not proc.stdin or (not proc.stdout):
         return f"Error: MCP server '{serverId}' not running"
-    request = {'jsonrpc': '2.0', 'id': str(uuid.uuid4()), 'method': 'tools/call', 'params': {'name': toolName, 'arguments': args}}
+    request = {
+        'jsonrpc': '2.0',
+        'id': str(uuid.uuid4()),
+        'method': 'tools/call',
+        'params': {'name': toolName, 'arguments': args},
+    }
     try:
         proc.stdin.write((json.dumps(request) + '\n').encode())
         await proc.stdin.drain()
         response = await asyncio.wait_for(proc.stdout.readline(), timeout=MCP_TIMEOUT_MS / 1000)
         result = json.loads(response.decode())
         if 'error' in result:
-            return f"Error: {result['error'].get('message', str(result['error']))}"
+            return f'Error: {result["error"].get("message", str(result["error"]))}'
         content = result.get('result', {}).get('content', [])
         textParts = [c.get('text', '') for c in content if c.get('type') in ('text', 'output_text')]
         return '\n'.join(textParts) if textParts else json.dumps(result['result'])
@@ -137,6 +176,7 @@ async def executeTool(serverId: str, toolName: str, args: dict[str, object]) -> 
     except Exception as exc:
         return f'Error: {exc}'
 
+
 def getAllMcpTools() -> list[dict[str, object]]:
     """Get all tools from all registered MCP servers."""
     allTools = []
@@ -146,10 +186,22 @@ def getAllMcpTools() -> list[dict[str, object]]:
             allTools.append(tool)
     return allTools
 
+
 def getMcpToolDefinitions() -> list[dict[str, object]]:
     """Get MCP tools in a format compatible with the tool registry."""
     tools = getAllMcpTools()
-    return [{'type': 'function', 'function': {'name': f"mcp__{t.get('_mcp_server_id', 'unknown')}__{t['name']}", 'description': t.get('description', ''), 'parameters': t.get('inputSchema', {'type': 'object', 'properties': {}})}} for t in tools]
+    return [
+        {
+            'type': 'function',
+            'function': {
+                'name': f'mcp__{t.get("_mcp_server_id", "unknown")}__{t["name"]}',
+                'description': t.get('description', ''),
+                'parameters': t.get('inputSchema', {'type': 'object', 'properties': {}}),
+            },
+        }
+        for t in tools
+    ]
+
 
 def getMcpToolDefinitionsSync() -> list[dict[str, object]]:
     """Sync accessor over the lazily-populated MCP tool cache.
@@ -166,6 +218,7 @@ def getMcpToolDefinitionsSync() -> list[dict[str, object]]:
             pass
     return getMcpToolDefinitions()
 
+
 async def refreshMcpTools() -> None:
     """Discover tools from every registered MCP server into the cache.
 
@@ -181,9 +234,11 @@ async def refreshMcpTools() -> None:
             if isinstance(srv, dict):
                 srv['error'] = str(exc)
 
+
 def isMcpToolName(name: str) -> bool:
     """Check if a tool name belongs to an MCP server."""
     return isinstance(name, str) and name.startswith('mcp__')
+
 
 async def executeMcpToolCall(name: str, args: dict[str, object]) -> str:
     """Execute an MCP tool call by routing to the correct server."""
@@ -192,6 +247,7 @@ async def executeMcpToolCall(name: str, args: dict[str, object]) -> str:
         return f'Error: Invalid MCP tool name: {name}'
     __, serverId, toolName = parts
     return await executeTool(serverId, toolName, args)
+
 
 def sanitizeToolSchema(schema: object) -> dict[str, object]:
     """Sanitize a JSON Schema to ensure it has expected structure."""

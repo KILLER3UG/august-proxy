@@ -35,7 +35,7 @@ def _parseCron(expression: str) -> tuple[list[int], list[int], list[int], list[i
     def parseField(field: str, minVal: int, maxVal: int) -> list[int]:
         if field == '*':
             return list(range(minVal, maxVal + 1))
-        values = []
+        values: list[int] = []
         for part in field.split(','):
             if '/' in part:
                 base, step = part.split('/')
@@ -133,6 +133,14 @@ async def runJobNow(jobId: str) -> dict[str, object]:
         job['lastError'] = str(exc)
         return job
 
+def _make_done_callback(job_id: str) -> Callable[[asyncio.Task], None]:
+    """Return a callback that removes *job_id* from ``_tasks`` when done."""
+    def _cleanup(t: asyncio.Task) -> None:
+        _tasks.pop(job_id, None)
+
+    return _cleanup
+
+
 async def startScheduler(intervalS: int=60) -> None:
     """Start the scheduler loop."""
     global _running
@@ -148,7 +156,7 @@ async def startScheduler(intervalS: int=60) -> None:
             if _matchesCron(as_str(job.get('schedule'), '* * * * *'), now):
                 task = asyncio.create_task(runJobNow(jobId))
                 _tasks[jobId] = task
-                task.add_done_callback(lambda t, jId=jobId: _tasks.pop(jId, None))
+                task.add_done_callback(_make_done_callback(jobId))
         await asyncio.sleep(intervalS)
 
 def stopScheduler() -> None:

@@ -44,8 +44,14 @@ def updateFleet(patch: dict[str, object]) -> tuple[bool, str, dict[str, str]]:
     if not ok:
         return (False, err, getFleet())
     cfg = config_service.getConfig()
-    aux = cfg.setdefault('auxiliary', {})
-    fleet = aux.setdefault('model_fleet', {})
+    aux = cfg.get('auxiliary')
+    if not isinstance(aux, dict):
+        aux = {}
+        cfg['auxiliary'] = aux
+    fleet = aux.get('model_fleet')
+    if not isinstance(fleet, dict):
+        fleet = {}
+        aux['model_fleet'] = fleet
     fleet.update(patch)
     config_service.saveConfig(cfg)
     return (True, '', getFleet())

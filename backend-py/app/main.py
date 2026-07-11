@@ -4,6 +4,7 @@ FastAPI application entry point.
 Serves the SPA from web-dist/ and routes API requests.
 This is the Python equivalent of the original Node.js index.js.
 """
+
 from __future__ import annotations
 import asyncio
 import logging
@@ -16,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 # Enforce the supported Python floor. The project targets 3.12+ (see
@@ -23,10 +25,11 @@ logger = logging.getLogger(__name__)
 # other 3.12-only syntax are used throughout. Fail fast with a clear message
 # instead of a cryptic SyntaxError deep in the import graph on older runtimes.
 import sys
+
 if sys.version_info < (3, 12):
     raise RuntimeError(
-        f"August Proxy requires Python 3.12 or newer (running {sys.version.split()[0]}). "
-        "Please upgrade your Python interpreter."
+        f'August Proxy requires Python 3.12 or newer (running {sys.version.split()[0]}). '
+        'Please upgrade your Python interpreter.'
     )
 
 
@@ -48,52 +51,64 @@ class WebSocketLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         from app.services import log_stream
+
         try:
             level = self.LEVEL_MAP.get(record.levelname, 'info')
-            log_stream.emitLogEvent({
-                'category': 'info',
-                'level': level,
-                'message': self.format(record),
-                'metadata': {'logger': record.name, 'module': record.module},
-            })
+            log_stream.emitLogEvent(
+                {
+                    'category': 'info',
+                    'level': level,
+                    'message': self.format(record),
+                    'metadata': {'logger': record.name, 'module': record.module},
+                }
+            )
         except Exception:
             pass
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.reload()
     # Start the thread-safe log-stream hub (WS fan-out + ring buffer).
     from app.services import log_stream
+
     await log_stream.startHub()
     wsHandler = WebSocketLogHandler()
     wsHandler.setLevel(logging.INFO)
     logging.getLogger().addHandler(wsHandler)
     from app.services import tool_definitions
+
     tool_definitions.registerAll()
     from app.services import memory_store
+
     memory_store.init()
     from app.lib.paths import dataPath
+
     _dbPathVal = dataPath('august_brain.sqlite')
     if _dbPathVal.exists():
         try:
             from scripts.migrateDbColumns import migrateDatabase
+
             migrateDatabase(_dbPathVal)
             logger.info('Database columns migrated: snake_case → camelCase')
         except Exception as exc:
             logger.warning('DB migration skipped: %s', exc)
         try:
             from app.lib.storage_key_migration import migrate_storage_keys
+
             migrate_storage_keys(_dbPathVal)
         except Exception as exc:
             logger.warning('Storage-key migration skipped: %s', exc)
     try:
         from app.services.tools.mcp_client import refreshMcpTools
+
         asyncio.create_task(refreshMcpTools())
     except Exception:
         pass
     _gateway = None
     try:
         from app.services.gateway.runner import startGateway
+
         _gateway = await startGateway(settings)
         app.state.gateway_runner = _gateway
     except Exception:
@@ -102,6 +117,7 @@ async def lifespan(app: FastAPI):
     _curatorTask = None
     try:
         from app.services.skills.curator import makeBackgroundCurator
+
         _curator, _curatorTask = makeBackgroundCurator()
         app.state.curator = _curator
     except Exception:
@@ -110,6 +126,7 @@ async def lifespan(app: FastAPI):
     try:
         from app.services.agent_message_bus import AgentMessageBus
         from app.services.subagent_orchestrator import SubagentOrchestrator
+
         _bus = AgentMessageBus()
         _orchestrator = SubagentOrchestrator(_bus, max_workers=5)
         app.state.subagent_bus = _bus
@@ -140,17 +157,23 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
     try:
-        from app.services.browser.session_manager import close_all as closeBrowsers
+        from app.services.browser.session_manager import closeAll as closeBrowsers
+
         await closeBrowsers()
     except Exception:
         pass
     try:
         from app.services.daemon_manager import shutdownAll
+
         await shutdownAll()
     except Exception:
         pass
+
+
 app = FastAPI(title='August Proxy', version='0.1.0', lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
+app.add_middleware(
+    CORSMiddleware, allow_origins=['*'], allow_credentials=True, allow_methods=['*'], allow_headers=['*']
+)
 from app.routers import config as configRoutes
 from app.routers import providers as providersRoutes
 from app.routers import skills as skillsRoutes
@@ -183,6 +206,7 @@ from app.routers import exam as examRoutes
 from app.routers import live as liveRoutes
 from app.routers import calendar as calendarRoutes
 from app.routers import subagent as subagentRoutes
+
 app.include_router(configRoutes.router)
 app.include_router(providersRoutes.router)
 app.include_router(skillsRoutes.router)
@@ -229,12 +253,16 @@ if _WEBDist.is_dir():
         path = request.url.path
         if path.startswith('/api/') or path.startswith('/v1/'):
             from fastapi.responses import JSONResponse
+
             return JSONResponse({'error': 'Not found', 'path': path}, status_code=404)
         index = _WEBDist / 'index.html'
         if index.exists():
             return FileResponse(str(index))
         return FileResponse(str(index)) if index.exists() else None
+
+
 _startedAt: float = time.time()
+
 
 @app.get('/api/health')
 async def health():
@@ -246,7 +274,14 @@ async def health():
     /health handler was removed to avoid a first-match-wins collision that
     dropped the `python` field.
     """
-    return {'status': 'ok', 'version': '0.1.0', 'python': True, 'port': settings.port, 'uptime': time.time() - _startedAt}
+    return {
+        'status': 'ok',
+        'version': '0.1.0',
+        'python': True,
+        'port': settings.port,
+        'uptime': time.time() - _startedAt,
+    }
+
 
 @app.get('/api/health/detailed')
 async def healthDetailed():
@@ -263,4 +298,10 @@ async def healthDetailed():
     ea = gw.get('externalAccess') or {}
     enabled = bool(ea.get('enabled', False))
     hasKey = bool(settings.gatewayApiKey)
-    return {'status': 'ok', 'mode': 'python', 'port': settings.port, 'data_dir': str(settings.dataDir), 'externalAccess': {'enabled': enabled, 'hasKey': hasKey, 'configured': enabled and hasKey}}
+    return {
+        'status': 'ok',
+        'mode': 'python',
+        'port': settings.port,
+        'data_dir': str(settings.dataDir),
+        'externalAccess': {'enabled': enabled, 'hasKey': hasKey, 'configured': enabled and hasKey},
+    }

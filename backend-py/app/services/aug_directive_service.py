@@ -20,6 +20,7 @@ Frontmatter parsing mirrors ``skillService._parseSkill`` (simple
 ``key: value`` lines inside a leading ``---`` block) so we avoid a hard
 PyYAML dependency.
 """
+
 from __future__ import annotations
 
 import json
@@ -30,7 +31,20 @@ from app.jsonUtils import as_str, as_dict, as_list, as_int
 
 _AUG_FILENAME = 'AUG.md'
 _FRONTMATTER_RE = re.compile(r'^---\s*\n(.*?)\n---\s*\n(.*)', re.DOTALL)
-_SKIP_DIRS = {'.git', 'node_modules', '__pycache__', '.venv', 'venv', 'dist', 'build', '.aug', 'data', 'web-dist', '.turbo', 'target'}
+_SKIP_DIRS = {
+    '.git',
+    'node_modules',
+    '__pycache__',
+    '.venv',
+    'venv',
+    'dist',
+    'build',
+    '.aug',
+    'data',
+    'web-dist',
+    '.turbo',
+    'target',
+}
 _MAX_READ_BYTES = 4000
 
 
@@ -45,6 +59,7 @@ def _resolveAugPath(workspacePath: str | None) -> Path:
             return ws / _AUG_FILENAME
     try:
         from app.config import settings
+
         return Path(settings.projectRoot) / _AUG_FILENAME
     except Exception:
         return Path.cwd() / _AUG_FILENAME
@@ -93,7 +108,9 @@ def exists(workspacePath: str | None) -> bool:
     return _resolveAugPath(workspacePath).exists()
 
 
-def write(workspacePath: str | None, content: str, *, frontmatter: Optional[dict[str, str]] = None) -> dict[str, object]:
+def write(
+    workspacePath: str | None, content: str, *, frontmatter: Optional[dict[str, str]] = None
+) -> dict[str, object]:
     """Write AUG.md for a workspace.
 
     Refuses to write outside the resolved workspace root. Returns
@@ -131,8 +148,8 @@ def delete(workspacePath: str | None) -> dict[str, object]:
         removed = True
     return {'path': str(path), 'removed': removed}
 
+    # ── Workspace analysis (for /init) ──────────────────────────────────────────
 
-# ── Workspace analysis (for /init) ──────────────────────────────────────────
 
 def _analyzeWorkspace(workspacePath: str) -> dict[str, object]:
     """Collect lightweight signals about a workspace for AUG.md generation."""
@@ -146,14 +163,25 @@ def _analyzeWorkspace(workspacePath: str) -> dict[str, object]:
         topLevel.append(entry.name + ('/' if entry.is_dir() else ''))
     signals: dict[str, object] = {'topLevel': topLevel[:60]}
     # Manifest hints
-    for manifest in ('package.json', 'pyproject.toml', 'Cargo.toml', 'go.mod', 'pom.xml', 'requirements.txt', 'Gemfile', 'composer.json'):
+    for manifest in (
+        'package.json',
+        'pyproject.toml',
+        'Cargo.toml',
+        'go.mod',
+        'pom.xml',
+        'requirements.txt',
+        'Gemfile',
+        'composer.json',
+    ):
         mp = ws / manifest
         if mp.exists():
             try:
-                signals.setdefault('manifests', {})[manifest] = mp.read_text('utf-8')[:_MAX_READ_BYTES]
+                manifests = signals.setdefault('manifests', {})
+                if isinstance(manifests, dict):
+                    manifests[manifest] = mp.read_text('utf-8')[:_MAX_READ_BYTES]
             except Exception:
                 pass
-    # README
+                # README
     for readme in ('README.md', 'README.txt', 'README', 'readme.md'):
         rp = ws / readme
         if rp.exists():
@@ -162,13 +190,22 @@ def _analyzeWorkspace(workspacePath: str) -> dict[str, object]:
             except Exception:
                 pass
             break
-    # Git context
+            # Git context
     try:
         import subprocess
-        branch = subprocess.run(['git', 'branch', '--show-current'], cwd=workspacePath, capture_output=True, text=True, timeout=5).stdout.strip()
+
+        branch = subprocess.run(
+            ['git', 'branch', '--show-current'], cwd=workspacePath, capture_output=True, text=True, timeout=5
+        ).stdout.strip()
         if branch:
             signals['gitBranch'] = branch
-        log = subprocess.run(['git', 'log', '--oneline', '--max-count', '10'], cwd=workspacePath, capture_output=True, text=True, timeout=5).stdout.strip()
+        log = subprocess.run(
+            ['git', 'log', '--oneline', '--max-count', '10'],
+            cwd=workspacePath,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
         if log:
             signals['gitLog'] = log.split('\n')
     except Exception:
@@ -179,27 +216,30 @@ def _analyzeWorkspace(workspacePath: str) -> dict[str, object]:
 def _renderAnalysis(analysis: dict[str, object]) -> str:
     """Render the workspace analysis into a compact text blob for the prompt."""
     parts: list[str] = []
-    if analysis.get('topLevel'):
-        parts.append('Top-level entries:\n' + '\n'.join(f'  - {e}' for e in analysis['topLevel']))
-    if analysis.get('manifests'):
-        for name, content in analysis['manifests'].items():
+    topLevel = as_list(analysis.get('topLevel'))
+    if topLevel:
+        parts.append('Top-level entries:\n' + '\n'.join(f'  - {e}' for e in topLevel))
+    manifests = as_dict(analysis.get('manifests'))
+    if manifests:
+        for name, content in manifests.items():
             parts.append(f'{name}:\n{content}')
     if analysis.get('readme'):
         parts.append(f'README.md:\n{analysis["readme"]}')
     if analysis.get('gitBranch'):
         parts.append(f'Git branch: {analysis["gitBranch"]}')
-    if analysis.get('gitLog'):
-        parts.append('Recent git history:\n' + '\n'.join(f'  - {l}' for l in analysis['gitLog']))
+    gitLog = as_list(analysis.get('gitLog'))
+    if gitLog:
+        parts.append('Recent git history:\n' + '\n'.join(f'  - {l}' for l in gitLog))
     return '\n\n'.join(parts)
 
+    # ── Generation (LLM-driven) ─────────────────────────────────────────────────
 
-# ── Generation (LLM-driven) ─────────────────────────────────────────────────
 
 _SYSTEM_PROMPT_CREATE = (
     'You are generating an AUG.md file for a software project. AUG.md is the '
     'project instruction file for the August Proxy AI agent (the equivalent of '
-    'Claude Code\'s CLAUDE.md). It is plain markdown and should be concise '
-    '(target under 120 lines). It teaches the agent the project\'s build '
+    "Claude Code's CLAUDE.md). It is plain markdown and should be concise "
+    "(target under 120 lines). It teaches the agent the project's build "
     'commands, test commands, code conventions, and architecture so future '
     'sessions are productive.\n\n'
     'Write the AUG.md body only (no YAML frontmatter). Use markdown sections: '
@@ -218,7 +258,9 @@ _SYSTEM_PROMPT_REFINE = (
 )
 
 
-async def generate(workspacePath: str, *, mode: str = 'create', existing: Optional[str] = None, model: str = '') -> dict[str, object]:
+async def generate(
+    workspacePath: str, *, mode: str = 'create', existing: Optional[str] = None, model: str = ''
+) -> dict[str, object]:
     """Analyze a workspace and ask an LLM to draft (or refine) AUG.md.
 
     Returns ``{draft, existing, analysis, mode}``. Does NOT write to disk —
@@ -232,7 +274,7 @@ async def generate(workspacePath: str, *, mode: str = 'create', existing: Option
         try:
             loaded = load(workspacePath)
             if loaded:
-                existing = loaded['body']
+                existing = as_str(loaded.get('body'))
         except Exception:
             pass
     isRefine = mode == 'refine' and bool(existing)
@@ -244,7 +286,7 @@ async def generate(workspacePath: str, *, mode: str = 'create', existing: Option
     userParts.append('# Workspace signals\n' + (analysisText or '(no readable signals)'))
     userParts.append('Now produce the AUG.md body.')
 
-    messages = [
+    messages: list[dict[str, object]] = [
         {'role': 'system', 'content': systemPrompt},
         {'role': 'user', 'content': '\n\n'.join(userParts)},
     ]
@@ -255,8 +297,7 @@ async def generate(workspacePath: str, *, mode: str = 'create', existing: Option
         # No provider configured / API key missing / call failed. Surface a
         # clear error rather than returning a blank AUG.md preview.
         raise RuntimeError(
-            'No AUG.md draft was produced. Check that a provider/API key is '
-            'configured and reachable, then retry /init.'
+            'No AUG.md draft was produced. Check that a provider/API key is configured and reachable, then retry /init.'
         )
     return {
         'draft': draft,
@@ -279,7 +320,8 @@ async def _callLlm(messages: list[dict[str, object]], *, model: str = '') -> str
     try:
         from app.providers import resolver as providerResolver
         from app.providers.clients import getClient
-        providers = providerResolver.listAvailable()
+
+        providers = providerResolver.list_available()
         if not providers:
             return ''
         provider = providerResolver.resolve(model) if model else providers[0]
@@ -292,15 +334,23 @@ async def _callLlm(messages: list[dict[str, object]], *, model: str = '') -> str
         if not apiKey:
             return ''
         useModel = model or provider.get('defaultModel', '') or 'claude-sonnet-4-20250514'
-        body = {'model': useModel, 'messages': messages, 'max_tokens': 2000}
-        resp = await client.chatCompletions(body)
+        req_body = {'model': useModel, 'messages': messages, 'max_tokens': 2000}
+        resp = await client.chat_completions(req_body)
         if getattr(resp, 'status', 200) != 200:
             return ''
-        bodyJson = resp.body if isinstance(getattr(resp, 'body', None), dict) else {}
-        choices = bodyJson.get('choices', [])
-        if not choices:
+        resp_body = getattr(resp, 'body', None)
+        if not isinstance(resp_body, dict):
             return ''
-        content = choices[0].get('message', {}).get('content', '')
+        raw_choices = resp_body.get('choices', [])
+        if not isinstance(raw_choices, list) or not raw_choices:
+            return ''
+        choice = raw_choices[0]
+        if not isinstance(choice, dict):
+            return ''
+        msg = choice.get('message', {})
+        if not isinstance(msg, dict):
+            msg = {}
+        content = msg.get('content', '')
         if isinstance(content, list):
             return ' '.join(b.get('text', '') for b in content if isinstance(b, dict))
         return content if isinstance(content, str) else ''

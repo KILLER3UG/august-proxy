@@ -6,6 +6,7 @@ Port of:
   - backend/adapters/sse-parser.js (SSE event parsing)
   - backend/adapters/base.js (shared adapter utilities)
 """
+
 from __future__ import annotations
 import asyncio
 import json
@@ -14,6 +15,7 @@ import time
 from typing import AsyncIterator, Callable
 import httpx
 from app.jsonUtils import as_str, as_dict, as_list
+
 
 class SseStreamParser:
     """Line-based SSE stream parser.
@@ -37,7 +39,7 @@ class SseStreamParser:
         while '\n' in self._buffer:
             boundary = self._buffer.index('\n')
             rawLine = self._buffer[:boundary]
-            self._buffer = self._buffer[boundary + 1:]
+            self._buffer = self._buffer[boundary + 1 :]
             self._handleLine(rawLine.rstrip('\r'))
 
     def flush(self) -> None:
@@ -57,7 +59,7 @@ class SseStreamParser:
             return
         colon = line.find(':')
         field = line[:colon] if colon >= 0 else line
-        value = line[colon + 1:] if colon >= 0 else ''
+        value = line[colon + 1 :] if colon >= 0 else ''
         if value.startswith(' '):
             value = value[1:]
         if field == 'event':
@@ -74,6 +76,7 @@ class SseStreamParser:
             return
         self.onEvent(self._currentEvent['event'] or 'message', self._currentEvent['data'])
         self._currentEvent = {'event': '', 'data': ''}
+
 
 def parseRetryAfterMs(retryAfterHeader: str | None) -> int | None:
     """Parse Retry-After header value into milliseconds.
@@ -96,9 +99,11 @@ def parseRetryAfterMs(retryAfterHeader: str | None) -> int | None:
         pass
     return None
 
+
 def isRetryableStatus(status: int) -> bool:
     """True for 429 (Too Many Requests) and 503 (Service Unavailable)."""
     return status in (429, 503)
+
 
 def getRetryDelayMs(response: httpx.Response, attempt: int) -> int:
     """Compute delay before the next retry attempt.
@@ -113,15 +118,19 @@ def getRetryDelayMs(response: httpx.Response, attempt: int) -> int:
     jitter = random.randint(0, 400)
     return baseDelay + jitter
 
+
 def buildRateLimitMessage(status: int, body: str, attempts: int) -> str:
     """Build a user-friendly rate-limit error message."""
     guidance = 'Upstream is rate-limiting this request. The proxy retried automatically. If this keeps happening, spread traffic across multiple providers or API keys, reduce parallel requests, or move this workload to a higher-capacity plan.'
     return f'Upstream Error ({status}): {body}\n\n{guidance}\nRetries attempted: {attempts}.'
 
+
 class ProviderResponse:
     """Normalized response from an upstream provider API call."""
 
-    def __init__(self, status: int, headers: dict[str, str] | None=None, body: dict[str, object] | str | None=None) -> None:
+    def __init__(
+        self, status: int, headers: dict[str, str] | None = None, body: dict[str, object] | str | None = None
+    ) -> None:
         self.status = status
         self.headers = headers or {}
         self.body = body
@@ -131,11 +140,11 @@ class ProviderResponse:
         return 200 <= self.status < 300
 
     @property
-    def isError(self) -> bool:
+    def is_error(self) -> bool:
         return self.status >= 400 or self.status == 0
 
     @property
-    def bodyJson(self) -> dict[str, object] | None:
+    def body_json(self) -> dict[str, object] | None:
         """Return body as a dict if it's JSON, None otherwise."""
         if isinstance(self.body, dict):
             return self.body
@@ -145,6 +154,7 @@ class ProviderResponse:
             except (json.JSONDecodeError, UnicodeDecodeError):
                 return None
         return None
+
 
 def estimateStringTokens(s: str | None) -> int:
     """Estimate token count for a string using character heuristics.
@@ -168,6 +178,7 @@ def estimateStringTokens(s: str | None) -> int:
             tokens += 0.25
     return max(1, int(tokens + 0.999))
 
+
 def estimateMessageTokens(msg: dict[str, object]) -> int:
     """Estimate tokens for a single message."""
     tokens = 4
@@ -182,8 +193,9 @@ def estimateMessageTokens(msg: dict[str, object]) -> int:
         tokens += estimateStringTokens(as_str(func.get('arguments'), ''))
         tokens += estimateStringTokens(as_str(tc.get('id'), ''))
     if msg.get('tool_call_id'):
-        tokens += 4 + estimateStringTokens(msg['tool_call_id'])
+        tokens += 4 + estimateStringTokens(as_str(msg.get('tool_call_id'), ''))
     return tokens
+
 
 def estimateToolTokens(tools: list[dict[str, object]] | None) -> int:
     """Estimate tokens for tool definitions."""
@@ -199,7 +211,8 @@ def estimateToolTokens(tools: list[dict[str, object]] | None) -> int:
         total += estimateStringTokens(json.dumps(params))
     return total
 
-def estimateTokens(messages: list[dict[str, object]], tools: list[dict[str, object]] | None=None) -> int:
+
+def estimateTokens(messages: list[dict[str, object]], tools: list[dict[str, object]] | None = None) -> int:
     """Estimate total tokens for a conversation."""
     total = 3
     for msg in messages:
@@ -208,6 +221,7 @@ def estimateTokens(messages: list[dict[str, object]], tools: list[dict[str, obje
         total += estimateToolTokens(tools)
     return total
 
+
 def formatTokenCount(n: int) -> str:
     """Format token counts: 1.5M, 512K, or raw number."""
     if n >= 1000000:
@@ -215,6 +229,7 @@ def formatTokenCount(n: int) -> str:
     if n >= 1000:
         return f'{n / 1024:.1f}K'
     return str(n)
+
 
 def _estimateContentTokens(content: object) -> int:
     """Estimate tokens for various content formats."""
@@ -243,6 +258,7 @@ def _estimateContentTokens(content: object) -> int:
         return total
     return estimateStringTokens(json.dumps(content))
 
+
 class BaseProviderClient:
     """Shared HTTP transport for all provider API formats.
 
@@ -257,9 +273,10 @@ class BaseProviderClient:
     Subclass this for each API format (Anthropic Messages, OpenAI Chat,
     Bedrock Converse, etc.).
     """
+
     apiFormat: str = ''
 
-    def __init__(self, providerConfig: dict[str, object], *, timeout: float=300.0, maxRetries: int=3) -> None:
+    def __init__(self, providerConfig: dict[str, object], *, timeout: float = 300.0, maxRetries: int = 3) -> None:
         self.config = providerConfig
         self.timeout = timeout
         self.maxRetries = maxRetries
@@ -275,6 +292,24 @@ class BaseProviderClient:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+
+    async def chat_completions(self, body: dict[str, object], apiKey: str | None = None) -> ProviderResponse:
+        raise NotImplementedError
+
+    async def chat_completions_stream(
+        self, body: dict[str, object], apiKey: str | None = None
+    ) -> AsyncIterator[dict[str, object]]:
+        raise NotImplementedError
+        yield {}  # async-generator stub; subclasses override
+
+    async def messages(self, body: dict[str, object], apiKey: str | None = None) -> ProviderResponse:
+        raise NotImplementedError
+
+    async def messages_stream(
+        self, body: dict[str, object], apiKey: str | None = None
+    ) -> AsyncIterator[dict[str, object]]:
+        raise NotImplementedError
+        yield {}  # async-generator stub; subclasses override
 
     def buildAuthHeaders(self, apiKey: str | None) -> dict[str, str]:
         """Build standard JSON + Bearer auth headers.
@@ -300,6 +335,7 @@ class BaseProviderClient:
         """
         import os
         from app.config import settings
+
         providerName = as_str(self.config.get('name'), '')
         embedded = as_str(self.config.get('api_key')) or as_str(self.config.get('apiKey'))
         if embedded:
@@ -308,15 +344,16 @@ class BaseProviderClient:
         candidates = [providerName]
         aliasesList = as_list(self.config.get('aliases'), [])
         if isinstance(aliasesList, list):
-            candidates.extend(aliasesList)
+            candidates.extend(as_str(a) for a in aliasesList)
         envVars = as_list(self.config.get('envVars'), [])
         for var in envVars:
-            if var.endswith('_API_KEY'):
-                base = var.replace('_API_KEY', '').lower()
+            varStr = as_str(var)
+            if varStr.endswith('_API_KEY'):
+                base = varStr.replace('_API_KEY', '').lower()
                 candidates.append(base)
                 candidates.append(base.replace('_', '-'))
-            elif var.endswith('_KEY'):
-                base = var.replace('_KEY', '').lower()
+            elif varStr.endswith('_KEY'):
+                base = varStr.replace('_KEY', '').lower()
                 candidates.append(base)
                 candidates.append(base.replace('_', '-'))
         for candidate in candidates:
@@ -328,25 +365,28 @@ class BaseProviderClient:
                 if apiKey:
                     return apiKey
         for var in envVars:
-            val = os.environ.get(var)
+            val = os.environ.get(as_str(var))
             if val:
                 return val
         envName = providerName.upper().replace(' ', '_').replace('-', '_')
         for suffix in ('_API_KEY', '_KEY', '_APIKEY'):
-            candidate = os.environ.get(f'{envName}{suffix}')
-            if candidate:
-                return candidate
+            envCandidate = os.environ.get(f'{envName}{suffix}')
+            if envCandidate:
+                return envCandidate
         return None
 
     def resolveBaseUrl(self) -> str:
         """Resolve the base URL from env vars, config.json, or provider default."""
         from app.config import settings
+
         providerName = as_str(self.config.get('name'), '')
         cfg = as_dict(settings.config.get(providerName), {})
         baseUrl = as_str(cfg.get('baseUrl')) or as_str(self.config.get('baseUrl'), '')
         return baseUrl.rstrip('/') if baseUrl else ''
 
-    async def requestJson(self, method: str, url: str, headers: dict[str, str], body: dict[str, object] | None=None) -> ProviderResponse:
+    async def requestJson(
+        self, method: str, url: str, headers: dict[str, str], body: dict[str, object] | None = None
+    ) -> ProviderResponse:
         """Make a non-streaming JSON request with retry logic."""
         for attempt in range(self.maxRetries + 1):
             try:
@@ -362,12 +402,14 @@ class BaseProviderClient:
                 return ProviderResponse(status=resp.status_code, headers=dict(resp.headers), body=data)
             except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
                 if attempt >= self.maxRetries:
-                    return ProviderResponse(status=0, body={'error': f'Request failed after {self.maxRetries} retries: {exc}'})
-                delay = min(1000 * 2 ** attempt, 8000) / 1000
+                    return ProviderResponse(
+                        status=0, body={'error': f'Request failed after {self.maxRetries} retries: {exc}'}
+                    )
+                delay = min(1000 * 2**attempt, 8000) / 1000
                 await asyncio.sleep(delay)
         return ProviderResponse(status=0, body={'error': 'Max retries exceeded'})
 
-    async def generate(self, prompt: str, system: str | None=None) -> str:
+    async def generate(self, prompt: str, system: str | None = None) -> str:
         """v2: Simple text-in/text-out helper used by consolidation, delta engine,
         skill genesis, and daemon code paths.
 
@@ -382,7 +424,7 @@ class BaseProviderClient:
             model = as_str(self.config.get('model'), '')
             body = {'model': model, 'messages': messages, 'stream': False}
             try:
-                resp = await self.chatCompletions(body)
+                resp = await self.chat_completions(body)
             except (AttributeError, TypeError):
                 return ''
             if resp.status != 200:
@@ -396,7 +438,9 @@ class BaseProviderClient:
             return ''
         return ''
 
-    async def streamSse(self, url: str, headers: dict[str, str], body: dict[str, object]) -> AsyncIterator[dict[str, object]]:
+    async def streamSse(
+        self, url: str, headers: dict[str, str], body: dict[str, object]
+    ) -> AsyncIterator[dict[str, object]]:
         """Stream SSE events from an upstream API.
 
         Yields parsed JSON dicts for each ``data:`` line as they arrive
@@ -413,7 +457,11 @@ class BaseProviderClient:
                         continue
                     if resp.status_code >= 400:
                         errorBody = await resp.aread()
-                        yield {'type': 'error', 'status': resp.status_code, 'body': errorBody.decode('utf-8', errors='replace')}
+                        yield {
+                            'type': 'error',
+                            'status': resp.status_code,
+                            'body': errorBody.decode('utf-8', errors='replace'),
+                        }
                         return
                     queue: asyncio.Queue[dict[str, object] | None] = asyncio.Queue()
 
@@ -428,6 +476,7 @@ class BaseProviderClient:
                             queue.put_nowait(parsed)
                         except json.JSONDecodeError:
                             pass
+
                     parser = SseStreamParser(onEvent=collector)
 
                     async def _feed() -> None:
@@ -438,6 +487,7 @@ class BaseProviderClient:
                             parser.flush()
                         finally:
                             queue.put_nowait(None)
+
                     feedTask = asyncio.create_task(_feed())
                     try:
                         while True:
@@ -455,14 +505,14 @@ class BaseProviderClient:
             except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
                 lastExc = exc
                 if attempt < self.maxRetries:
-                    delay = min(1000 * 2 ** attempt, 8000) / 1000
+                    delay = min(1000 * 2**attempt, 8000) / 1000
                     await asyncio.sleep(delay)
                     continue
                 yield {'type': 'error', 'error': str(lastExc)}
                 return
 
     @staticmethod
-    def estimateTokens(messages: list[dict[str, object]], tools: list[dict[str, object]] | None=None) -> int:
+    def estimateTokens(messages: list[dict[str, object]], tools: list[dict[str, object]] | None = None) -> int:
         return estimateTokens(messages, tools)
 
     @staticmethod

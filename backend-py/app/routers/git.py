@@ -3,17 +3,21 @@
 Port of backend/services/git/git-service.js + git-routes.js.
 Provides git status, log, and basic operations via the git CLI.
 """
+
 from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
 router = APIRouter(prefix='/api/git')
+
 
 class GitCommand(BaseModel):
     repoPath: str = ''
     args: list[str] = []
+
 
 async def _runGit(repoPath: str, *args: str) -> str:
     """Run a git command and return stdout."""
@@ -21,7 +25,9 @@ async def _runGit(repoPath: str, *args: str) -> str:
     if not cwd.is_dir():
         raise HTTPException(status_code=400, detail=f'Not a directory: {repoPath}')
     try:
-        proc = await asyncio.create_subprocess_exec('git', *args, cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        proc = await asyncio.create_subprocess_exec(
+            'git', *args, cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
         if proc.returncode != 0:
             raise HTTPException(status_code=400, detail=stderr.decode('utf-8', errors='replace'))
@@ -31,34 +37,39 @@ async def _runGit(repoPath: str, *args: str) -> str:
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail='Git not found on system PATH')
 
+
 @router.get('/status')
-async def gitStatus(repoPath: str=''):
+async def gitStatus(repoPath: str = ''):
     """Get git status for a repository."""
     output = await _runGit(repoPath, 'status', '--porcelain')
     return {'status': output}
 
+
 @router.get('/log')
-async def gitLog(repoPath: str='', count: int=10):
+async def gitLog(repoPath: str = '', count: int = 10):
     """Get recent git log."""
     output = await _runGit(repoPath, 'log', f'--max-count={count}', '--oneline')
     return {'log': output}
 
+
 @router.get('/branch')
-async def gitBranch(repoPath: str=''):
+async def gitBranch(repoPath: str = ''):
     """List git branches."""
     output = await _runGit(repoPath, 'branch', '-a')
     return {'branches': output}
 
+
 @router.get('/diff')
-async def gitDiff(repoPath: str='', target: str='HEAD'):
+async def gitDiff(repoPath: str = '', target: str = 'HEAD'):
     """Show git diff for unstaged changes."""
     output = await _runGit(repoPath, 'diff', target)
     return {'diff': output}
+
 
 @router.post('/command')
 async def gitCommand(body: GitCommand):
     """Execute an arbitrary git command."""
     if not body.args:
         raise HTTPException(status_code=400, detail='No git args provided')
-    output = await _runGit(body.repo_path, *body.args)
+    output = await _runGit(body.repoPath, *body.args)
     return {'output': output}

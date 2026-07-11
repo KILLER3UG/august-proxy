@@ -12,6 +12,7 @@ Handles:
 - Conversation grouping
 - Session ID resolution
 """
+
 from __future__ import annotations
 import asyncio
 import json
@@ -21,15 +22,17 @@ import uuid
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Callable, cast
 from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
 from app.lib.paths import dataPath
+
 MAX_ACTIVITY_LOG = 200
 MAX_REQUEST_LOG = 1000
 MAX_LOG_EVENTS = 5000
 MAX_REQUEST_DETAILS = 100
 ACTIVITY_LOG_FILE = 'activity-log.json'
 REQUEST_LOG_FILE = 'request-log.json'
+
 
 class ActivityLog:
     """In-memory activity log with SSE broadcast."""
@@ -39,7 +42,12 @@ class ActivityLog:
         self._subscribers: list[Callable[[dict[str, object]], None]] = []
 
     def append(self, type: str, detail: str) -> dict[str, object]:
-        entry = {'id': str(uuid.uuid4()), 'type': type, 'detail': detail, 'timestamp': datetime.utcnow().isoformat() + 'Z'}
+        entry: dict[str, object] = {
+            'id': str(uuid.uuid4()),
+            'type': type,
+            'detail': detail,
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+        }
         self._entries.appendleft(entry)
         self._broadcast(entry)
         return entry
@@ -53,6 +61,7 @@ class ActivityLog:
         def unsubscribe() -> None:
             if callback in self._subscribers:
                 self._subscribers.remove(callback)
+
         return unsubscribe
 
     def _broadcast(self, entry: dict[str, object]) -> None:
@@ -61,14 +70,19 @@ class ActivityLog:
                 cb(entry)
             except Exception:
                 pass
+
+
 activityLog = ActivityLog()
+
 
 def logActivity(type: str, detail: str) -> None:
     """Append an activity log entry."""
     activityLog.append(type, detail)
 
+
 def getActivityLog() -> list[dict[str, object]]:
     return activityLog.get()
+
 
 class RequestTracker:
     """Tracks API requests, responses, tokens, and errors."""
@@ -99,7 +113,7 @@ class RequestTracker:
         self._persist()
         return entry
 
-    def captureRequest(self, reqId: str, body: object, metadata: dict[str, object] | None=None) -> None:
+    def captureRequest(self, reqId: str, body: object, metadata: dict[str, object] | None = None) -> None:
         """Store the request body for debug inspection."""
         detail = self._details.get(reqId)
         if not detail:
@@ -112,7 +126,7 @@ class RequestTracker:
         if metadata:
             detail.update(metadata)
 
-    def captureResponse(self, reqId: str, responseData: dict[str, object]) -> None:
+    def capture_response(self, reqId: str, responseData: dict[str, object]) -> None:
         """Store the response body with token/usage extraction."""
         detail = self._details.get(reqId)
         if not detail:
@@ -125,14 +139,15 @@ class RequestTracker:
             detail['outputTokens'] = as_int(usage.get('completion_tokens')) or as_int(usage.get('output_tokens'))
         choices = as_list(responseData.get('choices'), [])
         if choices:
-            detail['finishReason'] = as_str(choices[0].get('finish_reason'), '')
-            message = as_dict(choices[0].get('message')) or as_dict(choices[0].get('delta'))
+            choice = as_dict(choices[0])
+            detail['finishReason'] = as_str(choice.get('finish_reason'), '')
+            message = as_dict(choice.get('message')) or as_dict(choice.get('delta'))
             if as_str(message.get('content')):
                 detail['responseContent'] = str(message['content'])[:500]
             if as_list(message.get('tool_calls'), []):
-                detail['toolCalls'] = len(message['tool_calls'])
+                detail['toolCalls'] = len(as_list(message.get('tool_calls'), []))
 
-    def captureTokens(self, reqId: str, inputTokens: int, outputTokens: int) -> None:
+    def capture_tokens(self, reqId: str, inputTokens: int, outputTokens: int) -> None:
         """Push token counts into an existing detail entry."""
         detail = self._details.get(reqId)
         if not detail:
@@ -141,7 +156,7 @@ class RequestTracker:
         detail['inputTokens'] = as_int(detail.get('inputTokens')) + inputTokens
         detail['outputTokens'] = as_int(detail.get('outputTokens')) + outputTokens
 
-    def captureError(self, reqId: str, error: str) -> None:
+    def capture_error(self, reqId: str, error: str) -> None:
         """Set error on a request detail."""
         detail = self._details.get(reqId)
         if not detail:
@@ -152,20 +167,23 @@ class RequestTracker:
     def getPending(self) -> list[dict[str, object]]:
         self._cleanupStale()
         now = time.time()
-        return [{**v, 'elapsed': int((time.time() - _parseTimestamp(v['startedAt'])) * 1000)} for v in self._pending.values()]
+        return [
+            {**v, 'elapsed': int((time.time() - _parseTimestamp(as_str(v.get('startedAt')))) * 1000)}
+            for v in self._pending.values()
+        ]
 
     def getLog(self) -> list[dict[str, object]]:
         self._cleanupStale()
         return list(self._log)
 
-    def getFiltered(self, period: str='all') -> list[dict[str, object]]:
+    def getFiltered(self, period: str = 'all') -> list[dict[str, object]]:
         """Filter request log by time period."""
         cutoff = _periodCutoff(period)
         if cutoff is None:
             return list(self._log)
         return [e for e in self._log if _parseTimestamp(as_str(e.get('startedAt'), '')) >= cutoff]
 
-    def getStats(self, period: str='all') -> dict[str, object]:
+    def getStats(self, period: str = 'all') -> dict[str, object]:
         """Compute aggregate stats from the request log."""
         entries = self.getFiltered(period)
         total = len(entries)
@@ -179,9 +197,19 @@ class RequestTracker:
             models[m] = models.get(m, 0) + 1
         inputCost = totalInput / 1000000 * 3.0
         outputCost = totalOutput / 1000000 * 15.0
-        return {'totalRequests': total, 'completed': completed, 'errors': errors, 'totalInputTokens': totalInput, 'totalOutputTokens': totalOutput, 'estimatedCost': round(inputCost + outputCost, 4), 'mostUsedModel': max(models, key=models.get) if models else 'none', 'modelBreakdown': models, 'averageDuration': 0}
+        return {
+            'totalRequests': total,
+            'completed': completed,
+            'errors': errors,
+            'totalInputTokens': totalInput,
+            'totalOutputTokens': totalOutput,
+            'estimatedCost': round(inputCost + outputCost, 4),
+            'mostUsedModel': max(models, key=lambda k: models.get(k, 0)) if models else 'none',
+            'modelBreakdown': models,
+            'averageDuration': 0,
+        }
 
-    def getRequestDetails(self, period: str='all') -> list[dict[str, object]]:
+    def getRequestDetails(self, period: str = 'all') -> list[dict[str, object]]:
         """Return stored request details."""
         cutoff = _periodCutoff(period)
         if cutoff is None:
@@ -214,32 +242,54 @@ class RequestTracker:
         events are visible under the default filter set.
         """
         from app.services import log_stream
+
         event = dict(event)
         if not as_str(event.get('category')):
             event['category'] = 'info'
         log_stream.emitLogEvent(event)
 
-    def getRecentLogEvents(self, limit: int=100) -> list[dict[str, object]]:
+    def getRecentLogEvents(self, limit: int = 100) -> list[dict[str, object]]:
         from app.services import log_stream
+
         return log_stream.getRecentLogEvents(limit)
 
     def _finalize(self, reqId: str, pending: dict[str, object], result: dict[str, object]) -> dict[str, object]:
         """Build the final request log entry."""
         usage = as_dict(result.get('usage'), {})
         detail = self._details.pop(reqId, {})
-        return {'id': reqId, 'startedAt': as_str(pending.get('startedAt'), ''), 'completedAt': datetime.utcnow().isoformat() + 'Z', 'status': 'error' if as_str(result.get('error')) else 'completed', 'model': as_str(pending.get('model'), ''), 'provider': as_str(pending.get('provider'), ''), 'inputTokens': as_int(usage.get('prompt_tokens')) or as_int(usage.get('input_tokens')) or as_int(detail.get('inputTokens')), 'outputTokens': as_int(usage.get('completion_tokens')) or as_int(usage.get('output_tokens')) or as_int(detail.get('outputTokens')), 'error': as_str(result.get('error')) or as_str(detail.get('error')), 'method': as_str(pending.get('method'), 'POST'), 'path': as_str(pending.get('path'), ''), 'sessionId': as_str(result.get('sessionId')) or as_str(pending.get('sessionId'), ''), **detail}
+        return {
+            'id': reqId,
+            'startedAt': as_str(pending.get('startedAt'), ''),
+            'completedAt': datetime.utcnow().isoformat() + 'Z',
+            'status': 'error' if as_str(result.get('error')) else 'completed',
+            'model': as_str(pending.get('model'), ''),
+            'provider': as_str(pending.get('provider'), ''),
+            'inputTokens': as_int(usage.get('prompt_tokens'))
+            or as_int(usage.get('input_tokens'))
+            or as_int(detail.get('inputTokens')),
+            'outputTokens': as_int(usage.get('completion_tokens'))
+            or as_int(usage.get('output_tokens'))
+            or as_int(detail.get('outputTokens')),
+            'error': as_str(result.get('error')) or as_str(detail.get('error')),
+            'method': as_str(pending.get('method'), 'POST'),
+            'path': as_str(pending.get('path'), ''),
+            'sessionId': as_str(result.get('sessionId')) or as_str(pending.get('sessionId'), ''),
+            **detail,
+        }
 
-    def _cleanupStale(self, timeoutS: int=600) -> None:
+    def _cleanupStale(self, timeoutS: int = 600) -> None:
         """Remove pending requests older than timeout."""
         now = time.time()
-        stale = [rid for rid, v in self._pending.items() if now - _parseTimestamp(as_str(v.get('startedAt'), '')) > timeoutS]
+        stale = [
+            rid for rid, v in self._pending.items() if now - _parseTimestamp(as_str(v.get('startedAt'), '')) > timeoutS
+        ]
         for rid in stale:
             del self._pending[rid]
 
     def _broadcastSse(self, entry: dict[str, object]) -> None:
         for client in list(self._sseClients):
             try:
-                client({'type': 'request_log', 'data': entry})
+                cast('Callable[[dict[str, object]], None]', client)({'type': 'request_log', 'data': entry})
             except Exception:
                 self._sseClients.remove(client)
 
@@ -259,63 +309,86 @@ class RequestTracker:
         if isinstance(data, list):
             return [self._sanitize(v) for v in data]
         return data
+
+
 _tracker = RequestTracker()
+
 
 def startRequest(info: dict[str, object]) -> str:
     return _tracker.startRequest(info)
 
+
 def endRequest(reqId: str, result: dict[str, object]) -> dict[str, object] | None:
     return _tracker.endRequest(reqId, result)
 
-def captureRequest(reqId: str, body: object, metadata: dict[str, object] | None=None) -> None:
+
+def captureRequest(reqId: str, body: object, metadata: dict[str, object] | None = None) -> None:
     _tracker.captureRequest(reqId, body, metadata)
 
-def captureResponse(reqId: str, responseData: dict[str, object]) -> None:
-    _tracker.captureResponse(reqId, responseData)
 
-def captureTokens(reqId: str, inputTokens: int, outputTokens: int) -> None:
-    _tracker.captureTokens(reqId, inputTokens, outputTokens)
+def capture_response(reqId: str, responseData: dict[str, object]) -> None:
+    _tracker.capture_response(reqId, responseData)
 
-def captureError(reqId: str, error: str) -> None:
-    _tracker.captureError(reqId, error)
+
+def capture_tokens(reqId: str, inputTokens: int, outputTokens: int) -> None:
+    _tracker.capture_tokens(reqId, inputTokens, outputTokens)
+
+
+def capture_error(reqId: str, error: str) -> None:
+    _tracker.capture_error(reqId, error)
+
 
 def getPendingRequests() -> list[dict[str, object]]:
     return _tracker.getPending()
 
+
 def getRequestLog() -> list[dict[str, object]]:
     return _tracker.getLog()
 
-def getFilteredRequests(period: str='all') -> list[dict[str, object]]:
+
+def getFilteredRequests(period: str = 'all') -> list[dict[str, object]]:
     return _tracker.getFiltered(period)
 
-def getStats(period: str='all') -> dict[str, object]:
+
+def getStats(period: str = 'all') -> dict[str, object]:
     return _tracker.getStats(period)
 
-def getRequestDetails(period: str='all') -> list[dict[str, object]]:
+
+def getRequestDetails(period: str = 'all') -> list[dict[str, object]]:
     return _tracker.getRequestDetails(period)
+
 
 def getRequestDetail(reqId: str) -> dict[str, object] | None:
     return _tracker.getRequestDetail(reqId)
 
+
 def addSseClient(client: object) -> None:
     _tracker.addSseClient(client)
+
 
 def removeSseClient(client: object) -> None:
     _tracker.removeSseClient(client)
 
+
 def addLogWsClient(ws: object) -> None:
     from app.services import log_stream
+
     log_stream.addLogWsClient(ws)
+
 
 def removeLogWsClient(ws: object) -> None:
     from app.services import log_stream
+
     log_stream.removeLogWsClient(ws)
+
 
 def emitLogEvent(event: dict[str, object]) -> None:
     _tracker.emitLogEvent(event)
 
-def getRecentLogEvents(limit: int=100) -> list[dict[str, object]]:
+
+def getRecentLogEvents(limit: int = 100) -> list[dict[str, object]]:
     return _tracker.getRecentLogEvents(limit)
+
 
 def extractSessionId(body: dict[str, object]) -> str:
     """Extract a session ID from a request body."""
@@ -325,7 +398,8 @@ def extractSessionId(body: dict[str, object]) -> str:
             return val
     return ''
 
-def resolveSessionId(body: dict[str, object], metadata: dict[str, object] | None=None) -> str:
+
+def resolveSessionId(body: dict[str, object], metadata: dict[str, object] | None = None) -> str:
     """Resolve final session ID with priority: metadata > body > synthetic."""
     if metadata:
         sid = as_str(metadata.get('sessionId')) or as_str(metadata.get('session_id'))
@@ -333,8 +407,10 @@ def resolveSessionId(body: dict[str, object], metadata: dict[str, object] | None
             return sid
     return extractSessionId(body) or _syntheticSessionId()
 
+
 def _syntheticSessionId() -> str:
     return f'proxy:{uuid.uuid4().hex[:12]}'
+
 
 def _parseTimestamp(ts: str) -> float:
     """Parse an ISO timestamp string to a Unix timestamp."""
@@ -343,6 +419,7 @@ def _parseTimestamp(ts: str) -> float:
         return dt.timestamp()
     except (ValueError, AttributeError):
         return 0
+
 
 def _periodCutoff(period: str) -> float | None:
     """Return the cutoff timestamp for a given period string."""

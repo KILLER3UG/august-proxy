@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timedelta
+from typing import cast
 from app.typeAliases import BlackboardNoteDict
 from app.jsonUtils import as_str, as_dict, as_list, as_int
 
@@ -68,7 +69,7 @@ def readNotes(sessionId: str, agent: str='', key: str='', ack: bool=False) -> li
             if n.get('id'):
                 conn.execute('DELETE FROM blackboard WHERE id = ?', (n['id'],))
         conn.commit()
-    return notes
+    return cast('list[BlackboardNoteDict]', notes)
 
 def clearNotes(sessionId: str, agent: str='') -> int:
     """Clear blackboard notes, optionally for a specific agent."""

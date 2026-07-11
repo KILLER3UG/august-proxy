@@ -1,7 +1,9 @@
 """
 Configuration API routes.
 """
+
 from __future__ import annotations
+from typing import cast
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.config import settings
@@ -9,7 +11,10 @@ from app.providers import resolver as providerResolver
 from app.lib import secrets
 from app.services import config_service
 from app.jsonUtils import as_dict, as_list, as_str
+from app.typeAliases import AliasDict
+
 router = APIRouter(prefix='/api/config')
+
 
 @router.get('/activeProvider')
 async def activeProvider():
@@ -22,15 +27,24 @@ async def activeProvider():
     cfg = config_service.getConfig()
     active = cfg.get('activeProvider')
     providers = []
-    for p in providerResolver.listAvailable():
+    for p in providerResolver.list_available():
         apiKey = as_str(as_dict(cfg.get(p['name']), {}).get('apiKey'), '')
         if not apiKey:
             from app.providers.clients import getClient
+
             client = getClient(p)
             if client:
                 apiKey = client.resolveApiKey() or ''
         if apiKey:
-            providers.append({'id': p['name'], 'name': p['name'], 'apiMode': as_str(p.get('apiMode'), ''), 'isAvailable': True, 'redactedKey': secrets.mask(apiKey)})
+            providers.append(
+                {
+                    'id': p['name'],
+                    'name': p['name'],
+                    'apiMode': as_str(p.get('apiMode'), ''),
+                    'isAvailable': True,
+                    'redactedKey': secrets.mask(apiKey),
+                }
+            )
     store = config_service.getProvidersStore()
     for entry in as_list(store.get('providers'), []):
         name = as_str(entry.get('name'), '')
@@ -38,12 +52,22 @@ async def activeProvider():
             continue
         apiKey = as_str(entry.get('apiKey'), '')
         if apiKey:
-            providers.append({'id': name, 'name': name, 'apiMode': as_str(entry.get('apiFormat'), 'openaiChat'), 'isAvailable': True, 'redactedKey': secrets.mask(apiKey)})
+            providers.append(
+                {
+                    'id': name,
+                    'name': name,
+                    'apiMode': as_str(entry.get('apiFormat'), 'openaiChat'),
+                    'isAvailable': True,
+                    'redactedKey': secrets.mask(apiKey),
+                }
+            )
     return {'activeProvider': active, 'providers': providers}
+
 
 class ProviderDetailsUpdate(BaseModel):
     provider: str
     config: dict[str, str] = {}
+
 
 @router.get('/provider-details')
 async def providerDetails(provider: str = ''):
@@ -55,9 +79,11 @@ async def providerDetails(provider: str = ''):
     import os
     from app.providers import resolver as providerResolver
     from app.providers.template_loader import getTemplates, getTemplate
+
     store = config_service.getProvidersStore()
     entry = None
-    for e in store.get('providers', []):
+    for raw in as_list(store.get('providers'), []):
+        e = as_dict(raw, {})
         if e.get('id') == provider or e.get('name') == provider:
             entry = e
             break
@@ -82,8 +108,8 @@ async def providerDetails(provider: str = ''):
         configOverrides = {}
         isAvailable = False
         providerId = tmpl.get('id', provider)
-    envVars = pd.get('envVars') or []
-    envStatus = {v: bool(os.getenv(v)) for v in envVars}
+    envVars = as_list(pd.get('envVars'), [])
+    envStatus = {as_str(v): bool(os.getenv(as_str(v))) for v in envVars}
     cfg = config_service.getConfig()
     active = cfg.get('activeProvider')
     return {
@@ -103,12 +129,15 @@ async def providerDetails(provider: str = ''):
         'configOverrides': configOverrides,
     }
 
+
 @router.post('/provider-details')
 async def updateProviderDetails(body: ProviderDetailsUpdate):
     """Apply config overrides (api key / base url) to a custom provider entry."""
     from app.services import model_service
+
     store = config_service.getProvidersStore()
-    for e in store.get('providers', []):
+    for raw in as_list(store.get('providers'), []):
+        e = as_dict(raw, {})
         if e.get('id') == body.provider or e.get('name') == body.provider:
             if 'apiKey' in body.config:
                 e['apiKey'] = body.config['apiKey']
@@ -119,6 +148,7 @@ async def updateProviderDetails(body: ProviderDetailsUpdate):
             return {'status': 'success', 'id': e.get('id')}
     raise HTTPException(status_code=404, detail='Provider not found')
 
+
 @router.get('/safe')
 async def configSafe():
     """Get full config (safe endpoint — returns everything the UI needs).
@@ -128,34 +158,44 @@ async def configSafe():
     """
     from app.lib.paths import dataPath
     import json
+
     cfgPath = dataPath('config.json')
     cfg = json.loads(cfgPath.read_text('utf-8')) if cfgPath.exists() else {}
     return cfg
+
 
 @router.get('/model-aliases')
 async def getModelAliases():
     """Return all model-alias entries for the UI's Aliases tab."""
     from app.services import alias_service
+
     return {'aliases': alias_service.listAliases()}
+
 
 class ModelAliasesBulk(BaseModel):
     aliases: list[dict[str, object]]
+
 
 @router.put('/model-aliases')
 async def putModelAliases(body: ModelAliasesBulk):
     """Replace the entire alias list (validated)."""
     from app.services import alias_service
+
     try:
-        return {'aliases': alias_service.replace_aliases(body.aliases, actor='ui')}
+        return {'aliases': alias_service.replaceAliases(cast(list[AliasDict], body.aliases), actor='ui')}
     except ValueError as exc:
         from fastapi import HTTPException
+
         raise HTTPException(400, detail={'code': 'validation', 'message': str(exc)})
+
 
 @router.get('/subagent-fallback')
 async def getSubagentFallback():
     """Return the current sub-agent fallback configuration."""
     from app.services import fallback_service
+
     return fallback_service.getFallback()
+
 
 class FallbackUpdate(BaseModel):
     enabled: bool | None = None
@@ -163,48 +203,70 @@ class FallbackUpdate(BaseModel):
     provider: str | None = None
     model: str | None = None
 
+
 @router.put('/subagent-fallback')
 async def putSubagentFallback(body: FallbackUpdate):
     """Update sub-agent fallback fields (partial)."""
     from app.services import fallback_service
+
     try:
-        return fallback_service.configureFallback(enabled=body.enabled, mode=body.mode, provider=body.provider, model=body.model, actor='ui')
+        return fallback_service.configureFallback(
+            enabled=body.enabled, mode=body.mode, provider=body.provider, model=body.model, actor='ui'
+        )
     except ValueError as exc:
         from fastapi import HTTPException
+
         raise HTTPException(400, detail={'code': 'validation', 'message': str(exc)})
+
 
 class FallbackTest(BaseModel):
     model: str
+
 
 @router.post('/subagent-fallback/test')
 async def testSubagentFallback(body: FallbackTest):
     """Probe resolution of a model id without saving."""
     from app.services import fallback_service
-    return fallback_service.test_fallback(body.model)
+
+    return fallback_service.testFallback(body.model)
+
 
 class BackgroundReviewUpdate(BaseModel):
     enabled: bool | None = None
-    reviewModel: str | None = None
-    reflectionModel: str | None = None
-    autoMemoryModel: str | None = None
+    review_model: str | None = None
+    reflection_model: str | None = None
+    auto_memory_model: str | None = None
+
 
 @router.get('/background-review')
 async def getBackgroundReview():
     """Return the current background review config."""
     from app.services import background_review_service
+
     return background_review_service.getConfig()
+
 
 @router.put('/background-review')
 async def putBackgroundReview(body: BackgroundReviewUpdate):
     """Update background review config fields (partial)."""
     from app.services import background_review_service
-    return background_review_service.saveConfig(enabled=body.enabled, review_model=body.reviewModel, reflection_model=body.reflectionModel, auto_memory_model=body.autoMemoryModel, actor='ui')
+
+    return background_review_service.saveConfig(
+        enabled=body.enabled,
+        review_model=body.review_model,
+        reflection_model=body.reflection_model,
+        auto_memory_model=body.auto_memory_model,
+        actor='ui',
+    )
+
 
 @router.get('/model-fleet')
 async def getModelFleet():
     """v4.1: Return the merged fleet (defaults + user overrides) — see §10."""
     from app.services import model_fleet_service
+
     return model_fleet_service.getFleet()
+
 
 @router.put('/model-fleet')
 async def putModelFleet(body: dict[str, object]):
@@ -221,10 +283,12 @@ async def putModelFleet(body: dict[str, object]):
     """
     from fastapi import HTTPException
     from app.services import model_fleet_service
-    ok, err, fleet = model_fleet_service.update_fleet(body)
+
+    ok, err, fleet = model_fleet_service.updateFleet(body)
     if not ok:
         raise HTTPException(status_code=400, detail={'code': 'validation', 'message': err})
     return fleet
+
 
 @router.get('/live')
 async def getLiveConfig():
@@ -234,7 +298,9 @@ async def getLiveConfig():
     (Web Speech API). Setting a provider upgrades to a paid service.
     """
     from app.services import live_config_service
+
     return live_config_service.getLiveConfig()
+
 
 @router.put('/live')
 async def putLiveConfig(body: dict[str, object]):
@@ -246,10 +312,12 @@ async def putLiveConfig(body: dict[str, object]):
     """
     from fastapi import HTTPException
     from app.services import live_config_service
-    ok, err, cfg = live_config_service.update_live_config(body)
+
+    ok, err, cfg = live_config_service.updateLiveConfig(body)
     if not ok:
         raise HTTPException(status_code=400, detail={'code': 'validation', 'message': err})
     return cfg
+
 
 @router.get('/external-access')
 async def getExternalAccess():
@@ -267,10 +335,22 @@ async def getExternalAccess():
     ea = as_dict(gw.get('externalAccess'), {})
     enabled = bool(ea.get('enabled', False))
     apiKey = settings.gatewayApiKey
-    return {'enabled': enabled, 'hasKey': bool(apiKey), 'keyPreview': secrets.mask(apiKey) if apiKey else None, 'source': 'env' if apiKey else None, 'endpoints': {'anthropic': f'http://localhost:{settings.port}/v1/messages', 'openai': f'http://localhost:{settings.port}/v1/chat/completions', 'models': f'http://localhost:{settings.port}/v1/models'}}
+    return {
+        'enabled': enabled,
+        'hasKey': bool(apiKey),
+        'keyPreview': secrets.mask(apiKey) if apiKey else None,
+        'source': 'env' if apiKey else None,
+        'endpoints': {
+            'anthropic': f'http://localhost:{settings.port}/v1/messages',
+            'openai': f'http://localhost:{settings.port}/v1/chat/completions',
+            'models': f'http://localhost:{settings.port}/v1/models',
+        },
+    }
+
 
 class ExternalAccessUpdate(BaseModel):
     enabled: bool
+
 
 @router.put('/external-access')
 async def putExternalAccess(body: ExternalAccessUpdate):
@@ -280,11 +360,22 @@ async def putExternalAccess(body: ExternalAccessUpdate):
     in ``.env`` (or system environment) and is managed outside the app.
     """
     if body.enabled and (not settings.gatewayApiKey):
-        raise HTTPException(status_code=400, detail={'code': 'no_api_key', 'message': 'Cannot enable external access: GATEWAY_API_KEY is not configured. Set it in your .env file and restart the proxy.'})
+        raise HTTPException(
+            status_code=400,
+            detail={
+                'code': 'no_api_key',
+                'message': 'Cannot enable external access: GATEWAY_API_KEY is not configured. Set it in your .env file and restart the proxy.',
+            },
+        )
     cfg = config_service.getConfig()
-    gw = cfg.setdefault('gateway', {})
-    ea = gw.setdefault('externalAccess', {})
+    gw = as_dict(cfg.setdefault('gateway', {}), {})
+    ea = as_dict(gw.setdefault('externalAccess', {}), {})
     ea['enabled'] = bool(body.enabled)
     config_service.saveConfig(cfg)
     settings.reload()
-    return {'enabled': ea['enabled'], 'hasKey': bool(settings.gatewayApiKey), 'keyPreview': secrets.mask(settings.gatewayApiKey) if settings.gatewayApiKey else None, 'source': 'env' if settings.gatewayApiKey else None}
+    return {
+        'enabled': ea['enabled'],
+        'hasKey': bool(settings.gatewayApiKey),
+        'keyPreview': secrets.mask(settings.gatewayApiKey) if settings.gatewayApiKey else None,
+        'source': 'env' if settings.gatewayApiKey else None,
+    }

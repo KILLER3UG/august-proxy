@@ -32,8 +32,14 @@ def updateLiveConfig(patch: dict[str, object]) -> tuple[bool, str, dict[str, str
     if not ok:
         return (False, err, getLiveConfig())
     cfg = config_service.getConfig()
-    aux = cfg.setdefault('auxiliary', {})
-    live = aux.setdefault('live', {})
+    aux = cfg.get('auxiliary')
+    if not isinstance(aux, dict):
+        aux = {}
+        cfg['auxiliary'] = aux
+    live = aux.get('live')
+    if not isinstance(live, dict):
+        live = {}
+        aux['live'] = live
     live.update(patch)
     config_service.saveConfig(cfg)
     return (True, '', getLiveConfig())

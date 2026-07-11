@@ -94,7 +94,8 @@ async def setupProvider(
 
     # ── Update an existing provider ──
     if providerId:
-        for p in store.get('providers', []):
+        for rawP in as_list(store.get('providers'), []):
+            p = as_dict(rawP)
             if p.get('id') == providerId:
                 if name:
                     p['name'] = name
@@ -125,18 +126,18 @@ async def setupProvider(
     resolved_url = baseUrl
     models: list[dict] = []
     for tmpl in getTemplates():
-        tmpl_name = (tmpl.get('name') or '').lower()
-        tmpl_id = (tmpl.get('id') or '').lower()
+        tmpl_name = (as_str(tmpl.get('name'), '') or '').lower()
+        tmpl_id = (as_str(tmpl.get('id'), '') or '').lower()
         if tmpl_name == display_name.lower() or tmpl_id == display_name.lower():
             if not resolved_url:
-                resolved_url = tmpl.get('baseUrl', '')
+                resolved_url = as_str(tmpl.get('baseUrl'), '')
             if api_format == 'openaiChat':
-                api_format = tmpl.get('apiFormat', api_format)
-            profiles = tmpl.get('modelProfiles', {}) or {}
+                api_format = as_str(tmpl.get('apiFormat'), api_format)
+            profiles = as_dict(tmpl.get('modelProfiles'), {})
             for key in profiles:
                 if key == '*':
                     continue
-                prof = profiles[key]
+                prof = as_dict(profiles.get(key), {})
                 models.append({
                     'id': key,
                     'name': key,
@@ -157,7 +158,7 @@ async def setupProvider(
         'autoFetch': False,
         'models': models,
     }
-    store['providers'].append(entry)
+    as_list(store['providers']).append(entry)
     config_service.saveProvidersStore(store)
     model_service.invalidateCache()
     return _ok(

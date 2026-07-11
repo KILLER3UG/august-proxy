@@ -9,6 +9,7 @@ tool set. For tool-using background tasks, use spawn_subagent instead.
 
 Design: docs/design/cognitive-architecture-v1.md §5.4
 """
+
 from __future__ import annotations
 import asyncio
 import hashlib
@@ -18,7 +19,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, cast
 from app.typeAliases import DaemonStatusDict
-from app.jsonUtils import as_str, as_dict, as_int
+from app.jsonUtils import as_str, as_dict, as_float, as_int
+
 logger = logging.getLogger(__name__)
 MAX_DAEMONS_PER_SESSION = 3
 RESULT_EXPIRY_TURNS = 5
@@ -28,17 +30,21 @@ MAX_RETRIES = 2
 POLL_INTERVAL = 30
 SHUTDOWN_TIMEOUT = 5
 
+
 @dataclass
 class DaemonSpec:
     """Specification for a daemon to spawn."""
+
     name: str
     prompt: str
     watchCondition: str | None = None
     tools: list[str] | None = None
 
+
 @dataclass
 class DaemonResult:
     """Result from a daemon run."""
+
     output: str = ''
     status: str = 'running'
     error: str = ''
@@ -46,6 +52,7 @@ class DaemonResult:
     previousHash: str = ''
     turnsAlive: int = 0
     triggered: bool = False
+
 
 class DaemonManager:
     """Manages daemon lifecycle for all sessions."""
@@ -55,14 +62,31 @@ class DaemonManager:
         self._tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
-    async def spawn(self, spec: DaemonSpec, sessionId: str, context: dict[str, object] | None=None) -> str:
+    async def spawn(self, spec: DaemonSpec, sessionId: str, context: dict[str, object] | None = None) -> str:
         """Spawn a daemon. Returns daemon_id string or error message."""
         async with self._lock:
-            sessionDaemons = [d for d in self._daemons.values() if as_str(d.get('session_id')) == sessionId and getattr(cast('DaemonResult | None', d.get('result')), 'status', '') != 'errored']
+            sessionDaemons = [
+                d
+                for d in self._daemons.values()
+                if as_str(d.get('session_id')) == sessionId
+                and getattr(cast('DaemonResult | None', d.get('result')), 'status', '') != 'errored'
+            ]
             if len(sessionDaemons) >= MAX_DAEMONS_PER_SESSION:
                 return f'Error: max {MAX_DAEMONS_PER_SESSION} daemons per session'
             daemonId = f'{sessionId}_{spec.name}_{int(time.time())}'
-            info = {'id': daemonId, 'name': spec.name, 'session_id': sessionId, 'prompt': spec.prompt, 'watch_condition': spec.watch_condition, 'tools': spec.tools, 'result': DaemonResult(), 'context': context or {}, 'retries': 0, 'backoff_index': 0, 'backoff_until': 0.0}
+            info: dict[str, object] = {
+                'id': daemonId,
+                'name': spec.name,
+                'session_id': sessionId,
+                'prompt': spec.prompt,
+                'watch_condition': spec.watchCondition,
+                'tools': spec.tools,
+                'result': DaemonResult(),
+                'context': context or {},
+                'retries': 0,
+                'backoff_index': 0,
+                'backoff_until': 0.0,
+            }
             self._daemons[daemonId] = info
             task = asyncio.create_task(self._runLoop(daemonId))
             self._tasks[daemonId] = task
@@ -77,12 +101,14 @@ class DaemonManager:
             self._tasks[daemonId].cancel()
             del self._tasks[daemonId]
             if daemonId in self._daemons:
-                self._daemons[daemonId]['result'].status = 'completed'
+                r = self._daemons[daemonId].get('result')
+                if isinstance(r, DaemonResult):
+                    r.status = 'completed'
                 del self._daemons[daemonId]
             logger.info('Daemon killed: %s', daemonId)
             return True
 
-    def listDaemons(self, sessionId: str | None=None) -> list[DaemonStatusDict]:
+    def list_daemons(self, sessionId: str | None = None) -> list[DaemonStatusDict]:
         """List daemons, optionally filtered by session.
 
         Returns compact info (no full results). Expired results are removed.
@@ -92,12 +118,26 @@ class DaemonManager:
         for did, info in list(self._daemons.items()):
             if sessionId and as_str(info.get('session_id')) != sessionId:
                 continue
-            r = cast(DaemonResult, info.get('result')) if isinstance(info.get('result'), DaemonResult) else DaemonResult()
-            if r.triggered and r.turns_alive >= RESULT_EXPIRY_TURNS:
+            r = (
+                cast(DaemonResult, info.get('result'))
+                if isinstance(info.get('result'), DaemonResult)
+                else DaemonResult()
+            )
+            if r.triggered and r.turnsAlive >= RESULT_EXPIRY_TURNS:
                 r.triggered = False
                 r.output = ''
                 r.status = 'completed'
-            results.append({'id': did, 'name': info['name'], 'status': r.status, 'triggered': r.triggered, 'error': r.error or None, 'last_check': r.last_check, 'turns_alive': r.turns_alive, 'output': r.output})
+            entry: dict[str, object] = {
+                'id': did,
+                'name': info['name'],
+                'status': r.status,
+                'triggered': r.triggered,
+                'error': r.error or None,
+                'last_check': r.lastCheck,
+                'turns_alive': r.turnsAlive,
+                'output': r.output,
+            }
+            results.append(cast(DaemonStatusDict, entry))
         return results
 
     def getResult(self, daemonId: str) -> DaemonResult | None:
@@ -108,13 +148,17 @@ class DaemonManager:
             return cast(DaemonResult, r) if isinstance(r, DaemonResult) else None
         return None
 
-    def incrementTurns(self, sessionId: str) -> None:
+    def increment_turns(self, sessionId: str) -> None:
         """Increment turn counter for all daemons in a session (called after each LLM turn)."""
         for info in self._daemons.values():
             if as_str(info.get('session_id')) == sessionId:
-                r = cast(DaemonResult, info.get('result')) if isinstance(info.get('result'), DaemonResult) else DaemonResult()
+                r = (
+                    cast(DaemonResult, info.get('result'))
+                    if isinstance(info.get('result'), DaemonResult)
+                    else DaemonResult()
+                )
                 if r.triggered:
-                    r.turns_alive += 1
+                    r.turnsAlive += 1
 
     async def shutdown(self) -> None:
         """Cancel all daemon tasks gracefully."""
@@ -122,7 +166,7 @@ class DaemonManager:
         for t in tasks:
             t.cancel()
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True, timeout=SHUTDOWN_TIMEOUT)
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=SHUTDOWN_TIMEOUT)
         self._tasks.clear()
         self._daemons.clear()
         logger.info('All daemons shut down')
@@ -134,18 +178,18 @@ class DaemonManager:
             return
         while True:
             try:
-                if info['backoff_until'] > time.time():
+                if as_float(info.get('backoff_until'), 0.0) > time.time():
                     await asyncio.sleep(1)
                     continue
                 result = await self._runOnce(daemonId)
                 if result is None:
                     break
                 info['result'] = result
-                info['result'].last_check = time.time()
+                result.lastCheck = time.time()
                 triggered = self._evaluateWatch(info)
                 if triggered:
-                    info['result'].triggered = True
-                    info['result'].turns_alive = 0
+                    result.triggered = True
+                    result.turnsAlive = 0
                     logger.info('Daemon triggered: %s (condition: %s)', daemonId, info['watch_condition'])
                 info['backoff_index'] = 0
                 await asyncio.sleep(POLL_INTERVAL)
@@ -154,12 +198,14 @@ class DaemonManager:
                 break
             except Exception as exc:
                 logger.error('Daemon error: %s: %s', daemonId, exc)
-                info['result'].status = 'errored'
-                info['result'].error = str(exc)
-                if info['retries'] < MAX_RETRIES:
-                    info['retries'] += 1
+                r = info.get('result')
+                if isinstance(r, DaemonResult):
+                    r.status = 'errored'
+                    r.error = str(exc)
+                if as_int(info.get('retries'), 0) < MAX_RETRIES:
+                    info['retries'] = as_int(info.get('retries'), 0) + 1
                     delay = self._backoff(info)
-                    logger.info('Daemon retry %d/%d in %.0fs', info['retries'], MAX_RETRIES, delay)
+                    logger.info('Daemon retry %d/%d in %.0fs', as_int(info.get('retries'), 0), MAX_RETRIES, delay)
                     await asyncio.sleep(delay)
                 else:
                     logger.error('Daemon max retries reached: %s', daemonId)
@@ -175,12 +221,14 @@ class DaemonManager:
             modelRole = 'cerebellum'
             try:
                 from app.services.workbench.model_fleet import getModelForRole
+
                 cerebellumModel = getModelForRole(modelRole)
             except Exception:
                 cerebellumModel = None
             if cerebellumModel:
                 from app.providers.clients import getClient
-                output = await self._callCerebellum(cerebellumModel, info['prompt'])
+
+                output = await self._callCerebellum(cerebellumModel, as_str(info.get('prompt'), ''))
                 result.output = output
                 result.status = 'completed'
             else:
@@ -200,6 +248,7 @@ class DaemonManager:
         try:
             from app.providers import resolver as providerResolver
             from app.providers.clients import getClient
+
             if not model:
                 return f'[daemon: no model configured]'
             provider = providerResolver.resolve(model)
@@ -224,7 +273,7 @@ class DaemonManager:
         if condition == 'on_completion':
             return bool(output.strip())
         if condition.startswith('on_match:'):
-            keyword = condition[len('on_match:'):]
+            keyword = condition[len('on_match:') :]
             return keyword.lower() in output.lower()
         if condition == 'on_change':
             currentHash = hashlib.md5(output.encode()).hexdigest()
@@ -243,7 +292,10 @@ class DaemonManager:
         info['backoff_index'] = idx + 1
         info['backoff_until'] = time.time() + delay
         return delay
+
+
 _manager: DaemonManager | None = None
+
 
 def getManager() -> DaemonManager:
     """Get the global daemon manager singleton."""
@@ -251,6 +303,7 @@ def getManager() -> DaemonManager:
     if _manager is None:
         _manager = DaemonManager()
     return _manager
+
 
 async def shutdownAll() -> None:
     """Shutdown all daemon managers."""

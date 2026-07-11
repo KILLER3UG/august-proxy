@@ -6,12 +6,15 @@ DeepSeek, OpenRouter, Novita, Nvidia, xAI, Together, OpenCode, and more.
 
 Port of the HTTP transport portions of backend/adapters/openai.js.
 """
+
 from __future__ import annotations
 from typing import AsyncIterator
 from app.providers.clients.base import BaseProviderClient, ProviderResponse
 
+
 class OpenAIClient(BaseProviderClient):
     """Client for OpenAI Chat Completions and Responses APIs."""
+
     apiFormat = 'openaiChat'
 
     def buildAuthHeaders(self, apiKey: str | None) -> dict[str, str]:
@@ -36,7 +39,7 @@ class OpenAIClient(BaseProviderClient):
             base = 'https://api.openai.com/v1'
         return base.rstrip('/')
 
-    async def chatCompletions(self, body: dict[str, object], apiKey: str | None=None) -> ProviderResponse:
+    async def chat_completions(self, body: dict[str, object], apiKey: str | None = None) -> ProviderResponse:
         """Non-streaming call to POST /chat/completions."""
         if apiKey is None:
             apiKey = self.resolveApiKey()
@@ -45,7 +48,9 @@ class OpenAIClient(BaseProviderClient):
         body['stream'] = False
         return await self.requestJson('POST', url, headers, body)
 
-    async def chatCompletionsStream(self, body: dict[str, object], apiKey: str | None=None) -> AsyncIterator[dict[str, object]]:
+    async def chat_completions_stream(
+        self, body: dict[str, object], apiKey: str | None = None
+    ) -> AsyncIterator[dict[str, object]]:
         """Streaming call to POST /chat/completions (``stream: true``).
 
         Yields raw SSE ``data:`` chunks as parsed dicts.
@@ -58,7 +63,7 @@ class OpenAIClient(BaseProviderClient):
         async for event in self.streamSse(url, headers, body):
             yield event
 
-    async def responses(self, body: dict[str, object], apiKey: str | None=None) -> ProviderResponse:
+    async def responses(self, body: dict[str, object], apiKey: str | None = None) -> ProviderResponse:
         """Call to POST /v1/responses (OpenAI Responses API).
 
         OpenAI's newer Responses API is a non-streaming endpoint.
@@ -69,7 +74,7 @@ class OpenAIClient(BaseProviderClient):
         url = f'{self.resolveBaseUrl()}/responses'
         return await self.requestJson('POST', url, headers, body)
 
-    async def listModels(self, apiKey: str | None=None) -> ProviderResponse:
+    async def listModels(self, apiKey: str | None = None) -> ProviderResponse:
         """Call GET /v1/models to list available models."""
         if apiKey is None:
             apiKey = self.resolveApiKey()

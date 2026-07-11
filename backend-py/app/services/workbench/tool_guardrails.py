@@ -8,9 +8,11 @@ Tracks:
 - Same-tool failure patterns: warn at 4 failures on the same tool, block at 8
 - Reset tracker state when the model produces a text response (not just tool calls)
 """
+
 from __future__ import annotations
 import time
 from collections import defaultdict
+
 
 class ToolCallTracker:
     """Tracks tool-call patterns to detect loops and failure spirals.
@@ -26,6 +28,7 @@ class ToolCallTracker:
         self._callSequence: list[tuple[str, str, float]] = []
         self._failureCount: defaultdict[str, int] = defaultdict(int)
         self._lastTextResponse: float = time.monotonic()
+
     WARN_IDENTICAL = 3
     BLOCK_IDENTICAL = 6
     WARN_FAILURE = 4
@@ -51,7 +54,10 @@ class ToolCallTracker:
             else:
                 break
         if identicalCount >= self.BLOCK_IDENTICAL:
-            return ('block', f"Blocked: '{toolName}' called with identical arguments {identicalCount} times. Try a different approach.")
+            return (
+                'block',
+                f"Blocked: '{toolName}' called with identical arguments {identicalCount} times. Try a different approach.",
+            )
         if identicalCount >= self.WARN_IDENTICAL:
             return ('warn', f"Warning: '{toolName}' called with identical arguments {identicalCount} times in a row.")
         failCount = self._failureCount.get(toolName, 0)
@@ -61,11 +67,11 @@ class ToolCallTracker:
             return ('warn', f"Warning: '{toolName}' has failed {failCount} times.")
         return ('ok', '')
 
-    def recordFailure(self, toolName: str) -> None:
+    def record_failure(self, toolName: str) -> None:
         """Record a tool failure (call returned an error)."""
         self._failureCount[toolName] += 1
 
-    def recordTextResponse(self) -> None:
+    def record_text_response(self) -> None:
         """Record that the model produced a text response (not a tool call).
 
         Resets the call sequence tracker — the model is back to reasoning
@@ -77,10 +83,15 @@ class ToolCallTracker:
 
     def getStats(self) -> dict[str, object]:
         """Return current tracker stats for debugging."""
-        return {'sequence_length': len(self._callSequence), 'failure_counts': dict(self._failureCount), 'last_text_response_ago': time.monotonic() - self._lastTextResponse}
+        return {
+            'sequence_length': len(self._callSequence),
+            'failure_counts': dict(self._failureCount),
+            'last_text_response_ago': time.monotonic() - self._lastTextResponse,
+        }
 
     @staticmethod
     def _hashArgs(args: dict[str, object]) -> str:
         """Create a stable hash of tool arguments for comparison."""
         import json
+
         return json.dumps(args, sort_keys=True, ensure_ascii=False)

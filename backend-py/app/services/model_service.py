@@ -10,6 +10,7 @@ Key functions:
 - ``resolve_model_alias_details()`` — find provider for an alias
 - ``invalidate_cache()`` — clear the cache
 """
+
 from __future__ import annotations
 import asyncio
 import json
@@ -22,6 +23,7 @@ from app.config import settings
 from app.jsonUtils import as_str, as_list, as_dict, as_int
 from app.providers import resolver as providerResolver
 from app.providers.clients import getClient
+
 _modelCache: list[dict[str, object]] | None = None
 _modelCacheAt: float = 0
 _MODELCacheTtl: float = 300
@@ -30,34 +32,64 @@ _aliasCacheAt: float = 0
 _ALIASCacheTtl: float = 60
 _refreshInFlight: asyncio.Task | None = None
 
+
 def invalidateCache() -> None:
     global _modelCache, _modelCacheAt, _aliasCache, _aliasCacheAt
     _modelCache = None
     _modelCacheAt = 0
     _aliasCache = None
     _aliasCacheAt = 0
-_STATICModelLists: dict[str, list[dict[str, object]]] = {'Anthropic': [{'id': 'claude-sonnet-4-7', 'contextWindow': 200000}, {'id': 'claude-sonnet-4-6', 'contextWindow': 200000}, {'id': 'claude-opus-4-7', 'contextWindow': 200000}, {'id': 'claude-opus-4-6', 'contextWindow': 200000}, {'id': 'claude-haiku-4-5', 'contextWindow': 200000}], 'OpenAI API': [{'id': 'gpt-4o', 'contextWindow': 128000}, {'id': 'gpt-4o-mini', 'contextWindow': 128000}, {'id': 'o1', 'contextWindow': 200000}, {'id': 'o3', 'contextWindow': 200000}], 'Google AI Studio': [{'id': 'gemini-2.0-flash', 'contextWindow': 1048576}, {'id': 'gemini-2.0-pro', 'contextWindow': 1048576}, {'id': 'gemini-1.5-pro', 'contextWindow': 1048576}], 'DeepSeek': [{'id': 'deepseek-v4', 'contextWindow': 131072}, {'id': 'deepseek-v4-flash', 'contextWindow': 131072}, {'id': 'deepseek-reasoner', 'contextWindow': 131072}]}
+
+
+_STATICModelLists: dict[str, list[dict[str, object]]] = {
+    'Anthropic': [
+        {'id': 'claude-sonnet-4-7', 'contextWindow': 200000},
+        {'id': 'claude-sonnet-4-6', 'contextWindow': 200000},
+        {'id': 'claude-opus-4-7', 'contextWindow': 200000},
+        {'id': 'claude-opus-4-6', 'contextWindow': 200000},
+        {'id': 'claude-haiku-4-5', 'contextWindow': 200000},
+    ],
+    'OpenAI API': [
+        {'id': 'gpt-4o', 'contextWindow': 128000},
+        {'id': 'gpt-4o-mini', 'contextWindow': 128000},
+        {'id': 'o1', 'contextWindow': 200000},
+        {'id': 'o3', 'contextWindow': 200000},
+    ],
+    'Google AI Studio': [
+        {'id': 'gemini-2.0-flash', 'contextWindow': 1048576},
+        {'id': 'gemini-2.0-pro', 'contextWindow': 1048576},
+        {'id': 'gemini-1.5-pro', 'contextWindow': 1048576},
+    ],
+    'DeepSeek': [
+        {'id': 'deepseek-v4', 'contextWindow': 131072},
+        {'id': 'deepseek-v4-flash', 'contextWindow': 131072},
+        {'id': 'deepseek-reasoner', 'contextWindow': 131072},
+    ],
+}
+
 
 def _deriveModelsUrl(baseUrl: str) -> str | None:
     """Derive the /models endpoint URL from a provider's base URL."""
     base = baseUrl.rstrip('/')
     for suffix in ['/chat/completions', '/messages', '/responses', '/v1']:
         if base.endswith(suffix):
-            base = base[:-len(suffix)]
+            base = base[: -len(suffix)]
     return f'{base}/models' if base else None
 
-def _getContextWindow(modelId: str, provider: dict[str, object] | None=None, fallback: int | None=None) -> int:
+
+def _getContextWindow(modelId: str, provider: dict[str, object] | None = None, fallback: int | None = None) -> int:
     """Resolve context window from provider profile or inference."""
     if provider:
         profiles = as_dict(provider.get('modelProfiles'), {})
         for key in [modelId] + [k for k in profiles if modelId.startswith(k)]:
             profile = as_dict(profiles.get(key))
             if isinstance(profile, dict) and profile.get('contextWindow'):
-                return profile['contextWindow']
+                return as_int(profile['contextWindow'])
         wildcard = as_dict(profiles.get('*'), {})
         if isinstance(wildcard, dict) and wildcard.get('contextWindow'):
-            return wildcard['contextWindow']
+            return as_int(wildcard['contextWindow'])
     return fallback or 128000
+
 
 def _isFreeModelId(modelId: str) -> bool:
     """Check if a model ID indicates a free tier (:free / -free)."""
@@ -65,6 +97,7 @@ def _isFreeModelId(modelId: str) -> bool:
         return False
     lower = modelId.lower()
     return ':free' in lower or '-free' in lower or lower.endswith('free')
+
 
 def _prettifyModelBase(base: str) -> str:
     """Generate a human-readable model name."""
@@ -79,20 +112,29 @@ def _prettifyModelBase(base: str) -> str:
         return 'DeepSeek ' + re.sub('^deepseek-', '', base, flags=re.IGNORECASE).replace('-', ' ').title()
     return base.replace('-', ' ').title()
 
+
 def _getModelDisplayAlias(model: dict[str, object]) -> str:
     """Generate a display alias for a model."""
     modelId = as_str(model.get('id'), '')
     base = modelId.split('/')[-1].split(':')[-1] if '/' in modelId or ':' in modelId else modelId
     tag = ''
-    for pattern, label in [('-fast$', 'Fast'), ('-thinking$', 'Thinking'), ('-preview$', 'Preview'), ('-latest$', 'Latest'), (':free$', 'Free'), ('-free$', 'Free')]:
+    for pattern, label in [
+        ('-fast$', 'Fast'),
+        ('-thinking$', 'Thinking'),
+        ('-preview$', 'Preview'),
+        ('-latest$', 'Latest'),
+        (':free$', 'Free'),
+        ('-free$', 'Free'),
+    ]:
         if re.search(pattern, base, re.IGNORECASE):
             base = re.sub(pattern, '', base, flags=re.IGNORECASE)
             tag = label
             break
     display = _prettifyModelBase(base)
-    return f"{display}{(f' ({tag})' if tag else '')}"
+    return f'{display}{(f" ({tag})" if tag else "")}'
 
-async def _fetchProviderModels(provider: dict[str, object], timeoutS: float=5.0) -> list[dict[str, object]]:
+
+async def _fetchProviderModels(provider: dict[str, object], timeoutS: float = 5.0) -> list[dict[str, object]]:
     """Fetch models from a provider's /models endpoint.
 
     Falls back to static list if the endpoint is unavailable.
@@ -112,7 +154,15 @@ async def _fetchProviderModels(provider: dict[str, object], timeoutS: float=5.0)
                 if resp.status_code == 200:
                     data = resp.json()
                     modelList = data.get('data', data.get('models', data if isinstance(data, list) else []))
-                    return [{'id': m['id'], 'name': m['id'], 'provider': providerName, 'contextWindow': _getContextWindow(m['id'], provider, m.get('context_length'))} for m in (modelList if isinstance(modelList, list) else [])]
+                    return [
+                        {
+                            'id': m['id'],
+                            'name': m['id'],
+                            'provider': providerName,
+                            'contextWindow': _getContextWindow(m['id'], provider, m.get('context_length')),
+                        }
+                        for m in (modelList if isinstance(modelList, list) else [])
+                    ]
         except Exception:
             pass
     static = _STATICModelLists.get(providerName, [])
@@ -121,10 +171,20 @@ async def _fetchProviderModels(provider: dict[str, object], timeoutS: float=5.0)
         if defaultModel:
             static = [{'id': defaultModel, 'contextWindow': _getContextWindow(defaultModel, provider)}]
         fallbackModels = as_list(provider.get('fallbackModels'), [])
-        for fm in fallbackModels:
+        for fmEntry in fallbackModels:
+            fm = as_str(fmEntry)
             if not any((s['id'] == fm for s in static)):
                 static.append({'id': fm, 'contextWindow': _getContextWindow(fm, provider)})
-    return [{'id': m['id'], 'name': m['id'], 'provider': providerName, 'contextWindow': as_int(m.get('contextWindow'), 128000)} for m in static]
+    return [
+        {
+            'id': m['id'],
+            'name': m['id'],
+            'provider': providerName,
+            'contextWindow': as_int(m.get('contextWindow'), 128000),
+        }
+        for m in static
+    ]
+
 
 async def _aggregateModels() -> list[dict[str, object]]:
     """Aggregate models from providers + alias models for /v1/models.
@@ -147,28 +207,43 @@ async def _aggregateModels() -> list[dict[str, object]]:
             for m_raw in as_list(entry.get('models'), []):
                 m = as_dict(m_raw)
                 import re
-                mid = m['id']
-                reasoning = m.get('reasoning', False) or bool(re.search('\\b(o1|o3|reasoner|thinking|reasoning)\\b', mid, re.IGNORECASE))
-                allModels.append({'id': mid, 'name': as_str(m.get('name'), mid), 'provider': entry['name'], 'contextWindow': as_int(m.get('contextWindow'), 128000), 'supportsReasoning': reasoning, 'supportsThinking': reasoning, 'isFree': m.get('free', False) or _isFreeModelId(m['id'])})
+
+                mid = as_str(m['id'])
+                reasoning = m.get('reasoning', False) or bool(
+                    re.search('\\b(o1|o3|reasoner|thinking|reasoning)\\b', mid, re.IGNORECASE)
+                )
+                allModels.append(
+                    {
+                        'id': mid,
+                        'name': as_str(m.get('name'), mid),
+                        'provider': entry['name'],
+                        'contextWindow': as_int(m.get('contextWindow'), 128000),
+                        'supportsReasoning': reasoning,
+                        'supportsThinking': reasoning,
+                        'isFree': m.get('free', False) or _isFreeModelId(mid),
+                    }
+                )
     except Exception:
         pass
     # Inject alias models so /v1/models exposes them alongside provider models.
     try:
         from app.services.alias_mapping_service import getAliasModelsForV1Models
+
         aliasModels = getAliasModelsForV1Models()
         allModels.extend(aliasModels)
     except Exception:
         pass
     seen: dict[str, dict[str, object]] = {}
     for m in allModels:
-        mid = m['id']
+        mid = as_str(m['id'])
         if mid not in seen or (m.get('isFree') and (not seen[mid].get('isFree'))):
             seen[mid] = m
     result = list(seen.values())
     result.sort(key=lambda m: (0 if m.get('isFree') else 1, as_str(m.get('id'), '')))
     return result
 
-async def aggregate(refresh: bool=False) -> list[dict[str, object]]:
+
+async def aggregate(refresh: bool = False) -> list[dict[str, object]]:
     """Get the aggregated model list with caching."""
     global _modelCache, _modelCacheAt, _refreshInFlight
     now = time.time()
@@ -186,6 +261,7 @@ async def aggregate(refresh: bool=False) -> list[dict[str, object]]:
     _modelCacheAt = now
     return models
 
+
 async def _refreshBackground() -> None:
     """Background cache refresh."""
     global _modelCache, _modelCacheAt
@@ -195,6 +271,7 @@ async def _refreshBackground() -> None:
         _modelCacheAt = time.time()
     except Exception:
         pass
+
 
 async def prewarm() -> None:
     """Pre-warm the model cache on startup."""
@@ -206,8 +283,10 @@ async def prewarm() -> None:
     except Exception:
         pass
 
+
 def getModelDisplayAlias(model: dict[str, object]) -> str:
     return _getModelDisplayAlias(model)
+
 
 def isFreeModelId(modelId: str) -> bool:
     return _isFreeModelId(modelId)

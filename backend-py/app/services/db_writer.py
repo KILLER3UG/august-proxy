@@ -17,37 +17,42 @@ Low-priority writes (daemon notes, background review) are dropped after
 Reads bypass the queue and use direct thread-local connections (WAL
 permits concurrent readers alongside a single writer).
 """
+
 from __future__ import annotations
 import asyncio
 import logging
 import time
 from typing import Callable
+
 logger = logging.getLogger(__name__)
 _HIGHDrainTimeout = 5.0
 _LOWDropAfter = 2.0
 _writeQueue: asyncio.Queue | None = None
 _workerTask: asyncio.Task | None = None
 
+
 class QueueItem:
     """A queued write operation."""
 
-    def __init__(self, fn: Callable[[], object], priority: str='low'):
+    def __init__(self, fn: Callable[[], object], priority: str = 'low'):
         self.fn = fn
         self.priority = priority
         self.enqueuedAt = time.monotonic()
         self.id = id(self)
 
+
 def ensureQueue():
     """Start the queue and worker if not already running."""
-    global _write_queue, _worker_task
+    global _writeQueue, _workerTask
     if _writeQueue is None:
         _writeQueue = asyncio.Queue()
     if _workerTask is None or _workerTask.done():
         _workerTask = asyncio.create_task(_drainLoop())
 
+
 async def shutdown():
     """Cancel the worker and drain remaining items."""
-    global _worker_task
+    global _workerTask
     if _workerTask and (not _workerTask.done()):
         _workerTask.cancel()
         try:
@@ -56,21 +61,26 @@ async def shutdown():
             pass
         _workerTask = None
 
-async def enqueueWrite(fn: Callable[[], object], priority: str='low') -> bool:
+
+async def enqueueWrite(fn: Callable[[], object], priority: str = 'low') -> bool:
     """Enqueue a write operation.
 
     Returns True if the write was enqueued, False if it was dropped
     (low-priority only, when the queue is too full).
     """
     ensureQueue()
+    queue = _writeQueue
+    if queue is None:
+        logger.error('DB write queue not initialized')
+        return False
     item = QueueItem(fn, priority)
     try:
         if priority == 'high':
-            await asyncio.wait_for(_writeQueue.put(item), timeout=_HIGHDrainTimeout)
+            await asyncio.wait_for(queue.put(item), timeout=_HIGHDrainTimeout)
             return True
         else:
             try:
-                _writeQueue.put_nowait(item)
+                queue.put_nowait(item)
                 return True
             except asyncio.QueueFull:
                 logger.warning('Write queue full, dropping low-priority write')
@@ -79,7 +89,8 @@ async def enqueueWrite(fn: Callable[[], object], priority: str='low') -> bool:
         logger.error('Write queue timed out on high-priority write')
         return False
 
-async def enqueueWriteSync(fn: Callable[[], object], priority: str='low') -> bool:
+
+async def enqueueWriteSync(fn: Callable[[], object], priority: str = 'low') -> bool:
     """Synchronous version for use from non-async contexts.
 
     Creates a new event loop if needed (safe for sync callers in
@@ -87,9 +98,10 @@ async def enqueueWriteSync(fn: Callable[[], object], priority: str='low') -> boo
     """
     return await enqueueWrite(fn, priority)
 
+
 async def _drainLoop():
     """Background worker: drain the write queue one item at a time."""
-    global _write_queue
+    global _writeQueue
     logger.info('DB write queue worker started')
     while True:
         try:

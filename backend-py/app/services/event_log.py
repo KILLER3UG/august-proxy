@@ -4,6 +4,7 @@ Replaces chat-event-log.js.
 
 Pattern: in-memory ring buffer + JSONL file + asyncio.Queue fan-out.
 """
+
 from __future__ import annotations
 import asyncio
 import json
@@ -12,7 +13,9 @@ from collections import deque
 from pathlib import Path
 from typing import AsyncIterator
 from app.lib.paths import dataPath
+
 MAX_IN_MEMORY = 2000
+
 
 class EventLog:
     """Per-session append-only event log with SSE fan-out."""
@@ -20,7 +23,7 @@ class EventLog:
     def __init__(self) -> None:
         self._sessions: dict[str, _SessionLog] = {}
 
-    def append(self, sessionId: str, eventType: str, payload: dict[str, object] | None=None) -> int:
+    def append(self, sessionId: str, eventType: str, payload: dict[str, object] | None = None) -> int:
         entry = self._getOrCreate(sessionId)
         seq = entry.nextSeq
         entry.nextSeq += 1
@@ -38,7 +41,7 @@ class EventLog:
             entry.subscribers.remove(q)
         return seq
 
-    async def subscribe(self, sessionId: str, sinceSeq: int=0) -> AsyncIterator[dict[str, object]]:
+    async def subscribe(self, sessionId: str, sinceSeq: int = 0) -> AsyncIterator[dict[str, object]]:
         """Yield events for a session, starting from since_seq."""
         entry = self._getOrCreate(sessionId)
         q: asyncio.Queue = asyncio.Queue()
@@ -69,10 +72,12 @@ class EventLog:
             self._sessions[sessionId] = _SessionLog()
         return self._sessions[sessionId]
 
-class _SessionLog:
 
+class _SessionLog:
     def __init__(self) -> None:
         self.nextSeq: int = 1
         self.events: deque[dict] = deque(maxlen=MAX_IN_MEMORY)
         self.subscribers: set[asyncio.Queue] = set()
-eventLog = EventLog()
+
+
+event_log = EventLog()

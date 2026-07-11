@@ -19,6 +19,7 @@ Resolution order (from aliasMappingService):
 ``resolve_or_fallback`` wraps ``resolve`` and falls back to the
 active provider's model on any miss.
 """
+
 from __future__ import annotations
 import logging
 from app.config import settings
@@ -31,18 +32,21 @@ from app.services.alias_mapping_service import (
     listAliasNames,
     BUILTIN_PUBLIC_ALIASES,
 )
+
 logger = logging.getLogger(__name__)
 DEFAULT_ALIAS = 'default'
 # Re-export for backward compatibility
 BUILTIN_CLAUDE_PUBLIC_ALIASES = BUILTIN_PUBLIC_ALIASES
 
+
 class ModelResolutionError(Exception):
     """Raised when a model alias cannot be resolved."""
 
-    def __init__(self, message: str, input: str | None=None, reason: str | None=None) -> None:
+    def __init__(self, message: str, input: str | None = None, reason: str | None = None) -> None:
         super().__init__(message)
         self.input = input
         self.reason = reason
+
 
 def _normalize(input: object) -> str | None:
     """Normalize input to a trimmed string or None."""
@@ -51,15 +55,18 @@ def _normalize(input: object) -> str | None:
     s = str(input).strip()
     return s or None
 
+
 def _hasCredentials(provider: dict[str, object]) -> bool:
     """Check if a provider has API credentials configured."""
     from app.providers.clients import getClient
+
     client = getClient(provider)
     if not client:
         return False
     return client.resolveApiKey() is not None
 
-def resolve(input: str | None, providerHint: str | None=None, defaultAlias: str | None=None) -> dict[str, object]:
+
+def resolve(input: str | None, provider_hint: str | None = None, default_alias: str | None = None) -> dict[str, object]:
     """Resolve an alias or model ID to a ``{ alias, provider, model, is_fallback }`` tuple.
 
     Delegates to ``aliasMappingService.resolve_alias()`` which provides the
@@ -77,9 +84,9 @@ def resolve(input: str | None, providerHint: str | None=None, defaultAlias: str 
     Raises:
         ModelResolutionError: If the input cannot be resolved.
     """
-    normalized = _normalize(input) or _normalize(defaultAlias) or DEFAULT_ALIAS
+    normalized = _normalize(input) or _normalize(default_alias) or DEFAULT_ALIAS
     try:
-        result = resolveAlias(normalized, providerHint=providerHint)
+        result = resolveAlias(normalized, provider_hint=provider_hint)
         return {
             'alias': result.alias,
             'provider': result.provider,
@@ -89,7 +96,10 @@ def resolve(input: str | None, providerHint: str | None=None, defaultAlias: str 
     except ValueError as exc:
         raise ModelResolutionError(str(exc), input=normalized, reason='no_matching_provider') from exc
 
-def resolveOrFallback(input: str | None, providerHint: str | None=None, defaultAlias: str | None=None) -> dict[str, object] | None:
+
+def resolveOrFallback(
+    input: str | None, provider_hint: str | None = None, default_alias: str | None = None
+) -> dict[str, object] | None:
     """Resolve with graceful fallback to the active provider. Never raises.
 
     Delegates to ``aliasMappingService.resolve_alias_or_none()``.
@@ -103,8 +113,8 @@ def resolveOrFallback(input: str | None, providerHint: str | None=None, defaultA
         Resolution result dict, or ``None`` if no provider is available.
     """
     originalInput = _normalize(input)
-    normalized = originalInput or _normalize(defaultAlias) or DEFAULT_ALIAS
-    result = resolveAliasOrNone(normalized, providerHint=providerHint)
+    normalized = originalInput or _normalize(default_alias) or DEFAULT_ALIAS
+    result = resolveAliasOrNone(normalized, provider_hint=provider_hint)
     if result is not None:
         return {
             'alias': result.alias,
@@ -115,13 +125,16 @@ def resolveOrFallback(input: str | None, providerHint: str | None=None, defaultA
     logger.warning(f"[ModelResolver] no active provider available; cannot resolve '{normalized}'")
     return None
 
+
 def getAliasForModel(modelId: str) -> str | None:
     """Reverse lookup: given a raw model ID, find the alias that maps to it."""
     return _getReverseAlias(modelId)
 
+
 def listAliases() -> list[str]:
     """Return every alias the system knows about, deduplicated."""
     return listAliasNames()
+
 
 def getDefaultAlias() -> str:
     return DEFAULT_ALIAS
