@@ -85,7 +85,7 @@ async def setupProvider(
 
     api_format = _normalize_format(apiFormat)
 
-    from app.services import config_service, modelService
+    from app.services import config_service, model_service
     from app.providers.template_loader import getTemplates
 
     store = config_service.getProvidersStore()
@@ -104,7 +104,7 @@ async def setupProvider(
                 if apiKey:
                     p['apiKey'] = apiKey
                 config_service.saveProvidersStore(store)
-                modelService.invalidateCache()
+                model_service.invalidateCache()
                 return _ok(
                     providerId=p['id'],
                     name=p['name'],
@@ -159,7 +159,7 @@ async def setupProvider(
     }
     store['providers'].append(entry)
     config_service.saveProvidersStore(store)
-    modelService.invalidateCache()
+    model_service.invalidateCache()
     return _ok(
         providerId=new_id,
         name=display_name,
