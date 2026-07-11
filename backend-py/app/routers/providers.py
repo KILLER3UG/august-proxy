@@ -4,45 +4,13 @@ Uses camelCase throughout matching the frontend convention.
 """
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from app.models.config import ProviderConfig, ProviderCreate, ProviderUpdate, ModelCreate, ModelUpdate
 from app.providers import resolver
 from app.providers.template_loader import getTemplates, getTemplate
 from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
 from app.services import configService
 from app.services import modelService
 router = APIRouter(prefix='/api/providers')
-
-
-class ProviderCreate(BaseModel):
-    name: str
-    baseUrl: str = ''
-    apiFormat: str = 'openaiChat'
-    apiKey: str = ''
-    enabled: bool = True
-    template: str | None = None
-
-
-class ProviderUpdate(BaseModel):
-    name: str | None = None
-    baseUrl: str | None = None
-    apiFormat: str | None = None
-    apiKey: str | None = None
-    enabled: bool | None = None
-
-
-class ModelCreate(BaseModel):
-    id: str
-    name: str | None = None
-    contextWindow: int | None = None
-    reasoning: bool | None = None
-    free: bool | None = None
-
-
-class ModelUpdate(BaseModel):
-    name: str | None = None
-    contextWindow: int | None = None
-    reasoning: bool | None = None
-    free: bool | None = None
 
 
 def _provider_to_dict(p: object) -> dict:
@@ -52,13 +20,13 @@ def _provider_to_dict(p: object) -> dict:
         return {
             'id': p.id,
             'name': p.name,
-            'baseUrl': p.baseUrl,
-            'apiFormat': p.apiFormat,
-            'apiKey': p.apiKey,
+            'baseUrl': p.base_url,
+            'apiFormat': p.api_format,
+            'apiKey': p.api_key,
             'enabled': p.enabled,
-            'apiKeySet': bool(p.apiKey),
-            'autoFetch': p.autoFetch,
-            'models': [{'id': m.id, 'name': m.name, 'contextWindow': m.contextWindow, 'reasoning': m.reasoning, 'free': m.free, 'source': m.source} for m in p.models],
+            'apiKeySet': bool(p.api_key),
+            'autoFetch': p.auto_fetch,
+            'models': [{'id': m.id, 'name': m.name, 'contextWindow': m.context_window, 'reasoning': m.reasoning, 'free': m.free, 'source': m.source} for m in p.models],
         }
     # Fallback for raw dicts
     pd = dict(p) if isinstance(p, dict) else {}
@@ -93,8 +61,8 @@ async def createProvider(body: ProviderCreate):
     store = configService.getProvidersStore()
     if 'providers' not in store:
         store['providers'] = []
-    baseUrl = body.baseUrl
-    apiFormat = body.apiFormat
+    baseUrl = body.base_url
+    apiFormat = body.api_format
     models: list[dict] = []
     if body.template:
         tmpl = getTemplate(body.template)
@@ -104,14 +72,21 @@ async def createProvider(body: ProviderCreate):
             if not apiFormat or apiFormat == 'openaiChat':
                 apiFormat = as_str(tmpl.get('apiFormat', 'openaiChat'))
             profiles = as_dict(tmpl.get('modelProfiles', {}))
+            # If we have specific model profiles, use them
             for key, val in profiles.items():
                 if key != '*':
                     profile = as_dict(val)
                     models.append({'id': key, 'name': key, 'contextWindow': as_int(profile.get('contextWindow', 128000)), 'reasoning': as_bool(profile.get('supportsReasoning', False)), 'free': False, 'source': 'template'})
+            # If we only have a wildcard profile or no models were added, add the default model
+            if not models and '*' in profiles:
+                default_model = as_str(tmpl.get('defaultModel', ''))
+                if default_model:
+                    wildcard_profile = as_dict(profiles['*'])
+                    models.append({'id': default_model, 'name': default_model, 'contextWindow': as_int(wildcard_profile.get('contextWindow', 128000)), 'reasoning': as_bool(wildcard_profile.get('supportsReasoning', False)), 'free': False, 'source': 'template'})
     slug = body.name.lower().replace(' ', '-')[:40]
     rand = hashlib.md5(str(time.time()).encode()).hexdigest()[:6]
     providerId = f'{slug}-{rand}'
-    entry = {'id': providerId, 'name': body.name, 'baseUrl': baseUrl, 'apiFormat': apiFormat, 'apiKey': body.apiKey, 'enabled': body.enabled, 'autoFetch': False, 'models': models}
+    entry = {'id': providerId, 'name': body.name, 'baseUrl': baseUrl, 'apiFormat': apiFormat, 'apiKey': body.api_key, 'enabled': body.enabled, 'autoFetch': False, 'models': models}
     providers_list = as_list(store.get('providers', []))
     if not isinstance(providers_list, list):
         providers_list = []
@@ -119,7 +94,7 @@ async def createProvider(body: ProviderCreate):
     store['providers'] = providers_list
     configService.saveProvidersStore(store)
     modelService.invalidateCache()
-    return {**entry, 'apiKeySet': bool(body.apiKey)}
+    return {**entry, 'apiKeySet': bool(body.api_key)}
 
 
 @router.post('/import-config')
@@ -157,12 +132,12 @@ async def updateProvider(providerId: str, body: ProviderUpdate):
         if as_str(p.get('id', '')) == providerId:
             if body.name is not None:
                 p['name'] = body.name
-            if body.baseUrl is not None:
-                p['baseUrl'] = body.baseUrl
-            if body.apiFormat is not None:
-                p['apiFormat'] = body.apiFormat
-            if body.apiKey is not None:
-                p['apiKey'] = body.apiKey
+            if body.base_url is not None:
+                p['baseUrl'] = body.base_url
+            if body.api_format is not None:
+                p['apiFormat'] = body.api_format
+            if body.api_key is not None:
+                p['apiKey'] = body.api_key
             if body.enabled is not None:
                 p['enabled'] = body.enabled
             configService.saveProvidersStore(store)
@@ -273,7 +248,7 @@ async def addModel(providerId: str, body: ModelCreate):
     for p in providers_list:
         if as_str(p.get('id', '')) == providerId:
             p_models = as_list(p.setdefault('models', []))
-            p_models.append({'id': body.id, 'name': body.name or body.id, 'contextWindow': body.contextWindow or 128000, 'reasoning': body.reasoning or False, 'free': body.free or False, 'source': 'manual'})
+            p_models.append({'id': body.id, 'name': body.name or body.id, 'contextWindow': body.context_window or 128000, 'reasoning': body.reasoning or False, 'free': body.free or False, 'source': 'manual'})
             configService.saveProvidersStore(store)
             modelService.invalidateCache()
             return {**p, 'apiKeySet': bool(p.get('apiKey'))}
@@ -292,8 +267,8 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                 if as_str(m.get('id', '')) == modelId:
                     if body.name is not None:
                         m['name'] = body.name
-                    if body.contextWindow is not None:
-                        m['contextWindow'] = body.contextWindow
+                    if body.context_window is not None:
+                        m['contextWindow'] = body.context_window
                     if body.reasoning is not None:
                         m['reasoning'] = body.reasoning
                     if body.free is not None:
