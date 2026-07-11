@@ -4,6 +4,7 @@
    `/Exam` (with optional topic or file paths). */
 import { useEffect, useState, useCallback } from 'react';
 import { ExamBanner } from './ExamBanner';
+import { api } from '@/api/client';
 
 interface Question {
   id: number;
@@ -66,16 +67,7 @@ export function ExamHost(props: ExamHostProps) {
         if (files.length > 0) body.files = files;
         else body.topic = topic;
 
-        const resp = await fetch(`${API_BASE}/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({})) as Record<string, unknown>;
-          throw new Error(String(err.detail) || `HTTP ${resp.status}`);
-        }
-        const data = await resp.json() as { examId?: number; totalQuestions?: number; question?: Question; id?: number; stem?: string; options?: string[]; position?: number };
+        const data = await api.post<{ examId?: number; totalQuestions?: number; question?: Question; id?: number; stem?: string; options?: string[]; position?: number }>(`${API_BASE}/generate`, body);
         if (cancelled) return;
         // Wire format: camelCase (`examId`, `totalQuestions`, …).
         const examIdNum: number | null = data.examId ?? null;
@@ -108,13 +100,10 @@ export function ExamHost(props: ExamHostProps) {
   const handleAnswer = useCallback(
     async (questionId: number, selectedIndex: number): Promise<AnswerResult> => {
       if (!examId) throw new Error('No exam');
-      const resp = await fetch(`${API_BASE}/${examId}/answer`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ questionId: questionId, selectedIndex: selectedIndex }),
+      const data = await api.post<Record<string, unknown>>(`${API_BASE}/${examId}/answer`, {
+        questionId: questionId,
+        selectedIndex: selectedIndex,
       });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json() as Record<string, unknown>;
       // Wire format: camelCase (`isCorrect`, `correctIndex`, `rationale`).
       return {
         isCorrect: (data.isCorrect ?? data.correct ?? false) as boolean,
@@ -135,15 +124,7 @@ export function ExamHost(props: ExamHostProps) {
     }
     setPosition(nextPos);
     try {
-      const resp = await fetch(`${API_BASE}/${examId}/question/${nextPos}`);
-      if (!resp.ok) {
-        if (resp.status === 404) {
-          onDismiss();
-          return;
-        }
-        throw new Error(`HTTP ${resp.status}`);
-      }
-      const q = await resp.json() as Question;
+      const q = await api.get<Question>(`${API_BASE}/${examId}/question/${nextPos}`);
       // Wire format: camelCase (`examId`, `position`, `stem`, `options`).
       const nextQuestion: Question = {
         id: q.id,
@@ -154,6 +135,10 @@ export function ExamHost(props: ExamHostProps) {
       };
       setQuestion(nextQuestion);
     } catch (e) {
+      if (e instanceof Error && 'status' in e && (e as { status: number }).status === 404) {
+        onDismiss();
+        return;
+      }
       setError((e as Error).message);
     }
   }, [examId, position, totalQuestions, onDismiss]);
@@ -164,13 +149,7 @@ export function ExamHost(props: ExamHostProps) {
       const body: Record<string, unknown> = { request };
       if (sessionModel) body.model = sessionModel;
       if (sessionProvider) body.provider = sessionProvider;
-      const resp = await fetch(`${API_BASE}/${examId}/questions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json() as { question?: Question; position?: number };
+      const data = await api.post<{ question?: Question; position?: number }>(`${API_BASE}/${examId}/questions`, body);
       if (data?.question) {
         setQuestion(data.question);
         setPosition(data.position ?? position);

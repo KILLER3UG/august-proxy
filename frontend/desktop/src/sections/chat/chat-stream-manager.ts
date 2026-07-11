@@ -459,9 +459,7 @@ export async function reconnectChatStream(
 // Sync all active streams with the backend
 export async function syncActiveStreams(_ensureWorkbenchSession: () => Promise<WorkbenchSession | null>) {
   try {
-    const res = await fetch('/api/workbench/chat/active');
-    if (!res.ok) return;
-    const active: Record<string, string> = await res.json();
+    const active = await api.get<Record<string, string>>('/api/workbench/chat/active');
     for (const sessionId of Object.keys(active)) {
       if (active[sessionId] === 'streaming') {
         // Re-attach the per-session SSE subscriber if we don't have one.

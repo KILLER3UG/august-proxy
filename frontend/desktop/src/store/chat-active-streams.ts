@@ -22,9 +22,7 @@ async function poll(): Promise<void> {
   if (typeof window === 'undefined') return;
   inFlight = true;
   try {
-    const res = await fetch('/api/workbench/chat/active');
-    if (!res.ok) return;
-    const active: Record<string, string> = await res.json();
+    const active = await api.get<Record<string, string>>('/api/workbench/chat/active');
     const next: Record<string, 'streaming'> = {};
     for (const [id, status] of Object.entries(active)) {
       if (status === 'streaming') next[id] = 'streaming';

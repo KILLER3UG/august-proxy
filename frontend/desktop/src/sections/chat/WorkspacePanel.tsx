@@ -4,6 +4,7 @@ import { $sessions, updateSessionWorkspace } from '@/store/sessions';
 import { FolderGit2, ChevronRight, ChevronDown, Folder, FolderOpen, FileText, AlertCircle, Trash2, FolderSearch, Link2 } from 'lucide-react';
 import { isTauri } from '@/lib/tauri-detect';
 import { toast } from 'sonner';
+import { useWorkspaceFiles } from '@/hooks/useWorkspaceFiles';
 
 interface FlatFileNode {
   name: string;
@@ -20,31 +21,19 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
   const workspacePath = activeSession?.workspacePath || null;
 
   const [flatTree, setFlatTree] = useState<FlatFileNode[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sync state with active session's workspace path
-  useEffect(() => {
-    if (workspacePath) {
-      void loadRootFiles(workspacePath);
-    } else {
-      setFlatTree([]);
-      setError(null);
-    }
-  }, [workspacePath, sessionId]);
+  // Use React Query for root files
+  const { data: rootFilesData, isLoading: loading, error: queryError } = useWorkspaceFiles(workspacePath);
 
-  const loadRootFiles = async (dirPath: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(dirPath)}`);
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({})) as Record<string, unknown>;
-        throw new Error((errData.error as string) || 'Failed to list directory contents');
-      }
-      const data = await res.json() as { files: Array<{ name: string; path: string; isDir: boolean; sizeBytes?: number }> };
+  // Sync state with query results
+  useEffect(() => {
+    if (queryError) {
+      setError(queryError.message);
+      setFlatTree([]);
+    } else if (rootFilesData) {
       setFlatTree(
-        data.files.map((f) => ({
+        rootFilesData.files.map((f) => ({
           name: f.name,
           path: f.path,
           isDir: f.isDir,
@@ -53,14 +42,11 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
           sizeBytes: f.sizeBytes,
         }))
       );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
+    } else if (!workspacePath) {
       setFlatTree([]);
-    } finally {
-      setLoading(false);
+      setError(null);
     }
-  };
+  }, [workspacePath, rootFilesData, queryError]);
 
   const handleClear = () => {
     if (!sessionId) return;
@@ -82,9 +68,9 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
     } else {
       // Expand
       try {
-        const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(node.path)}`);
-        if (!res.ok) throw new Error('Failed to load subfolder');
-        const data = await res.json() as { files: Array<{ name: string; path: string; isDir: boolean; sizeBytes?: number }> };
+        const data = await api.get<{ files: Array<{ name: string; path: string; isDir: boolean; sizeBytes?: number }> }>(
+          `/api/workspace/files?path=${encodeURIComponent(node.path)}`
+        );
         const subnodes = data.files.map((f) => ({
           name: f.name,
           path: f.path,
@@ -149,11 +135,9 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
     const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
 
     try {
-      const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`);
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({})) as Record<string, unknown>;
-        throw new Error((errData.error as string) || 'Directory does not exist or is not readable');
-      }
+      await api.get<{ files: Array<{ name: string; path: string; isDir: boolean }> }>(
+        `/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`
+      );
 
       toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
 
@@ -177,8 +161,9 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
     const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
     void (async () => {
       try {
-        const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`);
-        if (!res.ok) throw new Error(((await res.json().catch(() => ({})) as Record<string, unknown>).error as string) || 'Directory not accessible');
+        await api.get<{ files: Array<{ name: string; path: string; isDir: boolean }> }>(
+          `/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`
+        );
         toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
         if (sessionId) updateSessionWorkspace(sessionId, normalizedPath);
       } catch (err) {
@@ -256,8 +241,9 @@ export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
                       const folderName = normalized.split('/').pop() || 'workspace';
                       const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
                       try {
-                        const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalized)}`);
-                        if (!res.ok) throw new Error('Directory does not exist or is not readable');
+                        await api.get<{ files: Array<{ name: string; path: string; isDir: boolean }> }>(
+                          `/api/workspace/files?path=${encodeURIComponent(normalized)}`
+                        );
                         toast.success(`Connected to workspace: ${folderName}`, { id: toastId });
                         if (sessionId) {
                           updateSessionWorkspace(sessionId, normalized);

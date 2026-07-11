@@ -817,12 +817,7 @@ function FallbackTab() {
     }
     setTesting(true);
     try {
-      const res = await fetch('/api/config/subagent-fallback/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'probe-non-alias' }),
-      });
-      const data = await res.json() as Record<string, unknown>;
+      const data = await api.post<Record<string, unknown>>('/api/config/subagent-fallback/test', { model: 'probe-non-alias' });
       if (data?.translationWarning) toast.warning(data.translationWarning as string);
       if (data?.ok && (data.result as Record<string, unknown>)?.resolution) {
         const resolution = (data.result as Record<string, unknown>).resolution as Record<string, string>;

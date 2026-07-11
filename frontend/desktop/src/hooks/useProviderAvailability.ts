@@ -3,6 +3,7 @@
 /* appear in the model dropdown without remounting the chat. */
 
 import { useQuery } from '@tanstack/react-query';
+import { api } from '@/api/client';
 
 export interface ProviderAvailability {
   id: string;
@@ -20,9 +21,7 @@ export function useProviderAvailability() {
   const q = useQuery<ProviderAvailabilityResponse>({
     queryKey: ['provider-availability'],
     queryFn: async () => {
-      const res = await fetch('/api/config/activeProvider');
-      if (!res.ok) throw new Error('Failed to fetch provider availability');
-      return res.json();
+      return api.get<ProviderAvailabilityResponse>('/api/config/activeProvider');
     },
     refetchInterval: 30_000,
     staleTime: 15_000,

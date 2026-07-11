@@ -1,19 +1,6 @@
 /* v3 — System Health tab: per-phase status board */
-import { useEffect, useState } from 'react';
 import { Clock, Heart } from 'lucide-react';
-
-interface LayerInfo {
-  layer: string;
-  flag: string;
-  flagValue: boolean;
-  status: 'on & healthy' | 'on & failing' | 'off' | 'not shipped';
-  detail: string;
-  lastCheckAt: string;
-}
-
-interface HealthData {
-  phases: LayerInfo[];
-}
+import { useSystemHealth } from '@/hooks/useSystemHealth';
 
 const STATUS_COLOR: Record<string, string> = {
   'on & healthy': 'text-success',
@@ -29,34 +16,11 @@ const DOT_COLOR: Record<string, string> = {
   'not shipped': 'bg-muted',
 };
 
-const API_BASE = '/api/brain';
-
 export function SystemHealthTab() {
-  const [data, setData] = useState<HealthData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchData = async () => {
-      try {
-        const resp = await fetch(`${API_BASE}/health`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const json = await resp.json();
-        if (!cancelled) setData(json);
-      } catch (e) {
-        if (!cancelled) setError((e as Error).message);
-      }
-    };
-    void fetchData();
-    const id = setInterval(() => { void fetchData(); }, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
+  const { data, error } = useSystemHealth();
 
   if (error) {
-    return <div className="p-4 text-danger">Error loading health: {error}</div>;
+    return <div className="p-4 text-danger">Error loading health: {error.message}</div>;
   }
   if (!data) {
     return (

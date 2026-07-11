@@ -48,6 +48,7 @@ import { $currentWorkspaceId, $workspaces } from "@/store/workspaces";
 import { $activeChatSessions, startChatActiveStreamsPoller } from "@/store/chat-active-streams";
 import { toast } from "sonner";
 import { modelDisplayParts } from "@/sections/chat/ChatThread";
+import { api } from "@/api/client";
 
 const SESSIONS_KEY = "august-pinned-sessions";
 const STORAGE = (() => {
@@ -139,15 +140,9 @@ export function SessionList({
     const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
 
     try {
-      const res = await fetch(
+      const res = await api.get<{ files: Array<{ name: string; path: string; isDir: boolean }> }>(
         `/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`,
       );
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(
-          errData.error || "Directory does not exist or is not readable",
-        );
-      }
 
       // Find or auto‑create a session for this folder
       const { session, created } = findOrCreateSessionForPath(normalizedPath, folderName);
@@ -175,8 +170,9 @@ export function SessionList({
     const toastId = toast.loading(`Connecting to workspace: ${folderName}...`);
     void (async () => {
       try {
-        const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`);
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Directory not accessible');
+        await api.get<{ files: Array<{ name: string; path: string; isDir: boolean }> }>(
+          `/api/workspace/files?path=${encodeURIComponent(normalizedPath)}`,
+        );
         // Find or auto‑create a session for this folder
         const { session, created } = findOrCreateSessionForPath(normalizedPath, folderName);
         if (created) {
