@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 import pytest
 from app.services import skillService
-from app.services.memory.backgroundReview import ReviewGates, _doReview, _parseRecommendations, _saveFact, _lastRelevantMessages, tryBackgroundReview
+from app.services.memory.background_review import ReviewGates, _doReview, _parseRecommendations, _saveFact, _lastRelevantMessages, tryBackgroundReview
 from app.services.memoryStore import getMemory
 
 class TestReviewGates:

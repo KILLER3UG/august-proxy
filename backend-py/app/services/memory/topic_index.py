@@ -4,7 +4,7 @@ Topic index — topic classification + grouping for sessions.
 Port of backend/services/memory/topic-index.js (213 lines).
 """
 from __future__ import annotations
-from app.services.memory.brainOrchestrator import classifyTask
+from app.services.memory.brain_orchestrator import classifyTask
 from app.services.memoryStore import indexSessionTopic as _index
 VALID_TOPICS = {'debug', 'code_edit', 'research', 'memory_question', 'planning', 'system_control', 'chat'}
 

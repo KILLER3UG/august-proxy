@@ -51,7 +51,7 @@ def deduplicate(entries: list[dict[str, object]], threshold: float=0.85) -> list
     """Remove near-duplicate entries."""
     if not entries:
         return []
-    from app.services.memory.fuzzyMatch import similarity
+    from app.services.memory.fuzzy_match import similarity
     kept = [entries[0]]
     for e in entries[1:]:
         textE = str(e.get('content', '') or e.get('text', ''))

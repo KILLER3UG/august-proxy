@@ -5,7 +5,7 @@ import pytest
 from app.services import daemonManager, blackboardService, consolidationDaemon
 from app.services.memoryStore import init, _conn
 from app.services.workbench import workbench
-from app.services.memory import contextBuilder
+from app.services.memory import context_builder
 from app.services.workbench import modelFleet
 
 @pytest.fixture(autouse=True)
@@ -30,7 +30,7 @@ def testChatWithDaemonBlackboardAndVerifier():
     mgr._daemons[f'{sid}_ci'] = {'id': f'{sid}_ci', 'name': 'ci_watcher', 'session_id': sid, 'prompt': 'watch', 'watch_condition': 'on_match:FAIL', 'result': result}
     blackboardService.write_note(sid, 'ci_watcher', 'result', 'Tests failing on line 45', 60)
     session = {'id': sid, 'execution_state': {'phase': 'review', 'step': 3, 'verification_command': 'pytest tests/test_auth.py'}, 'subconscious_updates': [{'name': 'ci_watcher', 'status': 'triggered', 'result': '3 failures in auth.py'}], 'blackboard_state': blackboardService.read_notes(sid)}
-    prompt = contextBuilder.build_system_prompt(session=session, memory={})
+    prompt = context_builder.build_system_prompt(session=session, memory={})
     assert 'ci_watcher' in prompt
     assert '<blackboard_state>' in prompt
     assert '<verifier_gate>' in prompt

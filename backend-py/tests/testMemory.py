@@ -1,12 +1,12 @@
 """Memory system unit tests."""
 import pytest
 from app.services.memoryStore import init, close, saveMemory, getMemory, deleteMemory, listMemory, searchMemory, saveFact, getFact, searchFacts, listFacts, deleteFact, saveProposal, getProposal, listProposals, decideProposal, recordLifecycle, listLifecycle, indexSessionTopic, getSessionTopic, listTopics, saveSession, getSession, listSessions, deleteSessionRecord, saveMessage, getMessages, recordUsage, getUsage, getStats, vacuum
-from app.services.memory.brainOrchestrator import getBrainConfig, classifyTask, riskForTask, extractTextFromMessages
+from app.services.memory.brain_orchestrator import getBrainConfig, classifyTask, riskForTask, extractTextFromMessages
 from app.adapters.anthropic import normalizeSystemBlocks, systemBlocksToText
-from app.services.memory.contextBuilder import buildSlimCoreContext
-from app.services.memory.contextCompressor import compressMessages, localSummarize, buildSummaryMessage, _isSummaryMessage, _extractSummaryText, DEFAULT_SUMMARY_MARKER
-from app.services.memory.contextScrubber import ContextScrubber, stripMemoryBlocks
-from app.services.memory.topicIndex import classifyTopic
+from app.services.memory.context_builder import buildSlimCoreContext
+from app.services.memory.context_compressor import compressMessages, localSummarize, buildSummaryMessage, _isSummaryMessage, _extractSummaryText, DEFAULT_SUMMARY_MARKER
+from app.services.memory.context_scrubber import ContextScrubber, stripMemoryBlocks
+from app.services.memory.topic_index import classifyTopic
 
 @pytest.fixture(autouse=True)
 def setupDb():
