@@ -1,7 +1,7 @@
 """v1.1 — End-to-end smoke test: a real chat session, no crashes."""
 import pytest
 import uuid
-from app.services.memory import contextBuilder, autoMemory
+from app.services.memory import context_builder, auto_memory
 from app.services.workbench import workbench
 from app.services import memoryStore
 
@@ -16,14 +16,14 @@ def testBuildSystemPromptDoesNotCrashWithRealisticPayload():
     session = {'id': 'e2e-test', 'user_state': {'profile': 'developer', 'skills': [{'name': 'test', 'description': 'x'}]}, 'workspace': {'path': '/tmp', 'vcs': 'git on main'}, 'directives': {'goal': 'test the chat', 'plan': None, 'planApproved': False}, 'learned_heuristics': [{'rule': 'use unicode math'}], 'core_memory': {'facts': ['user prefers tabs']}, 'auto_memories': [{'key': 'x', 'content': 'y', 'importance': 0.5}]}
     memory = {'core_memory': {'facts': ['user prefers tabs']}, 'learned_heuristics': [{'rule': 'use unicode math'}], 'auto_memories': [{'key': 'x', 'content': 'y', 'importance': 0.5}]}
     tools = [{'name': 'read_file', 'description': 'read a file', 'parameters': []}, {'name': 'write_file', 'description': 'write a file', 'parameters': []}]
-    result = contextBuilder.buildSystemPrompt(session=session, memory=memory, tools=tools)
+    result = context_builder.buildSystemPrompt(session=session, memory=memory, tools=tools)
     assert isinstance(result, str)
     assert len(result) > 100
 
 def testBuildSystemPromptWithCachedT12DoesNotCrash():
     """Cache path: cached_t12 provided, should be included verbatim."""
     cachePayload = 'PRECOMPUTED_T1_T2_BLOCK'
-    result = contextBuilder.buildSystemPrompt(session={'id': 'e2e-test'}, memory={}, cached_t12=cachePayload)
+    result = context_builder.buildSystemPrompt(session={'id': 'e2e-test'}, memory={}, cached_t12=cachePayload)
     assert cachePayload in result
 
 def testSaveAutoMemoryThenBrainQueryRoundTrip():
@@ -32,7 +32,7 @@ def testSaveAutoMemoryThenBrainQueryRoundTrip():
     uniqueMarker = f'e2euniq{uuid.uuid4().hex[:8]}'
     key = f'v11_e2e_round_trip'
     try:
-        autoMemory.save_auto_memory(key=key, content=f'round trip {uniqueMarker}', importance=0.9)
+        auto_memory.save_auto_memory(key=key, content=f'round trip {uniqueMarker}', importance=0.9)
         result = memoryStore.brain_query(store='auto_memories', query=uniqueMarker, limit=5)
         parsed = json.loads(result)
         assert isinstance(parsed, list)

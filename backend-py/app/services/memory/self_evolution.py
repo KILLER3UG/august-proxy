@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 import time
 from app.services.memoryStore import saveMemory, getMemory
-from app.services.memory.autoMemory import saveAutoMemory
+from app.services.memory.auto_memory import saveAutoMemory
 _REFLECTIONKey = 'self_evolution_log'
 _MAXReflections = 50
 _CORRECTIONPatterns: list[tuple[re.Pattern, str]] = [(re.compile("\\bdon'?t\\s+(\\w+)"), 'behavior'), (re.compile('\\bnever\\s+(\\w+)'), 'behavior'), (re.compile('\\balways\\s+(\\w+)'), 'behavior'), (re.compile('\\bprefer\\b'), 'preference'), (re.compile('\\b(actually|instead|rather)\\b'), 'correction'), (re.compile('\\bstop\\s+\\w+ing\\b'), 'behavior')]

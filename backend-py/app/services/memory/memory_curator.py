@@ -5,7 +5,7 @@ Port of backend/services/memory/memory-curator.js.
 """
 from __future__ import annotations
 from app.services.memoryStore import listMemory, saveMemory, deleteMemory
-from app.services.memory.memoryQuality import scoreQuality, deduplicate
+from app.services.memory.memory_quality import scoreQuality, deduplicate
 _MAXMemoryEntries = 500
 _MAXFacts = 200
 

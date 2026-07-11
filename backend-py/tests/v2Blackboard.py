@@ -53,12 +53,12 @@ def testSessionScoping():
 
 def testTier3IncludesBlackboardState():
     """<blackboard_state> is included in build_system_prompt when notes exist."""
-    from app.services.memory import contextBuilder
+    from app.services.memory import context_builder
     import uuid
     sid = f'v2-tier3-{uuid.uuid4().hex[:8]}'
     blackboardService.write_note(sid, 'ci_watcher', 'test_result', 'tests failing on line 45', 60)
     session = {'id': sid, 'blackboard_state': blackboardService.read_notes(sid)}
-    prompt = contextBuilder.build_system_prompt(session=session, memory={})
+    prompt = context_builder.build_system_prompt(session=session, memory={})
     assert '<blackboard_state>' in prompt
     assert 'ci_watcher' in prompt
     assert 'tests failing on line 45' in prompt

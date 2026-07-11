@@ -4,7 +4,7 @@ Port of backend/services/workbench/intent-mapping.js.
 """
 from __future__ import annotations
 import re
-from app.services.memory.brainOrchestrator import classifyTask
+from app.services.memory.brain_orchestrator import classifyTask
 
 def mapIntent(text: str) -> dict[str, object]:
     """Parse user input into an intent with routing info."""

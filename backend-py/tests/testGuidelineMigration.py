@@ -3,15 +3,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import pytest
-from app.services.memory import contextBuilder
+from app.services.memory import context_builder
 from app.services.memoryStore import getMemory, saveMemory
 
 class TestContextBuilder:
 
     def testPlatformStringReferencesSkillsNotGuidelines(self):
-        assert 'learned guidelines' not in contextBuilder.AUGUST_PLATFORM.lower()
-        assert 'skill_manage' in contextBuilder.AUGUST_PLATFORM
-        assert 'load_skill' in contextBuilder.AUGUST_PLATFORM
+        assert 'learned guidelines' not in context_builder.AUGUST_PLATFORM.lower()
+        assert 'skill_manage' in context_builder.AUGUST_PLATFORM
+        assert 'load_skill' in context_builder.AUGUST_PLATFORM
 
 @pytest.mark.asyncio
 async def testMigrationScriptRoundTrip(isolatedData, isolatedSkills):

@@ -1,6 +1,6 @@
 """v1.1 — Test that build_system_prompt accepts cached_t12 kwarg."""
 import pytest
-from app.services.memory.contextBuilder import buildSystemPrompt
+from app.services.memory.context_builder import buildSystemPrompt
 
 def testBuildSystemPromptAcceptsCachedT12():
     """Regression: Phase 7 cache hook must not TypeError on the kwarg."""

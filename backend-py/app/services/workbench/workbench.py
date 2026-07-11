@@ -228,7 +228,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     Wires brain_orchestrator classification, workspace, VCS, memory stats,
     whats-new, and guard mode rules — achieving Node.js parity.
     """
-    from app.services.memory.contextBuilder import buildSystemPrompt as ctxBuild
+    from app.services.memory.context_builder import buildSystemPrompt as ctxBuild
     from app.services.memoryStore import getMemory
     memory = {}
     profile = getMemory('userProfile')
@@ -241,7 +241,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     if projects:
         memory['active_projects'] = projects
     try:
-        from app.services.memory.autoMemory import getRelevantMemories
+        from app.services.memory.auto_memory import getRelevantMemories
         recentText = ''
         if session.messages:
             recent = session.messages[-6:] if len(session.messages) > 6 else session.messages
@@ -272,7 +272,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
             pass
     brainPolicy = None
     try:
-        from app.services.memory.brainOrchestrator import extractTextFromMessages, classifyTask, policyForTask
+        from app.services.memory.brain_orchestrator import extractTextFromMessages, classifyTask, policyForTask
         msgs = []
         if hasattr(session, 'messages') and session.messages:
             msgs = session.messages
@@ -360,7 +360,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     base = ctxBuild(session=sessionDict, memory=memory, tools=tools, agentContext=agentContext, cachedT12=cachedT12)
     if cachedT12 is None:
         try:
-            from app.services.memory.contextBuilder import buildTier1, buildTier2
+            from app.services.memory.context_builder import buildTier1, buildTier2
             t1 = buildTier1(sessionDict)
             t2 = buildTier2(sessionDict)
             t12Parts = []
@@ -742,7 +742,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
     def _isCancelled() -> bool:
         return signal is not None and signal.is_set()
     try:
-        from app.services.memory.contextCompressor import compressMessages, isFeatureEnabled
+        from app.services.memory.context_compressor import compressMessages, isFeatureEnabled
         from app.providers.clients.base import estimateTokens
         if isFeatureEnabled():
             originalTokens = estimateTokens(session.messages)
@@ -974,7 +974,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
     reflectionModel = _backgroundTaskModel('reflectionModel', resolvedModel)
     autoMemoryModel = _backgroundTaskModel('autoMemoryModel', resolvedModel)
     try:
-        from app.services.memory.backgroundReview import tryBackgroundReview, ReviewGates
+        from app.services.memory.background_review import tryBackgroundReview, ReviewGates
         asyncio.create_task(tryBackgroundReview(session, list(currentMessages), gates=ReviewGates(turn_interval=3, tool_round_interval=6), llm_client=_makeReviewLlmClient(resolvedProvider, reviewModel)))
     except Exception:
         pass
@@ -983,7 +983,7 @@ async def sendWorkbenchMessageStream(sessionId: str, message: str, provider: str
     except Exception:
         pass
     try:
-        from app.services.memory.selfEvolution import reflectOnTurn
+        from app.services.memory.self_evolution import reflectOnTurn
         asyncio.create_task(asyncio.to_thread(reflectOnTurn, list(currentMessages), reflectionModel))
     except Exception:
         pass
@@ -1012,7 +1012,7 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]]
     the heavier LLM-based background_review. The ``model`` argument is
     the resolved auto-memory model (falls back to the chat model) used
     for audit/metadata on the saved memories."""
-    from app.services.memory.autoMemory import saveAutoMemory, extractAndSaveTodos
+    from app.services.memory.auto_memory import saveAutoMemory, extractAndSaveTodos
     try:
         extractAndSaveTodos(messages)
     except Exception:

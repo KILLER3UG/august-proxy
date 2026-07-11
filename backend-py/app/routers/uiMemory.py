@@ -28,8 +28,8 @@ from __future__ import annotations
 import time
 from fastapi import APIRouter, Query
 from app.services import memoryStore
-from app.services.memory import contextBuilder
-from app.services.memory import vectorDb
+from app.services.memory import context_builder
+from app.services.memory import vector_db
 from app.jsonUtils import as_dict, as_float, as_int, as_list, as_str
 router = APIRouter(prefix='/api/brain')
 
@@ -85,7 +85,7 @@ async def brainVectors() -> dict[str, object]:
     Projects each vector entry into { id, topic, summary, timestamp, tags }.
     """
     try:
-        db = vectorDb._read() or {}
+        db = vector_db._read() or {}
         entries = as_list(db.get('entries'), []) or as_list(db.get('vectors'), []) or []
     except Exception:
         entries = []
@@ -145,7 +145,7 @@ async def brainLearning() -> dict[str, object]:
 @router.get('/prompt')
 async def brainPrompt() -> dict[str, object]:
     """Return the built system prompt — { prompt, length }."""
-    prompt = contextBuilder.buildSystemPrompt()
+    prompt = context_builder.buildSystemPrompt()
     return {'prompt': prompt, 'length': len(prompt)}
 
 @router.get('/search')
@@ -174,7 +174,7 @@ async def brainSearch(q: str=Query(default='')) -> dict[str, object]:
     except Exception:
         pass
     try:
-        for v in vectorDb.search(query, top_k=5) or []:
+        for v in vector_db.search(query, top_k=5) or []:
             if not isinstance(v, dict):
                 continue
             meta = as_dict(v.get('metadata'), {})
@@ -231,7 +231,7 @@ async def brainGraph() -> dict[str, object]:
     except Exception:
         pass
     try:
-        vcount = vectorDb.count()
+        vcount = vector_db.count()
         counts['relations'] = int(vcount or 0)
         if vcount:
             entityTypes['vector'] = int(vcount)
@@ -249,7 +249,7 @@ async def brainDiagnostics() -> dict[str, object]:
     try:
         stats = memoryStore.getStats() or {}
         try:
-            vcount = int(vectorDb.count() or 0)
+            vcount = int(vector_db.count() or 0)
         except Exception:
             vcount = 0
         try:
@@ -260,7 +260,7 @@ async def brainDiagnostics() -> dict[str, object]:
             facts = as_int(stats.get('facts'), 0)
         except Exception:
             facts = 0
-        prompt = contextBuilder.buildSystemPrompt()
+        prompt = context_builder.buildSystemPrompt()
         return {'injectedChars': len(prompt), 'maxChars': 32768, 'compacted': False, 'guidelines': guidelines, 'semanticFacts': facts, 'vectorEntries': vcount}
     except Exception as exc:
         return {'error': str(exc), 'injectedChars': 0, 'maxChars': 0, 'compacted': False, 'guidelines': 0, 'semanticFacts': 0, 'vectorEntries': 0}
