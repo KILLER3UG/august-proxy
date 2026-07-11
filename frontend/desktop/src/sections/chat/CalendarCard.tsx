@@ -10,20 +10,11 @@
  * - If no MCP calendar server configured, shows only internal events with a hint
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from 'lucide-react';
 import { useMcpTools, type McpTool } from '@/hooks/useMcpTools';
+import { useCalendarEvents, type CalendarEvent } from '@/hooks/useCalendarEvents';
 import type { VoiceCommandCardProps } from '@/api/voice/registry';
-
-// ── Types ──────────────────────────────────────────────────────────────────
-
-interface CalendarEvent {
-  id: string;
-  title: string;
-  date: string; // ISO date YYYY-MM-DD
-  kind: 'task' | 'reminder' | 'scheduled_chat' | 'external';
-  source: 'internal' | 'mcp';
-}
 
 // ── Date helpers ───────────────────────────────────────────────────────────
 
@@ -61,9 +52,9 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export function CalendarCard({ onDismiss }: VoiceCommandCardProps) {
   const [weekOffset, setWeekOffset] = useState(0);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading: loading, error: queryError } = useCalendarEvents();
+  const events = data?.events ?? [];
+  const error = queryError ? 'Failed to load events' : null;
   const { tools } = useMcpTools();
 
   const hasCalendarMcp = tools.some(
@@ -72,20 +63,6 @@ export function CalendarCard({ onDismiss }: VoiceCommandCardProps) {
       t.name.includes('gcal') ||
       t.name.includes('events'),
   );
-
-  // Fetch internal events on mount.
-  useEffect(() => {
-    fetch('/api/calendar/internal')
-      .then(r => r.json())
-      .then(data => {
-        setEvents(data.events ?? []);
-        setLoading(false);
-      })
-      .catch((_err) => {
-        setError('Failed to load events');
-        setLoading(false);
-      });
-  }, []);
 
   const weekDates = getWeekDates(weekOffset);
   const weekStart = formatDate(weekDates[0]);

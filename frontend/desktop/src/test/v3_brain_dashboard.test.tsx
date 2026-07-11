@@ -1,15 +1,44 @@
 /* v3 — Brain dashboard LearningTab + SystemHealthTab */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LearningTab } from '@/sections/brain/LearningTab';
 import { SystemHealthTab } from '@/sections/brain/SystemHealthTab';
 import { BrainDashboard } from '@/sections/brain/BrainDashboard';
+import * as apiClient from '@/api/client';
 
-function mockFetchSequence(responses: Array<unknown>) {
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  });
+}
+
+function renderWithQuery(ui: React.ReactElement) {
+  const queryClient = createTestQueryClient();
+  return render(
+    <QueryClientProvider client={queryClient}>
+      {ui}
+    </QueryClientProvider>
+  );
+}
+
+function mockApiGetSequence(responses: Array<unknown>) {
   let i = 0;
-  return vi.fn().mockImplementation(() => {
+  return vi.spyOn(apiClient.api, 'get').mockImplementation(() => {
     const data = responses[Math.min(i++, responses.length - 1)];
-    return Promise.resolve({ ok: true, json: () => data });
+    return Promise.resolve(data);
+  });
+}
+
+function mockApiPostSequence(responses: Array<unknown>) {
+  let i = 0;
+  return vi.spyOn(apiClient.api, 'post').mockImplementation(() => {
+    const data = responses[Math.min(i++, responses.length - 1)];
+    return Promise.resolve(data);
   });
 }
 
@@ -40,8 +69,8 @@ describe('v3 — LearningTab', () => {
   });
 
   it('renders heuristics with source badges', async () => {
-    global.fetch = mockFetchSequence([FULL_LEARNING]);
-    render(<LearningTab />);
+    mockApiGetSequence([FULL_LEARNING]);
+    renderWithQuery(<LearningTab />);
     await waitFor(() => {
       expect(screen.getByText('Use Yarn')).toBeTruthy();
       expect(screen.getByText('manual')).toBeTruthy();
@@ -50,16 +79,16 @@ describe('v3 — LearningTab', () => {
   });
 
   it('renders auto-memories', async () => {
-    global.fetch = mockFetchSequence([FULL_LEARNING]);
-    render(<LearningTab />);
+    mockApiGetSequence([FULL_LEARNING]);
+    renderWithQuery(<LearningTab />);
     await waitFor(() => {
       expect(screen.getByText(/JWT expiry bug/)).toBeTruthy();
     });
   });
 
   it('renders sleep cycle stats', async () => {
-    global.fetch = mockFetchSequence([FULL_LEARNING]);
-    render(<LearningTab />);
+    mockApiGetSequence([FULL_LEARNING]);
+    renderWithQuery(<LearningTab />);
     await waitFor(() => {
       expect(screen.getByText(/Last run/)).toBeTruthy();
       expect(screen.getByText(/2 merges/)).toBeTruthy();
@@ -67,8 +96,8 @@ describe('v3 — LearningTab', () => {
   });
 
   it('renders pending skills', async () => {
-    global.fetch = mockFetchSequence([FULL_LEARNING]);
-    render(<LearningTab />);
+    mockApiGetSequence([FULL_LEARNING]);
+    renderWithQuery(<LearningTab />);
     await waitFor(() => {
       expect(screen.getByText('jwtDebugFlow')).toBeTruthy();
     });
@@ -81,8 +110,8 @@ describe('v3 — SystemHealthTab', () => {
   });
 
   it('renders a layer row with detail', async () => {
-    global.fetch = mockFetchSequence([FULL_HEALTH]);
-    render(<SystemHealthTab />);
+    mockApiGetSequence([FULL_HEALTH]);
+    renderWithQuery(<SystemHealthTab />);
     await waitFor(() => {
       expect(screen.getByText('Phase 4 — Learned Heuristics')).toBeTruthy();
       expect(screen.getByText('on & healthy')).toBeTruthy();
@@ -91,8 +120,8 @@ describe('v3 — SystemHealthTab', () => {
   });
 
   it('shows failing detail when a layer is failing', async () => {
-    global.fetch = mockFetchSequence([FULL_HEALTH]);
-    render(<SystemHealthTab />);
+    mockApiGetSequence([FULL_HEALTH]);
+    renderWithQuery(<SystemHealthTab />);
     await waitFor(() => {
       expect(screen.getByText('3 notes stale')).toBeTruthy();
     });
@@ -105,8 +134,8 @@ describe('v3 — BrainDashboard tab switching', () => {
   });
 
   it('switches between Learning and System Health tabs', async () => {
-    global.fetch = mockFetchSequence([FULL_LEARNING, FULL_HEALTH, FULL_HEALTH]);
-    render(<BrainDashboard />);
+    mockApiGetSequence([FULL_LEARNING, FULL_HEALTH, FULL_HEALTH]);
+    renderWithQuery(<BrainDashboard />);
     expect(screen.getByText('Learning')).toBeTruthy();
     expect(screen.getByText('System Health')).toBeTruthy();
     fireEvent.click(screen.getByText('System Health'));

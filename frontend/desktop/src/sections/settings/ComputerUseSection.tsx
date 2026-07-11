@@ -1,7 +1,7 @@
 /* ── Computer Use — Desktop automation settings ────────────────────── */
 /* Manages computer use backend, health diagnostics, and approval workflows. */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import {
   Monitor,
   RefreshCw,
@@ -13,65 +13,18 @@ import {
   Keyboard,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-
-interface HealthCheck {
-  name: string;
-  status: 'ok' | 'warning' | 'error';
-  message: string;
-  details: Record<string, unknown>;
-}
-
-interface HealthReport {
-  platform: string;
-  overall: 'ok' | 'warning' | 'error';
-  checks: HealthCheck[];
-  timestamp: string;
-}
-
-interface ComputerUseConfig {
-  enabled: boolean;
-  backend: string;
-  autoApprove: string[];
-  blocklistKeys: string[];
-  blocklistPatterns: string[];
-}
+import { useComputerUseHealth, useComputerUseConfig } from '@/hooks/useComputerUse';
+import type { HealthCheck, HealthReport, ComputerUseConfig } from '@/hooks/useComputerUse';
 
 export function ComputerUseSection() {
-  const [health, setHealth] = useState<HealthReport | null>(null);
-  const [config, setConfig] = useState<ComputerUseConfig | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: health, isLoading: healthLoading, refetch: refetchHealth, error: healthError } = useComputerUseHealth();
+  const { data: config, isLoading: configLoading, refetch: refetchConfig, error: configError } = useComputerUseConfig();
+  const error = healthError || configError;
 
-  const fetchHealth = useCallback(async () => {
-    try {
-      const res = await fetch('/api/desktop-automation/health');
-      if (!res.ok) throw new Error('Failed to fetch health status');
-      const data = await res.json();
-      setHealth(data);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error');
-    }
-  }, []);
-
-  const fetchConfig = useCallback(async () => {
-    try {
-      const res = await fetch('/api/desktop-automation/config');
-      if (!res.ok) throw new Error('Failed to fetch config');
-      const data = await res.json();
-      setConfig(data);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error');
-    }
-  }, []);
-
-  useEffect(() => {
-    void Promise.all([fetchHealth(), fetchConfig()]).finally(() => setLoading(false));
-  }, [fetchHealth, fetchConfig]);
+  const loading = healthLoading || configLoading;
 
   const handleRefresh = async () => {
-    setLoading(true);
-    await Promise.all([fetchHealth(), fetchConfig()]);
-    setLoading(false);
+    await Promise.all([refetchHealth(), refetchConfig()]);
   };
 
   if (loading) {
@@ -95,7 +48,7 @@ export function ComputerUseSection() {
 
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
+          {error instanceof Error ? error.message : String(error)}
         </div>
       )}
 

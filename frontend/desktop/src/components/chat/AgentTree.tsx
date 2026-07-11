@@ -2,49 +2,22 @@
 /* Hierarchical view of sub-agent jobs for a session. Driven by the        */
 /* /api/agents/tree endpoint.                                               */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ChevronRight, ChevronDown, Bot, Loader2, Check, AlertTriangle, StopCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { useAgentTree } from '@/hooks/useAgentTree';
+import type { AgentNode } from '@/hooks/useAgentTree';
 
-export type AgentNode = {
-  id: string;
-  parentId: string | null;
-  sessionId: string | null;
-  agentId: string;
-  parentAgentId: string | null;
-  depth: number;
-  task: string;
-  status: 'running' | 'completed' | 'failed' | 'blocked';
-  scope: string | null;
-  startedAt: string;
-  updatedAt: string;
-  completedAt: string | null;
-  resultSummary: string | null;
-};
+export type { AgentNode } from '@/hooks/useAgentTree';
 
 type Subtree = { root: AgentNode; children: Record<string, Subtree> };
-
-type TreeResponse = {
-  root: AgentNode;
-  children: Record<string, Subtree>;
-};
 
 type Props = {
   rootId: string | null;
   maxDepth?: number;
   onSelect?: (node: AgentNode) => void;
 };
-
-async function fetchTree(rootId: string, maxDepth: number): Promise<TreeResponse | null> {
-  try {
-    const r = await fetch(`/api/agents/tree?root=${encodeURIComponent(rootId)}&maxDepth=${maxDepth}`);
-    if (!r.ok) return null;
-    return r.json();
-  } catch (_) {
-    return null;
-  }
-}
 
 const STATUS_BADGE: Record<AgentNode['status'], { label: string; Icon: typeof Loader2; cls: string }> = {
   running:   { label: 'running',   Icon: Loader2,     cls: 'border-info/40 text-info' },
@@ -54,32 +27,10 @@ const STATUS_BADGE: Record<AgentNode['status'], { label: string; Icon: typeof Lo
 };
 
 export function AgentTree({ rootId, maxDepth = 4, onSelect }: Props) {
-  const [tree, setTree] = useState<TreeResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!rootId) {
-      setTree(null);
-      return;
-    }
-    let cancelled = false;
-    const tick = async () => {
-      setLoading(true);
-      const next = await fetchTree(rootId, maxDepth);
-      if (cancelled) return;
-      setTree(next);
-      setLoading(false);
-    };
-    void tick();
-    const t = setInterval(() => { void tick(); }, 3000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, [rootId, maxDepth]);
+  const { data: tree, isLoading } = useAgentTree(rootId, maxDepth);
 
   if (!rootId) return null;
-  if (loading && !tree) return <div className="text-xs text-muted-foreground p-3">Loading agent tree…</div>;
+  if (isLoading && !tree) return <div className="text-xs text-muted-foreground p-3">Loading agent tree…</div>;
   if (!tree) return <div className="text-xs text-muted-foreground p-3">No agent tree available.</div>;
 
   return (

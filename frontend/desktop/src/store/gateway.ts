@@ -1,4 +1,5 @@
 import { atom } from 'nanostores';
+import { api } from '@/api/client';
 
 export type GatewayState =
   | { status: 'connecting' }
@@ -15,9 +16,7 @@ export interface GatewayHealth {
 
 async function poll() {
   try {
-    const res = await fetch('/api/health');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = (await res.json()) as GatewayHealth;
+    const data = await api.get<GatewayHealth>('/api/health');
     $gateway.set({ status: 'open', port: data.port ?? 0, uptime: data.uptime ?? 0 });
   } catch (e) {
     $gateway.set({ status: 'closed', reason: e instanceof Error ? e.message : String(e) });

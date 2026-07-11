@@ -1,92 +1,13 @@
 /* v3 — Learning tab: heuristics, auto-memories, facts, sleep cycle, delta engine, skill genesis */
-import { useEffect, useState } from 'react';
 import { Sparkles, Brain, Clock, Zap, ListChecks } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-
-interface Heuristic {
-  id: number;
-  rule: string;
-  source: string;
-  category: string;
-  createdAt: string;
-}
-
-interface AutoMemory {
-  id: number;
-  key: string;
-  content: string;
-  importance: number;
-  createdAt?: string;
-}
-
-interface PendingSkill {
-  id: number;
-  name: string;
-  description: string;
-  triggerText?: string;
-}
-
-interface LearningData {
-  heuristics: Heuristic[];
-  heuristicCount: number;
-  coreFacts: unknown;
-  userProfile: unknown;
-  autoMemories: AutoMemory[];
-  sleepCycle: { lastRunAt: string | null; lastMerged: number; lastPromoted: number; lastDeleted: number };
-  deltaEngine: { consentGranted: boolean; queueSize: number; lastFlushAt: string | null };
-  pendingSkills: PendingSkill[];
-}
-
-const API_BASE = '/api/brain';
+import { useLearningData } from '@/hooks/useLearningData';
 
 export function LearningTab() {
-  const [data, setData] = useState<LearningData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchData = async () => {
-      try {
-        const resp = await fetch(`${API_BASE}/learning`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const json = await resp.json() as Record<string, unknown>;
-        // Wire format is camelCase (`heuristics`, `heuristicCount`,
-        // `sleepCycle`, `deltaEngine`, `pendingSkills`, …) per the v3
-        // brain API contract.
-        const normalized: LearningData = {
-          heuristics: (json.heuristics ?? []) as Heuristic[],
-          heuristicCount: (json.heuristicCount ?? 0) as number,
-          coreFacts: json.coreFacts ?? null,
-          userProfile: json.userProfile ?? null,
-          autoMemories: (json.autoMemories ?? []) as AutoMemory[],
-          sleepCycle: {
-            lastRunAt: ((json.sleepCycle as Record<string, unknown>)?.lastRunAt ?? null) as string | null,
-            lastMerged: ((json.sleepCycle as Record<string, unknown>)?.lastMerged ?? 0) as number,
-            lastPromoted: ((json.sleepCycle as Record<string, unknown>)?.lastPromoted ?? 0) as number,
-            lastDeleted: ((json.sleepCycle as Record<string, unknown>)?.lastDeleted ?? 0) as number,
-          },
-          deltaEngine: {
-            consentGranted: ((json.deltaEngine as Record<string, unknown>)?.consentGranted ?? false) as boolean,
-            queueSize: ((json.deltaEngine as Record<string, unknown>)?.queueSize ?? 0) as number,
-            lastFlushAt: ((json.deltaEngine as Record<string, unknown>)?.lastFlushAt ?? null) as string | null,
-          },
-          pendingSkills: (json.pendingSkills ?? []) as PendingSkill[],
-        };
-        if (!cancelled) setData(normalized);
-      } catch (e) {
-        if (!cancelled) setError((e as Error).message);
-      }
-    };
-    void fetchData();
-    const id = setInterval(() => { void fetchData(); }, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
+  const { data, error } = useLearningData();
 
   if (error) {
-    return <div className="p-4 text-danger">Error loading brain data: {error}</div>;
+    return <div className="p-4 text-danger">Error loading brain data: {error.message}</div>;
   }
   if (!data) {
     return (

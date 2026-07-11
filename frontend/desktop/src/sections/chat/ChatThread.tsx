@@ -9,6 +9,7 @@ import { Send, Paperclip, Mic, AtSign, Plus, ChevronDown, Check, StopCircle, X, 
 import { cn, formatClockTime, workspaceBaseName } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
+import { api } from '@/api/client';
 import { toast } from 'sonner';
 import { useStore } from '@nanostores/react';
 import { createPortal } from 'react-dom';
@@ -804,8 +805,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           break;
         }
         case 'load-skill': {
-          fetch(`/api/skills?q=${encodeURIComponent(event.skillName)}`)
-            .then(r => r.json() as Promise<{ total: number; skills: Array<{ name: string; description: string; trigger: string; category: string }> }>)
+          api.get<{ total: number; skills: Array<{ name: string; description: string; trigger: string; category: string }> }>(`/api/skills?q=${encodeURIComponent(event.skillName)}`)
             .then(data => {
               if (data.total === 0) {
                 toast.error(
@@ -834,8 +834,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         case 'fetch-skills': {
           const url =
             '/api/skills' + (event.query ? '?q=' + encodeURIComponent(event.query) : '');
-          fetch(url)
-            .then(r => r.json() as Promise<{ total: number; skills: Array<{ name: string; category: string; enabled: boolean; description: string }> }>)
+          api.get<{ total: number; skills: Array<{ name: string; category: string; enabled: boolean; description: string }> }>(url)
             .then(data => {
               if (data.total === 0) {
                 toast.info(
@@ -891,25 +890,18 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           // Decide create vs refine by checking whether an AUG.md already
           // exists for this workspace. /init should refine an existing file
           // rather than blindly overwrite it.
-          const decideMode = fetch(
+          const decideMode = api.get<{ exists: boolean }>(
             '/api/aug/context' + (ws ? `?workspacePath=${encodeURIComponent(ws)}` : ''),
-            { method: 'GET' },
           )
-            .then(r => (r.ok ? r.json() as Promise<{ exists: boolean }> : Promise.resolve({ exists: false })))
             .then(c => (c && c.exists ? 'refine' : 'create'))
             .catch(() => 'create');
           decideMode
             .then(mode =>
-              fetch('/api/aug/init', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode, workspacePath: ws || undefined }),
+              api.post<{ draft: string; existing: boolean }>('/api/aug/init', {
+                mode,
+                workspacePath: ws || undefined,
               }),
             )
-            .then(r => {
-              if (!r.ok) return r.json().then((err: { error?: string; detail?: string }) => { throw new Error(err?.error || err?.detail || 'generation failed'); });
-              return r.json() as Promise<{ draft: string; existing: boolean }>;
-            })
             .then(data => {
               setAugPreview({
                 draft: data.draft || '',
@@ -1017,14 +1009,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // every 30s and refetches on invalidation, so newly-added providers appear
   // without remounting the chat.
 
-	  // On mount: fetch active config for initial model selection.
-	  useEffect(() => {
-	    void (async () => {
+		  // On mount: fetch active config for initial model selection.
+		  useEffect(() => {
+		    void (async () => {
       // Phase 1: quick config fetch for initial model selection
       try {
-          const configRes = await fetch('/api/config/safe');
-        if (configRes.ok) {
-          const config = await configRes.json() as Record<string, unknown>;
+          const config = await api.get<Record<string, unknown>>('/api/config/safe');
           const activeProvider = (config?.activeProvider as string) || '';
           const pConfig = (config?.[activeProvider] as Record<string, unknown>) || {};
           const activeModelId: string | null = (pConfig?.model as string) || (pConfig?._upstreamModel as string) || (pConfig?.currentModel as string) || null;
@@ -1042,7 +1032,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               return placeholder;
             });
           }
-        }
       } catch (e) {
         console.warn('[Models] Config fetch failed, using localStorage fallback:', e);
       }

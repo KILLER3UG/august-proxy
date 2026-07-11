@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { X, HelpCircle, CheckCircle2, XCircle, ChevronRight, Lightbulb, Plus } from 'lucide-react';
+import { api } from '@/api/client';
 
 interface Question {
   id: number;
@@ -53,17 +54,11 @@ export function ExamBanner({ examId, question, onAnswer, onNext, onAddQuestion, 
     if (!helpText.trim()) return;
     setIsSubmitting(true);
     try {
-      const res = await fetch(`/api/exam/${examId}/help`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ questionId: question.id, ask: helpText }),
+      const data = await api.post<{ explanation?: string }>(`/api/exam/${examId}/help`, {
+        questionId: question.id,
+        ask: helpText,
       });
-      if (res.ok) {
-        const data = await res.json();
-        setExplanation(data.explanation || 'No explanation available.');
-      } else {
-        setExplanation('Unable to get help right now.');
-      }
+      setExplanation(data.explanation || 'No explanation available.');
       setShowExplanation(true);
     } catch {
       setExplanation('Unable to get help right now.');

@@ -10,18 +10,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useSessionStatus } from '@/hooks/useSessionStatus';
+import type { SessionStatus } from '@/hooks/useSessionStatus';
+import { api } from '@/api/client';
 
-type SessionStatus = {
-    sessionId: string;
-    status: 'idle' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
-    pendingTool: string | null;
-    pendingToken: string | null;
-    pendingArgs: Record<string, unknown> | null;
-    pendingCreatedAt: number | null;
-    updatedAt: string | null;
-    guardMode: 'plan' | 'ask' | 'full';
-    approved: boolean;
-};
+export type { SessionStatus } from '@/hooks/useSessionStatus';
 
 type Props = {
     sessionId: string | null;
@@ -29,32 +22,12 @@ type Props = {
     onStatusChange?: (status: SessionStatus | null) => void;
 };
 
-async function fetchStatus(sessionId: string): Promise<SessionStatus | null | 'gone'> {
-    try {
-        const r = await fetch(`/api/workbench/session/${encodeURIComponent(sessionId)}/status`, { credentials: 'same-origin' });
-        // A 404 means the Workbench session no longer exists (e.g. the backend
-        // restarted and wiped its in-memory store). Signal "gone" so the caller
-        // stops polling a dead id instead of 404-ing every interval.
-        if (r.status === 404) return 'gone';
-        if (!r.ok) return null;
-        return r.json() as Promise<SessionStatus>;
-    } catch {
-        return null;
-    }
-}
-
 async function postDecision(sessionId: string, token: string, reject: boolean) {
-    const r = await fetch('/api/workbench/confirm-mutation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ sessionId, token, reject })
+    return api.post<{ success: boolean }>('/api/workbench/confirm-mutation', {
+        sessionId,
+        token,
+        reject,
     });
-    if (!r.ok) {
-        const text = await r.text().catch(() => '');
-        throw new Error(text || `Approval API returned ${r.status}`);
-    }
-    return r.json();
 }
 
 function summarizeTool(toolName: string | null, args: Record<string, unknown> | null): string {
@@ -70,39 +43,12 @@ function summarizeTool(toolName: string | null, args: Record<string, unknown> | 
 }
 
 export function ApprovalBanner({ sessionId, pollIntervalMs = 2000, onStatusChange }: Props) {
-    const [status, setStatus] = useState<SessionStatus | null>(null);
+    const { data: status } = useSessionStatus(sessionId, pollIntervalMs);
     const [deciding, setDeciding] = useState<'approve' | 'reject' | null>(null);
 
     useEffect(() => {
-        if (!sessionId) {
-            setStatus(null);
-            onStatusChange?.(null);
-            return;
-        }
-        let cancelled = false;
-        let timer: ReturnType<typeof setInterval> | undefined;
-        const tick = async () => {
-            if (cancelled) return;
-            const next = await fetchStatus(sessionId);
-            if (cancelled) return;
-            // The session is gone (404) — stop polling a dead id instead of
-            // 404-ing on every interval.
-            if (next === 'gone') {
-                setStatus(null);
-                onStatusChange?.(null);
-                if (timer) { clearInterval(timer); timer = undefined; }
-                return;
-            }
-            setStatus(next);
-            onStatusChange?.(next);
-        };
-        void tick();
-        timer = setInterval(() => { void tick(); }, pollIntervalMs);
-        return () => {
-            cancelled = true;
-            if (timer) clearInterval(timer);
-        };
-    }, [sessionId, pollIntervalMs, onStatusChange]);
+        onStatusChange?.(status ?? null);
+    }, [status, onStatusChange]);
 
     const isAwaiting = status?.status === 'awaiting_approval' && !!status.pendingToken;
     const summary = useMemo(
@@ -193,5 +139,4 @@ export function ApprovalBanner({ sessionId, pollIntervalMs = 2000, onStatusChang
     );
 }
 
-export type { SessionStatus };
 export default ApprovalBanner;
