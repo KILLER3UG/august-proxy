@@ -1,4 +1,5 @@
 import { atom } from 'nanostores';
+import { api } from '@/api/client';
 
 export type GatewayState =
   | { status: 'connecting' }

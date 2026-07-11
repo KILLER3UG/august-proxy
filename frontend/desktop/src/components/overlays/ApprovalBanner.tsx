@@ -139,5 +139,4 @@ export function ApprovalBanner({ sessionId, pollIntervalMs = 2000, onStatusChang
     );
 }
 
-export type { SessionStatus };
 export default ApprovalBanner;

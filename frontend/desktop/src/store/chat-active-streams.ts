@@ -9,6 +9,7 @@
  */
 
 import { atom } from 'nanostores';
+import { api } from '@/api/client';
 
 const POLL_INTERVAL_MS = 3000;
 

@@ -17,8 +17,9 @@ import { useComputerUseHealth, useComputerUseConfig } from '@/hooks/useComputerU
 import type { HealthCheck, HealthReport, ComputerUseConfig } from '@/hooks/useComputerUse';
 
 export function ComputerUseSection() {
-  const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useComputerUseHealth();
-  const { data: config, isLoading: configLoading, refetch: refetchConfig } = useComputerUseConfig();
+  const { data: health, isLoading: healthLoading, refetch: refetchHealth, error: healthError } = useComputerUseHealth();
+  const { data: config, isLoading: configLoading, refetch: refetchConfig, error: configError } = useComputerUseConfig();
+  const error = healthError || configError;
 
   const loading = healthLoading || configLoading;
 
@@ -47,7 +48,7 @@ export function ComputerUseSection() {
 
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
+          {error instanceof Error ? error.message : String(error)}
         </div>
       )}
 

@@ -5,6 +5,7 @@ import { FolderGit2, ChevronRight, ChevronDown, Folder, FolderOpen, FileText, Al
 import { isTauri } from '@/lib/tauri-detect';
 import { toast } from 'sonner';
 import { useWorkspaceFiles } from '@/hooks/useWorkspaceFiles';
+import { api } from '@/api/client';
 
 interface FlatFileNode {
   name: string;

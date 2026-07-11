@@ -9,6 +9,7 @@ import { Send, Paperclip, Mic, AtSign, Plus, ChevronDown, Check, StopCircle, X, 
 import { cn, formatClockTime, workspaceBaseName } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
+import { api } from '@/api/client';
 import { toast } from 'sonner';
 import { useStore } from '@nanostores/react';
 import { createPortal } from 'react-dom';

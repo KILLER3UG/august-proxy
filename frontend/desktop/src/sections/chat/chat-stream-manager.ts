@@ -2,6 +2,7 @@ import { atom } from 'nanostores';
 import type { ChatMessage, MessageBlock, ProviderSetupResult } from '@/types/chat';
 import type { WorkbenchMode, EffortLevel } from '@/types/chat';
 import type { WorkbenchSession } from '@/types/workbench';
+import { api } from '@/api/client';
 import { streamWorkbenchChat, streamWorkbenchReconnect, stopWorkbenchChat } from '@/api/workbench';
 import { setSessionStatus, clearSessionStatus, $sessions } from '@/store/sessions';
 import { makeStreamHandlers } from './makeStreamHandlers';
