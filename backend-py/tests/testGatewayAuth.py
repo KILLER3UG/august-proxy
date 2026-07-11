@@ -1,7 +1,7 @@
 """Tests for the External API Gateway Access feature.
 
 Covers:
-  - The ``requireGatewayKey`` dependency behaviour under each gate state.
+  - The ``require_gateway_key`` dependency behaviour under each gate state.
   - The ``GET /api/config/external-access`` and ``PUT`` handlers in
     ``app.routers.config``.
   - End-to-end protection of the ``/v1/*`` proxy routes via
@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from app.lib.gatewayAuth import requireGatewayKey
+from app.lib.gateway_auth import require_gateway_key
 from app.routers.config import router as configRouter
 from app.routers.proxy import router as proxyRouter
 
@@ -37,17 +37,17 @@ def _resetGatewayKey(isolatedData):
     settings.reload()
 
 class TestRequireGatewayKey:
-    """Behavioural coverage of the ``requireGatewayKey`` dependency."""
+    """Behavioural coverage of the ``require_gateway_key`` dependency."""
 
     async def testDisabledReturns403WithNoHeader(self, isolatedData):
         with pytest.raises(HTTPException) as exc:
-            await requireGatewayKey(authorization=None)
+            await require_gateway_key(authorization=None)
         assert exc.value.status_code == 403
         assert exc.value.detail['code'] == 'external_access_disabled'
 
     async def testDisabledReturns403EvenWithValidHeader(self, isolatedData):
         with pytest.raises(HTTPException) as exc:
-            await requireGatewayKey(authorization='Bearer anything')
+            await require_gateway_key(authorization='Bearer anything')
         assert exc.value.status_code == 403
 
     async def testEnabledWithoutKeyReturns503(self, isolatedData):
@@ -55,7 +55,7 @@ class TestRequireGatewayKey:
         from app.config import settings
         settings.reload()
         with pytest.raises(HTTPException) as exc:
-            await requireGatewayKey(authorization='Bearer x')
+            await require_gateway_key(authorization='Bearer x')
         assert exc.value.status_code == 503
         assert exc.value.detail['code'] == 'gateway_key_unconfigured'
 
@@ -65,7 +65,7 @@ class TestRequireGatewayKey:
         settings.reload()
         settings.gatewayApiKey = 's3cret'
         with pytest.raises(HTTPException) as exc:
-            await requireGatewayKey(authorization=None)
+            await require_gateway_key(authorization=None)
         assert exc.value.status_code == 401
         assert exc.value.detail['code'] == 'auth_missing'
         assert exc.value.headers.get('WWW-Authenticate') == 'Bearer'
@@ -76,7 +76,7 @@ class TestRequireGatewayKey:
         settings.reload()
         settings.gatewayApiKey = 's3cret'
         with pytest.raises(HTTPException) as exc:
-            await requireGatewayKey(authorization='Bearer wrong')
+            await require_gateway_key(authorization='Bearer wrong')
         assert exc.value.status_code == 401
         assert exc.value.detail['code'] == 'auth_invalid_key'
 
@@ -86,7 +86,7 @@ class TestRequireGatewayKey:
         settings.reload()
         settings.gatewayApiKey = 's3cret'
         with pytest.raises(HTTPException) as exc:
-            await requireGatewayKey(authorization='Basic s3cret')
+            await require_gateway_key(authorization='Basic s3cret')
         assert exc.value.status_code == 401
 
     async def testEnabledCorrectKeyReturnsTrue(self, isolatedData):
@@ -94,7 +94,7 @@ class TestRequireGatewayKey:
         from app.config import settings
         settings.reload()
         settings.gatewayApiKey = 's3cret'
-        result = await requireGatewayKey(authorization='Bearer s3cret')
+        result = await require_gateway_key(authorization='Bearer s3cret')
         assert result is True
 
     async def testEnabledLowercaseBearerWorks(self, isolatedData):
@@ -103,7 +103,7 @@ class TestRequireGatewayKey:
         from app.config import settings
         settings.reload()
         settings.gatewayApiKey = 's3cret'
-        result = await requireGatewayKey(authorization='bearer s3cret')
+        result = await require_gateway_key(authorization='bearer s3cret')
         assert result is True
 
 @pytest.fixture

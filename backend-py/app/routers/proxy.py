@@ -7,7 +7,7 @@ capture into the logger so the Observability section has live data:
 start_request on entry, capture_request for the body, and either
 end_request (non-streaming) or a stream-wrapping end_request (streaming).
 
-All /v1/* endpoints are gated by ``requireGatewayKey`` so external clients
+All /v1/* endpoints are gated by ``require_gateway_key`` so external clients
 must authenticate with the ``GATEWAY_API_KEY`` Bearer token. The local SPA
 is unaffected because it uses ``/api/*`` (workbench, sessions, etc.) instead
 of ``/v1/*``.
@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.adapters import anthropic as anthropicAdapter
 from app.adapters import openai as openaiAdapter
 from app.jsonUtils import as_str, as_dict, as_list, as_int
-from app.lib.gatewayAuth import requireGatewayKey
+from app.lib.gateway_auth import require_gateway_key
 from app.providers import resolver as providerResolver
 from app.services import logger as trafficLogger
 router = APIRouter()
@@ -150,7 +150,7 @@ async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[s
         pass
 
 @router.post('/v1/messages')
-async def anthropicMessages(request: Request, _auth: bool=Depends(requireGatewayKey)):
+async def anthropicMessages(request: Request, _auth: bool=Depends(require_gateway_key)):
     """Anthropic Messages API proxy.
 
     Delegates to the Anthropic adapter which handles:
@@ -173,7 +173,7 @@ async def anthropicMessages(request: Request, _auth: bool=Depends(requireGateway
     return result
 
 @router.post('/v1/chat/completions')
-async def openaiChat(request: Request, _auth: bool=Depends(requireGatewayKey)):
+async def openaiChat(request: Request, _auth: bool=Depends(require_gateway_key)):
     """OpenAI Chat Completions API proxy.
 
     Delegates to the OpenAI adapter which handles:
@@ -195,7 +195,7 @@ async def openaiChat(request: Request, _auth: bool=Depends(requireGatewayKey)):
     return result
 
 @router.post('/v1/responses')
-async def openaiResponses(request: Request, _auth: bool=Depends(requireGatewayKey)):
+async def openaiResponses(request: Request, _auth: bool=Depends(require_gateway_key)):
     """OpenAI Responses API proxy.
 
     Translates the chat completion response to the Responses API format.
@@ -240,7 +240,7 @@ def _translateToResponsesFormat(chatCompletion: dict) -> dict:
     return {'id': f'resp_{uuid.uuid4().hex[:12]}', 'object': 'response', 'created_at': int(time.time()), 'status': 'completed', 'model': as_str(chatCompletion.get('model'), ''), 'output': outputItems, 'usage': {'input_tokens': as_int(usage.get('prompt_tokens'), 0), 'output_tokens': as_int(usage.get('completion_tokens'), 0), 'total_tokens': as_int(usage.get('total_tokens'), 0)}}
 
 @router.get('/v1/models')
-async def listModels(_auth: bool=Depends(requireGatewayKey)):
+async def listModels(_auth: bool=Depends(require_gateway_key)):
     """List available models from all configured providers."""
     providers = providerResolver.listAvailable()
     models = []

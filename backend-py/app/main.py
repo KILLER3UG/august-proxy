@@ -82,8 +82,8 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             logger.warning('DB migration skipped: %s', exc)
         try:
-            from app.lib.storageKeyMigration import migrateStorageKeys
-            migrateStorageKeys(_dbPathVal)
+            from app.lib.storage_key_migration import migrate_storage_keys
+            migrate_storage_keys(_dbPathVal)
         except Exception as exc:
             logger.warning('Storage-key migration skipped: %s', exc)
     try:
