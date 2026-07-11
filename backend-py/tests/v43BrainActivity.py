@@ -55,8 +55,8 @@ def testGetEndpointReturnsEventsNewestFirst():
 def testSseEndpointModuleExportsStream():
     """The /api/brain/events/stream endpoint exists in the router. Streaming
     behavior is verified manually — TestClient + async iterators hang."""
-    from app.routers import brainActivity
-    paths = {route.path for route in brainActivity.router.routes}
+    from app.routers import brain_activity
+    paths = {route.path for route in brain_activity.router.routes}
     assert '/api/brain/events/stream' in paths
     assert '/api/brain/events' in paths
 
