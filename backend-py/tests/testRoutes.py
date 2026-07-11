@@ -242,4 +242,4 @@ async def testApiMemoryStats(client):
     resp = await client.get('/api/memory/stats')
     assert resp.status_code == 200
     data = resp.json()
-    assert 'memory_store' in data
+    assert 'memoryStore' in data

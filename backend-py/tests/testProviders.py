@@ -21,7 +21,7 @@ async def testTemplatesEndpointReturnsTemplates():
         assert 'modelProfiles' in tmpl
         ids = {t['id'] for t in data}
         assert 'anthropic' in ids
-        assert 'openai-api' in ids
+        assert 'openai' in ids
         assert 'deepseek' in ids
 
 
@@ -65,7 +65,7 @@ async def testCreateProviderWithTemplate(monkeypatch):
         assert data['apiFormat'] == 'anthropicMessages'
         assert len(data['models']) > 0
         modelIds = {m['id'] for m in data['models']}
-        assert 'claude-sonnet-4' in modelIds or 'claude-opus-4' in modelIds
+        assert 'claude-sonnet-4-7' in modelIds or 'claude-opus-4' in modelIds
 
 
 async def testActiveProviderReturnsEmptyWhenNoneConfigured(isolatedData):

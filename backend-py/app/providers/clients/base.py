@@ -136,7 +136,7 @@ class ProviderResponse:
         self.body = body
 
     @property
-    def isSuccess(self) -> bool:
+    def is_success(self) -> bool:
         return 200 <= self.status < 300
 
     @property

@@ -87,11 +87,11 @@ class AgentMessageBus:
         async with self._condition:
             self._condition.notify_all()
 
-    def getTopicMessages(self, topic: str) -> list[dict[str, Any]]:
+    def get_topic_messages(self, topic: str) -> list[dict[str, Any]]:
         """Return all queued messages for *topic* (for late-joining consumers)."""
         return list(self._queues.get(topic, []))
 
-    async def waitForMessage(self, topic: str, timeout: float | None = None) -> dict[str, Any] | None:
+    async def wait_for_message(self, topic: str, timeout: float | None = None) -> dict[str, Any] | None:
         """Block until a new message arrives on *topic*, then return it.
 
         If *timeout* is set and no message arrives, returns ``None``.

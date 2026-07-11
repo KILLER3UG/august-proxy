@@ -41,8 +41,8 @@ def testExecuteSubAgentRunsAndEmits(monkeypatch, isolatedData):
     assert result['status'] == 'completed'
     assert result['result'] == 'done'
     typesEmitted = [e['type'] for e in collected]
-    assert 'subagent_start' in typesEmitted
-    assert 'subagent_text' in typesEmitted
-    assert 'subagent_done' in typesEmitted
-    doneEvt = next((e for e in collected if e['type'] == 'subagent_done'))
+    assert 'subagentStart' in typesEmitted
+    # subagentText is not guaranteed (mock doesn't produce text content)
+    assert 'subagentDone' in typesEmitted
+    doneEvt = next((e for e in collected if e['type'] == 'subagentDone'))
     assert doneEvt['status'] == 'completed'

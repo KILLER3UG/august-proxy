@@ -97,7 +97,7 @@ class TestFacts:
         saveFact('user_name', 'Alice', category='identity')
         fact = getFact('user_name')
         assert fact is not None
-        assert fact['fact_key'] == 'user_name'
+        assert fact['factKey'] == 'user_name'
         assert fact['category'] == 'identity'
 
     def testSearchFacts(self):
@@ -142,7 +142,7 @@ class TestLifecycle:
         assert lid > 0
         events = listLifecycle('session_1')
         assert len(events) == 1
-        assert events[0]['event_type'] == 'session_started'
+        assert events[0]['eventType'] == 'session_started'
 
 
 class TestTopicIndex:

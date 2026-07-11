@@ -80,7 +80,7 @@ async def testOrchestratorEvents(bus):
     request = SubagentSpawnRequest(
         session=session, workItems=[{'goal': 'quick test', 'agentId': 'general'}], mode='auto'
     )
-    with patch('app.services.subagent_orchestrator.runSubagent', new_callable=AsyncMock) as mockRun:
+    with patch('app.services.subagent_worker.runSubagent', new_callable=AsyncMock) as mockRun:
         mockRun.return_value = {'status': 'completed', 'result': 'done', 'error': ''}
         handles = await orch.spawn(request)
         await asyncio.sleep(0.2)

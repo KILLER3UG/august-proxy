@@ -84,7 +84,7 @@ class TestOpenAIClient:
         assert headers['Authorization'] == 'Bearer sk-test'
 
     def testBaseUrl(self):
-        client = OpenAIClient({'name': 'OpenAI', 'base_url': 'https://custom.api.com/v1'})
+        client = OpenAIClient({'name': 'OpenAI', 'baseUrl': 'https://custom.api.com/v1'})
         url = client.resolveBaseUrl()
         assert url == 'https://custom.api.com/v1'
 
@@ -109,7 +109,7 @@ class TestMiniMaxClient:
         assert isinstance(client, AnthropicClient)
 
     def testBaseUrl(self):
-        client = MiniMaxClient({'name': 'MiniMax', 'base_url': 'https://api.minimax.io/anthropic'})
+        client = MiniMaxClient({'name': 'MiniMax', 'baseUrl': 'https://api.minimax.io/anthropic'})
         url = client.resolveBaseUrl()
         assert 'minimax.io' in url
 
@@ -128,29 +128,29 @@ class TestBedrockClient:
 
 class TestFactory:
     def testAnthropicMessages(self):
-        client = getClient({'name': 'Anthropic', 'api_mode': 'anthropicMessages'})
+        client = getClient({'name': 'Anthropic', 'apiMode': 'anthropicMessages'})
         assert isinstance(client, AnthropicClient)
 
     def testOpenaiChat(self):
-        client = getClient({'name': 'DeepSeek', 'api_mode': 'openaiChat'})
+        client = getClient({'name': 'DeepSeek', 'apiMode': 'openaiChat'})
         assert isinstance(client, OpenAIClient)
 
     def testCodexResponses(self):
-        client = getClient({'name': 'OpenAI API', 'api_mode': 'codexResponses'})
+        client = getClient({'name': 'OpenAI API', 'apiMode': 'codexResponses'})
         assert isinstance(client, OpenAIClient)
 
     def testGeminiOpenai(self):
-        client = getClient({'name': 'Google AI Studio', 'api_mode': 'geminiOpenai'})
+        client = getClient({'name': 'Google AI Studio', 'apiMode': 'geminiOpenai'})
         assert isinstance(client, GeminiClient)
 
     def testBedrockConverse(self):
-        client = getClient({'name': 'AWS Bedrock', 'api_mode': 'bedrockConverse'})
+        client = getClient({'name': 'AWS Bedrock', 'apiMode': 'bedrockConverse'})
         assert isinstance(client, BedrockClient)
 
     def testMinimax(self):
-        client = getClient({'name': 'MiniMax', 'api_mode': 'minimax'})
+        client = getClient({'name': 'MiniMax', 'apiMode': 'minimax'})
         assert isinstance(client, MiniMaxClient)
 
     def testUnknownModeDefaultsToOpenai(self):
-        client = getClient({'name': 'Unknown', 'api_mode': 'weird_format'})
+        client = getClient({'name': 'Unknown', 'apiMode': 'weird_format'})
         assert isinstance(client, OpenAIClient)

@@ -423,7 +423,7 @@ class TestAnthropicWorkbenchStreaming:
         assert result['usage']['input_tokens'] == 10
         assert result['usage']['output_tokens'] == 5
         assert 'thinking' not in capturedBody
-        assert any((e.get('type') == 'final_output' for e in emitted))
+        assert any((e.get('type') == 'finalOutput' for e in emitted))
         assert result['thinking'] == ''
         assert not any((b.get('type') == 'thinking' for b in result['content']))
 

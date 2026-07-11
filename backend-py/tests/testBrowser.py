@@ -41,7 +41,7 @@ def testBrowserOpenWithoutEngineReturnsError(monkeypatch):
     async def _boom():
         raise BrowserUnavailableError('no playwright')
 
-    monkeypatch.setattr('app.services.browser.sessionManager._startEngine', _boom)
+    monkeypatch.setattr('app.services.browser.session_manager._startEngine', _boom)
     result = json.loads(asyncio.run(handlers.browserOpen('https://example.com')))
     assert result['status'] == 'error'
     assert 'Playwright' in result['error'] or 'playwright' in result['error'].lower()

@@ -36,9 +36,9 @@ async def testConfigShape(client):
     data = resp.json()
     assert data['backend'] == 'pyautogui'
     assert 'enabled' in data
-    assert isinstance(data['auto_approve'], list)
-    assert isinstance(data['blocklist_keys'], list)
-    assert isinstance(data['blocklist_patterns'], list)
+    assert isinstance(data['autoApprove'], list)
+    assert isinstance(data['blocklistKeys'], list)
+    assert isinstance(data['blocklistPatterns'], list)
 
 
 @pytest.mark.asyncio

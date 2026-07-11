@@ -353,8 +353,8 @@ async def _spawn_and_wait(coord_env, goals, execution_log=None, busy_sleep=0.0):
     bus_events: dict[str, dict[str, list]] = {}
     for h in handles:
         bus_events[h.taskId] = {
-            'progress': list(bus.getTopicMessages(f'task:{h.taskId}:progress')),
-            'result': list(bus.getTopicMessages(f'task:{h.taskId}:result')),
+            'progress': list(bus.get_topic_messages(f'task:{h.taskId}:progress')),
+            'result': list(bus.get_topic_messages(f'task:{h.taskId}:result')),
         }
     await orch.close()
     bus.close()
