@@ -33,7 +33,7 @@ def _emit_security(code: str, message: str) -> None:
     except Exception:
         pass
 
-def _externalAccessEnabled() -> bool:
+def _external_access_enabled() -> bool:
     """Return True when the user has opted-in to external proxy access."""
     try:
         cfg = settings.config or {}
@@ -43,7 +43,7 @@ def _externalAccessEnabled() -> bool:
     ea = gw.get('externalAccess', {}) or {}
     return bool(ea.get('enabled', False))
 
-async def requireGatewayKey(authorization: str | None=Header(default=None)) -> bool:
+async def require_gateway_key(authorization: str | None=Header(default=None)) -> bool:
     """FastAPI dependency that protects ``/v1/*`` proxy endpoints.
 
     When external access is disabled the gateway is closed and we reject the
@@ -51,7 +51,7 @@ async def requireGatewayKey(authorization: str | None=Header(default=None)) -> b
     ``settings.gatewayApiKey`` (which is bound to the ``GATEWAY_API_KEY``
     env var by ``pydantic-settings``).
     """
-    if not _externalAccessEnabled():
+    if not _external_access_enabled():
         _emit_security('external_access_disabled', 'External API access is disabled.')
         raise HTTPException(status_code=403, detail={'code': 'external_access_disabled', 'message': 'External API access is disabled. Enable it in Settings → API Access.'})
     key = settings.gatewayApiKey
