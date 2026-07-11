@@ -7,14 +7,11 @@
     "frontend/desktop",
     "frontend/mobile"
   ],
-	  "scripts": {
-	    "start": "node scripts/start-backend.mjs",
-	    "start:node": "node backend/index.js",
-	    "launch": "node backend/launch.js",
+  "scripts": {
+    "start": "node scripts/start-backend.mjs",
     "dev": "node scripts/dev-app.mjs",
     "dev:desktop": "node scripts/dev-tauri.mjs",
     "dev:web": "npm run dev:vite -w frontend/desktop",
-    "memory:eval": "node backend/scripts/run-memory-eval.js",
     "build:web": "npm run build -w frontend/desktop",
     "preview:web": "npm run preview -w frontend/desktop",
     "download:node-binaries": "node scripts/download-node-binaries.mjs",
@@ -23,10 +20,9 @@
     "release:minor": "node scripts/release-desktop.mjs minor",
     "release:desktop": "npm run build:web && npm run download:node-binaries && npm run tauri -w frontend/desktop build",
     "version": "node scripts/sync-tauri-version.mjs && git add frontend/desktop/src-tauri/tauri.conf.json frontend/desktop/src/sections/settings/UpdateSection.tsx",
-    "test:backend": "node --test backend/test/verification.test.js backend/test/sse-streaming.test.cjs backend/test/route-resolver.test.cjs backend/test/model-resolver.test.cjs backend/test/session-model-inheritance.test.cjs backend/test/sub-agent-alias.test.cjs backend/test/scheduler.test.js",
-    "test:memory": "node --test backend/test/memory-evals.test.cjs backend/test/memory-quality.test.cjs backend/test/memory-service-tools.test.cjs",
+    "test:backend": "cd backend-py && python -m pytest -q",
     "test:frontend": "npm run test -w frontend/desktop",
-    "test:verify": "npm run test:backend && npm run test:memory && npm run test:frontend",
+    "test:verify": "npm run test:backend && npm run test:frontend",
     "test": "npm run test:verify"
   },
   "dependencies": {
