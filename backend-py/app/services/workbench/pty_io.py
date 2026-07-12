@@ -261,6 +261,9 @@ class _WinPtyProcess:
     """Container for Windows PTY process state."""
 
     def __init__(self, proc: Any) -> None:
+        # proc type is platform-specific (Windows process handle / pipe).
+        # A Protocol covering the union is possible but adds abstraction
+        # overhead for a single wrapper — keep Any with this note.
         self.proc: Any = proc
 
 

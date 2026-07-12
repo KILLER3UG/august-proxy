@@ -10,7 +10,7 @@ import json
 import os
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Awaitable, Callable
 from app.jsonUtils import as_str, as_dict, as_list, as_int, write_json_atomic
@@ -24,7 +24,7 @@ def _jobsPath() -> Path:
 
 
 def _now() -> str:
-    return datetime.utcnow().isoformat() + 'Z'
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
 def _parseCron(expression: str) -> tuple[list[int], list[int], list[int], list[int], list[int]]:
@@ -65,7 +65,7 @@ def _parseCron(expression: str) -> tuple[list[int], list[int], list[int], list[i
 def _matchesCron(expr: str, dt: datetime | None = None) -> bool:
     """Check if the current time matches a cron expression."""
     if dt is None:
-        dt = datetime.utcnow()
+        dt = datetime.now(timezone.utc)
     minutes, hours, days, months, weekdays = _parseCron(expr)
     return (
         dt.minute in minutes
@@ -193,7 +193,7 @@ async def startScheduler(intervalS: int = 60) -> None:
     _running = True
     _loadJobs()
     while _running:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         for jobId, job in list(_jobs.items()):
             if not job.get('enabled'):
                 continue

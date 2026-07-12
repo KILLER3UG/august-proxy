@@ -20,7 +20,7 @@ import os
 import time
 import uuid
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, cast
 from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str, write_json_atomic
@@ -46,7 +46,7 @@ class ActivityLog:
             'id': str(uuid.uuid4()),
             'type': type,
             'detail': detail,
-            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         }
         self._entries.appendleft(entry)
         self._broadcast(entry)
@@ -98,7 +98,7 @@ class RequestTracker:
     def startRequest(self, info: dict[str, object]) -> str:
         """Register a pending request. Returns the request ID."""
         reqId = str(uuid.uuid4())
-        self._pending[reqId] = {'id': reqId, 'startedAt': datetime.utcnow().isoformat() + 'Z', **info}
+        self._pending[reqId] = {'id': reqId, 'startedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'), **info}
         self._cleanupStale()
         return reqId
 
@@ -260,7 +260,7 @@ class RequestTracker:
         return {
             'id': reqId,
             'startedAt': as_str(pending.get('startedAt'), ''),
-            'completedAt': datetime.utcnow().isoformat() + 'Z',
+            'completedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             'status': 'error' if as_str(result.get('error')) else 'completed',
             'model': as_str(pending.get('model'), ''),
             'provider': as_str(pending.get('provider'), ''),

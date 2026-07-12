@@ -50,7 +50,7 @@ def _getOrchestrator(request: Request) -> SubagentOrchestrator:
     return orch
 
 
-def _getSession(request: Request) -> Any:
+def _getSession(request: Request) -> object:
     """Get a minimal session-like object from request state."""
     import types
 

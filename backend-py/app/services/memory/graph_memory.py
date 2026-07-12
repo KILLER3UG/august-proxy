@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str, write_json_atomic
@@ -26,7 +26,7 @@ def _graphFile() -> Path:
 
 
 def _now() -> str:
-    return datetime.utcnow().isoformat() + 'Z'
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
 def _compact(text: object, maxLen: int = 600) -> str:

@@ -11,7 +11,7 @@ import os
 import platform
 import uuid
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Protocol, cast
 from app.jsonUtils import as_bool, as_dict, as_float, as_int, as_list, as_str
 from app.services.workbench.pty_io import PtyIO
@@ -47,7 +47,7 @@ def _dangerousReason(command: str) -> str | None:
 
 
 def _now() -> str:
-    return datetime.utcnow().isoformat() + 'Z'
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
 def _getShell() -> str:

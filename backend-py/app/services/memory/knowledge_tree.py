@@ -5,6 +5,7 @@ Port of backend/services/memory/knowledge-tree.js.
 """
 
 from __future__ import annotations
+from datetime import datetime, timezone
 from app.services.memory_store import saveMemory, getMemory
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 
@@ -28,13 +29,13 @@ def createNode(topic: str, parentTopic: str | None = None, content: str = '') ->
     nodes = as_dict(tree.get('nodes'))
     if topic in nodes:
         return as_dict(nodes[topic])
-    node = {
+    node: dict[str, object] = {
         'id': nodeId,
         'topic': topic,
         'parent': parentTopic,
         'content': content,
         'children': [],
-        'createdAt': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
+        'createdAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
     }
     nodes[topic] = node
     tree['nodes'] = nodes

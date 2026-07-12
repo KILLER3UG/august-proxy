@@ -5,6 +5,7 @@ Port of backend/services/memory/cross-session-bridge.js.
 """
 
 from __future__ import annotations
+from datetime import datetime, timezone
 from app.jsonUtils import as_list, as_dict
 from app.services.memory_store import saveMemory, getMemory, searchMemory, indexSessionTopic
 
@@ -21,7 +22,7 @@ def bridgeSessions(sourceId: str, targetId: str, reason: str = 'related') -> Non
         {
             'targetId': targetId,
             'reason': reason,
-            'createdAt': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
+            'createdAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         }
     )
     bridges[sourceId] = targets

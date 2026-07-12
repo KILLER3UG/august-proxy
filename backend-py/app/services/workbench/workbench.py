@@ -23,7 +23,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncIterator, Callable, TYPE_CHECKING, cast
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float, as_bool, write_json_atomic
@@ -154,7 +154,7 @@ def _sessionsPath() -> Path:
 
 
 def _now() -> str:
-    return datetime.utcnow().isoformat() + 'Z'
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
 def _loadSessions() -> None:

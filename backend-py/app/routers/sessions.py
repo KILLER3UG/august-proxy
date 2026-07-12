@@ -5,7 +5,7 @@ Port of backend/services/storage/session-store.js.
 
 from __future__ import annotations
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.services import memory_store
@@ -29,7 +29,7 @@ async def listSessions():
 async def createSession():
     """Create a new session."""
     sessionId = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat() + 'Z'
+    now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     session = {
         'id': sessionId,
         'title': 'New Session',
