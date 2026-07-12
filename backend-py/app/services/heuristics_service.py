@@ -4,8 +4,17 @@ Heuristics service — CRUD over the learned_heuristics table (Phase 4).
 The table was created in Phase 0; this service provides the application
 layer for adding, removing, listing, and clearing heuristics.
 
-All writes go through the Phase 0 write queue (db_writer.enqueue_write)
-when called from async contexts, or directly from sync ones.
+Writes are performed DIRECTLY through ``memoryStore`` (the shared,
+thread-local brain connection). Every connection opened by
+``memoryStore._conn`` sets ``PRAGMA journal_mode=WAL`` and
+``PRAGMA busy_timeout=10000``, so direct writes from the many callers are
+safe from "database is locked" errors and corruption under WAL.
+
+``db_writer`` (``app.services.dbWriter``) is a SEPARATE single-writer queue
+that serializes writes through one asyncio worker task. It is an ADDITIONAL
+serialization layer, NOT the universal write path: as of this writing it is
+used only by ``consolidationDaemon``. This service does NOT enqueue through
+``db_writer``; it commits changes directly via ``memoryStore``.
 """
 
 from __future__ import annotations
