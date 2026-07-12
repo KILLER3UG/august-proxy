@@ -6,7 +6,6 @@ Uses camelCase throughout matching the frontend convention.
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from app.models.config import ProviderConfig, ProviderCreate, ProviderUpdate, ModelCreate, ModelUpdate
-from app.providers import resolver
 from app.providers.template_loader import getTemplates, getTemplate
 from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
 from app.services import config_service
@@ -17,7 +16,6 @@ router = APIRouter(prefix='/api/providers')
 
 def _provider_to_dict(p: object) -> dict:
     """Convert a ProviderConfig or raw dict to the API response shape."""
-    from app.models.config import ProviderConfig
 
     if isinstance(p, ProviderConfig):
         return {
@@ -70,7 +68,8 @@ async def listTemplates():
 
 @router.post('')
 async def createProvider(body: ProviderCreate):
-    import hashlib, time
+    import hashlib
+    import time
 
     store = config_service.getProvidersStore()
     if 'providers' not in store:

@@ -51,7 +51,7 @@ def testSaveAutoMemoryThenBrainQueryRoundTrip():
     import json
 
     uniqueMarker = f'e2euniq{uuid.uuid4().hex[:8]}'
-    key = f'v11_e2e_round_trip'
+    key = 'v11_e2e_round_trip'
     try:
         auto_memory.save_auto_memory(key=key, content=f'round trip {uniqueMarker}', importance=0.9)
         result = memory_store.brain_query(store='auto_memories', query=uniqueMarker, limit=5)

@@ -23,11 +23,10 @@ PyYAML dependency.
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Optional
-from app.jsonUtils import as_str, as_dict, as_list, as_int
+from app.jsonUtils import as_str, as_dict, as_list
 
 _AUG_FILENAME = 'AUG.md'
 _FRONTMATTER_RE = re.compile(r'^---\s*\n(.*?)\n---\s*\n(.*)', re.DOTALL)
@@ -229,7 +228,7 @@ def _renderAnalysis(analysis: dict[str, object]) -> str:
         parts.append(f'Git branch: {analysis["gitBranch"]}')
     gitLog = as_list(analysis.get('gitLog'))
     if gitLog:
-        parts.append('Recent git history:\n' + '\n'.join(f'  - {l}' for l in gitLog))
+        parts.append('Recent git history:\n' + '\n'.join(f'  - {line}' for line in gitLog))
     return '\n\n'.join(parts)
 
     # ── Generation (LLM-driven) ─────────────────────────────────────────────────

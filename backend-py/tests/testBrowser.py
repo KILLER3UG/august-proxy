@@ -27,9 +27,9 @@ def testCompactSnapshotFormat():
     ]
     out = snapshot.buildCompactSnapshot(elements)
     lines = out.split('\n')
-    assert any(('[@e1] button "Search"' in l for l in lines))
-    assert any(("value='hello'" in l for l in lines))
-    assert not any(('@e3' in l for l in lines))
+    assert any(('[@e1] button "Search"' in line for line in lines))
+    assert any(("value='hello'" in line for line in lines))
+    assert not any(('@e3' in line for line in lines))
 
 
 def testBrowserOpenWithoutEngineReturnsError(monkeypatch):

@@ -10,7 +10,6 @@ Determines which tools are safe to run in parallel vs. mutating
 from __future__ import annotations
 import json
 import re
-from app.typeAliases import JsonValue
 
 MUTATING_NAME_PATTERN = re.compile(
     '^(write|edit|create|delete|install|run|bash|launch|click|type|focus|set|add|remove|rename|copy|move|mkdir|touch|chmod|kill|uninstall|stop|restart|upload|download|patch|apply|commit|push|merge|deploy|start|reboot|shutdown|format|mount|unmount|browser_navigate|browser_click|browser_type|browser_snapshot)',

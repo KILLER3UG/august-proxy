@@ -28,7 +28,6 @@ import logging
 import os
 from typing import Optional
 import discord
-from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.services.gateway.base import BasePlatformAdapter, MessageEvent, SessionSource
 
 log = logging.getLogger(__name__)
@@ -127,7 +126,6 @@ class DiscordAdapter(BasePlatformAdapter):
         """Fetch a channel by ID (runs in executor for thread safety)."""
         if self._client is None:
             return None
-        import discord
 
         loop = asyncio.get_event_loop()
         client = self._client

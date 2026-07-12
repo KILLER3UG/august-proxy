@@ -15,7 +15,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable, Optional
+from typing import Awaitable, Callable
 from app.jsonUtils import as_str
 
 log = logging.getLogger(__name__)

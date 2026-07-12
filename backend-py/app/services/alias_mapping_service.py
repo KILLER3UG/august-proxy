@@ -37,13 +37,12 @@ Resolution order (documented here so developers don't need to hunt):
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from app.config import settings
 from app.models.aliases import AliasMapping, AliasResolutionResult
 from app.providers import resolver as providerResolver
 from app.providers.routeResolver import resolveForModel
-from app.jsonUtils import as_str, as_dict
+from app.jsonUtils import as_str
 
 logger = logging.getLogger(__name__)
 

@@ -36,12 +36,11 @@ Response shapes (match the frontend types):
 from __future__ import annotations
 from typing import cast
 from app.config import settings
-from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 from app.services import config_service
 from app.services.memory.brain_orchestrator import DEFAULT_FEATURES
 from app.services.memory_store import recordConfigAudit
 from app.services.workbench import workbench as workbenchSvc
-from app.typeAliases import BrainConfigDict, JsonValue
+from app.typeAliases import BrainConfigDict
 
 boolKeys: tuple[str, ...] = (
     'enabled',

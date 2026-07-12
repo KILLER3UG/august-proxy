@@ -8,8 +8,7 @@ import os
 from pathlib import Path
 from typing import Optional
 from app.lib.paths import dataPath
-from app.typeAliases import JsonValue
-from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float, write_json_atomic
+from app.jsonUtils import as_list, as_int, write_json_atomic
 from app.models.config import ProviderConfig, ModelConfig
 
 

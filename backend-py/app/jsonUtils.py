@@ -21,7 +21,6 @@ import os
 import tempfile
 from collections.abc import Callable
 
-from app.typeAliases import JsonValue
 
 
 def as_str(value: object, default: str = '') -> str:

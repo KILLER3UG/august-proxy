@@ -18,8 +18,7 @@ import time
 import uuid
 from typing import AsyncIterator, Callable, cast
 from app.typeAliases import JsonValue
-from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
-from app.adapters.base import streamSse, buildHeaders, extractRequestHeaders, _scanHeadersForSessionId
+from app.jsonUtils import as_str, as_dict, as_list, as_int
 from app.adapters.proxy_tools import (
     getProxyOpenaiToolDefinitions,
     appendMissingOpenaiTools,
@@ -29,13 +28,13 @@ from app.adapters.proxy_tools import (
     getToolDefinitionName,
     isProxyManagedLocalToolName,
 )
-from app.adapters.tool_classification import classifyOpenaiToolCalls, getToolNameFromOpenaiTool
+from app.adapters.tool_classification import classifyOpenaiToolCalls
 from app.adapters.stream_state import OpenaiStreamAccumulator, ToolCallDelta
 from app.adapters.case_converters import snakeToCamel, camelToSnake
 from app.providers import resolver as providerResolver
-from app.providers.modelResolver import resolve, resolveOrFallback
+from app.providers.modelResolver import resolve
 from app.providers.clients import getClient, BaseProviderClient
-from app.models import ChatCompletionRequest, ChatMessage, ToolCall, Usage
+from app.models import ChatCompletionRequest, ChatMessage
 
 MAX_MANAGED_TOOL_ROUNDS = 10
 
@@ -349,7 +348,6 @@ async def resolveManagedOpenaiToolCalls(
             break
         choice = as_dict(choices[0], {})
         message = as_dict(choice.get('message'), {})
-        finishReason = as_str(choice.get('finish_reason'), 'stop')
         toolCalls = cast('list[dict[str, object]]', as_list(message.get('tool_calls'), []))
         if not toolCalls:
             currentMessages.append(message)
@@ -416,8 +414,6 @@ async def streamUpstreamAndResolveToolsOpenai(
     toolRound = 0
     raw_body = body.model_dump() if isinstance(body, ChatCompletionRequest) else body
     currentMessages = cast('list[dict[str, object]]', as_list(raw_body.get('messages'), []))
-    responseId = ''
-    modelName = model
     streamBody = cast('dict[str, object]', camelToSnake({**raw_body, 'stream': True}))
     async for chunk in _getClient().streamSse(upstreamUrl, upstreamHeaders, streamBody):
         if chunk.get('type') == 'error':
@@ -432,8 +428,6 @@ async def streamUpstreamAndResolveToolsOpenai(
             and isinstance(choices[0], dict)
             and as_dict(choices[0], {}).get('finish_reason') in ('tool_calls', 'stop')
         ):
-            responseId = acc.id or as_str(chunk.get('id'), '')
-            modelName = acc.model or model
             if acc.tool_calls:
                 toolRound += 1
                 if toolRound > MAX_MANAGED_TOOL_ROUNDS:
@@ -501,10 +495,8 @@ async def handleChatCompletions(
     try:
         resolved = resolve(model, default_alias='gpt-4o')
         providerName = as_str(resolved.get('provider'), '')
-        resolvedModel = as_str(resolved.get('model'), model)
     except Exception:
         providerName = model
-        resolvedModel = model
     provider = providerResolver.resolve(providerName or model)
     if not provider:
         return ({'error': 'No provider available for model', 'model': model}, None)

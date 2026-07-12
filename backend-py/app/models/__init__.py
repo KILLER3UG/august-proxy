@@ -13,9 +13,6 @@ from app.models.anthropic import (
     ContentBlock,
     ToolUseBlock,
     ToolResultBlock,
-    AnthropicResponse,
-    AnthropicUsage,
-    AnthropicSSEEvent,
 )
 from app.models.openai import (
     ChatCompletionRequest,

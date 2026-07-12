@@ -26,7 +26,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Any, Callable
+from typing import Any
 from app.services.agent_message_bus import AgentMessageBus, Subscription, Handler
 
 logger = logging.getLogger(__name__)

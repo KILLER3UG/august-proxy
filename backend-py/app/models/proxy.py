@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from app.models.base import JsonValue
 
 
 class ToolClassificationResult(TypedDict, total=False):

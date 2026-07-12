@@ -105,7 +105,6 @@ class PtyIO:
         self, shell: str, args: list[str], cwd: Optional[str], env: Optional[dict[str, str]], cols: int, rows: int
     ) -> None:
         import pty
-        import select
         import struct
         import fcntl
         import termios

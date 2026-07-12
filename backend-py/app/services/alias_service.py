@@ -73,7 +73,6 @@ def _providerNames() -> set[str]:
     """All known provider names + aliases (templates and custom)."""
     names: set[str] = set()
     try:
-        from app.providers import resolver as providerResolver
         from app.providers.template_loader import getTemplates
 
         for t in getTemplates():

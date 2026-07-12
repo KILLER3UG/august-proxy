@@ -16,14 +16,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from app.services.desktop_automation import (
-    clickMouse,
-    getMousePosition,
     getScreenSize,
-    listWindows,
-    openUrl,
-    pressKey,
-    takeScreenshot,
-    typeText,
 )
 from app.services.desktop_dispatch import automateAction
 
@@ -34,6 +27,7 @@ def _isAvailable() -> bool:
     try:
         import pyautogui
 
+        del pyautogui  # availability probe only
         return True
     except ImportError:
         return False

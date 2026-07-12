@@ -5,7 +5,6 @@ Manages MCP server connections, tool discovery, and OAuth flows.
 """
 
 from __future__ import annotations
-import json
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 

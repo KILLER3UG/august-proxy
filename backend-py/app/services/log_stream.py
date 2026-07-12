@@ -150,7 +150,7 @@ async def stopHub() -> None:
     _loop = None
 
 
-import contextlib
+import contextlib  # noqa: E402
 
 
 @contextlib.asynccontextmanager

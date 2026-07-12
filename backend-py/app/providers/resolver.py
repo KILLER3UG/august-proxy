@@ -10,7 +10,7 @@ Port of backend/providers/provider-resolver.js + model-resolver.js (enhanced).
 
 from __future__ import annotations
 from typing import Optional
-from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
+from app.jsonUtils import as_str, as_dict, as_list
 from app.config import settings
 from app.providers import aliases
 from app.providers.template_loader import getTemplates, getTemplate

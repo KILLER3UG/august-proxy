@@ -76,11 +76,10 @@ def testAddHeuristicPublishesBrainEvent():
     """add_heuristic() publishes a 'heuristic' event so the Activity tab sees it."""
     from app.services.brain_event_bus import brainBus
 
-    before = len(brainBus.recent(limit=200))
     from app.services.heuristics_service import addHeuristic, removeHeuristic
 
     rid = (
-        addHeuristic(f'v4.3 publish-test {{uuid}}', source='v4_3_test')
+        addHeuristic('v4.3 publish-test {uuid}', source='v4_3_test')
         if False
         else __import__('uuid').uuid4()
         and addHeuristic(f'v4.3 publish-test {__import__("uuid").uuid4().hex[:8]}', source='v4_3_test')

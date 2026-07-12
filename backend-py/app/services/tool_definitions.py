@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import re
 from pathlib import Path
 from typing import cast
 from app.services import tool_registry
@@ -426,7 +425,7 @@ async def _diagnoseProxy() -> str:
         f'Data directory: {settings.dataDir}',
         f'Web dist: {settings.webDist}',
         f'Port: {settings.port}',
-        f'Mode: python',
+        'Mode: python',
         f'Environment: {getattr(settings, "env", "production")}',
     ]
     try:
@@ -452,10 +451,9 @@ async def _describeEnvironment() -> str:
     """Describe the workspace environment: paths, VCS, available tools."""
     from app.config import settings
 
-    parts = [f'Proxy version: 0.1.0', f'Data directory: {settings.dataDir}', f'Platform: win32']
+    parts = ['Proxy version: 0.1.0', f'Data directory: {settings.dataDir}', 'Platform: win32']
     try:
         import subprocess
-        from app.lib.paths import dataPath
 
         cwd = str(settings.dataDir.parent)
         branch = subprocess.run(

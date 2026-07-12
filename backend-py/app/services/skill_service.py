@@ -15,7 +15,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import Optional
-from app.jsonUtils import as_str, as_dict, as_list, as_int
+from app.jsonUtils import as_str
 
 SKILLS_DIR = Path(__file__).resolve().parent.parent.parent.parent / 'skills'
 

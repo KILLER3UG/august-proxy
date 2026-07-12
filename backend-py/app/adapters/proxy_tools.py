@@ -14,8 +14,7 @@ This module provides:
 from __future__ import annotations
 import json
 from typing import Callable
-from app.typeAliases import JsonValue
-from app.models import ToolDefinition, FunctionDefinition
+from app.models import ToolDefinition
 
 MANAGED_WEB_TOOL_NAMES: set[str] = {
     'WebSearch',
