@@ -14,7 +14,6 @@ This is a pure function — trivially testable.
 from __future__ import annotations
 from dataclasses import dataclass, field
 from app.services.tools.retrieval import buildToolCatalog, searchTools, buildQueryFromMessages
-from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
 
 AUGUST_CORE_TOOLS: frozenset[str] = frozenset(
     {

@@ -17,7 +17,7 @@ import logging
 import time
 from typing import Any, Callable
 from app.services.agent_message_bus import AgentMessageBus
-from app.jsonUtils import as_str, as_dict, as_list, as_int
+from app.jsonUtils import as_str
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,6 @@ async def runSubagent(
 
         if restrictedTools:
             originalDefs = parentToolRegistry(session) if parentToolRegistry else None
-            originalOpenai = parentOpenaiTools(session) if parentOpenaiTools else None
             if originalDefs:
                 import app.services.workbench.workbench as wb
 

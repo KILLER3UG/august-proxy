@@ -7,13 +7,11 @@ Port of backend/services/scheduler/index.js + missing/cron-tools.js.
 from __future__ import annotations
 import asyncio
 import json
-import os
-import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Awaitable, Callable
-from app.jsonUtils import as_str, as_dict, as_list, as_int, write_json_atomic
+from app.jsonUtils import as_str, write_json_atomic
 from app.lib.paths import dataPath
 
 _JOBSFile = dataPath('scheduled-jobs.json')
@@ -152,8 +150,6 @@ async def runJobNow(jobId: str) -> dict[str, object]:
         return {'error': 'Job not found'}
     job['status'] = 'running'
     try:
-        import subprocess
-        import shlex
 
         proc = await asyncio.create_subprocess_shell(
             as_str(job['command'], ''), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE

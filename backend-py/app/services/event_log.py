@@ -7,12 +7,9 @@ Pattern: in-memory ring buffer + JSONL file + asyncio.Queue fan-out.
 
 from __future__ import annotations
 import asyncio
-import json
 import time
 from collections import deque
-from pathlib import Path
 from typing import AsyncIterator
-from app.lib.paths import dataPath
 
 MAX_IN_MEMORY = 2000
 

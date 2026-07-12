@@ -18,7 +18,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from app.services.subagent_orchestrator import SubagentOrchestrator, SubagentSpawnRequest
+from app.services.subagent_orchestrator import SubagentOrchestrator
 from app.services.tools.spawn_subagents_tool import executeSpawnSubagents, approveProposal
 
 logger = logging.getLogger(__name__)

@@ -6,7 +6,6 @@ Provides git status, log, and basic operations via the git CLI.
 
 from __future__ import annotations
 import asyncio
-import os
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel

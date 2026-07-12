@@ -8,10 +8,8 @@ This is the Python equivalent of the original Node.js index.js.
 from __future__ import annotations
 import asyncio
 import logging
-import os
 import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -24,7 +22,7 @@ logger = logging.getLogger(__name__)
 # requires-python in pyproject.toml and the CI pin); PEP 695 type aliases and
 # other 3.12-only syntax are used throughout. Fail fast with a clear message
 # instead of a cryptic SyntaxError deep in the import graph on older runtimes.
-import sys
+import sys  # noqa: E402
 
 if sys.version_info < (3, 12):
     raise RuntimeError(
@@ -174,38 +172,38 @@ app = FastAPI(title='August Proxy', version='0.1.0', lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware, allow_origins=['*'], allow_credentials=True, allow_methods=['*'], allow_headers=['*']
 )
-from app.routers import config as configRoutes
-from app.routers import providers as providersRoutes
-from app.routers import skills as skillsRoutes
-from app.routers import models as modelsRoutes
-from app.routers import proxy as proxyRoutes
-from app.routers import workbench as workbenchRoutes
-from app.routers import sessions as sessionsRoutes
-from app.routers import memory as memoryRoutes
-from app.routers import audit as auditRoutes
-from app.routers import usage as usageRoutes
-from app.routers import agents as agentsRoutes
-from app.routers import mcp as mcpRoutes
-from app.routers import cron as cronRoutes
-from app.routers import git as gitRoutes
-from app.routers import desktop_automation as desktopAutomationRoutes
-from app.routers import browser as browserRoutes
-from app.routers import terminal as terminalRoutes
-from app.routers import terminal_routes as terminalWsRoutes
-from app.routers import manage as manageRoutes
-from app.routers import monitoring as monitoringRoutes
-from app.routers import august as augustRoutes
-from app.routers import gateway as gatewayRoutes
-from app.routers import curator as curatorRoutes
-from app.routers import ui_memory as uiMemoryRoutes
-from app.routers import aug as augRoutes
-from app.routers import brain as brainRoutes
-from app.routers import brain_activity as brainActivityRoutes
-from app.routers import brain_config as brainConfigRoutes
-from app.routers import exam as examRoutes
-from app.routers import live as liveRoutes
-from app.routers import calendar as calendarRoutes
-from app.routers import subagent as subagentRoutes
+from app.routers import config as configRoutes  # noqa: E402
+from app.routers import providers as providersRoutes  # noqa: E402
+from app.routers import skills as skillsRoutes  # noqa: E402
+from app.routers import models as modelsRoutes  # noqa: E402
+from app.routers import proxy as proxyRoutes  # noqa: E402
+from app.routers import workbench as workbenchRoutes  # noqa: E402
+from app.routers import sessions as sessionsRoutes  # noqa: E402
+from app.routers import memory as memoryRoutes  # noqa: E402
+from app.routers import audit as auditRoutes  # noqa: E402
+from app.routers import usage as usageRoutes  # noqa: E402
+from app.routers import agents as agentsRoutes  # noqa: E402
+from app.routers import mcp as mcpRoutes  # noqa: E402
+from app.routers import cron as cronRoutes  # noqa: E402
+from app.routers import git as gitRoutes  # noqa: E402
+from app.routers import desktop_automation as desktopAutomationRoutes  # noqa: E402
+from app.routers import browser as browserRoutes  # noqa: E402
+from app.routers import terminal as terminalRoutes  # noqa: E402
+from app.routers import terminal_routes as terminalWsRoutes  # noqa: E402
+from app.routers import manage as manageRoutes  # noqa: E402
+from app.routers import monitoring as monitoringRoutes  # noqa: E402
+from app.routers import august as augustRoutes  # noqa: E402
+from app.routers import gateway as gatewayRoutes  # noqa: E402
+from app.routers import curator as curatorRoutes  # noqa: E402
+from app.routers import ui_memory as uiMemoryRoutes  # noqa: E402
+from app.routers import aug as augRoutes  # noqa: E402
+from app.routers import brain as brainRoutes  # noqa: E402
+from app.routers import brain_activity as brainActivityRoutes  # noqa: E402
+from app.routers import brain_config as brainConfigRoutes  # noqa: E402
+from app.routers import exam as examRoutes  # noqa: E402
+from app.routers import live as liveRoutes  # noqa: E402
+from app.routers import calendar as calendarRoutes  # noqa: E402
+from app.routers import subagent as subagentRoutes  # noqa: E402
 
 app.include_router(configRoutes.router)
 app.include_router(providersRoutes.router)

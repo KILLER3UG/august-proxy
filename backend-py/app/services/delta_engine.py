@@ -14,13 +14,11 @@ are detected locally without any API call → source="local-diff".
 
 from __future__ import annotations
 import hashlib
-import json
 import logging
 import os
 import time
 from difflib import unified_diff as unifiedDiff
-from pathlib import Path
-from app.jsonUtils import as_str, as_dict, as_list, as_int
+from app.jsonUtils import as_str
 from app.services.heuristics_service import addHeuristic
 
 logger = logging.getLogger(__name__)

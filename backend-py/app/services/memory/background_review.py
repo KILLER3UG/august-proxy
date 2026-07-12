@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 from app.jsonUtils import as_dict, as_list, as_str
 from app.typeAliases import JsonValue
@@ -138,10 +138,11 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
                 except Exception:
                     pass
             elif action == 'patch':
-                patch_kwargs: dict[str, object] = {'body': as_str(recDict.get('body'))}
-                if 'description' in recDict:
-                    patch_kwargs['description'] = as_str(recDict['description'])
-                skill_service.patchSkill(name, **patch_kwargs)
+                skill_service.patchSkill(
+                    name,
+                    body=as_str(recDict.get('body')),
+                    description=as_str(recDict.get('description')) if 'description' in recDict else None,
+                )
                 as_list(result['skills_patched']).append(name)
                 try:
                     from app.services.skills.curator import SkillCurator

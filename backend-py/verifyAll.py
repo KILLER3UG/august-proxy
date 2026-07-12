@@ -1,18 +1,21 @@
 """Full end-to-end verification of all phases v1, v2, v3 backend."""
 
-import json, sys, os, sqlite3, py_compile
+import json
+import sys
+import sqlite3
+import py_compile as pyCompile
 
 errors = []
 print('=' * 60)
 print('AUGUST PROXY — FULL VERIFICATION')
 print('=' * 60)
 print('\n1. Config loading...')
-from app.config import settings
+from app.config import settings  # noqa: E402
 
 settings.reload()
 print('  CONFIG OK')
 print('\n2. Database initialization...')
-from app.services.memory_store import init, getStats
+from app.services.memory_store import init, getStats  # noqa: E402
 
 init()
 stats = getStats()
@@ -57,7 +60,7 @@ for t in [
         errors.append(f'missing trigger: {t}')
 conn.close()
 print('\n5. brain_query...')
-from app.services.memory_store import brainQuery
+from app.services.memory_store import brainQuery  # noqa: E402
 
 stores = ['memory', 'autoMemories', 'heuristics', 'facts', 'sessions', 'messages', 'timeline', 'blackboard']
 for s in stores:
@@ -70,7 +73,7 @@ for s in stores:
     except Exception as e:
         errors.append(f'brain_query({s}): {e}')
 print('\n6. Heuristics CRUD...')
-from app.services.heuristics_service import addHeuristic, countHeuristics
+from app.services.heuristics_service import addHeuristic, countHeuristics  # noqa: E402
 
 n1 = countHeuristics()
 rid = addHeuristic('Test verification rule', source='verification')
@@ -80,7 +83,7 @@ if rid and n2 > n1:
 else:
     errors.append('heuristics CRUD')
 print('\n7. Blackboard CRUD...')
-from app.services.blackboard_service import writeNote, readNotes, clearNotes
+from app.services.blackboard_service import writeNote, readNotes, clearNotes  # noqa: E402
 
 writeNote('test_s', 'verify', 'k1', 'v1', priority=5)
 notes = readNotes('test_s')
@@ -95,7 +98,7 @@ if any((n['key'] == 'k1' for n in notes)):
 else:
     errors.append('blackboard write/read')
 print('\n8. Token budget...')
-from app.services.workbench.token_budget import estimateTokens, computeBudget, getCriticalThreshold
+from app.services.workbench.token_budget import estimateTokens, computeBudget, getCriticalThreshold  # noqa: E402
 
 t = estimateTokens('Hello world test')
 budget = computeBudget('Hello world test', model='gpt-4', provider='openai')
@@ -105,7 +108,7 @@ if t > 0 and budget['attention_pressure'] == 'low' and (thresh == 0.85):
 else:
     errors.append('token budget')
 print('\n9. BM25...')
-from app.services.tools.retrieval import buildToolCatalog, searchTools
+from app.services.tools.retrieval import buildToolCatalog, searchTools  # noqa: E402
 
 catalog = buildToolCatalog(
     [
@@ -119,7 +122,7 @@ if 'read_file' in results:
 else:
     print(f'  BM25 (warn): {results}')
 print('\n10. Core tools...')
-from app.services.tools.model_tools import AUGUST_CORE_TOOLS
+from app.services.tools.model_tools import AUGUST_CORE_TOOLS  # noqa: E402
 
 required = [
     'brain_query',
@@ -149,12 +152,12 @@ for k in [
     'progressive_disclosure',
     'prompt_caching',
 ]:
-    if layers.get(k) == True:
+    if layers.get(k) is True:
         print(f'  v1 {k}=true: OK')
     else:
         errors.append(f'flag: {k}={layers.get(k)}')
 for k in ['daemons', 'blackboard', 'env_watcher', 'verifier_reflex', 'skill_genesis']:
-    if layers.get(k) == False:
+    if layers.get(k) is False:
         print(f'  v2 {k}=false: OK')
     else:
         print(f'  v2 {k}={layers.get(k)} (expected false)')
@@ -189,7 +192,7 @@ for f in files:
     try:
         pyCompile.compile(f, doraise=True)
         count += 1
-    except pyCompile.PyCompileError as e:
+    except pyCompile.PyCompileError:
         errors.append(f'compile: {f}')
 print(f'  {count}/{len(files)} files compile OK')
 print('\n' + '=' * 60)

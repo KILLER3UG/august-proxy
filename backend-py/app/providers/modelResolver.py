@@ -22,9 +22,6 @@ active provider's model on any miss.
 
 from __future__ import annotations
 import logging
-from app.config import settings
-from app.providers import resolver as providerResolver
-from app.providers.routeResolver import resolveForModel
 from app.services.alias_mapping_service import (
     resolveAlias,
     resolveAliasOrNone,

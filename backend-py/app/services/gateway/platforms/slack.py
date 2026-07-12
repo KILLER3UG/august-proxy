@@ -105,7 +105,6 @@ class SlackAdapter(BasePlatformAdapter):
         """Start the Socket Mode listener in a background thread."""
         if self._socketClient is None:
             return
-        loop = asyncio.get_event_loop()
         self._listenerTask = asyncio.create_task(self._runSocketClient())
 
     async def _runSocketClient(self) -> None:

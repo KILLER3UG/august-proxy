@@ -148,9 +148,7 @@ def buildQueryFromMessages(messages: list[dict[str, object]], windowSize: int = 
         return ''
     recent = messages[-windowSize:] if len(messages) > windowSize else messages
     parts: list[str] = []
-    n = len(recent)
-    for i, msg in enumerate(recent):
-        weight = (i + 1) / n
+    for msg in recent:
         content = msg.get('content', '')
         if isinstance(content, str):
             if content.strip():

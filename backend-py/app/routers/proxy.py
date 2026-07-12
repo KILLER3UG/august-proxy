@@ -266,12 +266,10 @@ async def openaiResponses(request: Request, _auth: bool = Depends(require_gatewa
 def _translateToResponsesFormat(chatCompletion: dict) -> dict:
     """Translate a Chat Completions response to Responses API format."""
     import uuid
-    import time
 
     choices = as_list(chatCompletion.get('choices'), [])
     choice = as_dict(choices[0] if choices else None, {})
     message = as_dict(choice.get('message'), {})
-    finishReason = as_str(choice.get('finish_reason'), 'stop')
     usage = as_dict(chatCompletion.get('usage'), {})
     outputItems: list[dict[str, object]] = []
     reasoning = as_str(message.get('reasoning')) or as_str(message.get('reasoning_content'), '')

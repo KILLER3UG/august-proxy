@@ -172,7 +172,7 @@ async def executeTool(serverId: str, toolName: str, args: dict[str, object]) -> 
     except asyncio.TimeoutError:
         return f"Error: MCP tool '{toolName}' timed out"
     except json.JSONDecodeError:
-        return f'Error: Invalid JSON response from MCP server'
+        return 'Error: Invalid JSON response from MCP server'
     except Exception as exc:
         return f'Error: {exc}'
 

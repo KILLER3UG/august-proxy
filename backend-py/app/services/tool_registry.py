@@ -7,7 +7,6 @@ Supports reserved bridge names and optional keywords per tool.
 from __future__ import annotations
 import contextvars
 from typing import Callable, Coroutine
-from app.typeAliases import JsonValue
 
 _registry: dict[str, dict[str, object]] = {}
 ToolHandler = Callable[..., Coroutine[object, object, str]]

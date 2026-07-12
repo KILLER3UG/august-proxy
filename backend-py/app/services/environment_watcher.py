@@ -11,9 +11,9 @@ import fnmatch
 import logging
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
-from app.jsonUtils import as_str, as_int, as_float
+from app.jsonUtils import as_float
 
 if TYPE_CHECKING:
     from watchdog.observers import Observer

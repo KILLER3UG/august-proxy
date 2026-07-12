@@ -6,7 +6,7 @@ Port of backend/services/memory/cross-session-bridge.js.
 
 from __future__ import annotations
 from app.jsonUtils import as_list, as_dict
-from app.services.memory_store import saveMemory, getMemory, searchMemory, indexSessionTopic
+from app.services.memory_store import saveMemory, getMemory, searchMemory
 
 _BRIDGEKey = 'session_bridges'
 

@@ -6,7 +6,7 @@ CRUD endpoints and the config service.
 
 from __future__ import annotations
 
-from app.models.base import ExtraAllowBaseModel, JsonValue
+from app.models.base import ExtraAllowBaseModel
 
 
 class ModelConfig(ExtraAllowBaseModel):

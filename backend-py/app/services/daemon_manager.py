@@ -13,13 +13,12 @@ Design: docs/design/cognitive-architecture-v1.md §5.4
 from __future__ import annotations
 import asyncio
 import hashlib
-import json
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Callable, cast
+from dataclasses import dataclass
+from typing import cast
 from app.typeAliases import DaemonStatusDict
-from app.jsonUtils import as_str, as_dict, as_float, as_int
+from app.jsonUtils import as_str, as_float, as_int
 
 logger = logging.getLogger(__name__)
 MAX_DAEMONS_PER_SESSION = 3
@@ -225,7 +224,6 @@ class DaemonManager:
             except Exception:
                 cerebellumModel = None
             if cerebellumModel:
-                from app.providers.clients import getClient
 
                 output = await self._callCerebellum(cerebellumModel, as_str(info.get('prompt'), ''))
                 result.output = output
@@ -249,7 +247,7 @@ class DaemonManager:
             from app.providers.clients import getClient
 
             if not model:
-                return f'[daemon: no model configured]'
+                return '[daemon: no model configured]'
             provider = providerResolver.resolve(model)
             if not provider:
                 return f'[daemon: no provider for {model}]'

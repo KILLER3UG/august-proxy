@@ -11,8 +11,6 @@ from __future__ import annotations
 from typing import cast
 import json
 import os
-import re
-from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from app.jsonUtils import as_dict, as_list, as_str, write_json_atomic

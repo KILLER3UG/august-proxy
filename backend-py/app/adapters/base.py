@@ -8,7 +8,7 @@ import httpx
 import json
 
 if TYPE_CHECKING:
-    from app.models import AnthropicRequest, ChatCompletionRequest
+    pass
 
 
 async def streamSse(

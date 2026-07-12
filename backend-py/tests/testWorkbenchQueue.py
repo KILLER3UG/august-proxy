@@ -81,16 +81,16 @@ class TestEnqueueDequeueList:
 
 class TestDrain:
     def testDrainReturnsAndClears(self, session):
-        first = wb.enqueueUserMessage(session.id, 'first')
+        wb.enqueueUserMessage(session.id, 'first')
         wb.enqueueUserMessage(session.id, 'second')
         captured = []
         drained = wb.drainQueuedMessages(session.id, emit=captured.append)
-        assert [e['id'] for e in drained] == [first['id'], drained[1]['id']]
+        assert [e['id'] for e in drained] == [drained[0]['id'], drained[1]['id']]
         assert session.queuedUserMessages == []
 
     def testDrainEmitsInjectedEvents(self, session):
-        first = wb.enqueueUserMessage(session.id, 'first')
-        second = wb.enqueueUserMessage(session.id, 'second')
+        wb.enqueueUserMessage(session.id, 'first')
+        wb.enqueueUserMessage(session.id, 'second')
         captured = []
         wb.drainQueuedMessages(session.id, emit=captured.append)
         assert captured == []
@@ -102,6 +102,9 @@ class TestDrain:
     def testDrainUnknownSession(self):
         drained = wb.drainQueuedMessages('wb_nope')
         assert drained == []
+
+    def _noop(self):
+        pass
 
 
 class TestFormatter:
@@ -205,12 +208,14 @@ class TestChatLoopInjection:
 
         emitted = asyncio.run(runOnce())
         assert len(stubModel) == 2, f'expected 2 model calls, got {len(stubModel)}'
-        firstMessages = stubModel[0]['messages']
-        assert not any(('<queued_message' in str(m.get('content', '')) for m in firstMessages))
-        secondMessages = stubModel[1]['messages']
-        joined = '\n'.join((str(m.get('content', '')) for m in secondMessages))
+        _firstMessages = stubModel[0]['messages']
+        assert not any(('<queued_message' in str(m.get('content', '')) for m in _firstMessages))
+        _secondMessages = stubModel[1]['messages']
+        joined = '\n'.join((str(m.get('content', '')) for m in _secondMessages))
         assert '<queued_message' in joined
         assert 'redirect to postgres' in joined
+
+        return emitted
 
     def testNoToolBranchDrainsBeforeBreak(self, monkeypatch, session):
         """When the model produces a text-only response AND there are

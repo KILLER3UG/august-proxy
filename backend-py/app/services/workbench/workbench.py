@@ -19,19 +19,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
-import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncIterator, Callable, TYPE_CHECKING, cast
+from typing import Callable, TYPE_CHECKING, cast
 from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float, as_bool, write_json_atomic
 from app.typeAliases import JsonValue
 
 if TYPE_CHECKING:
     from app.services.workbench.tool_guardrails import ToolCallTracker
-from app.models import AnthropicRequest, ChatCompletionRequest, ChatMessage, ToolDefinition, FunctionDefinition, Usage
+from app.models import AnthropicRequest, ChatCompletionRequest
 logger = logging.getLogger('workbench')
 MAX_MANAGED_TOOL_ROUNDS = 10
 WORKBENCH_TOKEN_BUDGET = 2000000
@@ -517,7 +515,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
             ).stdout.strip()
             if log:
                 lines = log.split('\n')
-                whatsNew = 'Recent git activity:\n' + '\n'.join((f'  - {l}' for l in lines))
+                whatsNew = 'Recent git activity:\n' + '\n'.join((f'  - {line}' for line in lines))
         except Exception:
             pass
     skillsManifest = ''

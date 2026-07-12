@@ -175,8 +175,9 @@ class TestSessionBridge:
 
     def testSessionIdForCreatesAndPersists(self, tmpMap: Path, monkeypatch):
         fakeSession = makeSessionFake(id='wb_abc123')
-        sf = lambda **kw: fakeSession
-        bridge = SessionBridge(mapPath=tmpMap, sessionFactory=sf)
+        def _sf(**kw):
+            return fakeSession
+        bridge = SessionBridge(mapPath=tmpMap, sessionFactory=_sf)
         sid = bridge.sessionIdFor('telegram:1')
         assert sid == 'wb_abc123'
         data = json.loads(tmpMap.read_text('utf-8'))
@@ -336,7 +337,6 @@ async def testStaleLockHeal():
 async def testDiffChatIdsAreIndependent():
     """Messages from different chat_ids get different session keys and don't interfere."""
     runner = StubRunner()
-    fakeSession = makeSessionFake(id='wb_i')
     b = SessionBridge(
         runner=runner.run,
         sessionFactory=lambda **kw: makeSessionFake(id='wb_indep'),

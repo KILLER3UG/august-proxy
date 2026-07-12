@@ -8,10 +8,8 @@ backend/providers/minimax.js / minimax-cn.js.
 """
 
 from __future__ import annotations
-from typing import AsyncIterator
 from app.jsonUtils import as_str
 from app.providers.clients.anthropic import AnthropicClient
-from app.providers.clients.base import ProviderResponse
 
 
 class MiniMaxClient(AnthropicClient):
