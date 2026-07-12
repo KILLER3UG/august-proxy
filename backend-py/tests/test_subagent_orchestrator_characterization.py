@@ -71,7 +71,7 @@ async def test_spawn_returns_one_handle_per_work_item():
     # sub-agent run happens in a background task that is internally
     # error-handled). No model/provider stack is required for this check.
     bus = AgentMessageBus()
-    orch = SubagentOrchestrator(bus, maxWorkers=5)
+    orch = SubagentOrchestrator(bus, max_workers=5)
     request = SubagentSpawnRequest(
         session=None,
         workItems=[{'goal': 'a', 'agentId': 'general'}, {'goal': 'b', 'agentId': 'coder'}],

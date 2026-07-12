@@ -1,5 +1,5 @@
 """
-Safety-net CHARACTERIZATION tests for ``app.services.daemonManager``.
+Safety-net CHARACTERIZATION tests for ``app.services.daemon_manager``.
 
 These are deliberately lightweight: they exercise the public API surface that
 can be tested WITHOUT spawning real daemon poll loops (which block on
@@ -12,8 +12,8 @@ schedule, and the no-op shutdown path).
 from __future__ import annotations
 import pytest
 
-import app.services.daemonManager as dm
-from app.services.daemonManager import (
+import app.services.daemon_manager as dm
+from app.services.daemon_manager import (
     DaemonManager,
     DaemonResult,
     DaemonSpec,
@@ -42,7 +42,7 @@ def test_constants_are_exposed():
 
 def test_fresh_manager_has_no_daemons():
     mgr = DaemonManager()
-    assert mgr.listDaemons() == []
+    assert mgr.list_daemons() == []
     assert mgr.getResult('does-not-exist') is None
 
 
@@ -72,7 +72,7 @@ def test_list_daemons_includes_daemon_with_result():
         'session_id': 's1',
         'result': DaemonResult(output='x', status='completed', triggered=True, turnsAlive=10),
     }
-    result = mgr.listDaemons('s1')
+    result = mgr.list_daemons('s1')
     assert isinstance(result, list)
     assert len(result) == 1
     assert result[0]['id'] == 'd1'

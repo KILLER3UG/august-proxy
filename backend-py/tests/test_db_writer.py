@@ -1,5 +1,5 @@
 """
-Safety-net CHARACTERIZATION tests for ``app.services.dbWriter``.
+Safety-net CHARACTERIZATION tests for ``app.services.db_writer``.
 
 These tests capture the CURRENT (as-observed) behavior of the db_writer
 module. They are intentionally NOT designed to assert "intended" behavior —
@@ -30,7 +30,7 @@ import time
 
 import pytest
 
-import app.services.dbWriter as dbw
+import app.services.db_writer as dbw
 
 
 @pytest.fixture(autouse=True)

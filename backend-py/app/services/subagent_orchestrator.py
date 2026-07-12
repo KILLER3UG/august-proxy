@@ -26,7 +26,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Any
+from typing import Any, Callable
 from app.services.agent_message_bus import AgentMessageBus, Subscription, Handler
 
 logger = logging.getLogger(__name__)
@@ -166,7 +166,7 @@ class SubagentOrchestrator:
         """Get a handle by taskId."""
         return self._handles.get(taskId)
 
-    def on(self, event: str, handler: Handler) -> Callable[[], None]:
+    def on(self, event: str, handler: Handler) -> Subscription:
         """Subscribe to orchestrator events.
 
         Event types:

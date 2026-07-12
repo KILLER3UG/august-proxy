@@ -50,7 +50,8 @@ def _write(db: dict[str, object]) -> None:
     db['entries'] = as_list(db['entries'])[-_MAXEntries:]
     p = _dbPath()
     p.parent.mkdir(parents=True, exist_ok=True)
-	    write_json_atomic(p, db, indent=2)
+    write_json_atomic(p, db, indent=2)
+
 _encoder = None
 
 
