@@ -113,31 +113,30 @@ class DaemonManager:
 
         Returns compact info (no full results). Expired results are removed.
         """
-        now = time.time()
         results: list[DaemonStatusDict] = []
         for did, info in list(self._daemons.items()):
             if sessionId and as_str(info.get('session_id')) != sessionId:
                 continue
-            r = (
-                cast(DaemonResult, info.get('result'))
-                if isinstance(info.get('result'), DaemonResult)
-                else DaemonResult()
-            )
-            if r.triggered and r.turnsAlive >= RESULT_EXPIRY_TURNS:
-                r.triggered = False
-                r.output = ''
-                r.status = 'completed'
-            entry: dict[str, object] = {
-                'id': did,
-                'name': info['name'],
-                'status': r.status,
-                'triggered': r.triggered,
-                'error': r.error or None,
-                'last_check': r.lastCheck,
-                'turns_alive': r.turnsAlive,
-                'output': r.output,
-            }
-            results.append(cast(DaemonStatusDict, entry))
+	            r = (
+	                cast(DaemonResult, info.get('result'))
+	                if isinstance(info.get('result'), DaemonResult)
+	                else DaemonResult()
+	            )
+	            if r.triggered and r.turnsAlive >= RESULT_EXPIRY_TURNS:
+	                r.triggered = False
+	                r.output = ''
+	                r.status = 'completed'
+	            entry: dict[str, object] = {
+	                'id': did,
+	                'name': info['name'],
+	                'status': r.status,
+	                'triggered': r.triggered,
+	                'error': r.error or None,
+	                'last_check': r.lastCheck,
+	                'turns_alive': r.turnsAlive,
+	                'output': r.output,
+	            }
+	            results.append(cast(DaemonStatusDict, entry))
         return results
 
     def getResult(self, daemonId: str) -> DaemonResult | None:

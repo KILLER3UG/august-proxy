@@ -61,10 +61,10 @@ def test_get_result_returns_result_object_for_known_daemon():
     assert res.output == 'hi'
 
 
-def test_list_daemons_raises_when_a_daemon_with_result_is_present():
-    # CURRENT behavior: listDaemons accesses ``r.turns_alive`` but DaemonResult
-    # stores the field as ``turnsAlive`` (camelCase), so listing a daemon that
-    # has a result raises AttributeError. Pins the current (broken) behavior.
+def test_list_daemons_includes_daemon_with_result():
+    # listDaemons must read the ``turnsAlive`` attribute (camelCase) on
+    # DaemonResult rather than ``turns_alive``, so listing a daemon that has a
+    # result returns the list without raising.
     mgr = DaemonManager()
     mgr._daemons['d1'] = {
         'id': 'd1',
@@ -72,8 +72,11 @@ def test_list_daemons_raises_when_a_daemon_with_result_is_present():
         'session_id': 's1',
         'result': DaemonResult(output='x', status='completed', triggered=True, turnsAlive=10),
     }
-    with pytest.raises(AttributeError):
-        mgr.listDaemons('s1')
+    result = mgr.listDaemons('s1')
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert result[0]['id'] == 'd1'
+    assert result[0]['name'] == 'd'
 
 
 def test_evaluate_watch_returns_false_without_condition():
