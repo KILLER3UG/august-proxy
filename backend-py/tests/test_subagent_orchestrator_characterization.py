@@ -9,11 +9,11 @@ Observed CURRENT behavior captured here:
 
   * ``SubagentHandle`` and the module constants are usable directly (no event
     loop / provider imports required).
-  * ``SubagentOrchestrator.on(event, handler)`` currently RAISES ``TypeError``.
-    The source constructs ``Subscription(lambda: ...)`` but
-    ``Subscription.__init__`` requires ``(topic, handler)`` positional args, so
-    event subscription is currently broken. This test pins that behavior; when
-    the refactor fixes ``on()`` this assertion must change.
+  * ``SubagentOrchestrator.on(event, handler)`` constructs a ``Subscription``
+    with ``(bus, topic, handler)`` and registers the handler without raising.
+    (Previously the source constructed ``Subscription(lambda: ...)`` which
+    raised ``TypeError`` because ``Subscription.__init__`` requires
+    ``(bus, topic, handler)``.)
 
 Run with:  python -m pytest tests/test_subagent_orchestrator_characterization.py -q
 """
@@ -48,13 +48,22 @@ def test_subagent_handle_to_dict_and_elapsed():
     assert isinstance(h.elapsed, float)
 
 
-def test_on_raises_typeerror_currently():
-    # CURRENT behavior: on() builds Subscription with only an unsubscribe
-    # callable, but Subscription requires (topic, handler), so it raises.
+def test_on_subscribes_with_topic_and_handler():
+    # FIXED behavior: on() builds a Subscription with (bus, topic, handler),
+    # registering the handler without raising.
     bus = AgentMessageBus()
     orch = SubagentOrchestrator(bus)
-    with pytest.raises(TypeError):
-        orch.on('failure', lambda data: None)
+
+    def handler(data):
+        pass
+
+    sub = orch.on('failure', handler)
+    # The returned handle is a Subscription tied to the topic and handler.
+    assert sub is not None
+    assert sub._topic == 'failure'
+    assert sub._handler is handler
+    # The handler is now registered and will be invoked when the event fires.
+    assert handler in orch._eventHandlers['failure']
 
 
 async def test_spawn_returns_one_handle_per_work_item():

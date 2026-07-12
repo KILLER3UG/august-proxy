@@ -26,8 +26,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Any, Callable, Optional
-from app.jsonUtils import as_str, as_dict, as_list, as_int
+from typing import Any
 from app.services.agent_message_bus import AgentMessageBus, Subscription, Handler
 
 logger = logging.getLogger(__name__)
@@ -178,7 +177,7 @@ class SubagentOrchestrator:
         if event not in self._eventHandlers:
             self._eventHandlers[event] = []
         self._eventHandlers[event].append(handler)
-        return lambda: self._eventHandlers[event].remove(handler)
+        return Subscription(self._bus, event, handler)
 
     async def _fireEvent(self, event: str, data: dict[str, Any]) -> None:
         """Fire an event to all registered handlers."""
