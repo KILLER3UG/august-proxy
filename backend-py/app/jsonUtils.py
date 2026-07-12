@@ -16,6 +16,11 @@ checks so the behavior is consistent everywhere.
 
 from __future__ import annotations
 
+import json
+import os
+import tempfile
+from collections.abc import Callable
+
 from app.typeAliases import JsonValue
 
 
@@ -51,3 +56,48 @@ def as_float(value: object, default: float = 0.0) -> float:
 def as_bool(value: object, default: bool = False) -> bool:
     """Return ``value`` as a ``bool``, or ``default`` if it is not a bool."""
     return value if isinstance(value, bool) else default
+
+
+def write_json_atomic(
+    path: str | os.PathLike[str],
+    data: object,
+    indent: int = 2,
+    default: Callable[[object], object] | None = None,
+) -> None:
+    """Write ``data`` to ``path`` as JSON atomically.
+
+    The payload is serialised to a temporary file created in the *same*
+    directory as ``path`` and then moved into place with ``os.replace``.
+    Because the rename is atomic on a single filesystem, any reader (or a
+    crash / interruption mid-write) always sees either the old file or the
+    complete new file — never a partially written one.
+
+    Args:
+        path: Destination file path (``str`` or ``os.PathLike``).
+        data: JSON-serialisable object to write.
+        indent: Indentation passed to ``json.dumps`` (default ``2``).
+        default: Optional ``default`` callable passed to ``json.dumps`` for
+            non-serialisable values (e.g. ``str``).
+    """
+    text = json.dumps(data, indent=indent, ensure_ascii=False, default=default)
+    target = os.path.abspath(path)
+    tmp = tempfile.NamedTemporaryFile(
+        mode='w',
+        encoding='utf-8',
+        dir=os.path.dirname(target),
+        delete=False,
+        suffix='.tmp',
+    )
+    try:
+        with tmp:
+            tmp.write(text)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        os.replace(tmp.name, target)
+    except BaseException:
+        # Best-effort cleanup of the partial temp file.
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        raise

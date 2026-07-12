@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Awaitable, Callable
-from app.jsonUtils import as_str, as_dict, as_list, as_int
+	from app.jsonUtils import as_str, as_dict, as_list, as_int, write_json_atomic
 from app.lib.paths import dataPath
 
 _JOBSFile = dataPath('scheduled-jobs.json')
@@ -98,7 +98,7 @@ def _loadJobs() -> None:
 def _saveJobs() -> None:
     p = _jobsPath()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(list(_jobs.values()), indent=2, default=str), 'utf-8')
+    write_json_atomic(p, list(_jobs.values()), indent=2, default=str)
 
 
 def listJobs() -> list[dict[str, object]]:

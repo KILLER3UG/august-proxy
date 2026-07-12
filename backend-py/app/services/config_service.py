@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 from app.lib.paths import dataPath
 from app.typeAliases import JsonValue
-from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
+	from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float, write_json_atomic
 from app.models.config import ProviderConfig, ModelConfig
 
 
@@ -22,7 +22,7 @@ def _readJson(path: Path) -> dict[str, object]:
 
 def _writeJson(path: Path, data: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2), 'utf-8')
+    write_json_atomic(path, data, indent=2)
 
 
 def getConfig() -> dict[str, object]:

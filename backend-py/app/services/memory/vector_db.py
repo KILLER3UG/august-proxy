@@ -15,7 +15,7 @@ import re
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from app.jsonUtils import as_dict, as_list, as_str
+from app.jsonUtils import as_dict, as_list, as_str, write_json_atomic
 from app.lib.paths import dataPath
 
 _DBFile = dataPath('august_vector_memory.json')
@@ -50,9 +50,7 @@ def _write(db: dict[str, object]) -> None:
     db['entries'] = as_list(db['entries'])[-_MAXEntries:]
     p = _dbPath()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(db, indent=2), 'utf-8')
-
-
+	    write_json_atomic(p, db, indent=2)
 _encoder = None
 
 

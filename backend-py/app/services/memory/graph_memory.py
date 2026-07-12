@@ -10,8 +10,8 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import cast
-from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
+	from typing import cast
+	from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str, write_json_atomic
 from app.lib.paths import dataPath
 
 _DEFAULTGraphFile = dataPath('august_graph_memory.json')
@@ -85,7 +85,7 @@ def _write(graph: dict[str, object]) -> None:
     g['observations'] = as_list(g['observations'])[-_MAXObservations:]
     p = _graphFile()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(g, indent=2), 'utf-8')
+    write_json_atomic(p, g, indent=2)
 
 
 def addEntity(name: str, entityType: str = 'general', metadata: dict[str, object] | None = None) -> dict[str, object]:

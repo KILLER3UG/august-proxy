@@ -25,14 +25,13 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncIterator, Callable, TYPE_CHECKING, cast
-from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float, as_bool
-from app.typeAliases import JsonValue
-
-if TYPE_CHECKING:
-    from app.services.workbench.tool_guardrails import ToolCallTracker
-from app.models import AnthropicRequest, ChatCompletionRequest, ChatMessage, ToolDefinition, FunctionDefinition, Usage
-
+	from typing import AsyncIterator, Callable, TYPE_CHECKING, cast
+	from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float, as_bool, write_json_atomic
+	from app.typeAliases import JsonValue
+	
+	if TYPE_CHECKING:
+	    from app.services.workbench.tool_guardrails import ToolCallTracker
+	from app.models import AnthropicRequest, ChatCompletionRequest, ChatMessage, ToolDefinition, FunctionDefinition, Usage
 logger = logging.getLogger('workbench')
 MAX_MANAGED_TOOL_ROUNDS = 10
 WORKBENCH_TOKEN_BUDGET = 2000000
@@ -177,7 +176,7 @@ def saveSessions() -> None:
     sortedSessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
     path = _sessionsPath()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps([s.toDict() for s in sortedSessions], indent=2), 'utf-8')
+    write_json_atomic(path, [s.toDict() for s in sortedSessions], indent=2)
 
 
 def _emitSessionStatus(sessionId: str) -> None:

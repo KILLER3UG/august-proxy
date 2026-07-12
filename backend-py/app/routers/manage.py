@@ -10,6 +10,7 @@ import json
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.config import settings
+from app.jsonUtils import write_json_atomic
 from app.providers import resolver as providerResolver
 from app.services.memory_store import getStats
 from app.services.workbench.workbench import listWorkbenchSessions
@@ -48,7 +49,7 @@ def _writeAliases(aliases: list[dict[str, object]]) -> None:
     p = dataPath('config.json')
     cfg = json.loads(p.read_text('utf-8')) if p.exists() else {}
     cfg['modelAliases'] = aliases
-    p.write_text(json.dumps(cfg, indent=2), 'utf-8')
+    write_json_atomic(p, cfg, indent=2)
     settings.reload()
 
 
@@ -145,6 +146,6 @@ async def updateSettings(body: SettingsUpdate):
 
     for keyPath, value in body.updates.items():
         deepSet(cfg, keyPath.split('.'), value)
-    p.write_text(json.dumps(cfg, indent=2), 'utf-8')
+    write_json_atomic(p, cfg, indent=2)
     settings.reload()
     return {'updated': list(body.updates.keys())}

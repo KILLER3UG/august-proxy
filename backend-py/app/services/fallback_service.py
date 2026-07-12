@@ -9,7 +9,7 @@ config is finally live.
 
 from __future__ import annotations
 from app.config import settings
-from app.jsonUtils import as_str, as_dict, as_list, as_int
+	from app.jsonUtils import as_str, as_dict, as_list, as_int, write_json_atomic
 from app.lib.paths import dataPath
 from app.services.memory_store import recordConfigAudit
 
@@ -33,7 +33,7 @@ def _writeFallback(fb: dict[str, object]) -> None:
     p = dataPath('config.json')
     cfg = json.loads(p.read_text('utf-8')) if p.exists() else {}
     cfg['subAgentFallback'] = fb
-    p.write_text(json.dumps(cfg, indent=2), 'utf-8')
+    write_json_atomic(p, cfg, indent=2)
     settings.reload()
 
 

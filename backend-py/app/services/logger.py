@@ -14,16 +14,16 @@ Handles:
 """
 
 from __future__ import annotations
-import asyncio
-import json
-import os
+	import asyncio
+	import json
+	import os
 import time
 import uuid
 from collections import deque
 from datetime import datetime
-from pathlib import Path
-from typing import Callable, cast
-from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
+	from pathlib import Path
+	from typing import Callable, cast
+	from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str, write_json_atomic
 from app.lib.paths import dataPath
 
 MAX_ACTIVITY_LOG = 200
@@ -298,7 +298,7 @@ class RequestTracker:
         try:
             path = dataPath(REQUEST_LOG_FILE)
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(list(self._log)[:100], indent=2, default=str), 'utf-8')
+            write_json_atomic(path, list(self._log)[:100], indent=2, default=str)
         except Exception:
             pass
 
