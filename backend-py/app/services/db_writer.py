@@ -107,7 +107,7 @@ async def _drainLoop():
         try:
             item: QueueItem = await _writeQueue.get()
             if item.priority == 'low':
-                elapsed = time.monotonic() - item.enqueued_at
+                elapsed = time.monotonic() - item.enqueuedAt
                 if elapsed > _LOWDropAfter:
                     logger.debug('Dropped expired low-priority write (%.2fs old)', elapsed)
                     _writeQueue.task_done()
