@@ -13,6 +13,9 @@ from app.models.anthropic import (
     ContentBlock,
     ToolUseBlock,
     ToolResultBlock,
+    AnthropicResponse,  # noqa: F401 — re-exported for app.adapters.anthropic
+    AnthropicUsage,  # noqa: F401 — re-exported for app.adapters.anthropic
+    AnthropicSSEEvent,  # noqa: F401 — re-exported for app.adapters.anthropic
 )
 from app.models.openai import (
     ChatCompletionRequest,
