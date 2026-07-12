@@ -137,6 +137,28 @@ export default tseslint.config(
         },
       ],
 
+      // ── PascalCase enforcement for type-level declarations ──
+      // Variable/function/property camelCase is already governed by the
+      // `camelcase` rule above (with its snake_case migration allow-list), so
+      // we deliberately do NOT re-select variables/functions here — doing so
+      // would duplicate that allow-list and re-introduce errors on the
+      // wire-protocol identifiers the project must keep literal.
+      //
+      // SCREAMING_SNAKE constants are intentionally NOT enforced here: applying
+      // UPPER_CASE to every `const` declaration would falsely flag idiomatic
+      // React code (e.g. `const MyComponent = () => {}`) and config objects,
+      // producing a mass of false positives. If true module-level SCREAMING_SNAKE
+      // constants are wanted later, scope a narrow `variable`/`const` selector
+      // (or a custom predicate) in a dedicated phase rather than blanket-enabling.
+      '@typescript-eslint/naming-convention': [
+        'error',
+        { selector: 'class', format: ['PascalCase'] },
+        { selector: 'interface', format: ['PascalCase'] },
+        { selector: 'typeAlias', format: ['PascalCase'] },
+        { selector: 'enum', format: ['PascalCase'] },
+        { selector: 'typeParameter', format: ['PascalCase'] },
+      ],
+
       // Acceptable relaxation: namespace conventions vary in this codebase
       '@typescript-eslint/no-namespace': 'off',
       '@typescript-eslint/triple-slash-reference': 'off',
