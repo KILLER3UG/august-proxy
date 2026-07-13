@@ -16,7 +16,8 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Awaitable, Callable
-from app.jsonUtils import as_str, write_json_atomic
+from app.json_narrowing import as_str
+from app.atomic_write import write_json_atomic
 
 log = logging.getLogger(__name__)
 WorkbenchRunner = Callable[..., Awaitable[None]]

@@ -13,7 +13,7 @@ import os
 
 import pytest
 
-from app.jsonUtils import write_json_atomic
+from app.atomic_write import write_json_atomic
 
 
 def test_write_json_atomic_writes_expected_content(tmp_path: object) -> None:

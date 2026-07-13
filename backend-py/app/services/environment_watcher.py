@@ -13,7 +13,7 @@ import os
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
-from app.jsonUtils import as_float
+from app.json_narrowing import as_float
 
 if TYPE_CHECKING:
     from watchdog.observers import Observer

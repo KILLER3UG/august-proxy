@@ -10,7 +10,7 @@ run consolidation) and the System Health fan-out.
 
 from __future__ import annotations
 from fastapi import APIRouter
-from app.jsonUtils import as_int
+from app.json_narrowing import as_int
 
 router = APIRouter(prefix='/api/brain')
 

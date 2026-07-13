@@ -7,7 +7,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from app.models.config import ProviderConfig, ProviderCreate, ProviderUpdate, ModelCreate, ModelUpdate
 from app.providers.template_loader import getTemplates, getTemplate
-from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
+from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 from app.services import config_service
 from app.services import model_service
 

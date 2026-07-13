@@ -14,7 +14,7 @@ import random
 import time
 from typing import AsyncIterator, Callable
 import httpx
-from app.jsonUtils import as_str, as_dict, as_list
+from app.json_narrowing import as_str, as_dict, as_list
 
 
 class SseStreamParser:

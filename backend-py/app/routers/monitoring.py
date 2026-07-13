@@ -27,7 +27,7 @@ dropped the `python` field); it was removed.
 
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
-from app.jsonUtils import as_dict, as_int
+from app.json_narrowing import as_dict, as_int
 from app.services.logger import (
     getActivityLog,
     getPendingRequests,

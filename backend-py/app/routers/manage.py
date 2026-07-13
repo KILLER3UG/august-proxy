@@ -10,7 +10,7 @@ import json
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.config import settings
-from app.jsonUtils import write_json_atomic
+from app.atomic_write import write_json_atomic
 from app.providers import resolver as providerResolver
 from app.services.memory_store import getStats
 from app.services.workbench.workbench import listWorkbenchSessions

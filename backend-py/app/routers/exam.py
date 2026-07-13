@@ -8,7 +8,7 @@ client-supplied correct_index. Questions are served one at a time as banners.
 from __future__ import annotations
 import json
 from fastapi import APIRouter, HTTPException
-from app.jsonUtils import as_str, as_int, as_list
+from app.json_narrowing import as_str, as_int, as_list
 from app.services.memory_store import _conn
 from app.services import exam_service
 

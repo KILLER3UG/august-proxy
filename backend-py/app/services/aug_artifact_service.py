@@ -24,7 +24,7 @@ import re
 import shutil
 from pathlib import Path
 
-from app.jsonUtils import write_json_atomic
+from app.atomic_write import write_json_atomic
 
 _PLANS_DIR = 'plans'
 _TODOS_DIR = 'todoList'

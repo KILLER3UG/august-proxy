@@ -6,7 +6,7 @@ a partial dict and validates each field's shape.
 """
 
 from __future__ import annotations
-from app.jsonUtils import as_dict, as_str
+from app.json_narrowing import as_dict, as_str
 from app.services import config_service
 
 FIELDS = ('sttProvider', 'sttModel', 'ttsProvider', 'ttsModel', 'ttsVoice')

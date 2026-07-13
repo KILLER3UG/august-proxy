@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 from typing import cast
 from app.services import tool_registry
-from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
+from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 
 _MAXFileSize = 10 * 1024 * 1024
 _MAXSearchResults = 100

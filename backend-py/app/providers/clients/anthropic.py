@@ -10,7 +10,7 @@ Handles:
 
 from __future__ import annotations
 from typing import AsyncIterator
-from app.jsonUtils import as_str
+from app.json_narrowing import as_str
 from app.providers.clients.base import BaseProviderClient, ProviderResponse
 
 

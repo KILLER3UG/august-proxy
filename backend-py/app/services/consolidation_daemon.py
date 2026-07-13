@@ -13,7 +13,7 @@ import json
 import logging
 import os
 import time
-from app.jsonUtils import as_dict, as_list
+from app.json_narrowing import as_dict, as_list
 from app.typeAliases import ConsolidationSummaryDict
 
 logger = logging.getLogger(__name__)

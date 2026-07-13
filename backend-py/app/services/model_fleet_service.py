@@ -12,7 +12,7 @@ merged fleet for the UI.
 """
 
 from __future__ import annotations
-from app.jsonUtils import as_dict, as_str
+from app.json_narrowing import as_dict, as_str
 from app.services import config_service
 
 ROLES = ('cortex', 'cerebellum', 'hippocampus', 'prefrontal')

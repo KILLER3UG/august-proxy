@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from app.adapters import anthropic as anthropicAdapter
 from app.adapters import openai as openaiAdapter
-from app.jsonUtils import as_str, as_dict, as_list, as_int
+from app.json_narrowing import as_str, as_dict, as_list, as_int
 from app.lib.gateway_auth import require_gateway_key
 from app.providers import resolver as providerResolver
 from app.services import logger as trafficLogger

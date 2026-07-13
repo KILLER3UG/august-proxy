@@ -13,7 +13,8 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from app.jsonUtils import as_dict, as_list, as_str, write_json_atomic
+from app.json_narrowing import as_dict, as_list, as_str
+from app.atomic_write import write_json_atomic
 from app.lib.paths import dataPath
 
 _DBFile = dataPath('august_vector_memory.json')

@@ -18,7 +18,7 @@ When empty, the chat session's model is used for that task.
 from __future__ import annotations
 import json
 from app.config import settings
-from app.jsonUtils import write_json_atomic
+from app.atomic_write import write_json_atomic
 from app.lib.paths import dataPath
 from app.services.memory_store import recordConfigAudit
 

@@ -7,7 +7,7 @@ Port of backend/services/memory/knowledge-tree.js.
 from __future__ import annotations
 from datetime import datetime, timezone
 from app.services.memory_store import saveMemory, getMemory
-from app.jsonUtils import as_str, as_dict, as_list
+from app.json_narrowing import as_str, as_dict, as_list
 
 _TREEKey = 'knowledge_tree'
 

@@ -29,7 +29,7 @@ import asyncio
 import logging
 import os
 from typing import Any, Optional
-from app.jsonUtils import as_str, as_dict
+from app.json_narrowing import as_str, as_dict
 from app.services.gateway.base import BasePlatformAdapter, MessageEvent, SessionSource
 
 log = logging.getLogger(__name__)

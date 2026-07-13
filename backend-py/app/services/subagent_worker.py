@@ -17,7 +17,7 @@ import logging
 import time
 from typing import Any, Callable
 from app.services.agent_message_bus import AgentMessageBus
-from app.jsonUtils import as_str
+from app.json_narrowing import as_str
 
 logger = logging.getLogger(__name__)
 

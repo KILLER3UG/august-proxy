@@ -8,7 +8,7 @@ tools to execute locally vs. forward to the client.
 """
 
 from __future__ import annotations
-from app.jsonUtils import as_str
+from app.json_narrowing import as_str
 from app.adapters.proxy_tools import isProxyManagedLocalToolName
 from app.models import ToolCall, ToolUseBlock, ToolClassificationResult
 

@@ -29,7 +29,9 @@ from app.config import settings
 from app.lib.paths import dataPath
 from app.services.memory_store import recordConfigAudit
 from app.typeAliases import AliasDict, JsonValue
-from app.jsonUtils import as_dict, as_list, as_str, write_json_atomic
+from app.json_narrowing import as_dict, as_list, as_str
+from app.atomic_write import write_json_atomic
+
 
 def listAliases() -> list[AliasDict]:
     """Return all model-alias entries (full records, not just names)."""
@@ -47,6 +49,7 @@ def listAliases() -> list[AliasDict]:
 
 
 def _writeAliases(aliases: list[AliasDict]) -> None:
+    """Write the full aliases list to ``config.json`` atomically."""
     import json
 
     p = dataPath('config.json')
@@ -141,7 +144,7 @@ def createAlias(
 def update_alias(
     alias: str, target_model: str | None = None, target_provider: str | None = None, actor: str = 'system'
 ) -> AliasDict:
-    """Update an existing alias. Raises if not found."""
+    """Update an existing alias. Returns the updated alias or None if not found."""
     aliases = listAliases()
     existing = next((a for a in aliases if as_str(a.get('alias')) == alias), None)
     if existing is None:

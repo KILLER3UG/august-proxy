@@ -9,7 +9,7 @@ while the browser layer drives an invisible Playwright page.
 
 from __future__ import annotations
 from typing import Any, Awaitable, Callable
-from app.jsonUtils import as_str, as_int
+from app.json_narrowing import as_str, as_int
 from app.services.desktop_automation import (
     takeScreenshot,
     getMousePosition,

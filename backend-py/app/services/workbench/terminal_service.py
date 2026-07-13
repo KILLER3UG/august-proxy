@@ -12,7 +12,7 @@ import platform
 import uuid
 from datetime import datetime, timezone
 from typing import Callable, Protocol, cast
-from app.jsonUtils import as_bool, as_int, as_list, as_str
+from app.json_narrowing import as_bool, as_int, as_list, as_str
 from app.services.workbench.pty_io import PtyIO
 
 BUFFER_LIMIT = 256 * 1024

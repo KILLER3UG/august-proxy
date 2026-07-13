@@ -18,7 +18,7 @@ import logging
 import os
 import time
 from difflib import unified_diff as unifiedDiff
-from app.jsonUtils import as_str
+from app.json_narrowing import as_str
 from app.services.heuristics_service import addHeuristic
 
 logger = logging.getLogger(__name__)

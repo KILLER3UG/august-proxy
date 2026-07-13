@@ -8,7 +8,7 @@ when boto3 is not installed.
 
 from __future__ import annotations
 from typing import Any, AsyncIterator, cast
-from app.jsonUtils import as_str, as_dict, as_list
+from app.json_narrowing import as_str, as_dict, as_list
 from app.providers.clients.base import BaseProviderClient, ProviderResponse
 
 

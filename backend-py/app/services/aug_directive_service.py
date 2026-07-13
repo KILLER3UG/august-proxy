@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Optional
-from app.jsonUtils import as_str, as_dict, as_list
+from app.json_narrowing import as_str, as_dict, as_list
 
 _AUG_FILENAME = 'AUG.md'
 _FRONTMATTER_RE = re.compile(r'^---\s*\n(.*?)\n---\s*\n(.*)', re.DOTALL)

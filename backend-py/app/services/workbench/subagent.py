@@ -12,7 +12,7 @@ emitted to the parent session's SSE stream as ``subagent_*`` events.
 from __future__ import annotations
 import uuid
 from typing import Callable, cast
-from app.jsonUtils import as_bool, as_dict, as_int, as_list, as_str
+from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 from app.services.tools.agent_registry import (
     _MAXAgentDepth,
     createJob,

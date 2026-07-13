@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass
 from typing import cast
 from app.typeAliases import DaemonStatusDict
-from app.jsonUtils import as_str, as_float, as_int
+from app.json_narrowing import as_str, as_float, as_int
 
 logger = logging.getLogger(__name__)
 MAX_DAEMONS_PER_SESSION = 3

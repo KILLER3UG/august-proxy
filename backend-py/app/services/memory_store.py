@@ -23,7 +23,7 @@ from app.typeAliases import (
     SessionRecord,
     MessageDict,
 )
-from app.jsonUtils import as_str, as_list, as_int
+from app.json_narrowing import as_str, as_list, as_int
 
 _BRAINFileEnv = 'AUGUST_BRAIN_SQLITE_FILE'
 _DEFAULTBrainFile = 'august_brain.sqlite'

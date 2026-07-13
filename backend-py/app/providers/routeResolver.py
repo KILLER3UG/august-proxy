@@ -18,7 +18,7 @@ Resolution order:
 
 from __future__ import annotations
 from typing import Optional
-from app.jsonUtils import as_dict, as_list, as_str
+from app.json_narrowing import as_dict, as_list, as_str
 from app.providers import resolver
 
 

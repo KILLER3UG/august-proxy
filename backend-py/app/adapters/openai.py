@@ -18,7 +18,7 @@ import time
 import uuid
 from typing import AsyncIterator, Callable, cast
 from app.typeAliases import JsonValue
-from app.jsonUtils import as_str, as_dict, as_list, as_int
+from app.json_narrowing import as_str, as_dict, as_list, as_int
 from app.adapters.proxy_tools import (
     getProxyOpenaiToolDefinitions,
     appendMissingOpenaiTools,

@@ -11,7 +11,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Awaitable, Callable
-from app.jsonUtils import as_str, write_json_atomic
+from app.json_narrowing import as_str
+from app.atomic_write import write_json_atomic
 from app.lib.paths import dataPath
 
 _JOBSFile = dataPath('scheduled-jobs.json')

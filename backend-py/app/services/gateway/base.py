@@ -19,7 +19,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
-from app.jsonUtils import as_bool
+from app.json_narrowing import as_bool
 
 if TYPE_CHECKING:
     from app.services.gateway.session_bridge import SessionBridge

@@ -19,7 +19,7 @@ from app.services.browser.element_resolver import resolveLocator
 from app.services.browser.session_manager import BrowserUnavailableError, getOrCreateSession
 from app.services.browser.snapshot import buildCompactSnapshot, runSnapshot
 from app.services.workbench.context import currentSessionId
-from app.jsonUtils import as_dict
+from app.json_narrowing import as_dict
 
 if TYPE_CHECKING:
     from playwright.async_api import Page

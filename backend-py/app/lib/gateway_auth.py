@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from fastapi import Header, HTTPException
 from app.config import settings
-from app.jsonUtils import as_dict
+from app.json_narrowing import as_dict
 
 log = logging.getLogger(__name__)
 

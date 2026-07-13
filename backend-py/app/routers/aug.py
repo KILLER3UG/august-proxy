@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Body
 
-from app.jsonUtils import as_str
+from app.json_narrowing import as_str
 from app.services import aug_directive_service
 from app.services import aug_artifact_service
 

@@ -22,7 +22,7 @@ import json
 import logging
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
-from app.jsonUtils import as_dict, as_list, as_str
+from app.json_narrowing import as_dict, as_list, as_str
 from app.typeAliases import JsonValue
 from app.services import skill_service
 

@@ -22,7 +22,7 @@ Custom-store entry filtering:
 
 from __future__ import annotations
 from typing import Callable, Optional
-from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float
+from app.json_narrowing import as_str, as_dict, as_list, as_int, as_float
 from app.services import config_service
 
 _storeCache: Optional[dict[str, object]] = None

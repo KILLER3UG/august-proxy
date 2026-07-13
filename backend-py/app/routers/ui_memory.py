@@ -31,7 +31,7 @@ from fastapi import APIRouter, Query
 from app.services import memory_store
 from app.services.memory import context_builder
 from app.services.memory import vector_db
-from app.jsonUtils import as_dict, as_float, as_int, as_list, as_str
+from app.json_narrowing import as_dict, as_float, as_int, as_list, as_str
 
 router = APIRouter(prefix='/api/brain')
 

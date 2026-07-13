@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 from app.services import skill_service
-from app.jsonUtils import as_str, as_list, as_int, as_float
+from app.json_narrowing import as_str, as_list, as_int, as_float
 
 log = logging.getLogger(__name__)
 _STALEAfterDays = 14

@@ -24,7 +24,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, TYPE_CHECKING, cast
-from app.jsonUtils import as_str, as_dict, as_list, as_int, as_float, as_bool, write_json_atomic
+from app.json_narrowing import as_str, as_dict, as_list, as_int, as_float, as_bool
+from app.atomic_write import write_json_atomic
 from app.typeAliases import JsonValue
 
 if TYPE_CHECKING:

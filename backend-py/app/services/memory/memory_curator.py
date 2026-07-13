@@ -6,7 +6,7 @@ Port of backend/services/memory/memory-curator.js.
 
 from __future__ import annotations
 from typing import cast
-from app.jsonUtils import as_float, as_int, as_str
+from app.json_narrowing import as_float, as_int, as_str
 from app.services.memory_store import listMemory, deleteMemory
 from app.services.memory.memory_quality import scoreQuality, deduplicate
 
