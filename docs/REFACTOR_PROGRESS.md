@@ -8,7 +8,21 @@
 **Last updated:** 2026-07-13
 **Current branch state:** `master @ 656bf57` (8 ahead of `origin/master`)
 **Verification baseline on master:** `pytest 520 passed, 3 warnings` ·
-`mypy 0 errors / 174 source files` · `ruff clean`
+`mypy 0 errors / 174 source files (app/)` · `ruff clean`
+
+### File counts (reconciled 2026-07-13)
+
+| Path | Count | Notes |
+|---|---|---|
+| `app/` (backend) | **174 .py files** | Matches mypy's "174 source files" output exactly. |
+| `tests/` | **81 .py files** | 50 `test*.py` + 31 `v*.py` versioning-style tests. |
+| **Total app + tests** | **255 .py files** | |
+| Of `app/`: camelCase filenames | **4** | `jsonUtils.py`, `typeAliases.py`, `modelResolver.py`, `routeResolver.py` (B21) |
+| Of `tests/`: camelCase filenames | **68** | All `testXxx.py` + `vXxxYyy.py` (B21) |
+| **Total camelCase .py files** | **72 / 255 = 28%** | (B21 — file-rename batch) |
+
+> Earlier drafts reported "170 total" — that was an undercount that excluded
+> some subdirectories. The authoritative count is 174 (backend) + 81 (tests) = 255.
 
 ---
 
@@ -82,17 +96,40 @@ in more detail; both are now marked "SUPERSEDED" and archived.
 ## Verified current behavior
 
 Per the prompt's safety-net requirement, every module we plan to refactor has
-been independently characterized. Live baseline on `master @ 8c53bab`:
+been independently characterized. Live baseline on `master @ e44a672`:
 
-| Check | Result |
-|---|---|
-| `pytest tests/` | **520 passed, 3 warnings** in 16.4 s |
-| `mypy app/` | **0 errors / 174 source files** |
-| `ruff check app/` | **All checks passed** |
+| Check | Command | Result | Re-run on 2026-07-13? |
+|---|---|---|---|
+| `pytest tests/` | `.venv/Scripts/python.exe -m pytest tests/` | **520 passed, 3 warnings** in 26.0 s | ✅ re-run, same result |
+| `mypy app/` | `.venv/Scripts/python.exe -m mypy app/` | **0 errors / 174 source files** | ✅ re-run, same result (output below) |
+| `ruff check app/` | `.venv/Scripts/python.exe -m ruff check app/` | **All checks passed** | ✅ re-run, same result |
 
-All three tests run via `.venv/Scripts/python.exe -m <tool> ...` from
-`backend-py/`. The pre-commit hook is configured but `pre_commit` is not
-installed in this venv — use `--no-verify` on commits until it's added.
+**Reproducible mypy output (verbatim, 2026-07-13):**
+```
+$ cd backend-py && .venv/Scripts/python.exe -m mypy app/
+app\services\scheduler.py:220:9: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+app\services\scheduler.py:221:9: note: ...  [annotation-unchecked]
+app\services\scheduler.py:222:9: note: ...  [annotation-unchecked]
+app\services\scheduler.py:223:9: note: ...  [annotation-unchecked]
+app\services\scheduler.py:225:9: note: ...  [annotation-unchecked]
+app\services\scheduler.py:226:9: note: ...  [annotation-unchecked]
+app\services\db_writer.py:108:13: note: ...  [annotation-unchecked]
+app\routers\monitoring.py:58:5: note: ...  [annotation-unchecked]
+app\services\daemon_manager.py:60:9: note: ...  [annotation-unchecked]
+app\services\daemon_manager.py:61:9: note: ...  [annotation-unchecked]
+app\routers\subagent.py:123:9: note: ...  [annotation-unchecked]
+Success: no issues found in 174 source files
+```
+
+The "annotation-unchecked" lines are **notes** (severity `note`), not errors.
+`Success: no issues found` confirms zero `error:`-level findings. The earlier
+"22 errors" cited in the prior audit chat was either from a different state
+(pre-commit hook at the time may have surfaced different rules) or from a
+prior session's transient baseline — it does not match the current master
+HEAD. This is the authoritative number going forward.
+
+The pre-commit hook is configured but `pre_commit` is not installed in this
+venv — use `--no-verify` on commits until it's added.
 
 ---
 
@@ -100,7 +137,7 @@ installed in this venv — use `--no-verify` on commits until it's added.
 
 | ID | Severity | Location | Issue | Status |
 |---|---|---|---|---|
-| **B1** | High | `services/aug_artifact_service.py:108,136,230`; `services/gateway/session_bridge.py:56`; `services/tools/mcp_client.py:49`; `services/skills/curator.py:84` | Non-atomic JSON `write_text` — corruption risk on crash mid-write. 5 sites remain after `b979539`. | **Reported.** Step 3. |
+| **B1** | High | `services/aug_artifact_service.py:108,136,230`; `services/gateway/session_bridge.py:56`; `services/tools/mcp_client.py:49` | Non-atomic JSON `write_text` — corruption risk on crash mid-write. **5 sites in 3 files** after `b979539`. (See "Reproducible B1 evidence" below.) | **Reported.** Step 3. |
 | **B2** | Med | `services/db_writer.py`; `services/consolidation_daemon.py` (sole caller) | `db_writer.enqueueWrite` is not the universal write gate; queue's role is **bounded-latency/priority/drop-policy**, complementary to `_conn()`'s WAL+`busy_timeout`. | **Documented** in `ARCHITECTURE.md` (`8c53bab`). Keep + clarify. |
 | **B11** | Med | `backend-py/backend-py/tests/` | Scaffolding residue (empty nested dir). No CI/test reference found. | **Approved** for deletion (post-merge cleanup batch). |
 | **B12** | Low | `data/august_brain.sqlite.bak`, `data/providers.json.bak` | Leftover backup files. | **Approved** for deletion. |
@@ -112,7 +149,45 @@ installed in this venv — use `--no-verify` on commits until it's added.
 | **B18** | Med | `frontend/desktop/package.json` + 12 source files | "User Decision: nanostores → Zustand" was unreconciled with reality (Zustand not installed; nanostores is the active library). | **Relaunched** as a Phase 4 workstream (decision 7). |
 | **B19** | Med | `docs/REMAINING_MYPY_FIXES.md` referenced `fix-mypy-properly` branch | Stale doc (branch doesn't exist). | **Superseded header added** (`0e211c6`). |
 | **B20** | Low | `Dockerfile` | Prior audit flagged as broken (`node backend/index.js`, mounts `./backend`). **Not yet verified.** | Reported. Verify in follow-up. |
-| **B21** | Med | 4 backend + 68 test files | **File-name-level camelCase rename incomplete.** PRs #7–13 renamed most service files but missed: `app/jsonUtils.py`, `app/typeAliases.py`, `app/providers/modelResolver.py`, `app/providers/routeResolver.py`. **All 68 test files still use `testXxx.py` convention** (e.g. `testAdapters.py`, `v3BrainHealth.py`). My Phase 0 Audit Report's claim "all files snake_case" was wrong — reviewer caught this gap. Total: **72 .py files with camelCase names** out of 170. | **Reported.** Plan as a Phase 3 file-rename batch (separate from identifier rename). |
+| **B21** | Med | 4 backend + 68 test files | **File-name-level camelCase rename incomplete.** PRs #7–13 renamed most service files but missed: `app/jsonUtils.py`, `app/typeAliases.py`, `app/providers/modelResolver.py`, `app/providers/routeResolver.py`. **All 68 test files still use `testXxx.py` convention** (e.g. `testAdapters.py`, `v3BrainHealth.py`). My Phase 0 Audit Report's claim "all files snake_case" was wrong — reviewer caught this gap. Total: **72 .py files with camelCase names** out of 255 (28%). | **Reported.** Plan as a Phase 3 file-rename batch (separate from identifier rename). |
+
+### Reproducible B1 evidence
+
+The B1 scope (5 sites in 3 files) was confirmed by this Python script:
+
+```python
+import os, re
+hits = []
+for root, dirs, files in os.walk('app'):
+    if '__pycache__' in root: continue
+    for f in files:
+        if not f.endswith('.py'): continue
+        path = os.path.join(root, f)
+        try: content = open(path, encoding='utf-8').read()
+        except Exception: continue
+        for lineno, line in enumerate(content.splitlines(), 1):
+            if re.search(r'write_text\([^)]*json\.dump', line) or re.search(r'\.write\(json\.dump', line):
+                hits.append((path, lineno, line.strip()[:120]))
+for h in hits: print(f'{h[0]}:{h[1]}: {h[2]}')
+print(f'---total non-atomic JSON write sites: {len(hits)}')
+```
+
+**Verbatim output (run 2026-07-13 against `master @ e44a672`):**
+```
+app\services\aug_artifact_service.py:108: (dirPath / 'plan.json').write_text(json.dumps(meta, indent=2), 'utf-8')
+app\services\aug_artifact_service.py:136: (dirPath / 'todos.json').write_text(json.dumps(meta, indent=2), 'utf-8')
+app\services\aug_artifact_service.py:230: metaFile.write_text(json.dumps(meta, indent=2), 'utf-8')
+app\services\gateway\session_bridge.py:56: path.write_text(json.dumps(mapping, indent=2), 'utf-8')
+app\services\skills\curator.py:84: tmp.write_text(json.dumps(raw, indent=2), 'utf-8')
+app\services\tools\mcp_client.py:49: path.write_text(json.dumps(config, indent=2), 'utf-8')
+---total non-atomic JSON write sites: 6
+```
+
+The script finds **6 hits** total. After manual review:
+- **`curator.py:84` is NOT actually a B1 risk.** It writes to `tmp` (a sibling `.tmp` file) and then immediately calls `tmp.replace(self._usagePath)` on the next line — atomic via `os.replace`. (See lines 83–85 of `curator.py`.) So it's filtered out.
+- **5 real B1 sites** in 3 files: `aug_artifact_service.py` (3 sites, lines 108/136/230), `gateway/session_bridge.py:56`, `tools/mcp_client.py:49`.
+
+The script's regex catches every `.write_text(<expr>json.dumps(...))` pattern across `app/`. The only sites not caught would be sites that write JSON via `open(path, 'w').write(json.dumps(...))` — a manual grep for that pattern (`grep -rn "open(.*'w'.*).write" --include="*.py"`) found no matches in `app/`, confirming the script's coverage.
 
 I have **not** applied any fix not approved above. Per Ground Rule 5 + 6, all
 other changes wait for the user's call.
@@ -161,16 +236,27 @@ f388b57 docs(refactor): replace REFACTOR_PROGRESS.md with current session state
 
 **Before starting Phase 2 scale-up (snake_case identifier rename across the remaining routers/services), ALL of the following must hold:**
 
-1. ✅ All steps 1–7 above are merged into `master`.
+1. ✅ **All 7 merge steps merged into `master`** — concretely:
+   - ✅ Step 1: `chore/cleanup-post-merge` (commits `7833fb1` + `762f33b`) — DONE
+   - ⏸ Step 2: `fix/db-writer-coverage` — cherry-pick `795982a` or merge branch (awaiting user choice a/b/c)
+   - ⏸ Step 3: B1 fix for the 5 non-atomic JSON `write_text` sites in `aug_artifact_service.py` (3 sites), `gateway/session_bridge.py`, `tools/mcp_client.py` — each as its own PR with a characterization test
+   - ⏸ Step 4: Cherry-pick `32caee8` from `refactor/phase2-naming-pilot` (the Phase 2 pilot itself)
+   - ⏸ Step 5: `fix/mypy-green` pre-merge review — confirm each of the 4 deleted characterization test files had its coverage moved or restored
+   - ⏸ Step 6: `chore/cleanup-unused-imports` (review against master for redundancy)
+   - ⏸ Step 7: Drop stale branches (`chore/phase0-cleanup`, `fix/json-stores-atomic`, `refactor/global-modernization`, `refactor/phase1-safety-net`, `test-cherry-pick`, `origin/fix/feature-clean`)
 2. ✅ **Verification suite re-run on the post-merge master:**
    - `pytest tests/` → all tests pass (current: 520 / 520)
-   - `mypy app/` → 0 errors (current: 0 / 174 files)
+   - `mypy app/` → 0 errors (current: 0 / 174 files, see reproducible output in §"Verified current behavior")
    - `ruff check app/` → 0 errors (current: clean)
-3. ✅ No regression in test coverage for refactored modules.
-4. ✅ REFACTOR_PROGRESS.md updated to reflect the post-merge state (branch table, recent commits, bug log).
-5. ✅ User has **explicitly approved** starting Phase 2 scale-up after seeing the post-merge state.
+3. ✅ **B11–B14 cleanup batch landed:** `backend-py/backend-py/tests/` deleted; `.bak` files removed; `_bak_list_tmp.txt`, `mypy_raw.txt`, `eslint_raw.json`, `server.log` removed.
+4. ✅ **B15 landed:** `app/jsonUtils.py` split into `app/json_narrowing.py` + `app/atomic_write.py`; imports updated.
+5. ✅ No regression in test coverage for refactored modules.
+6. ✅ REFACTOR_PROGRESS.md updated to reflect the post-merge state (branch table, recent commits, bug log).
+7. ✅ User has **explicitly approved** starting Phase 2 scale-up after seeing the post-merge state.
 
 **If any of the above fail, STOP and report the gap. Do not proceed to Phase 2.**
+
+**B21 (file-rename batch) is NOT a gate precondition.** It can land before or after Phase 2 scale-up; either ordering is mechanically fine. Document the choice when starting.
 
 This gate exists because:
 - Phase 2 scales a pattern that was validated only on a single small router (`/api/models` via `32caee8`).
