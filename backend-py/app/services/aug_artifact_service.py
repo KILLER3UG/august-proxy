@@ -24,6 +24,8 @@ import re
 import shutil
 from pathlib import Path
 
+from app.jsonUtils import write_json_atomic
+
 _PLANS_DIR = 'plans'
 _TODOS_DIR = 'todoList'
 _MAX_SLUG = 50
@@ -105,7 +107,7 @@ def savePlan(
         'status': status,
         'plan': plan,
     }
-    (dirPath / 'plan.json').write_text(json.dumps(meta, indent=2), 'utf-8')
+    write_json_atomic(dirPath / 'plan.json', meta, indent=2)
     meta['path'] = str(dirPath / 'plan.json')
     return meta
 
@@ -133,7 +135,7 @@ def saveTodos(
         'status': status,
         'todos': todos,
     }
-    (dirPath / 'todos.json').write_text(json.dumps(meta, indent=2), 'utf-8')
+    write_json_atomic(dirPath / 'todos.json', meta, indent=2)
     meta['path'] = str(dirPath / 'todos.json')
     return meta
 
@@ -227,4 +229,4 @@ def updatePlanStatus(workspacePath: str | None, sessionId: str, status: str) -> 
         if meta.get('sessionId') == sessionId:
             meta['status'] = status
             meta['updatedAt'] = _now()
-            metaFile.write_text(json.dumps(meta, indent=2), 'utf-8')
+            write_json_atomic(metaFile, meta, indent=2)

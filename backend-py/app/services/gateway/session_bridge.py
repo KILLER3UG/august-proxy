@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Awaitable, Callable
-from app.jsonUtils import as_str
+from app.jsonUtils import as_str, write_json_atomic
 
 log = logging.getLogger(__name__)
 WorkbenchRunner = Callable[..., Awaitable[None]]
@@ -53,7 +53,7 @@ def _loadMap(path: Path) -> dict[str, str]:
 def _saveMap(path: Path, mapping: dict[str, str]) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(mapping, indent=2), 'utf-8')
+        write_json_atomic(path, mapping, indent=2)
     except Exception as exc:
         log.warning('gateway: could not persist session map: %s', exc)
 
