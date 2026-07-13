@@ -353,7 +353,7 @@ persist via thin `_conn()` wrappers (`blackboard_service`, `heuristics_service`,
 
 `db_writer` is **complementary, not redundant** with `memory_store._conn()`:
 
-| Concern | `memory_store._conn()` (WAL + busy_timeout) | `db_writer.enqueueWrite` (queue) |
+| Concern | `memory_store._conn()` (WAL + busy_timeout) | `db_writer.enqueue_write` (queue) |
 |---|---|---|
 | Writer serialization across all callers | ✅ yes | ✅ yes (one worker) |
 | Bounded SQLite-level wait | ✅ via `busy_timeout=10000` | ⚠️ no (worker runs the closure) |
@@ -363,7 +363,7 @@ persist via thin `_conn()` wrappers (`blackboard_service`, `heuristics_service`,
 | Sync callers (most daemons) | ✅ direct | ❌ async-only |
 
 Reads bypass both layers (WAL allows concurrent readers). `consolidation_daemon`
-is currently the **only** caller of `enqueueWrite` (4 sites); it does reads via
+is currently the **only** caller of `enqueue_write` (4 sites); it does reads via
 `_conn()` and writes via the queue because the daemon's writes share a closure
 that captures `conn` from the daemon's event-loop thread, and the queue worker
 runs on the same thread. **Do not remove the queue** — it provides priority
@@ -371,10 +371,11 @@ semantics and bounded user-facing wait that WAL alone does not.
 
 ### JSON stores — atomic writes
 
-All JSON stores write through [`app/jsonUtils.py::write_json_atomic`](../backend-py/app/jsonUtils.py)
-(line 60), which serializes to a temp file in the same directory and `os.replace`s
-into place. Because the rename is atomic on a single filesystem, a crash
-mid-write leaves either the old file or the complete new file — never a
-partial one. New writers must use this helper (a Phase 4 B1 follow-up will
-finish migrating the ~5 non-atomic `write_text(json.dumps(...))` sites that
-remain).
+All JSON stores write through [`app/atomic_write.py::write_json_atomic`](../backend-py/app/atomic_write.py),
+which serializes to a temp file in the same directory (`flush` + `os.fsync`) and
+`os.replace`s into place. Because the rename is atomic on a single filesystem, a
+crash mid-write leaves either the old file or the complete new file — never a
+partial one. New writers must use this helper. As of `6765b85`, the former B1a
+non-atomic sites are migrated (or removed with dead code); the only remaining
+`write_text(json.dumps(...))` hit is `skills/curator.py`, which writes a sibling
+`.tmp` then `Path.replace`s — also atomic.
