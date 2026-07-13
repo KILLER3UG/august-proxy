@@ -64,7 +64,7 @@ async def listModels(
     if limit > 0:
         models = models[offset : offset + limit]
     return ModelList(
-        models=[ModelInfo(**m) for m in models],
+        models=[ModelInfo.model_validate(m) for m in models],
         has_more=offset + limit < total,
         total=total,
     )
