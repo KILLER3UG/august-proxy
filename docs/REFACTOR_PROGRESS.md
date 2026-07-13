@@ -44,12 +44,12 @@ the live repo on 2026-07-13. Discrepancies found:
 
 | Prompt claim | Reality on master @ 762f33b |
 |---|---|
-| "Pervasive camelCase across all 147 files" | **Outdated.** Substantial snake_case rename completed (PRs #7–13). Three modules remain camelCase internally: `memory_store.py`, `db_writer.py`, `proxy_tools.py`. |
+| "Pervasive camelCase across all 147 files" | **Outdated at identifier level.** Substantial identifier-level snake_case rename completed (PRs #7–13). Three modules remain camelCase internally: `memory_store.py`, `db_writer.py`, `proxy_tools.py`. **But also: at the file-name level, 72 of 170 .py files still have camelCase names** (4 backend modules + 68 tests) — see B21. |
 | `refactor/phase2-naming-pilot` proven (pytest/mypy/tsc clean) | **Verified on master for the pilot itself** — `CamelModel` + `alias_generator` work, 6 tests pass. Pilot lands in step 4. |
 | "fix(json-stores) atomic writes merged; B1 fixed" | **Partially true.** `b979539` migrated most stores; **5 non-atomic `write_text(json.dumps(...))` sites remain** (B1 incomplete). |
 | "B2 — db_writer coverage gaps" | **Reframed.** `db_writer.enqueueWrite` is NOT the universal write gate. `memory_store._conn()` is (WAL + `busy_timeout`). `db_writer` is a complementary async queue with priority/drop/bounded-wait. Sole caller: `consolidation_daemon`. |
 | "nanostores → Zustand migration" | **Reconciled** — Zustand not installed; nanostores is the active library. Migration relaunched (decision 7). |
-| "147 Python backend files" | **170 actual** (24% drift). Services: 96 actual vs 70 claimed. |
+| "147 Python backend files" | **170 actual** (24% drift). Services: 96 actual vs 70 claimed. Tests: 68 .py files, all still with camelCase `testXxx.py` names — tests were not renamed by PRs #7–13. |
 | "70 service files" | 96 actual (44 top-level + 18 memory + 5 browser + 4 gateway + 7 tools + 13 workbench + 1 skills + 4 gateway/platforms). |
 
 Two prior audit reports (`docs/REFACTOR_AUDIT_*.md`) document the verification
@@ -112,6 +112,7 @@ installed in this venv — use `--no-verify` on commits until it's added.
 | **B18** | Med | `frontend/desktop/package.json` + 12 source files | "User Decision: nanostores → Zustand" was unreconciled with reality (Zustand not installed; nanostores is the active library). | **Relaunched** as a Phase 4 workstream (decision 7). |
 | **B19** | Med | `docs/REMAINING_MYPY_FIXES.md` referenced `fix-mypy-properly` branch | Stale doc (branch doesn't exist). | **Superseded header added** (`0e211c6`). |
 | **B20** | Low | `Dockerfile` | Prior audit flagged as broken (`node backend/index.js`, mounts `./backend`). **Not yet verified.** | Reported. Verify in follow-up. |
+| **B21** | Med | 4 backend + 68 test files | **File-name-level camelCase rename incomplete.** PRs #7–13 renamed most service files but missed: `app/jsonUtils.py`, `app/typeAliases.py`, `app/providers/modelResolver.py`, `app/providers/routeResolver.py`. **All 68 test files still use `testXxx.py` convention** (e.g. `testAdapters.py`, `v3BrainHealth.py`). My Phase 0 Audit Report's claim "all files snake_case" was wrong — reviewer caught this gap. Total: **72 .py files with camelCase names** out of 170. | **Reported.** Plan as a Phase 3 file-rename batch (separate from identifier rename). |
 
 I have **not** applied any fix not approved above. Per Ground Rule 5 + 6, all
 other changes wait for the user's call.
@@ -141,14 +142,40 @@ f388b57 docs(refactor): replace REFACTOR_PROGRESS.md with current session state
    - (a) cherry-pick just `795982a` (the doc-only audit) onto master as a clean 1-commit change.
    - (b) `git merge` the whole branch (will be a no-op for 12 absorbed commits + clean add of `795982a`).
    - (c) skip the branch entirely; the audit claim is already covered by `ARCHITECTURE.md` (`8c53bab`) and the chat-delivered Phase 0 Audit Report.
-3. **Step 3** — Finish B1 (5 non-atomic `write_text` sites), one store per PR with a characterization test.
+3. **Step 3** — Finish B1 (5 non-atomic `write_text` sites in 3 files), one store per PR with a characterization test.
 4. **Step 4** — Cherry-pick `32caee8` from `refactor/phase2-naming-pilot` (the Phase 2 pilot).
 5. **Step 5** — Before merging `fix/mypy-green`, check each of the 4 deleted characterization test files for moved coverage; report findings.
 6. **Step 6** — `chore/cleanup-unused-imports` (review against master for redundancy).
 7. **Step 7** — Drop stale branches + `origin/fix/feature-clean`.
 8. **Cleanup batch** — delete `backend-py/backend-py/tests/`, `.bak` files, `_bak_list_tmp.txt`, `mypy_raw.txt`, `eslint_raw.json`, `server.log`.
-9. **B15** — Split `app/jsonUtils.py` into `json_narrowing.py` + `atomic_write.py`.
-10. **B18** — nanostores → Zustand migration (Phase 4 separate workstream).
+9. **B15** — Split `app/jsonUtils.py` into `json_narrowing.py` + `atomic_write.py` (this also closes the B21 file-rename for `jsonUtils.py`).
+10. **B21 (file-rename batch, Phase 3)** — Rename remaining camelCase .py files:
+    - 3 backend: `app/typeAliases.py`, `app/providers/modelResolver.py`, `app/providers/routeResolver.py` → snake_case equivalents; update all importers.
+    - 68 tests: `testXxx.py` → `test_xxx.py`; update CI configs and pytest discovery. **High mechanical cost** — 68 import references to update.
+    - Decision needed: do this in one PR or split by directory (adapters/ → providers/ → …).
+11. **B18** — nanostores → Zustand migration (Phase 4 separate workstream).
+
+---
+
+## 🚦 Phase 2 integration gate (EXPLICIT)
+
+**Before starting Phase 2 scale-up (snake_case identifier rename across the remaining routers/services), ALL of the following must hold:**
+
+1. ✅ All steps 1–7 above are merged into `master`.
+2. ✅ **Verification suite re-run on the post-merge master:**
+   - `pytest tests/` → all tests pass (current: 520 / 520)
+   - `mypy app/` → 0 errors (current: 0 / 174 files)
+   - `ruff check app/` → 0 errors (current: clean)
+3. ✅ No regression in test coverage for refactored modules.
+4. ✅ REFACTOR_PROGRESS.md updated to reflect the post-merge state (branch table, recent commits, bug log).
+5. ✅ User has **explicitly approved** starting Phase 2 scale-up after seeing the post-merge state.
+
+**If any of the above fail, STOP and report the gap. Do not proceed to Phase 2.**
+
+This gate exists because:
+- Phase 2 scales a pattern that was validated only on a single small router (`/api/models` via `32caee8`).
+- Scaling introduces ~30+ routers and 70+ services to refactor — each rename is a behavior-preserving rename, but the cumulative blast radius is large.
+- The reviewer of my Phase 0 audit flagged that the original "Ready to proceed" conclusion was premature — this gate makes the integration point non-bypassable.
 
 ---
 
@@ -158,6 +185,8 @@ f388b57 docs(refactor): replace REFACTOR_PROGRESS.md with current session state
 - **Step 5 timing:** run the test-coverage review as a separate chat reply before any merge, or proceed step-by-step?
 - **B20 (Dockerfile broken claim):** verify now or defer to a separate workstream?
 - **B11–B14 cleanup batch ordering:** as a single commit, or one commit per file?
+- **B21 file-rename batch (Phase 3):** one PR for all 72 files, or split by directory (4 backend first, then tests, or by subdirectory)?
+- **B21 ordering vs Phase 2 identifier rename:** file rename first (B21 before Phase 2), or identifier rename first (Phase 2 before B21)? Either works mechanically, but the order affects review cost.
 
 ---
 
