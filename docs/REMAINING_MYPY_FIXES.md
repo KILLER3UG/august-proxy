@@ -7,11 +7,13 @@
 > `mypy 0 errors / 174 source files` — verified live on `master @ 762f33b`.
 >
 > What changed since this doc was written:
-> - **All snake_case renames landed** (PRs #7–13). The "Top 30 files to fix"
->   table below references pre-rename camelCase paths (`memoryStore.py`,
->   `backgroundReview.py`, `toolDefinitions.py`, etc.). The current snake_case
->   names are listed in §3 of the Phase 0 Audit Report delivered in chat on
->   2026-07-13.
+> - **All snake_case renames landed** (PRs #7–13), plus B21 app file renames
+>   (`typeAliases.py` → `type_aliases.py`, `modelResolver.py` →
+>   `model_resolver.py`, `routeResolver.py` → `route_resolver.py`). The
+>   "Top 30 files to fix" table below still references many pre-rename
+>   camelCase paths (`memoryStore.py`, `backgroundReview.py`,
+>   `toolDefinitions.py`, etc.) — treat those rows as historical labels,
+>   not current paths.
 > - **The `alias_generator=to_camel` pattern (PRs #11–12)** resolved many
 >   `arg-type` and `union-attr` errors that this doc tries to fix manually
 >   with `as_*` helpers.
@@ -69,7 +71,7 @@ python -m mypy app/
 | 23 | `services/tools/agentRegistry.py` | `getMemory()` returns `object` → `cast()` |
 | 21 | `services/memory/graphMemory.py` | `.get()` on graph dicts → `as_str/as_list/as_int` |
 | 21 | `services/workbench/terminalService.py` | `.get()` on session dicts → `as_str/as_bool` |
-| 21 | `providers/routeResolver.py` | `.get()` on provider profiles → `as_list/as_dict` |
+| 21 | `providers/route_resolver.py` (was `routeResolver.py`) | `.get()` on provider profiles → `as_list/as_dict` |
 | 19 | `services/logger.py` | `.get()` on log entries → `as_str/as_int/as_float` |
 | 18 | `services/memoryStore.py` | `.get()` on store dicts → `as_str/as_list` |
 | 17 | `providers/resolver.py` | `.get()` on provider configs → `as_str/as_dict/as_list` |

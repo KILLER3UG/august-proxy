@@ -93,8 +93,9 @@ boundary. Phase 5 is where the API contract is now formally defined.
 
 ### Phase 4 — Backend residual narrowing
 
-Add four new TypedDicts to `app/typeAliases.py` (renamed from `types.py`
-during Phase 0 because the file shadowed stdlib `types`):
+Add four new TypedDicts to `app/type_aliases.py` (renamed from `types.py`
+during Phase 0 because the file shadowed stdlib `types`; later B21
+renamed `typeAliases.py` → `type_aliases.py`):
 
 - `BlackboardNoteDict` — `id`, `sessionId`, `agent`, `key`, `value`,
   `priority`, `createdAt`, `expiresAt`.
@@ -165,5 +166,5 @@ Per phase:
   transient drift. Console warnings feed into Phase 7's monitoring
   hooks.
 - **No OpenAPI/codegen:** out of scope. Manual mirroring between
-  `app/typeAliases.py` TypedDicts and frontend interfaces continues;
+  `app/type_aliases.py` TypedDicts and frontend interfaces continues;
   Zod schemas are the runtime guard against drift.
