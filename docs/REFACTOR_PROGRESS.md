@@ -6,7 +6,7 @@
 > them for refactor-status questions.
 
 **Last updated:** 2026-07-13
-**Current branch state:** `master @ 8c53bab` (3 ahead of `origin/master`)
+**Current branch state:** `master @ f388b57` (7 ahead of `origin/master`)
 **Verification baseline on master:** `pytest 520 passed, 3 warnings` ·
 `mypy 0 errors / 174 source files` · `ruff clean`
 
@@ -121,6 +121,7 @@ other changes wait for the user's call.
 ## Recent commits (this session)
 
 ```
+f388b57 docs(refactor): replace REFACTOR_PROGRESS.md with current session state
 8c53bab docs(architecture): add 'Data persistence' section + update docs index
 0e211c6 docs(static-analysis): mark stale analysis docs as superseded
 8bc8aa6 docs(audit): mark prior audit reports as superseded + archive root AUDIT.md
