@@ -57,8 +57,8 @@ export default tseslint.config(
       'react-refresh': reactRefresh,
     },
     rules: {
-      // Phase 0 starts as warn; Phase 2 escalates to error.
-      '@typescript-eslint/no-explicit-any': 'warn',
+      // Phase 2: no-explicit-any is error. Existing usages were fixed.
+      '@typescript-eslint/no-explicit-any': 'error',
 
       // Surface unsafe uses of typed slots.
       '@typescript-eslint/no-unsafe-assignment': 'warn',

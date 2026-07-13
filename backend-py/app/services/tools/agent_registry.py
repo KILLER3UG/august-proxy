@@ -6,7 +6,7 @@ Port of backend/services/tools/agent-registry.js + agent-sessions.js + agent-job
 
 from __future__ import annotations
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import cast
 from app.services.memory_store import saveMemory, getMemory, recordConfigAudit
 from app.jsonUtils import as_int, as_list, as_str
@@ -18,7 +18,7 @@ _MAXAgentDepth = 4
 
 
 def _now() -> str:
-    return datetime.utcnow().isoformat() + 'Z'
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
 def listAgents() -> list[dict[str, object]]:

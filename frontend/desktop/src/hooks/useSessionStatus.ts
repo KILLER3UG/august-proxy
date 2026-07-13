@@ -27,7 +27,7 @@ export function useSessionStatus(sessionId: string | null, pollIntervalMs: numbe
                 );
             } catch (error) {
                 // 404 means session is gone
-                if (error instanceof Error && 'status' in error && (error as any).status === 404) {
+                if (error instanceof Error && 'status' in error && (error as {status: number}).status === 404) {
                     return null;
                 }
                 return null;

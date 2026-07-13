@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from datetime import datetime, timezone
 from app.services.memory_store import saveMemory, getMemory
 
 _MAXMemories = 100
@@ -29,7 +30,7 @@ def saveAutoMemory(key: str, content: object, category: str = 'auto', importance
     keep `auto_memories_fts` in sync — no manual FTS insert needed.
     """
     conn = _conn()
-    now = __import__('datetime').datetime.utcnow().isoformat() + 'Z'
+    now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     contentJson = content if isinstance(content, str) else json.dumps(content)
     existing = conn.execute('SELECT id FROM autoMemories WHERE key = ?', (key,)).fetchone()
     if existing:

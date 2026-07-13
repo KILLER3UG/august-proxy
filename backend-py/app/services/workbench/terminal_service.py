@@ -10,9 +10,10 @@ import asyncio
 import os
 import platform
 import uuid
-from datetime import datetime
+from collections import deque
+from datetime import datetime, timezone
 from typing import Callable, Protocol, cast
-from app.jsonUtils import as_bool, as_int, as_list, as_str
+from app.jsonUtils import as_bool, as_dict, as_float, as_int, as_list, as_str
 from app.services.workbench.pty_io import PtyIO
 
 BUFFER_LIMIT = 256 * 1024
@@ -46,7 +47,7 @@ def _dangerousReason(command: str) -> str | None:
 
 
 def _now() -> str:
-    return datetime.utcnow().isoformat() + 'Z'
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
 def _getShell() -> str:
@@ -268,6 +269,7 @@ async def submitTerminalCommand(params: dict[str, object]) -> dict[str, object]:
     command = as_str(params.get('command'), '')
     cwd = as_str(params.get('cwd')) or os.getcwd()
     approved = as_bool(params.get('approved', False))
+    reason = as_str(params.get('reason'), '')
     timeoutMs = as_int(params.get('timeoutMs'), 30000)
     if not approved:
         danger = _dangerousReason(command)
@@ -379,7 +381,7 @@ async def handleTerminalConnection(websocket: object, terminalId: str) -> None:
                 terminalId, data, approved=as_bool(session.get('approvedInteractive', False))
             )
             if as_str(result.get('status')) == 'approval_required':
-                await ws.send_text('\r\n[Approval required for interactive input]\r\n')
+                await ws.send_text(f'\r\n[Approval required for interactive input]\r\n')
     except Exception:
         pass
     finally:

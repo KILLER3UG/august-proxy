@@ -31,7 +31,7 @@ Modes
 
 from __future__ import annotations
 import logging
-from typing import Any
+from typing import Any, Callable
 from app.services.subagent_orchestrator import SubagentOrchestrator, SubagentSpawnRequest
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ async def executeSpawnSubagents(
     session: object,
     workItems: list[dict[str, Any]],
     mode: str = 'auto',
-    emit: Any | None = None,
+    emit: Callable | None = None,
 ) -> dict[str, Any]:
     """Execute the spawn_subagents tool.
 

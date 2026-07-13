@@ -11,7 +11,9 @@ from __future__ import annotations
 from typing import cast
 import json
 import os
-from datetime import datetime
+import re
+from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from app.jsonUtils import as_dict, as_list, as_str, write_json_atomic
 from app.lib.paths import dataPath
@@ -27,7 +29,7 @@ def _dbPath() -> Path:
 
 
 def _now() -> str:
-    return datetime.utcnow().isoformat() + 'Z'
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
 def _defaultDb() -> dict[str, object]:

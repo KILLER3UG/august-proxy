@@ -11,7 +11,7 @@ on read to delete-on-read, and Tier 3 injection support.
 from __future__ import annotations
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import cast
 from app.typeAliases import BlackboardNoteDict
 
@@ -29,7 +29,7 @@ def computeTtl(pollInterval: int) -> str:
     A fast env-watcher polling every 2s gets notes that live >= 4s.
     """
     ttlSeconds = max(pollInterval * 2, 60)
-    expires = datetime.utcnow() + timedelta(seconds=ttlSeconds)
+    expires = datetime.now(timezone.utc) + timedelta(seconds=ttlSeconds)
     return expires.strftime('%Y-%m-%d %H:%M:%S')
 
 

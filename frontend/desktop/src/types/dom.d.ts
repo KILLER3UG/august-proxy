@@ -3,7 +3,7 @@
 import 'react';
 
 declare module 'react' {
-  interface InputHTMLAttributes<T, TExtended = T> {
+  interface InputHTMLAttributes<T, TDefault = T> {
     /** Non-standard Chrome/Edge attribute that opens a directory picker. */
     webkitdirectory?: string;
     /** Non-standard directory picker attribute (alternative name). */
