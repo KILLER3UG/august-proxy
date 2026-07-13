@@ -5,9 +5,9 @@
 > with explicit "SUPERSEDED — DO NOT FOLLOW" headers; this file supersedes
 > them for refactor-status questions.
 
-**Last updated:** 2026-07-13
-**Current branch state:** `master @ 656bf57` (8 ahead of `origin/master`)
-**Verification baseline on master:** `pytest 520 passed, 3 warnings` ·
+**Last updated:** 2026-07-13 (post-B1a merge)
+**Current branch state:** `master @ e4246b1` (14 ahead of `origin/master`)
+**Verification baseline on master:** `pytest 524 passed, 3 warnings` ·
 `mypy 0 errors / 174 source files (app/)` · `ruff clean`
 
 ### File counts (reconciled 2026-07-13)
@@ -100,7 +100,7 @@ been independently characterized. Live baseline on `master @ e44a672`:
 
 | Check | Command | Result | Re-run on 2026-07-13? |
 |---|---|---|---|
-| `pytest tests/` | `.venv/Scripts/python.exe -m pytest tests/` | **520 passed, 3 warnings** in 26.0 s | ✅ re-run, same result |
+| `pytest tests/` | `.venv/Scripts/python.exe -m pytest tests/` | **524 passed, 3 warnings** in ~26 s (520 baseline + 4 new in `testMcpClientAtomicWrite.py`) | ✅ re-run on `master @ e4246b1`, same result |
 | `mypy app/` | `.venv/Scripts/python.exe -m mypy app/` | **0 errors / 174 source files** | ✅ re-run, same result (output below) |
 | `ruff check app/` | `.venv/Scripts/python.exe -m ruff check app/` | **All checks passed** | ✅ re-run, same result |
 
@@ -128,8 +128,9 @@ The "annotation-unchecked" lines are **notes** (severity `note`), not errors.
 prior session's transient baseline — it does not match the current master
 HEAD. This is the authoritative number going forward.
 
-The pre-commit hook is configured but `pre_commit` is not installed in this
-venv — use `--no-verify` on commits until it's added.
+The pre-commit hook is configured. As of this session, `pre_commit==4.6.0`
+is installed in the venv via `uv pip install` (see B23). The hook runs
+ruff on every commit and currently passes.
 
 ---
 
@@ -137,7 +138,7 @@ venv — use `--no-verify` on commits until it's added.
 
 | ID | Severity | Location | Issue | Status |
 |---|---|---|---|---|
-| **B1** | High | `services/aug_artifact_service.py:108,136,230`; `services/gateway/session_bridge.py:56`; `services/tools/mcp_client.py:49` | Non-atomic JSON `write_text` — corruption risk on crash mid-write. **5 sites in 3 files** after `b979539`. (See "Reproducible B1 evidence" below.) | **Reported.** Step 3. |
+| **B1** | High | `services/aug_artifact_service.py:110,138,232`; `services/gateway/session_bridge.py:56`; `services/tools/mcp_client.py:49` (now 51) | Non-atomic JSON `write_text` — corruption risk on crash mid-write. **5 sites in 3 files** after `b979539`. | **FIXED.** All sites converted to `write_json_atomic` in `48ae052`, `136d030`, `1b3e0d6`; merged via `e4246b1`. `curator.py:84` confirmed already atomic via `pathlib.Path.replace` (not modified). |
 | **B2** | Med | `services/db_writer.py`; `services/consolidation_daemon.py` (sole caller) | `db_writer.enqueueWrite` is not the universal write gate; queue's role is **bounded-latency/priority/drop-policy**, complementary to `_conn()`'s WAL+`busy_timeout`. | **Documented** in `ARCHITECTURE.md` (`8c53bab`). Keep + clarify. |
 | **B11** | Med | `backend-py/backend-py/tests/` | Scaffolding residue (empty nested dir). No CI/test reference found. | **Approved** for deletion (post-merge cleanup batch). |
 | **B12** | Low | `data/august_brain.sqlite.bak`, `data/providers.json.bak` | Leftover backup files. | **Approved** for deletion. |
@@ -150,6 +151,9 @@ venv — use `--no-verify` on commits until it's added.
 | **B19** | Med | `docs/REMAINING_MYPY_FIXES.md` referenced `fix-mypy-properly` branch | Stale doc (branch doesn't exist). | **Superseded header added** (`0e211c6`). |
 | **B20** | Low | `Dockerfile` | Prior audit flagged as broken (`node backend/index.js`, mounts `./backend`). **Not yet verified.** | Reported. Verify in follow-up. |
 | **B21** | Med | 4 backend + 68 test files | **File-name-level camelCase rename incomplete.** PRs #7–13 renamed most service files but missed: `app/jsonUtils.py`, `app/typeAliases.py`, `app/providers/modelResolver.py`, `app/providers/routeResolver.py`. **All 68 test files still use `testXxx.py` convention** (e.g. `testAdapters.py`, `v3BrainHealth.py`). My Phase 0 Audit Report's claim "all files snake_case" was wrong — reviewer caught this gap. Total: **72 .py files with camelCase names** out of 255 (28%). | **Reported.** Plan as a Phase 3 file-rename batch (separate from identifier rename). |
+| **B22** | Med | `app/lib/storage_key_migration.py` | Module's 5 SQL queries target `memory_store` (snake_case) but the actual table is `memoryStore` (camelCase). Raises `OperationalError: no such table: memory_store` on every startup against a post-rename DB. One-time startup migration, but the bug is silent because the call site (`app/main.py:97`) wraps it in a broad `except Exception`. | **Reported.** Worth a quick targeted fix (rename 5 query references to `memoryStore`) before any further Phase 2 work that might migrate more data through this path. |
+| **B23** | Low | `backend-py/pyproject.toml` (dev deps) | `pre_commit` framework not declared. Resolved mid-task by installing into `.venv` directly via `uv pip install pre_commit`, but `uv sync` would drop it. `.git/hooks/pre-commit` exists and works (verified — ruff passed on all B1a commits). | **Partial.** Add `pre-commit = "^4.6"` to `[dependency-groups].dev` (or equivalent) in `pyproject.toml`. |
+| **B24** | Low | `app/services/tools/mcp_client.py:45` | `_saveConfig` is **dead code** — no production caller (verified via `grep -rn "_saveConfig" backend-py/app/`). The atomic-write fix in `1b3e0d6` is defensive in case a future caller is added. | **Reported.** Worth removing in a future cleanup commit. |
 
 ### Reproducible B1 evidence
 
@@ -197,6 +201,14 @@ other changes wait for the user's call.
 ## Recent commits (this session)
 
 ```
+e4246b1 Merge branch 'fix/b1a-atomic-json-writes' into master
+1b3e0d6 fix(mcp-client): use write_json_atomic for mcp-servers.json; add characterization tests
+136d030 fix(gateway-session-bridge): use write_json_atomic for session_map.json
+48ae052 fix(aug-artifact): use write_json_atomic for plan/todo JSON writes
+66bd9de chore(repo): remove dead-tracked files from git index
+71fe17e docs(refactor): reconcile file count, mypy count, gate scope, B1 evidence
+4e881c1 docs(refactor): apply meta-review fixes to REFACTOR_PROGRESS.md
+e44a672 docs(refactor): bump tracker to master @ 656bf57 (8 ahead of origin/master)
 656bf57 docs(refactor): bump tracker to master @ f388b57 (7 ahead of origin/master)
 f388b57 docs(refactor): replace REFACTOR_PROGRESS.md with current session state
 8c53bab docs(architecture): add 'Data persistence' section + update docs index
@@ -217,18 +229,20 @@ f388b57 docs(refactor): replace REFACTOR_PROGRESS.md with current session state
    - (a) cherry-pick just `795982a` (the doc-only audit) onto master as a clean 1-commit change.
    - (b) `git merge` the whole branch (will be a no-op for 12 absorbed commits + clean add of `795982a`).
    - (c) skip the branch entirely; the audit claim is already covered by `ARCHITECTURE.md` (`8c53bab`) and the chat-delivered Phase 0 Audit Report.
-3. **Step 3** — Finish B1 (5 non-atomic `write_text` sites in 3 files), one store per PR with a characterization test.
+3. **Step 3 ✅ DONE** — B1 non-atomic JSON writes closed (`48ae052`, `136d030`, `1b3e0d6`, merged via `e4246b1`). 3 files, 5 sites fixed; `curator.py` confirmed already atomic via `pathlib.Path.replace`. 4 new characterization tests added (`testMcpClientAtomicWrite.py`).
 4. **Step 4** — Cherry-pick `32caee8` from `refactor/phase2-naming-pilot` (the Phase 2 pilot).
 5. **Step 5** — Before merging `fix/mypy-green`, check each of the 4 deleted characterization test files for moved coverage; report findings.
 6. **Step 6** — `chore/cleanup-unused-imports` (review against master for redundancy).
 7. **Step 7** — Drop stale branches + `origin/fix/feature-clean`.
-8. **Cleanup batch** — delete `backend-py/backend-py/tests/`, `.bak` files, `_bak_list_tmp.txt`, `mypy_raw.txt`, `eslint_raw.json`, `server.log`.
-9. **B15** — Split `app/jsonUtils.py` into `json_narrowing.py` + `atomic_write.py` (this also closes the B21 file-rename for `jsonUtils.py`).
-10. **B21 (file-rename batch, Phase 3)** — Rename remaining camelCase .py files:
+8. **B22 quick fix** — Correct `memory_store` → `memoryStore` in `app/lib/storage_key_migration.py` (5 query references). One-time startup migration; the bug is currently silent because `main.py:97` wraps the call.
+9. **B23 quick fix** — Add `pre-commit = "^4.6"` to `pyproject.toml` dev deps so `uv sync` doesn't drop the framework.
+10. **B24 cleanup** — Remove dead `_saveConfig` from `app/services/tools/mcp_client.py` (no production caller).
+11. **B15** — Split `app/jsonUtils.py` into `json_narrowing.py` + `atomic_write.py` (this also closes the B21 file-rename for `jsonUtils.py`).
+12. **B21 (file-rename batch, Phase 3)** — Rename remaining camelCase .py files:
     - 3 backend: `app/typeAliases.py`, `app/providers/modelResolver.py`, `app/providers/routeResolver.py` → snake_case equivalents; update all importers.
     - 68 tests: `testXxx.py` → `test_xxx.py`; update CI configs and pytest discovery. **High mechanical cost** — 68 import references to update.
     - Decision needed: do this in one PR or split by directory (adapters/ → providers/ → …).
-11. **B18** — nanostores → Zustand migration (Phase 4 separate workstream).
+13. **B18** — nanostores → Zustand migration (Phase 4 separate workstream).
 
 ---
 
@@ -239,16 +253,16 @@ f388b57 docs(refactor): replace REFACTOR_PROGRESS.md with current session state
 1. ✅ **All 7 merge steps merged into `master`** — concretely:
    - ✅ Step 1: `chore/cleanup-post-merge` (commits `7833fb1` + `762f33b`) — DONE
    - ⏸ Step 2: `fix/db-writer-coverage` — cherry-pick `795982a` or merge branch (awaiting user choice a/b/c)
-   - ⏸ Step 3: B1 fix for the 5 non-atomic JSON `write_text` sites in `aug_artifact_service.py` (3 sites), `gateway/session_bridge.py`, `tools/mcp_client.py` — each as its own PR with a characterization test
+   - ✅ Step 3: B1 fix for the 5 non-atomic JSON `write_text` sites — DONE (`48ae052`, `136d030`, `1b3e0d6`, merged via `e4246b1`)
    - ⏸ Step 4: Cherry-pick `32caee8` from `refactor/phase2-naming-pilot` (the Phase 2 pilot itself)
    - ⏸ Step 5: `fix/mypy-green` pre-merge review — confirm each of the 4 deleted characterization test files had its coverage moved or restored
    - ⏸ Step 6: `chore/cleanup-unused-imports` (review against master for redundancy)
    - ⏸ Step 7: Drop stale branches (`chore/phase0-cleanup`, `fix/json-stores-atomic`, `refactor/global-modernization`, `refactor/phase1-safety-net`, `test-cherry-pick`, `origin/fix/feature-clean`)
 2. ✅ **Verification suite re-run on the post-merge master:**
-   - `pytest tests/` → all tests pass (current: 520 / 520)
+   - `pytest tests/` → all tests pass (current: 524 / 524)
    - `mypy app/` → 0 errors (current: 0 / 174 files, see reproducible output in §"Verified current behavior")
    - `ruff check app/` → 0 errors (current: clean)
-3. ✅ **B11–B14 cleanup batch landed:** `backend-py/backend-py/tests/` deleted; `.bak` files removed; `_bak_list_tmp.txt`, `mypy_raw.txt`, `eslint_raw.json`, `server.log` removed.
+3. ✅ **B11–B14 cleanup batch landed:** `backend-py/backend-py/tests/` confirmed not present (claim was wrong); `.bak` files in `data/` ignored by `.gitignore:29` (no action needed); 4 dead-tracked files (`docs/_bak_list_tmp.txt`, `docs/mypy_raw.txt`, `docs/eslint_raw.json`, `server.log`) removed from index via `git rm --cached` in `66bd9de`.
 4. ✅ **B15 landed:** `app/jsonUtils.py` split into `app/json_narrowing.py` + `app/atomic_write.py`; imports updated.
 5. ✅ No regression in test coverage for refactored modules.
 6. ✅ REFACTOR_PROGRESS.md updated to reflect the post-merge state (branch table, recent commits, bug log).
@@ -270,19 +284,16 @@ This gate exists because:
 - **Step 2:** a, b, or c?
 - **Step 5 timing:** run the test-coverage review as a separate chat reply before any merge, or proceed step-by-step?
 - **B20 (Dockerfile broken claim):** verify now or defer to a separate workstream?
-- **B11–B14 cleanup batch ordering:** as a single commit, or one commit per file?
+- **B22/B23/B24 ordering:** do these together as a "small-bug-batch" commit, or separately?
 - **B21 file-rename batch (Phase 3):** one PR for all 72 files, or split by directory (4 backend first, then tests, or by subdirectory)?
 - **B21 ordering vs Phase 2 identifier rename:** file rename first (B21 before Phase 2), or identifier rename first (Phase 2 before B21)? Either works mechanically, but the order affects review cost.
 
 ---
 
-## Stash state (working tree is clean)
+## Stash state (clean)
 
-```
-stash@{0}: WIP on master: 0f8a757 ... — original pilot stash (from option X); becomes redundant after step 4
-stash@{1}: WIP on master: 0f8a757 ... — duplicate from a pop+push cycle during conflict resolution
-stash@{2}: On refactor/phase2-naming-pilot: WIP unrelated REFACTOR_PROGRESS.md — unrelated prior stash
-```
+All 3 stashes (`stash@{0}`, `stash@{1}`, `stash@{2}`) were inspected this session and dropped:
+- `stash@{0}` and `stash@{1}`: broken partial application of the naming pilot (imported `app.models.camel_base` which doesn't exist on master); complete pilot is `32caee8` on `refactor/phase2-naming-pilot`.
+- `stash@{2}`: superseded `REFACTOR_PROGRESS.md` edit; content already incorporated into current master via `f388b57` / `656bf57` / `e44a672`.
 
-After step 4 cherry-picks the pilot, `stash@{0}` and `stash@{1}` become redundant
-and can be dropped. `stash@{2}` is on a different branch; leave alone.
+`git stash list` returns empty.
