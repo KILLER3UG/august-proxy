@@ -3,6 +3,9 @@
 Port of backend/services/usage/ (4 files).
 Uses memory_store for usage event persistence.
 
+Request body ``UsageRecord`` inherits :class:`CamelModel` so internals are
+snake_case while JSON from the frontend stays camelCase.
+
 Route contract (matches the frontend's ``/api/usage/*`` calls):
   • POST   /api/usage                       — record a usage event
   • GET    /api/usage/session?id=<sessionId> — aggregated per-session usage
@@ -17,25 +20,31 @@ declared first so FastAPI cannot shadow it.
 
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from app.models.camel_base import CamelModel
 from app.services import memory_store
 
 router = APIRouter(prefix='/api/usage')
 
 
-class UsageRecord(BaseModel):
-    sessionId: str
+class UsageRecord(CamelModel):
+    """Usage event body. Internals are snake_case; JSON stays camelCase."""
+
+    session_id: str
     model: str
-    inputTokens: int = 0
-    outputTokens: int = 0
-    contextTokens: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    context_tokens: int = 0
 
 
 @router.post('')
 async def record_usage(body: UsageRecord):
     """Record a usage event."""
     usageId = memory_store.record_usage(
-        body.sessionId, body.model, body.inputTokens, body.outputTokens, body.contextTokens
+        body.session_id,
+        body.model,
+        body.input_tokens,
+        body.output_tokens,
+        body.context_tokens,
     )
     return {'id': usageId}
 
