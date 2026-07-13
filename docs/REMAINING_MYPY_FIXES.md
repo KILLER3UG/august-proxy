@@ -1,5 +1,32 @@
 # Remaining mypy Fixes — Prompt for AI Agent
 
+> **⚠️ STALE — DO NOT FOLLOW ⚠️**
+>
+> This document is from an earlier session and the **numbers it cites are wrong**.
+> At time of writing (2026-07-12 session), the master branch already had
+> `mypy 0 errors / 174 source files` — verified live on `master @ 762f33b`.
+>
+> What changed since this doc was written:
+> - **All snake_case renames landed** (PRs #7–13). The "Top 30 files to fix"
+>   table below references pre-rename camelCase paths (`memoryStore.py`,
+>   `backgroundReview.py`, `toolDefinitions.py`, etc.). The current snake_case
+>   names are listed in §3 of the Phase 0 Audit Report delivered in chat on
+>   2026-07-13.
+> - **The `alias_generator=to_camel` pattern (PRs #11–12)** resolved many
+>   `arg-type` and `union-attr` errors that this doc tries to fix manually
+>   with `as_*` helpers.
+> - **`fix-mypy-properly` branch doesn't exist** — neither locally nor on
+>   origin. The actual mypy-cleanup branch is `fix/mypy-green` (still
+>   unmerged; pre-merge review pending per step 5 of the refactor plan).
+> - **mypy runs on Python 3.12+** per `pyproject.toml` `requires-python`. The
+>   doc's claim about "blocked by Python 3.10 syntax" is wrong.
+>
+> **The Core Fix Pattern section** (80% of errors, `dict.get()` → `as_*`)
+> remains useful as a reference for the underlying pattern, but most of the
+> specific call sites it lists have since been resolved.
+>
+> Preserved here for archaeology; not authoritative.
+
 You are tasked with fixing **1,002 mypy errors across 85 files** in the `backend-py/app/` directory. Do NOT use `# type: ignore` or `ignore_errors = True` — fix them properly.
 
 ## Repository Location

@@ -1,5 +1,34 @@
 # Static Analysis Errors — Inventory & Fix Guide
 
+> **⚠️ STALE — DO NOT FOLLOW ⚠️**
+>
+> This inventory is from `master @ 2429058` (2026-07-09). At time of writing
+> (2026-07-13), `master @ 762f33b` reports **mypy 0 errors / 174 source files,
+> ruff clean, pytest 520 passed**. The "two-phase approach" described below
+> was largely superseded by the snake_case rename (#7–13) + `alias_generator`
+> pattern (#11) + a different CI-gating strategy (#16).
+>
+> Specific stale claims:
+> - "Phase 1 committed (`4a3e90a`)" → no such commit. The relevant commit is
+>   `31c6953 Fix mypy type errors`, predating this doc by weeks.
+> - Backend counts: 1,870 → 1,248 → 0 errors. The actual reduction path went
+>   via `alias_generator` + `populate_by_name=True` + `extra="allow"`, not
+>   the `cast()`-heavy Phase 1 path this doc describes.
+> - File paths in §2.2 use pre-rename camelCase names (`daemonManager.py`,
+>   `terminalService.py`, `graphMemory.py`, etc.). The current snake_case
+>   names are in the Phase 0 Audit Report delivered in chat on 2026-07-13.
+> - ESLint section (§3) is from the same older baseline. The commit
+>   `0f8a757 CI hardening + Ruff cleanup` and `362e839 chore: cleanup
+>   post-merge` have since landed ESLint `no-explicit-any` as an error and
+>   fixed the 2 specific TS any usages called out in §3.3.d.
+> - **ESLint counts worth preserving** (root-cause signal from §3.3.a):
+>   `no-unsafe-member-access 213`, `no-unused-vars 118`,
+>   `no-floating-promises 103`. Root cause: `src/api/*` returns `any` —
+>   needs typed API client generation from OpenAPI.
+>
+> **For current status, see `docs/REFACTOR_PROGRESS.md`.**
+> Preserved here for archaeology; not authoritative.
+
 > Generated 2026-07-09 from `master` (`2429058`).
 > Last updated 2026-07-09 — Phase 1 committed (`4a3e90a`), Phase 2 planned in `PHASE2_TYPE_REMEDIATION_PLAN.md`.
 >

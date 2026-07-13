@@ -1,5 +1,40 @@
 # Phase 2 — Pydantic Model Remediation Plan
 
+> **⚠️ STALE — DO NOT FOLLOW ⚠️**
+>
+> This plan is from an earlier session. The "Phase 1 committed as `4a3e90a`"
+> commit hash is wrong — that commit doesn't exist on master. The actual
+> relevant commits are `31c6953 Fix mypy type errors` (older) and the
+> `alias_generator` + snake_case rename PRs #7–13 (newer, more
+> comprehensive).
+>
+> What changed since this plan was written:
+> - **The snake_case rename (PRs #7–13) and the `alias_generator=to_camel`
+>   pattern (PR #11) ARE the Phase 2 boundary-translation strategy** that
+>   this plan outlines. They've already landed on master. Most of §3 (model
+>   module layout), §4 (strict vs loose), and §5 (file-by-file migration)
+>   below are now historical record rather than pending work.
+> - **mypy is already 0 errors** on `master @ 762f33b` (174 files). The
+>   "mypy 0" target stated below has been met.
+> - **eslint** has tightened (no-explicit-any now error) and the 2 specific
+>   TS any usages called out have been fixed (`362e839`).
+> - The "remaining 1,002 mypy errors" cited elsewhere in the docs
+>   (`REMAINING_MYPY_FIXES.md`) is also wrong as of master HEAD.
+>
+> What's still genuinely relevant from this plan:
+> - The **design principle** at the top ("Strict on what you touch,
+>   `extra="allow"` on what you forward") remains the right model for a
+>   pass-through proxy.
+> - The **`CamelModel` pattern in `app/models/camel_base.py`** is the
+>   concrete implementation of that principle; see the pilot validation
+>   on `/api/models` (commit `32caee8` on `refactor/phase2-naming-pilot`,
+>   cherry-picks cleanly to master in step 4 of the refactor plan).
+> - The **risk-assessment section** (§8 below) is still useful when
+>   scaling the pattern across the remaining 32 routers.
+>
+> **For current status, see `docs/REFACTOR_PROGRESS.md`.**
+> Preserved here for archaeology; not authoritative.
+
 > **Status:** Planned (Phase 1 committed as `4a3e90a`)
 > **Target:** mypy 0, eslint 0, with a sustainable architecture for a multi-provider proxy gateway.
 > **Design principle (proxy-specific):** *Strict on what you touch, `extra="allow"` on what you forward.*
