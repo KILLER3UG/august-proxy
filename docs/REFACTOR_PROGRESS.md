@@ -5,12 +5,12 @@
 > with explicit "SUPERSEDED — DO NOT FOLLOW" headers; this file supersedes
 > them for refactor-status questions.
 
-**Last updated:** 2026-07-13 (B21 doc-path sweep + scope note)
-**Current branch state:** `refactor/b21-app-file-renames` (from `master @ 320079e`)
-**Verification baseline on this branch (re-run 2026-07-13):**
-`pytest 534 passed, 3 warnings` · `mypy app/ → 0 errors / 176 source files` ·
+**Last updated:** 2026-07-13 (B21 app renames merged to master)
+**Current branch state:** `master @ 4f94269` (= `origin/master`, clean working tree)
+**Verification baseline on master (user + CI, 2026-07-13):**
+`pytest 534 passed` · `mypy app/ → 0 errors / 176 source files` ·
 `ruff check app/ → All checks passed`
-**Merge gate:** push + CI green on `type-check.yml` (Python 3.12) before merging.
+**CI:** `type-check.yml` green on `4f94269` (run 29259375428) before fast-forward merge.
 
 ### Phase 0 sign-off
 
@@ -215,7 +215,7 @@ schema snake_case migration (Phase 4, needs separate sign-off).
 | **B18** | Med | Open — nanostores still in desktop `package.json`; Zustand not installed |
 | **B19** | Med | Stale mypy doc marked superseded |
 | **B20** | Low | Dockerfile claim not yet re-verified |
-| **B21** | Med | **PARTIAL** — 3 app **filenames** renamed on `refactor/b21-app-file-renames` (**filename-only**; camelCase function exports and TypedDict field names inside those modules intentionally unchanged — not closed by B21). **62** camelCase test filenames remain. |
+| **B21** | Med | **PARTIAL** — app **filenames** closed on master (`af9fce9`+`4f94269`, FF merge). Filename-only; camelCase callables/TypedDict fields inside those modules intentionally unchanged. **62** camelCase test filenames remain. |
 | **B22** | Med | **CLOSED** — `2b9f9a7` / `9a10b57` |
 | **B23** | Low | **CLOSED** — `pre-commit>=4.6.0` in `pyproject.toml` (`420b80f`) |
 | **B24** | Low | **CLOSED** — dead `_saveConfig` removed (`420b80f`) |
@@ -226,40 +226,45 @@ schema snake_case migration (Phase 4, needs separate sign-off).
 ## Recent commits (tip)
 
 ```
+4f94269 docs(naming): fix stale B21 path refs and record filename-only scope
+af9fce9 refactor(naming): rename three remaining app camelCase modules to snake_case
+320079e docs(refactor): record Phase 0 sign-off and open Phase 2+
 635b2cc docs(refactor): publish meta-review evidence and fix ARCHITECTURE drift
 6765b85 refactor(naming): convert memory_store and proxy_tools APIs to snake_case
-2c63762 refactor(db_writer): rename to snake_case (B16)
-fe4ed55 refactor(jsonUtils): split into json_narrowing.py + atomic_write.py (B15)
-420b80f chore: B23 + B24 — pre_commit dev-dep + remove dead _saveConfig
 ```
 
 ---
 
 ## B21 scope note (explicit)
 
-B21 is a **filename rename only**. Public callables and TypedDict fields inside
-the renamed modules remain camelCase by design for this chunk:
+B21 app **filenames** are closed on `master @ 4f94269` (fast-forward of
+`af9fce9` + `4f94269`). B21 was a **filename rename only**. Public callables
+and TypedDict fields inside the renamed modules remain camelCase by design
+for that chunk:
 
 - `model_resolver.py`: `resolveOrFallback`, `getAliasForModel`, `listAliases`, `getDefaultAlias`
 - `route_resolver.py`: `resolveForModel`
 - `type_aliases.py`: TypedDict keys such as `targetModel`, `apiFormat`, `baseUrl`, …
 
 Those identifiers are **not** closed by B21. Function/API snake_case conversion
-and CamelModel scale-up are separate follow-ups. Do not treat a green B21 merge
+and CamelModel scale-up are separate follow-ups. Do not treat the B21 merge
 as closing the PEP 8 / naming-convention gap for this surface.
+
+Feature branch `refactor/b21-app-file-renames` shares HEAD with master and is
+safe to delete locally + on origin when desired.
 
 ---
 
 ## What's next
 
-1. ✅ Phase 0 re-verified and signed off (2026-07-13 handoff session — prompt Progress Log was stale; live tracker + HEAD accepted).
-2. ✅ B21 app file renames on `refactor/b21-app-file-renames` (+ doc-path sweep).
-3. **Gate before merge:** push branch → wait for CI (`type-check.yml`, Python 3.12) green — do not merge on local-venv alone.
-4. **After merge:** CamelModel scale-up — one router per commit (addresses boundary naming; not a substitute for converting remaining camelCase callables).
-5. Later: B21 test renames (62 files), remaining callable snake_case in renamed modules, B18 Zustand, B20 Dockerfile, Phase 3 large-file splits.
+1. ✅ Phase 0 signed off; B21 app filenames merged to master (`4f94269`).
+2. **Next (when user starts):** CamelModel scale-up — one router per commit on a feature branch; push + CI before merge each time (or batch CI per PR — user preference).
+3. Separate later chunks: remaining camelCase callables/TypedDict fields in renamed modules; B21 test renames (62 files); B18 Zustand; B20 Dockerfile; Phase 3 large-file splits.
 
 ---
 
 ## Open questions for the user
 
-- Merge only after CI is green on the pushed branch.
+- Delete redundant `refactor/b21-app-file-renames` (local + origin)?
+- Start CamelModel with which first router (default: next non-pilot after `models.py`)?
+- Manual CI loop vs cron ping — defaulting to manual unless asked.
