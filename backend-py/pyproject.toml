@@ -27,9 +27,10 @@ dev = [
     "httpx>=0.28.0",
     "watchfiles>=1.0.0",
     "mypy>=1.13.0",
-    "types-requests",
     "types-PyYAML",
+    "types-requests",
     "ruff>=0.9.0",
+    "pre-commit>=4.6.0",
 ]
 ml = [
     "sentence-transformers>=3.3.0",
@@ -66,6 +67,7 @@ dev = [
     "types-PyYAML",
     "types-requests",
     "ruff>=0.9.0",
+    "pre-commit>=4.6.0",
 ]
 
 # ── Ruff (lint + format) ────────────────────────────────────────────
