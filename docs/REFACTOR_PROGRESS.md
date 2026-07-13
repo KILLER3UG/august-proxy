@@ -10,7 +10,7 @@
 > (keep in sync when ending a session).
 
 **Last updated:** 2026-07-13 (session handoff — CamelModel usage merged; pause)
-**Current branch state:** `master @ c15e064` (= `origin/master`, expect clean working tree)
+**Current branch state:** `master` tip (= `origin/master`, expect clean). Verify with `git rev-parse HEAD` — handoff docs land in/after `ab05148`.
 **Verification baseline on master (2026-07-13 handoff):**
 `pytest 538 collected / 538 passed` · `mypy app/ → 0 errors / 176 source files` ·
 `ruff check app/ → All checks passed` · CI `type-check.yml` (Python 3.12)
@@ -31,7 +31,7 @@ scale-up (`usage`).
 
 ## Where to pick up (next session)
 
-1. Verify HEAD ≈ `c15e064` (or newer), clean tree, only meaningful branch = `master`.
+1. Verify clean `master` matching `origin/master` (`git rev-parse HEAD`); handoff docs are on/after `ab05148`.
 2. Optional cleanup: delete leftover `refactor/b21-app-file-renames` (local + origin) if still present — content already on master.
 3. **Next code chunk:** CamelModel scale-up — **one router** on a feature branch.
    - Suggested: `git.py` (`repoPath` → `repo_path`), or `sessions` / `mcp` / `cron` (mostly single-word fields).
@@ -128,6 +128,7 @@ write sites; curator uses temp + `Path.replace`. Re-verify if time passed.
 ## Recent commits (tip)
 
 ```
+ab05148 docs(refactor): publish session handoff prompt and refresh tracker
 c15e064 docs(refactor): record CamelModel usage router merge
 40606d5 refactor(usage): convert UsageRecord to CamelModel with snake_case fields
 aa8930a docs(refactor): record B21 app-filename merge on master
@@ -135,7 +136,6 @@ aa8930a docs(refactor): record B21 app-filename merge on master
 af9fce9 refactor(naming): rename three remaining app camelCase modules to snake_case
 320079e docs(refactor): record Phase 0 sign-off and open Phase 2+
 635b2cc docs(refactor): publish meta-review evidence and fix ARCHITECTURE drift
-6765b85 refactor(naming): convert memory_store and proxy_tools APIs to snake_case
 ```
 
 ---

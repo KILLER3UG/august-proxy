@@ -1,7 +1,7 @@
 # Full Codebase Refactor & Modernization Prompt
 ### (Production Refactor Edition — August Proxy)
 
-> **Handoff snapshot:** 2026-07-13 · live tracker: `docs/REFACTOR_PROGRESS.md` · tip: `master @ c15e064`  
+> **Handoff snapshot:** 2026-07-13 · live tracker: `docs/REFACTOR_PROGRESS.md` · tip: verify with `git rev-parse master` (handoff docs on/after `ab05148`)  
 > Paste this entire document into a new session. Then **verify it against the repo** (Ground Rule 1) before coding.
 
 Act as a Senior Principal Software Architect and Lead Developer. Your task is a comprehensive, end-to-end refactor of **August Proxy** — a large, working AI-agent proxy system: a Tauri + React 19 + TypeScript desktop app (plus an Expo React Native mobile companion) on the frontend, and a FastAPI Python backend spanning ~176 `app/` Python files across **32 routers** (200+ endpoints) and ~95 service files. This is a multi-phase migration of a live system, not a quick cleanup pass — treat the scale below as the default assumption for how you plan your work, not an edge case.
@@ -188,7 +188,7 @@ Same deliverables as before when the full refactor completes.
 
 Because this is a large codebase, work iteratively.
 
-**Current step (as of `c15e064`):** Continue **Phase 2 CamelModel scale-up** — next router on a feature branch (suggested: `git.py`, `sessions.py`, `mcp.py`, or `cron.py` for low risk; or a router with multi-word camelCase fields for higher value). One router per commit → push → CI → verify → FF-merge → update `docs/REFACTOR_PROGRESS.md`.
+**Current step:** Continue **Phase 2 CamelModel scale-up** — next router on a feature branch (suggested: `git.py`, `sessions.py`, `mcp.py`, or `cron.py` for low risk; or a router with multi-word camelCase fields for higher value). One router per commit → push → CI → verify → FF-merge → update `docs/REFACTOR_PROGRESS.md`.
 
 **On session start:**
 1. Acknowledge these instructions and the Codebase Reference.
@@ -201,7 +201,7 @@ Because this is a large codebase, work iteratively.
 
 ## Progress Log (verify this, don't just read it — see Ground Rule 1)
 
-*Last updated 2026-07-13 end-of-session handoff. Tip: `master @ c15e064` (= `origin/master`). Confirm SHAs — more work may have landed since.*
+*Last updated 2026-07-13 end-of-session handoff. Tip: `master` / `origin/master` (verify `git rev-parse HEAD`; handoff docs on/after `ab05148`).*
 
 ### Merge Status (historical queue — CLOSED)
 
