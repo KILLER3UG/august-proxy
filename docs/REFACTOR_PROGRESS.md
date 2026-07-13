@@ -5,12 +5,11 @@
 > with explicit "SUPERSEDED — DO NOT FOLLOW" headers; this file supersedes
 > them for refactor-status questions.
 
-**Last updated:** 2026-07-13 (B21 app renames merged to master)
-**Current branch state:** `master @ 4f94269` (= `origin/master`, clean working tree)
+**Last updated:** 2026-07-13 (CamelModel usage router merged to master)
+**Current branch state:** `master @ 40606d5` (= `origin/master`, clean working tree after tracker commit)
 **Verification baseline on master (user + CI, 2026-07-13):**
-`pytest 534 passed` · `mypy app/ → 0 errors / 176 source files` ·
-`ruff check app/ → All checks passed`
-**CI:** `type-check.yml` green on `4f94269` (run 29259375428) before fast-forward merge.
+`pytest 538 passed`; `mypy app/` / `ruff check app/` green on feature branch before FF merge
+**CI:** green on `refactor/camelmodel-usage` @ `40606d5`; fast-forwarded onto `master`
 
 ### Phase 0 sign-off
 
@@ -196,7 +195,7 @@ schema snake_case migration (Phase 4, needs separate sign-off).
 | 6 | B18 nanostores → Zustand relaunched (Phase 4 workstream) | open workstream |
 | 7 | SQLite schema camelCase→snake_case needs **explicit** sign-off (not bundled with B16) | Ground Rule 5 — enforced in `6765b85` |
 | 8 | Phase 0 evidence pack signed off; G5–G7 dropped; Phase 2+ unblocked | user 2026-07-13 |
-| 9 | Next chunk order: **B21 app file renames (3 files) first**, then CamelModel scale-up one router at a time | B21 app renames done on feature branch; merge then CamelModel |
+| 9 | Next chunk order: B21 app filenames first, then CamelModel scale-up one router at a time | B21 done; CamelModel **usage** router merged (`40606d5`) - first scale-up after `models` pilot |
 
 ---
 
@@ -226,12 +225,13 @@ schema snake_case migration (Phase 4, needs separate sign-off).
 ## Recent commits (tip)
 
 ```
+40606d5 refactor(usage): convert UsageRecord to CamelModel with snake_case fields
+aa8930a docs(refactor): record B21 app-filename merge on master
 4f94269 docs(naming): fix stale B21 path refs and record filename-only scope
 af9fce9 refactor(naming): rename three remaining app camelCase modules to snake_case
 320079e docs(refactor): record Phase 0 sign-off and open Phase 2+
-635b2cc docs(refactor): publish meta-review evidence and fix ARCHITECTURE drift
-6765b85 refactor(naming): convert memory_store and proxy_tools APIs to snake_case
 ```
+
 
 ---
 
@@ -255,16 +255,20 @@ safe to delete locally + on origin when desired.
 
 ---
 
+
+## CamelModel progress note
+
+Phase 2 CamelModel scale-up **started**. Pilot remains `models.py` (`c030ff6` / `b1d1217`). First post-pilot router: **`usage`** - `UsageRecord` -> `CamelModel` with snake_case fields (`40606d5`, FF onto master). Rough progress: **1 / ~32** routers after pilot (usage done). Characterization: `tests/test_camel_model_usage.py` (4 passed on master post-merge).
+
 ## What's next
 
-1. ✅ Phase 0 signed off; B21 app filenames merged to master (`4f94269`).
-2. **Next (when user starts):** CamelModel scale-up — one router per commit on a feature branch; push + CI before merge each time (or batch CI per PR — user preference).
+1. Phase 0 signed off; B21 app filenames merged; CamelModel **usage** router on master (`40606d5`).
+2. **Next:** CamelModel scale-up - one router per commit on a feature branch; push + CI before merge. Suggested low-risk next: `git.py`, or `sessions` / `mcp` / `cron`; or continue with routers that already expose camelCase response fields.
 3. Separate later chunks: remaining camelCase callables/TypedDict fields in renamed modules; B21 test renames (62 files); B18 Zustand; B20 Dockerfile; Phase 3 large-file splits.
 
 ---
 
 ## Open questions for the user
 
-- Delete redundant `refactor/b21-app-file-renames` (local + origin)?
-- Start CamelModel with which first router (default: next non-pilot after `models.py`)?
-- Manual CI loop vs cron ping — defaulting to manual unless asked.
+- Which next CamelModel router (`git.py` / sessions / mcp / cron, or another with camelCase fields)?
+- Manual CI loop vs cron ping - defaulting to manual unless asked.
