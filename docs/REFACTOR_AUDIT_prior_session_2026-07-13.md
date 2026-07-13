@@ -1,4 +1,32 @@
 # Phase 0 Audit Report — August Proxy
+
+> **⚠️ SUPERSEDED — DO NOT USE AS CURRENT REFERENCE ⚠️**
+>
+> Earlier audit from 2026-07-13 (same date as the active session, but
+> written before the current audit verified all claims against the live
+> repository). Most of its claims are now stale:
+> - "Phase 2 pilot proven on `refactor/phase2-naming-pilot`" was correct
+>   but the pilot is **not** on master HEAD — it lands in step 4 of the
+>   current refactor.
+> - "B1 fixed in branch `fix/json-stores-atomic`" is **wrong** — the
+>   `b979539` commit on master migrated most stores but 5+ non-atomic
+>   `write_text` sites still remain.
+> - "All Python files use camelCase" is **wrong** — substantial snake_case
+>   rename completed via PRs #7–13.
+> - File counts and merge recommendations are outdated vs. the active
+>   audit (also delivered 2026-07-13, but after this one).
+>
+> **For current refactor status, see `docs/REFACTOR_PROGRESS.md`.**
+>
+> Two pieces of signal in this report are worth preserving and not in the
+> current audit:
+> - ESLint top-issue counts (no-unsafe-member-access 213,
+>   no-unused-vars 118, no-floating-promises 103) and root cause:
+>   `src/api/*` returns `any` — needs typed API client generation from
+>   OpenAPI.
+> - Dockerfile-broken claim: `node backend/index.js`, mounts `./backend`
+>   which does not exist. **Not yet verified.**
+
 **Date:** 2026-07-13  
 **Auditor:** ZCode (Senior Principal Software Architect)  
 **Repository:** C:\Dev\august-proxy  

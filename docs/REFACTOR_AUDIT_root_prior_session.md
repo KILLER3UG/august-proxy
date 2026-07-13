@@ -1,5 +1,27 @@
 # AUDIT.md — August Proxy Refactor, Phase 0
 
+> **⚠️ SUPERSEDED — DO NOT USE AS CURRENT REFERENCE ⚠️**
+>
+> This is an even-earlier audit report (predates 2026-07-12). Many of its
+> claims are stale: the codebase has since had its snake_case rename
+> completed (PRs #7–13), B1 partially fixed, .bak cleanup landed, and the
+> refactor pilot validated on `/api/models`.
+>
+> **For current refactor status, see `docs/REFACTOR_PROGRESS.md`.**
+> For the current audit findings (this session), see the Phase 0 Audit
+> Report delivered in chat on 2026-07-13.
+>
+> Preserved here for archaeology only. References that are now wrong:
+> - "Phase 1 committed (`4a3e90a`)" → no such commit exists; Phase 1 of
+>   the type-remediation plan was later superseded by the snake_case rename
+>   + alias_generator approach in PRs #11–13.
+> - Working-tree claims of "many .bak files / many modified files" → the
+>   subsequent `chore/phase0-cleanup` branch landed the .bak cleanup
+>   (`d58c882`, `8b0fa9f`).
+> - Files named in `camelCase` (`memoryStore.py`, `providerSetupTool.py`,
+>   `toolDefinitions.py`, etc.) → all renamed to snake_case by PRs #8, #9,
+>   #10, #13.
+
 > **Status: Phase 0 complete. This document is the deliverable. Do not start
 > code changes until the findings below are confirmed.** The refactor spec
 > (Sections 1–8) is assumed as the target; this audit maps the *actual* repo
