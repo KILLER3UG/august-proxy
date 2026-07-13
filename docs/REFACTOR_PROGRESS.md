@@ -5,10 +5,10 @@
 > with explicit "SUPERSEDED — DO NOT FOLLOW" headers; this file supersedes
 > them for refactor-status questions.
 
-**Last updated:** 2026-07-13 (post-Step-2 merge)
-**Current branch state:** `master @ 894ecad` (16 ahead of `origin/master`)
-**Verification baseline on master:** `pytest 534 passed, 3 warnings` ·
-`mypy 0 errors / 174 source files (app/)` · `ruff clean`
+**Last updated:** 2026-07-13 (post-Step-4 merge)
+**Current branch state:** `master @ 5c2794a` (23 ahead of `origin/master`)
+**Verification baseline on master:** `pytest 538 passed, 3 warnings` ·
+`mypy 0 errors / 175 source files (app/)` · `ruff clean`
 
 ### File counts (reconciled 2026-07-13)
 
@@ -100,8 +100,8 @@ been independently characterized. Live baseline on `master @ e44a672`:
 
 | Check | Command | Result | Re-run on 2026-07-13? |
 |---|---|---|---|
-| `pytest tests/` | `.venv/Scripts/python.exe -m pytest tests/` | **534 passed, 3 warnings** in ~22 s (520 baseline + 4 in `testMcpClientAtomicWrite.py` + 6 in `testStorageKeyMigration.py` + 4 in cherry-picked `test_db_writer_coverage.py` + `test_sqlite_safety.py`) | ✅ re-run on `master @ 894ecad`, same result |
-| `mypy app/` | `.venv/Scripts/python.exe -m mypy app/` | **0 errors / 174 source files** | ✅ re-run, same result (output below) |
+| `pytest tests/` | `.venv/Scripts/python.exe -m pytest tests/` | **538 passed, 3 warnings** in ~22 s (520 baseline + 4 in `testMcpClientAtomicWrite.py` + 6 in `testStorageKeyMigration.py` + 4 in cherry-picked `test_db_writer_coverage.py` + `test_sqlite_safety.py` + 4 in `test_camel_model.py`) | ✅ re-run on master, same result |
+| `mypy app/` | `.venv/Scripts/python.exe -m mypy app/` | **0 errors / 175 source files** (+1 for `app/models/camel_base.py`) | ✅ re-run, same result (output below) |
 | `ruff check app/` | `.venv/Scripts/python.exe -m ruff check app/` | **All checks passed** | ✅ re-run, same result |
 
 **Reproducible mypy output (verbatim, 2026-07-13):**
@@ -201,6 +201,10 @@ other changes wait for the user's call.
 ## Recent commits (this session)
 
 ```
+5c2794a Merge branch 'cherry-pick/phase2-naming-pilot-32caee8' into master
+b1d1217 fix(models-router): use ModelInfo.model_validate to satisfy mypy
+c030ff6 refactor(api): introduce CamelModel boundary, pilot on models router
+63a2dc3 docs(refactor): mark Step 2 + B22 closed; refresh baseline to 534 passed
 894ecad Merge branch 'cherry-pick/db-writer-coverage-795982a' into master
 3bc390e fix(db-writer): audit SQLite writes; correct heuristicsService queue docstring
 9a10b57 Merge branch 'fix/b22-storage-key-migration' into master
@@ -232,7 +236,7 @@ f388b57 docs(refactor): replace REFACTOR_PROGRESS.md with current session state
 1. **Step 1 ✅ DONE** — `chore/cleanup-post-merge` merged (`7833fb1` + `762f33b`). 5 conflicts resolved by taking branch version; 21 ruff errors fixed; 164 deprecation warnings eliminated.
 2. **Step 2 ✅ DONE** — `fix/db-writer-coverage` cherry-picked (`795982a` → `3bc390e` with import-path updates; merged via `894ecad`). `heuristicsService` docstring corrected; 2 characterization tests added.
 3. **Step 3 ✅ DONE** — B1 non-atomic JSON writes closed (`48ae052`, `136d030`, `1b3e0d6`, merged via `e4246b1`). 3 files, 5 sites fixed; `curator.py` confirmed already atomic via `pathlib.Path.replace`. 4 new characterization tests added (`testMcpClientAtomicWrite.py`).
-4. **Step 4** — Cherry-pick `32caee8` from `refactor/phase2-naming-pilot` (the Phase 2 pilot).
+4. **Step 4 ✅ DONE** — `refactor/phase2-naming-pilot` cherry-picked (`32caee8` → `c030ff6` with conflict resolution; mypy fix `b1d1217`; merged). Brings in `app/models/camel_base.py` (CamelModel base) + pilot on `routers/models.py` (ModelInfo/ModelList). 4 characterization tests added (`test_camel_model.py` — handoff claimed 6; actual is 4). **Pilot's "mypy unaffected" claim was wrong:** cherry-pick introduced 3 mypy errors (dict-spread kwargs), fixed by switching to `ModelInfo.model_validate(m)`.
 5. **Step 5** — Before merging `fix/mypy-green`, check each of the 4 deleted characterization test files for moved coverage; report findings.
 6. **Step 6** — `chore/cleanup-unused-imports` (review against master for redundancy).
 7. **Step 7** — Drop stale branches + `origin/fix/feature-clean`.
@@ -256,13 +260,13 @@ f388b57 docs(refactor): replace REFACTOR_PROGRESS.md with current session state
    - ✅ Step 1: `chore/cleanup-post-merge` (commits `7833fb1` + `762f33b`) — DONE
    - ✅ Step 2: `fix/db-writer-coverage` cherry-pick (`795982a` → `3bc390e`, merged via `894ecad`) — DONE
    - ✅ Step 3: B1 fix for the 5 non-atomic JSON `write_text` sites — DONE (`48ae052`, `136d030`, `1b3e0d6`, merged via `e4246b1`)
-   - ⏸ Step 4: Cherry-pick `32caee8` from `refactor/phase2-naming-pilot` (the Phase 2 pilot itself)
+   - ✅ Step 4: Cherry-pick `32caee8` from `refactor/phase2-naming-pilot` (the Phase 2 pilot itself) — DONE (`c030ff6` + mypy fix `b1d1217`)
    - ⏸ Step 5: `fix/mypy-green` pre-merge review — confirm each of the 4 deleted characterization test files had its coverage moved or restored
    - ⏸ Step 6: `chore/cleanup-unused-imports` (review against master for redundancy)
    - ⏸ Step 7: Drop stale branches (`chore/phase0-cleanup`, `fix/json-stores-atomic`, `refactor/global-modernization`, `refactor/phase1-safety-net`, `test-cherry-pick`, `origin/fix/feature-clean`)
 2. ✅ **Verification suite re-run on the post-merge master:**
-   - `pytest tests/` → all tests pass (current: 534 / 534)
-   - `mypy app/` → 0 errors (current: 0 / 174 files, see reproducible output in §"Verified current behavior")
+   - `pytest tests/` → all tests pass (current: 538 / 538)
+   - `mypy app/` → 0 errors (current: 0 / 175 files, see reproducible output in §"Verified current behavior")
    - `ruff check app/` → 0 errors (current: clean)
 3. ✅ **B11–B14 cleanup batch landed:** `backend-py/backend-py/tests/` confirmed not present (claim was wrong); `.bak` files in `data/` ignored by `.gitignore:29` (no action needed); 4 dead-tracked files (`docs/_bak_list_tmp.txt`, `docs/mypy_raw.txt`, `docs/eslint_raw.json`, `server.log`) removed from index via `git rm --cached` in `66bd9de`.
 4. ✅ **B15 landed:** `app/jsonUtils.py` split into `app/json_narrowing.py` + `app/atomic_write.py`; imports updated.
@@ -283,11 +287,14 @@ This gate exists because:
 
 ## Open questions for the user
 
-- **Step 4:** Cherry-pick the Phase 2 naming pilot next, or do B23 (pre_commit dev dep declaration) + B24 (remove dead `_saveConfig`) first as a small-batch cleanup?
 - **Step 5 timing:** run the test-coverage review as a separate chat reply before any merge, or proceed step-by-step?
+- **Step 6 timing:** do before/after Step 5?
+- **Step 7 (drop stale branches):** when? Probably last.
+- **B23 (pre_commit dev-dep declaration) + B24 (remove dead `_saveConfig`):** do as a small-batch cleanup now, or after Step 5/6/7?
 - **B20 (Dockerfile broken claim):** verify now or defer to a separate workstream?
 - **B21 file-rename batch (Phase 3):** one PR for all 72 files, or split by directory (4 backend first, then tests, or by subdirectory)?
 - **B21 ordering vs Phase 2 identifier rename:** file rename first (B21 before Phase 2), or identifier rename first (Phase 2 before B21)? Either works mechanically, but the order affects review cost.
+- **Phase 2 scale-up is now unblocked** (CamelModel pattern proven on `/api/models`): do B15 (jsonUtils split) and B21 (file-rename batch) BEFORE scaling to the other 31 routers, or fold them into the scaling itself?
 
 ---
 
