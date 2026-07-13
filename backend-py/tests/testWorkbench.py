@@ -465,7 +465,7 @@ class TestAnthropicWorkbenchStreaming:
 
         import app.services.memory_store as memoryStore
 
-        monkeypatch.setattr(memoryStore, 'recordUsage', fakeRecordUsage)
+        monkeypatch.setattr(memoryStore, 'record_usage', fakeRecordUsage)
         providerConfig = {'name': 'anthropic', 'model_profiles': {'*': {}}, 'apiMode': 'anthropicMessages'}
         monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **k: providerConfig)
         monkeypatch.setattr(wb, '_resolveModel', lambda *a, **k: 'claude-3-5-sonnet-20241022')

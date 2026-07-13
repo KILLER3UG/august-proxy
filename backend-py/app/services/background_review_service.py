@@ -20,7 +20,7 @@ import json
 from app.config import settings
 from app.atomic_write import write_json_atomic
 from app.lib.paths import dataPath
-from app.services.memory_store import recordConfigAudit
+from app.services.memory_store import record_config_audit
 
 _DEFAULTConfig: dict[str, object] = {'enabled': False, 'reviewModel': '', 'reflectionModel': '', 'autoMemoryModel': ''}
 
@@ -76,5 +76,5 @@ def saveConfig(
         current['autoMemoryModel'] = auto_memory_model
     result = {k: current.get(k, _DEFAULTConfig.get(k)) for k in _DEFAULTConfig}
     _writeConfig(result)
-    recordConfigAudit('background_review', 'update', actor, before=before, after=dict(result))
+    record_config_audit('background_review', 'update', actor, before=before, after=dict(result))
     return dict(result)

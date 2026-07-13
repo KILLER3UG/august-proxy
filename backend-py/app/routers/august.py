@@ -11,7 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.services import alias_service
-from app.services.memory_store import listConfigAudit
+from app.services.memory_store import list_config_audit
 
 router = APIRouter(prefix='/api/august')
 
@@ -65,7 +65,7 @@ async def manageAliases(body: AliasManageRequest):
 async def auditLog(category: str = '', limit: int = 200) -> dict[str, object]:
     """Return config-change audit entries shaped for the frontend AuditEntry view."""
     limit = max(1, min(limit, 1000))
-    rows = listConfigAudit(category=category, limit=limit)
+    rows = list_config_audit(category=category, limit=limit)
     entries = []
     for r in rows:
         entries.append(

@@ -29,13 +29,13 @@ from app.adapters.base import (
 from app.adapters.stream_state import AnthropicNativeStreamState, OpenaiToAnthropicStreamState
 from app.providers.clients.base import BaseProviderClient
 from app.adapters.proxy_tools import (
-    formatManagedToolResult,
-    executeManagedProxyTool,
-    getToolDefinitionName,
-    dedupeAndCanonicalizeAnthropicTools,
-    getManagedAnthropicWebToolDefinitions,
-    anthropicToOpenaiToolDefinition,
-    isProxyManagedLocalToolName,
+    format_managed_tool_result,
+    execute_managed_proxy_tool,
+    get_tool_definition_name,
+    dedupe_and_canonicalize_anthropic_tools,
+    get_managed_anthropic_web_tool_definitions,
+    anthropic_to_openai_tool_definition,
+    is_proxy_managed_local_tool_name,
 )
 from app.adapters.tool_classification import (
     classifyAnthropicToolUses,
@@ -839,7 +839,7 @@ async def resolveManagedAnthropicToolUses(
         else:
             openaiBody = buildOpenaiRequest({'messages': cast(JsonValue, currentMessages)}, model, currentSystem)
             if knownTools:
-                openaiBody['tools'] = [anthropicToOpenaiToolDefinition(t) for t in knownTools]
+                openaiBody['tools'] = [anthropic_to_openai_tool_definition(t) for t in knownTools]
             openaiBodyJson = cast(dict[str, object], as_dict(camelToSnake(openaiBody), {}))
             resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, openaiBodyJson)
         if resp.status != 200:
@@ -894,8 +894,8 @@ async def resolveManagedAnthropicToolUses(
             toolInput = as_dict(tu.get('input'), {})
             toolUseId = as_str(tu.get('id'), f'toolu_{uuid.uuid4().hex[:16]}')
             try:
-                result = await executeManagedProxyTool(toolName, toolInput, workspacePath, parentSignal=parentSignal)
-                tr = ToolResultBlock(tool_use_id=toolUseId, content=formatManagedToolResult(toolName, result))
+                result = await execute_managed_proxy_tool(toolName, toolInput, workspacePath, parentSignal=parentSignal)
+                tr = ToolResultBlock(tool_use_id=toolUseId, content=format_managed_tool_result(toolName, result))
                 toolResults.append(tr.model_dump())  # type: ignore[misc]
             except Exception as exc:
                 tr = ToolResultBlock(tool_use_id=toolUseId, content=f'Error: {exc}', is_error=True)
@@ -946,21 +946,21 @@ async def handleMessages(
     clientWantsStream = body.stream if isinstance(body, AnthropicRequest) else body.get('stream', False)
     systemBlocks = buildAnthropicSystemBlocks(cast(JsonValue, as_list(raw_body.get('system'), [])))
     clientToolsRaw = as_list(raw_body.get('tools'), [])
-    managedWebTools = getManagedAnthropicWebToolDefinitions()
+    managedWebTools = get_managed_anthropic_web_tool_definitions()
     clientTools = cast('list[dict[str, object]]', clientToolsRaw)
-    knownTools = dedupeAndCanonicalizeAnthropicTools(clientTools + managedWebTools)
+    knownTools = dedupe_and_canonicalize_anthropic_tools(clientTools + managedWebTools)
     managedLocalToolNames: set[str] = set()
     clientToolNames: set[str] = set()
     # Proxy-injected managed web tools are always locally executable, even if
     # the client didn't list them in its own tool set. Seed the managed set so
     # classifyAnthropicToolUses() recognizes model calls to them as managed.
     for t in managedWebTools:
-        name = as_str(getToolDefinitionName(t), '') or as_str(t.get('name'), '')
+        name = as_str(get_tool_definition_name(t), '') or as_str(t.get('name'), '')
         if name:
             managedLocalToolNames.add(name)
     for t in clientTools:
-        name = as_str(getToolDefinitionName(t), '') or as_str(t.get('name'), '')
-        if isProxyManagedLocalToolName(name):
+        name = as_str(get_tool_definition_name(t), '') or as_str(t.get('name'), '')
+        if is_proxy_managed_local_tool_name(name):
             managedLocalToolNames.add(name)
         else:
             clientToolNames.add(name)
@@ -1067,7 +1067,7 @@ async def _handleMessagesNonStreaming(
     else:
         openaiBody = buildOpenaiRequest(body, model, systemBlocks)
         if knownTools:
-            openaiBody['tools'] = [anthropicToOpenaiToolDefinition(t) for t in knownTools]
+            openaiBody['tools'] = [anthropic_to_openai_tool_definition(t) for t in knownTools]
         openaiBody['stream'] = False
         openaiBodyJson = cast(dict[str, object], as_dict(camelToSnake(openaiBody), {}))
         resp = await client.requestJson('POST', upstreamUrl, upstreamHeaders, openaiBodyJson)
@@ -1147,8 +1147,8 @@ async def _streamAnthropicNative(
             toolInput = as_dict(tu.get('input'), {})
             toolUseId = as_str(tu.get('id'), f'toolu_{uuid.uuid4().hex[:16]}')
             try:
-                result = await executeManagedProxyTool(toolName, toolInput)
-                tr = ToolResultBlock(tool_use_id=toolUseId, content=formatManagedToolResult(toolName, result))
+                result = await execute_managed_proxy_tool(toolName, toolInput)
+                tr = ToolResultBlock(tool_use_id=toolUseId, content=format_managed_tool_result(toolName, result))
                 currentMessages.append(tr.model_dump())  # type: ignore[misc]
             except Exception as exc:
                 tr = ToolResultBlock(tool_use_id=toolUseId, content=f'Error: {exc}', is_error=True)
@@ -1171,7 +1171,7 @@ async def _streamOpenaiAsAnthropic(
     """Stream from an OpenAI-format upstream and convert to Anthropic SSE."""
     openaiBody = buildOpenaiRequest(body, model, systemBlocks)
     if knownTools:
-        openaiBody['tools'] = [anthropicToOpenaiToolDefinition(t) for t in knownTools]
+        openaiBody['tools'] = [anthropic_to_openai_tool_definition(t) for t in knownTools]
     openaiBody['stream'] = True
     toolRound = 0
     currentMessages: list[dict[str, object]] = cast('list[dict[str, object]]', as_list(body.get('messages'), []))
@@ -1213,8 +1213,8 @@ async def _streamOpenaiAsAnthropic(
                     tuInput = as_dict(tu.get('input'), {})
                     tuId = as_str(tu.get('id'), '')
                     try:
-                        result = await executeManagedProxyTool(tuName, tuInput)
-                        tr = ToolResultBlock(tool_use_id=tuId, content=formatManagedToolResult(tuName, result))
+                        result = await execute_managed_proxy_tool(tuName, tuInput)
+                        tr = ToolResultBlock(tool_use_id=tuId, content=format_managed_tool_result(tuName, result))
                         currentMessages.append(tr.model_dump())  # type: ignore[misc]
                     except Exception as exc:
                         tr = ToolResultBlock(tool_use_id=tuId, content=f'Error: {exc}', is_error=True)

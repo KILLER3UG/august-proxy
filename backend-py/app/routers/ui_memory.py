@@ -46,7 +46,7 @@ async def brainStatus() -> dict[str, object]:
     try:
         from app.lib.paths import dataPath
 
-        stats = memory_store.getStats() or {}
+        stats = memory_store.get_stats() or {}
         dbPath = dataPath('august_brain.sqlite')
         count = as_int(stats.get('memory_store'), 0)
         return {'count': count, 'driver': 'sqlite', 'path': str(dbPath), 'available': True}
@@ -62,7 +62,7 @@ async def brainItems() -> dict[str, object]:
     shape the dashboard renders (id, type, key, title, summary, ...).
     """
     try:
-        rows = memory_store.listMemory('%') or []
+        rows = memory_store.list_memory('%') or []
     except Exception:
         rows = []
     items: list[dict[str, object]] = []
@@ -144,8 +144,8 @@ async def brainLearning() -> dict[str, object]:
     from app.services import delta_engine as _de
 
     heuristics = listHeuristics()
-    coreFacts = memory_store.getMemory('coreMemory')
-    userProfile = memory_store.getMemory('userProfile')
+    coreFacts = memory_store.get_memory('coreMemory')
+    userProfile = memory_store.get_memory('userProfile')
     try:
         deltaQueueSize = len(getattr(_de, '_diff_queue', []) or [])
     except Exception:
@@ -187,7 +187,7 @@ async def brainLearning() -> dict[str, object]:
     except Exception:
         pass
     try:
-        topics = memory_store.listTopics(limit=1) or []
+        topics = memory_store.list_topics(limit=1) or []
     except Exception:
         topics = []
     lastTopic = topics[0].get('topic') if topics else None
@@ -226,7 +226,7 @@ async def brainSearch(q: str = Query(default='')) -> dict[str, object]:
     if not query:
         return {'results': []}
     try:
-        for r in memory_store.searchMemory(query) or []:
+        for r in memory_store.search_memory(query) or []:
             if not isinstance(r, dict):
                 continue
             results.append(
@@ -242,7 +242,7 @@ async def brainSearch(q: str = Query(default='')) -> dict[str, object]:
     except Exception:
         pass
     try:
-        for f in memory_store.searchFacts(query) or []:
+        for f in memory_store.search_facts(query) or []:
             if not isinstance(f, dict):
                 continue
             results.append(
@@ -290,7 +290,7 @@ async def brainGuidelines() -> dict[str, object]:
     into the Guideline shape ({ id, text, source, confidence, status, ... }).
     """
     try:
-        facts = memory_store.listFacts('guideline') or []
+        facts = memory_store.list_facts('guideline') or []
     except Exception:
         facts = []
     out: list[dict[str, object]] = []
@@ -336,7 +336,7 @@ async def brainGraph() -> dict[str, object]:
     counts = {'entities': 0, 'relations': 0, 'observations': 0}
     entityTypes: dict[str, int] = {}
     try:
-        stats = memory_store.getStats() or {}
+        stats = memory_store.get_stats() or {}
         counts['entities'] = as_int(stats.get('memory_store'), 0)
         counts['observations'] = as_int(stats.get('facts'), 0)
         entityTypes['memory'] = counts['entities']
@@ -361,13 +361,13 @@ async def brainDiagnostics() -> dict[str, object]:
     semanticFacts, vectorEntries }.
     """
     try:
-        stats = memory_store.getStats() or {}
+        stats = memory_store.get_stats() or {}
         try:
             vcount = int(vector_db.count() or 0)
         except Exception:
             vcount = 0
         try:
-            guidelines = len(memory_store.listFacts('guideline') or [])
+            guidelines = len(memory_store.list_facts('guideline') or [])
         except Exception:
             guidelines = 0
         try:

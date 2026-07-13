@@ -15,7 +15,7 @@ by ``background_review.py`` which runs interval-gated.
 from __future__ import annotations
 import re
 import time
-from app.services.memory_store import saveMemory, getMemory
+from app.services.memory_store import save_memory, get_memory
 from app.services.memory.auto_memory import saveAutoMemory
 
 _REFLECTIONKey = 'self_evolution_log'
@@ -91,10 +91,10 @@ def reflectOnTurn(messages: list[dict[str, object]], model: str = '') -> dict[st
             match = pattern.search(text)
             if match:
                 value = match.group(1).strip()
-                profile = getMemory('userProfile') or {}
+                profile = get_memory('userProfile') or {}
                 if isinstance(profile, dict) and key not in profile:
                     profile[key] = value
-                    saveMemory('userProfile', profile)
+                    save_memory('userProfile', profile)
                     learnings.append(f'Learned {key}: {value}')
                     memoryUpdates += 1
     reflection = {
@@ -106,10 +106,10 @@ def reflectOnTurn(messages: list[dict[str, object]], model: str = '') -> dict[st
         'tool_failures': toolFailures,
         'message_count': len(messages),
     }
-    reflections = getMemory(_REFLECTIONKey) or []
+    reflections = get_memory(_REFLECTIONKey) or []
     if not isinstance(reflections, list):
         reflections = []
     reflections.append(reflection)
     reflections = reflections[-_MAXReflections:]
-    saveMemory(_REFLECTIONKey, reflections)
+    save_memory(_REFLECTIONKey, reflections)
     return reflection

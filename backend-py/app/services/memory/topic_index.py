@@ -6,7 +6,7 @@ Port of backend/services/memory/topic-index.js (213 lines).
 
 from __future__ import annotations
 from app.services.memory.brain_orchestrator import classifyTask
-from app.services.memory_store import indexSessionTopic as _index
+from app.services.memory_store import index_session_topic as _index
 
 VALID_TOPICS = {'debug', 'code_edit', 'research', 'memory_question', 'planning', 'system_control', 'chat'}
 
@@ -42,22 +42,22 @@ def indexSession(
     return {'session_id': sessionId, 'topic': topic, 'parent_topic': parentTopic, 'confidence': confidence}
 
 
-def getSessionTopic(sessionId: str) -> dict[str, object] | None:
+def get_session_topic(sessionId: str) -> dict[str, object] | None:
     """Get the classified topic for a session."""
-    from app.services.memory_store import getSessionTopic as _get
+    from app.services.memory_store import get_session_topic as _get
 
     return _get(sessionId)
 
 
-def listTopics(limit: int = 50) -> list[dict[str, object]]:
+def list_topics(limit: int = 50) -> list[dict[str, object]]:
     """List all classified session topics."""
-    from app.services.memory_store import listTopics as _list
+    from app.services.memory_store import list_topics as _list
 
     return _list(limit)
 
 
-def searchSessionsByTopic(topic: str) -> list[dict[str, object]]:
+def search_sessions_by_topic(topic: str) -> list[dict[str, object]]:
     """Find sessions with a given topic classification."""
-    from app.services.memory_store import searchSessionsByTopic as _search
+    from app.services.memory_store import search_sessions_by_topic as _search
 
     return _search(topic)

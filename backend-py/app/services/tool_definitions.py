@@ -348,10 +348,10 @@ async def _webSearch(query: str, maxResults: int = 10) -> str:
 
 async def _memorySearch(query: str) -> str:
     """Search past conversation memory."""
-    from app.services.memory_store import searchMemory
+    from app.services.memory_store import search_memory
 
     try:
-        results = searchMemory(query)
+        results = search_memory(query)
         if not results:
             return f'No memory results for: {query}'
         lines = [f'Memory search results for: {query}\n']
@@ -373,12 +373,12 @@ async def _factSearch(query: str) -> str:
 
 async def _contextRead() -> str:
     """Read current context/profile from memory."""
-    from app.services.memory_store import getMemory
+    from app.services.memory_store import get_memory
 
     try:
-        profile = getMemory('userProfile')
-        context = getMemory('current_context')
-        preferences = getMemory('user_preferences')
+        profile = get_memory('userProfile')
+        context = get_memory('current_context')
+        preferences = get_memory('user_preferences')
         parts = []
         if profile:
             parts.append(f'User Profile:\n{json.dumps(profile, indent=2)}')
@@ -396,7 +396,7 @@ async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int
 
     Returns compact JSON. Stores not yet shipped return "not available".
     """
-    from app.services.memory_store import brainQuery as _bq
+    from app.services.memory_store import brain_query as _bq
 
     try:
         filtersDict = {}
@@ -522,10 +522,10 @@ async def _writeScratchpad(text: str) -> str:
     DISCARDED — not accumulated. Use this to keep your current analysis,
     code diff, or reasoning step in front of you across turns.
     """
-    from app.services.workbench.workbench import getSession, updateSessionState
+    from app.services.workbench.workbench import get_session, updateSessionState
 
     try:
-        session = getSession()
+        session = get_session()
         if not session:
             return 'Error: no active workbench session.'
         await updateSessionState(
@@ -563,9 +563,9 @@ async def _spawnDaemon(name: str, prompt: str, watchCondition: str = '', tools: 
         elif tools:
             toolsList = [t.strip() for t in tools.split(',') if t.strip()]
         spec = DaemonSpec(name=name, prompt=prompt, watchCondition=watchCondition or None, tools=toolsList)
-        from app.services.workbench.workbench import getSession
+        from app.services.workbench.workbench import get_session
 
-        session = getSession()
+        session = get_session()
         sessionId = getattr(session, 'id', '') if session else ''
         manager = getManager()
         result = await manager.spawn(spec, sessionId)
@@ -615,11 +615,11 @@ async def _writeBlackboard(key: str, value: str, priority: int = 0) -> str:
     Blackboard notes are visible to all agents in the session (main loop
     and daemons). They expire after a TTL or when acknowledged.
     """
-    from app.services.workbench.workbench import getSession
+    from app.services.workbench.workbench import get_session
     from app.services.blackboard_service import writeNote
 
     try:
-        session = getSession()
+        session = get_session()
         sessionId = getattr(session, 'id', '') if session else ''
         agent = getattr(session, '_current_agent', 'main')
         writeNote(sessionId, agent, key, value, priority)
@@ -630,11 +630,11 @@ async def _writeBlackboard(key: str, value: str, priority: int = 0) -> str:
 
 async def _readBlackboard(agent: str = '', key: str = '') -> str:
     """Read notes from the shared blackboard."""
-    from app.services.workbench.workbench import getSession
+    from app.services.workbench.workbench import get_session
     from app.services.blackboard_service import readNotes
 
     try:
-        session = getSession()
+        session = get_session()
         sessionId = getattr(session, 'id', '') if session else ''
         notes = readNotes(sessionId, agent, key)
         if not notes:
@@ -649,11 +649,11 @@ async def _readBlackboard(agent: str = '', key: str = '') -> str:
 
 async def _clearBlackboard(agent: str = '') -> str:
     """Clear blackboard notes."""
-    from app.services.workbench.workbench import getSession
+    from app.services.workbench.workbench import get_session
     from app.services.blackboard_service import clearNotes
 
     try:
-        session = getSession()
+        session = get_session()
         sessionId = getattr(session, 'id', '') if session else ''
         count = clearNotes(sessionId, agent)
         return f'Cleared {count} blackboard note(s).'
@@ -671,10 +671,10 @@ async def _updateState(
     Tier 3 on every turn. Call this when you start, progress through, or
     complete a phase of work.
     """
-    from app.services.workbench.workbench import getSession, updateSessionState
+    from app.services.workbench.workbench import get_session, updateSessionState
 
     try:
-        session = getSession()
+        session = get_session()
         if not session:
             return 'Error: no active workbench session.'
         completedList = [c.strip() for c in completed.split('\n') if c.strip()] if completed else []
@@ -806,8 +806,8 @@ async def _deleteSession(sessionId: str) -> str:
     from app.services import memory_store
 
     try:
-        i = memory_store.deleteSessionRecord(sessionId)
-        msgCount = memory_store.deleteSessionMessages(sessionId)
+        i = memory_store.delete_session_record(sessionId)
+        msgCount = memory_store.delete_session_messages(sessionId)
         if i:
             return f'Deleted session {sessionId} (+ {msgCount} message(s)).'
         return f'Session {sessionId} not found — it may have already been deleted.'
@@ -820,7 +820,7 @@ async def _deleteFolder(folderId: str) -> str:
     from app.services import memory_store
 
     try:
-        sessions = memory_store.listSessions()
+        sessions = memory_store.list_sessions()
         folderSessions = [s for s in sessions if s.get('folderId') == folderId]
         if not folderSessions:
             return f"No sessions found in folder '{folderId}'."
@@ -828,9 +828,9 @@ async def _deleteFolder(folderId: str) -> str:
         msgCount = 0
         for s in folderSessions:
             sid = s['id']
-            if memory_store.deleteSessionRecord(sid):
+            if memory_store.delete_session_record(sid):
                 count += 1
-                msgCount += memory_store.deleteSessionMessages(sid)
+                msgCount += memory_store.delete_session_messages(sid)
         return f"Deleted {count} session(s) from folder '{folderId}' (+ {msgCount} message(s))."
     except Exception as exc:
         return f"Error deleting folder '{folderId}': {exc}"

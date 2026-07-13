@@ -40,10 +40,10 @@ def testReplaceValidatesEach(isolatedData):
 
 
 def testAuditRecorded(isolatedData):
-    from app.services.memory_store import listConfigAudit
+    from app.services.memory_store import list_config_audit
 
     alias_service.createAlias(
         alias='audited', target_model='claude-sonnet-4-7', target_provider='Anthropic', actor='test'
     )
-    entries = listConfigAudit(category='alias')
+    entries = list_config_audit(category='alias')
     assert any((e['action'] == 'create' and e['after'].get('alias') == 'audited' for e in entries))

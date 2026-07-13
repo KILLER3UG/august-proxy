@@ -32,7 +32,7 @@ from app.services.logger import (
     getActivityLog,
     getPendingRequests,
     getFilteredRequests,
-    getStats as getUsageStats,
+    get_stats as getUsageStats,
     getRequestDetails,
     getRequestDetail as getReqDetail,
     getRecentLogEvents,
@@ -98,7 +98,7 @@ async def getRequestDetail(requestId: str):
 
 
 @router.get('/stats')
-async def getStats(period: str = Query(default='all', alias='period')):
+async def get_stats(period: str = Query(default='all', alias='period')):
     """Return aggregate usage statistics in the Node.js StatsResponse shape.
 
     The Python logger returns a partial object (completed/errors/etc); the

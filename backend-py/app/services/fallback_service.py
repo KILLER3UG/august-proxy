@@ -12,7 +12,7 @@ from app.config import settings
 from app.json_narrowing import as_str
 from app.atomic_write import write_json_atomic
 from app.lib.paths import dataPath
-from app.services.memory_store import recordConfigAudit
+from app.services.memory_store import record_config_audit
 
 _DEFAULTFallback: dict[str, object] = {'enabled': False, 'mode': 'off', 'provider': '', 'model': ''}
 _VALIDModes = {'off', 'session_only', 'marked_subagent_only', 'always'}
@@ -68,7 +68,7 @@ def configureFallback(
             if not ok:
                 raise ValueError(msg)
     _writeFallback(after)
-    recordConfigAudit('fallback', 'configure', actor, before=before, after=after)
+    record_config_audit('fallback', 'configure', actor, before=before, after=after)
     return after
 
 

@@ -22,7 +22,7 @@ _MAXEntries = 2000
 _EMBEDDINGDim = 384
 
 
-def _dbPath() -> Path:
+def _db_path() -> Path:
     env = os.environ.get('AUGUST_VECTOR_DB_FILE')
     return Path(env) if env else _DBFile
 
@@ -36,7 +36,7 @@ def _defaultDb() -> dict[str, object]:
 
 
 def _read() -> dict[str, object]:
-    p = _dbPath()
+    p = _db_path()
     if not p.exists():
         return _defaultDb()
     try:
@@ -47,7 +47,7 @@ def _read() -> dict[str, object]:
 
 def _write(db: dict[str, object]) -> None:
     db['entries'] = as_list(db['entries'])[-_MAXEntries:]
-    p = _dbPath()
+    p = _db_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     write_json_atomic(p, db, indent=2)
 
@@ -168,15 +168,15 @@ _COLLECTIONSKey = 'semantic_collections'
 
 
 def _readCollections() -> dict[str, object]:
-    from app.services.memory_store import getMemory
+    from app.services.memory_store import get_memory
 
-    return as_dict(getMemory(_COLLECTIONSKey), {})
+    return as_dict(get_memory(_COLLECTIONSKey), {})
 
 
 def _writeCollections(data: dict[str, object]) -> None:
-    from app.services.memory_store import saveMemory
+    from app.services.memory_store import save_memory
 
-    saveMemory(_COLLECTIONSKey, data)
+    save_memory(_COLLECTIONSKey, data)
 
 
 def createCollection(name: str, description: str = '') -> dict[str, object]:

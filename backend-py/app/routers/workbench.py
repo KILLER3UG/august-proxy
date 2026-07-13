@@ -34,13 +34,13 @@ async def createSession(request: Request):
 
 
 @router.get('/sessions')
-async def listSessions():
+async def list_sessions():
     """List all workbench sessions."""
     return wb.listWorkbenchSessions()
 
 
 @router.get('/sessions/{session_id}')
-async def getSession(sessionId: str):
+async def get_session(sessionId: str):
     """Get a session by ID."""
     session = wb.getWorkbenchSession(sessionId)
     if not session:

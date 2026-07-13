@@ -8,15 +8,15 @@ from app.adapters.tool_classification import (
     classifyAnthropicToolUses,
 )
 from app.adapters.proxy_tools import (
-    isManagedWebToolName,
-    isManagedBashToolName,
-    openaiToAnthropicToolDefinition,
-    anthropicToOpenaiToolDefinition,
-    getManagedAnthropicWebToolDefinitions,
-    sanitizeAnthropicToolDefinition,
-    dedupeAndCanonicalizeAnthropicTools,
-    isBrowserAutomationToolName,
-    formatManagedWebResult,
+    is_managed_web_tool_name,
+    is_managed_bash_tool_name,
+    openai_to_anthropic_tool_definition,
+    anthropic_to_openai_tool_definition,
+    get_managed_anthropic_web_tool_definitions,
+    sanitize_anthropic_tool_definition,
+    dedupe_and_canonicalize_anthropic_tools,
+    is_browser_automation_tool_name,
+    format_managed_web_result,
 )
 from app.adapters.openai import (
     deriveSessionIdFromOpenai,
@@ -77,17 +77,17 @@ class TestToolClassification:
 
 class TestProxyTools:
     def testManagedToolNames(self):
-        assert isManagedWebToolName('WebSearch') is True
-        assert isManagedWebToolName('WebFetch') is True
-        assert isManagedWebToolName('unknown') is False
-        assert isManagedBashToolName('bash') is True
+        assert is_managed_web_tool_name('WebSearch') is True
+        assert is_managed_web_tool_name('WebFetch') is True
+        assert is_managed_web_tool_name('unknown') is False
+        assert is_managed_bash_tool_name('bash') is True
 
     def testBrowserAutomation(self):
-        assert isBrowserAutomationToolName('browser_navigate') is True
-        assert isBrowserAutomationToolName('read_file') is False
+        assert is_browser_automation_tool_name('browser_navigate') is True
+        assert is_browser_automation_tool_name('read_file') is False
 
     def testToolDefinitions(self):
-        tools = getManagedAnthropicWebToolDefinitions()
+        tools = get_managed_anthropic_web_tool_definitions()
         assert len(tools) == 5
         names = [t['name'] for t in tools]
         assert 'WebSearch' in names
@@ -99,18 +99,18 @@ class TestProxyTools:
             'type': 'function',
             'function': {'name': 'test', 'description': 'desc', 'parameters': {'type': 'object'}},
         }
-        anthropic = openaiToAnthropicToolDefinition(openai)
+        anthropic = openai_to_anthropic_tool_definition(openai)
         assert anthropic['name'] == 'test'
         assert anthropic['description'] == 'desc'
-        back = anthropicToOpenaiToolDefinition(anthropic)
+        back = anthropic_to_openai_tool_definition(anthropic)
         assert back['type'] == 'function'
         assert back['function']['name'] == 'test'
 
     def testSanitizeTool(self):
-        result = sanitizeAnthropicToolDefinition({'name': '  test  ', 'description': 'desc', 'input_schema': {}})
+        result = sanitize_anthropic_tool_definition({'name': '  test  ', 'description': 'desc', 'input_schema': {}})
         assert result is not None
         assert result['name'] == 'test'
-        result2 = sanitizeAnthropicToolDefinition({'type': 'function', 'function': {'name': 'fn_test'}})
+        result2 = sanitize_anthropic_tool_definition({'type': 'function', 'function': {'name': 'fn_test'}})
         assert result2 is not None
         assert result2['name'] == 'fn_test'
 
@@ -120,13 +120,13 @@ class TestProxyTools:
             {'name': 'WebSearch', 'description': '', 'input_schema': {'type': 'object', 'properties': {}}},
             {'name': 'my_tool', 'description': '', 'input_schema': {'type': 'object', 'properties': {}}},
         ]
-        result = dedupeAndCanonicalizeAnthropicTools(tools)
+        result = dedupe_and_canonicalize_anthropic_tools(tools)
         names = [t['name'] for t in result]
         assert names.count('WebSearch') == 1
         assert 'my_tool' in names
 
     def testFormatWebResult(self):
-        result = formatManagedWebResult({'query': 'test', 'results': [{'title': 'R1', 'url': 'http://x.com'}]})
+        result = format_managed_web_result({'query': 'test', 'results': [{'title': 'R1', 'url': 'http://x.com'}]})
         assert 'R1' in result
         assert 'test' in result
 

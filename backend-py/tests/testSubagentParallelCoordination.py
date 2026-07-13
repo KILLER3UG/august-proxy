@@ -171,10 +171,10 @@ class CoordinationStub:
     def _claimed_ports(self, messages: list[dict[str, Any]]) -> set[int]:
         """Read claimed ports from the blackboard using a fresh DB connection."""
         import sqlite3
-        from app.services.memory_store import _dbPath
+        from app.services.memory_store import _db_path
 
         ports: set[int] = set()
-        db = _dbPath()
+        db = _db_path()
         try:
             conn = sqlite3.connect(str(db), timeout=5)
             conn.row_factory = sqlite3.Row
@@ -306,7 +306,7 @@ def coord_env(monkeypatch, tmp_path):
     monkeypatch.setattr(clientsMod, 'getClient', fake_get_client)
     monkeypatch.setattr('app.providers.clients.getClient', fake_get_client)
 
-    # A single parent session. Both sub-agents resolve to it via getSession(),
+    # A single parent session. Both sub-agents resolve to it via get_session(),
     # so they share the same blackboard scope.
     session = wb.createWorkbenchSession(provider='stub-anthropic')
     session_id = session.id

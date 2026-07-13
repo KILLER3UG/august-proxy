@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from typing import cast
-from app.services.memory_store import saveMemory, getMemory, recordConfigAudit
+from app.services.memory_store import save_memory, get_memory, record_config_audit
 from app.json_narrowing import as_int, as_list, as_str
 from app.typeAliases import JsonValue
 
@@ -22,7 +22,7 @@ def _now() -> str:
 
 
 def listAgents() -> list[dict[str, object]]:
-    raw = getMemory(_AGENTSKey) or []
+    raw = get_memory(_AGENTSKey) or []
     return cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
 
 
@@ -73,8 +73,8 @@ def createAgent(
         'depth': _calculateDepth(resolvedParent, agents),
     }
     agents.append(agent)
-    saveMemory(_AGENTSKey, cast(JsonValue, agents))
-    recordConfigAudit('agent', 'create', actor, before=None, after=agent)
+    save_memory(_AGENTSKey, cast(JsonValue, agents))
+    record_config_audit('agent', 'create', actor, before=None, after=agent)
     return agent
 
 
@@ -84,8 +84,8 @@ def updateAgent(agentId: str, updates: dict[str, object], actor: str = 'system')
         if a['id'] == agentId:
             before = dict(a)
             a.update(updates)
-            saveMemory(_AGENTSKey, cast(JsonValue, agents))
-            recordConfigAudit('agent', 'update', actor, before=before, after=a)
+            save_memory(_AGENTSKey, cast(JsonValue, agents))
+            record_config_audit('agent', 'update', actor, before=before, after=a)
             return a
     return None
 
@@ -96,8 +96,8 @@ def deleteAgent(agentId: str, actor: str = 'system') -> bool:
     newAgents = [a for a in agents if a['id'] != agentId]
     if len(newAgents) == len(agents):
         return False
-    saveMemory(_AGENTSKey, cast(JsonValue, newAgents))
-    recordConfigAudit('agent', 'delete', actor, before=before, after=None)
+    save_memory(_AGENTSKey, cast(JsonValue, newAgents))
+    record_config_audit('agent', 'delete', actor, before=before, after=None)
     return True
 
 
@@ -192,7 +192,7 @@ def deriveChildPermissions(parentId: str, childId: str) -> list[str]:
 
 
 def listJobs(agentId: str = '') -> list[dict[str, object]]:
-    raw = getMemory(_JOBSKey) or []
+    raw = get_memory(_JOBSKey) or []
     jobs = cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
     if agentId:
         return [j for j in jobs if as_str(j.get('agentId')) == agentId]
@@ -200,7 +200,7 @@ def listJobs(agentId: str = '') -> list[dict[str, object]]:
 
 
 def createJob(agentId: str, goal: str, context: str = '') -> dict[str, object]:
-    raw = getMemory(_JOBSKey) or []
+    raw = get_memory(_JOBSKey) or []
     jobs: list[dict[str, object]] = cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
     jobId = f'job_{uuid.uuid4().hex[:8]}'
     job: dict[str, object] = {
@@ -212,17 +212,17 @@ def createJob(agentId: str, goal: str, context: str = '') -> dict[str, object]:
         'createdAt': _now(),
     }
     jobs.append(job)
-    saveMemory(_JOBSKey, cast(JsonValue, jobs))
+    save_memory(_JOBSKey, cast(JsonValue, jobs))
     return job
 
 
 def updateJob(jobId: str, updates: dict[str, object]) -> dict[str, object] | None:
-    raw = getMemory(_JOBSKey) or []
+    raw = get_memory(_JOBSKey) or []
     jobs: list[dict[str, object]] = cast('list[dict[str, object]]', raw) if isinstance(raw, list) else []
     for j in jobs:
         if j['id'] == jobId:
             j.update(updates)
-            saveMemory(_JOBSKey, cast(JsonValue, jobs))
+            save_memory(_JOBSKey, cast(JsonValue, jobs))
             return j
     return None
 

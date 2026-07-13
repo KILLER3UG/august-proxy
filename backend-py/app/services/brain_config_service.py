@@ -38,7 +38,7 @@ from typing import cast
 from app.config import settings
 from app.services import config_service
 from app.services.memory.brain_orchestrator import DEFAULT_FEATURES
-from app.services.memory_store import recordConfigAudit
+from app.services.memory_store import record_config_audit
 from app.services.workbench import workbench as workbenchSvc
 from app.typeAliases import BrainConfigDict
 
@@ -219,7 +219,7 @@ def saveBrainConfig(patch: dict[str, object]) -> tuple[bool, str, BrainConfigDic
     snakePatch = _camelPatchToSnake(patch)
     mergedSnake = {**currentSnake, **snakePatch}
     _savePersisted(mergedSnake)
-    recordConfigAudit('brain', 'update', 'user', before=before, after=dict(mergedSnake))
+    record_config_audit('brain', 'update', 'user', before=before, after=dict(mergedSnake))
     return (True, '', _snakeToCamel(mergedSnake))
 
 
@@ -230,7 +230,7 @@ def resetBrainConfig() -> tuple[bool, BrainConfigDict]:
     cfg.pop('brain_orchestrator', None)
     config_service.saveConfig(cfg)
     settings.reload()
-    recordConfigAudit('brain', 'reset', 'user', before=before, after={})
+    record_config_audit('brain', 'reset', 'user', before=before, after={})
     return (True, _defaultsCamel())
 
 

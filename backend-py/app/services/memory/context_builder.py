@@ -10,7 +10,7 @@ Port of backend/services/memory/context-builder.js (224 lines).
 
 from __future__ import annotations
 from app.json_narrowing import as_str, as_dict, as_list, as_int
-from app.services.memory_store import getMemory
+from app.services.memory_store import get_memory
 
 AUGUST_PLATFORM: str = 'Platform: August Proxy.\n- Cross-session memory tools are available: memory_search() to find past conversations, fact_search() for structured facts, context_read() for user profile.\n- Save recurring user corrections/lessons as skills via `skill_manage`; load them via `load_skill`.\n- Note: "August" or "August Proxy" is the name of this proxy platform. You are still yourself — respond as your actual underlying model identity.\n- Address the user neutrally without honorifics.'
 DEFAULT_CONTEXT_MAX_CHARS: int = 24000
@@ -63,7 +63,7 @@ def buildTier1(session: dict[str, object] | None = None) -> str:
     )
     blocks.append(wrapTag('system_constraints', '\n'.join(constraints)))
     userParts: list[str] = []
-    profile = getMemory('userProfile') if session else None
+    profile = get_memory('userProfile') if session else None
     if profile:
         userParts.append(f'Profile: {_fmtVal(profile, 300)}')
     skillsManifest = as_str((session or {}).get('skills_manifest'), '')

@@ -242,7 +242,7 @@ async def executeMcpToolCall(name: str, args: dict[str, object]) -> str:
     return await executeTool(serverId, toolName, args)
 
 
-def sanitizeToolSchema(schema: object) -> dict[str, object]:
+def sanitize_tool_schema(schema: object) -> dict[str, object]:
     """Sanitize a JSON Schema to ensure it has expected structure."""
     if not isinstance(schema, dict):
         return {'type': 'object', 'properties': {}}

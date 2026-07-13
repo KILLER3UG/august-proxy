@@ -32,7 +32,7 @@ _BUSYRetries = 2
 _local = threading.local()
 
 
-def _dbPath() -> Path:
+def _db_path() -> Path:
     """Resolve the brain SQLite database path."""
     envPath = os.environ.get(_BRAINFileEnv)
     if envPath:
@@ -43,7 +43,7 @@ def _dbPath() -> Path:
 def _conn() -> sqlite3.Connection:
     """Get a thread-local connection to the brain database."""
     if not hasattr(_local, 'conn') or _local.conn is None:
-        dbPath = _dbPath()
+        dbPath = _db_path()
         dbPath.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(dbPath), timeout=_TIMEOUTMs / 1000)
         conn.row_factory = sqlite3.Row
@@ -116,10 +116,10 @@ def init() -> None:
         "\n        CREATE TABLE IF NOT EXISTS pendingSkills (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            name TEXT UNIQUE NOT NULL,\n            description TEXT,\n            triggerText TEXT,\n            draftPath TEXT NOT NULL,\n            sourceSessionId TEXT,\n            sourceWorkflow TEXT,\n            createdBy TEXT DEFAULT 'auto-gen',\n            createdAt TEXT DEFAULT (datetime('now')),\n            status TEXT DEFAULT 'pending',\n            useCount INTEGER DEFAULT 0,\n            lastSurfacedAt TEXT\n        )\n    "
     )
     conn.commit()
-    _ensureColumn(conn, 'usageEvents', 'contextTokens', 'INTEGER DEFAULT 0')
+    _ensure_column(conn, 'usageEvents', 'contextTokens', 'INTEGER DEFAULT 0')
 
 
-def _ensureColumn(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
     """Add a column to a table if it does not already exist (idempotent)."""
     cols = {row['name'] for row in conn.execute(f'PRAGMA table_info({table})').fetchall()}
     if column not in cols:
@@ -127,7 +127,7 @@ def _ensureColumn(conn: sqlite3.Connection, table: str, column: str, decl: str) 
         conn.commit()
 
 
-def saveMemory(key: str, value: JsonValue) -> None:
+def save_memory(key: str, value: JsonValue) -> None:
     """Save a key-value pair to memory."""
     conn = _conn()
     conn.execute(
@@ -136,7 +136,7 @@ def saveMemory(key: str, value: JsonValue) -> None:
     conn.commit()
 
 
-def getMemory(key: str) -> JsonValue | None:
+def get_memory(key: str) -> JsonValue | None:
     """Get a value from memory by key."""
     conn = _conn()
     row = conn.execute('SELECT value FROM memoryStore WHERE key = ?', (key,)).fetchone()
@@ -148,7 +148,7 @@ def getMemory(key: str) -> JsonValue | None:
     return None
 
 
-def deleteMemory(key: str) -> bool:
+def delete_memory(key: str) -> bool:
     """Delete a memory key. Returns True if it existed."""
     conn = _conn()
     cursor = conn.execute('DELETE FROM memoryStore WHERE key = ?', (key,))
@@ -156,7 +156,7 @@ def deleteMemory(key: str) -> bool:
     return cursor.rowcount > 0
 
 
-def listMemory(pattern: str = '%') -> list[MemoryEntryDict]:
+def list_memory(pattern: str = '%') -> list[MemoryEntryDict]:
     """List memory entries with optional key pattern matching."""
     conn = _conn()
     rows = conn.execute(
@@ -172,7 +172,7 @@ def listMemory(pattern: str = '%') -> list[MemoryEntryDict]:
     return results
 
 
-def searchMemory(query: str) -> list[MemoryEntryDict]:
+def search_memory(query: str) -> list[MemoryEntryDict]:
     """Full-text search across memory keys and values."""
     if not query or not query.strip():
         return []
@@ -208,7 +208,7 @@ def searchMemory(query: str) -> list[MemoryEntryDict]:
         return results
 
 
-def saveFact(
+def save_fact(
     factKey: str, factValue: JsonValue, category: str = 'general', source: str = '', confidence: float = 1.0
 ) -> None:
     """Save a structured fact."""
@@ -220,7 +220,7 @@ def saveFact(
     conn.commit()
 
 
-def getFact(factKey: str) -> FactDict | None:
+def get_fact(factKey: str) -> FactDict | None:
     """Get a fact by key."""
     conn = _conn()
     row = conn.execute('SELECT * FROM facts WHERE factKey = ?', (factKey,)).fetchone()
@@ -229,7 +229,7 @@ def getFact(factKey: str) -> FactDict | None:
     return cast(FactDict, dict(row))
 
 
-def searchFacts(query: str, category: str = '') -> list[FactDict]:
+def search_facts(query: str, category: str = '') -> list[FactDict]:
     """Search facts by key or value."""
     conn = _conn()
     like = f'%{query}%'
@@ -246,7 +246,7 @@ def searchFacts(query: str, category: str = '') -> list[FactDict]:
     return [cast(FactDict, dict(r)) for r in rows]
 
 
-def listFacts(category: str = '') -> list[FactDict]:
+def list_facts(category: str = '') -> list[FactDict]:
     """List facts, optionally filtered by category."""
     conn = _conn()
     if category:
@@ -256,7 +256,7 @@ def listFacts(category: str = '') -> list[FactDict]:
     return [cast(FactDict, dict(r)) for r in rows]
 
 
-def deleteFact(factKey: str) -> bool:
+def delete_fact(factKey: str) -> bool:
     """Delete a fact by key."""
     conn = _conn()
     cursor = conn.execute('DELETE FROM facts WHERE factKey = ?', (factKey,))
@@ -264,7 +264,7 @@ def deleteFact(factKey: str) -> bool:
     return cursor.rowcount > 0
 
 
-def saveProposal(sessionId: str, proposalType: str, content: JsonValue) -> int:
+def save_proposal(sessionId: str, proposalType: str, content: JsonValue) -> int:
     """Save a proposal (plan, mutation, etc.)."""
     conn = _conn()
     cursor = conn.execute(
@@ -275,14 +275,14 @@ def saveProposal(sessionId: str, proposalType: str, content: JsonValue) -> int:
     return as_int(cursor.lastrowid)
 
 
-def getProposal(proposalId: int) -> ProposalDict | None:
+def get_proposal(proposalId: int) -> ProposalDict | None:
     """Get a proposal by ID."""
     conn = _conn()
     row = conn.execute('SELECT * FROM proposals WHERE id = ?', (proposalId,)).fetchone()
     return cast(ProposalDict, dict(row)) if row else None
 
 
-def listProposals(sessionId: str, status: str = '') -> list[ProposalDict]:
+def list_proposals(sessionId: str, status: str = '') -> list[ProposalDict]:
     """List proposals for a session, optionally filtered by status."""
     conn = _conn()
     if status:
@@ -296,7 +296,7 @@ def listProposals(sessionId: str, status: str = '') -> list[ProposalDict]:
     return [cast(ProposalDict, dict(r)) for r in rows]
 
 
-def decideProposal(proposalId: int, status: str, decidedBy: str = '') -> bool:
+def decide_proposal(proposalId: int, status: str, decidedBy: str = '') -> bool:
     """Decide (approve/reject) a proposal."""
     conn = _conn()
     cursor = conn.execute(
@@ -307,7 +307,7 @@ def decideProposal(proposalId: int, status: str, decidedBy: str = '') -> bool:
     return cursor.rowcount > 0
 
 
-def recordLifecycle(sessionId: str, eventType: str, detail: JsonValue = None) -> int:
+def record_lifecycle(sessionId: str, eventType: str, detail: JsonValue = None) -> int:
     """Record a lifecycle event."""
     conn = _conn()
     cursor = conn.execute(
@@ -318,7 +318,7 @@ def recordLifecycle(sessionId: str, eventType: str, detail: JsonValue = None) ->
     return as_int(cursor.lastrowid)
 
 
-def listLifecycle(sessionId: str, eventType: str = '', limit: int = 100) -> list[dict[str, object]]:
+def list_lifecycle(sessionId: str, eventType: str = '', limit: int = 100) -> list[dict[str, object]]:
     """List lifecycle events for a session."""
     conn = _conn()
     if eventType:
@@ -333,7 +333,7 @@ def listLifecycle(sessionId: str, eventType: str = '', limit: int = 100) -> list
     return [dict(r) for r in rows]
 
 
-def recordConfigAudit(
+def record_config_audit(
     category: str, action: str, actor: str = '', before: JsonValue = None, after: JsonValue = None
 ) -> int:
     """Record a structured config-change audit entry.
@@ -356,7 +356,7 @@ def recordConfigAudit(
     return as_int(cursor.lastrowid)
 
 
-def listConfigAudit(category: str = '', limit: int = 200) -> list[dict[str, object]]:
+def list_config_audit(category: str = '', limit: int = 200) -> list[dict[str, object]]:
     """List config-change audit entries, newest first."""
     conn = _conn()
     if category:
@@ -387,7 +387,7 @@ def listConfigAudit(category: str = '', limit: int = 200) -> list[dict[str, obje
     return results
 
 
-def indexSessionTopic(sessionId: str, topic: str, parentTopic: str | None = None, confidence: float = 0.75) -> bool:
+def index_session_topic(sessionId: str, topic: str, parentTopic: str | None = None, confidence: float = 0.75) -> bool:
     """Record or update the topic for a session."""
     conn = _conn()
     try:
@@ -401,28 +401,28 @@ def indexSessionTopic(sessionId: str, topic: str, parentTopic: str | None = None
         return False
 
 
-def getSessionTopic(sessionId: str) -> dict[str, object] | None:
+def get_session_topic(sessionId: str) -> dict[str, object] | None:
     """Get the classified topic for a session."""
     conn = _conn()
     row = conn.execute('SELECT * FROM sessionTopics WHERE sessionId = ?', (sessionId,)).fetchone()
     return dict(row) if row else None
 
 
-def listTopics(limit: int = 50) -> list[dict[str, object]]:
+def list_topics(limit: int = 50) -> list[dict[str, object]]:
     """List all classified session topics, most recent first."""
     conn = _conn()
     rows = conn.execute('SELECT * FROM sessionTopics ORDER BY classifiedAt DESC LIMIT ?', (limit,)).fetchall()
     return [dict(r) for r in rows]
 
 
-def searchSessionsByTopic(topic: str) -> list[dict[str, object]]:
+def search_sessions_by_topic(topic: str) -> list[dict[str, object]]:
     """Find sessions with a given topic classification."""
     conn = _conn()
     rows = conn.execute('SELECT * FROM sessionTopics WHERE topic = ? ORDER BY classifiedAt DESC', (topic,)).fetchall()
     return [dict(r) for r in rows]
 
 
-def saveSession(session: SessionRecord) -> None:
+def save_session(session: SessionRecord) -> None:
     """Persist a session record."""
     conn = _conn()
     conn.execute(
@@ -442,21 +442,21 @@ def saveSession(session: SessionRecord) -> None:
     conn.commit()
 
 
-def listSessions() -> list[SessionRecord]:
+def list_sessions() -> list[SessionRecord]:
     """List all sessions, most recent first."""
     conn = _conn()
     rows = conn.execute('SELECT * FROM sessions ORDER BY startedAt DESC').fetchall()
     return [cast(SessionRecord, dict(r)) for r in rows]
 
 
-def getSession(sessionId: str) -> SessionRecord | None:
+def get_session(sessionId: str) -> SessionRecord | None:
     """Get a single session by ID."""
     conn = _conn()
     row = conn.execute('SELECT * FROM sessions WHERE id = ?', (sessionId,)).fetchone()
     return cast(SessionRecord, dict(row)) if row else None
 
 
-def deleteSessionRecord(sessionId: str) -> bool:
+def delete_session_record(sessionId: str) -> bool:
     """Delete a session record."""
     conn = _conn()
     cursor = conn.execute('DELETE FROM sessions WHERE id = ?', (sessionId,))
@@ -464,7 +464,7 @@ def deleteSessionRecord(sessionId: str) -> bool:
     return cursor.rowcount > 0
 
 
-def saveMessage(sessionId: str, role: str, content: JsonValue) -> int:
+def save_message(sessionId: str, role: str, content: JsonValue) -> int:
     """Save a message to a session."""
     conn = _conn()
     cursor = conn.execute(
@@ -474,7 +474,7 @@ def saveMessage(sessionId: str, role: str, content: JsonValue) -> int:
     return as_int(cursor.lastrowid)
 
 
-def getMessages(sessionId: str) -> list[MessageDict]:
+def get_messages(sessionId: str) -> list[MessageDict]:
     """Get all messages for a session."""
     conn = _conn()
     rows = conn.execute('SELECT * FROM messages WHERE sessionId = ? ORDER BY createdAt', (sessionId,)).fetchall()
@@ -489,7 +489,7 @@ def getMessages(sessionId: str) -> list[MessageDict]:
     return results
 
 
-def deleteSessionMessages(sessionId: str) -> int:
+def delete_session_messages(sessionId: str) -> int:
     """Delete all messages for a session."""
     conn = _conn()
     cursor = conn.execute('DELETE FROM messages WHERE sessionId = ?', (sessionId,))
@@ -497,7 +497,7 @@ def deleteSessionMessages(sessionId: str) -> int:
     return cursor.rowcount
 
 
-def recordUsage(sessionId: str, model: str, inputTokens: int = 0, outputTokens: int = 0, contextTokens: int = 0) -> int:
+def record_usage(sessionId: str, model: str, inputTokens: int = 0, outputTokens: int = 0, contextTokens: int = 0) -> int:
     """Record a usage event.
 
     ``contextTokens`` captures the provider-reported ``inputTokens`` of the
@@ -514,7 +514,7 @@ def recordUsage(sessionId: str, model: str, inputTokens: int = 0, outputTokens: 
     return as_int(cursor.lastrowid)
 
 
-def getUsage(sessionId: str) -> dict[str, object]:
+def get_usage(sessionId: str) -> dict[str, object]:
     """Get aggregated usage for a session.
 
     Returns cumulative totals (for the Usage page) plus ``latestContextTokens``
@@ -574,7 +574,7 @@ def vacuum() -> None:
     conn.commit()
 
 
-def getStats() -> dict[str, object]:
+def get_stats() -> dict[str, object]:
     """Get database statistics."""
     conn = _conn()
     stats = {}
@@ -584,7 +584,7 @@ def getStats() -> dict[str, object]:
             stats[table] = row['count'] if row else 0
         except Exception:
             stats[table] = 0
-    stats['db_size_bytes'] = _dbPath().stat().st_size if _dbPath().exists() else 0
+    stats['db_size_bytes'] = _db_path().stat().st_size if _db_path().exists() else 0
     return stats
 
 
@@ -662,7 +662,7 @@ _BRAINStores: dict[str, dict[str, object]] = {
 }
 
 
-def _brainQueryGraph(query: str, filters: dict | None, limit: int) -> str:
+def _brain_query_graph(query: str, filters: dict | None, limit: int) -> str:
     """v1.1: Read graph entities/relations from august_graph_memory.json.
 
     Returns list of {entity, type, attributes} or {source, relation, target} rows.
@@ -710,7 +710,7 @@ def _brainQueryGraph(query: str, filters: dict | None, limit: int) -> str:
     return _json.dumps(rows[:limit], ensure_ascii=False)
 
 
-def _brainQueryDaemons(query: str, filters: dict | None, limit: int) -> str:
+def _brain_query_daemons(query: str, filters: dict | None, limit: int) -> str:
     """v1.1: Read live daemon registry (Phase 8).
 
     Returns list of {sessionId, name, status, watchCondition, lastCheck, error} rows.
@@ -758,7 +758,7 @@ def _brainQueryDaemons(query: str, filters: dict | None, limit: int) -> str:
         return _json.dumps([])
 
 
-def brainQuery(store: str, query: str = '', filters: dict | None = None, limit: int = 10) -> str:
+def brain_query(store: str, query: str = '', filters: dict | None = None, limit: int = 10) -> str:
     """Read-only query across any brain store (§11 of the cognitive spec).
 
     Returns compact JSON rows. Capped at ``limit`` and at a hard token
@@ -770,9 +770,9 @@ def brainQuery(store: str, query: str = '', filters: dict | None = None, limit: 
     _TOKENCeiling = 2000
     conn = _conn()
     if store == 'graph':
-        return _brainQueryGraph(query, filters, limit)
+        return _brain_query_graph(query, filters, limit)
     if store == 'daemons':
-        return _brainQueryDaemons(query, filters, limit)
+        return _brain_query_daemons(query, filters, limit)
     if store not in _BRAINStores:
         return json.dumps(
             {'error': f"store '{store}' not available in this build", 'available': sorted(_BRAINStores.keys())}
@@ -840,7 +840,7 @@ def brainQuery(store: str, query: str = '', filters: dict | None = None, limit: 
         return json.dumps({'error': f'brain_query({store}): {exc}'})
 
 
-def writeTimelineEvent(sessionId: str, eventSummary: str, category: str = 'general') -> int:
+def write_timeline_event(sessionId: str, eventSummary: str, category: str = 'general') -> int:
     """v2: Append an entry to episodicTimeline. Returns the new row's id."""
     conn = _conn()
     cur = conn.execute(
@@ -851,7 +851,7 @@ def writeTimelineEvent(sessionId: str, eventSummary: str, category: str = 'gener
     return as_int(cur.lastrowid)
 
 
-def timelineSweep() -> int:
+def timeline_sweep() -> int:
     """v2: Hourly sweep. For sessions with no timeline entry, generate one.
 
     Returns the number of new entries created.
@@ -901,6 +901,6 @@ def timelineSweep() -> int:
                 summary = content[:200]
             else:
                 summary = '(session ended)'
-        writeTimelineEvent(sid, summary.strip()[:500], 'sweep')
+        write_timeline_event(sid, summary.strip()[:500], 'sweep')
         count += 1
     return count

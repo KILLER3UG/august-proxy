@@ -20,13 +20,13 @@ from typing import AsyncIterator, Callable, cast
 from app.typeAliases import JsonValue
 from app.json_narrowing import as_str, as_dict, as_list, as_int
 from app.adapters.proxy_tools import (
-    getProxyOpenaiToolDefinitions,
+    get_proxy_openai_tool_definitions,
     appendMissingOpenaiTools,
-    formatManagedToolResult,
-    executeManagedProxyTool,
-    executeManagedOpenaiToolCalls,
-    getToolDefinitionName,
-    isProxyManagedLocalToolName,
+    format_managed_tool_result,
+    execute_managed_proxy_tool,
+    execute_managed_openai_tool_calls,
+    get_tool_definition_name,
+    is_proxy_managed_local_tool_name,
 )
 from app.adapters.tool_classification import classifyOpenaiToolCalls
 from app.adapters.stream_state import OpenaiStreamAccumulator, ToolCallDelta
@@ -289,11 +289,11 @@ async def fallbackClientFailedToolsOpenai(
                         except (json.JSONDecodeError, TypeError):
                             args = {}
                         try:
-                            result = await executeManagedProxyTool(name, args)
+                            result = await execute_managed_proxy_tool(name, args)
                             updated[i] = {
                                 'tool_call_id': toolCallId,
                                 'role': 'tool',
-                                'content': formatManagedToolResult(name, result),
+                                'content': format_managed_tool_result(name, result),
                             }
                             changed = True
                         except Exception as exc:
@@ -356,7 +356,7 @@ async def resolveManagedOpenaiToolCalls(
         if not classification['has_managed']:
             currentMessages.append(message)
             break
-        toolResults = await executeManagedOpenaiToolCalls(
+        toolResults = await execute_managed_openai_tool_calls(
             classification['managed_tool_calls'], knownTools, currentMessages, workspacePath, onToolEvent, parentSignal
         )
         currentMessages.append(message)
@@ -443,7 +443,7 @@ async def streamUpstreamAndResolveToolsOpenai(
                 if classification['has_managed'] and (
                     classification['can_execute_managed'] or toolRound < MAX_MANAGED_TOOL_ROUNDS
                 ):
-                    toolResults = await executeManagedOpenaiToolCalls(
+                    toolResults = await execute_managed_openai_tool_calls(
                         classification['managed_tool_calls'], knownTools, currentMessages, workspacePath, onToolEvent
                     )
                     currentMessages.extend(toolResults)
@@ -511,7 +511,7 @@ async def handleChatCompletions(
     upstreamUrl = toOpenaiCompatibleTargetUrl(baseUrl)
     clientWantsStream = raw_body.get('stream', False)
     isResponsesEndpoint = raw_body.get('_endpoint') == 'responses'
-    knownTools = getProxyOpenaiToolDefinitions()
+    knownTools = get_proxy_openai_tool_definitions()
     clientTools = cast('list[dict[str, object]]', as_list(raw_body.get('tools'), []))
     if clientTools:
         appendMissingOpenaiTools(knownTools, clientTools)
@@ -519,13 +519,13 @@ async def handleChatCompletions(
     clientToolNames: set[str] = set()
     # Proxy-injected managed tools are always locally executable
     for t in knownTools:
-        name = getToolDefinitionName(t)
-        if name and isProxyManagedLocalToolName(name):
+        name = get_tool_definition_name(t)
+        if name and is_proxy_managed_local_tool_name(name):
             managedLocalToolNames.add(name)
     # Client-listed tools: separate managed from client-owned
     for t in clientTools or []:
-        name = getToolDefinitionName(t)
-        if name and isProxyManagedLocalToolName(name):
+        name = get_tool_definition_name(t)
+        if name and is_proxy_managed_local_tool_name(name):
             managedLocalToolNames.add(name)
         elif name:
             clientToolNames.add(name)

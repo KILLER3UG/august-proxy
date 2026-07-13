@@ -27,15 +27,15 @@ MANAGED_WEB_TOOL_NAMES: set[str] = {
 MANAGED_BASH_TOOL_NAMES: set[str] = {'bash', 'mcp__workspace__bash'}
 
 
-def isManagedWebToolName(name: str) -> bool:
+def is_managed_web_tool_name(name: str) -> bool:
     return isinstance(name, str) and name in MANAGED_WEB_TOOL_NAMES
 
 
-def isManagedBashToolName(name: str) -> bool:
+def is_managed_bash_tool_name(name: str) -> bool:
     return isinstance(name, str) and name in MANAGED_BASH_TOOL_NAMES
 
 
-def getManagedWebToolKind(name: str) -> str | None:
+def get_managed_web_tool_kind(name: str) -> str | None:
     if not isinstance(name, str):
         return None
     if name in ('WebSearch', 'web_search', 'mcp__workspace__web_search'):
@@ -45,60 +45,60 @@ def getManagedWebToolKind(name: str) -> str | None:
     return None
 
 
-def getManagedWebLocalToolName(toolName: str) -> str:
+def get_managed_web_local_tool_name(toolName: str) -> str:
     """Map variant tool names to canonical local names."""
     if toolName in ('WebSearch', 'web_search', 'mcp__workspace__web_search'):
         return 'web_search'
     return 'web_fetch'
 
 
-def _stubToolDefinitions() -> list[dict[str, object]]:
+def _stub_tool_definitions() -> list[dict[str, object]]:
     """Placeholder — returns empty list until MCP/Cowork/August tools are implemented."""
     return []
 
 
-def _stubIsToolName(name: str) -> bool:
+def _stub_is_tool_name(name: str) -> bool:
     return False
 
 
-def _stubExecuteTool(name: str, args: dict[str, object]) -> str:
+def _stub_execute_tool(name: str, args: dict[str, object]) -> str:
     return f'Stub: {name} not yet implemented'
 
 
-def _stubLogActivity(category: str, detail: str) -> None:
+def _stub_log_activity(category: str, detail: str) -> None:
     pass
 
 
-def _getBrainConfig() -> dict[str, object]:
+def _get_brain_config() -> dict[str, object]:
     """Placeholder — returns defaults until brain-orchestrator is ported."""
     return {'adapter_parallel_tools': False}
 
 
-def _recordToolFailure(info: dict[str, object]) -> None:
+def _record_tool_failure(info: dict[str, object]) -> None:
     """Placeholder — no-op until tool-failure-memory is ported."""
     pass
 
 
-def _validateToolArguments(
+def _validate_tool_arguments(
     toolCall: dict[str, object], toolDefinitions: list[dict[str, object]], messages: list[dict[str, object]]
 ) -> dict[str, object]:
     """Placeholder — returns valid until validator is ported."""
     return {'valid': True}
 
 
-def _executeToolBatch(
+def _execute_tool_batch(
     toolCalls: list[dict[str, object]], executeOne: Callable[..., object], options: dict[str, object] | None = None
 ) -> list[object]:
     """Placeholder — returns empty list until tool-executor is ported."""
     return []
 
 
-def _isToolParallelSafe(toolName: str, args: dict[str, object] | None = None) -> bool:
+def _is_tool_parallel_safe(toolName: str, args: dict[str, object] | None = None) -> bool:
     """Placeholder — returns False until managed-tool-policy is ported."""
     return False
 
 
-def sanitizeToolSchema(schema: object) -> dict[str, object]:
+def sanitize_tool_schema(schema: object) -> dict[str, object]:
     """Sanitize a JSON Schema to ensure it has the expected structure."""
     if not isinstance(schema, dict):
         return {'type': 'object', 'properties': {}}
@@ -110,7 +110,7 @@ def sanitizeToolSchema(schema: object) -> dict[str, object]:
     return result
 
 
-def getManagedAnthropicWebToolDefinitions() -> list[dict[str, object]]:
+def get_managed_anthropic_web_tool_definitions() -> list[dict[str, object]]:
     """Return Anthropic-format tool definitions for managed web/bash tools."""
     return [
         {
@@ -190,7 +190,7 @@ def getManagedAnthropicWebToolDefinitions() -> list[dict[str, object]]:
     ]
 
 
-def sanitizeAnthropicToolDefinition(tool: dict[str, object] | None) -> dict[str, object] | None:
+def sanitize_anthropic_tool_definition(tool: dict[str, object] | None) -> dict[str, object] | None:
     """Normalize an Anthropic-format tool definition."""
     if not tool or not isinstance(tool, dict):
         return None
@@ -209,11 +209,11 @@ def sanitizeAnthropicToolDefinition(tool: dict[str, object] | None) -> dict[str,
     return {
         'name': name,
         'description': str(normalized.get('description', '')),
-        'input_schema': sanitizeToolSchema(normalized.get('input_schema', {})),
+        'input_schema': sanitize_tool_schema(normalized.get('input_schema', {})),
     }
 
 
-def dedupeAndCanonicalizeAnthropicTools(tools: list[dict[str, object]]) -> list[dict[str, object]]:
+def dedupe_and_canonicalize_anthropic_tools(tools: list[dict[str, object]]) -> list[dict[str, object]]:
     """Deduplicate and canonicalize Anthropic-format tool definitions.
 
     Replaces managed web tool variants with canonical versions, and
@@ -224,14 +224,14 @@ def dedupeAndCanonicalizeAnthropicTools(tools: list[dict[str, object]]) -> list[
     includeManagedFetch = False
     seenNames: set[str] = set()
     for raw in tools or []:
-        t = sanitizeAnthropicToolDefinition(raw)
+        t = sanitize_anthropic_tool_definition(raw)
         if not t:
             continue
         name = t.get('name')
         assert isinstance(name, str)
-        if isBrowserAutomationToolName(name):
+        if is_browser_automation_tool_name(name):
             continue
-        kind = getManagedWebToolKind(name)
+        kind = get_managed_web_tool_kind(name)
         if kind == 'search':
             includeManagedSearch = True
             continue
@@ -242,15 +242,15 @@ def dedupeAndCanonicalizeAnthropicTools(tools: list[dict[str, object]]) -> list[
             continue
         seenNames.add(name)
         sanitized.append(t)
-    for ct in getManagedAnthropicWebToolDefinitions():
+    for ct in get_managed_anthropic_web_tool_definitions():
         ctName = ct.get('name')
         assert isinstance(ctName, str)
-        kind = getManagedWebToolKind(ctName)
+        kind = get_managed_web_tool_kind(ctName)
         if kind == 'search' and includeManagedSearch or (kind == 'fetch' and includeManagedFetch):
             if ctName not in seenNames:
                 seenNames.add(ctName)
                 sanitized.append(ct)
-    bashDefs = [t for t in getManagedAnthropicWebToolDefinitions() if t.get('name') == 'mcp__workspace__bash']
+    bashDefs = [t for t in get_managed_anthropic_web_tool_definitions() if t.get('name') == 'mcp__workspace__bash']
     for bd in bashDefs:
         bdName = bd.get('name')
         assert isinstance(bdName, str)
@@ -260,16 +260,16 @@ def dedupeAndCanonicalizeAnthropicTools(tools: list[dict[str, object]]) -> list[
     return sanitized
 
 
-def getCanonicalManagedAnthropicWebTools() -> list[dict[str, object]]:
+def get_canonical_managed_anthropic_web_tools() -> list[dict[str, object]]:
     """Return only the canonical web tool definitions."""
     return [
         t
-        for t in getManagedAnthropicWebToolDefinitions()
+        for t in get_managed_anthropic_web_tool_definitions()
         if t['name'] in ('WebSearch', 'WebFetch', 'mcp__workspace__bash')
     ]
 
 
-def openaiToAnthropicToolDefinition(tool: dict[str, object]) -> dict[str, object]:
+def openai_to_anthropic_tool_definition(tool: dict[str, object]) -> dict[str, object]:
     """Convert an OpenAI-format tool definition to Anthropic format."""
     if tool and tool.get('type') == 'function':
         func = tool.get('function')
@@ -277,30 +277,30 @@ def openaiToAnthropicToolDefinition(tool: dict[str, object]) -> dict[str, object
         return {
             'name': func.get('name'),
             'description': func.get('description', ''),
-            'input_schema': sanitizeToolSchema(func.get('parameters', {})),
+            'input_schema': sanitize_tool_schema(func.get('parameters', {})),
         }
     return tool
 
 
-def anthropicToOpenaiToolDefinition(tool: dict[str, object]) -> dict[str, object]:
+def anthropic_to_openai_tool_definition(tool: dict[str, object]) -> dict[str, object]:
     """Convert an Anthropic-format tool definition to OpenAI format."""
     return {
         'type': 'function',
         'function': {
             'name': tool.get('name', ''),
             'description': tool.get('description', ''),
-            'parameters': sanitizeToolSchema(tool.get('input_schema', {})),
+            'parameters': sanitize_tool_schema(tool.get('input_schema', {})),
             'strict': tool.get('strict'),
         },
     }
 
 
-def getCanonicalCoworkAnthropicTools() -> list[dict[str, object]]:
+def get_canonical_cowork_anthropic_tools() -> list[dict[str, object]]:
     """Return Cowork tools in Anthropic format."""
-    return [openaiToAnthropicToolDefinition(t) for t in _stubToolDefinitions()]
+    return [openai_to_anthropic_tool_definition(t) for t in _stub_tool_definitions()]
 
 
-def getCanonicalManagedOpenaiWebTools() -> list[dict[str, object]]:
+def get_canonical_managed_openai_web_tools() -> list[dict[str, object]]:
     """Return OpenAI-format managed web tool definitions."""
     return [
         {
@@ -368,32 +368,32 @@ def getCanonicalManagedOpenaiWebTools() -> list[dict[str, object]]:
     ]
 
 
-def getCanonicalManagedAnthropicOpenaiWebTools() -> list[dict[str, object]]:
+def get_canonical_managed_anthropic_openai_web_tools() -> list[dict[str, object]]:
     """Return managed web tools in OpenAI format (Anthropic-mapped)."""
-    return [anthropicToOpenaiToolDefinition(t) for t in getCanonicalManagedAnthropicWebTools()]
+    return [anthropic_to_openai_tool_definition(t) for t in get_canonical_managed_anthropic_web_tools()]
 
 
-def getProxyOpenaiToolDefinitions() -> list[dict[str, object]]:
+def get_proxy_openai_tool_definitions() -> list[dict[str, object]]:
     """Return all proxy tool definitions in OpenAI format."""
     return [
-        *_stubToolDefinitions(),
-        *_stubToolDefinitions(),
-        *_stubToolDefinitions(),
-        *getCanonicalManagedOpenaiWebTools(),
+        *_stub_tool_definitions(),
+        *_stub_tool_definitions(),
+        *_stub_tool_definitions(),
+        *get_canonical_managed_openai_web_tools(),
     ]
 
 
-def getProxyOpenaiToolDefinitionsForAnthropic() -> list[dict[str, object]]:
+def get_proxy_openai_tool_definitions_for_anthropic() -> list[dict[str, object]]:
     """Return all proxy tool definitions in Anthropic format."""
     return [
-        *_stubToolDefinitions(),
-        *_stubToolDefinitions(),
-        *_stubToolDefinitions(),
-        *getCanonicalManagedAnthropicOpenaiWebTools(),
+        *_stub_tool_definitions(),
+        *_stub_tool_definitions(),
+        *_stub_tool_definitions(),
+        *get_canonical_managed_anthropic_openai_web_tools(),
     ]
 
 
-def getToolDefinitionName(tool: ToolDefinition | dict[str, object]) -> str:
+def get_tool_definition_name(tool: ToolDefinition | dict[str, object]) -> str:
     """Extract the name from a tool definition (Anthropic or OpenAI format)."""
     if isinstance(tool, ToolDefinition):
         return tool.function.name
@@ -406,12 +406,12 @@ def getToolDefinitionName(tool: ToolDefinition | dict[str, object]) -> str:
     return name if isinstance(name, str) else ''
 
 
-def appendMissingTools(targetTools: list[dict[str, object]], extraTools: list[dict[str, object]]) -> list[str]:
+def append_missing_tools(targetTools: list[dict[str, object]], extraTools: list[dict[str, object]]) -> list[str]:
     """Append tools from extra_tools that are not already in target_tools."""
-    seen = {getToolDefinitionName(t) for t in targetTools or [] if getToolDefinitionName(t)}
+    seen = {get_tool_definition_name(t) for t in targetTools or [] if get_tool_definition_name(t)}
     appended: list[str] = []
     for tool in extraTools or []:
-        name = getToolDefinitionName(tool)
+        name = get_tool_definition_name(tool)
         if not name or name in seen:
             continue
         seen.add(name)
@@ -420,22 +420,22 @@ def appendMissingTools(targetTools: list[dict[str, object]], extraTools: list[di
     return appended
 
 
-appendMissingAnthropicTools = appendMissingTools
-appendMissingOpenaiTools = appendMissingTools
+appendMissingAnthropicTools = append_missing_tools
+appendMissingOpenaiTools = append_missing_tools
 
 
-def isProxyManagedLocalToolName(name: str) -> bool:
+def is_proxy_managed_local_tool_name(name: str) -> bool:
     """Check if a tool name is proxy-managed."""
     return (
-        isManagedWebToolName(name)
-        or isManagedBashToolName(name)
-        or _stubIsToolName(name)
-        or _stubIsToolName(name)
-        or _stubIsToolName(name)
+        is_managed_web_tool_name(name)
+        or is_managed_bash_tool_name(name)
+        or _stub_is_tool_name(name)
+        or _stub_is_tool_name(name)
+        or _stub_is_tool_name(name)
     )
 
 
-def rememberManagedLocalToolDefinitions(
+def remember_managed_local_tool_definitions(
     tools: list[dict[str, object]], ctx: dict[str, object] | None = None
 ) -> list[str]:
     """Remember which tool definitions are proxy-managed."""
@@ -443,8 +443,8 @@ def rememberManagedLocalToolDefinitions(
         return []
     names: list[str] = []
     for tool in tools or []:
-        name = getToolDefinitionName(tool)
-        if not isProxyManagedLocalToolName(name):
+        name = get_tool_definition_name(tool)
+        if not is_proxy_managed_local_tool_name(name):
             continue
         managedNames = ctx.get('managed_local_tool_names')
         assert isinstance(managedNames, set)
@@ -453,7 +453,7 @@ def rememberManagedLocalToolDefinitions(
     return names
 
 
-def buildClientToolGuidance(clientTools: list[dict[str, object]] | None) -> str:
+def build_client_tool_guidance(clientTools: list[dict[str, object]] | None) -> str:
     """Build system prompt guidance for client-side tools."""
     if not clientTools:
         return ''
@@ -483,7 +483,7 @@ def buildClientToolGuidance(clientTools: list[dict[str, object]] | None) -> str:
     return '\n'.join(lines)
 
 
-def isBrowserAutomationToolName(name: str) -> bool:
+def is_browser_automation_tool_name(name: str) -> bool:
     """Check if a tool name looks like a browser automation tool."""
     if not isinstance(name, str):
         return False
@@ -501,7 +501,7 @@ def isBrowserAutomationToolName(name: str) -> bool:
     return any((kw in lower for kw in browserKeywords))
 
 
-def formatManagedWebResult(result: object) -> str:
+def format_managed_web_result(result: object) -> str:
     """Format web search/fetch results as readable text."""
     if not result or not isinstance(result, dict):
         return str(result or '')
@@ -530,11 +530,11 @@ def formatManagedWebResult(result: object) -> str:
     return json.dumps(result)
 
 
-def formatManagedToolResult(toolName: str, result: object) -> str:
+def format_managed_tool_result(toolName: str, result: object) -> str:
     """Format a managed tool execution result."""
-    if isManagedWebToolName(toolName):
-        return formatManagedWebResult(result)
-    if isManagedBashToolName(toolName):
+    if is_managed_web_tool_name(toolName):
+        return format_managed_web_result(result)
+    if is_managed_bash_tool_name(toolName):
         if not isinstance(result, dict):
             return str(result or '')
         parts = []
@@ -552,10 +552,10 @@ def formatManagedToolResult(toolName: str, result: object) -> str:
     return json.dumps(result)
 
 
-async def executeManagedProxyTool(
+async def execute_managed_proxy_tool(
     toolName: str,
     args: dict[str, object],
-    workspacePath: str | None = None,
+    workspace_path: str | None = None,
     onProgress: Callable[[str], None] | None = None,
     parentSignal: object = None,
 ) -> object:
@@ -564,24 +564,24 @@ async def executeManagedProxyTool(
     Currently stubs all external service calls. Real implementations come
     in Phases 3-5 (tool handlers, MCP client, etc.).
     """
-    if isManagedWebToolName(toolName):
-        localName = getManagedWebLocalToolName(toolName)
-        _stubLogActivity('WEB', f'{toolName} executed locally')
-        return _stubExecuteTool(localName, args or {})
-    if isManagedBashToolName(toolName):
-        _stubLogActivity('BASH', f'{toolName} executed locally')
-        return _stubExecuteTool(toolName, args or {})
-    if _stubIsToolName(toolName):
-        _stubLogActivity('TOOL', f'{toolName} executed by proxy')
-        return _stubExecuteTool(toolName, args or {})
+    if is_managed_web_tool_name(toolName):
+        localName = get_managed_web_local_tool_name(toolName)
+        _stub_log_activity('WEB', f'{toolName} executed locally')
+        return _stub_execute_tool(localName, args or {})
+    if is_managed_bash_tool_name(toolName):
+        _stub_log_activity('BASH', f'{toolName} executed locally')
+        return _stub_execute_tool(toolName, args or {})
+    if _stub_is_tool_name(toolName):
+        _stub_log_activity('TOOL', f'{toolName} executed by proxy')
+        return _stub_execute_tool(toolName, args or {})
     raise ValueError(f'Unsupported managed proxy tool: {toolName}')
 
 
-async def executeManagedOpenaiToolCalls(
+async def execute_managed_openai_tool_calls(
     toolCalls: list[dict[str, object]],
     knownTools: list[dict[str, object]],
     messages: list[dict[str, object]],
-    workspacePath: str | None = None,
+    workspace_path: str | None = None,
     onToolEvent: Callable[[dict[str, object]], None] | None = None,
     parentSignal: object = None,
 ) -> list[dict[str, object]]:
@@ -604,9 +604,9 @@ async def executeManagedOpenaiToolCalls(
         else:
             argsRaw = '{}'
         syntheticCall: dict[str, object] = {'function': {'name': toolName, 'arguments': argsRaw}}
-        validation = _validateToolArguments(syntheticCall, knownTools, messages)
+        validation = _validate_tool_arguments(syntheticCall, knownTools, messages)
         if not validation.get('valid'):
-            _stubLogActivity('VALIDATOR', f"OpenAI tool '{toolName}' rejected: {validation.get('error')}")
+            _stub_log_activity('VALIDATOR', f"OpenAI tool '{toolName}' rejected: {validation.get('error')}")
             results.append(
                 {
                     'tool_call_id': tc.get('id'),
@@ -625,12 +625,12 @@ async def executeManagedOpenaiToolCalls(
         except (json.JSONDecodeError, TypeError):
             parsedArgs = {}
         try:
-            result = await executeManagedProxyTool(toolName, parsedArgs, workspacePath, parentSignal=parentSignal)
+            result = await execute_managed_proxy_tool(toolName, parsedArgs, workspace_path, parentSignal=parentSignal)
             results.append(
-                {'tool_call_id': tc.get('id'), 'role': 'tool', 'content': formatManagedToolResult(toolName, result)}
+                {'tool_call_id': tc.get('id'), 'role': 'tool', 'content': format_managed_tool_result(toolName, result)}
             )
         except Exception as exc:
-            _recordToolFailure(
+            _record_tool_failure(
                 {'tool_name': toolName, 'args': parsedArgs, 'error': str(exc), 'phase': 'openai-managed-tool'}
             )
             results.append({'tool_call_id': tc.get('id'), 'role': 'tool', 'content': f'Error: {exc}'})

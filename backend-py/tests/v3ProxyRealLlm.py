@@ -15,7 +15,7 @@ for the external credential.
 
 Notes:
 - These make real HTTP calls (~10-30s each) and need network access.
-- The managed-tool test triggers ``executeManagedProxyTool`` (a real web
+- The managed-tool test triggers ``execute_managed_proxy_tool`` (a real web
   search), so it also needs outbound network to the search backend.
 - Provider routing is set up via a temporary ``providers.json`` (same pattern
   as ``tests/testProviderCredentials.py``) pointing the external model alias at
@@ -112,7 +112,7 @@ def testManagedToolLoopRunsThroughAnthropicAdapter(externalProvider):
     / managed-tool interception works end-to-end against a real model)."""
     import asyncio
     from app.adapters import anthropic as anthropicAdapter
-    from app.adapters.proxy_tools import getManagedAnthropicWebToolDefinitions
+    from app.adapters.proxy_tools import get_managed_anthropic_web_tool_definitions
 
     body = {
         'model': TEST_MODEL,
@@ -123,7 +123,7 @@ def testManagedToolLoopRunsThroughAnthropicAdapter(externalProvider):
             }
         ],
         'stream': True,
-        'tools': getManagedAnthropicWebToolDefinitions(),
+        'tools': get_managed_anthropic_web_tool_definitions(),
     }
     result, _headers = anthropicAdapter.handleMessages(body, request=None)
     assert hasattr(result, '__aiter__'), 'expected an async iterator for streaming'

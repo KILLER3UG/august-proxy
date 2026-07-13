@@ -7,7 +7,7 @@ Port of backend/services/memory/memory-retention.js.
 from __future__ import annotations
 import time
 from datetime import datetime
-from app.services.memory_store import listMemory, deleteMemory, listFacts, deleteFact
+from app.services.memory_store import list_memory, delete_memory, list_facts, delete_fact
 
 _RETENTION = {'transient': 86400 * 7, 'normal': 86400 * 30, 'important': 86400 * 90, 'critical': 86400 * 365}
 
@@ -26,17 +26,17 @@ def applyRetentionPolicy(policy: str = 'normal') -> dict[str, object]:
     now = time.time()
     memoryRemoved = 0
     factsRemoved = 0
-    for entry in listMemory():
+    for entry in list_memory():
         updated = entry.get('updatedAt', '')
         age = now - _parseTimestamp(updated) if updated else maxAge + 1
         if age > maxAge:
-            deleteMemory(entry['key'])
+            delete_memory(entry['key'])
             memoryRemoved += 1
-    for fact in listFacts():
+    for fact in list_facts():
         updated = fact.get('updatedAt', '')
         age = now - _parseTimestamp(updated) if updated else maxAge + 1
         if age > maxAge:
-            deleteFact(fact['factKey'])
+            delete_fact(fact['factKey'])
             factsRemoved += 1
     stats: dict[str, object] = {'memory_removed': memoryRemoved, 'facts_removed': factsRemoved}
     return stats
@@ -44,7 +44,7 @@ def applyRetentionPolicy(policy: str = 'normal') -> dict[str, object]:
 
 def getEntryAge(key: str) -> float | None:
     """Get the age in seconds of a memory entry."""
-    for entry in listMemory():
+    for entry in list_memory():
         if entry.get('key') == key:
             updated = entry.get('updatedAt', '')
             if updated:

@@ -20,7 +20,7 @@ from app.services.memory.background_review import (
     _lastRelevantMessages,
     tryBackgroundReview,
 )
-from app.services.memory_store import getMemory
+from app.services.memory_store import get_memory
 
 
 class TestReviewGates:
@@ -168,7 +168,7 @@ async def testDoReviewSavesMemoryFacts(isolatedData):
 
     result = await _doReview([{'role': 'user'}], llm_client=stubLlm)
     assert len(result['facts_added']) == 2
-    facts = getMemory('coreMemory') or []
+    facts = get_memory('coreMemory') or []
     assert len(facts) == 2
     assert any(('python' in f['fact'] for f in facts))
 
@@ -208,7 +208,7 @@ class TestSaveFact:
     KEY = 'coreMemory'
 
     def _facts(self):
-        return getMemory(self.KEY) or []
+        return get_memory(self.KEY) or []
 
     def testAddFact(self, isolatedData):
         _saveFact('add', 'User likes simplicity.')

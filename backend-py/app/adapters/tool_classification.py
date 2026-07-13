@@ -9,7 +9,7 @@ tools to execute locally vs. forward to the client.
 
 from __future__ import annotations
 from app.json_narrowing import as_str
-from app.adapters.proxy_tools import isProxyManagedLocalToolName
+from app.adapters.proxy_tools import is_proxy_managed_local_tool_name
 from app.models import ToolCall, ToolUseBlock, ToolClassificationResult
 
 
@@ -48,7 +48,7 @@ def _isManagedProxyToolName(name: str | None, managedLocalToolNames: set[str] | 
     """
     if not name:
         return False
-    if not isProxyManagedLocalToolName(name):
+    if not is_proxy_managed_local_tool_name(name):
         return False
     if managedLocalToolNames is not None and len(managedLocalToolNames) > 0:
         if name not in managedLocalToolNames:

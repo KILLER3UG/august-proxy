@@ -81,7 +81,7 @@ class ToolCallTracker:
         self._failureCount.clear()
         self._lastTextResponse = time.monotonic()
 
-    def getStats(self) -> dict[str, object]:
+    def get_stats(self) -> dict[str, object]:
         """Return current tracker stats for debugging."""
         return {
             'sequence_length': len(self._callSequence),

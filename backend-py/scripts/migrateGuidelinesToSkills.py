@@ -18,11 +18,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def main() -> None:
-    from app.services.memory_store import getMemory, saveMemory
+    from app.services.memory_store import get_memory, save_memory
     from app.services import skill_service
 
     GUIDELINES_KEY = 'learned_guidelines'
-    guidelines = getMemory(GUIDELINES_KEY) or []
+    guidelines = get_memory(GUIDELINES_KEY) or []
     if not isinstance(guidelines, list):
         guidelines = []
     if not guidelines:
@@ -55,7 +55,7 @@ def main() -> None:
             print(msg)
             errors.append(msg)
     if not errors:
-        saveMemory(GUIDELINES_KEY, [])
+        save_memory(GUIDELINES_KEY, [])
         print(f'Cleared {GUIDELINES_KEY} store. All {created} guidelines migrated.')
     else:
         print(f'Migrated {created} guidelines with {len(errors)} errors. KV store NOT cleared.')

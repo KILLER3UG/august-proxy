@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import pytest
 from app.services.memory import context_builder
-from app.services.memory_store import getMemory, saveMemory
+from app.services.memory_store import get_memory, save_memory
 
 
 class TestContextBuilder:
@@ -47,8 +47,8 @@ async def testMigrationScriptRoundTrip(isolatedData, isolatedSkills):
             'active': False,
         },
     ]
-    saveMemory('learned_guidelines', guidelines)
-    from app.services.memory_store import getMemory
+    save_memory('learned_guidelines', guidelines)
+    from app.services.memory_store import get_memory
 
     active = [g for g in guidelines if g.get('active', True)]
     created = 0
@@ -65,8 +65,8 @@ async def testMigrationScriptRoundTrip(isolatedData, isolatedSkills):
     assert len(matching) >= 1
     matching = skill_service.search(query='prefers short')
     assert len(matching) >= 1
-    saveMemory('learned_guidelines', [])
-    remaining = getMemory('learned_guidelines') or []
+    save_memory('learned_guidelines', [])
+    remaining = get_memory('learned_guidelines') or []
     assert len(remaining) == 0
 
 

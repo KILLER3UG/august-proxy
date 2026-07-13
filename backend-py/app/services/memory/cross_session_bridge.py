@@ -7,14 +7,14 @@ Port of backend/services/memory/cross-session-bridge.js.
 from __future__ import annotations
 from datetime import datetime, timezone
 from app.json_narrowing import as_list, as_dict
-from app.services.memory_store import saveMemory, getMemory, searchMemory
+from app.services.memory_store import save_memory, get_memory, search_memory
 
 _BRIDGEKey = 'session_bridges'
 
 
 def bridgeSessions(sourceId: str, targetId: str, reason: str = 'related') -> None:
     """Create a bridge between two sessions."""
-    bridges = getMemory(_BRIDGEKey) or {}
+    bridges = get_memory(_BRIDGEKey) or {}
     if not isinstance(bridges, dict):
         bridges = {}
     targets = as_list(bridges.get(sourceId))
@@ -26,12 +26,12 @@ def bridgeSessions(sourceId: str, targetId: str, reason: str = 'related') -> Non
         }
     )
     bridges[sourceId] = targets
-    saveMemory(_BRIDGEKey, bridges)
+    save_memory(_BRIDGEKey, bridges)
 
 
 def getSessionBridges(sessionId: str) -> list[dict[str, object]]:
     """Get all bridges for a session."""
-    bridges = getMemory(_BRIDGEKey) or {}
+    bridges = get_memory(_BRIDGEKey) or {}
     if not isinstance(bridges, dict):
         return []
     return [as_dict(item) for item in as_list(bridges.get(sessionId))]
@@ -43,7 +43,7 @@ def findRelatedSessions(sessionId: str, topic: str = '') -> list[dict[str, objec
     for b in getSessionBridges(sessionId):
         related.append({'id': b['targetId'], 'reason': b.get('reason', 'bridged'), 'score': 1.0})
     if topic:
-        topicSessions = searchMemory(f'session_topic:{topic}')
+        topicSessions = search_memory(f'session_topic:{topic}')
         for s in topicSessions:
             sid = s.get('key', '')
             if sid != sessionId and (not any((r['id'] == sid for r in related))):

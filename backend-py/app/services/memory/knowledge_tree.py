@@ -6,18 +6,18 @@ Port of backend/services/memory/knowledge-tree.js.
 
 from __future__ import annotations
 from datetime import datetime, timezone
-from app.services.memory_store import saveMemory, getMemory
+from app.services.memory_store import save_memory, get_memory
 from app.json_narrowing import as_str, as_dict, as_list
 
 _TREEKey = 'knowledge_tree'
 
 
 def _read() -> dict[str, object]:
-    return as_dict(getMemory(_TREEKey), {'nodes': {}, 'root': None})
+    return as_dict(get_memory(_TREEKey), {'nodes': {}, 'root': None})
 
 
 def _write(tree: dict[str, object]) -> None:
-    saveMemory(_TREEKey, tree)
+    save_memory(_TREEKey, tree)
 
 
 def createNode(topic: str, parentTopic: str | None = None, content: str = '') -> dict[str, object]:

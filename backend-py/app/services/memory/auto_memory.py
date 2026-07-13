@@ -11,7 +11,7 @@ import json
 import re
 import time
 from datetime import datetime, timezone
-from app.services.memory_store import saveMemory, getMemory
+from app.services.memory_store import save_memory, get_memory
 
 _MAXMemories = 100
 
@@ -116,9 +116,9 @@ def deleteOrphanedBlob() -> bool:
     Returns True if the blob was found and deleted, False otherwise.
     Call this once after migration to avoid polluting LIKE-based searches.
     """
-    blob = getMemory('autoMemories')
+    blob = get_memory('autoMemories')
     if blob is not None:
-        saveMemory('autoMemories', None)
+        save_memory('autoMemories', None)
         return True
     return False
 

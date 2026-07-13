@@ -128,7 +128,7 @@ async def testApiUsageSessionRecordsAndReturnsContextTokens(client, isolatedData
     from app.services import memory_store
 
     sid = 'test-ctx-session'
-    memory_store.recordUsage(
+    memory_store.record_usage(
         sessionId=sid, model='claude-sonnet', inputTokens=12000, outputTokens=900, contextTokens=4823
     )
     resp = await client.get(f'/api/usage/session?id={sid}')
@@ -164,7 +164,7 @@ async def testApiUsageSessionContextTokensFallsBackToInputTokens(client, isolate
     from app.services import memory_store
 
     sid = 'test-fallback-session'
-    memory_store.recordUsage(sessionId=sid, model='claude-sonnet', inputTokens=7777, outputTokens=100, contextTokens=0)
+    memory_store.record_usage(sessionId=sid, model='claude-sonnet', inputTokens=7777, outputTokens=100, contextTokens=0)
     resp = await client.get(f'/api/usage/session?id={sid}')
     data = resp.json()
     assert resp.status_code == 200

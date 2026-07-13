@@ -27,7 +27,7 @@ from typing import cast
 
 from app.config import settings
 from app.lib.paths import dataPath
-from app.services.memory_store import recordConfigAudit
+from app.services.memory_store import record_config_audit
 from app.typeAliases import AliasDict, JsonValue
 from app.json_narrowing import as_dict, as_list, as_str
 from app.atomic_write import write_json_atomic
@@ -131,7 +131,7 @@ def createAlias(
         beforeCopy = None
         aliases.append(entry)
     _writeAliases(aliases)
-    recordConfigAudit(
+    record_config_audit(
         'alias',
         'create' if beforeCopy is None else 'upsert',
         actor,
@@ -160,7 +160,7 @@ def update_alias(
     if target_provider is not None:
         existing['targetProvider'] = target_provider
     _writeAliases(aliases)
-    recordConfigAudit('alias', 'update', actor, before=cast('JsonValue', before), after=cast('JsonValue', existing))
+    record_config_audit('alias', 'update', actor, before=cast('JsonValue', before), after=cast('JsonValue', existing))
     return existing
 
 
@@ -172,7 +172,7 @@ def delete_alias(alias: str, actor: str = 'system') -> bool:
     if len(newAliases) == len(aliases):
         return False
     _writeAliases(newAliases)
-    recordConfigAudit('alias', 'delete', actor, before=cast('JsonValue', before), after=None)
+    record_config_audit('alias', 'delete', actor, before=cast('JsonValue', before), after=None)
     return True
 
 
@@ -198,5 +198,5 @@ def replaceAliases(aliases: list[AliasDict], actor: str = 'system') -> list[Alia
         )
     before = listAliases()
     _writeAliases(normalised)
-    recordConfigAudit('alias', 'replace', actor, before=cast('JsonValue', before), after=cast('JsonValue', normalised))
+    record_config_audit('alias', 'replace', actor, before=cast('JsonValue', before), after=cast('JsonValue', normalised))
     return normalised

@@ -134,7 +134,7 @@ async def testApiConversationsIsDict(client):
 async def testApiBrainStatus(client, isolatedData):
     from app.services import memory_store
 
-    memory_store.saveMemory('k1', {'summary': 'v1'})
+    memory_store.save_memory('k1', {'summary': 'v1'})
     r = await client.get('/api/brain/status')
     assert r.status_code == 200
     body = r.json()
@@ -147,7 +147,7 @@ async def testApiBrainStatus(client, isolatedData):
 async def testApiBrainItems(client, isolatedData):
     from app.services import memory_store
 
-    memory_store.saveMemory('k1', {'summary': 'hello'})
+    memory_store.save_memory('k1', {'summary': 'hello'})
     r = await client.get('/api/brain/items')
     assert r.status_code == 200
     items = r.json().get('items', [])
@@ -174,7 +174,7 @@ async def testApiBrainPrompt(client):
 async def testApiBrainSearch(client, isolatedData):
     from app.services import memory_store
 
-    memory_store.saveMemory('greeting', {'summary': 'hello world'})
+    memory_store.save_memory('greeting', {'summary': 'hello world'})
     r = await client.get('/api/brain/search?q=hello')
     assert r.status_code == 200
     results = r.json().get('results', [])
@@ -193,7 +193,7 @@ async def testApiBrainLearning(client):
 async def testApiBrainGuidelines(client, isolatedData):
     from app.services import memory_store
 
-    memory_store.saveFact('g1', {'text': 'Be concise'}, category='guideline')
+    memory_store.save_fact('g1', {'text': 'Be concise'}, category='guideline')
     r = await client.get('/api/brain/guidelines')
     assert r.status_code == 200
     guidelines = r.json().get('guidelines', [])

@@ -90,7 +90,7 @@ config_service.dataPath = lambda name, *a, **kw: path_obj if name == 'providers.
 provider_credentials.invalidate()
 
 from app.adapters import openai as openaiAdapter  # noqa: E402
-from app.adapters.proxy_tools import getManagedAnthropicWebToolDefinitions  # noqa: E402
+from app.adapters.proxy_tools import get_managed_anthropic_web_tool_definitions  # noqa: E402
 
 
 async def _collect(it):
@@ -123,7 +123,7 @@ body3 = {
     'model': 'test-model',
     'messages': [{'role': 'user', 'content': 'search'}],
     'stream': True,
-    'tools': getManagedAnthropicWebToolDefinitions(),
+    'tools': get_managed_anthropic_web_tool_definitions(),
 }
 res3, _ = asyncio.run(openaiAdapter.handleChatCompletions(body3, request=None))
 ev3 = asyncio.run(_collect(res3))

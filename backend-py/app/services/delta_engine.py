@@ -194,16 +194,16 @@ def _hashPath(filePath: str) -> str:
 
 def _writeHash(key: str, content: str) -> None:
     """Store a content hash (in memory for now, extend to SQLite if needed)."""
-    from app.services.memory_store import saveMemory
+    from app.services.memory_store import save_memory
 
-    saveMemory(key, content)
+    save_memory(key, content)
 
 
 def _readHash(key: str) -> str | None:
     """Read a stored content hash."""
-    from app.services.memory_store import getMemory
+    from app.services.memory_store import get_memory
 
-    val = getMemory(key)
+    val = get_memory(key)
     if isinstance(val, str):
         return val
     return None

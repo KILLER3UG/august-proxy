@@ -7,14 +7,14 @@ Port of backend/services/memory/tool-failure-memory.js.
 from __future__ import annotations
 from app.json_narrowing import as_str, as_dict
 from datetime import datetime, timezone
-from app.services.memory_store import saveMemory, getMemory
+from app.services.memory_store import save_memory, get_memory
 
 _FAILURESKey = 'tool_failures'
 
 
 def recordToolFailure(info: dict[str, object]) -> None:
     """Record a tool failure in memory."""
-    failures = getMemory(_FAILURESKey) or []
+    failures = get_memory(_FAILURESKey) or []
     if not isinstance(failures, list):
         failures = []
     failures.append(
@@ -27,12 +27,12 @@ def recordToolFailure(info: dict[str, object]) -> None:
         }
     )
     failures = failures[-50:]
-    saveMemory(_FAILURESKey, failures)
+    save_memory(_FAILURESKey, failures)
 
 
 def recallToolFailures(toolName: str, limit: int = 5) -> list[dict[str, object]]:
     """Get recent failures for a specific tool."""
-    failures = getMemory(_FAILURESKey) or []
+    failures = get_memory(_FAILURESKey) or []
     if not isinstance(failures, list):
         return []
     matches: list[dict[str, object]] = []

@@ -413,16 +413,16 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     whats-new, and guard mode rules — achieving Node.js parity.
     """
     from app.services.memory.context_builder import buildSystemPrompt as ctxBuild
-    from app.services.memory_store import getMemory
+    from app.services.memory_store import get_memory
 
     memory = {}
-    profile = getMemory('userProfile')
+    profile = get_memory('userProfile')
     if profile:
         memory['userProfile'] = profile
-    context = getMemory('current_context')
+    context = get_memory('current_context')
     if context:
         memory['global_context'] = context
-    projects = getMemory('active_projects')
+    projects = get_memory('active_projects')
     if projects:
         memory['active_projects'] = projects
     try:
@@ -455,7 +455,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
             memory['learnedHeuristics'] = [dict(r) for r in heuristicsRows]
     except Exception:
         pass
-    coreFacts = getMemory('coreMemory')
+    coreFacts = get_memory('coreMemory')
     if coreFacts:
         memory['coreMemory'] = coreFacts
     agentContext = None
@@ -497,7 +497,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
             pass
     memoryStats = {}
     try:
-        from app.services.memory_store import getStats as memStats
+        from app.services.memory_store import get_stats as memStats
 
         memoryStats = memStats()
     except Exception:
@@ -749,13 +749,13 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     Phase 3: If progressive disclosure is active and the tool set exceeds
     the threshold, BM25 pre-loads the most relevant tools and defers the rest.
     """
-    from app.adapters.proxy_tools import sanitizeAnthropicToolDefinition
+    from app.adapters.proxy_tools import sanitize_anthropic_tool_definition
     from app.services.tool_registry import listTools
 
     tools: list[dict[str, object]] = []
     seen: set[str] = set()
     for raw in listTools():
-        t = sanitizeAnthropicToolDefinition(raw)
+        t = sanitize_anthropic_tool_definition(raw)
         if not t:
             continue
         if t['name'] in seen:
@@ -784,7 +784,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     OpenAI/Anthropic format) are normalized to OpenAI format and deduped
     by name, then real MCP server tools are appended.
     """
-    from app.adapters.proxy_tools import anthropicToOpenaiToolDefinition
+    from app.adapters.proxy_tools import anthropic_to_openai_tool_definition
     from app.services.tool_registry import listTools
 
     tools: list[dict[str, object]] = []
@@ -796,7 +796,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
                 seen.add(name)
                 tools.append(raw)
             continue
-        t = anthropicToOpenaiToolDefinition(raw)
+        t = anthropic_to_openai_tool_definition(raw)
         name = as_str(as_dict(t.get('function', {})).get('name', ''))
         if name and name not in seen:
             seen.add(name)
@@ -807,12 +807,12 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
 
 def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, object]]:
     """Real MCP server tools in Anthropic format, deduped against ``seen``."""
-    from app.adapters.proxy_tools import openaiToAnthropicToolDefinition
+    from app.adapters.proxy_tools import openai_to_anthropic_tool_definition
     from app.services.tools.mcp_client import getMcpToolDefinitionsSync
 
     out: list[dict[str, object]] = []
     for raw in getMcpToolDefinitionsSync():
-        t = openaiToAnthropicToolDefinition(raw)
+        t = openai_to_anthropic_tool_definition(raw)
         name = as_str(t.get('name', ''))
         if name and name not in seen:
             seen.add(name)
@@ -1388,9 +1388,9 @@ async def sendWorkbenchMessageStream(
         _emitSessionStatus(sessionId)
         if totalInputTokens > 0 or totalOutputTokens > 0:
             try:
-                from app.services.memory_store import recordUsage
+                from app.services.memory_store import record_usage
 
-                recordUsage(
+                record_usage(
                     sessionId=session.id,
                     model=resolvedModel,
                     inputTokens=totalInputTokens,
@@ -1400,7 +1400,7 @@ async def sendWorkbenchMessageStream(
                 session.totalInputTokens += totalInputTokens
                 session.totalOutputTokens += totalOutputTokens
             except Exception:
-                logger.exception('workbench recordUsage failed')
+                logger.exception('workbench record_usage failed')
     finally:
         if emit:
             emit({'type': 'done', 'sessionId': sessionId})
@@ -2196,7 +2196,7 @@ def listProxyCapabilities() -> dict[str, object]:
     }
 
 
-def getSession() -> WorkbenchSession | None:
+def get_session() -> WorkbenchSession | None:
     """Get the active workbench session from the current context.
 
     Used by the update_state tool to read/write execution state.

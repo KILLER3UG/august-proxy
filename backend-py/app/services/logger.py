@@ -179,7 +179,7 @@ class RequestTracker:
             return list(self._log)
         return [e for e in self._log if _parseTimestamp(as_str(e.get('startedAt'), '')) >= cutoff]
 
-    def getStats(self, period: str = 'all') -> dict[str, object]:
+    def get_stats(self, period: str = 'all') -> dict[str, object]:
         """Compute aggregate stats from the request log."""
         entries = self.getFiltered(period)
         total = len(entries)
@@ -346,8 +346,8 @@ def getFilteredRequests(period: str = 'all') -> list[dict[str, object]]:
     return _tracker.getFiltered(period)
 
 
-def getStats(period: str = 'all') -> dict[str, object]:
-    return _tracker.getStats(period)
+def get_stats(period: str = 'all') -> dict[str, object]:
+    return _tracker.get_stats(period)
 
 
 def getRequestDetails(period: str = 'all') -> list[dict[str, object]]:

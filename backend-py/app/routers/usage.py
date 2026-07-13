@@ -32,9 +32,9 @@ class UsageRecord(BaseModel):
 
 
 @router.post('')
-async def recordUsage(body: UsageRecord):
+async def record_usage(body: UsageRecord):
     """Record a usage event."""
-    usageId = memory_store.recordUsage(
+    usageId = memory_store.record_usage(
         body.sessionId, body.model, body.inputTokens, body.outputTokens, body.contextTokens
     )
     return {'id': usageId}
@@ -50,7 +50,7 @@ async def getSessionUsage(id: str = Query(..., description='Session id')):
     """
     if not id:
         raise HTTPException(status_code=400, detail='Missing session id')
-    return memory_store.getUsage(id)
+    return memory_store.get_usage(id)
 
 
 @router.get('')

@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 from app.main import app
-from app.services.memory_store import listConfigAudit
+from app.services.memory_store import list_config_audit
 
 _ALLCamelKeys = {
     'enabled',
@@ -84,7 +84,7 @@ async def testPutMergesAndAudits(client, isolatedData):
     assert body['config']['enabled'] is False
     assert body['config']['maxAgentDepth'] == 3
     assert body['config']['adaptivePolicy'] is True
-    rows = listConfigAudit(category='brain')
+    rows = list_config_audit(category='brain')
     assert any((r['action'] == 'update' for r in rows))
     update = next((r for r in rows if r['action'] == 'update'))
     assert update['actor'] == 'user'
@@ -101,7 +101,7 @@ async def testPutRejectsUnknownKey(client, isolatedData):
     assert 'notARealKey' in detail.get('message', '')
     body = (await client.get('/api/brain/config')).json()
     assert body['source'] == 'fallback'
-    assert not listConfigAudit(category='brain')
+    assert not list_config_audit(category='brain')
 
 
 @pytest.mark.asyncio
@@ -133,7 +133,7 @@ async def testResetClearsPersistedAndAudits(client, isolatedData):
     body2 = (await client.get('/api/brain/config')).json()
     assert body2['source'] == 'fallback'
     assert body2['config']['enabled'] is True
-    resets = [r for r in listConfigAudit(category='brain') if r['action'] == 'reset']
+    resets = [r for r in list_config_audit(category='brain') if r['action'] == 'reset']
     assert len(resets) == 1
     assert resets[0]['before'].get('enabled') is False
     assert resets[0]['after'] == {}

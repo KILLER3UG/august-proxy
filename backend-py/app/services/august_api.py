@@ -19,9 +19,9 @@ def getProxyInfo() -> dict[str, object]:
 
 
 def getProxyDiagnostics() -> dict[str, object]:
-    from app.services.memory_store import getStats
+    from app.services.memory_store import get_stats
 
-    return {'proxy': getProxyInfo(), 'memory_stats': getStats(), 'uptime': 0}
+    return {'proxy': getProxyInfo(), 'memory_stats': get_stats(), 'uptime': 0}
 
 
 def getProxySettings() -> dict[str, object]:

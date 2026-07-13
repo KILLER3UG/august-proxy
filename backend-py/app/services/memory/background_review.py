@@ -204,10 +204,10 @@ def _parseRecommendations(raw: str) -> dict[str, object]:
 
 def _saveFact(action: str, content: str) -> None:
     """Save a fact to the core memory KV store."""
-    from app.services.memory_store import getMemory, saveMemory
+    from app.services.memory_store import get_memory, save_memory
 
     KEY = 'coreMemory'
-    raw = getMemory(KEY)
+    raw = get_memory(KEY)
     facts: list[JsonValue] = raw if isinstance(raw, list) else []
     now = __import__('time').time()
     newFact: dict[str, object] = {'fact': content, 'updated_at': now}
@@ -215,7 +215,7 @@ def _saveFact(action: str, content: str) -> None:
         for i, f in enumerate(facts):
             if isinstance(f, dict) and f.get('fact', '') == content:
                 facts[i] = newFact
-                saveMemory(KEY, facts)
+                save_memory(KEY, facts)
                 return
         facts.append(newFact)
     else:
@@ -223,4 +223,4 @@ def _saveFact(action: str, content: str) -> None:
             if isinstance(f, dict) and f.get('fact', '') == content:
                 return
         facts.append(newFact)
-    saveMemory(KEY, facts)
+    save_memory(KEY, facts)

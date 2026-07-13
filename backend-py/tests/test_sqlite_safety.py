@@ -9,7 +9,7 @@ These prove the corruption-safety mechanism that backs the ~33 direct
   * A minimal write committed through ``memoryStore`` actually persists.
 
 All tests run against a TEMP database (via the ``AUGUST_BRAIN_SQLITE_FILE``
-env override that ``memoryStore._dbPath`` honors) so the real brain file is
+env override that ``memoryStore._db_path`` honors) so the real brain file is
 never touched.
 
 Run with:  python -m pytest tests/test_sqlite_safety.py -q
@@ -49,9 +49,9 @@ def test_memory_store_uses_busy_timeout(temp_brain):
 
 def test_direct_write_succeeds(temp_brain):
     """A write through the memoryStore helper commits and is readable back."""
-    memoryStore.saveMemory('safety_test_key', {'v': 1, 'nested': [1, 2, 3]})
-    value = memoryStore.getMemory('safety_test_key')
+    memoryStore.save_memory('safety_test_key', {'v': 1, 'nested': [1, 2, 3]})
+    value = memoryStore.get_memory('safety_test_key')
     assert value == {'v': 1, 'nested': [1, 2, 3]}
     # And it survives a fresh read on a brand-new connection to the same file.
     memoryStore.close()
-    assert memoryStore.getMemory('safety_test_key') == {'v': 1, 'nested': [1, 2, 3]}
+    assert memoryStore.get_memory('safety_test_key') == {'v': 1, 'nested': [1, 2, 3]}

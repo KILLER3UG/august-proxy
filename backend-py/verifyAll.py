@@ -15,10 +15,10 @@ from app.config import settings  # noqa: E402
 settings.reload()
 print('  CONFIG OK')
 print('\n2. Database initialization...')
-from app.services.memory_store import init, getStats  # noqa: E402
+from app.services.memory_store import init, get_stats  # noqa: E402
 
 init()
-stats = getStats()
+stats = get_stats()
 expected = ['memory_store', 'facts', 'proposals', 'sessions', 'messages', 'usage_events', 'session_topics']
 for t in expected:
     if stats.get(t) is not None:
@@ -60,12 +60,12 @@ for t in [
         errors.append(f'missing trigger: {t}')
 conn.close()
 print('\n5. brain_query...')
-from app.services.memory_store import brainQuery  # noqa: E402
+from app.services.memory_store import brain_query  # noqa: E402
 
 stores = ['memory', 'autoMemories', 'heuristics', 'facts', 'sessions', 'messages', 'timeline', 'blackboard']
 for s in stores:
     try:
-        result = brainQuery(s, '', None, 1)
+        result = brain_query(s, '', None, 1)
         if 'error' not in result.lower() or 'not available' in result.lower():
             print(f'  brain_query({s}): OK')
         else:

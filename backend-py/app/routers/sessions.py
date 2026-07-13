@@ -19,9 +19,9 @@ class MessageCreate(BaseModel):
 
 
 @router.get('')
-async def listSessions():
+async def list_sessions():
     """List all sessions."""
-    sessions = memory_store.listSessions()
+    sessions = memory_store.list_sessions()
     return {'sessions': sessions}
 
 
@@ -39,14 +39,14 @@ async def createSession():
         'model': '',
         'isArchived': False,
     }
-    memory_store.saveSession(session)
+    memory_store.save_session(session)
     return session
 
 
 @router.get('/{sessionId}')
-async def getSession(sessionId: str):
+async def get_session(sessionId: str):
     """Get a session by ID."""
-    session = memory_store.getSession(sessionId)
+    session = memory_store.get_session(sessionId)
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
     return session
@@ -55,21 +55,21 @@ async def getSession(sessionId: str):
 @router.delete('/{sessionId}')
 async def deleteSession(sessionId: str):
     """Delete a session and its messages."""
-    if not memory_store.deleteSessionRecord(sessionId):
+    if not memory_store.delete_session_record(sessionId):
         raise HTTPException(status_code=404, detail='Session not found')
-    memory_store.deleteSessionMessages(sessionId)
+    memory_store.delete_session_messages(sessionId)
     return {'status': 'ok'}
 
 
 @router.get('/{sessionId}/messages')
 async def getSessionMessages(sessionId: str):
     """Get messages for a session."""
-    messages = memory_store.getMessages(sessionId)
+    messages = memory_store.get_messages(sessionId)
     return {'messages': messages}
 
 
 @router.post('/{sessionId}/messages')
 async def addMessage(sessionId: str, body: MessageCreate):
     """Add a message to a session."""
-    msgId = memory_store.saveMessage(sessionId, body.role, body.content)
+    msgId = memory_store.save_message(sessionId, body.role, body.content)
     return {'id': msgId, 'status': 'ok'}

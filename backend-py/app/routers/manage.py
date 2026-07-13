@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from app.config import settings
 from app.atomic_write import write_json_atomic
 from app.providers import resolver as providerResolver
-from app.services.memory_store import getStats
+from app.services.memory_store import get_stats
 from app.services.workbench.workbench import listWorkbenchSessions
 
 router = APIRouter(prefix='/api/manage')
@@ -76,7 +76,7 @@ async def snapshot():
             for p in providers
         ],
         'sessions': listWorkbenchSessions(),
-        'memory': getStats(),
+        'memory': get_stats(),
     }
 
 

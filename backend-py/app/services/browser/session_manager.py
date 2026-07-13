@@ -93,7 +93,7 @@ async def getOrCreateSession(sessionId: str) -> BrowserSession:
         return session
 
 
-def getSession(sessionId: str) -> BrowserSession | None:
+def get_session(sessionId: str) -> BrowserSession | None:
     return _sessions.get(sessionId or 'default')
 
 
