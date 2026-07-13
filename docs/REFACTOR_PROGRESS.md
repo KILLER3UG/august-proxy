@@ -5,11 +5,18 @@
 > with explicit "SUPERSEDED — DO NOT FOLLOW" headers; this file supersedes
 > them for refactor-status questions.
 
-**Last updated:** 2026-07-13 (meta-review evidence reconciliation)
-**Current branch state:** `master @ 6765b85` (= `origin/master`, clean working tree)
+**Last updated:** 2026-07-13 (Phase 0 signed off)
+**Current branch state:** `master @ 635b2cc` (= `origin/master`, clean working tree)
 **Verification baseline on master (re-run 2026-07-13):**
 `pytest 534 passed, 3 warnings` · `mypy app/ → 0 errors / 176 source files` ·
 `ruff check app/ → All checks passed`
+
+### Phase 0 sign-off
+
+**Signed off by user 2026-07-13** on the meta-review evidence pack (B1/B2/mypy/file
+counts/test delta/gate). Phase 0 Audit baseline accepted. G5–G7 formally
+**dropped** (feature branches absent on local and `origin`; only `master`
+remains). Phase 2 scale-up and subsequent phases are **unblocked**.
 
 ---
 
@@ -152,15 +159,15 @@ added above; some earlier counts under-counted subpackages.
 | G2 | B2 / `db_writer` cherry-pick on master (`3bc390e`/`894ecad`) + ARCHITECTURE paragraph | ✅ |
 | G3 | B1a non-atomic JSON writes closed (grep evidence above) | ✅ |
 | G4 | CamelModel pilot on master (`c030ff6`+`b1d1217`) | ✅ |
-| G5 | `fix/mypy-green` pre-merge review **or** branch confirmed gone | ⏸ **Branch absent** locally and on `origin` — only `master` remains. Treat as **void pending explicit drop decision**; do not block on merging a missing branch. |
-| G6 | `chore/cleanup-unused-imports` review **or** branch confirmed gone | ⏸ Same — **branch absent**. |
-| G7 | Stale feature branches dropped | ⏸ Local/remote feature branches already gone; confirm no resurrected remotes before declaring done. |
+| G5 | `fix/mypy-green` pre-merge review **or** branch confirmed gone | ✅ **Dropped** — branch absent; characterization tests remain on master |
+| G6 | `chore/cleanup-unused-imports` review **or** branch confirmed gone | ✅ **Dropped** — branch absent |
+| G7 | Stale feature branches dropped | ✅ **Dropped** — only `master` / `origin/master` remain |
 | G8 | `pytest tests/` green | ✅ 534/534 |
 | G9 | `mypy app/` green | ✅ 0/176 |
 | G10 | `ruff check app/` green | ✅ |
 | G11 | B15 `jsonUtils` split landed | ✅ `fe4ed55` |
 | G12 | B16 remaining camelCase **function** APIs in `memory_store`/`proxy_tools`/`db_writer` | ✅ (`2c63762`, `6765b85`) |
-| G13 | User explicitly approves Phase 2 scale-up after reviewing this evidence | ⏸ **awaiting** |
+| G13 | User explicitly approves Phase 0 / Phase 2 gate after reviewing evidence | ✅ **Signed off 2026-07-13** |
 
 **Not gate blockers:** B18 (Zustand), B20 (Dockerfile), B21 (file renames), SQLite
 schema snake_case migration (Phase 4, needs separate sign-off).
@@ -189,6 +196,8 @@ schema snake_case migration (Phase 4, needs separate sign-off).
 | 5 | B2 — keep `db_writer`, document role | closed (`8c53bab` + `3bc390e`) |
 | 6 | B18 nanostores → Zustand relaunched (Phase 4 workstream) | open workstream |
 | 7 | SQLite schema camelCase→snake_case needs **explicit** sign-off (not bundled with B16) | Ground Rule 5 — enforced in `6765b85` |
+| 8 | Phase 0 evidence pack signed off; G5–G7 dropped; Phase 2+ unblocked | user 2026-07-13 |
+| 9 | Next chunk order: **B21 app file renames (3 files) first**, then CamelModel scale-up one router at a time | default after sign-off (lowest-risk-first) |
 
 ---
 
@@ -211,41 +220,33 @@ schema snake_case migration (Phase 4, needs separate sign-off).
 | **B22** | Med | **CLOSED** — `2b9f9a7` / `9a10b57` |
 | **B23** | Low | **CLOSED** — `pre-commit>=4.6.0` in `pyproject.toml` (`420b80f`) |
 | **B24** | Low | **CLOSED** — dead `_saveConfig` removed (`420b80f`) |
-| **B25** | Low | `ARCHITECTURE.md` still says `enqueueWrite` / `jsonUtils.py` in places — doc drift after B15/B16 |
+| **B25** | Low | **CLOSED** — `ARCHITECTURE.md` updated for `enqueue_write` / `atomic_write.py` in `635b2cc` |
 
 ---
 
 ## Recent commits (tip)
 
 ```
+635b2cc docs(refactor): publish meta-review evidence and fix ARCHITECTURE drift
 6765b85 refactor(naming): convert memory_store and proxy_tools APIs to snake_case
 2c63762 refactor(db_writer): rename to snake_case (B16)
 fe4ed55 refactor(jsonUtils): split into json_narrowing.py + atomic_write.py (B15)
 420b80f chore: B23 + B24 — pre_commit dev-dep + remove dead _saveConfig
-d06950a docs(refactor): mark Step 4 closed; refresh baseline to 538 / mypy 175
-5c2794a Merge branch 'cherry-pick/phase2-naming-pilot-32caee8' into master
-...
-894ecad Merge branch 'cherry-pick/db-writer-coverage-795982a' into master
-3bc390e fix(db-writer): audit SQLite writes; correct heuristicsService queue docstring
 ```
 
 ---
 
 ## What's next
 
-1. **User Phase 0 sign-off** on this evidence pack (G13).
-2. Fix **B25** — update `ARCHITECTURE.md` paths/`enqueue_write` naming.
-3. Decide fate of **G5–G7** (missing branches): formally mark dropped.
-4. **B21** file-rename batch (3 app files first, then tests) — ordering vs CamelModel scale-up.
-5. **CamelModel scale-up** across remaining routers — only after G13.
-6. **B18** Zustand migration (separate workstream).
-7. **B20** Dockerfile verify.
+1. ✅ Phase 0 signed off; G5–G7 dropped; B25 closed.
+2. **Next chunk (Phase 2/3 naming):** B21 — rename 3 app files on a feature branch:
+   `typeAliases.py` → `type_aliases.py`, `modelResolver.py` → `model_resolver.py`,
+   `routeResolver.py` → `route_resolver.py`; update imports; pytest/mypy/ruff.
+3. Then **CamelModel scale-up** — one router per commit (not all 32 at once).
+4. Later: B21 test renames (62 files), B18 Zustand, B20 Dockerfile, Phase 3 large-file splits.
 
 ---
 
 ## Open questions for the user
 
-- Approve Phase 0 audit baseline as of `6765b85` with the evidence above?
-- Formally drop G5–G7 (missing branches) so the Phase 2 gate is only G13?
-- B21 before or after CamelModel router scale-up?
-- Commit+push this tracker update + B25 ARCHITECTURE fix now?
+- (none blocking) Say if you want CamelModel scale-up before the 3-file B21 rename instead.
