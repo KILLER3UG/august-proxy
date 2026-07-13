@@ -131,7 +131,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
     )
     try:
         from app.services.memory_store import _conn
-        from app.services.db_writer import enqueueWrite
+        from app.services.db_writer import enqueue_write
 
         conn = _conn()
         autoMemories = [
@@ -170,7 +170,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                 def _deleteMerged(i: object = rid) -> object:
                     return conn.execute('DELETE FROM learnedHeuristics WHERE id = ?', (i,))
 
-                await enqueueWrite(_deleteMerged)
+                await enqueue_write(_deleteMerged)
             if mergedRule:
 
                 def _updateMerged(k: object = keepId, m: object = mergedRule) -> object:
@@ -178,7 +178,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                         "UPDATE learnedHeuristics SET rule = ?, updatedAt = datetime('now') WHERE id = ?", (m, k)
                     )
 
-                await enqueueWrite(_updateMerged)
+                await enqueue_write(_updateMerged)
             stats['merged'] += 1
         for promoRaw in as_list(plan.get('promote'), []):
             promo = as_dict(promoRaw)
@@ -193,7 +193,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                     (k, v, 'auto-promoted', 'consolidation', 0.8),
                 )
 
-            await enqueueWrite(_insertFact)
+            await enqueue_write(_insertFact)
             stats['promoted'] += 1
         for did in as_list(plan.get('delete'), []):
             if did in recentIds:
@@ -202,7 +202,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
             def _deleteStale(i: object = did) -> object:
                 return conn.execute('DELETE FROM learnedHeuristics WHERE id = ?', (i,))
 
-            await enqueueWrite(_deleteStale)
+            await enqueue_write(_deleteStale)
             stats['deletedStale'] += 1
     except Exception as exc:
         stats['errors'].append(str(exc))

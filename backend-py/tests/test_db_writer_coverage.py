@@ -18,25 +18,25 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import app.services.memory_store as memoryStore
-import app.services.db_writer as dbWriter
-import app.services.consolidation_daemon as consolidationDaemon
+import app.services.memory_store as memory_store
+import app.services.db_writer as db_writer
+import app.services.consolidation_daemon as consolidation_daemon
 
 
 @pytest.fixture
 def temp_brain(monkeypatch, tmp_path):
     """Temporary brain DB with one seeded heuristic (so the daemon proceeds)."""
     monkeypatch.setenv('AUGUST_BRAIN_SQLITE_FILE', str(tmp_path / 'brain.sqlite'))
-    memoryStore.close()
-    memoryStore.init()
-    conn = memoryStore._conn()
+    memory_store.close()
+    memory_store.init()
+    conn = memory_store._conn()
     conn.execute(
         "INSERT INTO learnedHeuristics (rule, source, category) VALUES (?, ?, ?)",
         ('seed rule', 'auto', 'general'),
     )
     conn.commit()
     yield
-    memoryStore.close()
+    memory_store.close()
 
 
 def _plan(promote=None, merge=None, delete=None) -> str:
@@ -57,24 +57,24 @@ async def test_consolidation_routes_writes_through_db_writer(temp_brain):
         return True
 
     with patch.object(
-        consolidationDaemon,
+        consolidation_daemon,
         '_callHippocampus',
         new=AsyncMock(
             return_value=_plan(
                 promote=[{'pattern': 'p', 'factKey': 'fk', 'factValue': 'fv'}]
             )
         ),
-    ), patch.object(dbWriter, 'enqueueWrite', new=fake_enqueue), patch(
+    ), patch.object(db_writer, 'enqueue_write', new=fake_enqueue), patch(
         'app.services.brain_event_bus.emitBrainEvent', new=MagicMock(return_value={})
     ):
-        summary = await consolidationDaemon.runConsolidation()
+        summary = await consolidation_daemon.runConsolidation()
 
     assert captured, (
         'expected runConsolidation to enqueue at least one write via db_writer'
     )
     # The enqueued callable should perform a real write (INSERT into facts).
     fn, _priority = captured[0]
-    conn = memoryStore._conn()
+    conn = memory_store._conn()
     before = conn.execute('SELECT count(*) FROM facts').fetchone()[0]
     fn()
     after = conn.execute('SELECT count(*) FROM facts').fetchone()[0]

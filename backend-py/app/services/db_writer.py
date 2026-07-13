@@ -25,10 +25,10 @@ import time
 from typing import Callable
 
 logger = logging.getLogger(__name__)
-_HIGHDrainTimeout = 5.0
-_LOWDropAfter = 2.0
-_writeQueue: asyncio.Queue | None = None
-_workerTask: asyncio.Task | None = None
+_HIGH_DRAIN_TIMEOUT = 5.0
+_LOW_DROP_AFTER = 2.0
+_write_queue: asyncio.Queue | None = None
+_worker_task: asyncio.Task | None = None
 
 
 class QueueItem:
@@ -37,46 +37,46 @@ class QueueItem:
     def __init__(self, fn: Callable[[], object], priority: str = 'low'):
         self.fn = fn
         self.priority = priority
-        self.enqueuedAt = time.monotonic()
+        self.enqueued_at = time.monotonic()
         self.id = id(self)
 
 
-def ensureQueue():
+def ensure_queue():
     """Start the queue and worker if not already running."""
-    global _writeQueue, _workerTask
-    if _writeQueue is None:
-        _writeQueue = asyncio.Queue()
-    if _workerTask is None or _workerTask.done():
-        _workerTask = asyncio.create_task(_drainLoop())
+    global _write_queue, _worker_task
+    if _write_queue is None:
+        _write_queue = asyncio.Queue()
+    if _worker_task is None or _worker_task.done():
+        _worker_task = asyncio.create_task(_drain_loop())
 
 
 async def shutdown():
     """Cancel the worker and drain remaining items."""
-    global _workerTask
-    if _workerTask and (not _workerTask.done()):
-        _workerTask.cancel()
+    global _worker_task
+    if _worker_task and (not _worker_task.done()):
+        _worker_task.cancel()
         try:
-            await _workerTask
+            await _worker_task
         except asyncio.CancelledError:
             pass
-        _workerTask = None
+        _worker_task = None
 
 
-async def enqueueWrite(fn: Callable[[], object], priority: str = 'low') -> bool:
+async def enqueue_write(fn: Callable[[], object], priority: str = 'low') -> bool:
     """Enqueue a write operation.
 
     Returns True if the write was enqueued, False if it was dropped
     (low-priority only, when the queue is too full).
     """
-    ensureQueue()
-    queue = _writeQueue
+    ensure_queue()
+    queue = _write_queue
     if queue is None:
         logger.error('DB write queue not initialized')
         return False
     item = QueueItem(fn, priority)
     try:
         if priority == 'high':
-            await asyncio.wait_for(queue.put(item), timeout=_HIGHDrainTimeout)
+            await asyncio.wait_for(queue.put(item), timeout=_HIGH_DRAIN_TIMEOUT)
             return True
         else:
             try:
@@ -90,27 +90,27 @@ async def enqueueWrite(fn: Callable[[], object], priority: str = 'low') -> bool:
         return False
 
 
-async def enqueueWriteSync(fn: Callable[[], object], priority: str = 'low') -> bool:
+async def enqueue_write_sync(fn: Callable[[], object], priority: str = 'low') -> bool:
     """Synchronous version for use from non-async contexts.
 
     Creates a new event loop if needed (safe for sync callers in
     thread-pool or background tasks).
     """
-    return await enqueueWrite(fn, priority)
+    return await enqueue_write(fn, priority)
 
 
-async def _drainLoop():
+async def _drain_loop():
     """Background worker: drain the write queue one item at a time."""
-    global _writeQueue
+    global _write_queue
     logger.info('DB write queue worker started')
     while True:
         try:
-            item: QueueItem = await _writeQueue.get()
+            item: QueueItem = await _write_queue.get()
             if item.priority == 'low':
-                elapsed = time.monotonic() - item.enqueuedAt
-                if elapsed > _LOWDropAfter:
+                elapsed = time.monotonic() - item.enqueued_at
+                if elapsed > _LOW_DROP_AFTER:
                     logger.debug('Dropped expired low-priority write (%.2fs old)', elapsed)
-                    _writeQueue.task_done()
+                    _write_queue.task_done()
                     continue
             try:
                 result = item.fn()
@@ -118,7 +118,7 @@ async def _drainLoop():
                     logger.error('Write fn raised: %s', result)
             except Exception as exc:
                 logger.error('Write fn raised: %s', exc)
-            _writeQueue.task_done()
+            _write_queue.task_done()
         except asyncio.CancelledError:
             logger.info('DB write queue worker cancelled')
             break
