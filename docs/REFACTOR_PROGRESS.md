@@ -5,9 +5,9 @@
 > with explicit "SUPERSEDED — DO NOT FOLLOW" headers; this file supersedes
 > them for refactor-status questions.
 
-**Last updated:** 2026-07-13 (post-B1a merge)
-**Current branch state:** `master @ e4246b1` (14 ahead of `origin/master`)
-**Verification baseline on master:** `pytest 524 passed, 3 warnings` ·
+**Last updated:** 2026-07-13 (post-Step-2 merge)
+**Current branch state:** `master @ 894ecad` (16 ahead of `origin/master`)
+**Verification baseline on master:** `pytest 534 passed, 3 warnings` ·
 `mypy 0 errors / 174 source files (app/)` · `ruff clean`
 
 ### File counts (reconciled 2026-07-13)
@@ -100,7 +100,7 @@ been independently characterized. Live baseline on `master @ e44a672`:
 
 | Check | Command | Result | Re-run on 2026-07-13? |
 |---|---|---|---|
-| `pytest tests/` | `.venv/Scripts/python.exe -m pytest tests/` | **524 passed, 3 warnings** in ~26 s (520 baseline + 4 new in `testMcpClientAtomicWrite.py`) | ✅ re-run on `master @ e4246b1`, same result |
+| `pytest tests/` | `.venv/Scripts/python.exe -m pytest tests/` | **534 passed, 3 warnings** in ~22 s (520 baseline + 4 in `testMcpClientAtomicWrite.py` + 6 in `testStorageKeyMigration.py` + 4 in cherry-picked `test_db_writer_coverage.py` + `test_sqlite_safety.py`) | ✅ re-run on `master @ 894ecad`, same result |
 | `mypy app/` | `.venv/Scripts/python.exe -m mypy app/` | **0 errors / 174 source files** | ✅ re-run, same result (output below) |
 | `ruff check app/` | `.venv/Scripts/python.exe -m ruff check app/` | **All checks passed** | ✅ re-run, same result |
 
@@ -151,8 +151,8 @@ ruff on every commit and currently passes.
 | **B19** | Med | `docs/REMAINING_MYPY_FIXES.md` referenced `fix-mypy-properly` branch | Stale doc (branch doesn't exist). | **Superseded header added** (`0e211c6`). |
 | **B20** | Low | `Dockerfile` | Prior audit flagged as broken (`node backend/index.js`, mounts `./backend`). **Not yet verified.** | Reported. Verify in follow-up. |
 | **B21** | Med | 4 backend + 68 test files | **File-name-level camelCase rename incomplete.** PRs #7–13 renamed most service files but missed: `app/jsonUtils.py`, `app/typeAliases.py`, `app/providers/modelResolver.py`, `app/providers/routeResolver.py`. **All 68 test files still use `testXxx.py` convention** (e.g. `testAdapters.py`, `v3BrainHealth.py`). My Phase 0 Audit Report's claim "all files snake_case" was wrong — reviewer caught this gap. Total: **72 .py files with camelCase names** out of 255 (28%). | **Reported.** Plan as a Phase 3 file-rename batch (separate from identifier rename). |
-| **B22** | Med | `app/lib/storage_key_migration.py` | Module's 5 SQL queries target `memory_store` (snake_case) but the actual table is `memoryStore` (camelCase). Raises `OperationalError: no such table: memory_store` on every startup against a post-rename DB. One-time startup migration, but the bug is silent because the call site (`app/main.py:97`) wraps it in a broad `except Exception`. | **Reported.** Worth a quick targeted fix (rename 5 query references to `memoryStore`) before any further Phase 2 work that might migrate more data through this path. |
-| **B23** | Low | `backend-py/pyproject.toml` (dev deps) | `pre_commit` framework not declared. Resolved mid-task by installing into `.venv` directly via `uv pip install pre_commit`, but `uv sync` would drop it. `.git/hooks/pre-commit` exists and works (verified — ruff passed on all B1a commits). | **Partial.** Add `pre-commit = "^4.6"` to `[dependency-groups].dev` (or equivalent) in `pyproject.toml`. |
+| **B22** | Med | `app/lib/storage_key_migration.py` | Module's 5 SQL queries target `memory_store` (snake_case) but the actual table is `memoryStore` (camelCase). Raises `OperationalError: no such table: memory_store` on every startup against a post-rename DB. One-time startup migration, but the bug is silent because the call site (`app/main.py:97`) wraps it in a broad `except Exception`. | **FIXED.** Renamed 5 query references + 2 docstring references to `memoryStore` in `2b9f9a7`, merged via `9a10b57`. 6 regression tests added in `tests/testStorageKeyMigration.py`. |
+| **B23** | Low | `backend-py/pyproject.toml` (dev deps) | `pre_commit` framework not declared. Resolved mid-task by installing into `.venv` directly via `uv pip install pre_commit`, but `uv sync` would drop it. `.git/hooks/pre-commit` exists and works (verified — ruff passed on all B1a + B22 + Step-2 commits). | **Partial.** Add `pre-commit = "^4.6"` to `[dependency-groups].dev` (or equivalent) in `pyproject.toml`. |
 | **B24** | Low | `app/services/tools/mcp_client.py:45` | `_saveConfig` is **dead code** — no production caller (verified via `grep -rn "_saveConfig" backend-py/app/`). The atomic-write fix in `1b3e0d6` is defensive in case a future caller is added. | **Reported.** Worth removing in a future cleanup commit. |
 
 ### Reproducible B1 evidence
@@ -201,6 +201,11 @@ other changes wait for the user's call.
 ## Recent commits (this session)
 
 ```
+894ecad Merge branch 'cherry-pick/db-writer-coverage-795982a' into master
+3bc390e fix(db-writer): audit SQLite writes; correct heuristicsService queue docstring
+9a10b57 Merge branch 'fix/b22-storage-key-migration' into master
+2b9f9a7 fix(storage-key-migration): target memoryStore table (was memory_store)
+0d0c282 docs(refactor): mark B1a closed; add B22/B23/B24; reconcile baseline
 e4246b1 Merge branch 'fix/b1a-atomic-json-writes' into master
 1b3e0d6 fix(mcp-client): use write_json_atomic for mcp-servers.json; add characterization tests
 136d030 fix(gateway-session-bridge): use write_json_atomic for session_map.json
@@ -225,16 +230,13 @@ f388b57 docs(refactor): replace REFACTOR_PROGRESS.md with current session state
 ## What's next (sequence per the user's confirmed merge order)
 
 1. **Step 1 ✅ DONE** — `chore/cleanup-post-merge` merged (`7833fb1` + `762f33b`). 5 conflicts resolved by taking branch version; 21 ruff errors fixed; 164 deprecation warnings eliminated.
-2. **Step 2 ⏸ AWAITING USER CHOICE** — `fix/db-writer-coverage`. Three options on the table:
-   - (a) cherry-pick just `795982a` (the doc-only audit) onto master as a clean 1-commit change.
-   - (b) `git merge` the whole branch (will be a no-op for 12 absorbed commits + clean add of `795982a`).
-   - (c) skip the branch entirely; the audit claim is already covered by `ARCHITECTURE.md` (`8c53bab`) and the chat-delivered Phase 0 Audit Report.
+2. **Step 2 ✅ DONE** — `fix/db-writer-coverage` cherry-picked (`795982a` → `3bc390e` with import-path updates; merged via `894ecad`). `heuristicsService` docstring corrected; 2 characterization tests added.
 3. **Step 3 ✅ DONE** — B1 non-atomic JSON writes closed (`48ae052`, `136d030`, `1b3e0d6`, merged via `e4246b1`). 3 files, 5 sites fixed; `curator.py` confirmed already atomic via `pathlib.Path.replace`. 4 new characterization tests added (`testMcpClientAtomicWrite.py`).
 4. **Step 4** — Cherry-pick `32caee8` from `refactor/phase2-naming-pilot` (the Phase 2 pilot).
 5. **Step 5** — Before merging `fix/mypy-green`, check each of the 4 deleted characterization test files for moved coverage; report findings.
 6. **Step 6** — `chore/cleanup-unused-imports` (review against master for redundancy).
 7. **Step 7** — Drop stale branches + `origin/fix/feature-clean`.
-8. **B22 quick fix** — Correct `memory_store` → `memoryStore` in `app/lib/storage_key_migration.py` (5 query references). One-time startup migration; the bug is currently silent because `main.py:97` wraps the call.
+8. **B22 ✅ DONE** — Corrected `memory_store` → `memoryStore` in `app/lib/storage_key_migration.py` (`2b9f9a7`, merged via `9a10b57`). 6 regression tests added (`testStorageKeyMigration.py`).
 9. **B23 quick fix** — Add `pre-commit = "^4.6"` to `pyproject.toml` dev deps so `uv sync` doesn't drop the framework.
 10. **B24 cleanup** — Remove dead `_saveConfig` from `app/services/tools/mcp_client.py` (no production caller).
 11. **B15** — Split `app/jsonUtils.py` into `json_narrowing.py` + `atomic_write.py` (this also closes the B21 file-rename for `jsonUtils.py`).
@@ -252,14 +254,14 @@ f388b57 docs(refactor): replace REFACTOR_PROGRESS.md with current session state
 
 1. ✅ **All 7 merge steps merged into `master`** — concretely:
    - ✅ Step 1: `chore/cleanup-post-merge` (commits `7833fb1` + `762f33b`) — DONE
-   - ⏸ Step 2: `fix/db-writer-coverage` — cherry-pick `795982a` or merge branch (awaiting user choice a/b/c)
+   - ✅ Step 2: `fix/db-writer-coverage` cherry-pick (`795982a` → `3bc390e`, merged via `894ecad`) — DONE
    - ✅ Step 3: B1 fix for the 5 non-atomic JSON `write_text` sites — DONE (`48ae052`, `136d030`, `1b3e0d6`, merged via `e4246b1`)
    - ⏸ Step 4: Cherry-pick `32caee8` from `refactor/phase2-naming-pilot` (the Phase 2 pilot itself)
    - ⏸ Step 5: `fix/mypy-green` pre-merge review — confirm each of the 4 deleted characterization test files had its coverage moved or restored
    - ⏸ Step 6: `chore/cleanup-unused-imports` (review against master for redundancy)
    - ⏸ Step 7: Drop stale branches (`chore/phase0-cleanup`, `fix/json-stores-atomic`, `refactor/global-modernization`, `refactor/phase1-safety-net`, `test-cherry-pick`, `origin/fix/feature-clean`)
 2. ✅ **Verification suite re-run on the post-merge master:**
-   - `pytest tests/` → all tests pass (current: 524 / 524)
+   - `pytest tests/` → all tests pass (current: 534 / 534)
    - `mypy app/` → 0 errors (current: 0 / 174 files, see reproducible output in §"Verified current behavior")
    - `ruff check app/` → 0 errors (current: clean)
 3. ✅ **B11–B14 cleanup batch landed:** `backend-py/backend-py/tests/` confirmed not present (claim was wrong); `.bak` files in `data/` ignored by `.gitignore:29` (no action needed); 4 dead-tracked files (`docs/_bak_list_tmp.txt`, `docs/mypy_raw.txt`, `docs/eslint_raw.json`, `server.log`) removed from index via `git rm --cached` in `66bd9de`.
@@ -281,10 +283,9 @@ This gate exists because:
 
 ## Open questions for the user
 
-- **Step 2:** a, b, or c?
+- **Step 4:** Cherry-pick the Phase 2 naming pilot next, or do B23 (pre_commit dev dep declaration) + B24 (remove dead `_saveConfig`) first as a small-batch cleanup?
 - **Step 5 timing:** run the test-coverage review as a separate chat reply before any merge, or proceed step-by-step?
 - **B20 (Dockerfile broken claim):** verify now or defer to a separate workstream?
-- **B22/B23/B24 ordering:** do these together as a "small-bug-batch" commit, or separately?
 - **B21 file-rename batch (Phase 3):** one PR for all 72 files, or split by directory (4 backend first, then tests, or by subdirectory)?
 - **B21 ordering vs Phase 2 identifier rename:** file rename first (B21 before Phase 2), or identifier rename first (Phase 2 before B21)? Either works mechanically, but the order affects review cost.
 
