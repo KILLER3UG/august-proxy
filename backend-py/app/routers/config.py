@@ -11,7 +11,7 @@ from app.providers import resolver as providerResolver
 from app.lib import secrets
 from app.services import config_service
 from app.json_narrowing import as_dict, as_list, as_str
-from app.typeAliases import AliasDict
+from app.type_aliases import AliasDict
 
 router = APIRouter(prefix='/api/config')
 

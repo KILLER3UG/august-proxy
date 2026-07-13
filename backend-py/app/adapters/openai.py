@@ -17,7 +17,7 @@ import json
 import time
 import uuid
 from typing import AsyncIterator, Callable, cast
-from app.typeAliases import JsonValue
+from app.type_aliases import JsonValue
 from app.json_narrowing import as_str, as_dict, as_list, as_int
 from app.adapters.proxy_tools import (
     get_proxy_openai_tool_definitions,
@@ -32,7 +32,7 @@ from app.adapters.tool_classification import classifyOpenaiToolCalls
 from app.adapters.stream_state import OpenaiStreamAccumulator, ToolCallDelta
 from app.adapters.case_converters import snakeToCamel, camelToSnake
 from app.providers import resolver as providerResolver
-from app.providers.modelResolver import resolve
+from app.providers.model_resolver import resolve
 from app.providers.clients import getClient, BaseProviderClient
 from app.models import ChatCompletionRequest, ChatMessage
 

@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Callable, TYPE_CHECKING, cast
 from app.json_narrowing import as_str, as_dict, as_list, as_int, as_float, as_bool
 from app.atomic_write import write_json_atomic
-from app.typeAliases import JsonValue
+from app.type_aliases import JsonValue
 
 if TYPE_CHECKING:
     from app.services.workbench.tool_guardrails import ToolCallTracker

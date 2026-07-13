@@ -8,7 +8,7 @@ from typing import cast
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.services import memory_store
-from app.typeAliases import JsonValue
+from app.type_aliases import JsonValue
 
 router = APIRouter(prefix='/api/memory')
 

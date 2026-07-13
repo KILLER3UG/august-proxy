@@ -14,7 +14,7 @@ import logging
 import os
 import time
 from app.json_narrowing import as_dict, as_list
-from app.typeAliases import ConsolidationSummaryDict
+from app.type_aliases import ConsolidationSummaryDict
 
 logger = logging.getLogger(__name__)
 _CONSOLIDATIONInterval = 86400

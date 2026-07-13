@@ -74,7 +74,7 @@ def configureFallback(
 
 def testFallback(model: str) -> dict[str, object]:
     """Probe resolution of a model id without saving anything."""
-    from app.providers.modelResolver import resolveOrFallback
+    from app.providers.model_resolver import resolveOrFallback
 
     try:
         result = resolveOrFallback(model)

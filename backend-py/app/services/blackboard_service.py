@@ -13,7 +13,7 @@ import json
 import time
 from datetime import datetime, timedelta, timezone
 from typing import cast
-from app.typeAliases import BlackboardNoteDict
+from app.type_aliases import BlackboardNoteDict
 
 
 def _conn():

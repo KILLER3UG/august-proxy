@@ -16,7 +16,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-# Re-export JsonValue from the canonical home in typeAliases so that model
+# Re-export JsonValue from the canonical home in type_aliases so that model
 # code doesn't need to import from two places. Defined as a PEP 695 type alias
 # (``type JsonValue = ...``) so pydantic 2.13 can resolve the self-reference.
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, object]

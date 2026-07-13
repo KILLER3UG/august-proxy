@@ -5,9 +5,9 @@
 > with explicit "SUPERSEDED — DO NOT FOLLOW" headers; this file supersedes
 > them for refactor-status questions.
 
-**Last updated:** 2026-07-13 (Phase 0 signed off)
-**Current branch state:** `master @ 635b2cc` (= `origin/master`, clean working tree)
-**Verification baseline on master (re-run 2026-07-13):**
+**Last updated:** 2026-07-13 (B21 app file renames in progress)
+**Current branch state:** `refactor/b21-app-file-renames` (from `master @ 320079e`)
+**Verification baseline on this branch (re-run 2026-07-13):**
 `pytest 534 passed, 3 warnings` · `mypy app/ → 0 errors / 176 source files` ·
 `ruff check app/ → All checks passed`
 
@@ -139,9 +139,7 @@ Counted on `6765b85` (PowerShell, excluding `__pycache__`):
 
 **App camelCase files remaining:**
 
-- `app/typeAliases.py`
-- `app/providers/modelResolver.py`
-- `app/providers/routeResolver.py`
+- *(none after B21)* — renamed to `type_aliases.py`, `model_resolver.py`, `route_resolver.py`
 
 (`jsonUtils.py` removed by B15 split → `json_narrowing.py` + `atomic_write.py`.)
 
@@ -181,7 +179,7 @@ schema snake_case migration (Phase 4, needs separate sign-off).
 | `app/` | **176** | Matches `mypy app/` “176 source files” |
 | `tests/` | **85** | |
 | **Total** | **261** | |
-| camelCase filenames | **65** | B21: 3 app + 62 tests |
+| camelCase filenames | **62** | B21: 0 app + 62 tests (3 app files renamed) |
 
 ---
 
@@ -197,7 +195,7 @@ schema snake_case migration (Phase 4, needs separate sign-off).
 | 6 | B18 nanostores → Zustand relaunched (Phase 4 workstream) | open workstream |
 | 7 | SQLite schema camelCase→snake_case needs **explicit** sign-off (not bundled with B16) | Ground Rule 5 — enforced in `6765b85` |
 | 8 | Phase 0 evidence pack signed off; G5–G7 dropped; Phase 2+ unblocked | user 2026-07-13 |
-| 9 | Next chunk order: **B21 app file renames (3 files) first**, then CamelModel scale-up one router at a time | default after sign-off (lowest-risk-first) |
+| 9 | Next chunk order: **B21 app file renames (3 files) first**, then CamelModel scale-up one router at a time | B21 app renames done on feature branch; merge then CamelModel |
 
 ---
 
@@ -216,7 +214,7 @@ schema snake_case migration (Phase 4, needs separate sign-off).
 | **B18** | Med | Open — nanostores still in desktop `package.json`; Zustand not installed |
 | **B19** | Med | Stale mypy doc marked superseded |
 | **B20** | Low | Dockerfile claim not yet re-verified |
-| **B21** | Med | Open — **65** camelCase filenames (3 app + 62 tests); was 72 |
+| **B21** | Med | **PARTIAL** — 3 app files renamed on `refactor/b21-app-file-renames`; **62** camelCase test filenames remain |
 | **B22** | Med | **CLOSED** — `2b9f9a7` / `9a10b57` |
 | **B23** | Low | **CLOSED** — `pre-commit>=4.6.0` in `pyproject.toml` (`420b80f`) |
 | **B24** | Low | **CLOSED** — dead `_saveConfig` removed (`420b80f`) |
@@ -238,15 +236,13 @@ fe4ed55 refactor(jsonUtils): split into json_narrowing.py + atomic_write.py (B15
 
 ## What's next
 
-1. ✅ Phase 0 signed off; G5–G7 dropped; B25 closed.
-2. **Next chunk (Phase 2/3 naming):** B21 — rename 3 app files on a feature branch:
-   `typeAliases.py` → `type_aliases.py`, `modelResolver.py` → `model_resolver.py`,
-   `routeResolver.py` → `route_resolver.py`; update imports; pytest/mypy/ruff.
-3. Then **CamelModel scale-up** — one router per commit (not all 32 at once).
+1. ✅ Phase 0 re-verified and signed off (2026-07-13 handoff session — prompt Progress Log was stale; live tracker + HEAD accepted).
+2. ✅ B21 app file renames done on `refactor/b21-app-file-renames` (awaiting merge to master).
+3. **Next:** merge B21 branch → master, then **CamelModel scale-up** — one router per commit.
 4. Later: B21 test renames (62 files), B18 Zustand, B20 Dockerfile, Phase 3 large-file splits.
 
 ---
 
 ## Open questions for the user
 
-- (none blocking) Say if you want CamelModel scale-up before the 3-file B21 rename instead.
+- (none blocking) Merge `refactor/b21-app-file-renames` to master when ready.

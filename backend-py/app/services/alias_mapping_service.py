@@ -41,7 +41,7 @@ import logging
 from app.config import settings
 from app.models.aliases import AliasMapping, AliasResolutionResult
 from app.providers import resolver as providerResolver
-from app.providers.routeResolver import resolveForModel
+from app.providers.route_resolver import resolveForModel
 from app.json_narrowing import as_str
 
 logger = logging.getLogger(__name__)

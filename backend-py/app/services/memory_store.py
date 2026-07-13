@@ -15,7 +15,7 @@ import threading
 from pathlib import Path
 from typing import cast
 from app.lib.paths import dataPath
-from app.typeAliases import (
+from app.type_aliases import (
     JsonValue,
     MemoryEntryDict,
     FactDict,

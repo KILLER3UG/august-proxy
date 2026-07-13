@@ -21,7 +21,7 @@ import json
 import time
 import uuid
 from typing import AsyncIterator, Callable, cast
-from app.typeAliases import JsonValue
+from app.type_aliases import JsonValue
 from app.json_narrowing import as_str, as_dict, as_list, as_int
 from app.adapters.base import (
     extractRequestHeaders as _extractRequestHeaders,
@@ -48,7 +48,7 @@ from app.models import (
 )
 from app.adapters.case_converters import snakeToCamel, camelToSnake
 from app.providers import resolver as providerResolver
-from app.providers.modelResolver import resolve
+from app.providers.model_resolver import resolve
 from app.providers.clients import getClient
 
 CLAUDE_PUBLIC_MODEL_ALIAS = 'claude-opus-4-6'

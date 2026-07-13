@@ -17,7 +17,7 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import cast
-from app.typeAliases import DaemonStatusDict
+from app.type_aliases import DaemonStatusDict
 from app.json_narrowing import as_str, as_float, as_int
 
 logger = logging.getLogger(__name__)

@@ -284,7 +284,7 @@ def coord_env(monkeypatch, tmp_path):
     # Route model resolution / provider selection at the sub-agent layer.
     monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **kw: STUB_PROVIDER)
     monkeypatch.setattr(wb, '_resolveModel', lambda p, hint='': 'stub-claude')
-    import app.providers.modelResolver as modelResolver
+    import app.providers.model_resolver as modelResolver
 
     monkeypatch.setattr(
         modelResolver,

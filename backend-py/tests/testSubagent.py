@@ -28,7 +28,7 @@ def testExecuteSubAgentRunsAndEmits(monkeypatch, isolatedData):
     monkeypatch.setattr(wb, '_resolveModel', lambda p, m='': 'test-model')
     monkeypatch.setattr(wb, 'toolDefinitions', lambda s: [])
     monkeypatch.setattr(wb, 'openaiToolDefinitions', lambda s: [])
-    import app.providers.modelResolver as mr
+    import app.providers.model_resolver as mr
 
     monkeypatch.setattr(
         mr, 'resolveOrFallback', lambda *a, **k: {'model': 'm', 'provider': 'Test', 'is_fallback': False}

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import cast
 from app.services.memory_store import save_memory, get_memory, record_config_audit
 from app.json_narrowing import as_int, as_list, as_str
-from app.typeAliases import JsonValue
+from app.type_aliases import JsonValue
 
 _AGENTSKey = 'agent_registry'
 _JOBSKey = 'agent_jobs'

@@ -40,7 +40,7 @@ from app.services import config_service
 from app.services.memory.brain_orchestrator import DEFAULT_FEATURES
 from app.services.memory_store import record_config_audit
 from app.services.workbench import workbench as workbenchSvc
-from app.typeAliases import BrainConfigDict
+from app.type_aliases import BrainConfigDict
 
 boolKeys: tuple[str, ...] = (
     'enabled',

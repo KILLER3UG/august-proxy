@@ -163,7 +163,7 @@ report):
 ### Type safety
 
 - **Python — no `Any` in new code.** Use `TypedDict` from
-  `app/typeAliases.py` for JSON row shapes, `JsonValue` for genuinely
+  `app/type_aliases.py` for JSON row shapes, `JsonValue` for genuinely
   heterogeneous JSON, and concrete primitives / `datetime` /
   Pydantic models where they apply. The repo runs `mypy` in CI;
   warnings block merge.

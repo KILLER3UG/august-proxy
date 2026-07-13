@@ -59,8 +59,8 @@ async def executeSubAgent(
     session: object, agentId: str, goal: str, context: str = '', emit: Callable[[dict[str, object]], None] | None = None
 ) -> dict[str, object]:
     """Execute a sub-agent task and return ``{jobId, agentId, status, result}``."""
-    from app.providers.modelResolver import resolveOrFallback
-    from app.providers.routeResolver import resolveForModel
+    from app.providers.model_resolver import resolveOrFallback
+    from app.providers.route_resolver import resolveForModel
     from app.services.fallback_service import getFallback
     from app.services.tool_registry import dispatch as dispatchTool
     from app.services.workbench.workbench import (

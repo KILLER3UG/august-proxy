@@ -23,7 +23,7 @@ class ModelConfig(ExtraAllowBaseModel):
 class ProviderConfig(ExtraAllowBaseModel):
     """A provider entry from the providers config store.
 
-    Maps to the ProviderConfigDict TypedDict in typeAliases.
+    Maps to the ProviderConfigDict TypedDict in type_aliases.
     """
 
     id: str = ''

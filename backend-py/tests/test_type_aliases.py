@@ -1,4 +1,4 @@
-"""Round-trip tests for the TypedDicts in app/typeAliases.py.
+"""Round-trip tests for the TypedDicts in app/type_aliases.py.
 
 Purpose: ensure TypedDicts accept the JSON shapes the services actually
 emit, and that structural quirks (optional fields, snake_case vs camelCase
@@ -12,7 +12,7 @@ one valid round-trip plus one missing-field test.
 from __future__ import annotations
 import json
 import pytest
-from app.typeAliases import (
+from app.type_aliases import (
     AliasDict,
     BlackboardNoteDict,
     BrainConfigDict,

@@ -23,7 +23,7 @@ import logging
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 from app.json_narrowing import as_dict, as_list, as_str
-from app.typeAliases import JsonValue
+from app.type_aliases import JsonValue
 from app.services import skill_service
 
 log = logging.getLogger(__name__)
