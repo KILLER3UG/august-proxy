@@ -15,7 +15,7 @@ import os
 import uuid
 from pathlib import Path
 from app.lib.paths import dataPath
-from app.jsonUtils import as_str, as_list
+from app.jsonUtils import as_str, as_list, write_json_atomic
 
 _mcpCleanupTasks: set[asyncio.Task] = set()
 MCP_CONFIG_FILE = 'mcp-servers.json'
@@ -46,7 +46,7 @@ def _saveConfig(config: dict[str, object]) -> None:
     """Save MCP server config to disk."""
     path = _mcpConfigPath()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(config, indent=2), 'utf-8')
+    write_json_atomic(path, config, indent=2)
 
 
 def listRegisteredServers() -> list[dict[str, object]]:
