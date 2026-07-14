@@ -9,17 +9,17 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 — schema rename **CLOSED** (pass 2); test isolation proven; **P0 unblocked**
+**Last updated:** 2026-07-14 — **P0 baselines landed** (measure-only); P1–P5 still gated
 **Current branch state:** `master` — verify with `git rev-parse HEAD`.
 **Verification baseline:**
-`pytest 680 passed` · live fingerprint snake-side identical through isolation + pass 2 drop · FTS PASS · `needs_migration=False`
+P0 suite green · schema closed · isolation autouse · full suite still expected 680+ + P0 tests
 **CI note:** Prefer `backend-py/.venv` (3.12). Isolation is **autouse** — do not remove.
 
 ### Phase 0 — SIGNED OFF (2026-07-13)
 ### Phase 2 — SIGNED OFF (2026-07-14) — includes B1a + B16 (see residual ledger)
 ### Phase 3 — **DONE against modularization exit criteria** (not “all large files gone”)
 ### Phase 4 — **DONE** (indexes, busy_timeout, Zustand, schema rename hybrid **closed on live DB**)
-### Phase P — **P0 unblocked** (baselines only until further approval)
+### Phase P — **P0 DONE** (baselines recorded); P1–P5 **not approved**
 
 ---
 
@@ -42,9 +42,64 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 
 ## Where to pick up (next session)
 
-1. **P0 baselines** (user-approved scope): measure product overhead vs provider RTT; include gateway/multi-agent; **no optimisations** until numbers justify further Phase P.
+1. Review P0 baseline numbers (below). **Separate go/no-go** for any P1 work.
 2. Do **not** remove `isolatedData` autouse without safety review.
 3. Phase 5 / Phase 7 remain open on the long roadmap.
+
+---
+
+## Phase P0 baselines (2026-07-14, this machine — mock LLM, no network)
+
+**How to re-run:**  
+`pytest backend-py/tests/test_perf_p0_baselines.py -q -s`  
+`python backend-py/scripts/p0_explain_plans.py`  
+Enable live timing logs: `AUGUST_PERF_TIMING=1`.
+
+### Mock-LLM workbench (product overhead only)
+
+| Metric | p50 | p95 | Notes |
+|---|---|---|---|
+| **total_ms** (text turn) | ~37–41 ms | ~54–83 ms | 8 runs; stub Anthropic stream |
+| **ttft_ms** | ~28–29 ms | ~39–40 ms | first `finalOutput`/`thinking`/`toolCall` |
+| **prompt_build** sum | ~23 ms | ~30–32 ms | system prompt + tool defs |
+| **llm_wait** sum | ~0.2 ms | ~4 ms | stub only — **not** provider RTT |
+| **persist** sum | ~7–10 ms | ~18–54 ms | save sessions + usage |
+| **tool_exec** (1× list_skills) | ~11 ms | — | one tool round then text |
+
+**Interpretation:** With a stub model, **prompt_build dominates** local overhead (~60% of turn). Real provider RTT will dwarf these numbers; P1 should not chase LLM wait until live RTT is separated. Persist is second; worth watching under load.
+
+### Multi-agent / shared state
+
+| Metric | Value | Notes |
+|---|---|---|
+| Blackboard 8 agents × 5 write+read | ~316 ms wall | 40 notes; concurrent `to_thread` |
+| `db_writer` enqueue lag (20 high) | p50 ~0.007 ms, max ~0.05 ms | empty queue; not a load test |
+
+### EXPLAIN QUERY PLAN (live brain)
+
+| Query | Plan note |
+|---|---|
+| sessions by `is_archived` | **INDEX** `idx_sessions_archived` |
+| messages by `session_id` | **INDEX** `idx_messages_session` |
+| usage by `session_id` | **INDEX** `idx_usage_events_session` |
+| blackboard by `session_id` | **INDEX** `idx_blackboard_session` |
+| memory_store by key | **PK/autoindex** |
+| memory_store_fts MATCH | FTS virtual index |
+
+No full-table SCAN on hot session/message paths in this pack.
+
+### Code added (measurement only)
+
+| Path | Role |
+|---|---|
+| `app/lib/perf_timing.py` | Traces, spans, TTFT, ring buffer, percentiles |
+| `workbench` stream | Spans: `prompt_build`, `llm_wait`, `tool_exec`, `persist` |
+| `tests/test_perf_p0_baselines.py` | Mock-LLM + blackboard + db_writer harnesses |
+| `scripts/p0_explain_plans.py` | EXPLAIN pack |
+| `scripts/p0_run_baselines.py` | Convenience runner |
+
+**Not done (P0):** frontend stream profiler (optional P0.4) — deferred as non-blocking.  
+**Not started:** P1+ optimisations.
 
 ---
 

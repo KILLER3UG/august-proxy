@@ -749,6 +749,60 @@ async def sendWorkbenchMessageStream(
     5. Handles tool calls in a loop
     6. Emits events for the SSE stream
     """
+    # P0 measurement only (AUGUST_PERF_TIMING=1 or tests force a current trace).
+    from app.lib.perf_timing import clear_current, current_trace, start_trace
+
+    _owned_trace = False
+    trace = current_trace()
+    if trace is None:
+        trace = start_trace('workbench_stream', sessionId=sessionId or '')
+        _owned_trace = True
+    if emit is not None:
+        _user_emit = emit
+
+        def emit(ev: dict[str, object]) -> None:  # type: ignore[no-redef]
+            if ev.get('type') in ('finalOutput', 'thinking', 'toolCall'):
+                trace.mark_ttft()
+            _user_emit(ev)
+
+    try:
+        await _sendWorkbenchMessageStreamImpl(
+            sessionId=sessionId,
+            message=message,
+            provider=provider,
+            agentId=agentId,
+            effort=effort,
+            model=model,
+            modelProvider=modelProvider,
+            guardMode=guardMode,
+            emit=emit,
+            signal=signal,
+            trace=trace,
+        )
+    finally:
+        if _owned_trace:
+            trace.finish()
+            clear_current()
+
+
+async def _sendWorkbenchMessageStreamImpl(
+    sessionId: str,
+    message: str,
+    provider: str = '',
+    agentId: str = '',
+    effort: str = '',
+    model: str = '',
+    modelProvider: str = '',
+    guardMode: str = '',
+    emit: Callable[[dict[str, object]], None] | None = None,
+    signal: asyncio.Event | None = None,
+    trace: object | None = None,
+) -> None:
+    """Implementation of the streaming chat loop (P0 timing hooks via ``trace``)."""
+    from app.lib.perf_timing import PerfTrace
+
+    _trace = cast(PerfTrace, trace) if trace is not None else PerfTrace('noop')
+
     session = getWorkbenchSession(sessionId)
     if not session:
         session = createWorkbenchSession(provider=provider, agentId=agentId, guardMode=guardMode or 'full')
@@ -801,9 +855,10 @@ async def sendWorkbenchMessageStream(
         if session._failure_feedback_age >= 3:
             session._failure_feedback = None
             session._failure_feedback_age = None
-    systemText = buildSystemPrompt(session)
-    tools = toolDefinitions(session)
-    openaiTools = openaiToolDefinitions(session)
+    with _trace.span('prompt_build'):
+        systemText = buildSystemPrompt(session)
+        tools = toolDefinitions(session)
+        openaiTools = openaiToolDefinitions(session)
     isAnthropic = _isAnthropicProvider(resolvedProvider)
     isOpenai = _isOpenaiProvider(resolvedProvider)
 
@@ -879,21 +934,30 @@ async def sendWorkbenchMessageStream(
                 else [as_dict(t.get('function', {})).get('name') for t in openaiTools]
             )
             logger.debug('workbench presenting %d tools to model: %s', len(toolNames), toolNames)
-        if isAnthropic:
-            response = await _callAnthropicWorkbench(
-                currentMessages, systemText, resolvedModel, tools, effectiveEffort, provider=resolvedProvider, emit=emit
-            )
-        elif isOpenai:
-            response = await _callOpenaiWorkbench(
-                currentMessages,
-                systemText,
-                resolvedModel,
-                openaiTools,
-                effectiveEffort,
-                provider=resolvedProvider,
-                emit=emit,
-            )
-        else:
+        with _trace.span('llm_wait', round=toolRound):
+            if isAnthropic:
+                response = await _callAnthropicWorkbench(
+                    currentMessages,
+                    systemText,
+                    resolvedModel,
+                    tools,
+                    effectiveEffort,
+                    provider=resolvedProvider,
+                    emit=emit,
+                )
+            elif isOpenai:
+                response = await _callOpenaiWorkbench(
+                    currentMessages,
+                    systemText,
+                    resolvedModel,
+                    openaiTools,
+                    effectiveEffort,
+                    provider=resolvedProvider,
+                    emit=emit,
+                )
+            else:
+                response = {'error': f'Unknown provider format for {resolvedProvider}'}
+        if not isAnthropic and not isOpenai:
             if emit:
                 emit({'type': 'error', 'message': f'Unknown provider format for {resolvedProvider}'})
             break
@@ -1048,13 +1112,15 @@ async def sendWorkbenchMessageStream(
                     result = guardMsg
                     tracker.record_failure(toolName)
                 else:
-                    result = await _executeTool(toolName, toolInput, session)
+                    with _trace.span('tool_exec', tool=toolName):
+                        result = await _executeTool(toolName, toolInput, session)
                     if isinstance(result, str) and result.startswith('Error:'):
                         tracker.record_failure(toolName)
                     if guardStatus == 'warn':
                         result = guardMsg + '\n' + result
             except Exception:
-                result = await _executeTool(toolName, toolInput, session)
+                with _trace.span('tool_exec', tool=toolName):
+                    result = await _executeTool(toolName, toolInput, session)
             MAX_SSE_CONTENT = 100 * 1024
             contentTruncated = len(result) > MAX_SSE_CONTENT
             sseContent = result[:MAX_SSE_CONTENT]
@@ -1132,26 +1198,27 @@ async def sendWorkbenchMessageStream(
         session.messages = list(currentMessages)
         session.status = 'idle'
         session.updatedAt = _now()
-        try:
-            saveSessions()
-        except Exception:
-            logger.exception('workbench save_sessions failed; still emitting done')
-        _emitSessionStatus(sessionId)
-        if totalInputTokens > 0 or totalOutputTokens > 0:
+        with _trace.span('persist'):
             try:
-                from app.services.memory_store import record_usage
-
-                record_usage(
-                    sessionId=session.id,
-                    model=resolvedModel,
-                    inputTokens=totalInputTokens,
-                    outputTokens=totalOutputTokens,
-                    contextTokens=finalContextTokens,
-                )
-                session.totalInputTokens += totalInputTokens
-                session.totalOutputTokens += totalOutputTokens
+                saveSessions()
             except Exception:
-                logger.exception('workbench record_usage failed')
+                logger.exception('workbench save_sessions failed; still emitting done')
+            _emitSessionStatus(sessionId)
+            if totalInputTokens > 0 or totalOutputTokens > 0:
+                try:
+                    from app.services.memory_store import record_usage
+
+                    record_usage(
+                        sessionId=session.id,
+                        model=resolvedModel,
+                        inputTokens=totalInputTokens,
+                        outputTokens=totalOutputTokens,
+                        contextTokens=finalContextTokens,
+                    )
+                    session.totalInputTokens += totalInputTokens
+                    session.totalOutputTokens += totalOutputTokens
+                except Exception:
+                    logger.exception('workbench record_usage failed')
     finally:
         if emit:
             emit({'type': 'done', 'sessionId': sessionId})

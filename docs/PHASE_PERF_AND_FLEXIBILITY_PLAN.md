@@ -1,11 +1,8 @@
 # Phase P — True Performance + Feature Flexibility Plan
 
-> **Status (2026-07-14):** **Design doc only for P1–P5.**  
-> **Approved for execution: P0 baselines only.**  
-> P1–P5 are **not** approved. After P0 numbers land, a **separate** go/no-go
-> decides whether Phase P continues at all. Writing this doc was not a
-> substitute for that scope decision (process correction: do not expand
-> initiatives mid-flight without explicit approval).
+> **Status (2026-07-14):** **P0 DONE** (baselines recorded in
+> `docs/REFACTOR_PROGRESS.md`). **P1–P5 not approved** — need a separate
+> go/no-go after reviewing numbers.
 >
 > **Why a plan exists:** Phases 3–4 improved structure and naming. They did
 > **not** prove end-to-end speed. *If* baselines show product-side waste,
@@ -108,7 +105,7 @@ Set provisional budgets; replace with measured p50/p95 after baselining.
 | P0.4 Frontend stream profiler | React Profiler + optional marks around stream buffer flush |
 | P0.5 Dashboard metrics (optional) | Export timings to log or `/health` debug only |
 
-**Exit:** Written baseline numbers in this doc or Progress Log (p50/p95).
+**Exit:** Written baseline numbers in Progress Log (p50/p95) — **met 2026-07-14**.
 
 ---
 
