@@ -44,7 +44,7 @@ async def manageAliases(body: AliasManageRequest):
     """Unified alias action endpoint used by the frontend's AliasesTab."""
     action = (body.action or '').lower()
     if action == 'list':
-        return {'aliases': alias_service.listAliases()}
+        return {'aliases': alias_service.listAliasesWire()}
     if action == 'upsert':
         alias = (body.alias or '').strip()
         if not alias:
@@ -59,7 +59,7 @@ async def manageAliases(body: AliasManageRequest):
             )
         except ValueError as exc:
             raise HTTPException(400, detail={'code': 'validation', 'message': str(exc)})
-        return {'alias': entry}
+        return {'alias': alias_service.alias_to_wire(entry)}
     if action == 'delete':
         if not body.alias:
             raise HTTPException(400, detail={'code': 'bad_request', 'message': 'alias is required'})

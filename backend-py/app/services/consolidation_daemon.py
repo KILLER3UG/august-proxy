@@ -121,7 +121,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
 
     Returns stats about what was done.
     """
-    stats: ConsolidationSummaryDict = {'merged': 0, 'promoted': 0, 'deletedStale': 0, 'errors': []}
+    stats: ConsolidationSummaryDict = {'merged': 0, 'promoted': 0, 'deleted_stale': 0, 'errors': []}
     from app.services.brain_event_bus import emitBrainEvent
 
     emitBrainEvent(
@@ -203,16 +203,16 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                 return conn.execute('DELETE FROM learnedHeuristics WHERE id = ?', (i,))
 
             await enqueue_write(_deleteStale)
-            stats['deletedStale'] += 1
+            stats['deleted_stale'] += 1
     except Exception as exc:
         stats['errors'].append(str(exc))
         logger.error('Consolidation error: %s', exc)
-    global _last_run
+    global _lastRun
     _lastRun = {
         'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
         'merged': stats['merged'],
         'promoted': stats['promoted'],
-        'deletedStale': stats['deletedStale'],
+        'deleted_stale': stats['deleted_stale'],
     }
     from app.services.brain_event_bus import emitBrainEvent
 
@@ -221,15 +221,21 @@ async def runConsolidation() -> ConsolidationSummaryDict:
         summaryParts.append(f'merged {stats["merged"]} duplicate{("s" if stats["merged"] != 1 else "")}')
     if stats['promoted']:
         summaryParts.append(f'promoted {stats["promoted"]} pattern{("s" if stats["promoted"] != 1 else "")} to facts')
-    if stats['deletedStale']:
-        summaryParts.append(f'deleted {stats["deletedStale"]} stale rule{("s" if stats["deletedStale"] != 1 else "")}')
+    if stats['deleted_stale']:
+        summaryParts.append(
+            f'deleted {stats["deleted_stale"]} stale rule{("s" if stats["deleted_stale"] != 1 else "")}'
+        )
     if not summaryParts:
         summaryParts.append('no changes — sleep cycle healthy')
     emitBrainEvent(
         category='consolidation',
         layer='consolidation_daemon',
         summary=f'Sleep cycle done: {", ".join(summaryParts)}',
-        meta={'merged': stats['merged'], 'promoted': stats['promoted'], 'deleted_stale': stats['deletedStale']},
+        meta={
+            'merged': stats['merged'],
+            'promoted': stats['promoted'],
+            'deleted_stale': stats['deleted_stale'],
+        },
     )
     return stats
 

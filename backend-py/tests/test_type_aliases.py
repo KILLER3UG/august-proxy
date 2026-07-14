@@ -46,11 +46,16 @@ class TestTypedDicts:
     """Verify TypedDicts accept the JSON shapes services produce."""
 
     def testAliasDictRoundTrip(self) -> None:
-        data: AliasDict = {'alias': 'fast', 'targetModel': 'claude-sonnet', 'targetProvider': 'anthropic'}
+        data: AliasDict = {
+            'alias': 'fast',
+            'target_model': 'claude-sonnet',
+            'target_provider': 'anthropic',
+        }
         roundTripped = json.loads(json.dumps(data))
         assert roundTripped == data
 
     def testBrainConfigDictRoundTrip(self) -> None:
+        # WIRE: camelCase API keys intentionally retained
         data: BrainConfigDict = {'enabled': True, 'maxAgentDepth': 3, 'adaptivePolicy': False}
         roundTripped = json.loads(json.dumps(data))
         assert roundTripped == data
@@ -90,7 +95,7 @@ class TestTypedDicts:
             'promoted': 1,
             'deleted_stale': 5,
             'heuristics': 100,
-            'durationMs': 1500,
+            'duration_ms': 1500,
             'errors': ['err1', 'err2'],
         }
         roundTripped = json.loads(json.dumps(data))
@@ -115,8 +120,13 @@ class TestTypedDicts:
             'id': 'daemon_1',
             'name': 'consolidation',
             'status': 'running',
-            'startedAt': '2026-07-01T00:00:00Z',
-            'lastHeartbeat': None,
+            'triggered': True,
+            'error': None,
+            'last_check': 0.0,
+            'turns_alive': 2,
+            'output': '',
+            'started_at': '2026-07-01T00:00:00Z',
+            'last_heartbeat': None,
             'extras': {'trigger': 'interval'},
         }
         roundTripped = json.loads(json.dumps(data))
@@ -152,10 +162,19 @@ class TestTypedDicts:
 class TestTypeContractDrift:
     """Sanity checks on the contract between TypedDicts and the wire."""
 
+    def testAliasDictUsesSnakeCaseInternal(self) -> None:
+        """AliasDict is INTERNAL snake_case; wire conversion is separate."""
+        data: AliasDict = {
+            'alias': 'fast',
+            'target_model': 'm',
+            'target_provider': 'p',
+            'display_alias': 'Fast',
+        }
+        assert 'target_model' in data
+        assert 'targetModel' not in data
+
     def testMemoryEntryDictUsesCamelCase(self) -> None:
-        """MemoryEntryDict must use camelCase JSON keys (the project
-        convention is to keep internal code camelCase and translate at
-        the adapter boundary)."""
+        """MemoryEntryDict is WIRE — camelCase matches SQLite columns."""
         data: MemoryEntryDict = {'key': 'k', 'value': 'v', 'updatedAt': '2026-07-01T00:00:00Z'}
         assert 'updatedAt' in data
         assert 'updated_at' not in data

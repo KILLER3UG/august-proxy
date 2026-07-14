@@ -9,11 +9,14 @@ def testCrudRoundtrip(isolatedData):
         alias='fast', target_model='claude-sonnet-4-7', target_provider='Anthropic', actor='test'
     )
     assert entry['alias'] == 'fast'
-    assert entry['targetModel'] == 'claude-sonnet-4-7'
+    assert entry['target_model'] == 'claude-sonnet-4-7'
     listed = alias_service.listAliases()
     assert any((a['alias'] == 'fast' for a in listed))
+    # On-disk config.json keeps camelCase wire keys
+    wire = alias_service.alias_to_wire(entry)
+    assert wire['targetModel'] == 'claude-sonnet-4-7'
     updated = alias_service.update_alias('fast', target_model='claude-haiku-4-5', actor='test')
-    assert updated['targetModel'] == 'claude-haiku-4-5'
+    assert updated['target_model'] == 'claude-haiku-4-5'
     assert alias_service.delete_alias('fast', actor='test') is True
     assert alias_service.delete_alias('fast', actor='test') is False
 
