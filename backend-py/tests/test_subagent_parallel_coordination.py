@@ -162,7 +162,7 @@ class CoordinationStub:
             conn = sqlite3.connect(str(_db_path()), timeout=5)
             conn.row_factory = sqlite3.Row
             cur = conn.execute(
-                'SELECT value FROM blackboard WHERE sessionId=? AND key=?',
+                'SELECT value FROM blackboard WHERE session_id=? AND key=?',
                 (self.session_id, 'decided'),
             )
             row = cur.fetchone()
@@ -191,7 +191,7 @@ class CoordinationStub:
             conn = sqlite3.connect(str(db), timeout=5)
             conn.row_factory = sqlite3.Row
             cur = conn.execute(
-                'SELECT key, value FROM blackboard WHERE sessionId=? AND key LIKE ?', (self.session_id, 'port_%')
+                'SELECT key, value FROM blackboard WHERE session_id=? AND key LIKE ?', (self.session_id, 'port_%')
             )
             for row in cur.fetchall():
                 try:

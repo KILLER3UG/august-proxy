@@ -68,6 +68,7 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
     """Find memories relevant to a query using FTS5 ranking.
 
     Falls back to LIKE-based search if FTS returns nothing.
+    Returned keys keep camelCase ``createdAt`` for wire/API consumers.
     """
     conn = _conn()
     try:
@@ -122,6 +123,7 @@ def deleteOrphanedBlob() -> bool:
     Returns True if the blob was found and deleted, False otherwise.
     Call this once after migration to avoid polluting LIKE-based searches.
     """
+    # Blob key name stays camelCase (row key, not a table/column).
     blob = get_memory('autoMemories')
     if blob is not None:
         save_memory('autoMemories', None)

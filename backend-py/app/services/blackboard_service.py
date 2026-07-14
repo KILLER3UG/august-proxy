@@ -64,7 +64,7 @@ def readNotes(sessionId: str, agent: str = '', key: str = '', ack: bool = False)
     """Read notes from the blackboard, with optional agent/key filters.
 
     v2: If `ack=True`, the read notes are deleted on read (acknowledged
-    by the consumer). Returns camelCase wire dicts.
+    by the consumer). Returns camelCase wire dicts via ``_row_as_wire``.
     """
     from app.services.memory_store import _row_as_wire
 

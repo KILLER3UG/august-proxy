@@ -6,7 +6,9 @@ in the ``memory_store`` table. It is called from ``app/main.py`` on
 every startup.
 
 Phase 4: brain tables are snake_case; this module queries ``memory_store``
-(with a fallback for legacy ``memoryStore`` if present).
+(with a fallback for legacy ``memoryStore`` if present). Blob ``key``
+values remain camelCase for the public memory API
+(``coreMemory`` / ``userProfile``).
 
 These tests build a small file SQLite database with the
 ``memory_store`` schema and exercise the real ``migrate_storage_keys``

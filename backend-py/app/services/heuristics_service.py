@@ -4,17 +4,17 @@ Heuristics service — CRUD over the learned_heuristics table (Phase 4).
 The table was created in Phase 0; this service provides the application
 layer for adding, removing, listing, and clearing heuristics.
 
-Writes are performed DIRECTLY through ``memoryStore`` (the shared,
+Writes are performed DIRECTLY through ``memory_store`` (the shared,
 thread-local brain connection). Every connection opened by
-``memoryStore._conn`` sets ``PRAGMA journal_mode=WAL`` and
+``memory_store._conn`` sets ``PRAGMA journal_mode=WAL`` and
 ``PRAGMA busy_timeout=10000``, so direct writes from the many callers are
 safe from "database is locked" errors and corruption under WAL.
 
-``db_writer`` (``app.services.dbWriter``) is a SEPARATE single-writer queue
+``db_writer`` (``app.services.db_writer``) is a SEPARATE single-writer queue
 that serializes writes through one asyncio worker task. It is an ADDITIONAL
 serialization layer, NOT the universal write path: as of this writing it is
-used only by ``consolidationDaemon``. This service does NOT enqueue through
-``db_writer``; it commits changes directly via ``memoryStore``.
+used only by ``consolidation_daemon``. This service does NOT enqueue through
+``db_writer``; it commits changes directly via ``memory_store``.
 """
 
 from __future__ import annotations
@@ -28,7 +28,10 @@ def _conn():
 
 
 def listHeuristics(category: str = '') -> list[dict[str, object]]:
-    """List all learned heuristics, optionally filtered by category."""
+    """List all learned heuristics, optionally filtered by category.
+
+    Row keys are camelCase on the wire via ``_row_as_wire``.
+    """
     from app.services.memory_store import _row_as_wire
 
     conn = _conn()
