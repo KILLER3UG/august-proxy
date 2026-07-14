@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from app.services import skill_service
-from app.services.skills.curator import SkillCurator, UsageRecord, makeBackgroundCurator
+from app.services.skills.curator import SkillCurator, UsageRecord, make_background_curator
 
 
 @pytest.fixture
@@ -33,41 +33,41 @@ def seededSkills(curator, isolatedSkills):
     rec = curator._ensure('old-skill')
     rec.lastUsedAt = time.time() - 15 * 86400
     curator._save()
-    curator.bumpUse('active-skill')
-    curator.bumpUse('bundled-ish')
+    curator.bump_use('active-skill')
+    curator.bump_use('bundled-ish')
     curator._save()
     return agentRoot
 
 
 class TestCurator:
     def testBumpCreatesAndIncrements(self, curator):
-        curator.bumpUse('my-skill')
-        rec = curator.getRecord('my-skill')
+        curator.bump_use('my-skill')
+        rec = curator.get_record('my-skill')
         assert rec is not None
         assert rec.useCount == 1
         assert rec.lastUsedAt is not None
-        curator.bumpUse('my-skill')
-        assert curator.getRecord('my-skill').useCount == 2
+        curator.bump_use('my-skill')
+        assert curator.get_record('my-skill').useCount == 2
 
     def testBumpViewAndPatch(self, curator):
-        curator.bumpView('a')
-        curator.bumpPatch('a')
-        rec = curator.getRecord('a')
+        curator.bump_view('a')
+        curator.bump_patch('a')
+        rec = curator.get_record('a')
         assert rec.viewCount == 1
         assert rec.patchCount == 1
 
     def testListUsage(self, curator):
-        curator.bumpUse('x')
-        lst = curator.listUsage()
+        curator.bump_use('x')
+        lst = curator.list_usage()
         names = [e['name'] for e in lst]
         assert 'x' in names
 
     def testPinAndUnpin(self, curator, isolatedSkills, seededSkills):
         skill_service.createSkill('pin-me', 'Desc.', 'body.', createdBy='agent')
         assert curator.pin('pin-me') is True
-        assert curator.getRecord('pin-me').pinned is True
+        assert curator.get_record('pin-me').pinned is True
         assert curator.unpin('pin-me') is True
-        assert curator.getRecord('pin-me').pinned is False
+        assert curator.get_record('pin-me').pinned is False
 
     def testPinRefusesBundled(self, curator, isolatedSkills, seededSkills):
         skill_service.createSkill('not-agent', 'Desc.', 'body.', createdBy='user')
@@ -76,7 +76,7 @@ class TestCurator:
     def testArchiveAndRestore(self, curator, isolatedSkills, seededSkills):
         skill_service.createSkill('arch-me', 'Desc.', 'body.', createdBy='agent')
         assert curator.archive('arch-me') is True
-        rec = curator.getRecord('arch-me')
+        rec = curator.get_record('arch-me')
         assert rec is not None
         assert rec.state == 'archived'
         assert rec.archivedAt is not None
@@ -84,7 +84,7 @@ class TestCurator:
         assert (agentRoot / '.archive' / 'arch-me').exists()
         assert not (agentRoot / 'arch-me').exists()
         assert curator.restore('arch-me') is True
-        assert curator.getRecord('arch-me').state == 'active'
+        assert curator.get_record('arch-me').state == 'active'
         assert (agentRoot / 'arch-me').exists()
 
     def testArchiveRefusesPinned(self, curator, isolatedSkills):
@@ -100,23 +100,23 @@ class TestCurator:
         assert curator.archive('no-such') is False
 
     def testRunCurationTransitionsStale(self, curator, seededSkills):
-        report = curator.runCuration()
+        report = curator.run_curation()
         assert 'old-skill' in report['staled']
-        rec = curator.getRecord('old-skill')
+        rec = curator.get_record('old-skill')
         assert rec is not None
         assert rec.state == 'stale'
 
     def testRunCurationDryRun(self, curator, seededSkills):
-        report = curator.runCuration(dryRun=True)
+        report = curator.run_curation(dryRun=True)
         assert 'old-skill' in report['staled']
-        rec = curator.getRecord('old-skill')
+        rec = curator.get_record('old-skill')
         assert rec is not None
         assert rec.state != 'stale'
 
     def testMakeBackgroundCurator(self, isolatedData):
         dataDir = isolatedData
         try:
-            cur, task = makeBackgroundCurator(dataDir=dataDir)
+            cur, task = make_background_curator(dataDir=dataDir)
             assert cur is not None
             task.cancel()
         except RuntimeError:
@@ -148,7 +148,7 @@ def testPinViaApi(curator, seededSkills):
     client = TestClient(_app(curator))
     r = client.post('/api/curator/pin/api-pin')
     assert r.status_code == 200
-    assert curator.getRecord('api-pin').pinned is True
+    assert curator.get_record('api-pin').pinned is True
 
 
 def testArchiveAndRestoreViaApi(curator, seededSkills):
@@ -156,10 +156,10 @@ def testArchiveAndRestoreViaApi(curator, seededSkills):
     client = TestClient(_app(curator))
     r = client.post('/api/curator/archive/api-arch')
     assert r.status_code == 200
-    assert curator.getRecord('api-arch').state == 'archived'
+    assert curator.get_record('api-arch').state == 'archived'
     r = client.post('/api/curator/restore/api-arch')
     assert r.status_code == 200
-    assert curator.getRecord('api-arch').state == 'active'
+    assert curator.get_record('api-arch').state == 'active'
 
 
 def testRunCurationViaApi(curator, seededSkills):

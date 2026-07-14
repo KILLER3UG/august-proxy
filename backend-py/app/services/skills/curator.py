@@ -86,19 +86,19 @@ class SkillCurator:
         except Exception as exc:
             log.warning('curator: could not save usage: %s', exc)
 
-    def bumpUse(self, name: str) -> None:
+    def bump_use(self, name: str) -> None:
         rec = self._ensure(name)
         rec.useCount += 1
         rec.lastUsedAt = time.time()
         self._save()
 
-    def bumpView(self, name: str) -> None:
+    def bump_view(self, name: str) -> None:
         rec = self._ensure(name)
         rec.viewCount += 1
         rec.lastViewedAt = time.time()
         self._save()
 
-    def bumpPatch(self, name: str) -> None:
+    def bump_patch(self, name: str) -> None:
         rec = self._ensure(name)
         rec.patchCount += 1
         rec.lastPatchedAt = time.time()
@@ -109,10 +109,10 @@ class SkillCurator:
             self._usage[name] = UsageRecord(name=name)
         return self._usage[name]
 
-    def getRecord(self, name: str) -> Optional[UsageRecord]:
+    def get_record(self, name: str) -> Optional[UsageRecord]:
         return self._usage.get(name)
 
-    def listUsage(self) -> list[dict[str, object]]:
+    def list_usage(self) -> list[dict[str, object]]:
         return [
             {
                 'name': v.name,
@@ -129,7 +129,7 @@ class SkillCurator:
 
     def pin(self, name: str) -> bool:
         """Pin a skill (exempt from auto-transitions).  Only agent-authored."""
-        if not self._isAgentSkill(name):
+        if not self._is_agent_skill(name):
             return False
         rec = self._ensure(name)
         rec.pinned = True
@@ -146,7 +146,7 @@ class SkillCurator:
 
     def archive(self, name: str) -> bool:
         """Move to the archive dir (never deletes).  Only agent-authored."""
-        if not self._isAgentSkill(name):
+        if not self._is_agent_skill(name):
             return False
         rec = self._ensure(name)
         if rec.pinned:
@@ -181,13 +181,13 @@ class SkillCurator:
         self._save()
         return True
 
-    def _isAgentSkill(self, name: str) -> bool:
+    def _is_agent_skill(self, name: str) -> bool:
         sk = skill_service.get(name)
         if not sk:
             return False
         return sk.get('created_by', '') == _AGENTCreatedTag
 
-    def runCuration(self, dryRun: bool = False) -> dict[str, object]:
+    def run_curation(self, dryRun: bool = False) -> dict[str, object]:
         """Iterate all agent-authored skills and transition stale / archiveable ones.
 
         Returns a report dict::
@@ -196,7 +196,7 @@ class SkillCurator:
         """
         now = time.time()
         report: dict[str, object] = {'active': 0, 'staled': [], 'archived': [], 'errors': []}
-        for skill in skill_service.listAll():
+        for skill in skill_service.list_all():
             if as_str(skill.get('created_by'), '') != _AGENTCreatedTag:
                 continue
             name = as_str(skill['name'], '')
@@ -224,7 +224,7 @@ class SkillCurator:
         return report
 
 
-def makeBackgroundCurator(dataDir: Path | None = None) -> tuple[SkillCurator, asyncio.Task]:
+def make_background_curator(dataDir: Path | None = None) -> tuple[SkillCurator, asyncio.Task]:
     """Create a curator and start its background curation loop.
 
     Returns (curator, task) — caller should cancel the task on shutdown.
@@ -234,7 +234,7 @@ def makeBackgroundCurator(dataDir: Path | None = None) -> tuple[SkillCurator, as
     async def _loop() -> None:
         while True:
             try:
-                report = curator.runCuration()
+                report = curator.run_curation()
                 if report.get('staled') or report.get('archived'):
                     log.info('curator ran: %s', {k: v for k, v in report.items() if v})
             except Exception as exc:

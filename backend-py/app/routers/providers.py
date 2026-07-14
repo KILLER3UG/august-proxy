@@ -6,7 +6,7 @@ Uses camelCase throughout matching the frontend convention.
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from app.models.config import ProviderConfig, ProviderCreate, ProviderUpdate, ModelCreate, ModelUpdate
-from app.providers.template_loader import getTemplates, getTemplate
+from app.providers.template_loader import get_templates, get_template
 from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
 from app.services import config_service
 from app.services import model_service
@@ -63,7 +63,7 @@ async def listProviders():
 @router.get('/templates')
 async def listTemplates():
     """Return all provider templates (static definitions from provider_templates.json)."""
-    return getTemplates()
+    return get_templates()
 
 
 @router.post('')
@@ -78,7 +78,7 @@ async def createProvider(body: ProviderCreate):
     apiFormat = body.api_format
     models: list[dict] = []
     if body.template:
-        tmpl = getTemplate(body.template)
+        tmpl = get_template(body.template)
         if tmpl:
             if not baseUrl:
                 baseUrl = as_str(tmpl.get('baseUrl', ''))
@@ -133,7 +133,7 @@ async def createProvider(body: ProviderCreate):
     providers_list.append(entry)
     store['providers'] = providers_list
     config_service.saveProvidersStore(store)
-    model_service.invalidateCache()
+    model_service.invalidate_cache()
     return {**entry, 'apiKeySet': bool(body.api_key)}
 
 
@@ -157,7 +157,7 @@ async def importProviderConfig(body: dict):
     providers_list.append(entry)
     store['providers'] = providers_list
     config_service.saveProvidersStore(store)
-    model_service.invalidateCache()
+    model_service.invalidate_cache()
     return {**entry, 'apiKeySet': bool(entry.get('apiKey'))}
 
 
@@ -190,7 +190,7 @@ async def updateProvider(providerId: str, body: ProviderUpdate):
             if body.enabled is not None:
                 p['enabled'] = body.enabled
             config_service.saveProvidersStore(store)
-            model_service.invalidateCache()
+            model_service.invalidate_cache()
             return {**p, 'apiKeySet': bool(p.get('apiKey'))}
     raise HTTPException(status_code=404, detail='Provider not found')
 
@@ -212,7 +212,7 @@ async def deleteProvider(providerId: str):
     if len(remaining) == before:
         raise HTTPException(status_code=404, detail='Provider not found')
     config_service.saveProvidersStore(store)
-    model_service.invalidateCache()
+    model_service.invalidate_cache()
     return {'deleted': True}
 
 
@@ -291,7 +291,7 @@ async def refreshModels(providerId: str):
                 )
         p['models'] = currentModels
         config_service.saveProvidersStore(store)
-        model_service.invalidateCache()
+        model_service.invalidate_cache()
         return {'added': added, 'updated': updated, 'removed': removed}
     raise HTTPException(status_code=404, detail='Provider not found')
 
@@ -323,7 +323,7 @@ async def addModel(providerId: str, body: ModelCreate):
                 }
             )
             config_service.saveProvidersStore(store)
-            model_service.invalidateCache()
+            model_service.invalidate_cache()
             return {**p, 'apiKeySet': bool(p.get('apiKey'))}
     raise HTTPException(status_code=404, detail='Provider not found')
 
@@ -351,7 +351,7 @@ async def updateModel(providerId: str, modelId: str, body: ModelUpdate):
                     if body.free is not None:
                         m['free'] = body.free
                     config_service.saveProvidersStore(store)
-                    model_service.invalidateCache()
+                    model_service.invalidate_cache()
                     return {'updated': True}
             raise HTTPException(status_code=404, detail='Model not found')
     raise HTTPException(status_code=404, detail='Provider not found')
@@ -374,7 +374,7 @@ async def deleteModel(providerId: str, modelId: str):
             if len(remaining) == before:
                 raise HTTPException(status_code=404, detail='Model not found')
             config_service.saveProvidersStore(store)
-            model_service.invalidateCache()
+            model_service.invalidate_cache()
             return {'deleted': True}
     raise HTTPException(status_code=404, detail='Provider not found')
 

@@ -743,7 +743,7 @@ async def _listSkills(query: str = '') -> str:
         if query:
             skills = skill_service.search(query)
         else:
-            skills = skill_service.listAll()
+            skills = skill_service.list_all()
         if not skills:
             return 'No skills found.' if not query else f"No skills matching '{query}'."
         lines = [f'Available skills ({len(skills)}):\n']

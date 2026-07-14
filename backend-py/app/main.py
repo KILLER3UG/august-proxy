@@ -114,9 +114,9 @@ async def lifespan(app: FastAPI):
     _curator = None
     _curatorTask = None
     try:
-        from app.services.skills.curator import makeBackgroundCurator
+        from app.services.skills.curator import make_background_curator
 
-        _curator, _curatorTask = makeBackgroundCurator()
+        _curator, _curatorTask = make_background_curator()
         app.state.curator = _curator
     except Exception:
         pass

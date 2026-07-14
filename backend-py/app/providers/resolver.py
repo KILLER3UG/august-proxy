@@ -13,7 +13,7 @@ from typing import Optional
 from app.json_narrowing import as_str, as_dict, as_list
 from app.config import settings
 from app.providers import aliases
-from app.providers.template_loader import getTemplates, getTemplate
+from app.providers.template_loader import get_templates, get_template
 
 
 def _templateToProviderDict(template: dict[str, object]) -> dict[str, object]:
@@ -61,7 +61,7 @@ def _customEntryToProviderDict(entry: dict[str, object]) -> dict[str, object]:
     when a matching template id exists and the entry does not override it.
     """
     templateId = str(entry.get('template', '')) or str(entry.get('id', ''))
-    tmpl = getTemplate(templateId) if templateId else None
+    tmpl = get_template(templateId) if templateId else None
     base = _templateToProviderDict(tmpl) if tmpl else {}
     base.update(
         {
@@ -121,10 +121,10 @@ def resolve(name: str) -> Optional[dict[str, object]]:
     if customEntry and customEntry.get('enabled') and customEntry.get('apiKey'):
         return _customEntryToProviderDict(customEntry)
     canonical = aliases.normalize(nameStr)
-    tmpl = getTemplate(canonical)
+    tmpl = get_template(canonical)
     if tmpl:
         return _templateToProviderDict(tmpl)
-    allTemplates = getTemplates()
+    allTemplates = get_templates()
     allProviders = [_templateToProviderDict(t) for t in allTemplates]
     for p in allProviders:
         if as_str(p.get('name'), '').lower() == nameStr.lower():
@@ -169,7 +169,7 @@ def resolve(name: str) -> Optional[dict[str, object]]:
 
 def list_available() -> list[dict[str, object]]:
     """Return all available providers — templates + custom store entries."""
-    templates = getTemplates()
+    templates = get_templates()
     providers = [_templateToProviderDict(t) for t in templates]
     try:
         from app.services import config_service

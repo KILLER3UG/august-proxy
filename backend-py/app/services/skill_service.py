@@ -147,7 +147,7 @@ def _agentSkillDir(name: str) -> Path:
     return _agentSkillsDir() / name
 
 
-def listAll() -> list[dict[str, object]]:
+def list_all() -> list[dict[str, object]]:
     """Discover all skills from both the agent and bundled roots."""
     skills: list[dict[str, object]] = []
     seen: set[str] = set()
@@ -172,7 +172,7 @@ def listAll() -> list[dict[str, object]]:
 
 def search(query: str = '', category: str = '', enabledOnly: bool = True) -> list[dict[str, object]]:
     """Search skills by name, description, trigger, or category."""
-    allSkills = listAll()
+    allSkills = list_all()
     q = query.lower().strip()
     results = []
     for s in allSkills:
@@ -194,7 +194,7 @@ def search(query: str = '', category: str = '', enabledOnly: bool = True) -> lis
 
 def get(name: str) -> Optional[dict[str, object]]:
     """Get a single skill by name (agent root takes precedence)."""
-    for s in listAll():
+    for s in list_all():
         if s['name'] == name:
             return s
     return None
@@ -220,7 +220,7 @@ def catalogue() -> list[dict[str, object]]:
             'trigger': s.get('trigger', ''),
             'category': s.get('category', 'uncategorized'),
         }
-        for s in listAll()
+        for s in list_all()
     ]
 
 

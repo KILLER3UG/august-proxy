@@ -102,7 +102,7 @@ def _writeAliases(aliases: list[AliasDict]) -> None:
     try:
         from app.services import model_service
 
-        model_service.invalidateCache()
+        model_service.invalidate_cache()
     except Exception:
         pass
 
@@ -118,9 +118,9 @@ def _providerNames() -> set[str]:
     """All known provider names + aliases (templates and custom)."""
     names: set[str] = set()
     try:
-        from app.providers.template_loader import getTemplates
+        from app.providers.template_loader import get_templates
 
-        for t in getTemplates():
+        for t in get_templates():
             names.add(as_str(t.get('name'), ''))
             for a in as_list(t.get('aliases'), []):
                 names.add(as_str(a))

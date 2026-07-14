@@ -87,7 +87,7 @@ async def setupProvider(
     api_format = _normalize_format(apiFormat)
 
     from app.services import config_service, model_service
-    from app.providers.template_loader import getTemplates
+    from app.providers.template_loader import get_templates
 
     store = config_service.getProvidersStore()
     if 'providers' not in store:
@@ -106,7 +106,7 @@ async def setupProvider(
                 if apiKey:
                     p['apiKey'] = apiKey
                 config_service.saveProvidersStore(store)
-                model_service.invalidateCache()
+                model_service.invalidate_cache()
                 return _ok(
                     providerId=p['id'],
                     name=p['name'],
@@ -126,7 +126,7 @@ async def setupProvider(
     # Apply template defaults when the chosen name matches a known template.
     resolved_url = baseUrl
     models: list[dict] = []
-    for rawTmpl in getTemplates():
+    for rawTmpl in get_templates():
         tmpl = as_dict(rawTmpl)
         tmpl_name = (as_str(tmpl.get('name'), '') or '').lower()
         tmpl_id = (as_str(tmpl.get('id'), '') or '').lower()
@@ -164,7 +164,7 @@ async def setupProvider(
     }
     as_list(store['providers']).append(entry)
     config_service.saveProvidersStore(store)
-    model_service.invalidateCache()
+    model_service.invalidate_cache()
     return _ok(
         providerId=new_id,
         name=display_name,

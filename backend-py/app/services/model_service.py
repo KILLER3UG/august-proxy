@@ -29,7 +29,7 @@ _ALIASCacheTtl: float = 60
 _refreshInFlight: asyncio.Task | None = None
 
 
-def invalidateCache() -> None:
+def invalidate_cache() -> None:
     global _modelCache, _modelCacheAt, _aliasCache, _aliasCacheAt
     _modelCache = None
     _modelCacheAt = 0

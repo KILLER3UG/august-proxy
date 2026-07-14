@@ -25,10 +25,7 @@ async def testTemplatesEndpointReturnsTemplates():
         assert 'openai-compatible' in ids
 
 
-async def testCreateProvider(monkeypatch):
-    from app.services import model_service
-
-    monkeypatch.setattr(model_service, 'invalidate_cache', model_service.invalidateCache, raising=False)
+async def testCreateProvider():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as client:
         resp = await client.post(
@@ -47,11 +44,8 @@ async def testCreateProvider(monkeypatch):
         assert data['apiKeySet'] is True
 
 
-async def testCreateProviderWithTemplate(monkeypatch):
+async def testCreateProviderWithTemplate():
     """Creating a provider with a template id pre-fills baseUrl and models."""
-    from app.services import model_service
-
-    monkeypatch.setattr(model_service, 'invalidate_cache', model_service.invalidateCache, raising=False)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as client:
         resp = await client.post(
@@ -79,11 +73,8 @@ async def testActiveProviderReturnsEmptyWhenNoneConfigured(isolatedData):
         assert len(data['providers']) == 0
 
 
-async def testImportProviderConfig(monkeypatch):
+async def testImportProviderConfig():
     """Importing a provider config works."""
-    from app.services import model_service
-
-    monkeypatch.setattr(model_service, 'invalidate_cache', model_service.invalidateCache, raising=False)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url='http://test') as client:
         resp = await client.post(

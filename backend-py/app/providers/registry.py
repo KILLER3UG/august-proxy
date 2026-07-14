@@ -19,7 +19,7 @@ def get(name: str) -> Optional[dict[str, object]]:
     return _registry.get(name)
 
 
-def listAll() -> list[dict[str, object]]:
+def list_all() -> list[dict[str, object]]:
     return list(_registry.values())
 
 

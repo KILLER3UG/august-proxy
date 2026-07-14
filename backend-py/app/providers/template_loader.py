@@ -61,7 +61,7 @@ def _buildIndex(templates: list[dict[str, object]]) -> dict[str, dict[str, objec
     return idx
 
 
-def getTemplates() -> list[dict[str, object]]:
+def get_templates() -> list[dict[str, object]]:
     """Return all provider templates (cached after first load)."""
     global _TEMPLATES, _INDEX
     if _TEMPLATES is None:
@@ -70,18 +70,18 @@ def getTemplates() -> list[dict[str, object]]:
     return list(_TEMPLATES)
 
 
-def getTemplate(templateId: str) -> Optional[dict[str, object]]:
+def get_template(template_id: str) -> Optional[dict[str, object]]:
     """Look up a single template by id (case-insensitive).
 
     Returns ``None`` if the id is not found.
     """
     global _TEMPLATES, _INDEX
     if _INDEX is None:
-        getTemplates()
-    return (_INDEX or {}).get(templateId.lower())
+        get_templates()
+    return (_INDEX or {}).get(template_id.lower())
 
 
-def invalidateCache() -> None:
+def invalidate_cache() -> None:
     """Clear the cached templates (useful for testing)."""
     global _TEMPLATES, _INDEX
     _TEMPLATES = None

@@ -134,7 +134,7 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
                 try:
                     from app.services.skills.curator import SkillCurator
 
-                    SkillCurator().bumpUse(name)
+                    SkillCurator().bump_use(name)
                 except Exception:
                     pass
             elif action == 'patch':
@@ -147,7 +147,7 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
                 try:
                     from app.services.skills.curator import SkillCurator
 
-                    SkillCurator().bumpUse(name)
+                    SkillCurator().bump_use(name)
                 except Exception:
                     pass
         except Exception as exc:

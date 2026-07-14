@@ -32,7 +32,7 @@ def testCreateSkillRoundTrip(isolatedSkills):
     )
     assert skill['name'] == 'py-test-thing'
     assert skill.get('created_by') == 'agent'
-    names = [s['name'] for s in skill_service.listAll()]
+    names = [s['name'] for s in skill_service.list_all()]
     assert 'py-test-thing' in names
     fetched = skill_service.get('py-test-thing')
     assert fetched is not None

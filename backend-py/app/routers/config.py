@@ -81,7 +81,7 @@ async def providerDetails(provider: str = ''):
     """
     import os
     from app.providers import resolver as providerResolver
-    from app.providers.template_loader import getTemplates, getTemplate
+    from app.providers.template_loader import get_templates, get_template
 
     store = config_service.getProvidersStore()
     entry = None
@@ -99,9 +99,9 @@ async def providerDetails(provider: str = ''):
         isAvailable = bool(entry.get('enabled')) and bool(entry.get('apiKey'))
         providerId = entry.get('id', provider)
     else:
-        tmpl = getTemplate(provider)
+        tmpl = get_template(provider)
         if not tmpl:
-            for t in getTemplates():
+            for t in get_templates():
                 if t.get('id') == provider or t.get('name') == provider:
                     tmpl = t
                     break
@@ -147,7 +147,7 @@ async def updateProviderDetails(body: ProviderDetailsUpdate):
             if body.config.get('baseUrl'):
                 e['baseUrl'] = body.config['baseUrl']
             config_service.saveProvidersStore(store)
-            model_service.invalidateCache()
+            model_service.invalidate_cache()
             return {'status': 'success', 'id': e.get('id')}
     raise HTTPException(status_code=404, detail='Provider not found')
 

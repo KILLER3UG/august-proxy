@@ -17,7 +17,7 @@ async def listUsage(request: Request):
     c = _curator(request)
     if not c:
         raise HTTPException(status_code=503, detail='Curator not running')
-    return {'usage': c.listUsage()}
+    return {'usage': c.list_usage()}
 
 
 @router.post('/pin/{name}')
@@ -66,5 +66,5 @@ async def runCuration(request: Request, dryRun: bool = False):
     c = _curator(request)
     if not c:
         raise HTTPException(status_code=503, detail='Curator not running')
-    report = c.runCuration(dryRun=dryRun)
+    report = c.run_curation(dryRun=dryRun)
     return {'report': report}
