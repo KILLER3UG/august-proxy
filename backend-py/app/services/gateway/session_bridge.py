@@ -114,10 +114,11 @@ class SessionBridge:
         parts: list[str] = []
 
         def emit(event: dict[str, object]) -> None:
-            # Workbench emits camelCase ``finalOutput`` (BatchedEmit / providers).
-            # Accept snake_case too for older callers/tests.
+            # Canonical types live in workbench.emit_types (camelCase wire).
+            from app.services.workbench.emit_types import ASSISTANT_TEXT_EMIT_TYPES
+
             et = event.get('type')
-            if et in ('finalOutput', 'final_output') and event.get('content'):
+            if et in ASSISTANT_TEXT_EMIT_TYPES and event.get('content'):
                 parts.append(as_str(event['content']))
             if onEvent:
                 try:
