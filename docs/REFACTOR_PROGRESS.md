@@ -1,35 +1,41 @@
 # Refactor Progress Tracker — August Proxy
 
 > **Live tracker for the multi-session refactor of August Proxy.** Updated at
-> the end of every session. Earlier audit/analysis docs are now in `docs/`
-> with explicit "SUPERSEDED — DO NOT FOLLOW" headers; this file supersedes
-> them for refactor-status questions.
+> the end of every session. This file is the authority for refactor-status
+> questions. Stale archaeology audits were removed from `docs/`.
 >
 > **Full pasteable handoff prompt for a new chat/model:**
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 — **Out-of-phase feature workstreams shipped** (Feature Flow UI + AUG inject)
-**Current branch state:** `feat/feature-flow-and-aug-inject` → merge to `master`. Verify `git rev-parse HEAD`.
+**Last updated:** 2026-07-14 — **Docs cleaned**; next rail **Phase 8** (final deliverables)
+**Current branch state:** `master` — verify with `git rev-parse HEAD`.
 **Verification baseline:**
-feature_flow tests · settings-registry 18 sections · isolation autouse
+feature_flow 11 tests · inject_aug FE toggle · isolation autouse · Phases 0–7 done
 **CI note:** Prefer `backend-py/.venv` (3.12). Isolation is **autouse** — do not remove.
 
-### Feature workstreams (from handoff — not numbered phases)
+### Feature workstreams (shipped)
 
 | Workstream | Status | Surface |
 |---|---|---|
 | Real-Time Feature Flow Visualization | ✅ | `/api/monitor/events` SSE + Settings → Feature Flow |
-| Optional Proxy-Path AUG.md Injection | ✅ | `injectAugOnProxy` + API Access toggle |
+| Optional Proxy-Path AUG.md Injection | ✅ | `injectAugOnProxy` + API Access toggle + HTTP tests |
+| Marquee titles / live backend actions / collab banners | ✅ | titlebar, tools, chat insights |
 
-### Phase 0 — SIGNED OFF (2026-07-13)
-### Phase 2 — SIGNED OFF (2026-07-14) — includes B1a + B16 (see residual ledger)
-### Phase 3 — **DONE against modularization exit criteria** (not “all large files gone”)
-### Phase 4 — **100% vs exit checklist** (re-verified 2026-07-14 — see evidence pack below)
-### Phase P — **DONE** (P0–P5 + exit gate)
-### Phase 5 — **DONE** (deps/tooling audit; B12 deleted; B20 closed)
-### Phase 6 — **DONE** (bug ledger re-verified; only B27 partial by product design)
-### Phase 7 — **OPERATIONALIZED** (matrix + suite baselines; gaps listed, not all E2E closed)
+### Phase status
+
+| Phase | Status |
+|---|---|
+| 0 Audit | **SIGNED OFF** |
+| 1 Safety net | **DONE** (ongoing discipline) |
+| 2 Naming / CamelModel | **SIGNED OFF** |
+| 3 Modularization | **DONE** (optional residual large files) |
+| 4 Modernization | **100%** exit checklist |
+| P Performance | **DONE** (P0–P5 + exit gate) |
+| 5 Deps / tooling / docs | **DONE** |
+| 6 Bug ledger | **DONE** (B27 partial by design) |
+| 7 Feature inventory testing | **OPERATIONALIZED** |
+| **8 Final deliverables** | **NEXT** |
 
 ---
 
@@ -52,13 +58,12 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 
 ## Where to pick up (next session)
 
-1. Phases **0–7** are complete or operationalized (see status lines above).
-2. **Phase 8** final deliverables remain if overall refactor sign-off is desired.
-3. **B27** stays PARTIAL until product asks for peer-help re-spawn.
-4. Phase 7 **gaps** (Slack/Discord live, mobile, SSRF deep suite) are backlog — not silent omissions.
-5. **Contention gate** still applies before *raising* daemon/subagent caps.
-6. Do **not** remove `isolatedData` autouse without safety review.
-7. Optional: ruff rule expansion; optional Phase 3 residual large-file polish.
+1. **Phase 8 — Final Deliverables** (overall refactor sign-off pack).
+2. **B27** stays PARTIAL until product asks for peer-help re-spawn.
+3. Phase 7 residual gaps (Slack/Discord live, mobile, SSRF deep suite) are backlog, not silent omissions.
+4. **Contention gate** still applies before *raising* daemon/subagent caps.
+5. Do **not** remove `isolatedData` autouse without safety review.
+6. Optional polish only with go-ahead: ruff rule expansion; residual large-file splits.
 
 ---
 
@@ -70,7 +75,7 @@ not only after a surprise finding.
 
 | Candidate | Status |
 |---|---|
-| `db_writer` | **Checked P0** — FIFO + age-drop; B26 open |
+| `db_writer` | **Checked P0** — FIFO + age-drop; B26 closed |
 | `subagent_orchestrator` peer-help | **Checked** — no recovery; silent success **fixed** (status + empty payload) |
 | `daemon_manager` | **Checked** — cap enforced; backoff schedule used; BACKOFF_CAP dead vs schedule |
 | **FTS app-path column MATCH** (`search_memory` / `auto_memory` / `brain_query`) | **Caught late (2026-07-14 audit)** — docs said Phase P complete; app SQL used nonexistent `content` column / wrong SELECT on FTS; silent LIKE / full-table fallback. Fixed + `tests/test_fts_app_path.py`. Tooling gap closed with permanent `scripts/_check_fts_query_hygiene.py` (static anti-patterns + live probes). `_verify_fts_sync.py` remains coverage-only. |
