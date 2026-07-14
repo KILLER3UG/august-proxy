@@ -45,7 +45,7 @@ _BRAINStores: dict[str, dict[str, object]] = {
     },
     'messages': {
         'table': 'messages',
-        'fts': None,
+        'fts': 'messages_fts',
         'columns': 'id, session_id, role, content, created_at',
         'search_cols': ['content'],
         'label': 'chat messages',

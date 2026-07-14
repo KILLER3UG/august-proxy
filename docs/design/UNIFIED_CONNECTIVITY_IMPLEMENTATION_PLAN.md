@@ -165,9 +165,9 @@ Status column: **Done** | **Partial** | **Open**
 |----|-----|-----|---------------------|--------|
 | **S1** | P0 | Multiple session planes | SQLite only SoT; memory is cache | **Done (core)** — blob + messages |
 | **S2** | P0 | Dual-write architecture | Primary SQLite txn; no permanent dual SoT | **Done (core)** — chat uses `save_workbench_session_sot` |
-| **S3** | P1 | Backfill / one-way migration | One-shot JSON→SQLite import | **Partial** — load migrates if SQLite empty |
-| **S4** | P1 | ID / reconcile split | One chat ID scheme; workbench API only | **Open** |
-| **S5** | P2 | Usage session id | Usage uses SoT session id | **Partial** |
+| **S3** | P1 | Backfill / one-way migration | One-shot JSON→SQLite import | **Done** — migrate + retire `.migrated` |
+| **S4** | P1 | ID / reconcile split | One chat ID scheme; workbench API only | **Done** — sidebar id = workbench SoT id |
+| **S5** | P2 | Usage session id | Usage uses SoT session id | **Done** — record/get resolve SoT id |
 
 ### 2.2 Memory planes
 
@@ -178,7 +178,7 @@ Status column: **Done** | **Partial** | **Open**
 | **M3** | P1 | Multi-plane chaos | One brain write facade | **Done** — `brain_write_facade` |
 | **M4** | P1 | Hot path vs db_writer | Documented write classes | **Done** |
 | **M5** | P1 | Fake priority / age-drop | Never drop must-succeed work | **Done** |
-| **M6** | P2 | LIKE-only messages | messages_fts on write | **Partial** (FTS work elsewhere; keep verifying) |
+| **M6** | P2 | LIKE-only messages | messages_fts on write | **Done** — FTS + triggers schema v8 |
 
 ### 2.3 Cognitive runtime
 
@@ -189,8 +189,8 @@ Status column: **Done** | **Partial** | **Open**
 | **C3** | P1 | Env watcher disconnected | Session-scoped + SQLite log | **Done** |
 | **C4** | P2 | Daemon placeholder | Real generate + fleet | **Done** |
 | **C5** | P0 | Flag inconsistency | Single cognitive tree | **Done** |
-| **C6** | P1 | Selfcheck vs schema | Probes match storage | **Partial** |
-| **C7** | P2 | Cron shell-only | Job types enum | **Partial** (automations durable shell) |
+| **C6** | P1 | Selfcheck vs schema | Probes match storage | **Done** — probe tables created; graph uses stats |
+| **C7** | P2 | Cron shell-only | Job types enum | **Done** — shell/workbench/http/noop |
 
 ### 2.4 MCP / gateway / live / proxy
 
@@ -200,8 +200,8 @@ Status column: **Done** | **Partial** | **Open**
 | **G2** | P2 | Gateway session map | Same SoT as workbench | **Done** — workbench blob + gatewayKey |
 | **G3** | P0 | Live stubs | Real workbench turn; STT/TTS real or off | **Done** — browser default; server optional/honest |
 | **X1** | P0 | Proxy tool stubs | tool_registry only | **Done** |
-| **X2** | P1 | Silent except | Metrics + policy | **Partial** |
-| **X3** | P2 | Delta consent | Real consent store | **Open** |
+| **X2** | P1 | Silent except | Metrics + policy | **Done** — proxy silent counters + health row |
+| **X3** | P2 | Delta consent | Real consent store | **Done** — durable memory_store + API |
 
 ### 2.5 Config & fleet
 
@@ -426,7 +426,7 @@ Must all be true before calling the program done:
 - [x] Program smoke + ARCHITECTURE refresh  
 
 ### Still open (optional / polish)
-- (none for this program)
+- (none — full gap inventory closed)
 
 ---
 

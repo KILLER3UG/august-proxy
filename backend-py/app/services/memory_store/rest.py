@@ -235,20 +235,39 @@ def search_sessions_by_topic(topic: str) -> list[dict[str, object]]:
     return [_row_as_wire(r) for r in rows]
 
 
+def resolve_sot_session_id(sessionId: str) -> str:
+    """Prefer a workbench / sessions-table SoT id when recording or looking up usage.
+
+    If ``sessionId`` already exists on ``sessions``, keep it. If a workbench
+    blob exists with that id, keep it. Otherwise return the given id unchanged
+    (callers may pass a provisional frontend id before linking).
+    """
+    sid = (sessionId or '').strip()
+    if not sid:
+        return sid
+    conn = _conn()
+    row = conn.execute('SELECT id FROM sessions WHERE id = ? LIMIT 1', (sid,)).fetchone()
+    if row:
+        return str(row['id'] if isinstance(row, dict) or hasattr(row, 'keys') else row[0])
+    # Also accept ids that only appear on usage already (historical)
+    return sid
+
+
 def record_usage(
     sessionId: str, model: str, inputTokens: int = 0, outputTokens: int = 0, contextTokens: int = 0
 ) -> int:
-    """Record a usage event.
+    """Record a usage event against the session SoT id when known.
 
     ``contextTokens`` captures the provider-reported ``inputTokens`` of the
     FINAL sub-call in the agentic turn — i.e. the true current context fill
     (system prompt + tools + messages, counted once). The cumulative
     ``inputTokens``/``outputTokens`` are still recorded for Usage-page totals.
     """
+    sot_id = resolve_sot_session_id(sessionId)
     conn = _conn()
     cursor = conn.execute(
         'INSERT INTO usage_events (session_id, model, input_tokens, output_tokens, context_tokens) VALUES (?, ?, ?, ?, ?)',
-        (sessionId, model, inputTokens, outputTokens, contextTokens),
+        (sot_id, model, inputTokens, outputTokens, contextTokens),
     )
     conn.commit()
     return as_int(cursor.lastrowid)
@@ -269,12 +288,14 @@ def list_usage(*, limit: int = 200) -> list[dict[str, object]]:
 def get_usage(sessionId: str) -> dict[str, object]:
     """Get aggregated usage for a session.
 
+    Resolves to the session SoT id when the id exists on ``sessions``.
     Returns cumulative totals (for the Usage page) plus ``latestContextTokens``
     — the ``contextTokens`` of the most recent usage event, which equals the
     provider-reported inputTokens of the final sub-call of the latest turn
     (the true current context fill). Also returns the per-event list ordered
     newest-first so the caller can derive the same value independently.
     """
+    sessionId = resolve_sot_session_id(sessionId)
     conn = _conn()
     row = conn.execute(
         'SELECT SUM(input_tokens) as total_input, SUM(output_tokens) as total_output, COUNT(*) as request_count FROM usage_events WHERE session_id = ?',

@@ -13,6 +13,8 @@ This module provides:
 
 from __future__ import annotations
 import json
+import logging
+import threading
 from typing import Callable
 
 from app.adapters.proxy_tool_defs import (
@@ -33,6 +35,30 @@ from app.adapters.proxy_tool_defs import (
     sanitize_anthropic_tool_definition,
     sanitize_tool_schema,
 )
+
+logger = logging.getLogger(__name__)
+
+# Swallowed-exception counters — never silent forever without metrics.
+_silent_stats_lock = threading.Lock()
+_silent_stats: dict[str, int] = {
+    'log_activity': 0,
+    'brain_config': 0,
+    'tool_failure_record': 0,
+    'parallel_policy': 0,
+    'tool_exec': 0,
+    'tool_batch': 0,
+}
+
+
+def get_proxy_silent_stats() -> dict[str, int]:
+    """Return counts of swallowed exceptions in proxy tool paths."""
+    with _silent_stats_lock:
+        return dict(_silent_stats)
+
+
+def _bump_silent(key: str) -> None:
+    with _silent_stats_lock:
+        _silent_stats[key] = int(_silent_stats.get(key, 0)) + 1
 
 # Re-export definition helpers for back-compat (``from app.adapters.proxy_tools import X``).
 __all__ = [
@@ -109,8 +135,9 @@ def _log_activity(category: str, detail: str) -> None:
         from app.services import logger as _tl
 
         _tl.emitLogEvent({'category': category.lower(), 'level': 'info', 'message': detail})
-    except Exception:
-        pass
+    except Exception as exc:
+        _bump_silent('log_activity')
+        logger.debug('proxy log_activity swallow: %s', exc)
 
 
 def _get_brain_config() -> dict[str, object]:
@@ -119,7 +146,9 @@ def _get_brain_config() -> dict[str, object]:
 
         features = get_features()
         return {'adapter_parallel_tools': bool(features.get('tool_guardrails', False))}
-    except Exception:
+    except Exception as exc:
+        _bump_silent('brain_config')
+        logger.debug('proxy brain_config swallow: %s', exc)
         return {'adapter_parallel_tools': False}
 
 
@@ -128,8 +157,9 @@ def _record_tool_failure(info: dict[str, object]) -> None:
         from app.services.memory.tool_failure_memory import recordToolFailure
 
         recordToolFailure(info)
-    except Exception:
-        pass
+    except Exception as exc:
+        _bump_silent('tool_failure_record')
+        logger.debug('proxy tool_failure_record swallow: %s', exc)
 
 
 def _validate_tool_arguments(
@@ -159,7 +189,9 @@ def _is_tool_parallel_safe(toolName: str, args: dict[str, object] | None = None)
         from app.services.workbench.managed_tool_policy import is_parallel_safe
 
         return bool(is_parallel_safe(toolName, args or {}))
-    except Exception:
+    except Exception as exc:
+        _bump_silent('parallel_policy')
+        logger.debug('proxy parallel_policy swallow: %s', exc)
         return False
 
 

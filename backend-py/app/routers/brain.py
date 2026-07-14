@@ -15,6 +15,27 @@ from app.json_narrowing import as_int
 router = APIRouter(prefix='/api/brain')
 
 
+@router.get('/delta-consent')
+async def getDeltaConsent():
+    """Delta engine consent (durable SoT in memory_store)."""
+    from app.services import delta_engine as de
+
+    return {'consentGranted': bool(de.isConsentGranted())}
+
+
+@router.put('/delta-consent')
+async def putDeltaConsent(body: dict):
+    """Set delta engine consent. Body: ``{ "granted": true|false }``."""
+    from app.services import delta_engine as de
+
+    granted = bool(body.get('granted'))
+    if granted:
+        de.grantConsent()
+    else:
+        de.revokeConsent()
+    return {'consentGranted': bool(de.isConsentGranted())}
+
+
 @router.delete('/heuristics/{heuristic_id}')
 async def deleteHeuristic(heuristicId: int):
     """v3: Delete a learned heuristic."""
@@ -196,6 +217,24 @@ async def getHealth():
             'last_check_at': nowIso,
         }
     )
+    try:
+        from app.adapters.proxy_tools import get_proxy_silent_stats
+
+        silent = get_proxy_silent_stats()
+    except Exception:
+        silent = {}
+    results.append(
+        {
+            'layer': 'Proxy silent swallows',
+            'flag': 'proxy_silent_metrics',
+            'flagValue': True,
+            'flag_value': True,
+            'status': 'on & healthy',
+            'detail': f'swallowed={sum(int(v) for v in silent.values()) if silent else 0} by_key={silent}',
+            'lastCheckAt': nowIso,
+            'last_check_at': nowIso,
+        }
+    )
     return {
         'phases': results,
         'cognitiveBoot': boot_status,
@@ -203,6 +242,7 @@ async def getHealth():
         'boot': boot,
         'consolidationLastRun': last_run,
         'dbWriter': dw,
+        'proxySilent': silent,
     }
 
 
@@ -324,9 +364,13 @@ def _runSelfcheck(flagKey: str) -> dict:
             from app.services.memory import graph_memory
 
             try:
-                g = graph_memory._read() if hasattr(graph_memory, '_read') else {}
-                entities = g.get('entities') if isinstance(g, dict) else []
-                n = len(entities) if isinstance(entities, list) else 0
+                if hasattr(graph_memory, 'graphStats'):
+                    stats = graph_memory.graphStats()
+                    n = int(stats.get('entities') or 0) if isinstance(stats, dict) else 0
+                else:
+                    g = graph_memory._read() if hasattr(graph_memory, '_read') else {}
+                    entities = g.get('entities') if isinstance(g, dict) else []
+                    n = len(entities) if isinstance(entities, list) else 0
             except Exception:
                 n = 0
             return {'status': 'on & healthy', 'detail': f'{n} graph entit{"y" if n == 1 else "ies"}'}

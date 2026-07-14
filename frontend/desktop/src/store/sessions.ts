@@ -154,7 +154,32 @@ export function updateSessionWorkbenchMetadata(
   id: string,
   metadata: Pick<Session, 'workbenchSessionId' | 'workbenchAgentId' | 'workbenchProvider'>
 ) {
-  const updated = useSessionsStore.getState().sessions.map(s => s.id === id ? { ...s, ...metadata } : s);
+  // Promote sidebar id to the workbench SoT id when linked (one chat ID scheme).
+  const wbId = metadata.workbenchSessionId;
+  const updated = useSessionsStore.getState().sessions.map(s => {
+    if (s.id !== id && s.workbenchSessionId !== id) return s;
+    const next: Session = { ...s, ...metadata };
+    if (wbId && wbId !== s.id) {
+      next.id = wbId;
+      next.workbenchSessionId = wbId;
+      // Migrate local draft/history keys from provisional id → SoT id
+      try {
+        const msg = localStorage.getItem(`chat_messages_${s.id}`);
+        if (msg && !localStorage.getItem(`chat_messages_${wbId}`)) {
+          localStorage.setItem(`chat_messages_${wbId}`, msg);
+        }
+        const draft = localStorage.getItem(`august_composer_draft_${s.id}`);
+        if (draft && !localStorage.getItem(`august_composer_draft_${wbId}`)) {
+          localStorage.setItem(`august_composer_draft_${wbId}`, draft);
+        }
+        if (s.id !== wbId) {
+          localStorage.removeItem(`chat_messages_${s.id}`);
+          localStorage.removeItem(`august_composer_draft_${s.id}`);
+        }
+      } catch { /* localStorage may be unavailable in tests */ }
+    }
+    return next;
+  });
   useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
 }
@@ -255,9 +280,10 @@ export async function reconcileSessionsFromBackend(): Promise<void> {
       const backend = backendMap.get(key) ?? backendMap.get(local.id);
       if (backend) {
         claimed.add(backend.id);
+        // Single ID scheme: sidebar id is always the workbench SoT id.
         merged.push({
           ...local,
-          id: local.id.startsWith('wb_') || local.id === backend.id ? backend.id : local.id,
+          id: backend.id,
           workbenchSessionId: backend.id,
           title: (backend.title as string | undefined) || local.title,
           startedAt: local.startedAt,

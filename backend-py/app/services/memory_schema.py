@@ -87,6 +87,11 @@ _CORE_SCHEMA_SQL = """
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         );
 
+        -- FTS5 on messages (content-sync; triggers below)
+        CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+            content, session_id, role, content='messages', content_rowid='id'
+        );
+
         CREATE TABLE IF NOT EXISTS usage_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT,
@@ -164,6 +169,22 @@ _CORE_SCHEMA_SQL = """
             VALUES (new.id, new.key, new.content);
         END;
 
+        -- messages_fts triggers (rowid = messages.id)
+        CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+            INSERT INTO messages_fts(rowid, content, session_id, role)
+            VALUES (new.id, new.content, new.session_id, new.role);
+        END;
+        CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+            INSERT INTO messages_fts(messages_fts, rowid, content, session_id, role)
+            VALUES('delete', old.id, old.content, old.session_id, old.role);
+        END;
+        CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
+            INSERT INTO messages_fts(messages_fts, rowid, content, session_id, role)
+            VALUES('delete', old.id, old.content, old.session_id, old.role);
+            INSERT INTO messages_fts(rowid, content, session_id, role)
+            VALUES (new.id, new.content, new.session_id, new.role);
+        END;
+
         CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category);
         CREATE INDEX IF NOT EXISTS idx_facts_updated ON facts(updated_at);
         CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals(session_id);
@@ -223,6 +244,49 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
             category TEXT DEFAULT 'general'
         )
     """
+    )
+    # Tables probed by cognitive health selfcheck — must exist when features are on.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_state (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            state_key TEXT NOT NULL,
+            state_value TEXT,
+            updated_at TEXT DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS scratchpad (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            content TEXT,
+            updated_at TEXT DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS tool_guardrail_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            tool_name TEXT,
+            reason TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS verifier_gate_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            detail TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+        """
     )
     conn.execute(
         """
@@ -377,7 +441,62 @@ def create_vector_graph_tables(conn: sqlite3.Connection) -> None:
 # Bump when DDL / indexes change in a way that requires re-running create_*.
 # user_version is set after a successful ensure_schema so warm boots can skip
 # the heavy CREATE IF NOT EXISTS + migration probe when already current.
-_SCHEMA_USER_VERSION = 7
+_SCHEMA_USER_VERSION = 8
+
+
+def _ensure_messages_fts(conn: sqlite3.Connection) -> None:
+    """Idempotent messages FTS + triggers (schema v8 additive upgrade)."""
+    conn.execute(
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+            content, session_id, role, content='messages', content_rowid='id'
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+            INSERT INTO messages_fts(rowid, content, session_id, role)
+            VALUES (new.id, new.content, new.session_id, new.role);
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+            INSERT INTO messages_fts(messages_fts, rowid, content, session_id, role)
+            VALUES('delete', old.id, old.content, old.session_id, old.role);
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
+            INSERT INTO messages_fts(messages_fts, rowid, content, session_id, role)
+            VALUES('delete', old.id, old.content, old.session_id, old.role);
+            INSERT INTO messages_fts(rowid, content, session_id, role)
+            VALUES (new.id, new.content, new.session_id, new.role);
+        END
+        """
+    )
+    # Rebuild FTS if base has rows and FTS is empty (upgrade path).
+    base_any = conn.execute('SELECT 1 FROM messages LIMIT 1').fetchone()
+    if base_any is not None:
+        fts_any = conn.execute('SELECT 1 FROM messages_fts LIMIT 1').fetchone()
+        if fts_any is None:
+            try:
+                conn.execute(
+                    "INSERT INTO messages_fts(messages_fts) VALUES('rebuild')"
+                )
+            except Exception:
+                # Fallback: manual rebuild from content table
+                conn.execute('DELETE FROM messages_fts')
+                conn.execute(
+                    """
+                    INSERT INTO messages_fts(rowid, content, session_id, role)
+                    SELECT id, content, session_id, role FROM messages
+                    """
+                )
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -402,10 +521,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'sessions', 'workbench_blob', 'TEXT')
             ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
             create_vector_graph_tables(conn)
+            _ensure_messages_fts(conn)
             conn.commit()
             return
     migrate_camel_to_snake(conn)
     create_core_schema(conn)
     create_extended_tables(conn)
+    _ensure_messages_fts(conn)
     conn.execute(f'PRAGMA user_version={_SCHEMA_USER_VERSION}')
     conn.commit()

@@ -158,8 +158,71 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
+def migrate_json_sessions_to_sqlite(*, force: bool = False) -> dict[str, object]:
+    """One-shot JSON → SQLite import. Idempotent; renames source after success.
+
+    Long-term: SQLite is SoT. The JSON file is import-once then ``.migrated``.
+    Returns a status dict for smoke / admin.
+    """
+    path = _sessions_path()
+    result: dict[str, object] = {
+        'ok': True,
+        'imported': 0,
+        'skipped': False,
+        'source': str(path),
+        'message': '',
+    }
+    if not path.exists():
+        result['message'] = 'no workbench-sessions.json'
+        result['skipped'] = True
+        return result
+    try:
+        from app.services import memory_store
+        from app.services.memory_store import list_workbench_blobs, save_workbench_session_sot
+
+        memory_store.init()
+        existing = list_workbench_blobs(limit=5)
+        if existing and not force:
+            result['skipped'] = True
+            result['message'] = 'sqlite already has sessions; leave JSON as optional export'
+            return result
+        data = json.loads(path.read_text('utf-8'))
+        if not isinstance(data, list):
+            result['ok'] = False
+            result['message'] = 'JSON root is not a list'
+            return result
+        imported = 0
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            session = WorkbenchSession.fromDict(item)
+            if not session.id:
+                continue
+            _sessions[session.id] = session
+            save_workbench_session_sot(session.toDict())
+            imported += 1
+        result['imported'] = imported
+        # Retire the import file so it is never re-read as a second SoT.
+        migrated = path.with_suffix(path.suffix + '.migrated')
+        try:
+            if migrated.exists():
+                migrated.unlink()
+            path.rename(migrated)
+            result['retiredTo'] = str(migrated)
+        except OSError as exc:
+            result['retireError'] = str(exc)
+        result['message'] = f'imported {imported} session(s) into SQLite'
+        logger.info('Migrated %d sessions from JSON into SQLite (retired source file)', imported)
+        return result
+    except (json.JSONDecodeError, OSError, Exception) as exc:
+        logger.exception('JSON→SQLite session migration failed')
+        result['ok'] = False
+        result['message'] = str(exc)
+        return result
+
+
 def _load_sessions() -> None:
-    """Load sessions from SQLite first; fall back to JSON file once if empty."""
+    """Load sessions from SQLite first; one-shot JSON migrate if SQLite empty."""
     try:
         from app.services import memory_store
         from app.services.memory_store import list_workbench_blobs
@@ -175,20 +238,8 @@ def _load_sessions() -> None:
     except Exception:
         logger.exception('SQLite session load failed; trying JSON fallback')
 
-    # Older installs: import workbench-sessions.json into SQLite once.
-    path = _sessions_path()
-    if not path.exists():
-        return
-    try:
-        data = json.loads(path.read_text('utf-8'))
-        for item in data:
-            session = WorkbenchSession.fromDict(item)
-            _sessions[session.id] = session
-        if _sessions:
-            save_sessions()
-            logger.info('Migrated %d sessions from JSON file into SQLite', len(_sessions))
-    except (json.JSONDecodeError, OSError):
-        pass
+    # Older installs: import workbench-sessions.json into SQLite once, then retire file.
+    migrate_json_sessions_to_sqlite(force=False)
 
 
 def is_session_json_export_enabled() -> bool:

@@ -711,15 +711,20 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     };
   }, [sessionId]);
 
-  // Fetch per‑session usage data from the backend usage_events table
+  // Fetch per‑session usage using the workbench SoT session id (not provisional sidebar ids).
   useEffect(() => {
-    if (!sessionId) {
+    const sotId =
+      workbenchSession?.id ||
+      activeSession?.workbenchSessionId ||
+      (sessionId?.startsWith('wb_') ? sessionId : '') ||
+      sessionId;
+    if (!sotId) {
       setSessionUsage(null);
       return;
     }
 
     let cancelled = false;
-    usageApi.session(sessionId)
+    usageApi.session(sotId)
       .then((data) => {
         if (cancelled) return;
         setSessionUsage({
@@ -737,7 +742,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       });
 
     return () => { cancelled = true; };
-  }, [sessionId]);
+  }, [sessionId, workbenchSession?.id, activeSession?.workbenchSessionId]);
 
   useEffect(() => chatRuntime.subscribe(() => _setRuntimeVersion((value) => value + 1)), []);
 

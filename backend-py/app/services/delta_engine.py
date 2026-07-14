@@ -25,27 +25,63 @@ logger = logging.getLogger(__name__)
 _TRACKWindowSeconds = 86400
 _BATCHFlushCount = 20
 _BATCHFlushSeconds = 86400
-_consent_granted: bool = False
+_CONSENT_KEY = 'delta_engine:consent'
+# Process cache; durable SoT is memory_store / SQLite kv.
+_consent_granted: bool | None = None
 _diff_queue: list[dict[str, object]] = []
 _last_flush: float = time.monotonic()
 
 
+def _load_consent() -> bool:
+    global _consent_granted
+    if _consent_granted is not None:
+        return _consent_granted
+    try:
+        from app.services.memory_store import get_memory
+
+        raw = get_memory(_CONSENT_KEY)
+        if isinstance(raw, dict):
+            _consent_granted = bool(raw.get('granted'))
+        elif isinstance(raw, str):
+            _consent_granted = raw.strip().lower() in ('1', 'true', 'yes', 'on')
+        else:
+            _consent_granted = False
+    except Exception:
+        _consent_granted = False
+    return bool(_consent_granted)
+
+
+def _persist_consent(granted: bool) -> None:
+    global _consent_granted
+    _consent_granted = granted
+    try:
+        from app.services.memory_store import save_memory
+
+        save_memory(
+            _CONSENT_KEY,
+            {
+                'granted': granted,
+                'updatedAt': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+            },
+        )
+    except Exception:
+        logger.exception('Failed to persist delta engine consent')
+
+
 def isConsentGranted() -> bool:
-    """Check if the user has opted into delta engine inference."""
-    return _consent_granted
+    """Check if the user has opted into delta engine inference (durable)."""
+    return _load_consent()
 
 
 def grantConsent() -> None:
     """Grant consent (called from the first-run dialog handler)."""
-    global _consent_granted
-    _consent_granted = True
+    _persist_consent(True)
     logger.info('Delta engine consent granted')
 
 
 def revokeConsent() -> None:
     """Revoke consent."""
-    global _consent_granted
-    _consent_granted = False
+    _persist_consent(False)
     logger.info('Delta engine consent revoked')
 
 

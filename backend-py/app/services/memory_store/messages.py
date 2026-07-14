@@ -9,7 +9,11 @@ from app.services.memory_store.wire import _json, _row_as_wire
 from app.type_aliases import JsonValue, MessageDict
 
 def save_message(sessionId: str, role: str, content: JsonValue) -> int:
-    """Save a message to a session."""
+    """Save a message to a session.
+
+    FTS index ``messages_fts`` is kept in sync via SQLite content-sync triggers
+    created in ``memory_schema`` (insert/update/delete).
+    """
     conn = _conn()
     cursor = conn.execute(
         'INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)',

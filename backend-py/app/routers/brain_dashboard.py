@@ -201,7 +201,11 @@ async def brainLearning() -> dict[str, object]:
         'userProfile': userProfile,
         'autoMemories': autoMemories,
         'sleepCycle': sleepCycle,
-        'delta_engine': {'consentGranted': False, 'queueSize': deltaQueueSize, 'lastFlushAt': lastFlushAt},
+        'delta_engine': {
+            'consentGranted': bool(_de.isConsentGranted()) if hasattr(_de, 'isConsentGranted') else False,
+            'queueSize': deltaQueueSize,
+            'lastFlushAt': lastFlushAt,
+        },
         'pendingSkills': pendingSkills,
         'backgroundReview': backgroundReview,
     }
