@@ -1,47 +1,60 @@
 """Memory system API routes.
 
 Port of the memory-related Express routes from the JS backend.
+
+Request bodies inherit :class:`CamelModel` so internals are snake_case while
+JSON from the frontend stays camelCase.
 """
 
 from __future__ import annotations
 from typing import cast
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from app.models.camel_base import CamelModel
 from app.services import memory_store
 from app.type_aliases import JsonValue
 
 router = APIRouter(prefix='/api/memory')
 
 
-class MemorySave(BaseModel):
+class MemorySave(CamelModel):
+    """KV save body. Internals are snake_case; JSON stays camelCase."""
+
     key: str
     value: object
     category: str = 'general'
     source: str = ''
 
 
-class FactSave(BaseModel):
-    factKey: str
-    factValue: object
+class FactSave(CamelModel):
+    """Fact save body. Internals are snake_case; JSON stays camelCase."""
+
+    fact_key: str
+    fact_value: object
     category: str = 'general'
     source: str = ''
     confidence: float = 1.0
 
 
-class FactSearch(BaseModel):
+class FactSearch(CamelModel):
+    """Fact search body. Internals are snake_case; JSON stays camelCase."""
+
     query: str = ''
     category: str = ''
 
 
-class ProposalCreate(BaseModel):
-    sessionId: str
-    proposalType: str
+class ProposalCreate(CamelModel):
+    """Proposal create body. Internals are snake_case; JSON stays camelCase."""
+
+    session_id: str
+    proposal_type: str
     content: object
 
 
-class ProposalDecide(BaseModel):
+class ProposalDecide(CamelModel):
+    """Proposal decide body. Internals are snake_case; JSON stays camelCase."""
+
     status: str
-    decidedBy: str = ''
+    decided_by: str = ''
 
 
 @router.get('/kv')
@@ -93,7 +106,13 @@ async def list_facts(category: str = ''):
 @router.post('/facts')
 async def saveFactRoute(body: FactSave):
     """Save a structured fact."""
-    memory_store.save_fact(body.factKey, cast(JsonValue, body.factValue), body.category, body.source, body.confidence)
+    memory_store.save_fact(
+        body.fact_key,
+        cast(JsonValue, body.fact_value),
+        body.category,
+        body.source,
+        body.confidence,
+    )
     return {'status': 'ok'}
 
 
@@ -124,7 +143,11 @@ async def deleteFactRoute(key: str):
 @router.post('/proposals')
 async def createProposal(body: ProposalCreate):
     """Create a proposal (plan, mutation)."""
-    pid = memory_store.save_proposal(body.sessionId, body.proposalType, cast(JsonValue, body.content))
+    pid = memory_store.save_proposal(
+        body.session_id,
+        body.proposal_type,
+        cast(JsonValue, body.content),
+    )
     return {'id': pid, 'status': 'pending'}
 
 
@@ -140,7 +163,7 @@ async def getProposalRoute(proposalId: int):
 @router.post('/proposals/{proposalId}/decide')
 async def decideProposalRoute(proposalId: int, body: ProposalDecide):
     """Decide (approve/reject) a proposal."""
-    if not memory_store.decide_proposal(proposalId, body.status, body.decidedBy):
+    if not memory_store.decide_proposal(proposalId, body.status, body.decided_by):
         raise HTTPException(status_code=404, detail='Proposal not found')
     return {'status': body.status}
 
