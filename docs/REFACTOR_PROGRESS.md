@@ -153,13 +153,24 @@
 
 ## What's next
 
-1. Push `master` and confirm CI Type check green.
-2. Phase 5 (docs/tooling modernization) / Phase 7 (feature inventory testing) as needed.
-3. Optional non-blocking extracts: workbench chat loop, anthropic stream translate.
+1. **Phase P (performance + flexibility):** see [`docs/PHASE_PERF_AND_FLEXIBILITY_PLAN.md`](./PHASE_PERF_AND_FLEXIBILITY_PLAN.md) — measure first (P0), then hot path / DB / UI / extension points.
+2. Phase 5 (docs/tooling) / Phase 7 (feature inventory testing) as needed.
+3. Optional non-blocking extracts: workbench chat loop, anthropic stream translate (only if they unblock Phase P).
+
+---
+
+## Phase 3/4 completeness (honest)
+
+| Scope | Status |
+|---|---|
+| Phase 3 **exit criteria** | **100%** (declared modularization + tests) |
+| Phase 4 **exit criteria** | **100%** (indexes, busy_timeout, schema hybrid, Zustand) |
+| Every residual large file fully split | **Not required / not done** (workbench chat loop, anthropic stream translate optional) |
+| True runtime performance program | **Not started** → Phase P plan |
 
 ---
 
 ## Open questions
 
-- None blocking Phase 3/4.
-- Optional: further monolith slices for readability only.
+- Approve Phase P Wave 1 (P0 baselines + prompt/tool-def caching + extension checklist)?
+- Parallel tools in Wave 1 or later?
