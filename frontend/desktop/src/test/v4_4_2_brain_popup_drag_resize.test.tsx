@@ -111,12 +111,12 @@ describe('v4.4.2 — Brain popup: drag, resize, dismiss behavior', () => {
     act(() => {
       const ev = new MouseEvent('pointermove', { bubbles: true, clientX: 100, clientY: 200 });
       (ev as unknown as { pointerId: number }).pointerId = 1;
-      document.dispatchEvent(ev);
+      window.dispatchEvent(ev);
     });
     act(() => {
       const ev = new MouseEvent('pointerup', { bubbles: true, clientX: 100, clientY: 200 });
       (ev as unknown as { pointerId: number }).pointerId = 1;
-      document.dispatchEvent(ev);
+      window.dispatchEvent(ev);
     });
     rectSpy.mockRestore();
     const popup = screen.getByTestId('brain-popup');
@@ -136,14 +136,28 @@ describe('v4.4.2 — Brain popup: drag, resize, dismiss behavior', () => {
     const rectSpy = vi.spyOn(handle, 'getBoundingClientRect').mockReturnValue({
       x: 600, y: 600, width: 16, height: 16, top: 600, left: 600, bottom: 616, right: 616, toJSON() {},
     });
-    fireEvent.pointerDown(handle, { clientX: 608, clientY: 608, pointerId: 1 });
-    fireEvent.pointerMove(document, { clientX: 800, clientY: 800, pointerId: 1 });
-    fireEvent.pointerUp(document, { pointerId: 1 });
+    const beforeW = parseInt(screen.getByTestId('brain-popup').style.width, 10);
+    // Native events — BrainIndicator listens on window (not React synthetic).
+    act(() => {
+      const ev = new MouseEvent('pointerdown', { bubbles: true, clientX: 608, clientY: 608 });
+      (ev as unknown as { pointerId: number }).pointerId = 1;
+      handle.dispatchEvent(ev);
+    });
+    act(() => {
+      const ev = new MouseEvent('pointermove', { bubbles: true, clientX: 800, clientY: 800 });
+      (ev as unknown as { pointerId: number }).pointerId = 1;
+      window.dispatchEvent(ev);
+    });
+    act(() => {
+      const ev = new MouseEvent('pointerup', { bubbles: true, clientX: 800, clientY: 800 });
+      (ev as unknown as { pointerId: number }).pointerId = 1;
+      window.dispatchEvent(ev);
+    });
     rectSpy.mockRestore();
     const popup = screen.getByTestId('brain-popup');
-    // Width/height inline style must have grown
+    // Width must have grown by the cursor delta
     const w = parseInt(popup.style.width, 10);
-    expect(w).toBeGreaterThan(400);
+    expect(w).toBeGreaterThan(beforeW + 100);
   });
 
   it('persists position + size to localStorage', () => {

@@ -31,13 +31,11 @@ function wrap(ui: React.ReactElement) {
 }
 
 describe('CollaborationInsights', () => {
-  it('shows evolving skills and persistent memory banners', () => {
+  it('shows evolving skills banner and not persistent memory', () => {
     wrap(<CollaborationInsights />);
     expect(screen.getByTestId('evolving-skills-banner').textContent).toMatch(/Evolving skills/i);
     expect(screen.getAllByText(/deploy-desktop/).length).toBeGreaterThan(0);
-    expect(screen.getByTestId('persistent-memory-banner').textContent).toMatch(
-      /Persistent memory/i,
-    );
-    expect(screen.getByText(/User works on august-proxy/)).toBeTruthy();
+    expect(screen.queryByTestId('persistent-memory-banner')).toBeNull();
+    expect(screen.queryByText(/Persistent memory/i)).toBeNull();
   });
 });

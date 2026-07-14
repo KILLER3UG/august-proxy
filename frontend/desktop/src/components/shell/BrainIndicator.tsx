@@ -122,56 +122,84 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
   }, []);
 
   // ---------- Drag (move) — starts from anywhere on the popup except interactive children ----------
+  // Geometry is always origin(at pointerdown) + cursor delta so the popup
+  // tracks the pointer 1:1 (image-editor style), never frame-to-frame accumulate.
   const dragState = useRef<{
     startX: number; startY: number;
     originX: number; originY: number;
+    pointerId: number;
+    captureEl: HTMLElement | null;
   } | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   const handleDragPointerDown = (e: React.PointerEvent<HTMLElement>) => {
-    console.log('[DRAG] pointerdown', e.clientX, e.clientY, 'button', e.button);
     const button = e.button ?? 0;
     if (button !== 0) return;
     const target = e.target as HTMLElement;
-    const blocked = target.closest('button, [role="tab"], input, textarea, select, [data-no-drag], [contenteditable="true"]');
-    if (blocked) {
-      console.log('[DRAG] blocked by', blocked);
-      return;
+    const blocked = target.closest(
+      'button, [role="tab"], input, textarea, select, a, [data-no-drag], [contenteditable="true"]',
+    );
+    if (blocked) return;
+    // Prefer capturing on the popup root so moves keep firing if the cursor
+    // leaves the element (image-editor style drag).
+    const captureEl =
+      (e.currentTarget.closest('[data-brain-popup-root]') as HTMLElement | null) ??
+      (e.currentTarget as HTMLElement);
+    try {
+      captureEl.setPointerCapture?.(e.pointerId);
+    } catch {
+      /* ignore */
     }
-    const targetEl = e.currentTarget;
-    try { targetEl.setPointerCapture?.(e.pointerId); } catch { /* ignore */ }
-    const rect = targetEl.getBoundingClientRect();
-    const offsetX = e.clientX - rect.left;
-    const offsetY = e.clientY - rect.top;
+    e.preventDefault();
+    e.stopPropagation();
     dragState.current = {
       startX: e.clientX,
       startY: e.clientY,
-      originX: geomRef.current.x - offsetX,
-      originY: geomRef.current.y - offsetY,
+      originX: geomRef.current.x,
+      originY: geomRef.current.y,
+      pointerId: e.pointerId,
+      captureEl,
     };
-    console.log('[DRAG] state set, attaching listeners', dragState.current);
-    // Attach move/up handlers inline (same pattern as resize)
+    setDragging(true);
     const onMove = (ev: PointerEvent) => {
-      console.log('[DRAG] move', ev.clientX, ev.clientY);
+      // Ignore other pointers / zeroed events
+      if (ev.pointerId != null && ev.pointerId !== dragState.current?.pointerId) return;
       handleDragPointerMove(ev);
     };
-    const onUp = () => {
-      console.log('[DRAG] up');
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId != null && dragState.current && ev.pointerId !== dragState.current.pointerId) {
+        return;
+      }
+      const cap = dragState.current?.captureEl;
       handleDragPointerUp();
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
+      setDragging(false);
+      try {
+        cap?.releasePointerCapture?.(ev.pointerId);
+      } catch {
+        /* ignore */
+      }
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
     };
-    document.addEventListener('pointermove', onMove);
-    document.addEventListener('pointerup', onUp);
+    // window-level listeners survive portal re-renders and leave-viewport moves
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   };
 
   const handleDragPointerMove = (e: PointerEvent) => {
     const d = dragState.current;
     if (!d) return;
-    setGeom((prev) => clampState({
-      ...prev,
-      x: d.originX + e.clientX,
-      y: d.originY + e.clientY,
-    }));
+    if (typeof e.clientX !== 'number' || typeof e.clientY !== 'number') return;
+    // Position = original top-left + cursor delta (tracks cursor 1:1).
+    setGeom((prev) =>
+      clampState({
+        ...prev,
+        x: d.originX + (e.clientX - d.startX),
+        y: d.originY + (e.clientY - d.startY),
+      }),
+    );
   };
 
   const handleDragPointerUp = () => {
@@ -193,11 +221,16 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
   } | null>(null);
 
   const handleResizePointerDown = (edge: ResizeEdge) => (e: React.PointerEvent<HTMLDivElement>) => {
-    console.log('[RESIZE] pointerdown edge', edge, e.clientX, e.clientY);
     const button = e.button ?? 0;
     if (button !== 0) return;
     e.stopPropagation();
-    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* ignore */ }
+    e.preventDefault();
+    const captureEl = e.currentTarget;
+    try {
+      captureEl.setPointerCapture?.(e.pointerId);
+    } catch {
+      /* ignore */
+    }
     const g = geomRef.current;
     resizeState.current = {
       edge,
@@ -208,64 +241,76 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
       originW: g.width,
       originH: g.height,
     };
-    console.log('[RESIZE] state set, attaching listeners', resizeState.current);
     const onMove = (ev: PointerEvent) => {
-      console.log('[RESIZE] move edge', edge, ev.clientX, ev.clientY);
       handleResizePointerMove(ev);
     };
-    const onUp = () => {
-      console.log('[RESIZE] up edge', edge);
+    const onUp = (ev: PointerEvent) => {
       handleResizePointerUp();
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
+      try {
+        captureEl.releasePointerCapture?.(ev.pointerId);
+      } catch {
+        /* ignore */
+      }
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
     };
-    document.addEventListener('pointermove', onMove);
-    document.addEventListener('pointerup', onUp);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   };
 
   const handleResizePointerMove = (e: PointerEvent) => {
     const r = resizeState.current;
     if (!r) return;
+    if (typeof e.clientX !== 'number' || typeof e.clientY !== 'number') return;
+    // Always compute from the geometry at pointerdown so each move
+    // tracks the cursor 1:1 (never accumulate onto previous frame).
     const dx = e.clientX - r.startX;
     const dy = e.clientY - r.startY;
-    setGeom((prev) => {
-      let { x: nx, y: ny, width: nw, height: nh } = prev;
-      switch (r.edge) {
-        case 'e':
-          nw = Math.max(MIN_WIDTH,  nw + dx); break;
-        case 'w':  // west edge — drag any grows width (anchor: east); x follows drag
-          nx = nx + dx;
-          nw = Math.max(MIN_WIDTH, nw + Math.abs(dx));
-          break;
-        case 's':  // south edge — drag down grows height (anchor: north)
-          nh = Math.max(MIN_HEIGHT, nh + dy); break;
-        case 'n':  // north edge — drag any grows height (anchor: south); y follows drag
-          ny = ny + dy;
-          nh = Math.max(MIN_HEIGHT, nh + Math.abs(dy));
-          break;
-        case 'ne': // top-right corner — drag down-right grows both (anchor: SW)
-          nw = Math.max(MIN_WIDTH,  nw + dx);
-          ny = ny + dy;
-          nh = Math.max(MIN_HEIGHT, nh + dy);
-          break;
-        case 'nw': // top-left corner — drag any grows both (anchor: SE); x, y follow
-          nx = nx + dx;
-          nw = Math.max(MIN_WIDTH, nw + Math.abs(dx));
-          ny = ny + dy;
-          nh = Math.max(MIN_HEIGHT, nh + Math.abs(dy));
-          break;
-        case 'se': // bottom-right corner — drag any grows both (anchor: NW)
-          nw = Math.max(MIN_WIDTH,  nw + dx);
-          nh = Math.max(MIN_HEIGHT, nh + dy);
-          break;
-        case 'sw': // bottom-left corner — drag any grows both (anchor: NE); x follows drag
-          nx = nx + dx;
-          nw = Math.max(MIN_WIDTH, nw + Math.abs(dx));
-          nh = Math.max(MIN_HEIGHT, nh + dy);
-          break;
+    let nx = r.originX;
+    let ny = r.originY;
+    let nw = r.originW;
+    let nh = r.originH;
+    switch (r.edge) {
+      case 'e':
+        nw = Math.max(MIN_WIDTH, r.originW + dx);
+        break;
+      case 'w': {
+        nw = Math.max(MIN_WIDTH, r.originW - dx);
+        nx = r.originX + (r.originW - nw);
+        break;
       }
-      return clampState({ x: nx, y: ny, width: nw, height: nh });
-    });
+      case 's':
+        nh = Math.max(MIN_HEIGHT, r.originH + dy);
+        break;
+      case 'n': {
+        nh = Math.max(MIN_HEIGHT, r.originH - dy);
+        ny = r.originY + (r.originH - nh);
+        break;
+      }
+      case 'ne':
+        nw = Math.max(MIN_WIDTH, r.originW + dx);
+        nh = Math.max(MIN_HEIGHT, r.originH - dy);
+        ny = r.originY + (r.originH - nh);
+        break;
+      case 'nw':
+        nw = Math.max(MIN_WIDTH, r.originW - dx);
+        nx = r.originX + (r.originW - nw);
+        nh = Math.max(MIN_HEIGHT, r.originH - dy);
+        ny = r.originY + (r.originH - nh);
+        break;
+      case 'se':
+        nw = Math.max(MIN_WIDTH, r.originW + dx);
+        nh = Math.max(MIN_HEIGHT, r.originH + dy);
+        break;
+      case 'sw':
+        nw = Math.max(MIN_WIDTH, r.originW - dx);
+        nx = r.originX + (r.originW - nw);
+        nh = Math.max(MIN_HEIGHT, r.originH + dy);
+        break;
+    }
+    setGeom(clampState({ x: nx, y: ny, width: nw, height: nh }));
   };
 
   const handleResizePointerUp = () => {
@@ -328,6 +373,7 @@ export function BrainIndicator({ initialUnseen = 0 }: BrainIndicatorProps) {
         geom={geom}
         tab={tab}
         setTab={setTab}
+        dragging={dragging}
         handleClose={handleClose}
         handleDragPointerDown={handleDragPointerDown}
         handleResizePointerDown={handleResizePointerDown}
@@ -343,6 +389,7 @@ function PopupContents({
   geom,
   tab,
   setTab,
+  dragging,
   handleClose,
   handleDragPointerDown,
   handleResizePointerDown,
@@ -350,6 +397,7 @@ function PopupContents({
   geom: PopupState;
   tab: TabKey;
   setTab: (k: TabKey) => void;
+  dragging: boolean;
   handleClose: () => void;
   handleDragPointerDown: (e: React.PointerEvent<HTMLElement>) => void;
   handleResizePointerDown: (edge: 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw') =>
@@ -454,13 +502,20 @@ function PopupContents({
       role="dialog"
       aria-label="Brain activity"
       onPointerDown={handleDragPointerDown}
-      className="fixed bg-popover border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden cursor-grab touch-none select-none"
+      className={cn(
+        'fixed bg-popover border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden touch-none select-none',
+        dragging ? 'cursor-grabbing' : 'cursor-grab',
+      )}
       style={{ left: geom.x, top: geom.y, width: geom.width, height: geom.height }}
     >
-      {/* Header (still has the brain-drag-handle testid for backwards compat) */}
+      {/* Header — primary drag surface (testid kept for tests / backwards compat) */}
       <div
         data-testid="brain-drag-handle"
-        className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0"
+        onPointerDown={handleDragPointerDown}
+        className={cn(
+          'flex items-center justify-between px-3 py-2 border-b border-border shrink-0',
+          dragging ? 'cursor-grabbing' : 'cursor-grab',
+        )}
       >
         <div className="flex items-center gap-2 pointer-events-none">
           <Brain className="size-4 text-primary" />
@@ -473,7 +528,7 @@ function PopupContents({
           type="button"
           onClick={handleClose}
           aria-label="Close"
-          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground pointer-events-auto"
+          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground pointer-events-auto cursor-pointer"
         >
           <X className="size-4" />
         </button>

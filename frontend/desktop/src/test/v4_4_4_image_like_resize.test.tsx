@@ -48,10 +48,11 @@ function dragResize(handle: HTMLElement, dx: number, dy: number): void {
     nativePointer(handle, 'pointerdown', { clientX: 108, clientY: 108 });
   });
   act(() => {
-    nativePointer(document, 'pointermove', { clientX: 108 + dx, clientY: 108 + dy });
+    // Listeners are on window (survives portal re-renders / leave-viewport)
+    nativePointer(window, 'pointermove', { clientX: 108 + dx, clientY: 108 + dy });
   });
   act(() => {
-    nativePointer(document, 'pointerup', { clientX: 108 + dx, clientY: 108 + dy });
+    nativePointer(window, 'pointerup', { clientX: 108 + dx, clientY: 108 + dy });
   });
   rectSpy.mockRestore();
 }
@@ -88,14 +89,15 @@ describe('v4.4.4 — Brain popup: image-editor resize (8 handles) + drag from an
     expect(screen.getByTestId('brain-resize-w')).toBeTruthy();
   });
 
-  it('NE corner drag grows both width and height', async () => {
+  it('NE corner: drag right grows width; drag up grows height (image-editor)', async () => {
     withQuery(<BrainIndicator />);
     await openPopup();
     const popup = screen.getByTestId('brain-popup');
     const beforeW = parseInt(popup.style.width, 10);
     const beforeH = parseInt(popup.style.height, 10);
     const handle = screen.getByTestId('brain-resize-ne');
-    dragResize(handle, 200, 150);
+    // +dx grows east; -dy moves north edge up → taller
+    dragResize(handle, 200, -150);
     const afterW = parseInt(popup.style.width, 10);
     const afterH = parseInt(popup.style.height, 10);
     expect(afterW).toBeGreaterThan(beforeW + 100);
@@ -130,38 +132,47 @@ describe('v4.4.4 — Brain popup: image-editor resize (8 handles) + drag from an
     expect(afterW).toBe(beforeW);
   });
 
-  it('W (west) edge drag grows width too', async () => {
+  it('W (west) edge drag left grows width', async () => {
     withQuery(<BrainIndicator />);
     await openPopup();
     const before = parseInt(screen.getByTestId('brain-popup').style.width, 10);
     const handle = screen.getByTestId('brain-resize-w');
-    dragResize(handle, 100, 0);
+    // Negative dx = drag left → wider (east edge anchored)
+    dragResize(handle, -100, 0);
     const after = parseInt(screen.getByTestId('brain-popup').style.width, 10);
-    expect(after).toBeGreaterThanOrEqual(before);
+    expect(after).toBeGreaterThan(before);
   });
 
-  it('drags the popup when a pointer is pressed on the body (not the header)', async () => {
+  it('drags the popup 1:1 with cursor delta', async () => {
+    // Seed a mid-viewport position so clamp does not block the +dx/+dy move
+    // (default geom is top-right and cannot move further right).
+    localStorage.setItem(
+      'august-brain-popup-state',
+      JSON.stringify({ width: 520, height: 520, x: 200, y: 100 }),
+    );
     withQuery(<BrainIndicator />);
     await openPopup();
     const popup = screen.getByTestId('brain-popup');
-    const rectSpy = vi.spyOn(popup, 'getBoundingClientRect').mockReturnValue({
-      x: 100, y: 100, width: 500, height: 400, top: 100, left: 100, bottom: 500, right: 600,
-      toJSON() { return this; },
-    });
-    const startX = 250, startY = 220;
+    const handle = screen.getByTestId('brain-drag-handle');
+    const beforeLeft = parseInt(popup.style.left, 10);
+    const beforeTop = parseInt(popup.style.top, 10);
+    expect(beforeLeft).toBe(200);
+    expect(beforeTop).toBe(100);
+    const startX = 250;
+    const startY = 120;
     act(() => {
-      nativePointer(popup, 'pointerdown', { clientX: startX, clientY: startY, button: 0 });
+      // Start on the header (guaranteed non-interactive target for drag)
+      nativePointer(handle, 'pointerdown', { clientX: startX, clientY: startY, button: 0 });
     });
     act(() => {
-      nativePointer(document, 'pointermove', { clientX: startX + 60, clientY: startY + 40 });
+      nativePointer(window, 'pointermove', { clientX: startX + 60, clientY: startY + 40 });
     });
     act(() => {
-      nativePointer(document, 'pointerup', { clientX: startX + 60, clientY: startY + 40 });
+      nativePointer(window, 'pointerup', { clientX: startX + 60, clientY: startY + 40 });
     });
-    rectSpy.mockRestore();
     const popup2 = screen.getByTestId('brain-popup');
-    expect(popup2.style.left).toBeTruthy();
-    expect(popup2.style.top).toBeTruthy();
+    expect(parseInt(popup2.style.left, 10)).toBe(beforeLeft + 60);
+    expect(parseInt(popup2.style.top, 10)).toBe(beforeTop + 40);
   });
 
   it('does NOT drag when pressing on an interactive child (a tab button)', async () => {
@@ -174,10 +185,10 @@ describe('v4.4.4 — Brain popup: image-editor resize (8 handles) + drag from an
       nativePointer(learningTab, 'pointerdown', { clientX: 100, clientY: 200 });
     });
     act(() => {
-      nativePointer(document, 'pointermove', { clientX: 700, clientY: 600 });
+      nativePointer(window, 'pointermove', { clientX: 700, clientY: 600 });
     });
     act(() => {
-      nativePointer(document, 'pointerup', { clientX: 700, clientY: 600 });
+      nativePointer(window, 'pointerup', { clientX: 700, clientY: 600 });
     });
     expect(screen.queryByTestId('brain-popup')).toBeTruthy();
     const popup3 = screen.getByTestId('brain-popup');
