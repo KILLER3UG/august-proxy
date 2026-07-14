@@ -3,7 +3,8 @@
 Maps a gateway ``session_key`` (e.g. ``telegram:12345``) to a workbench
 session id, invokes ``sendWorkbenchMessageStream`` (the same entry the
 REST ``POST /api/workbench/chat`` uses — ``routers/workbench.py:127``), and
-accumulates the assistant reply from ``final_output`` events.
+accumulates the assistant reply from workbench ``finalOutput`` events
+(camelCase wire; also accepts legacy ``final_output``).
 
 The workbench runner, session factory, and delete fn are injectable so the
 bridge is unit-testable without touching real workbench state.
@@ -113,7 +114,10 @@ class SessionBridge:
         parts: list[str] = []
 
         def emit(event: dict[str, object]) -> None:
-            if event.get('type') == 'final_output' and event.get('content'):
+            # Workbench emits camelCase ``finalOutput`` (BatchedEmit / providers).
+            # Accept snake_case too for older callers/tests.
+            et = event.get('type')
+            if et in ('finalOutput', 'final_output') and event.get('content'):
                 parts.append(as_str(event['content']))
             if onEvent:
                 try:
@@ -122,17 +126,34 @@ class SessionBridge:
                     pass
 
         try:
-            await self._runner(
-                sessionId=sessionId,
-                message=text,
-                provider=self._provider,
-                agentId=self._agentId,
-                model=self._model,
-                modelProvider=self._modelProvider,
-                guardMode=self._guardMode,
-                emit=emit,
-                signal=cancel,
-            )
+            from app.lib.perf_timing import clear_current, current_trace, start_trace
+
+            owned = False
+            trace = current_trace()
+            if trace is None:
+                # force=True so gateway turns appear even without AUGUST_PERF_TIMING
+                # when callers start an outer trace; with force they always record.
+                trace = start_trace(
+                    'gateway_invoke', force=False, sessionKey=sessionKey, channel='gateway'
+                )
+                owned = True
+            with trace.span('gateway_turn'):
+                await self._runner(
+                    sessionId=sessionId,
+                    message=text,
+                    provider=self._provider,
+                    agentId=self._agentId,
+                    model=self._model,
+                    modelProvider=self._modelProvider,
+                    guardMode=self._guardMode,
+                    emit=emit,
+                    signal=cancel,
+                )
+            if owned:
+                try:
+                    trace.finish()
+                finally:
+                    clear_current()
         finally:
             self._cancels.pop(sessionKey, None)
         return TurnResult(text=''.join(parts), cancelled=cancel.is_set())
