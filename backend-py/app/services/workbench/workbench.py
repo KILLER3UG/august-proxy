@@ -10,6 +10,7 @@ Key subsystems:
 - Plan/approval gate (plan mode, pending mutations, approval tokens)
 - System prompt building (3-tier cache structure)
 - Effort/thinking budget resolution (see effort.py; re-exported below)
+- Provider/LLM call helpers (see providers.py; re-exported below)
 - Goal system (stubbed)
 - Subagent dispatch (stubbed)
 """
@@ -20,7 +21,7 @@ import json
 import logging
 import uuid
 from typing import Callable, cast
-from app.json_narrowing import as_str, as_dict, as_list, as_int, as_bool
+from app.json_narrowing import as_str, as_dict, as_list, as_int
 from app.type_aliases import JsonValue
 from app.services.workbench import sessions as _sessions_mod
 from app.services.workbench.sessions import (
@@ -38,7 +39,7 @@ from app.services.workbench.effort import (
     effort_to_prompt_instruction,
     effort_to_openai_reasoning_effort,
 )
-from app.models import AnthropicRequest, ChatCompletionRequest
+from app.services.workbench import providers as _providers_mod
 
 logger = logging.getLogger('workbench')
 MAX_MANAGED_TOOL_ROUNDS = 10
@@ -66,6 +67,30 @@ summarize_session = _sessions_mod.summarize_session
 get_workbench_session_status = _sessions_mod.get_workbench_session_status
 subscribe_session_status = _sessions_mod.subscribe_session_status
 set_workbench_session_agent = _sessions_mod.set_workbench_session_agent
+
+# Provider / LLM-call re-exports (tests monkeypatch these names on workbench)
+resolve_workbench_provider = _providers_mod.resolve_workbench_provider
+resolve_model = _providers_mod.resolve_model
+is_anthropic_provider = _providers_mod.is_anthropic_provider
+is_openai_provider = _providers_mod.is_openai_provider
+extract_text = _providers_mod.extract_text
+extract_thinking = _providers_mod.extract_thinking
+supports_thinking = _providers_mod.supports_thinking
+call_anthropic_workbench = _providers_mod.call_anthropic_workbench
+call_openai_workbench = _providers_mod.call_openai_workbench
+background_task_model = _providers_mod.background_task_model
+make_review_llm_client = _providers_mod.make_review_llm_client
+_resolveWorkbenchProvider = _providers_mod.resolve_workbench_provider
+_resolveModel = _providers_mod.resolve_model
+_isAnthropicProvider = _providers_mod.is_anthropic_provider
+_isOpenaiProvider = _providers_mod.is_openai_provider
+_extractText = _providers_mod.extract_text
+_extractThinking = _providers_mod.extract_thinking
+_supportsThinking = _providers_mod.supports_thinking
+_callAnthropicWorkbench = _providers_mod.call_anthropic_workbench
+_callOpenaiWorkbench = _providers_mod.call_openai_workbench
+_backgroundTaskModel = _providers_mod.background_task_model
+_makeReviewLlmClient = _providers_mod.make_review_llm_client
 
 
 def normalizeGuardMode(mode: str) -> str:
@@ -1158,24 +1183,6 @@ async def sendWorkbenchMessageStream(
         pass
 
 
-def _backgroundTaskModel(taskKey: str, chatModel: str) -> str:
-    """Resolve the model to use for a background task.
-
-    Uses the per-task model from the background-review config when background
-    tasks are enabled and a model is configured; otherwise falls back to the
-    chat session's model.
-    """
-    try:
-        from app.services.background_review_service import getConfig
-
-        cfg = getConfig()
-        if cfg.get('enabled') and cfg.get(taskKey):
-            return as_str(cfg[taskKey])
-    except Exception:
-        pass
-    return chatModel
-
-
 def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]], model: str = '') -> None:
     """Auto-memory sync — save conversation summaries and extract todos.
 
@@ -1210,365 +1217,6 @@ def _lastUserMessageText(session: WorkbenchSession) -> str:
                 texts = [b.get('text', '') for b in content if isinstance(b, dict) and b.get('type') == 'text']
                 return ' '.join(texts)
     return ''
-
-
-def _makeReviewLlmClient(mainProvider: dict[str, object] | None, reviewModelHint: str = '') -> Callable | None:
-    """Create an LLM client for background review calls.
-
-    Resolves the provider from the ``reviewModel`` config (or the provided
-    ``review_model_hint``, which is already the per-task resolved model),
-    falling back to the main session provider. Returns None if no provider
-    is available (review will be a no-op).
-    """
-    try:
-        from app.providers import resolver as providerResolver
-
-        provider = None
-        reviewConfig: dict[str, object] | None = None
-        try:
-            from app.services.background_review_service import getConfig
-
-            reviewConfig = getConfig()
-            review_model = reviewConfig.get('reviewModel', '') or reviewModelHint
-            if review_model:
-                provider = providerResolver.resolve(as_str(review_model))
-        except Exception:
-            review_model = reviewModelHint
-        if not provider:
-            provider = mainProvider
-        if not provider:
-            provider = providerResolver.resolve('')
-        if not provider:
-            return None
-        from app.providers.clients import getClient
-
-        client = getClient(provider)
-        if not client:
-            return None
-        apiKey = client.resolveApiKey()
-        if not apiKey:
-            return None
-        _client = client
-        _reviewModel = review_model or 'claude-sonnet-4-20250514'
-
-        async def reviewLlm(prompt: list[dict[str, object]]) -> str:
-            """Call a cheap/fast model for background review."""
-            try:
-                body = {'model': _reviewModel, 'messages': prompt, 'max_tokens': 1024}
-                resp = await _client.chat_completions(body)
-                bodyJson = resp.body_json or {}
-                if resp.is_error or 'error' in bodyJson:
-                    return ''
-                choices = as_list(bodyJson.get('choices', []), [])
-                if not choices:
-                    return ''
-                return as_str(as_dict(as_dict(choices[0]).get('message', {})).get('content', ''))
-            except Exception:
-                return ''
-
-        return reviewLlm
-    except Exception:
-        return None
-
-
-def _resolveWorkbenchProvider(providerName: str, modelHint: str = '') -> dict[str, object] | None:
-    """Resolve a provider from name or model hint."""
-    from app.providers import resolver as providerResolver
-
-    if providerName:
-        provider = providerResolver.resolve(providerName)
-        if provider:
-            return provider
-    if modelHint:
-        provider = providerResolver.resolve(modelHint)
-        if provider:
-            return provider
-    providers = providerResolver.list_available()
-    return providers[0] if providers else None
-
-
-def _resolveModel(provider: dict[str, object] | None, modelHint: str = '') -> str:
-    """Resolve the model name from hint or provider default."""
-    if modelHint:
-        return modelHint
-    if provider:
-        return as_str(provider.get('defaultModel', ''))
-    return ''
-
-
-def _isAnthropicProvider(provider: dict[str, object] | None) -> bool:
-    return provider is not None and as_str(provider.get('apiMode')) == 'anthropicMessages'
-
-
-def _isOpenaiProvider(provider: dict[str, object] | None) -> bool:
-    return provider is not None and as_str(provider.get('apiMode')) in ('openaiChat', 'openaiChat', 'codexResponses')
-
-
-def _extractText(contentBlocks: list[dict[str, object]]) -> str:
-    """Extract text from Anthropic content blocks."""
-    parts: list[str] = []
-    for block in contentBlocks:
-        if block.get('type') == 'text':
-            parts.append(as_str(block.get('text', '')))
-    return '\n'.join(parts)
-
-
-def _extractThinking(contentBlocks: list[dict[str, object]]) -> str:
-    """Extract thinking/reasoning from Anthropic content blocks."""
-    parts: list[str] = []
-    for block in contentBlocks:
-        if block.get('type') == 'thinking':
-            parts.append(as_str(block.get('text', '')))
-    return '\n'.join(parts)
-
-
-async def _callAnthropicWorkbench(
-    messages: list[dict[str, object]],
-    systemText: str,
-    model: str,
-    tools: list[dict[str, object]],
-    effort: str,
-    provider: dict[str, object] | None = None,
-    emit: Callable[[dict[str, object]], None] | None = None,
-) -> dict[str, object]:
-    """Call an Anthropic-format model with progressive streaming.
-
-    Emits ``thinking``, ``final_output``, and ``tool_use`` events as
-    tokens arrive. Returns the full aggregated response dict with
-    ``content``, ``text``, ``thinking``, and ``tool_uses`` keys.
-    """
-    from app.adapters.anthropic import buildAnthropicUpstreamRequest
-    from app.providers.clients import getClient
-
-    if not provider:
-        provider = _resolveWorkbenchProvider('', model)
-    if not provider:
-        return {'error': 'No provider available'}
-    client = getClient(provider)
-    if not client:
-        return {'error': f'No client for {provider.get("name")}'}
-    apiKey = client.resolveApiKey()
-    if not apiKey:
-        return {'error': 'API key not configured'}
-    from app.adapters.anthropic import translateMessagesToAnthropic
-
-    anthropicMessages = translateMessagesToAnthropic(messages)
-    req = AnthropicRequest(model=model, max_tokens=8192)
-    body = buildAnthropicUpstreamRequest(req, model, [{'type': 'text', 'text': systemText}])
-    body['messages'] = anthropicMessages
-    if tools:
-        body['tools'] = tools
-    thinkingBudget = effortToThinkingBudget(effort)
-    if thinkingBudget > 0 and _supportsThinking(provider, model):
-        body['thinking'] = {'type': 'enabled', 'budget_tokens': thinkingBudget}
-    contentBlocks: list[dict[str, object]] = []
-    accumulatedText = ''
-    accumulatedThinking = ''
-    toolUses: list[dict[str, object]] = []
-    currentToolBlock: dict[str, object] | None = None
-    currentToolInputParts: list[str] = []
-    usage: dict[str, int] = {}
-    try:
-        async for event in client.messages_stream(body):
-            eventType = event.get('_event_type', '')
-            if eventType == 'content_block_start':
-                block = as_dict(event.get('content_block', {}))
-                blockType = block.get('type', '')
-                if blockType == 'tool_use':
-                    currentToolBlock = {
-                        'type': 'tool_use',
-                        'id': block.get('id', f'toolu_{uuid.uuid4().hex[:16]}'),
-                        'name': block.get('name', ''),
-                        'input': {},
-                    }
-                    currentToolInputParts = []
-                elif blockType == 'text':
-                    text = as_str(block.get('text', ''))
-                    if text:
-                        accumulatedText += text
-                        if emit:
-                            emit({'type': 'finalOutput', 'content': text})
-                elif blockType == 'thinking':
-                    text = as_str(block.get('thinking', ''))
-                    if text:
-                        accumulatedThinking += text
-                        if emit:
-                            emit({'type': 'thinking', 'content': text})
-            elif eventType == 'content_block_delta':
-                delta = as_dict(event.get('delta', {}))
-                deltaType = delta.get('type', '')
-                if deltaType == 'text_delta':
-                    text = as_str(delta.get('text', ''))
-                    if text:
-                        accumulatedText += text
-                        if emit:
-                            emit({'type': 'finalOutput', 'content': text})
-                elif deltaType == 'thinking_delta':
-                    text = as_str(delta.get('thinking', ''))
-                    if text:
-                        accumulatedThinking += text
-                        if emit:
-                            emit({'type': 'thinking', 'content': text})
-                elif deltaType == 'input_json_delta':
-                    currentToolInputParts.append(as_str(delta.get('partial_json', '')))
-            elif eventType == 'content_block_stop':
-                if currentToolBlock:
-                    raw = ''.join(currentToolInputParts)
-                    if raw:
-                        try:
-                            currentToolBlock['input'] = json.loads(raw)
-                        except json.JSONDecodeError:
-                            currentToolBlock['input'] = {'_raw': raw}
-                    toolUses.append(currentToolBlock)
-                    currentToolBlock = None
-                    currentToolInputParts = []
-            elif eventType == 'message_delta':
-                msgUsage = as_dict(event.get('usage', {}))
-                if msgUsage:
-                    usage['input_tokens'] = as_int(msgUsage.get('input_tokens', 0))
-                    usage['output_tokens'] = as_int(msgUsage.get('output_tokens', 0))
-            elif eventType == 'error':
-                return {'error': f'Stream error: {event}'}
-    except Exception as exc:
-        return {'error': str(exc)}
-    if accumulatedThinking:
-        contentBlocks.append({'type': 'thinking', 'text': accumulatedThinking})
-    if accumulatedText:
-        contentBlocks.append({'type': 'text', 'text': accumulatedText})
-    contentBlocks.extend(toolUses)
-    return {
-        'content': contentBlocks,
-        'text': accumulatedText,
-        'thinking': accumulatedThinking,
-        'tool_uses': toolUses,
-        'usage': usage,
-    }
-
-
-async def _callOpenaiWorkbench(
-    messages: list[dict[str, object]],
-    systemText: str,
-    model: str,
-    tools: list[dict[str, object]],
-    effort: str,
-    provider: dict[str, object] | None = None,
-    emit: Callable[[dict[str, object]], None] | None = None,
-) -> dict[str, object]:
-    """Call an OpenAI-format model with progressive streaming.
-
-    Emits ``thinking`` / ``reasoning`` and ``final_output`` events as
-    tokens arrive. Returns the full aggregated response dict with
-    ``choices`` (OpenAI format), ``text``, ``thinking``, and ``tool_uses``.
-    """
-    from app.providers.clients import getClient
-
-    if not provider:
-        provider = _resolveWorkbenchProvider('', model)
-    if not provider:
-        return {'error': 'No provider available'}
-    client = getClient(provider)
-    if not client:
-        return {'error': f'No client for {provider.get("name")}'}
-    apiKey = client.resolveApiKey()
-    if not apiKey:
-        return {'error': 'API key not configured'}
-    from app.adapters.anthropic import translateMessages
-
-    openaiMessages = translateMessages(messages)
-    openaiMessages.insert(0, {'role': 'system', 'content': systemText})
-    req = ChatCompletionRequest(model=model)
-    body: dict[str, object] = req.model_dump()  # type: ignore[assignment]
-    body['messages'] = openaiMessages
-    body['max_tokens'] = 8192
-    if tools:
-        body['tools'] = tools
-    reasoning = effortToOpenaiReasoningEffort(effort)
-    if reasoning:
-        body['reasoning_effort'] = reasoning
-        contentText = ''
-        thinkingText = ''
-        toolCallsAccum: dict[int, dict[str, object]] = {}
-        finishReason: str | None = None
-        usage: dict[str, int] = {}
-        try:
-            async for event in client.chat_completions_stream(body):
-                eventType = event.get('_event_type', '')
-                if eventType not in ('chat.completion.chunk', ''):
-                    pass
-                eventUsage = as_dict(event.get('usage'))
-                if eventUsage:
-                    usage['input_tokens'] = as_int(eventUsage.get('prompt_tokens', 0))
-                    usage['output_tokens'] = as_int(eventUsage.get('completion_tokens', 0))
-                choices = as_list(event.get('choices', []), [])
-                if not choices:
-                    continue
-                choice = as_dict(choices[0])
-                delta = as_dict(choice.get('delta', {}))
-                reasoner = as_str(delta.get('reasoning_content')) or as_str(delta.get('reasoning'))
-                if reasoner:
-                    thinkingText += reasoner
-                    if emit:
-                        emit({'type': 'thinking', 'content': reasoner})
-                textDelta = as_str(delta.get('content', ''))
-                if textDelta:
-                    contentText += textDelta
-                    if emit:
-                        emit({'type': 'finalOutput', 'content': textDelta})
-                for rawTc in as_list(delta.get('tool_calls', []), []):
-                    tc = as_dict(rawTc)
-                    idx = as_int(tc.get('index', 0))
-                    if idx not in toolCallsAccum:
-                        fn = as_dict(tc.get('function', {}))
-                        toolCallsAccum[idx] = {
-                            'id': tc.get('id', f'call_{uuid.uuid4().hex[:12]}'),
-                            'type': 'function',
-                            'function': {'name': fn.get('name', ''), 'arguments': fn.get('arguments', '')},
-                        }
-                    else:
-                        fn = as_dict(tc.get('function', {}))
-                        existing = as_dict(toolCallsAccum[idx]['function'])
-                        if fn.get('arguments'):
-                            existing['arguments'] = as_str(existing.get('arguments')) + as_str(fn.get('arguments'))
-                        if fn.get('name'):
-                            existing['name'] = as_str(existing.get('name')) + as_str(fn.get('name'))
-                if choice.get('finish_reason'):
-                    finishReason = as_str(choice.get('finish_reason'))
-        except Exception as exc:
-            return {'error': str(exc)}
-    assistantMessage: dict[str, object] = {'role': 'assistant', 'content': contentText}
-    toolUses: list[dict[str, object]] = []
-    if toolCallsAccum:
-        tcList = []
-        for idx in sorted(toolCallsAccum):
-            tc = toolCallsAccum[idx]
-            fn = as_dict(tc['function'])
-            try:
-                parsedArgs = json.loads(as_str(fn.get('arguments'))) if fn.get('arguments') else {}
-            except (json.JSONDecodeError, TypeError):
-                parsedArgs = {}
-            tcList.append(
-                {
-                    'id': tc['id'],
-                    'type': 'function',
-                    'function': {'name': fn['name'], 'arguments': json.dumps(parsedArgs)},
-                }
-            )
-            toolUses.append({'type': 'tool_use', 'id': tc['id'], 'name': fn['name'], 'input': parsedArgs})
-            assistantMessage['tool_calls'] = tcList
-    return {
-        'choices': [{'index': 0, 'message': assistantMessage, 'finish_reason': finishReason or 'stop'}],
-        'text': contentText,
-        'thinking': thinkingText,
-        'tool_uses': toolUses,
-        'usage': usage,
-    }
-
-
-def _supportsThinking(provider: dict[str, object], model: str) -> bool:
-    """Check if a provider/model supports Anthropic-style thinking."""
-    profiles = as_dict(provider.get('modelProfiles', {}))
-    profile = as_dict(profiles.get(model) or profiles.get('*') or {})
-    return as_bool(profile.get('supportsThinking')) or as_bool(profile.get('supportsReasoning'))
 
 
 async def _executeTool(toolName: str, args: dict[str, object], session: WorkbenchSession) -> str:
