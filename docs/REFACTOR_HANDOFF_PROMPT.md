@@ -1,12 +1,12 @@
 # Full Codebase Refactor & Modernization Prompt
 ### (Production Refactor Edition — August Proxy)
 
-> **Handoff snapshot:** 2026-07-14 · live tracker: `docs/REFACTOR_PROGRESS.md` · tip: verify with `git rev-parse master` (CamelModel git on/after `00904fe`)  
+> **Handoff snapshot:** 2026-07-14 · live tracker: `docs/REFACTOR_PROGRESS.md` · tip: verify with `git rev-parse master` (CamelModel memory on/after `5cc6255`)  
 > Paste this entire document into a new session. Then **verify it against the repo** (Ground Rule 1) before coding.
 
 Act as a Senior Principal Software Architect and Lead Developer. Your task is a comprehensive, end-to-end refactor of **August Proxy** — a large, working AI-agent proxy system: a Tauri + React 19 + TypeScript desktop app (plus an Expo React Native mobile companion) on the frontend, and a FastAPI Python backend spanning ~176 `app/` Python files across **32 routers** (200+ endpoints) and ~95 service files. This is a multi-phase migration of a live system, not a quick cleanup pass — treat the scale below as the default assumption for how you plan your work, not an edge case.
 
-**This is a handoff, not a fresh start — and it's already mid-flight.** Phase 0 is signed off. The old multi-branch merge sequence is **finished** (only `master` / `origin/master` remain for active work; a redundant `refactor/b21-app-file-renames` ref may still exist and is safe to delete). Phase 2 CamelModel scale-up is **in progress**: pilot (`models.py`) + `usage.py` + `git.py` are on master. **Pick up from the Progress Log's current step** — do not restart Phase 0 or re-merge closed branches. Before doing anything else, read the Progress Log, then scan the actual repository yourself to confirm what it says is still accurate. Do not take the Progress Log, or any prior audit report it references, at face value — see Ground Rule 1.
+**This is a handoff, not a fresh start — and it's already mid-flight.** Phase 0 is signed off. The old multi-branch merge sequence is **finished** (only `master` / `origin/master` remain for active work; a redundant `refactor/b21-app-file-renames` ref may still exist and is safe to delete). Phase 2 CamelModel scale-up is **in progress**: pilot (`models.py`) + `usage.py` + `git.py` + `memory.py` are on master. **Pick up from the Progress Log's current step** — do not restart Phase 0 or re-merge closed branches. Before doing anything else, read the Progress Log, then scan the actual repository yourself to confirm what it says is still accurate. Do not take the Progress Log, or any prior audit report it references, at face value — see Ground Rule 1.
 
 **Authoritative live tracker:** `docs/REFACTOR_PROGRESS.md` (not repo root). Prefer it over any older chat paste if they disagree — but still verify both against the repo.
 
@@ -94,7 +94,8 @@ Confirm baseline in Progress Log / live tracker before starting — **do not ass
   - Pilot: `routers/models.py` (`ModelInfo`, `ModelList`) + `tests/test_camel_model.py`
   - First scale-up: `routers/usage.py` (`UsageRecord`) + `tests/test_camel_model_usage.py` (`40606d5`)
   - Second scale-up: `routers/git.py` (`GitCommand`) + `tests/test_camel_model_git.py` (`00904fe`)
-  - **~36 `BaseModel` subclasses remain across routers** (agents, august, config, cron, desktop_automation, manage, mcp, memory, sessions, skills, subagent, terminal, terminal_routes, …). Convert **one router per commit**.
+  - Third scale-up: `routers/memory.py` (5 bodies) + `tests/test_camel_model_memory.py` (`5cc6255`)
+  - **~31 `BaseModel` subclasses remain across routers** (agents, august, config, cron, desktop_automation, manage, mcp, sessions, skills, subagent, terminal, terminal_routes, …). Convert **one router per commit**.
 
 **Frontend (TypeScript/JavaScript) — Target: `camelCase`** *(keep/standardize)*
 - Variables, functions, methods: `camelCase`
@@ -169,7 +170,7 @@ Same deliverables as before when the full refactor completes.
 
 - [ ] All existing functionality verified working (tests and/or manual trace)
 - [ ] No unapproved behavior changes
-- [x] Boundary translation pattern proven (`CamelModel`) — scaling in progress (models + usage + git done; ~36 BaseModel classes remain)
+- [x] Boundary translation pattern proven (`CamelModel`) — scaling in progress (models + usage + git + memory done; ~31 BaseModel classes remain)
 - [x] B16 function APIs snake_case for memory_store / db_writer / proxy_tools (SQL names deferred)
 - [x] B21 app filenames snake_case (callables/TypedDict fields + 62 test renames remain)
 - [ ] Naming fully consistent per language (remaining: router CamelModel scale-up, resolver callables, TypedDict fields, test filenames, curator camelCase methods)
@@ -189,7 +190,7 @@ Same deliverables as before when the full refactor completes.
 
 Because this is a large codebase, work iteratively.
 
-**Current step:** Continue **Phase 2 CamelModel scale-up** — next router on a feature branch (suggested: `sessions.py`, `mcp.py`, or `cron.py` for low risk; or `memory` / `terminal` for multi-field value). One router per commit → push → CI → verify → FF-merge → update `docs/REFACTOR_PROGRESS.md`.
+**Current step:** Continue **Phase 2 CamelModel scale-up** — next router on a feature branch (suggested: `sessions.py`, `mcp.py`, or `cron.py` for low risk; or `terminal` / `subagent` / `config` for multi-field value). One router per commit → push → CI → verify → FF-merge → update `docs/REFACTOR_PROGRESS.md`.
 
 **On session start:**
 1. Acknowledge these instructions and the Codebase Reference.
@@ -202,7 +203,7 @@ Because this is a large codebase, work iteratively.
 
 ## Progress Log (verify this, don't just read it — see Ground Rule 1)
 
-*Last updated 2026-07-14 (CamelModel git merged). Tip: `master` / `origin/master` (verify `git rev-parse HEAD`; git CamelModel on/after `00904fe`).*
+*Last updated 2026-07-14 (CamelModel memory merged). Tip: `master` / `origin/master` (verify `git rev-parse HEAD`; memory CamelModel on/after `5cc6255`).*
 
 ### Merge Status (historical queue — CLOSED)
 
@@ -217,6 +218,7 @@ Because this is a large codebase, work iteratively.
 | `refactor/b21-app-file-renames` | FF-merged to master | **✅ Content on master**; local/remote branch ref may linger — **safe to delete** |
 | `refactor/camelmodel-usage` | FF-merged | **✅ Done** (`40606d5`); branch deleted |
 | `refactor/camelmodel-git` | FF-merged | **✅ Done** (`00904fe`); branch deleted |
+| `refactor/camelmodel-memory` | FF-merged | **✅ Done** (`5cc6255`); branch deleted |
 
 **Working tree:** expect clean on `master`. If dirty, stop and report (Ground Rule 5).
 
@@ -234,7 +236,7 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 | camelCase **callables** in `model_resolver` / `route_resolver` | **Open** (separate chunk) |
 | camelCase **TypedDict fields** in `type_aliases` | **Open** (JSON contract — careful) |
 | 62 camelCase **test** filenames | **Open** |
-| CamelModel router scale-up | **In progress** — `models` + `usage` + `git` done; ~36 BaseModel classes remain |
+| CamelModel router scale-up | **In progress** — `models` + `usage` + `git` + `memory` done; ~31 BaseModel classes remain |
 | SQLite schema/table camelCase | **Deferred** — needs explicit sign-off |
 
 ### Priority decision (current)
@@ -295,9 +297,10 @@ Still required before Phase 8 sign-off.
 | `models.py` | `ModelInfo`, `ModelList` | ✅ Pilot on master |
 | `usage.py` | `UsageRecord` | ✅ `40606d5` on master |
 | `git.py` | `GitCommand` | ✅ `00904fe` on master |
-| Remaining routers with `BaseModel` bodies | ~36 classes | ❌ Next work |
+| `memory.py` | 5 bodies (`FactSave`, `ProposalCreate`, …) | ✅ `5cc6255` on master |
+| Remaining routers with `BaseModel` bodies | ~31 classes | ❌ Next work |
 
-**Suggested next:** simple single-word-field routers (`sessions` / `mcp` / `cron`) for mechanical confidence, or `memory` / `terminal` for multi-field value.
+**Suggested next:** simple single-word-field routers (`sessions` / `mcp` / `cron`) for mechanical confidence, or `terminal` / `subagent` / `config` for multi-field value.
 
 ---
 
@@ -366,7 +369,7 @@ Still required before Phase 8 sign-off.
 - **Frontend:** Tauri + React 19 + TypeScript (desktop), Expo React Native (mobile)
 - **Backend:** FastAPI (Python 3.12+; CI pins 3.12)
 - **Database:** SQLite + JSON stores
-- **Tests / types (baseline at handoff):** pytest **543** collected · mypy **0 / 176** · ruff clean · CI `type-check.yml`
+- **Tests / types (baseline at handoff):** pytest **550** collected · mypy **0 / 176** · ruff clean · CI `type-check.yml`
 - **Current priority:** CamelModel scale-up (next router) — not B1a, not branch merges, not Phase 0 redo
 - **Risky modules:** `workbench.py`, `memory_store.py`, `db_writer.py`, `self_evolution.py`, `delta_engine.py`, `daemon_manager.py`, `subagent_orchestrator.py`
 
@@ -374,6 +377,6 @@ Still required before Phase 8 sign-off.
 
 ## Session close note (for the next model)
 
-Stop state: CamelModel **git** merge complete (`00904fe`). Next action is **choose and convert the next CamelModel router** on a feature branch. Update `docs/REFACTOR_PROGRESS.md` after each merge. Keep Ground Rule 1 — verify this prompt against HEAD before trusting SHAs.
+Stop state: CamelModel **memory** merge complete (`5cc6255`). Next action is **choose and convert the next CamelModel router** on a feature branch. Update `docs/REFACTOR_PROGRESS.md` after each merge. Keep Ground Rule 1 — verify this prompt against HEAD before trusting SHAs.
 
 Are you ready to begin? If so, verify the Progress Log and Codebase Reference against the real repository first, report anything that doesn't match, then continue CamelModel scale-up from the current step rather than restarting from scratch.
