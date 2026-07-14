@@ -14,10 +14,14 @@ from app.adapters.proxy_tools import (
     anthropic_to_openai_tool_definition,
     get_managed_anthropic_web_tool_definitions,
     sanitize_anthropic_tool_definition,
+    sanitize_tool_schema,
     dedupe_and_canonicalize_anthropic_tools,
+    get_tool_definition_name,
+    append_missing_tools,
     is_browser_automation_tool_name,
     format_managed_web_result,
 )
+from app.adapters import proxy_tool_defs
 from app.adapters.openai import (
     deriveSessionIdFromOpenai,
     writeOpenaiSseData,
@@ -113,17 +117,58 @@ class TestProxyTools:
         result2 = sanitize_anthropic_tool_definition({'type': 'function', 'function': {'name': 'fn_test'}})
         assert result2 is not None
         assert result2['name'] == 'fn_test'
+        assert sanitize_anthropic_tool_definition(None) is None
+        assert sanitize_anthropic_tool_definition({'description': 'no name'}) is None
+
+    def testSanitizeToolSchema(self):
+        assert sanitize_tool_schema(None) == {'type': 'object', 'properties': {}}
+        assert sanitize_tool_schema('bad') == {'type': 'object', 'properties': {}}
+        filled = sanitize_tool_schema({'properties': {'a': {'type': 'string'}}})
+        assert filled['type'] == 'object'
+        assert 'a' in filled['properties']
+        kept = sanitize_tool_schema({'type': 'object', 'properties': {}, 'required': ['x']})
+        assert kept['required'] == ['x']
+
+    def testGetToolDefinitionName(self):
+        assert get_tool_definition_name({'name': 'alpha'}) == 'alpha'
+        assert get_tool_definition_name({'type': 'function', 'function': {'name': 'beta'}}) == 'beta'
+        assert get_tool_definition_name({}) == ''
+        assert get_tool_definition_name({'function': 'not-a-dict'}) == ''
+
+    def testAppendMissingTools(self):
+        target: list[dict[str, object]] = [{'name': 'keep', 'input_schema': {}}]
+        extra = [
+            {'name': 'keep', 'input_schema': {}},
+            {'name': 'new_one', 'input_schema': {}},
+            {'type': 'function', 'function': {'name': 'openai_style'}},
+            {'description': 'no name'},
+        ]
+        appended = append_missing_tools(target, extra)
+        assert appended == ['new_one', 'openai_style']
+        names = [get_tool_definition_name(t) for t in target]
+        assert names == ['keep', 'new_one', 'openai_style']
 
     def testDedupeTools(self):
         tools = [
             {'name': 'WebSearch', 'description': '', 'input_schema': {'type': 'object', 'properties': {}}},
             {'name': 'WebSearch', 'description': '', 'input_schema': {'type': 'object', 'properties': {}}},
             {'name': 'my_tool', 'description': '', 'input_schema': {'type': 'object', 'properties': {}}},
+            {'name': 'browser_navigate', 'description': '', 'input_schema': {'type': 'object', 'properties': {}}},
         ]
         result = dedupe_and_canonicalize_anthropic_tools(tools)
         names = [t['name'] for t in result]
         assert names.count('WebSearch') == 1
         assert 'my_tool' in names
+        assert 'browser_navigate' not in names
+        assert 'mcp__workspace__bash' in names
+
+    def testDefinitionHelpersReexportedFromProxyTools(self):
+        """Back-compat: definition helpers remain importable from proxy_tools."""
+        assert sanitize_tool_schema is proxy_tool_defs.sanitize_tool_schema
+        assert get_tool_definition_name is proxy_tool_defs.get_tool_definition_name
+        assert append_missing_tools is proxy_tool_defs.append_missing_tools
+        assert dedupe_and_canonicalize_anthropic_tools is proxy_tool_defs.dedupe_and_canonicalize_anthropic_tools
+        assert openai_to_anthropic_tool_definition is proxy_tool_defs.openai_to_anthropic_tool_definition
 
     def testFormatWebResult(self):
         result = format_managed_web_result({'query': 'test', 'results': [{'title': 'R1', 'url': 'http://x.com'}]})
