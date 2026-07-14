@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import Field
+from app.models.camel_base import CamelModel
 from app.services import skill_service
 from app.services.skill_service import SkillValidationError
 
 router = APIRouter(prefix='/api/skills')
 
 
-class SkillCreate(BaseModel):
+class SkillCreate(CamelModel):
     name: str = Field(..., description='Lowercase, dotted/hyphenated skill name.')
     description: str = Field(..., description='One-sentence description, ≤ 60 chars.')
     body: str = Field(..., description='SKILL.md body markdown.')
@@ -17,15 +18,15 @@ class SkillCreate(BaseModel):
     category: str = 'uncategorized'
 
 
-class SkillPatch(BaseModel):
+class SkillPatch(CamelModel):
     body: str | None = None
     description: str | None = None
     trigger: str | None = None
     category: str | None = None
 
 
-class SkillFileWrite(BaseModel):
-    filePath: str
+class SkillFileWrite(CamelModel):
+    file_path: str
     content: str
 
 
@@ -96,7 +97,7 @@ async def deleteSkill(name: str):
 async def writeSkillFile(name: str, body: SkillFileWrite):
     """Write a support file (scripts/, references/, templates/) into a skill."""
     try:
-        return skill_service.writeSkillFile(name, body.filePath, body.content)
+        return skill_service.writeSkillFile(name, body.file_path, body.content)
     except SkillValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
