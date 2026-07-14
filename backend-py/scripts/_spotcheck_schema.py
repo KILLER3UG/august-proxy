@@ -95,6 +95,47 @@ def main() -> int:
         migrate_camel_to_snake,
     )
 
+    print("\n=== Data coverage (camel rows present on snake) ===")
+    # Logical coverage: every camel key/id should exist on snake after merge pass 1.
+    coverage_specs = [
+        ("memoryStore", "memory_store", "key"),
+        ("usageEvents", "usage_events", "id"),
+        ("configAudit", "config_audit", "id"),
+        ("autoMemories", "auto_memories", "key"),
+        ("examQuestions", "exam_questions", "id"),
+        ("examAttempts", "exam_attempts", "id"),
+    ]
+    all_covered = True
+    for camel, snake, kcol in coverage_specs:
+        if camel not in tables or snake not in tables:
+            print(f"  {camel}/{snake}: skipped (missing table)")
+            continue
+        if kcol == "key":
+            missing = conn.execute(
+                f'''
+                SELECT COUNT(*) FROM "{camel}" cam
+                WHERE cam.key IS NOT NULL AND cam.key != ''
+                  AND NOT EXISTS (
+                    SELECT 1 FROM "{snake}" s WHERE s.key = cam.key
+                  )
+                '''
+            ).fetchone()[0]
+        else:
+            missing = conn.execute(
+                f'''
+                SELECT COUNT(*) FROM "{camel}" cam
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM "{snake}" s WHERE s.id = cam.id
+                )
+                '''
+            ).fetchone()[0]
+        nc = conn.execute(f'SELECT COUNT(*) FROM "{camel}"').fetchone()[0]
+        ns = conn.execute(f'SELECT COUNT(*) FROM "{snake}"').fetchone()[0]
+        ok = missing == 0
+        all_covered = all_covered and ok
+        print(f"  {camel}/{snake}: camel={nc} snake={ns} missing_on_snake={missing} {'OK' if ok else 'GAP'}")
+    print("coverage_all_ok:", all_covered)
+
     print("\n=== migrate_camel_to_snake on live DB ===")
     print("needs_migration before:", _needs_migration(conn))
     n = migrate_camel_to_snake(conn)
@@ -108,8 +149,11 @@ def main() -> int:
     }
     left = [c for c, _ in PAIRS if c in tables_after]
     print("camel tables still present after migrate:", left or "NONE")
+    print(
+        "NOTE: camel tables intentionally retained until drop_legacy_camel_tables(confirm=True)"
+    )
     conn.close()
-    return 0
+    return 0 if all_covered else 3
 
 
 if __name__ == "__main__":

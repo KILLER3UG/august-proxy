@@ -1,20 +1,20 @@
 # Phase 4 — SQLite schema rename plan
 
-> **Status:** **PARTIAL — NOT CLOSED on live DB** (spot-checked 2026-07-14).
+> **Status:** **Pass 1 VERIFIED** (2026-07-14) — camel data merged into snake;
+> camel tables **retained** until pass 2 drop. P0 still gated on full close
+> if you require single-schema only; app reads snake with full coverage now.
 >
 > **Intended “hybrid”:** SQLite tables/columns snake_case; HTTP/JSON camelCase
 > via `_row_as_wire`. **Not** dual columns by design.
 >
-> **Actual live state (`data/august_brain.sqlite`):** **Dual table names**
-> (e.g. `memoryStore` + `memory_store`) for all mapped renames. Columns on
-> both sides are largely snake already. `migrate_camel_to_snake` **skips**
-> rename when both exist (`needs_migration` stays True, change count 0).
-> Some data remains only on camel tables (e.g. `autoMemories` 100 vs
-> `auto_memories` 6; `examQuestions` 29 vs 0) → orphan risk for app SQL
-> that only queries snake names.
+> **Pass 1 live state:** Snake tables hold all camel content (coverage OK:
+> `auto_memories` 101 keys covering 100 camel; exams/config/usage merged).
+> Dual **table names** still exist by design until
+> `drop_legacy_camel_tables(confirm=True)`.
 >
-> **Next (separate approval — not Phase P0):** merge migration
-> (copy missing rows camel→snake, drop camel tables), then re-spot-check.
+> **Backup:** `data/august_brain.sqlite.pre-merge-20260714-175223`
+>
+> **Pass 2 (needs go):** drop camel tables + re-spot-check + pytest.
 >
 > **Refs:** Phase 4 schema rename (design only); Ground Rule 5 (explicit
 > sign-off for schema renames); prior reverse migration in

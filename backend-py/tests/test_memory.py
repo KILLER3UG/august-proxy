@@ -50,17 +50,13 @@ from app.services.memory.topic_index import classifyTopic
 
 
 @pytest.fixture(autouse=True)
-def setupDb():
-    init()
-    yield
-    from app.services.memory_store import _conn
+def setupDb(isolatedData):
+    """Use the shared temp-brain fixture — never touch live data/august_brain.sqlite.
 
-    conn = _conn()
-    conn.executescript(
-        '\n        PRAGMA foreign_keys = OFF;\n        DELETE FROM messages;\n        DELETE FROM sessions;\n        DELETE FROM usage_events;\n        DELETE FROM lifecycle;\n        DELETE FROM proposals;\n        DELETE FROM session_topics;\n        DELETE FROM facts;\n        DELETE FROM memory_store;\n        PRAGMA foreign_keys = ON;\n    '
-    )
-    conn.commit()
-    close()
+    ``isolatedData`` points AUGUST_BRAIN_SQLITE_FILE at a throwaway file and
+    calls init/close. Do not DELETE FROM the live brain (historical bug).
+    """
+    yield
 
 
 class TestMemoryKV:

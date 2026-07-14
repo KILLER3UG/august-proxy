@@ -124,34 +124,43 @@ Phase 3 “done” = major targets modularized enough for safer change, **not** 
 | Startup migration | `migrate_camel_to_snake` before `CREATE TABLE IF NOT EXISTS` |
 | Returned dicts / API JSON | camelCase via `_row_as_wire` |
 
-### Schema spot-check (live DB) — 2026-07-14 — **FAILED full close**
+### Schema merge pass 1 (live DB) — 2026-07-14 — **DATA MERGE VERIFIED; camel tables retained**
 
-**DB:** `data/august_brain.sqlite` (~1.6 MB), inspected with `backend-py/scripts/_spotcheck_schema.py`.
+**Protocol executed:**
 
-| Check | Result |
-|---|---|
-| Snake tables exist | Yes (`memory_store`, `sessions`, `messages`, …) |
-| Snake table **columns** | **All snake** on spot-checked tables (`session_id`, `created_at`, …) — no camelCase column names found |
-| Camel **table names** still present | **Yes — all 10 TABLE_MAP pairs dual** (`memoryStore` + `memory_store`, …) |
-| `migrate_camel_to_snake` on live DB | `needs_migration=True`, change count **0**, still True after — skips rename when both exist |
-| Migration code path | Logs *“Both X and Y exist — skipping table rename (manual merge needed)”* |
+1. Backup: `data/august_brain.sqlite.pre-merge-20260714-175223`
+2. Per-table conflict analysis + merge (camel → snake), **no camel drops**
+3. Id-collision recovery for `auto_memories` (logical `key` when ids collide)
+4. Same spot-check script re-run with **coverage** section
+5. Full pytest green (680 after dual-merge unit test)
+6. Camel tables **still present** pending second confirmation → `drop_legacy_camel_tables(confirm=True)`
 
-**Data split (evidence migration did not finish):**
+**Scripts:** `backend-py/scripts/merge_dual_schema_tables.py`, `_spotcheck_schema.py`, `_recover_auto_mem_conflicts.py`  
+**Code fix:** `schema_rename_migration.migrate_camel_to_snake` now **merges** when both exist (never overwrites conflicting snake rows); `drop_legacy_camel_tables(confirm=True)` is explicit only.
 
-| Pair | Camel rows | Snake rows | Risk |
+#### Spot-check after merge (`coverage_all_ok: True`)
+
+| Pair | Camel | Snake | Camel rows missing on snake |
 |---|---|---|---|
-| `autoMemories` / `auto_memories` | **100** | 6 | Most auto-memories may be stranded on camel table |
-| `examQuestions` / `exam_questions` | **29** | 0 | Exam data stranded |
-| `examAttempts` / `exam_attempts` | **4** | 0 | Stranded |
-| `configAudit` / `config_audit` | **2** | 0 | Stranded |
-| `usageEvents` / `usage_events` | 4 | 4 | Duplicated or parallel write paths |
-| `memoryStore` / `memory_store` | 2 | 2 | Dual |
+| `memoryStore` / `memory_store` | 2 | 2 | **0** (2 conflicts kept snake — newer `updated_at`) |
+| `usageEvents` / `usage_events` | 4 | 8 | **0** (4 distinct camel ids + 4 snake-only) |
+| `configAudit` / `config_audit` | 2 | 2 | **0** |
+| `autoMemories` / `auto_memories` | 100 | 101 | **0** by **key** (was 100 vs 6) |
+| `examQuestions` / `exam_questions` | 29 | 29 | **0** |
+| `examAttempts` / `exam_attempts` | 4 | 4 | **0** |
 
-**Root cause (code):** When snake tables already exist (e.g. `CREATE TABLE IF NOT EXISTS` ran while camel tables still held data), rename is **skipped** forever; app SQL now targets snake tables → **orphan risk** for camel-only rows.
+**Conflicts (snake kept, not overwritten):**
 
-**Phase 4 schema status:** **Not closed.** Requires an explicit **merge-or-drop** migration (copy camel→snake where missing, then drop camel) + re-verify live DB — **not** a P0 task; separate high-risk data work with user go-ahead.
+- `memory_store` keys `agent_jobs`, `self_evolution_log` — same key, different values; snake newer (pytest/runtime writes)
+- `auto_memories` id 5/6 id-collision different keys — camel logical keys re-inserted under new ids
 
-**Wire hybrid still true for snake paths:** `_row_as_wire` converts snake columns → camel API keys when reads hit snake tables.
+**Still open for pass 2 (user go):** drop all 10 camel content tables after second confirmation; then `_needs_migration` should go false when only snake remains.
+
+**Side fix (required for safe pytest):** `tests/test_memory.py` autouse fixture was **wiping live** `memory_store` / `sessions` / `usage_events` / etc. after every test. Fixed to use `isolatedData` temp brain. **Residual risk:** several `v2*` / `v3*` / `v11*` tests still call `memory_store.init()` without isolation and can mutate live DB — do not treat full suite as live-DB-safe until those are isolated too.
+
+**Phase 4 schema status:** **Pass 1 closed** (app-visible snake data complete). **Not fully closed** until camel tables dropped on pass 2.
+
+**Wire hybrid:** `_row_as_wire` on snake reads unchanged.
 
 ---
 
@@ -185,10 +194,10 @@ If P0 shows DB is not the bottleneck, P2 may never be worth opening.
 |---|---|
 | Phase 0/2 signed off | yes (B1a + B16 function APIs included) |
 | Phase 3 modularization exit criteria | met; residual large files optional |
-| Phase 4 modernization exit criteria | **partial** — indexes/busy_timeout/Zustand met; **schema rename not closed on live DB** |
+| Phase 4 modernization exit criteria | indexes/busy_timeout/Zustand met; schema **pass 1 verified**, pass 2 drop pending |
 | “100% of entire handoff checklist” | **false** — use residual ledger |
-| Schema rename | **open defect** — dual tables + stranded data; needs merge migration |
-| Phase P | **P0 only** until further approval; schema merge is **not** P0 |
+| Schema rename | **pass 1 done** (snake has full coverage); camel tables retained until pass 2 |
+| Phase P | **P0 only after** schema merge verified — pass 1 is verified; recommend pass 2 drop first or accept dual-name leftover |
 
 ---
 

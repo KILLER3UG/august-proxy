@@ -10,14 +10,39 @@ Safety:
   * Drops FTS content-sync tables/triggers before renaming content tables
   * Uses busy_timeout / WAL like ``memory_store._conn``
   * No-op when schema is already snake_case
+  * When **both** camel and snake tables exist: merge missing camel rows into
+    snake (never overwrite conflicting snake rows). Camel tables are **not**
+    dropped here — that is a separate confirmation step
+    (``drop_legacy_camel_tables``).
 """
 
 from __future__ import annotations
 
 import logging
 import sqlite3
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Natural key per camel table for dual-table merge identity.
+# Prefer logical keys over autoincrement ids when both sides may have
+# independently allocated the same integer for different rows.
+_MERGE_KEY_COLS: dict[str, tuple[str, ...]] = {
+    'memoryStore': ('key',),
+    'sessionTopics': ('session_id',),
+    'usageEvents': ('id',),
+    'configAudit': ('id',),
+    'learnedHeuristics': ('id',),
+    'autoMemories': ('id',),
+    'episodicTimeline': ('id',),
+    'examQuestions': ('id',),
+    'examAttempts': ('id',),
+    'pendingSkills': ('id',),
+}
+# Secondary logical key used when id conflicts but content differs (auto_memories).
+_MERGE_ALT_KEY: dict[str, tuple[str, ...]] = {
+    'autoMemories': ('key',),
+}
 
 # camelCase table → snake_case (inverse of migrateDbColumns.TABLE_MAP + full plan inventory)
 TABLE_MAP: dict[str, str] = {
@@ -258,16 +283,20 @@ def migrate_camel_to_snake(conn: sqlite3.Connection) -> int:
     for table, columns in COLUMN_MAP.items():
         total += _rename_columns_on_table(conn, table, columns)
 
-    # 3) Rename tables camel → snake
+    # 3) Rename tables camel → snake, or merge when both already exist
     for camel, snake in TABLE_MAP.items():
         if not _table_exists(conn, camel):
             continue
         if _table_exists(conn, snake):
-            logger.warning(
-                "Both '%s' and '%s' exist — skipping table rename (manual merge needed)",
-                camel,
-                snake,
-            )
+            merged = _merge_camel_into_snake(conn, camel, snake)
+            if merged:
+                logger.info(
+                    "Merged %s camel-only row(s) from '%s' into '%s' (camel table retained)",
+                    merged,
+                    camel,
+                    snake,
+                )
+            total += merged
             continue
         conn.execute(f'ALTER TABLE "{camel}" RENAME TO "{snake}"')
         logger.info('%s → %s', camel, snake)
@@ -284,7 +313,7 @@ def migrate_camel_to_snake(conn: sqlite3.Connection) -> int:
         except sqlite3.OperationalError:
             pass
 
-    # Drop orphaned camel FTS names if any remain
+    # Drop orphaned camel FTS names if any remain (not content tables)
     for fts in ('memoryStore_fts', 'autoMemories_fts'):
         if _table_exists(conn, fts):
             try:
@@ -293,5 +322,136 @@ def migrate_camel_to_snake(conn: sqlite3.Connection) -> int:
                 pass
 
     conn.commit()
+    # Rebuild FTS after merge inserts (content tables may have grown)
+    _rebuild_snake_fts(conn)
     logger.info('Brain schema migration complete (%s changes)', total)
     return total
+
+
+def _col_names(conn: sqlite3.Connection, table: str) -> list[str]:
+    return [row[1] for row in conn.execute(f'PRAGMA table_info("{table}")').fetchall()]
+
+
+def _merge_camel_into_snake(conn: sqlite3.Connection, camel: str, snake: str) -> int:
+    """Copy camel-only rows into snake. Never overwrite conflicting snake rows.
+
+    Returns number of rows inserted. Does not drop ``camel``.
+    """
+    key_cols = _MERGE_KEY_COLS.get(camel, ('id',))
+    camel_cols = _col_names(conn, camel)
+    snake_cols = _col_names(conn, snake)
+    shared = [c for c in snake_cols if c in camel_cols]
+    if not all(k in shared for k in key_cols):
+        logger.warning('Cannot merge %s → %s: key cols %s missing from shared', camel, snake, key_cols)
+        return 0
+
+    camel_rows = conn.execute(f'SELECT * FROM "{camel}"').fetchall()
+    snake_rows = conn.execute(f'SELECT * FROM "{snake}"').fetchall()
+    snake_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for r in snake_rows:
+        d = {c: r[i] for i, c in enumerate(snake_cols)}
+        snake_by_key[tuple(d.get(k) for k in key_cols)] = d
+
+    # For alt-key tables, also index snake by logical key
+    alt = _MERGE_ALT_KEY.get(camel)
+    snake_by_alt: dict[tuple[Any, ...], dict[str, Any]] = {}
+    if alt and all(a in snake_cols for a in alt):
+        for r in snake_rows:
+            d = {c: r[i] for i, c in enumerate(snake_cols)}
+            ak = tuple(d.get(a) for a in alt)
+            if ak[0] not in (None, ''):
+                snake_by_alt[ak] = d
+
+    inserted = 0
+    for r in camel_rows:
+        d = {c: r[i] for i, c in enumerate(camel_cols)}
+        k = tuple(d.get(c) for c in key_cols)
+        if k in snake_by_key:
+            # Same primary key — if payload differs, keep snake; if alt key differs
+            # (id collision with different logical identity), re-insert without id.
+            snake_d = snake_by_key[k]
+            payload_cols = [c for c in shared if c not in key_cols]
+            if all(snake_d.get(c) == d.get(c) for c in payload_cols):
+                continue  # identical
+            if alt and all(a in shared for a in alt):
+                camel_alt = tuple(d.get(a) for a in alt)
+                snake_alt = tuple(snake_d.get(a) for a in alt)
+                if camel_alt != snake_alt and camel_alt[0] not in (None, ''):
+                    if camel_alt in snake_by_alt:
+                        continue  # already present under logical key
+                    # Insert as new row without forcing conflicting id
+                    cols = [c for c in shared if c != 'id' and c in d]
+                    placeholders = ', '.join('?' for _ in cols)
+                    col_list = ', '.join(f'"{c}"' for c in cols)
+                    conn.execute(
+                        f'INSERT INTO "{snake}" ({col_list}) VALUES ({placeholders})',
+                        [d[c] for c in cols],
+                    )
+                    inserted += 1
+                    logger.info(
+                        '%s: id collision key=%s — inserted camel logical key %s without id',
+                        snake,
+                        k,
+                        camel_alt,
+                    )
+                    continue
+            logger.warning(
+                '%s: conflict on key %s — keeping snake row, not overwriting from camel',
+                snake,
+                k,
+            )
+            continue
+
+        # Missing primary key on snake — insert (preserve id when possible)
+        if alt and all(a in shared for a in alt):
+            camel_alt = tuple(d.get(a) for a in alt)
+            if camel_alt[0] not in (None, '') and camel_alt in snake_by_alt:
+                continue  # already present by logical key under another id
+
+        cols = [c for c in shared if c in d]
+        placeholders = ', '.join('?' for _ in cols)
+        col_list = ', '.join(f'"{c}"' for c in cols)
+        try:
+            conn.execute(
+                f'INSERT INTO "{snake}" ({col_list}) VALUES ({placeholders})',
+                [d[c] for c in cols],
+            )
+            inserted += 1
+        except sqlite3.IntegrityError as exc:
+            logger.warning('%s insert from camel key=%s failed: %s', snake, k, exc)
+
+    return inserted
+
+
+def _rebuild_snake_fts(conn: sqlite3.Connection) -> None:
+    for fts in ('memory_store_fts', 'auto_memories_fts'):
+        if not _table_exists(conn, fts):
+            continue
+        try:
+            conn.execute(f"INSERT INTO {fts}({fts}) VALUES('rebuild')")
+            conn.commit()
+        except sqlite3.Error as exc:
+            logger.warning('FTS rebuild %s failed: %s', fts, exc)
+
+
+def drop_legacy_camel_tables(conn: sqlite3.Connection, *, confirm: bool = False) -> int:
+    """Drop leftover camelCase content tables after merge verification.
+
+    Requires ``confirm=True``. Does not run from ``ensure_schema`` automatically.
+    """
+    if not confirm:
+        raise ValueError('drop_legacy_camel_tables requires confirm=True')
+    dropped = 0
+    for camel in TABLE_MAP:
+        if not _table_exists(conn, camel):
+            continue
+        # Refuse if snake twin missing
+        snake = TABLE_MAP[camel]
+        if not _table_exists(conn, snake):
+            logger.error('Refusing to drop %s — snake twin %s missing', camel, snake)
+            continue
+        conn.execute(f'DROP TABLE IF EXISTS "{camel}"')
+        logger.info('Dropped legacy camel table %s', camel)
+        dropped += 1
+    conn.commit()
+    return dropped

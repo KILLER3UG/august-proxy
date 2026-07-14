@@ -215,3 +215,85 @@ def test_row_as_wire_converts_snake_columns(isolatedData):
     assert 'startedAt' in row
     assert 'messageCount' in row
     assert 'started_at' not in row
+
+
+def test_dual_table_merge_copies_camel_only_rows(monkeypatch, tmp_path):
+    """When both camel and snake tables exist, missing camel rows are merged into snake.
+
+    Camel tables are retained (drop is a separate confirmation step).
+    Conflicting snake rows are not overwritten.
+    """
+    from app.services.schema_rename_migration import migrate_camel_to_snake
+
+    db_path = tmp_path / 'dual_brain.sqlite'
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(
+        """
+        CREATE TABLE memoryStore (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TEXT
+        );
+        CREATE TABLE memory_store (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TEXT
+        );
+        CREATE TABLE autoMemories (
+            id INTEGER PRIMARY KEY,
+            key TEXT,
+            content TEXT,
+            category TEXT,
+            importance REAL,
+            source TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        );
+        CREATE TABLE auto_memories (
+            id INTEGER PRIMARY KEY,
+            key TEXT,
+            content TEXT,
+            category TEXT,
+            importance REAL,
+            source TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        );
+        -- shared key, different value: snake wins
+        INSERT INTO memoryStore VALUES ('shared', '"old"', 't0');
+        INSERT INTO memory_store VALUES ('shared', '"new"', 't1');
+        -- camel-only blob key
+        INSERT INTO memoryStore VALUES ('only_camel', '"orphan"', 't0');
+        -- id collision different keys: both must survive under key coverage
+        INSERT INTO autoMemories VALUES (5, 'legacy_a', 'A', 'auto', 0.5, '', 't0', 't0');
+        INSERT INTO auto_memories VALUES (5, 'newer_b', 'B', 'auto', 0.5, '', 't1', 't1');
+        INSERT INTO autoMemories VALUES (7, 'only_camel_mem', 'C', 'auto', 0.5, '', 't0', 't0');
+        """
+    )
+    conn.commit()
+
+    n = migrate_camel_to_snake(conn)
+    assert n >= 1
+
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    # Camel retained until explicit drop
+    assert 'memoryStore' in tables
+    assert 'autoMemories' in tables
+
+    assert conn.execute("SELECT value FROM memory_store WHERE key='shared'").fetchone()[0] == '"new"'
+    assert conn.execute("SELECT value FROM memory_store WHERE key='only_camel'").fetchone()[0] == '"orphan"'
+
+    keys = {
+        r[0]
+        for r in conn.execute(
+            "SELECT key FROM auto_memories WHERE key IS NOT NULL"
+        ).fetchall()
+    }
+    assert 'newer_b' in keys
+    assert 'legacy_a' in keys  # re-inserted without colliding id
+    assert 'only_camel_mem' in keys
+
+    # Idempotent
+    n2 = migrate_camel_to_snake(conn)
+    assert n2 == 0
+    conn.close()
