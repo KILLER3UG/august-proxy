@@ -190,14 +190,18 @@ def create_core_schema(conn: sqlite3.Connection) -> None:
     """Create core tables, FTS virtual tables, sync triggers, and primary indexes."""
     conn.executescript(_CORE_SCHEMA_SQL)
     conn.commit()
-    row_count = conn.execute('SELECT count(*) FROM memory_store_fts').fetchone()[0]
-    if row_count == 0:
-        conn.execute(
+    # Cheap no-op path: only rebuild FTS when base has rows and FTS is empty.
+    # Avoids a full count on both sides when the brain is empty (common cold start).
+    base_any = conn.execute('SELECT 1 FROM memory_store LIMIT 1').fetchone()
+    if base_any is not None:
+        fts_any = conn.execute('SELECT 1 FROM memory_store_fts LIMIT 1').fetchone()
+        if fts_any is None:
+            conn.execute(
+                """
+                INSERT INTO memory_store_fts(rowid, key, value)
+                SELECT rowid, key, value FROM memory_store
             """
-            INSERT INTO memory_store_fts(rowid, key, value)
-            SELECT rowid, key, value FROM memory_store
-        """
-        )
+            )
     conn.commit()
     try:
         cols = [r['name'] for r in conn.execute('PRAGMA table_info(auto_memories)').fetchall()]
@@ -300,8 +304,31 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     ensure_column(conn, 'usage_events', 'context_tokens', 'INTEGER DEFAULT 0')
 
 
+# Bump when DDL / indexes change in a way that requires re-running create_*.
+# user_version is set after a successful ensure_schema so warm boots can skip
+# the heavy CREATE IF NOT EXISTS + migration probe when already current.
+_SCHEMA_USER_VERSION = 5
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    """Idempotently migrate camel→snake (if needed) then create the full brain schema."""
+    """Idempotently migrate camel→snake (if needed) then create the full brain schema.
+
+    Warm path: if ``PRAGMA user_version`` already matches ``_SCHEMA_USER_VERSION``
+    and core tables exist, skip migration + DDL (indexes already present).
+    """
+    try:
+        ver = int(conn.execute('PRAGMA user_version').fetchone()[0])
+    except Exception:
+        ver = 0
+    if ver >= _SCHEMA_USER_VERSION:
+        # Still verify one core table exists (corrupt / empty file edge).
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_store' LIMIT 1"
+        ).fetchone()
+        if row is not None:
+            return
     migrate_camel_to_snake(conn)
     create_core_schema(conn)
     create_extended_tables(conn)
+    conn.execute(f'PRAGMA user_version={_SCHEMA_USER_VERSION}')
+    conn.commit()
