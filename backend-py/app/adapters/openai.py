@@ -18,7 +18,7 @@ import time
 import uuid
 from typing import AsyncIterator, Callable, cast
 from app.type_aliases import JsonValue
-from app.json_narrowing import as_str, as_dict, as_list, as_int
+from app.json_narrowing import as_str, as_dict, as_list
 from app.adapters.proxy_tools import (
     get_proxy_openai_tool_definitions,
     appendMissingOpenaiTools,
@@ -31,10 +31,24 @@ from app.adapters.proxy_tools import (
 from app.adapters.tool_classification import classifyOpenaiToolCalls
 from app.adapters.stream_state import OpenaiStreamAccumulator, ToolCallDelta
 from app.adapters.case_converters import snakeToCamel, camelToSnake
+from app.adapters.openai_sse import (
+    write_openai_sse_headers,
+    write_openai_sse_data,
+    write_openai_sse_error,
+    write_openai_sse_done,
+    send_simulated_openai_stream,
+)
 from app.providers import resolver as providerResolver
 from app.providers.model_resolver import resolve
 from app.providers.clients import getClient, BaseProviderClient
 from app.models import ChatCompletionRequest, ChatMessage
+
+# Back-compat aliases (previous camelCase names on this module).
+writeOpenaiSseHeaders = write_openai_sse_headers
+writeOpenaiSseData = write_openai_sse_data
+writeOpenaiSseError = write_openai_sse_error
+writeOpenaiSseDone = write_openai_sse_done
+sendSimulatedOpenaiStream = send_simulated_openai_stream
 
 MAX_MANAGED_TOOL_ROUNDS = 10
 
@@ -138,89 +152,6 @@ def toOpenaiCompatibleTargetUrl(baseUrl: str) -> str:
     if '/v1' in base or '/v2' in base:
         return f'{base}/chat/completions'
     return f'{base}/v1/chat/completions'
-
-
-def writeOpenaiSseHeaders() -> dict[str, str]:
-    """Return SSE response headers for OpenAI-compatible streaming."""
-    return {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no',
-    }
-
-
-def writeOpenaiSseData(chunk: dict[str, object]) -> str:
-    """Serialize a chunk as SSE data line."""
-    return f'data: {json.dumps(chunk)}\n\n'
-
-
-def writeOpenaiSseError(error: str) -> str:
-    """Serialize an error as SSE."""
-    return writeOpenaiSseData({'error': {'message': error}})
-
-
-def writeOpenaiSseDone() -> str:
-    """Return the terminal SSE event."""
-    return 'data: [DONE]\n\n'
-
-
-def sendSimulatedOpenaiStream(response: dict[str, object]) -> list[str]:
-    """Create SSE events from a full JSON response, simulating a stream."""
-    events: list[str] = []
-    responseId = as_str(response.get('id'), f'chatcmpl-{uuid.uuid4().hex[:12]}')
-    created = as_int(response.get('created'), int(time.time()))
-    model = as_str(response.get('model'), 'unknown')
-    choices = as_list(response.get('choices'), [])
-    for choice in choices:
-        if not isinstance(choice, dict):
-            continue
-        choiceDict = cast('dict[str, object]', choice)
-        index = as_int(choiceDict.get('index'), 0)
-        delta = as_dict(choiceDict.get('delta'), {}) or as_dict(choiceDict.get('message'), {})
-        events.append(
-            writeOpenaiSseData(
-                {
-                    'id': responseId,
-                    'object': 'chat.completion.chunk',
-                    'created': created,
-                    'model': model,
-                    'choices': [{'index': index, 'delta': delta, 'finish_reason': None}],
-                }
-            )
-        )
-        events.append(
-            writeOpenaiSseData(
-                {
-                    'id': responseId,
-                    'object': 'chat.completion.chunk',
-                    'created': created,
-                    'model': model,
-                    'choices': [
-                        {
-                            'index': index,
-                            'delta': {},
-                            'finish_reason': cast('dict[str, object]', choiceDict).get('finish_reason', 'stop'),
-                        }
-                    ],
-                }
-            )
-        )
-    if response.get('usage'):
-        events.append(
-            writeOpenaiSseData(
-                {
-                    'id': responseId,
-                    'object': 'chat.completion.chunk',
-                    'created': created,
-                    'model': model,
-                    'choices': [],
-                    'usage': response['usage'],
-                }
-            )
-        )
-    events.append(writeOpenaiSseDone())
-    return events
 
 
 def createOpenaiStreamAccumulator() -> OpenaiStreamAccumulator:
@@ -380,19 +311,19 @@ async def streamOpenaiSseToClient(
     async for rawEvent in _getClient().streamSse(upstreamUrl, upstreamHeaders, bodyJson):
         event = cast('dict[str, object]', rawEvent)
         if as_str(event.get('type'), '') == 'error':
-            yield writeOpenaiSseError(as_str(event.get('body'), as_str(event.get('error'), '')))
-            yield writeOpenaiSseDone()
+            yield write_openai_sse_error(as_str(event.get('body'), as_str(event.get('error'), '')))
+            yield write_openai_sse_done()
             return
         if event.get('_event_type'):
             del event['_event_type']
-        yield writeOpenaiSseData(event)
+        yield write_openai_sse_data(event)
         choices = as_list(event.get('choices'), [])
         if choices and isinstance(choices[0], dict) and as_dict(choices[0], {}).get('finish_reason'):
             if event.get('usage'):
-                yield writeOpenaiSseData({'choices': [], 'usage': event['usage']})
-            yield writeOpenaiSseDone()
+                yield write_openai_sse_data({'choices': [], 'usage': event['usage']})
+            yield write_openai_sse_done()
             return
-    yield writeOpenaiSseDone()
+    yield write_openai_sse_done()
 
 
 async def streamUpstreamAndResolveToolsOpenai(
@@ -417,11 +348,11 @@ async def streamUpstreamAndResolveToolsOpenai(
     streamBody = cast('dict[str, object]', camelToSnake({**raw_body, 'stream': True}))
     async for chunk in _getClient().streamSse(upstreamUrl, upstreamHeaders, streamBody):
         if chunk.get('type') == 'error':
-            yield writeOpenaiSseError(as_str(chunk.get('body'), as_str(chunk.get('error'), '')))
-            yield writeOpenaiSseDone()
+            yield write_openai_sse_error(as_str(chunk.get('body'), as_str(chunk.get('error'), '')))
+            yield write_openai_sse_done()
             return
         acc.accumulate(chunk)
-        yield writeOpenaiSseData(chunk)
+        yield write_openai_sse_data(chunk)
         choices = as_list(chunk.get('choices'), [])
         if (
             choices
@@ -456,11 +387,11 @@ async def streamUpstreamAndResolveToolsOpenai(
                     )
                     async for nextChunk in _getClient().streamSse(upstreamUrl, upstreamHeaders, nextBody):
                         if nextChunk.get('type') == 'error':
-                            yield writeOpenaiSseError(as_str(nextChunk.get('body'), ''))
-                            yield writeOpenaiSseDone()
+                            yield write_openai_sse_error(as_str(nextChunk.get('body'), ''))
+                            yield write_openai_sse_done()
                             return
                         acc.accumulate(nextChunk)
-                        yield writeOpenaiSseData(nextChunk)
+                        yield write_openai_sse_data(nextChunk)
                         nchoices = as_list(nextChunk.get('choices'), [])
                         if nchoices and isinstance(nchoices[0], dict) and as_dict(nchoices[0], {}).get('finish_reason'):
                             break
@@ -473,10 +404,10 @@ async def streamUpstreamAndResolveToolsOpenai(
                         }
                     )
                     if acc.usage:
-                        yield writeOpenaiSseData({'choices': [], 'usage': acc.usage})
-            yield writeOpenaiSseDone()
+                        yield write_openai_sse_data({'choices': [], 'usage': acc.usage})
+            yield write_openai_sse_done()
             return
-    yield writeOpenaiSseDone()
+    yield write_openai_sse_done()
 
 
 async def handleChatCompletions(
@@ -552,7 +483,7 @@ async def handleChatCompletions(
             )
         else:
             stream = streamOpenaiSseToClient(upstreamUrl, headers, raw_body)
-        return (stream, writeOpenaiSseHeaders())
+        return (stream, write_openai_sse_headers())
     else:
         raw_body['stream'] = False
         if hasManagedTools:
