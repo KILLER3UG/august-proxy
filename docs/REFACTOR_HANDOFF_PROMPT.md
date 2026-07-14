@@ -201,7 +201,7 @@ Because this is a large codebase, work iteratively.
 
 ## Progress Log (verify this, don't just read it — see Ground Rule 1)
 
-*Last updated 2026-07-14 (Phases 0–7 + Phase P done; docs cleaned; Phase 8 next). Tip: verify `git rev-parse HEAD` + `docs/REFACTOR_PROGRESS.md`.*
+*Last updated 2026-07-14 (Phases 0–8 + Phase P **SIGNED OFF**). Tip: verify `git rev-parse HEAD` + `docs/PHASE8_FINAL_DELIVERABLES.md`.*
 
 ### Merge Status (historical queue — CLOSED)
 
@@ -300,7 +300,7 @@ Scheduled/known: `workbench.py`, `anthropic.py`, `tool_definitions.py`, plus `ad
 
 ### Feature-level testing (Phase 7) — operationalized
 
-Matrix + suite baselines recorded. Gaps explicit. Phase 8 overall sign-off still optional.
+Matrix + suite baselines recorded. Phase 7 fully automated E2E proven. Phase 8 signed off.
 
 ### CamelModel progress (complete)
 
