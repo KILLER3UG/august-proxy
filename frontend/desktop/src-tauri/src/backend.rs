@@ -202,6 +202,19 @@ fn isProxyUp() -> bool {
         .unwrap_or(false)
 }
 
+/// Poll health until success or timeout (used after spawn, not only "already up").
+fn waitUntilProxyUp(timeout: Duration) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    let step = Duration::from_millis(250);
+    while std::time::Instant::now() < deadline {
+        if isProxyUp() {
+            return true;
+        }
+        std::thread::sleep(step);
+    }
+    isProxyUp()
+}
+
 /// Try to bring up the backend. Tries Python first, falls back to Node.js.
 pub fn ensureRunning(app: &AppHandle) -> bool {
     if isProxyUp() {
@@ -260,8 +273,24 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
                             *guard = Some(c);
                         }
                     }
-                    log::info!("[backend] python proxy spawned");
-                    return true;
+                    log::info!("[backend] python proxy spawned — waiting for /api/health");
+                    // Do not return success on spawn alone: cold start can take seconds
+                    // (import + schema). Poll health so the webview does not thrash.
+                    if waitUntilProxyUp(Duration::from_secs(20)) {
+                        log::info!("[backend] python proxy healthy on :{}", proxyPort());
+                        return true;
+                    }
+                    log::error!(
+                        "[backend] python proxy spawned but /api/health not ready within timeout"
+                    );
+                    setLastError(
+                        app,
+                        format!(
+                            "[backend] python proxy not healthy on :{} after spawn",
+                            proxyPort()
+                        ),
+                    );
+                    // Fall through to Node fallback only if Python never answered.
                 }
                 Err(e) => {
                     let msg = format!("[backend] python spawn failed: {e} — falling back to Node.js");
@@ -326,8 +355,21 @@ pub fn ensureRunning(app: &AppHandle) -> bool {
                     *guard = Some(c);
                 }
             }
-            log::info!("[backend] node proxy spawned (fallback)");
-            true
+            log::info!("[backend] node proxy spawned (fallback) — waiting for /api/health");
+            if waitUntilProxyUp(Duration::from_secs(20)) {
+                log::info!("[backend] node proxy healthy on :{}", proxyPort());
+                true
+            } else {
+                log::error!("[backend] node proxy spawned but /api/health not ready");
+                setLastError(
+                    app,
+                    format!(
+                        "[backend] node proxy not healthy on :{} after spawn",
+                        proxyPort()
+                    ),
+                );
+                false
+            }
         }
         Err(e) => {
             log::error!("[backend] spawn failed: {e}");
