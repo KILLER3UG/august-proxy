@@ -2,17 +2,22 @@
 
 Port of backend/services/scheduler/index.js + missing/cron-tools.js.
 Manages scheduled/recurring job execution.
+
+Request body ``CronJobCreate`` inherits :class:`CamelModel` so internals are
+snake_case while JSON from the frontend stays camelCase.
 """
 
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from app.models.camel_base import CamelModel
 
 router = APIRouter(prefix='/api/cron')
 _jobs: dict[str, dict[str, object]] = {}
 
 
-class CronJobCreate(BaseModel):
+class CronJobCreate(CamelModel):
+    """Cron job create body. Internals are snake_case; JSON stays camelCase."""
+
     name: str
     schedule: str
     command: str
