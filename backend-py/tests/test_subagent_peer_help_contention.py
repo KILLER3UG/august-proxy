@@ -260,6 +260,40 @@ async def test_completed_with_empty_result_not_marked_completed(bus):
 
 
 @pytest.mark.asyncio
+async def test_partial_status_not_counted_as_completed_success(bus):
+    """partial must not map to handle.status=completed (spawn_subagents counts only completed)."""
+    orch = SubagentOrchestrator(bus, max_workers=2)
+
+    async def partial_result(**kwargs):
+        return {
+            'taskId': 't',
+            'agentId': 'general',
+            'status': 'partial',
+            'result': '',  # empty text allowed for partial only
+            'error': '',
+        }
+
+    session = MagicMock()
+    session.id = 'partial-status'
+    with patch('app.services.subagent_worker.runSubagent', new=AsyncMock(side_effect=partial_result)):
+        handles = await orch.spawn(
+            SubagentSpawnRequest(session=session, workItems=[{'goal': 'x', 'agentId': 'general'}])
+        )
+        results = await orch.waitForAll(handles)
+
+    h = handles[0]
+    assert h.status == 'partial'
+    # Same tally as spawn_subagents_tool._doSpawn
+    succeeded = sum(1 for r in results if r['status'] == 'completed')
+    failed = sum(1 for r in results if r['status'] in ('failed', 'error'))
+    assert succeeded == 0
+    assert failed == 0
+    assert results[0]['status'] == 'partial'
+    print('PARTIAL_STATUS', {'status': h.status, 'succeeded': succeeded, 'failed': failed})
+    await orch.close()
+
+
+@pytest.mark.asyncio
 async def test_concurrent_failures_peer_help_windows_do_not_deadlock(bus):
     """N concurrent failures each open a 5s window — all complete without deadlock."""
     orch = SubagentOrchestrator(bus, max_workers=5)

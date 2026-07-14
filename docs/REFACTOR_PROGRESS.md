@@ -105,9 +105,9 @@ not recover work; and until fixed, worker `{status: failed}` dicts were marked
 |---|---|
 | Failed worker `{status: failed}` → handle failed | `fix(subagent): treat failed status…` |
 | `{status: completed, result: ''}` / whitespace → failed | same family, non-empty payload required |
+| `{status: partial, ...}` | handle.status=`partial` — **not** tallied as `completed` by `spawn_subagents` (`succeeded` only counts exact `completed`) |
 
 Tests: `tests/test_subagent_peer_help_contention.py`.
-
 ### Daemon manager contention check (2026-07-14)
 
 | Contract | Measured |
@@ -115,10 +115,15 @@ Tests: `tests/test_subagent_peer_help_contention.py`.
 | Max 3 daemons / session | **Enforced**; 4th returns error; other sessions independent; `errored` frees a slot |
 | Concurrent 8 spawns | Exactly 3 ok / 5 errors; live ≤ 3 |
 | Backoff schedule | First delay = `BACKOFF_SCHEDULE[0]` (5s) on forced errors |
-| `BACKOFF_CAP` 300 | **Does not bind** with current schedule (max 135) — cap is dead for today's constants |
+| `BACKOFF_CAP` 300 | **Does not bind** (schedule max 135) |
 
-Tests: `tests/test_daemon_manager_contention.py`. No production code change (contracts hold for cap; cap constant is soft dead).
----
+**BACKOFF_CAP meaning:** Design (`cognitive-architecture-v1.md` §5.4) specifies
+backoff **5→15→45→135s, capped at 5 min**. The schedule already ends at 135;
+the cap is a **harmless leftover safety bound** for a longer schedule that was
+never added — not a bug that the schedule “should” reach 300. Safe to leave;
+only becomes load-bearing if someone extends `BACKOFF_SCHEDULE` past 300s.
+
+Tests: `tests/test_daemon_manager_contention.py`.---
 
 ## P1.1 / P1.2 — prompt segments + tool defs (isolated)
 

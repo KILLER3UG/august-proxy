@@ -239,6 +239,13 @@ class SubagentOrchestrator:
                             err = 'empty result payload with success status'
                         handle.error = err or handle.error
                     await self._fireEvent('subagentFailed', handle.toDict())
+                elif (
+                    isinstance(result, dict)
+                    and str(result.get('status') or '').lower() == 'partial'
+                ):
+                    # Not equivalent to full completion for tallies (see spawn_subagents).
+                    handle.status = 'partial'
+                    await self._fireEvent('subagentCompleted', handle.toDict())
                 else:
                     handle.status = 'completed'
                     await self._fireEvent('subagentCompleted', handle.toDict())
