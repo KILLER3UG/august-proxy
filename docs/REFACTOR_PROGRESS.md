@@ -63,6 +63,19 @@ not only after a surprise finding.
 | `db_writer` | **Checked P0** — FIFO + age-drop; B26 open |
 | `subagent_orchestrator` peer-help | **Checked** — no recovery; silent success **fixed** (status + empty payload) |
 | `daemon_manager` | **Checked** — cap enforced; backoff schedule used; BACKOFF_CAP dead vs schedule |
+| **FTS app-path column MATCH** (`search_memory` / `auto_memory` / `brain_query`) | **Caught late (2026-07-14 audit)** — docs said Phase P complete; app SQL used nonexistent `content` column / wrong SELECT on FTS; silent LIKE / full-table fallback. Fixed + `tests/test_fts_app_path.py`. Tooling gap closed with permanent `scripts/_check_fts_query_hygiene.py` (static anti-patterns + live probes). `_verify_fts_sync.py` remains coverage-only. |
+| **FTS alias MATCH** (`WHERE fts MATCH`) | **Same audit** — SQLite rejected alias left-hand MATCH (`no such column: fts`). Grep of `app/**/*.py`: only `memory_store` + `auto_memory` used MATCH; both use real table names. Hygiene script flags alias form permanently. |
+| **Gateway workbench event names** (`finalOutput` vs `final_output`) | **Caught late (same audit)** — SessionBridge accumulated snake_case only; workbench emits camelCase. Fixed accept both; `tests/test_gateway_final_output.py`. Watch other bridge consumers of emit types. |
+| **Optimistic “complete” plan status** | **Process debt** — third time this thread (schema hybrid, db_writer priority, Phase P complete). Status updates must cite verification command output, not intent. |
+
+### Process fix (status reporting)
+
+Before marking a workstream **DONE** in plan/progress docs:
+
+1. Run the **named** scripts in `ARCHITECTURE.md` permanent tooling table when the change class matches (FTS → `_verify_fts_sync.py` **and** a test that calls the app function, not only raw SQL).
+2. Paste or summarize **command exit + key lines** in the Progress Log entry.
+3. Prefer “measured / verified” language over “complete” until (1)–(2) exist.
+4. Correctness fixes and perf knobs land in **separate commits** (Ground Rule 3).
 
 ### Subagent peer-help + result handling (2026-07-14) — **higher severity than B26**
 
@@ -507,14 +520,19 @@ If P0 shows DB is not the bottleneck, P2 may never be worth opening.
 | **P1.1/1.2** | `prompt_segments_cache`, `tool_defs_cache`, kill switches, before/after numbers |
 | **P1.3** | `get_messages_async` + sessions route offload |
 | **P1.4** | `parallel_tools` allowlist + `chat_stages.run_regular_tools_stage` |
-| **P1.5** | `BatchedEmit` TTFT-safe SSE coalesce |
+| **P1.5** | `BatchedEmit` TTFT-safe SSE coalesce (**char + ~12 ms time budget**) |
 | **P1.6** | post-turn auto-memory/reflection via `to_thread` + `schedule_post_turn_side_effects` |
 | **P1.7** | provider `getClient` connection pool |
+| **P2.1–2.2** | EXPLAIN pack; **FTS MATCH fixed** (table-level; auto_memory JOIN; no full-table fallback) |
 | **P2.3** | `get_messages(limit/offset/before_id)`, `count_messages` |
-| **P3** | stream throttle (existing), `VirtualizedMessageList`, lazy Settings/Brain/Live |
+| **P2.4–2.6** | `db_writer.get_stats` + `/api/perf/db-writer`; schema `user_version` warm path; PRAGMA cache/mmap/sync |
+| **P3** | stream throttle, virtualize, lazy routes, drawer/browser selectors, deferred KaTeX/voice |
 | **P4** | DEVELOPER_GUIDE tool/provider/panel/daemon checklists + exercised notes |
-| **P5** | `workbench/chat_stages.py` stage boundaries |
+| **P5** | `chat_stages`, `stream_translate` (workbench), `anthropic_stream_translate`, `memory_conn` |
+| **Gateway** | accept `finalOutput` (not only `final_output`); optional turn spans |
 
-**Tests:** `tests/test_phase_p_remaining.py`, `test_perf_p0_baselines.py`, `test_perf_p1_prompt_tool_cache.py`.
+**Tests:** `tests/test_phase_p_remaining.py`, `test_phase_p_followups.py`, `test_perf_p0_baselines.py`, `test_perf_p1_prompt_tool_cache.py`.
 
 **Decisions retained:** db_writer FIFO (B26); peer-help failure semantics (B27); daemon cap holds.
+
+**Code audit note (2026-07-14):** Doc status alone is not proof — FTS MATCH on a nonexistent `content` column and gateway emit snake_case mismatch were still broken until the follow-up pass.

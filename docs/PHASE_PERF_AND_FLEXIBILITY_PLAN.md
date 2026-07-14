@@ -1,12 +1,12 @@
 # Phase P — True Performance + Feature Flexibility Plan
 
-> **Status (2026-07-14):** **PHASE P COMPLETE** for planned workstreams.
-> **P0** baselines closed · **P1** hot-path (caches, parallel RO tools, SSE
-> batch, side-effects off path, client pool, SQLite async offload) · **P2**
-> pagination + EXPLAIN audit · **P3** stream throttle, virtualize, lazy
-> routes · **P4** DEVELOPER_GUIDE extension checklists exercised · **P5**
-> `chat_stages` extract. Standing gate: load-test contracts before raising
-> daemon/subagent caps (`db_writer` FIFO accepted).
+> **Status (2026-07-14, code-audited follow-up):** **PHASE P COMPLETE** including
+> residual/optional work verified in code (not only docs). **P0–P5** delivered;
+> FTS MATCH bugs fixed; `db_writer` lag stats; PRAGMA cache/mmap/sync; schema
+> warm-path `user_version`; BatchedEmit time budget; Zustand drawer/browser
+> selectors; deferred FE cold-start imports; workbench + Anthropic stream
+> extracts; gateway `finalOutput` + turn spans. Standing gate: load-test before
+> raising daemon/subagent caps (`db_writer` FIFO retained).
 >
 > **Why a plan exists:** Phases 3–4 improved structure and naming. Phase P
 > measured and reduced product-side overhead and locked extension points.
@@ -259,13 +259,17 @@ Do **not** start P1+ without a new approval.
 | Stream | Status |
 |---|---|
 | P0 baselines + `/api/perf/recent` | Done |
-| P1.1–P1.7 hot path | Done (caches, parallel RO tools, BatchedEmit, client pool, to_thread side-effects, get_messages_async) |
+| P1.1–P1.7 hot path | Done (caches, parallel RO tools, BatchedEmit char+time, client pool, to_thread side-effects, get_messages_async) |
+| P2.1 EXPLAIN + P2.2 FTS | Done (table-level MATCH; auto_memory JOIN; bounded LIKE fallback) |
 | P2.3 message pagination | Done (`get_messages` limit/offset/before_id) |
-| P3 virtualize + code-split + stream throttle | Done |
+| P2.4 `db_writer` lag | Done (stats + `/api/perf/db-writer`; FIFO unchanged) |
+| P2.5 startup no-op | Done (`PRAGMA user_version` warm skip + cheap FTS EXISTS) |
+| P2.6 PRAGMA tune | Done (cache_size / mmap / synchronous NORMAL; env-tunable) |
+| P3 virtualize + code-split + stream throttle + selectors + cold-start | Done |
 | P4 extension checklists | Done (`DEVELOPER_GUIDE.md`) |
-| P5 chat_stages extract | Done |
+| P5 chat_stages + stream extracts + memory_conn | Done |
 
-Kill switches: `AUGUST_P1_TOOL_CACHE=0`, `AUGUST_P1_PROMPT_CACHE=0`, `AUGUST_P1_PARALLEL_TOOLS=0`.
+Kill switches / knobs: `AUGUST_P1_TOOL_CACHE=0`, `AUGUST_P1_PROMPT_CACHE=0`, `AUGUST_P1_PARALLEL_TOOLS=0`, `AUGUST_SQLITE_CACHE_KB`, `AUGUST_SQLITE_MMAP_MB`, `AUGUST_SQLITE_SYNC`, `AUGUST_DB_WRITER_LOW_DROP_S`.
 
 ---
 
