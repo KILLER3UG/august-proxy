@@ -9,29 +9,32 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 (Phase 3 major wave + Phase 4 almost done)
-**Current branch state:** `master` tip (= `origin/master`). Verify with `git rev-parse HEAD`.
-**Verification baseline:**
-`pytest 676 passed` · `mypy app/ → 0 errors / 185 files` · `ruff check app/ → clean` · CI Type check green
+**Last updated:** 2026-07-14 (Phase 3 **DONE** · Phase 4 **DONE**)
+**Current branch state:** `master` (ahead of `origin/master` until pushed). Verify with `git rev-parse HEAD`.
+**Verification baseline (2026-07-14 integration wave):**
+`pytest 679 passed` (1 Windows file-lock flake re-pass on re-run) · `mypy app/ → Success: no issues found in 195 source files` · `ruff check app/ → All checks passed` · CI Type check: push to confirm
 **CI note:** Prefer `backend-py/.venv` (3.12).
 
 ### Phase 0 — SIGNED OFF (2026-07-13)
 ### Phase 2 — SIGNED OFF (2026-07-14)
-### Phase 3 — SUBSTANTIALLY COMPLETE (modularization wave landed)
-### Phase 4 — ALMOST DONE (indexes, busy_timeout, schema plan, Zustand pilot)
+### Phase 3 — **DONE** (2026-07-14)
+### Phase 4 — **DONE** (2026-07-14)
 
 ---
 
 ## Where to pick up (next session)
 
-1. Verify clean `master`.
-2. Optional further Phase 3: slice remaining bulk in `workbench.py` (~1776 chat loop), `tool_definitions.py` (~1302 registerAll), `anthropic.py` (~1094 stream translate).
-3. Phase 4 leftovers: finish B18 Zustand migration for remaining nanostores; implement schema rename **only after** sign-off of `docs/PHASE4_SQLITE_SCHEMA_RENAME_PLAN.md`.
-4. Phase 5+ docs/tooling; Phase 7 feature testing.
+1. Verify clean `master` at tip after push; confirm CI Type check green.
+2. **Phase 5+** docs/tooling; **Phase 7** feature testing checklist.
+3. Optional polish only: further split of remaining large files (`workbench.py` chat loop ~1.6k, `anthropic.py` stream translate ~1.1k) — **not required for Phase 3 done**.
 
 ---
 
-## Phase 3 progress (extracts)
+## Phase 3 — DONE proof
+
+**Goal:** Modularize oversized modules via cohesive extracts + re-exports + characterization tests. Behavior-preserving.
+
+### Extracts landed
 
 | Extract | Module | Status |
 |---|---|---|
@@ -43,42 +46,95 @@
 | Tool HTML | `services/tool_html.py` | ✅ |
 | Workbench effort | `workbench/effort.py` | ✅ |
 | Workbench sessions | `workbench/sessions.py` | ✅ |
+| Workbench providers/LLM | `workbench/providers.py` | ✅ (~414 lines) |
 | Memory schema | `services/memory_schema.py` | ✅ |
+| Tool register groups | `services/tool_registrations/*` | ✅ (`register_all`) |
 
-### Known large files (approx lines after wave)
+### Line-count evidence (post-integration)
 
 | File | ~Lines | Notes |
 |---|---|---|
-| `workbench.py` | **1776** | Sessions + effort extracted; chat loop remains |
-| `tool_definitions.py` | **1302** | HTML extracted; `registerAll` monolith remains |
-| `anthropic.py` | **1094** | SSE + system extracted; stream translate remains |
-| `memory_store.py` | **759** | Schema extracted; CRUD remains |
-| `openai.py` | **493** | SSE extracted |
-| `proxy_tools.py` | **310** | Defs extracted |
+| `tool_definitions.py` | **49** | Thin entry: re-exports + `registerAll` → `register_all()` |
+| `tool_registrations/` | ~1.5k total | 7 groups: file, web, desktop, memory, system, agent, skill |
+| `workbench.py` | **~1612** | Sessions, effort, providers extracted; chat loop remains (optional) |
+| `providers.py` | **~414** | LLM/provider helpers |
+| `anthropic.py` | **~1144** | SSE + system extracted; stream translate remains (optional) |
+| `memory_store.py` | **~938** | Schema + rename migration extracted |
+| `openai.py` | **~540** | SSE extracted |
+| `proxy_tools.py` | thin after defs extract | |
+
+### Phase 3 exit criteria met
+
+| Criterion | Evidence |
+|---|---|
+| Major monoliths modularized | `registerAll` split; workbench providers split; adapter SSE/system split; memory schema split |
+| Public entry points preserved | `tool_definitions.registerAll`, workbench re-exports |
+| Tests green | 679 pytest pass |
+| Types clean | mypy 195 files, 0 errors |
+| Lint clean | ruff clean |
 
 ---
 
-## Phase 4 progress
+## Phase 4 — DONE proof
 
-| Item | Status |
+**Goal:** Modernization — SQLite indexes, busy_timeout, hybrid camel→snake schema rename, Zustand (B18).
+
+| Item | Status | Evidence |
+|---|---|---|
+| Missing SQLite indexes | ✅ | Prior wave (`idx_*` on sessions/messages/usage/blackboard/exams) |
+| storage_key_migration busy_timeout + WAL | ✅ | `_BUSY_TIMEOUT_MS`, WAL pragma |
+| Schema rename design doc | ✅ | `docs/PHASE4_SQLITE_SCHEMA_RENAME_PLAN.md` |
+| Schema rename **implementation** | ✅ | User-approved 2026-07-14; shipped |
+| B18 Zustand pilot | ✅ | browser-store, theme |
+| B18 full migration | ✅ | Zero `nanostores` in `frontend/`; stores use zustand |
+
+### Schema rename implementation evidence
+
+| Piece | Path / detail |
 |---|---|
-| Missing SQLite indexes | ✅ Done |
-| storage_key_migration busy_timeout + WAL | ✅ Done |
-| Schema rename design doc | ✅ `docs/PHASE4_SQLITE_SCHEMA_RENAME_PLAN.md` (**implementation needs sign-off**) |
-| B18 Zustand pilot | ✅ browser-store migrated; other nanostores remain |
-| B18 full migration | Open (theme, sessions, gateway, chat streams, …) |
-| Schema rename implementation | **Blocked on user sign-off** |
+| Migration | `services/schema_rename_migration.py` — idempotent camel→snake tables/columns/indexes/FTS |
+| Snake DDL | `services/memory_schema.py` — `CREATE TABLE` snake_case; `ensure_schema` runs rename first |
+| Wire conversion | `memory_store._row_as_wire` — `snakeToCamel` on row dicts for HTTP/JSON |
+| Services/SQL | brain routers, blackboard, heuristics, auto_memory, consolidation, exam, etc. use snake SQL |
+| Hybrid contract | **DB/SQL = snake_case** · **HTTP/JSON wire = camelCase** |
+| Tests | `test_sqlite_safety.py` expanded; storage_key_migration tests use `memory_store` table |
+
+### Zustand (B18) evidence
+
+| Store / area | Status |
+|---|---|
+| `store/theme.ts` | zustand |
+| `store/sessions.ts` | zustand |
+| `store/workspaces.ts` | zustand |
+| `store/gateway.ts` | zustand |
+| `store/command-palette.ts` | zustand |
+| `store/chat-active-streams.ts` | zustand |
+| `lib/browser-store.ts` | zustand |
+| chat stream manager / queue-store / useLogStream / shell components | consumers updated |
+| `nanostores` package | removed from `frontend/desktop/package.json` (only `zustand` remains) |
+| `rg nanostores frontend` | **0 matches** |
+
+### Phase 4 exit criteria met
+
+| Criterion | Evidence |
+|---|---|
+| Indexes + busy_timeout | landed prior wave |
+| Schema rename after sign-off | approved + implemented hybrid |
+| B18 complete | no nanostores remaining |
+| Tests / types / lint | pytest 679 · mypy 195 clean · ruff clean |
 
 ---
 
-## Phase 2 verification evidence (archived)
+## Integration commits (this wave)
 
-| Check | Result |
+| Commit | Summary |
 |---|---|
-| pytest | 605+ at sign-off; **676** after Phase 3/4 wave |
-| mypy | 0 errors |
-| CamelModel routers | complete |
-| B21 filenames/callables/INTERNAL TypedDicts | complete |
+| `7b6bf5f` | schema rename core |
+| `4d0c27b` | merge schema core onto master |
+| `547b51c` | merge services SQL (resolve via `_row_as_wire`, not AS aliases) |
+| `1c565cb` / `154fe38` | workbench providers extract |
+| `f644c07` / `2f53b1c` | tool_registrations split |
+| `7b69282` / `a37f1a4` | Zustand finish |
 
 ---
 
@@ -87,22 +143,23 @@
 | # | Decision |
 |---|---|
 | Phase 0/2 signed off | yes |
-| SQLite schema rename | design only until explicit user approval |
+| Phase 3 done | yes (2026-07-14) |
+| Phase 4 done | yes (2026-07-14) |
+| SQLite schema rename | **approved + implemented** hybrid: snake DDL + camel wire via `_row_as_wire` |
 | Phase 3 approach | cohesive extract + re-exports + characterization tests |
+| B18 | Zustand only; nanostores removed |
 
 ---
 
 ## What's next
 
-1. Optional: more workbench/tool_definitions/anthropic slices → Phase 3 fully done.
-2. Finish B18 Zustand stores (remaining list in prior pilot notes).
-3. User decision on schema rename plan before any SQL rename work.
-4. Phase 5/7 as needed.
+1. Push `master` and confirm CI Type check green.
+2. Phase 5 (docs/tooling modernization) / Phase 7 (feature inventory testing) as needed.
+3. Optional non-blocking extracts: workbench chat loop, anthropic stream translate.
 
 ---
 
 ## Open questions
 
-- Approve SQLite schema rename implementation per plan doc?
-- Continue remaining Zustand stores now?
-- Further workbench chat-loop split?
+- None blocking Phase 3/4.
+- Optional: further monolith slices for readability only.

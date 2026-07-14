@@ -1,11 +1,12 @@
-# Phase 4 — SQLite schema rename plan (design only)
+# Phase 4 — SQLite schema rename plan
 
-> **Status:** Design document only. **Do not implement** table/column renames
-> until the user explicitly signs off.
+> **Status:** **IMPLEMENTED** (2026-07-14). User approved hybrid strategy;
+> shipped on `master` via `schema_rename_migration.py` + snake_case DDL in
+> `memory_schema.py` + `_row_as_wire` (snake→camel) for HTTP/JSON.
 >
-> **Direction contemplated:** camelCase SQLite identifiers → snake_case, to
+> **Direction:** camelCase SQLite identifiers → snake_case, to
 > align the brain DB with Python naming conventions after Phase 2 callables /
-> INTERNAL TypedDict work.
+> INTERNAL TypedDict work. **Wire/API stays camelCase.**
 >
 > **Refs:** Phase 4 schema rename (design only); Ground Rule 5 (explicit
 > sign-off for schema renames); prior reverse migration in
