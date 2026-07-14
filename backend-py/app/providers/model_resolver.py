@@ -23,10 +23,10 @@ active provider's model on any miss.
 from __future__ import annotations
 import logging
 from app.services.alias_mapping_service import (
-    resolveAlias,
-    resolveAliasOrNone,
-    getReverseAlias as _getReverseAlias,
-    listAliasNames,
+    resolve_alias,
+    resolve_alias_or_none,
+    get_reverse_alias as _get_reverse_alias,
+    list_alias_names,
     BUILTIN_PUBLIC_ALIASES,
 )
 
@@ -83,7 +83,7 @@ def resolve(input: str | None, provider_hint: str | None = None, default_alias: 
     """
     normalized = _normalize(input) or _normalize(default_alias) or DEFAULT_ALIAS
     try:
-        result = resolveAlias(normalized, provider_hint=provider_hint)
+        result = resolve_alias(normalized, provider_hint=provider_hint)
         return {
             'alias': result.alias,
             'provider': result.provider,
@@ -111,7 +111,7 @@ def resolve_or_fallback(
     """
     originalInput = _normalize(input)
     normalized = originalInput or _normalize(default_alias) or DEFAULT_ALIAS
-    result = resolveAliasOrNone(normalized, provider_hint=provider_hint)
+    result = resolve_alias_or_none(normalized, provider_hint=provider_hint)
     if result is not None:
         return {
             'alias': result.alias,
@@ -125,12 +125,12 @@ def resolve_or_fallback(
 
 def get_alias_for_model(model_id: str) -> str | None:
     """Reverse lookup: given a raw model ID, find the alias that maps to it."""
-    return _getReverseAlias(model_id)
+    return _get_reverse_alias(model_id)
 
 
 def list_aliases() -> list[str]:
     """Return every alias the system knows about, deduplicated."""
-    return listAliasNames()
+    return list_alias_names()
 
 
 def get_default_alias() -> str:

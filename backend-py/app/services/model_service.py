@@ -223,9 +223,9 @@ async def _aggregateModels() -> list[dict[str, object]]:
         pass
     # Inject alias models so /v1/models exposes them alongside provider models.
     try:
-        from app.services.alias_mapping_service import getAliasModelsForV1Models
+        from app.services.alias_mapping_service import get_alias_models_for_v1_models
 
-        aliasModels = getAliasModelsForV1Models()
+        aliasModels = get_alias_models_for_v1_models()
         allModels.extend(aliasModels)
     except Exception:
         pass

@@ -22,7 +22,7 @@ Example::
        (alongside all provider models). See ``modelService._injectAliasModels()``.
 
     2. ``POST /v1/messages`` with ``model="claude-sonnet-4-6"`` is routed
-       to DeepSeek with ``model="deepseek-chat"`` via ``resolveAlias()``.
+       to DeepSeek with ``model="deepseek-chat"`` via ``resolve_alias()``.
 
     3. Response rewriting ensures the client sees the alias name,
        not the backend model ID.
@@ -74,7 +74,7 @@ def _normalize(value: object) -> str | None:
     return s or None
 
 
-def _hasCredentials(provider: dict[str, object]) -> bool:
+def _has_credentials(provider: dict[str, object]) -> bool:
     """Check if a provider has API credentials configured."""
     from app.providers.clients import getClient
 
@@ -84,12 +84,12 @@ def _hasCredentials(provider: dict[str, object]) -> bool:
     return client.resolveApiKey() is not None
 
 
-def _findUserAlias(inputAlias: str) -> AliasMapping | None:
+def _find_user_alias(input_alias: str) -> AliasMapping | None:
     """Look up a user-defined alias from ``config.json modelAliases``.
 
     Returns an ``AliasMapping`` if found, or ``None``.
     """
-    if not inputAlias:
+    if not input_alias:
         return None
     try:
         aliases = settings.config.get('modelAliases', [])
@@ -97,7 +97,7 @@ def _findUserAlias(inputAlias: str) -> AliasMapping | None:
             for entry in aliases:
                 if not isinstance(entry, dict):
                     continue
-                if entry.get('alias') == inputAlias:
+                if entry.get('alias') == input_alias:
                     return AliasMapping(
                         alias=entry.get('alias', ''),
                         target_model=entry.get('targetModel') or entry.get('target_model', ''),
@@ -109,18 +109,17 @@ def _findUserAlias(inputAlias: str) -> AliasMapping | None:
     return None
 
 
-def _resolveActiveProvider() -> dict[str, object] | None:
+def _resolve_active_provider() -> dict[str, object] | None:
     """Return the first available provider with credentials."""
     for p in providerResolver.list_available():
-        if _hasCredentials(p):
+        if _has_credentials(p):
             return p
     return None
 
     # ── Public API ──────────────────────────────────────────────────────────
 
-
-def resolveAlias(
-    inputAlias: str | None,
+def resolve_alias(
+    input_alias: str | None,
     provider_hint: str | None = None,
     default_alias: str | None = None,
 ) -> AliasResolutionResult:
@@ -138,9 +137,9 @@ def resolveAlias(
     4. Fallback to default alias or active provider
 
     Args:
-        inputAlias: The alias or model ID from the client request.
-        providerHint: Preferred provider name (used when multiple match).
-        defaultAlias: Fallback alias if ``inputAlias`` is None/empty.
+        input_alias: The alias or model ID from the client request.
+        provider_hint: Preferred provider name (used when multiple match).
+        default_alias: Fallback alias if ``input_alias`` is None/empty.
 
     Returns:
         ``AliasResolutionResult`` with the resolved provider, model, and
@@ -149,19 +148,19 @@ def resolveAlias(
     Raises:
         ValueError: If no provider can be resolved.
     """
-    normalized = _normalize(inputAlias) or _normalize(default_alias) or DEFAULT_ALIAS
+    normalized = _normalize(input_alias) or _normalize(default_alias) or DEFAULT_ALIAS
 
     # ── Step 1: User-defined alias ──────────────────────────────────────
     # The alias defines its OWN targetProvider + targetModel independently
     # of what the input string looks like. This is the core proxy-mapping
     # feature: "display claude-sonnet, route to deepseek-chat".
-    userAlias = _findUserAlias(normalized)
+    userAlias = _find_user_alias(normalized)
     if userAlias is not None and userAlias.target_model:
         routed = resolve_for_model(
             userAlias.target_model,
             hint=userAlias.target_provider or provider_hint,
         )
-        if routed is not None and _hasCredentials(routed):
+        if routed is not None and _has_credentials(routed):
             display = userAlias.display_alias or userAlias.alias
             return AliasResolutionResult(
                 alias=normalized,
@@ -177,7 +176,7 @@ def resolveAlias(
             # using official model names work even without a user-defined alias.
     if normalized in BUILTIN_PUBLIC_ALIASES:
         routed = resolve_for_model(normalized, hint=provider_hint)
-        if routed is not None and _hasCredentials(routed):
+        if routed is not None and _has_credentials(routed):
             return AliasResolutionResult(
                 alias=normalized,
                 provider=as_str(routed.get('name'), 'unknown'),
@@ -191,7 +190,7 @@ def resolveAlias(
             # If the input looks like a raw model ID (not an alias), try to route
             # it directly to a provider that supports it.
     routed = resolve_for_model(normalized, hint=provider_hint)
-    if routed is not None and _hasCredentials(routed):
+    if routed is not None and _has_credentials(routed):
         return AliasResolutionResult(
             alias=normalized,
             provider=as_str(routed.get('name'), 'unknown'),
@@ -202,8 +201,8 @@ def resolveAlias(
         )
 
         # ── Step 4: Fallback to active provider ─────────────────────────────
-    active = _resolveActiveProvider()
-    if active is not None and _hasCredentials(active):
+    active = _resolve_active_provider()
+    if active is not None and _has_credentials(active):
         model = active.get('defaultModel', normalized)
         provider_name = active.get('name', 'active')
         logger.warning(
@@ -227,35 +226,35 @@ def resolveAlias(
     )
 
 
-def resolveAliasOrNone(
-    inputAlias: str | None,
+def resolve_alias_or_none(
+    input_alias: str | None,
     provider_hint: str | None = None,
     default_alias: str | None = None,
 ) -> AliasResolutionResult | None:
-    """Like ``resolveAlias`` but returns ``None`` instead of raising.
+    """Like ``resolve_alias`` but returns ``None`` instead of raising.
 
     Safe for use in streaming endpoints or background tasks where
     a resolution failure should not propagate as an exception.
     """
     try:
-        return resolveAlias(inputAlias, provider_hint=provider_hint, default_alias=default_alias)
+        return resolve_alias(input_alias, provider_hint=provider_hint, default_alias=default_alias)
     except ValueError:
         return None
 
 
-def getReverseAlias(backendModelId: str) -> str | None:
+def get_reverse_alias(backend_model_id: str) -> str | None:
     """Reverse lookup: given a backend model ID, find the alias that maps to it.
 
     Used for response rewriting — when the upstream returns a model ID,
     the proxy should present the alias name to the client instead.
 
     Args:
-        backendModelId: The raw model ID returned by the upstream provider.
+        backend_model_id: The raw model ID returned by the upstream provider.
 
     Returns:
         The alias name if found, or ``None``.
     """
-    if not backendModelId:
+    if not backend_model_id:
         return None
     try:
         aliases = settings.config.get('modelAliases', [])
@@ -264,16 +263,16 @@ def getReverseAlias(backendModelId: str) -> str | None:
                 if not isinstance(entry, dict):
                     continue
                 target = entry.get('targetModel') or entry.get('target_model')
-                if target == backendModelId:
+                if target == backend_model_id:
                     return entry.get('alias')
     except Exception:
         pass
-    if backendModelId in BUILTIN_PUBLIC_ALIASES:
-        return backendModelId
+    if backend_model_id in BUILTIN_PUBLIC_ALIASES:
+        return backend_model_id
     return None
 
 
-def listAliasNames() -> list[str]:
+def list_alias_names() -> list[str]:
     """Return every alias name the system knows about, deduplicated."""
     out: set[str] = set()
     try:
@@ -288,7 +287,7 @@ def listAliasNames() -> list[str]:
     return sorted(out)
 
 
-def getAliasModelsForV1Models() -> list[dict[str, object]]:
+def get_alias_models_for_v1_models() -> list[dict[str, object]]:
     """Return alias entries formatted for the ``/v1/models`` endpoint.
 
     Each alias is exposed as a model entry so that clients see the alias

@@ -35,7 +35,7 @@ scale-up (`usage`).
 2. Optional cleanup: delete leftover `refactor/b21-app-file-renames` (local + origin) if still present — content already on master.
 3. **Phase 2 naming is largely closed.** Residual camelCase:
    - WIRE TypedDict keys (SQLite/JSON parity — Phase 4 schema) intentionally kept
-   - Optional: remaining private helpers elsewhere (e.g. `alias_mapping_service._hasCredentials`)
+   - Optional: remaining private helpers elsewhere (e.g. other residual camelCase helpers)
    - Curator method names if still camelCase
 4. Do **not** restart Phase 0 or re-merge closed historical branches.
 5. Do **not** rename SQLite wire TypedDict keys without Phase 4 schema sign-off.
