@@ -24,6 +24,8 @@ from pathlib import Path
 
 from app.lib.storage_key_migration import (
     BLOB_KEY_RENAMES,
+    _BUSY_TIMEOUT_MS,
+    _connect,
     is_already_migrated,
     migrate_storage_keys,
 )
@@ -106,3 +108,22 @@ def testRenameMapCoversExpectedKeys():
     assert set(BLOB_KEY_RENAMES) == {'core_memory', 'user_profile'}
     assert BLOB_KEY_RENAMES['core_memory'] == 'coreMemory'
     assert BLOB_KEY_RENAMES['user_profile'] == 'userProfile'
+
+
+def testConnectUsesBusyTimeoutAndWal(tmp_path: Path):
+    """Connections must match memory_store safety pragmas (Phase 4 B22 follow-up).
+
+    Bare sqlite3.connect without busy_timeout races with concurrent writers
+    (memory_store / daemons) and surfaces SQLITE_BUSY during startup migration.
+    """
+    db = tmp_path / 'brain.sqlite'
+    _seedDb(db, {'coreMemory': '"x"'})
+
+    conn = _connect(db)
+    try:
+        timeout = conn.execute('PRAGMA busy_timeout').fetchone()[0]
+        mode = conn.execute('PRAGMA journal_mode').fetchone()[0]
+        assert int(timeout) == _BUSY_TIMEOUT_MS == 10000
+        assert mode == 'wal'
+    finally:
+        conn.close()
