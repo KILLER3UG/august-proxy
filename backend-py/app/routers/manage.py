@@ -8,9 +8,9 @@ Replaces the legacy /ui/august/* action-dispatch pattern.
 from __future__ import annotations
 import json
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 from app.config import settings
 from app.atomic_write import write_json_atomic
+from app.models.camel_base import CamelModel
 from app.providers import resolver as providerResolver
 from app.services.memory_store import get_stats
 from app.services.workbench.workbench import listWorkbenchSessions
@@ -18,18 +18,18 @@ from app.services.workbench.workbench import listWorkbenchSessions
 router = APIRouter(prefix='/api/manage')
 
 
-class AliasCreate(BaseModel):
+class AliasCreate(CamelModel):
     alias: str
     target_model: str
     target_provider: str = ''
 
 
-class AliasUpdate(BaseModel):
+class AliasUpdate(CamelModel):
     target_model: str | None = None
     target_provider: str | None = None
 
 
-class SettingsUpdate(BaseModel):
+class SettingsUpdate(CamelModel):
     updates: dict[str, object]
 
 
