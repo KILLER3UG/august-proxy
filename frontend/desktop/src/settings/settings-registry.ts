@@ -2,7 +2,7 @@
 /* Drives the left rail, global search, route resolution, and the
  * parallel chat-side workspace panel.
  *
- * 5 categories, 16 sections, balanced 3–5 items per category.
+ * 5 categories, 18 sections, balanced 3–5+ items per category.
  * Sections are tagged `tier: 'basic' | 'advanced'` so the rail can show
  * a short beginner list by default and reveal advanced surfaces behind
  * a "Show advanced" toggle (persisted to localStorage by
@@ -114,7 +114,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
 ] as const;
 
 /**
- * The 16 sections of the Settings left rail.
+ * The 18 sections of the Settings left rail.
  *
  * Every section's `id` is immutable for legacy-alias support. To rename
  * a section, change the `label` and re-export the old label as an
