@@ -25,7 +25,9 @@ _AGENTCreatedTag = 'agent'
 
 
 @dataclass
-class UsageRecord:
+class SkillUsageRecord:
+    """Per-skill telemetry sidecar row (not the HTTP ``UsageRecord`` body)."""
+
     name: str
     useCount: int = 0
     viewCount: int = 0
@@ -50,7 +52,7 @@ class SkillCurator:
             except Exception:
                 dataDir = Path.cwd()
         self._usagePath = Path(dataDir) / 'skills' / _USAGEFilename
-        self._usage: dict[str, UsageRecord] = {}
+        self._usage: dict[str, SkillUsageRecord] = {}
         self._load()
 
     def _load(self) -> None:
@@ -58,7 +60,7 @@ class SkillCurator:
             if self._usagePath.exists():
                 raw = json.loads(self._usagePath.read_text('utf-8'))
                 if isinstance(raw, dict):
-                    self._usage = {k: UsageRecord(**v) for k, v in raw.items()}
+                    self._usage = {k: SkillUsageRecord(**v) for k, v in raw.items()}
         except Exception as exc:
             log.warning('curator: could not load usage: %s', exc)
 
@@ -104,12 +106,12 @@ class SkillCurator:
         rec.lastPatchedAt = time.time()
         self._save()
 
-    def _ensure(self, name: str) -> UsageRecord:
+    def _ensure(self, name: str) -> SkillUsageRecord:
         if name not in self._usage:
-            self._usage[name] = UsageRecord(name=name)
+            self._usage[name] = SkillUsageRecord(name=name)
         return self._usage[name]
 
-    def get_record(self, name: str) -> Optional[UsageRecord]:
+    def get_record(self, name: str) -> Optional[SkillUsageRecord]:
         return self._usage.get(name)
 
     def list_usage(self) -> list[dict[str, object]]:

@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from app.services import skill_service
-from app.services.skills.curator import SkillCurator, UsageRecord, make_background_curator
+from app.services.skills.curator import SkillCurator, make_background_curator
 
 
 @pytest.fixture
