@@ -292,13 +292,12 @@ Still required before Phase 8 sign-off.
 
 | Router | Models | Status |
 |---|---|---|
-| `models.py` | `ModelInfo`, `ModelList` | ✅ Pilot on master |
-| `usage.py` | `UsageRecord` | ✅ `40606d5` on master |
-| `git.py` | `GitCommand` | ✅ `00904fe` on master |
-| `memory.py` | 5 bodies (`FactSave`, `ProposalCreate`, …) | ✅ `5cc6255` on master |
-| Remaining routers with `BaseModel` bodies | ~31 classes | ❌ Next work |
+| `models` / `usage` / `git` / `memory` | pilot + multi-field | ✅ on master |
+| `sessions` / `mcp` / `cron` | simple bodies | ✅ on master |
+| `terminal_routes` / `subagent` / `config` | multi-field | ✅ on master |
+| Remaining (`agents`, `august`, `desktop_automation`, `manage`, `skills`, legacy `terminal`) | ~14 classes | ❌ Next work |
 
-**Suggested next:** simple single-word-field routers (`sessions` / `mcp` / `cron`) for mechanical confidence, or `terminal` / `subagent` / `config` for multi-field value.
+**Suggested next:** `agents` / `skills` / `manage` (multi-model routers), or legacy `terminal.py` (2 simple bodies).
 
 ---
 
