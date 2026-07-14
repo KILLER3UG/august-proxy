@@ -167,23 +167,26 @@ Phase 3 “done” = major targets modularized enough for safer change, **not** 
 
 | Pair | Camel | Snake | Camel rows missing on snake |
 |---|---|---|---|
-| `memoryStore` / `memory_store` | 2 | 2 | **0** (2 conflicts kept snake — newer `updated_at`) |
-| `usageEvents` / `usage_events` | 4 | 8 | **0** (4 distinct camel ids + 4 snake-only) |
+| `memoryStore` / `memory_store` | 2 | 2 | **0** (blobs content-unioned — see below) |
+| `usageEvents` / `usage_events` | 4 | 8+ | **0** (camel ids present) |
 | `configAudit` / `config_audit` | 2 | 2 | **0** |
 | `autoMemories` / `auto_memories` | 100 | 101 | **0** by **key** (was 100 vs 6) |
 | `examQuestions` / `exam_questions` | 29 | 29 | **0** |
 | `examAttempts` / `exam_attempts` | 4 | 4 | **0** |
 
-**Conflicts (snake kept, not overwritten):**
+**Conflicts — content-diffed (not timestamp-only):**
 
-- `memory_store` keys `agent_jobs`, `self_evolution_log` — same key, different values; snake newer (pytest/runtime writes)
-- `auto_memories` id 5/6 id-collision different keys — camel logical keys re-inserted under new ids
+| Key | Finding | Resolution |
+|---|---|---|
+| `agent_jobs` | Disjoint job ids (camel 6 ∩ snake 12 = ∅) | **Union by id** → 18; snake ⊇ camel |
+| `self_evolution_log` | Accumulating list; camel timestamp missing from snake | **Union by timestamp** → 3; snake ⊇ camel |
+| `auto_memories` id 5/6 | Id collision, different keys | Re-insert camel keys under new ids |
 
-**Still open for pass 2 (user go):** drop all 10 camel content tables after second confirmation; then `_needs_migration` should go false when only snake remains.
+**FTS5:** `memory_store` 2/2, `auto_memories` 101/101, 0 missing by rowid — `_verify_fts_sync.py` PASS.
 
-**Side fix (required for safe pytest):** `tests/test_memory.py` autouse fixture was **wiping live** `memory_store` / `sessions` / `usage_events` / etc. after every test. Fixed to use `isolatedData` temp brain. **Residual risk:** several `v2*` / `v3*` / `v11*` tests still call `memory_store.init()` without isolation and can mutate live DB — do not treat full suite as live-DB-safe until those are isolated too.
+**Still open for pass 2 (user go):** drop all 10 camel content tables + re-fingerprint + pytest (safe under autouse isolation).
 
-**Phase 4 schema status:** **Pass 1 closed** (app-visible snake data complete). **Not fully closed** until camel tables dropped on pass 2.
+**Phase 4 schema status:** **Pass 1 closed** (coverage + content union + FTS + isolation proof). **Not fully closed** until camel drop pass 2.
 
 **Wire hybrid:** `_row_as_wire` on snake reads unchanged.
 
@@ -196,7 +199,7 @@ Plan doc: [`docs/PHASE_PERF_AND_FLEXIBILITY_PLAN.md`](./PHASE_PERF_AND_FLEXIBILI
 | Decision | Status |
 |---|---|
 | Full Phase P (P0–P5) as committed initiative | **Not approved** |
-| **P0 baselines only** | **Approved** |
+| **P0 baselines only** | Approved in principle; **blocked until pass 2** |
 | P1–P5 optimization/extension work | **Gated** on P0 numbers + explicit go |
 | Baseline surfaces | Desktop **and** gateway/multi-agent (measure both) |
 | Parallel tool execution | **Deferred** to post-safety Wave 2 if ever approved |
