@@ -195,17 +195,28 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   /* ── Tools & Skills ──────────────────────────────────────────── */
   {
     id: 'tools-connections',
-    label: 'MCP & Connections',
-    description: 'MCP servers, connected accounts, and external service connections.',
+    label: 'Integrations',
+    description: 'Add Gmail, Calendar, Drive, GitHub, Slack, and MCP extensions for August.',
     icon: Plug,
     category: 'tools',
     tier: 'basic',
-    // Note: 'skill' is owned by the skills section below. 'connection'
-    // is owned here; tools-connections also owns the legacy alias
-    // 'connections' (singular 'connection' is a keyword, plural is the
-    // legacy alias).
-    keywords: ['mcp', 'command', 'connection', 'service', 'oauth', 'account', 'google', 'github', 'slack'],
-    legacyAliases: ['mcp', 'commands', 'connections', 'services'],
+    keywords: [
+      'mcp',
+      'integration',
+      'connection',
+      'service',
+      'oauth',
+      'account',
+      'google',
+      'gmail',
+      'calendar',
+      'drive',
+      'github',
+      'slack',
+      'filesystem',
+      'directory',
+    ],
+    legacyAliases: ['mcp', 'commands', 'connections', 'services', 'tools-connections'],
   },
   {
     id: 'skills',

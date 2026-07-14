@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { api } from '@/api/client';
+import { Markdown } from '@/sections/chat/ChatMarkdown';
 
 /* ── Types ──────────────────────────────────────────────────────────── */
 
@@ -552,11 +553,15 @@ export function SkillsSection() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5">
-            <h3 className="text-sm font-semibold mb-3">Instructions (SKILL.md body)</h3>
-            <pre className="whitespace-pre-wrap text-sm text-muted-foreground font-mono leading-relaxed max-h-[28rem] overflow-auto">
-              {selected.instructions}
-            </pre>
+          <div className="rounded-xl border border-border/60 bg-card p-5">
+            <h3 className="text-sm font-semibold mb-3 text-foreground">Instructions (SKILL.md)</h3>
+            <div className="max-h-[28rem] overflow-auto rounded-lg border border-border/40 bg-muted/20 px-4 py-3">
+              {selected.instructions?.trim() ? (
+                <Markdown content={selected.instructions} />
+              ) : (
+                <p className="text-sm text-muted-foreground">No instructions body.</p>
+              )}
+            </div>
           </div>
         </div>
       )}

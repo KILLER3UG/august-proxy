@@ -26,7 +26,7 @@ import { WorkspaceModelsSection } from '@/sections/workspace/WorkspaceModelsSect
 import { WorkspaceGeneralSection } from '@/sections/workspace/WorkspaceGeneralSection';
 import { BrainSettings } from '@/sections/overview/BrainSettings';
 import { SystemHealthSection } from './SystemHealthSection';
-import { ToolsConnectionsSection } from './ToolsConnectionsSection';
+import { IntegrationsSection } from './IntegrationsSection';
 import { ConversationsHistorySection } from './ConversationsHistorySection';
 import { AgentsAutomationSection } from './AgentsAutomationSection';
 import { DeveloperConsoleSection } from './DeveloperConsoleSection';
@@ -144,7 +144,7 @@ function ModelsWrapper() { return <WorkspaceModelsSection />; }
 function BrainWrapper() { return <BrainSettings />; }
 function GeneralWrapper() { return <WorkspaceGeneralSection />; }
 function SystemHealthWrapper() { return <SystemHealthSection />; }
-function ToolsConnectionsWrapper() { return <ToolsConnectionsSection />; }
+function ToolsConnectionsWrapper() { return <IntegrationsSection />; }
 function ConversationsHistoryWrapper() { return <ConversationsHistorySection />; }
 function AgentsAutomationWrapper() { return <AgentsAutomationSection />; }
 function DeveloperConsoleWrapper() { return <DeveloperConsoleSection />; }

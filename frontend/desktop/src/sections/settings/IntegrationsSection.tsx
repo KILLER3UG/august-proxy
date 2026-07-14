@@ -1,0 +1,302 @@
+/* ── Integrations — installed cards + directory “Add” modal ────────── */
+
+import { useMemo, useState } from 'react';
+import {
+  Search,
+  Plug,
+  Network,
+  CircleSlash,
+  Plus,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { IntegrationCard } from './IntegrationCard';
+import { IntegrationDetail } from './IntegrationDetail';
+import { IntegrationDirectoryModal } from './IntegrationDirectoryModal';
+import { useIntegrations, type IntegrationItem } from './useIntegrations';
+import { cn } from '@/lib/utils';
+
+type Mode = 'catalog' | 'detail';
+
+/** Shared theme-aware field styles (search, selects, connect tokens). */
+export const INTEGRATION_FIELD_CLASS =
+  'rounded-lg border border-border/60 bg-muted/40 text-foreground placeholder:text-muted-foreground ' +
+  'focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30';
+
+export function IntegrationsSection() {
+  const [mode, setMode] = useState<Mode>('catalog');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [q, setQ] = useState('');
+  const [dirOpen, setDirOpen] = useState(false);
+  const {
+    items,
+    accounts,
+    mcpServers,
+    isLoading,
+    installedCatalogIds,
+    addFromCatalog,
+    removeInstalled,
+  } = useIntegrations();
+
+  const selected = useMemo(
+    () => items.find((i) => i.id === selectedId) ?? null,
+    [items, selectedId],
+  );
+
+  const qLower = q.trim().toLowerCase();
+  const filteredAccounts = useMemo(
+    () =>
+      !qLower
+        ? accounts
+        : accounts.filter(
+            (a) =>
+              a.name.toLowerCase().includes(qLower) ||
+              a.tagline.toLowerCase().includes(qLower),
+          ),
+    [accounts, qLower],
+  );
+  const filteredMcp = useMemo(
+    () =>
+      !qLower
+        ? mcpServers
+        : mcpServers.filter(
+            (s) =>
+              s.name.toLowerCase().includes(qLower) ||
+              s.tagline.toLowerCase().includes(qLower),
+          ),
+    [mcpServers, qLower],
+  );
+
+  if (mode === 'detail' && selected) {
+    return (
+      <IntegrationDetail
+        item={selected}
+        onBack={() => setMode('catalog')}
+        onRemove={async () => {
+          await removeInstalled.mutateAsync(selected);
+          setMode('catalog');
+          setSelectedId(null);
+          toast.success('Removed from integrations');
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="px-8 py-6 space-y-6 h-full flex flex-col overflow-hidden">
+      <Header
+        connectedCount={accounts.filter((a) => a.connected).length}
+        mcpRunningCount={mcpServers.filter((s) => s.connected).length}
+        onAdd={() => setDirOpen(true)}
+      />
+
+      <div className="min-h-0 flex-1 overflow-auto space-y-8">
+        <SearchAndFilters q={q} onQuery={setQ} />
+
+        <Section
+          title="Connected services"
+          subtitle="Gmail, Calendar, Drive, GitHub, and Slack — add only the ones you need from the directory."
+          icon={<Network className="size-4 text-muted-foreground" />}
+          count={`${accounts.filter((a) => a.connected).length}/${accounts.length}`}
+        >
+          {filteredAccounts.length === 0 ? (
+            <Empty
+              message={
+                q
+                  ? 'No services match your search.'
+                  : 'Nothing added yet. Click + Add to enable Gmail, Calendar, Drive, and more.'
+              }
+              actionLabel="Browse directory"
+              onAction={() => setDirOpen(true)}
+            />
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {filteredAccounts.map((a) => (
+                <IntegrationCard
+                  key={a.id}
+                  item={a}
+                  onOpen={(it) => {
+                    setSelectedId(it.id);
+                    setMode('detail');
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </Section>
+
+        <Section
+          title="MCP extensions"
+          subtitle="Local MCP servers that extend August with tools (filesystem, memory, fetch, …)."
+          icon={<Plug className="size-4 text-muted-foreground" />}
+          count={`${mcpServers.filter((s) => s.connected).length}/${mcpServers.length} running`}
+        >
+          {isLoading ? (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-[88px] animate-pulse rounded-xl border border-border/60 bg-card"
+                />
+              ))}
+            </div>
+          ) : filteredMcp.length === 0 ? (
+            <Empty
+              message={
+                q
+                  ? 'No MCP servers match your search.'
+                  : 'No MCP extensions installed. Add Filesystem or others from the directory.'
+              }
+              actionLabel="Add extension"
+              onAction={() => setDirOpen(true)}
+            />
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {filteredMcp.map((s) => (
+                <IntegrationCard
+                  key={s.id}
+                  item={s}
+                  onOpen={(it) => {
+                    setSelectedId(it.id);
+                    setMode('detail');
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </Section>
+      </div>
+
+      <IntegrationDirectoryModal
+        open={dirOpen}
+        onClose={() => setDirOpen(false)}
+        installedIds={installedCatalogIds}
+        busyId={addFromCatalog.isPending ? addFromCatalog.variables?.id ?? null : null}
+        onAdd={async (entry) => {
+          await addFromCatalog.mutateAsync(entry);
+          toast.success(
+            entry.kind === 'mcp-extension'
+              ? `Installed ${entry.name}`
+              : `Added ${entry.name}`,
+          );
+        }}
+      />
+    </div>
+  );
+}
+
+/* ── Sub-components ─────────────────────────────────────────────────── */
+
+function Header({
+  connectedCount,
+  mcpRunningCount,
+  onAdd,
+}: {
+  connectedCount: number;
+  mcpRunningCount: number;
+  onAdd: () => void;
+}) {
+  return (
+    <header className="flex items-end justify-between gap-4">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Integrations</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Services and MCP extensions for August. Add only what you need — email and calendar are separate.
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <Badge variant="outline" className="font-mono text-xs">
+          {connectedCount} connected
+        </Badge>
+        <Badge variant="outline" className="font-mono text-xs">
+          {mcpRunningCount} MCP running
+        </Badge>
+        <Button size="sm" onClick={onAdd} data-testid="integrations-add">
+          <Plus className="size-3.5" />
+          Add
+        </Button>
+      </div>
+    </header>
+  );
+}
+
+function SearchAndFilters({
+  q,
+  onQuery,
+}: {
+  q: string;
+  onQuery: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="relative flex-1 min-w-[280px] max-w-md">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="text"
+          value={q}
+          onChange={(e) => onQuery(e.target.value)}
+          placeholder="Search your integrations…"
+          className={cn('w-full py-2 pl-9 pr-3 text-sm', INTEGRATION_FIELD_CLASS)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function Section({
+  title,
+  subtitle,
+  icon,
+  count,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  icon?: React.ReactNode;
+  count?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-end justify-between gap-3">
+        <div className="flex items-center gap-2">
+          {icon}
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          {count && (
+            <span className="rounded-full border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+              {count}
+            </span>
+          )}
+        </div>
+      </div>
+      {subtitle && <p className="text-xs text-muted-foreground -mt-1">{subtitle}</p>}
+      {children}
+    </section>
+  );
+}
+
+function Empty({
+  message,
+  actionLabel,
+  onAction,
+}: {
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
+      <CircleSlash className="size-4 shrink-0" />
+      <span className="flex-1">{message}</span>
+      {actionLabel && onAction && (
+        <Button variant="outline" size="sm" onClick={onAction}>
+          <Plus className="size-3.5" />
+          {actionLabel}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+export type { IntegrationItem };

@@ -62,7 +62,7 @@ def _saveConfig() -> None:
     for sid, srv in _servers.items():
         if not isinstance(srv, dict):
             continue
-        servers_out[sid] = {
+        row: dict[str, object] = {
             'id': sid,
             'name': srv.get('name', ''),
             'command': srv.get('command', ''),
@@ -72,6 +72,9 @@ def _saveConfig() -> None:
             'transport': as_str(srv.get('transport'), 'stdio'),
             'url': as_str(srv.get('url'), ''),
         }
+        if srv.get('catalogId'):
+            row['catalogId'] = srv.get('catalogId')
+        servers_out[sid] = row
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({'servers': servers_out}, indent=2), encoding='utf-8')
 
@@ -113,6 +116,21 @@ def registerServer(
         except OSError:
             pass
     return server
+
+
+def set_server_meta(server_id: str, **meta: object) -> dict[str, object] | None:
+    """Attach metadata (e.g. catalogId) and persist."""
+    srv = _servers.get(server_id)
+    if not isinstance(srv, dict):
+        return None
+    for k, v in meta.items():
+        if v is not None:
+            srv[k] = v
+    try:
+        _saveConfig()
+    except OSError:
+        pass
+    return srv
 
 
 def unregisterServer(serverId: str) -> bool:
@@ -637,7 +655,7 @@ async def load_and_start_from_config() -> dict[str, object]:
             continue
         if not command and transport == 'stdio':
             continue
-        registerServer(
+        reg = registerServer(
             name,
             command,
             args=args,
@@ -648,6 +666,8 @@ async def load_and_start_from_config() -> dict[str, object]:
             server_id=str(sid),
             persist=False,
         )
+        if entry.get('catalogId'):
+            reg['catalogId'] = entry.get('catalogId')
         loaded += 1
         if enabled:
             try:

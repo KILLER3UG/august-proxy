@@ -23,12 +23,44 @@ class MCPServerCreate(CamelModel):
     env: dict[str, str] = {}
     url: str = ''
     transport: str = 'stdio'
+    catalog_id: str = ''
+    enabled: bool = True
 
 
 @router.get('/servers')
 async def listServers():
     """List all registered MCP servers."""
     return {'servers': mcp_client.listRegisteredServers()}
+
+
+@router.get('/directory')
+async def mcpDirectory():
+    """Static MCP install recipes for the Integrations add modal (frontend also ships a catalog)."""
+    return {
+        'entries': [
+            {
+                'id': 'mcp-filesystem',
+                'name': 'Filesystem',
+                'packageName': '@modelcontextprotocol/server-filesystem',
+                'packageVersion': '2026.7.4',
+            },
+            {
+                'id': 'mcp-memory',
+                'name': 'Knowledge Graph Memory',
+                'packageName': '@modelcontextprotocol/server-memory',
+            },
+            {
+                'id': 'mcp-fetch',
+                'name': 'Fetch',
+                'packageName': '@modelcontextprotocol/server-fetch',
+            },
+            {
+                'id': 'mcp-github',
+                'name': 'GitHub MCP',
+                'packageName': '@modelcontextprotocol/server-github',
+            },
+        ]
+    }
 
 
 @router.post('/servers')
@@ -42,7 +74,14 @@ async def createServer(body: MCPServerCreate):
         body.command or body.url or 'true',
         args=list(body.args) if body.args else None,
         env=dict(body.env) if body.env else None,
+        enabled=body.enabled,
+        transport=body.transport or 'stdio',
+        url=body.url or '',
+        persist=True,
     )
+    if body.catalog_id:
+        mcp_client.set_server_meta(str(server.get('id')), catalogId=body.catalog_id)
+        server['catalogId'] = body.catalog_id
     if body.url:
         server['url'] = body.url
     if body.transport:
