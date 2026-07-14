@@ -224,8 +224,9 @@ and executes managed proxy tools.
 ## Memory & learning subsystem
 
 [`services/memory/`](../backend-py/app/services/memory/) is a layered memory
-system backed by `data/august_brain.sqlite` (via
-[`services/memory_store.py`](../backend-py/app/services/memory_store.py)):
+system backed by `data/august_brain.sqlite` (via the
+[`services/memory_store/`](../backend-py/app/services/memory_store/) package
+facade and [`memory_conn.py`](../backend-py/app/services/memory_conn.py)):
 
 | Module | Role |
 |--------|------|
@@ -367,13 +368,15 @@ that without a safety review.
 
 ### SQLite — single-writer async queue
 
-[`services/memory_store.py`](../backend-py/app/services/memory_store.py) owns the
-canonical connection (`_conn()`, line 43). Each connection sets
-`PRAGMA journal_mode=WAL`, `PRAGMA busy_timeout=10000`, and
-`PRAGMA foreign_keys=ON` (lines 50–52). WAL allows concurrent readers alongside
-a single writer and `busy_timeout` caps SQLite-level waits. About 33 modules
-persist via thin `_conn()` wrappers (`blackboard_service`, `heuristics_service`,
-`auto_memory`, etc.), so they inherit WAL + `busy_timeout` automatically.
+[`services/memory_conn.py`](../backend-py/app/services/memory_conn.py) owns the
+canonical connection (`conn()` / re-exported as `memory_store._conn`). Each
+connection applies `PRAGMA journal_mode=WAL`, `PRAGMA busy_timeout=10000`, and
+`PRAGMA foreign_keys=ON` via `apply_conn_pragmas`. WAL allows concurrent readers
+alongside a single writer and `busy_timeout` caps SQLite-level waits. About 33
+modules persist via thin `_conn()` wrappers (`blackboard_service`,
+`heuristics_service`, `auto_memory`, etc.), so they inherit WAL + `busy_timeout`
+automatically. CRUD lives under `services/memory_store/` (kv, messages,
+sessions, brain, rest, wire).
 
 [`services/db_writer.py`](../backend-py/app/services/db_writer.py) is a
 **separate** async write queue with **one worker**. Measured behaviour (P0

@@ -34,10 +34,12 @@ backend-py/
 │   ├── providers/           # Built-in provider defs, clients, resolvers
 │   ├── routers/             # HTTP routes (/api/* and /v1/*)
 │   ├── services/            # workbench, gateway, memory, skills, tools, browser
+│   │   ├── memory_store/    # brain SQLite domain package (kv, messages, …)
+│   │   └── memory_conn.py   # thread-local conn + PRAGMA defaults
 │   └── lib/                 # paths, secrets, retry, tokens, health, identity
-├── tests/                   # pytest suite
-├── scripts/                 # gen_providers, gen_phase8, migrate_guidelines_to_skills
-└── pyproject.toml
+├── tests/                   # pytest suite (isolatedData autouse)
+├── scripts/                 # gen_providers, brain DB verification, migrations
+└── pyproject.toml           # ruff + pytest config; requires-python >=3.12
 ```
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for how the pieces interact.
@@ -46,20 +48,26 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for how the pieces interact.
 
 ## Dev environment setup
 
-Requires **Python 3.13+**.
+Requires **Python 3.12+** (matches `backend-py/pyproject.toml` `requires-python`
+and CI `type-check.yml`). Prefer `backend-py/.venv` (3.12) over system 3.11.
 
 ```bash
 cd backend-py
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
+# or: uv sync --group dev
 
 # Optional extras
 pip install -e ".[ml]"           # sentence-transformers + numpy for embeddings
 python -m playwright install chromium   # browser automation
+
+# Optional repo-root git hooks (ruff on backend-py)
+pre-commit install
 ```
 
-The dev extra installs `pytest`, `pytest-asyncio`, `httpx`, and `watchfiles`.
+The dev extra installs `pytest`, `pytest-asyncio`, `httpx`, `watchfiles`,
+`mypy`, `ruff`, and `pre-commit`.
 
 ---
 

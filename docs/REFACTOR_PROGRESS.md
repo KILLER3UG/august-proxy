@@ -9,17 +9,18 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 — **Phase 5 residual started** (B26 closed; SkillUsageRecord rename)
-**Current branch state:** feature `refactor/phase5-b26-usage-record` (merge to `master` after CI). Verify with `git rev-parse HEAD`.
+**Last updated:** 2026-07-14 — **Phase 4 re-verified 100%** · **Phase 5 in progress** (docs/tooling audit)
+**Current branch state:** `master` (merged phase5 residual + Phase P follow-ups) · active work on `refactor/phase5-docs-tooling`. Verify with `git rev-parse HEAD`.
 **Verification baseline:**
-P0 + P1 cache tests green · schema closed · isolation autouse · db_writer FIFO · B26 dead path removed
+Phase 4 pack re-run green · Phase P exit gate · isolation autouse · B26 closed
 **CI note:** Prefer `backend-py/.venv` (3.12). Isolation is **autouse** — do not remove.
 
 ### Phase 0 — SIGNED OFF (2026-07-13)
 ### Phase 2 — SIGNED OFF (2026-07-14) — includes B1a + B16 (see residual ledger)
 ### Phase 3 — **DONE against modularization exit criteria** (not “all large files gone”)
-### Phase 4 — **DONE** (all **six** indexes present + EXPLAIN-used; busy_timeout; Zustand; schema closed)
-### Phase P — **DONE** (P0 baselines · P1 hot-path · P2 pagination · P3 UI · P4 checklists · P5 chat_stages)
+### Phase 4 — **100% vs exit checklist** (re-verified 2026-07-14 — see evidence pack below)
+### Phase P — **DONE** (P0–P5 + exit gate)
+### Phase 5 — **IN PROGRESS** (dependency/tooling/docs)
 
 ---
 
@@ -42,12 +43,12 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 
 ## Where to pick up (next session)
 
-1. Phase P is **closed** — only re-open for measured regressions or new budgets.
-2. **B26 closed** (dead `QueueFull` path removed). **UsageRecord collision closed** (`SkillUsageRecord` in curator).
-3. **Contention gate** still applies before *raising* daemon/subagent caps.
-4. Do **not** remove `isolatedData` autouse without safety review.
-5. **Phase 5** next: dependency audit notes, expand ruff gradually, doc drift (handoff vs tracker), optional B12 `.bak` delete.
-6. **Optional Phase 3 polish** (workbench chat loop / anthropic stream translate / stream_state) — needs explicit go-ahead.
+1. Phase 4 is **100%** against its exit checklist (re-verified — evidence pack below).
+2. Phase P is **closed** — only re-open for measured regressions or new budgets.
+3. **Phase 5 in progress** — dependency audit done; remaining: optional ruff expansion PR, B12 `.bak` delete (user go), Phase 7 later.
+4. **Contention gate** still applies before *raising* daemon/subagent caps.
+5. Do **not** remove `isolatedData` autouse without safety review.
+6. **Optional Phase 3 polish** only with explicit go-ahead.
 7. **Phase 7** feature-level testing still open on the long roadmap.
 
 ---
@@ -376,6 +377,27 @@ Phase 3 “done” = major targets modularized enough for safer change, **not** 
 | storage_key_migration busy_timeout + WAL | ✅ | |
 | Schema rename | ✅ hybrid (see below) | User-approved; shipped |
 | B18 Zustand | ✅ | Zero `nanostores` in frontend |
+| Raw sqlite3 + db_writer (no ORM) | ✅ | No SQLAlchemy; `memory_conn` + FIFO queue |
+
+### Phase 4 — independent re-verification (2026-07-14, post-merge)
+
+**Verdict: 100% of Phase 4 exit checklist** (indexes + busy_timeout/WAL + schema snake-only + Zustand + no ORM).  
+Not the same as “100% of entire multi-phase handoff” (B16 residual params, optional large files, Phase 5–8 remain).
+
+| Check | Command / method | Result |
+|---|---|---|
+| Six indexes present + EXPLAIN-used | `python backend-py/scripts/_check_phase4_indexes.py` | **ALL_SIX_PRESENT** |
+| Indexes in DDL | `memory_schema.py` CREATE INDEX IF NOT EXISTS | All six present |
+| Live tables snake-only | `sqlite_master` on `data/august_brain.sqlite` | **CAMEL_OR_MIXED: NONE** (28 tables) |
+| Live columns snake-only | `_spotcheck_schema.py` | camel leftovers **NONE**; dual pairs **0/10** |
+| Migration idle | `_spotcheck_schema.py` migrate section | `needs_migration before/after: False`; change count 0 |
+| Wire hybrid | `memory_store/wire.py` `_row_as_wire` + `snakeToCamel` | Present |
+| busy_timeout + WAL (brain) | `memory_conn.apply_conn_pragmas` | WAL + busy_timeout=10000 + FK ON; sync FULL default |
+| busy_timeout + WAL (storage keys) | `lib/storage_key_migration.py` | WAL + busy_timeout set |
+| Durable defaults test | `pytest tests/test_sqlite_pragma_defaults.py` | Passed |
+| nanostores | rg frontend | **0 hits** |
+| Zustand | `frontend/desktop` imports + `package.json` | 12+ stores; `"zustand": "^5.0.14"` |
+| No ORM | `pyproject.toml` comment + no sqlalchemy dep | Confirmed |
 
 ### What “schema hybrid” was *intended* to mean
 
@@ -470,7 +492,7 @@ If P0 shows DB is not the bottleneck, P2 may never be worth opening.
 |---|---|
 | Phase 0/2 signed off | yes (B1a + B16 function APIs included) |
 | Phase 3 modularization exit criteria | met; residual large files optional |
-| Phase 4 modernization exit criteria | **met** including schema rename closed on live DB |
+| Phase 4 modernization exit criteria | **100%** (re-verified evidence pack) |
 | “100% of entire handoff checklist” | **false** for residual naming params / optional large files |
 | Schema rename | **CLOSED** (pass 1 + pass 2) |
 | Phase P | **COMPLETE** (P0–P5 streams) |
@@ -482,33 +504,58 @@ If P0 shows DB is not the bottleneck, P2 may never be worth opening.
 
 ## What's next
 
-1. ~~P0 / Phase P~~ — **COMPLETE** (see section below).
-2. Finish Phase 5: doc/tooling polish, residual open bugs (B12 optional, B20 Dockerfile).
-3. Optional Phase 3 large-file slices only with explicit go-ahead.
-4. Phase 7 feature inventory testing when ready for overall refactor sign-off.
+1. ~~Phase 4~~ — **100% exit checklist** (re-verified).
+2. ~~P0 / Phase P~~ — **COMPLETE**.
+3. **Finish Phase 5:** optional ruff expansion PR; optional B12 delete; keep docs in sync as structure moves.
+4. Optional Phase 3 large-file slices only with explicit go-ahead.
+5. Phase 7 feature inventory testing when ready for overall refactor sign-off.
 
 ---
 
 ## Open questions
 
-- Approve optional Phase 3 chat-loop / stream-translate extracts?
 - Expand ruff select rules beyond E4/E7/E9/F in a dedicated PR?
-- Delete optional `data/*.bak` (B12)?
+- Delete optional `data/*.bak` (B12)? (`august_brain.sqlite.bak`, `providers.json.bak`)
+- Approve further optional Phase 3 polish?
 
 
 ---
 
-## Phase 5 residual (2026-07-14 — in progress)
+## Phase 5 — Dependency, Tooling & Documentation (2026-07-14 — in progress)
+
+### Dependency audit (verified)
+
+| Surface | Status | Notes |
+|---|---|---|
+| `requires-python` | ✅ `>=3.12` | Matches Dockerfile `python:3.12-slim` and CI 3.12 |
+| `[project.optional-dependencies].dev` vs `[dependency-groups].dev` | ✅ **in sync** | Same 9 packages (pytest, mypy, ruff, pre-commit, …) |
+| Runtime deps | ✅ lean | fastapi, uvicorn, httpx, pydantic, playwright, ddgs, … — no ORM |
+| Frontend store lib | ✅ Zustand only | `zustand@^5.0.14`; nanostores absent from deps + source |
+| Optional extras | ✅ | `ml`, `desktop`, `pty` documented in pyproject |
+
+### Tooling audit (verified)
+
+| Tool | Status | Notes |
+|---|---|---|
+| Ruff | ✅ configured | `[tool.ruff]` in pyproject; select E4/E7/E9/F; format not forced yet |
+| Pre-commit | ✅ present | `.pre-commit-config.yaml` → ruff on `backend-py/` |
+| mypy | ✅ CI | `type-check.yml` |
+| pytest | ✅ | `isolatedData` autouse; Phase P exit gate present |
+| Frontend eslint/tsc | ✅ CI | same workflow |
+| Ruff rule expansion | Open (optional) | Intentionally narrow; expand in dedicated PR only |
+
+### Docs / deploy residual
 
 | Item | Status | Evidence |
 |---|---|---|
-| B26 dead `QueueFull` path | ✅ CLOSED | `db_writer.enqueue_write` no longer catches `QueueFull`; ARCHITECTURE updated |
-| `UsageRecord` name collision | ✅ CLOSED | curator → `SkillUsageRecord`; API `routers.usage.UsageRecord` unchanged |
-| Handoff prompt sync | ✅ this session | `REFACTOR_HANDOFF_PROMPT.md` aligned to Phase P complete |
-| Dependency audit write-up | Open | `pyproject` dual dev lists already kept in sync |
-| Ruff rule expansion | Open | intentionally narrow select; expand gradually |
-| B12 `data/*.bak` | Open optional | do not auto-delete |
-| B20 Dockerfile claim | Open | re-verify when touching deploy |
+| B26 dead `QueueFull` path | ✅ CLOSED | removed earlier this session |
+| `UsageRecord` name collision | ✅ CLOSED | `SkillUsageRecord` |
+| Handoff prompt sync | ✅ | aligned to Phase P / Phase 5 |
+| ARCHITECTURE memory_store paths | ✅ this commit | package + `memory_conn` links |
+| DEVELOPER_GUIDE Python version | ✅ this commit | was wrongly 3.13+ → **3.12+** |
+| B20 Dockerfile | ✅ CLOSED | `FROM python:3.12-slim`; `uv sync`; uvicorn :8085 — matches project pin |
+| B12 `data/*.bak` | Open optional | `august_brain.sqlite.bak`, `providers.json.bak` — **not** auto-deleted |
+| Dependency audit write-up | ✅ this section | |
 
 ---
 

@@ -88,7 +88,7 @@ Confirm baseline in Progress Log / live tracker before starting — **do not ass
 
 **Verified baseline (2026-07-13 handoff — re-verify):**
 - Most backend modules/files are `snake_case`.
-- **B16 function APIs closed** for `memory_store.py`, `db_writer.py`, `adapters/proxy_tools.py` (there is **no** `services/proxy_tools.py`). SQL table/column names remain camelCase until Phase 4 explicit sign-off.
+- **B16 function APIs closed** for `memory_store` package, `db_writer.py`, `adapters/proxy_tools.py` (there is **no** `services/proxy_tools.py`). SQL tables/columns are **snake_case** (Phase 4 closed); residual camelCase is mostly service **params** / WIRE TypedDict keys.
 - **B21 closed (filenames + callables + INTERNAL TypedDicts):** app/test renames; `resolve_or_fallback` / `resolve_for_model` etc.; AliasDict + related INTERNAL TypedDicts with wire conversion. **WIRE** TypedDicts still camelCase (SQLite/JSON parity) — see Progress Log.
 - **CamelModel router scale-up COMPLETE:**
   - All request bodies under `app/routers/` use `CamelModel` (0 remaining `BaseModel` subclasses there).
@@ -141,15 +141,17 @@ Confirm baseline in Progress Log / live tracker before starting — **do not ass
 **Database**
 - Keep raw `sqlite3` + `db_writer` design — no ORM reintroduction unless asked.
 - **`db_writer` role — CORRECTED after P0 (B2 amended 2026-07-14):** `_conn()` = WAL/busy_timeout for most writers; `enqueue_write` = **FIFO** single-worker queue for `consolidation_daemon` only. **Not** a priority scheduler (high does not jump the line). Low drop = age > 2s at **dequeue**. Unbounded queue; dead `QueueFull` path **removed (B26 closed)**. See `docs/ARCHITECTURE.md`. Product decision: accept as-is for current sole caller; do not build “high means fast” on it.
-- `lib/storage_key_migration.py` busy_timeout inconsistency — still low priority / verify current state (B22 fixed a related table-name bug).
+- `lib/storage_key_migration.py` busy_timeout + WAL — **verified present** (same durability defaults as brain conn).
 - **Missing indexes — CLOSED:** all six present + EXPLAIN-used (see live tracker).
 - **B1a non-atomic JSON writes — CLOSED.** `write_json_atomic` lives in `app/atomic_write.py`. Former sites fixed; curator uses temp + `Path.replace`. Re-verify with grep before assuming closed if time has passed.
 - SQLite table/column camelCase→snake_case: **CLOSED** on live DB (snake-only + camel wire via `_row_as_wire`).
 
-## Phase 5 — Dependency, Tooling & Documentation
+## Phase 5 — Dependency, Tooling & Documentation (**IN PROGRESS**)
 
-- Same goals. Update `docs/ARCHITECTURE.md` / guides as structure changes. Tracker is `docs/REFACTOR_PROGRESS.md`.
+- Update `docs/ARCHITECTURE.md` / guides as structure changes. Tracker is `docs/REFACTOR_PROGRESS.md`.
 - Pre-commit present (`B23`). CI type-check workflow present.
+- **Done:** dependency audit (dev lists in sync; Python 3.12 pin consistent Dockerfile/CI/pyproject); B20 Dockerfile closed; DEVELOPER_GUIDE 3.12+; ARCHITECTURE memory_store package paths; B26 + SkillUsageRecord.
+- **Open optional:** ruff select expansion (dedicated PR); B12 `data/*.bak` delete with user go; Phase 7 testing.
 
 ## Phase 6 — Bug, Error & Logic Reporting (mandatory, ongoing)
 
@@ -181,7 +183,8 @@ Same deliverables as before when the full refactor completes.
 - [x] B18 Zustand migration closed
 - [x] Schema rename closed on live DB
 - [x] Phase P complete (P0–P5)
-- [ ] Dependencies audited, lint/format tooling complete (Phase 5 residual)
+- [x] Dependencies audited (Phase 5) — ruff expansion + B12 optional remain
+- [x] Phase 4 exit checklist re-verified 100% (indexes, schema, WAL/busy_timeout, Zustand)
 - [ ] Every Feature Inventory item tested end-to-end and documented (Phase 7)
 - [ ] Progress Log claims independently verified each session (Ground Rule 1)
 
@@ -226,7 +229,7 @@ Because this is a large codebase, work iteratively.
 
 ### Phase 0 sign-off — CLOSED
 
-Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unblocked. Earlier "Resolved"/"User Decision" labels from prior audits remain less authoritative than verified repo state — especially SQLite schema snake_case (needs **explicit** future sign-off) and B18 Zustand (relaunched, not done).
+Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unblocked. SQLite schema snake_case and B18 Zustand are **closed** (see live tracker Phase 4 evidence pack) — do not re-open from this historical note.
 
 ### Naming Conversion Status
 
@@ -272,7 +275,7 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 | B17 | Med | `fix/mypy-green` | Would delete characterization tests | **Dropped** — branch gone |
 | B18 | Med | desktop frontend | nanostores → Zustand | **CLOSED** — zero nanostores |
 | B19 | Low | `REMAINING_MYPY_FIXES.md` | Stale branch refs | Marked STALE; paths updated for B21 |
-| B20 | Low | Dockerfile | Claim not re-verified | **Open** |
+| B20 | Low | Dockerfile | Python pin vs project | **CLOSED** — `python:3.12-slim` matches `requires-python >=3.12` |
 | B21 | Med | app filenames + tests | camelCase filenames | **CLOSED** for app+tests+callables+INTERNAL TypedDicts; WIRE keys deferred by design |
 | B22 | Med | storage_key_migration | Wrong table name | **CLOSED** |
 | B23 | Low | pre-commit dep | Missing | **CLOSED** |
