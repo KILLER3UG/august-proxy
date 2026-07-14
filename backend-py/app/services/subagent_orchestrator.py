@@ -1,6 +1,6 @@
 """
 Sub-agent orchestrator — manages parallel sub-agent execution with a capped
-worker pool and failure recovery via peer-help.
+worker pool.
 
 Design
 ------
@@ -8,9 +8,20 @@ Design
 - Worker pool capped at 5 via ``asyncio.Semaphore``.
 - Each sub-agent task publishes lifecycle events to the shared
   ``AgentMessageBus`` under topics ``task:{taskId}:{progress|result|failure}``.
-- On failure: broadcasts to ``task:{taskId}:failure`` and opens a 5-second
-  ``peer-help`` claim window.  If no peer claims the failed task within
-  5 seconds, the failure is escalated.
+
+Peer-help (measured P0/P1 — do not design as recovery)
+------------------------------------------------------
+On **unhandled Exception** in the worker slot only, ``_handleFailure`` publishes
+``task:{id}:failure`` and waits up to ``PEER_HELP_WINDOW_SECONDS`` for a
+``task:{id}:peerHelp`` signal.  A claim ends the wait early but does **not**
+re-run the task or change the result.  No claim only logs.  There is no
+automatic re-spawn or escalation path.
+
+Worker-returned ``status: failed`` dicts are marked failed on the handle (they
+must not count as completed).  They do **not** currently open the peer-help
+wait (no recovery would run anyway).
+
+See docs/REFACTOR_PROGRESS.md decision table + Phase 6 **B27**.
 
 API
 ---
@@ -216,13 +227,21 @@ class SubagentOrchestrator:
                     taskId=handle.taskId,
                 )
                 handle.result = result
-                handle.status = 'completed'
                 handle.finishedAt = time.time()
-                if result:
-                    await self._fireEvent('subagentCompleted', handle.toDict())
-                else:
+                # runSubagent always returns a dict (truthy). Never use `if result`
+                # alone — a failed worker returns {status: 'failed', ...} which is
+                # still truthy and used to be mis-marked completed (B27).
+                if self._result_is_failure(result):
                     handle.status = 'failed'
+                    if isinstance(result, dict):
+                        err = str(result.get('error') or '').strip()
+                        if not err and not self._result_payload_text(result):
+                            err = 'empty result payload with success status'
+                        handle.error = err or handle.error
                     await self._fireEvent('subagentFailed', handle.toDict())
+                else:
+                    handle.status = 'completed'
+                    await self._fireEvent('subagentCompleted', handle.toDict())
             except asyncio.CancelledError:
                 handle.status = 'cancelled'
                 handle.finishedAt = time.time()
@@ -235,8 +254,43 @@ class SubagentOrchestrator:
                 await self._handleFailure(handle, request)
                 await self._fireEvent('subagentFailed', handle.toDict())
 
+    @staticmethod
+    def _result_payload_text(result: dict[str, Any]) -> str:
+        """Primary text payload from a worker result dict."""
+        return str(result.get('result') or result.get('output') or '').strip()
+
+    @classmethod
+    def _result_is_failure(cls, result: object) -> bool:
+        """True when the worker reported failure or 'success' with no usable content.
+
+        Same bug family as the truthy-dict status lie: ``{status: completed,
+        result: ''}`` must not tally as multi-agent success.
+        """
+        if result is None or result is False or result == '':
+            return True
+        if isinstance(result, dict):
+            status = str(result.get('status') or '').lower()
+            if status in ('failed', 'error', 'cancelled'):
+                return True
+            # partial = mixed outcomes; allow empty text (aggregated status only)
+            if status == 'partial':
+                return False
+            if status in ('completed', 'success', 'ok', ''):
+                # Explicit success requires non-empty, non-whitespace payload
+                if not cls._result_payload_text(result):
+                    return True
+                return False
+            if result.get('error') and status not in ('completed', 'success', 'ok'):
+                return True
+            return False
+        return False
+
     async def _handleFailure(self, handle: SubagentHandle, request: SubagentSpawnRequest) -> None:
-        """Broadcast a failure and open a peer-help window."""
+        """Publish failure and wait for optional peerHelp signal (does not re-run work).
+
+        A claim ends the wait early but does **not** re-spawn the task or alter
+        ``handle.result``. No claim only logs. This is not automatic recovery.
+        """
         taskId = handle.taskId
         await self._bus.publish(
             f'task:{taskId}:failure',
@@ -250,8 +304,16 @@ class SubagentOrchestrator:
         unsub = self._bus.subscribe(f'task:{taskId}:peerHelp', onPeerClaim)
         try:
             await asyncio.wait_for(claimed.wait(), timeout=PEER_HELP_WINDOW_SECONDS)
+            logger.info(
+                'Peer claimed failed task %s (signal only — work is NOT re-run)',
+                taskId,
+            )
         except asyncio.TimeoutError:
-            logger.info('No peer claimed failed task %s', taskId)
+            logger.info(
+                'No peer claimed failed task %s within %.1fs (no automatic re-spawn)',
+                taskId,
+                PEER_HELP_WINDOW_SECONDS,
+            )
         finally:
             unsub.unsubscribe()
 

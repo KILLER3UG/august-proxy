@@ -170,6 +170,96 @@ async def test_empty_result_failure_skips_peer_help_window(bus, caplog):
 
 
 @pytest.mark.asyncio
+async def test_worker_failed_status_dict_not_marked_completed(bus):
+    """B27 critical: runSubagent returns truthy {status:failed} — must not count as completed.
+
+    Production spawn_subagents tallies success via handle.status == 'completed'.
+    Pre-fix: orchestrator used `if result:` which is always true for a dict.
+    """
+    orch = SubagentOrchestrator(bus, max_workers=2)
+
+    async def fail_dict(**kwargs):
+        return {
+            'taskId': 't',
+            'agentId': 'general',
+            'status': 'failed',
+            'error': 'model refused',
+            'result': '',
+        }
+
+    session = MagicMock()
+    session.id = 'silent-success'
+    events: list[str] = []
+
+    async def on_ok(data):
+        events.append('completed')
+
+    async def on_fail(data):
+        events.append('failed')
+
+    orch.on('subagentCompleted', on_ok)
+    orch.on('subagentFailed', on_fail)
+
+    with patch('app.services.subagent_worker.runSubagent', new=AsyncMock(side_effect=fail_dict)):
+        handles = await orch.spawn(
+            SubagentSpawnRequest(session=session, workItems=[{'goal': 'x', 'agentId': 'general'}])
+        )
+        results = await orch.waitForAll(handles)
+
+    h = handles[0]
+    assert h.status == 'failed', f'silent success: status={h.status!r}'
+    assert h.error == 'model refused'
+    assert results[0]['status'] == 'failed'
+    assert 'failed' in events
+    assert 'completed' not in events
+    # spawn_subagents-style tally
+    succeeded = sum(1 for r in results if r['status'] == 'completed')
+    failed = sum(1 for r in results if r['status'] in ('failed', 'error'))
+    assert succeeded == 0 and failed == 1
+    print(
+        'WORKER_FAILED_DICT',
+        {'handle_status': h.status, 'events': events, 'succeeded': succeeded, 'failed': failed},
+    )
+    await orch.close()
+
+
+@pytest.mark.asyncio
+async def test_completed_with_empty_result_not_marked_completed(bus):
+    """Same bug family: status:completed with empty/whitespace result is not success."""
+    orch = SubagentOrchestrator(bus, max_workers=2)
+
+    async def empty_ok(**kwargs):
+        return {
+            'taskId': 't',
+            'agentId': 'general',
+            'status': 'completed',
+            'result': '   \n\t  ',
+            'error': '',
+        }
+
+    session = MagicMock()
+    session.id = 'empty-content'
+    events: list[str] = []
+    orch.on('subagentCompleted', lambda d: events.append('completed'))
+    orch.on('subagentFailed', lambda d: events.append('failed'))
+
+    with patch('app.services.subagent_worker.runSubagent', new=AsyncMock(side_effect=empty_ok)):
+        handles = await orch.spawn(
+            SubagentSpawnRequest(session=session, workItems=[{'goal': 'x', 'agentId': 'general'}])
+        )
+        results = await orch.waitForAll(handles)
+
+    h = handles[0]
+    assert h.status == 'failed'
+    assert 'empty result' in (h.error or '').lower()
+    assert results[0]['status'] == 'failed'
+    assert 'failed' in events
+    assert 'completed' not in events
+    print('EMPTY_CONTENT_SUCCESS', {'status': h.status, 'error': h.error, 'events': events})
+    await orch.close()
+
+
+@pytest.mark.asyncio
 async def test_concurrent_failures_peer_help_windows_do_not_deadlock(bus):
     """N concurrent failures each open a 5s window — all complete without deadlock."""
     orch = SubagentOrchestrator(bus, max_workers=5)
