@@ -149,21 +149,33 @@ class CoordinationStub:
 
     # -- blackboard helpers (fresh connection) ----------------------------
     def _read_decided(self, messages: list[dict[str, Any]]) -> str | None:
-        """Read the decided value from the blackboard using a fresh DB connection."""
-        import os
-        import sqlite3
-        from app.services.memory_store import _DEFAULTBrainFile
+        """Read the decided value from the blackboard using a fresh DB connection.
 
-        data_dir = os.environ.get('AUGUST_DATA_DIR', '')
-        db_path = os.path.join(data_dir, _DEFAULTBrainFile)
+        Uses ``memory_store._db_path()`` (same path as write tools) rather than
+        hand-building from AUGUST_DATA_DIR — the two can diverge if settings
+        and env are not in lockstep, which showed up as a CI flake on Linux.
+        """
+        import sqlite3
+        from app.services.memory_store import _db_path
+
         try:
-            conn = sqlite3.connect(db_path, timeout=5)
+            conn = sqlite3.connect(str(_db_path()), timeout=5)
             conn.row_factory = sqlite3.Row
-            cur = conn.execute('SELECT value FROM blackboard WHERE sessionId=? AND key=?', (self.session_id, 'decided'))
+            cur = conn.execute(
+                'SELECT value FROM blackboard WHERE sessionId=? AND key=?',
+                (self.session_id, 'decided'),
+            )
             row = cur.fetchone()
             conn.close()
             if row:
                 return str(row['value'])
+        except Exception:
+            pass
+        # Prefer the service helper as a second path (same session scope).
+        try:
+            notes = readNotes(self.session_id, key='decided')
+            if notes:
+                return str(notes[0]['value'])
         except Exception:
             pass
         return None
@@ -375,12 +387,14 @@ async def test_shared_decision_coordinated_via_blackboard(coord_env):
     for h in handles:
         assert h.status == 'completed', f'sub-agent {h.taskId} failed: {h.error}'
 
-    proposer_text = _result_text(results[0])
-    adopter_text = _result_text(results[1])
+    # waitForAll may not preserve spawn order under load — identify by content.
+    texts = [_result_text(r) for r in results]
+    proposer_text = next((t for t in texts if t.startswith('Agreed base path:')), texts[0])
+    adopter_text = next((t for t in texts if t.startswith('Adopted base path:') or t.startswith('Chosen base path:')), texts[-1])
 
     # Both must reference the SAME decided value -> they communicated.
-    assert '/api/v2-K3p' in proposer_text, proposer_text
-    assert '/api/v2-K3p' in adopter_text, adopter_text
+    assert '/api/v2-K3p' in proposer_text, f'proposer texts={texts!r}'
+    assert '/api/v2-K3p' in adopter_text, f'adopter texts={texts!r}'
 
     # The blackboard must hold the decision.
     notes = readNotes(coord_env['session_id'], key='decided')
