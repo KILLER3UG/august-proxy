@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   backend-mypy:
-    name: Backend — mypy
+    name: Backend — mypy + ruff + pytest
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -38,11 +38,14 @@ jobs:
       - name: Run mypy
         run: python -m mypy app/
 
+      # Full suite includes Phase 7 inventory E2E, feature_flow live-backend
+      # emission during tool stages, proxy inject HTTP, SSRF gates, gateway
+      # normalize paths (no live bot credentials required).
       - name: Run pytest
         run: pytest -q --tb=short
 
   frontend-tsc-eslint:
-    name: Frontend — tsc + eslint
+    name: Frontend — tsc + eslint + vitest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,3 +65,28 @@ jobs:
 
       - name: eslint
         run: npm run lint -w frontend/desktop
+
+      # Phase 7 UI inventory (Feature Flow, AUG toggle, collaboration banners,
+      # marquee titles). Live backend SSE is covered by backend pytest; vitest
+      # proves the desktop consumers of that stream.
+      - name: vitest
+        run: npm run test -w frontend/desktop
+
+  mobile-typecheck:
+    name: Mobile — typecheck + parity audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Mobile test (tsc + parity audit)
+        run: npm run test -w frontend/mobile

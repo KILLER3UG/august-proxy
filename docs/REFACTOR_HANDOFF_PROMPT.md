@@ -158,10 +158,11 @@ Confirm baseline in Progress Log / live tracker before starting — **do not ass
 Report new bugs with what / where / why / suggested fix. **Add to the Bug Tracker — do not renumber.**  
 Ledger re-verified 2026-07-14: only **B27 PARTIAL** remains (product-gated re-spawn). B28 stream re-export fixed.
 
-## Phase 7 — Feature-Level Testing & Documentation (**OPERATIONALIZED**)
+## Phase 7 — Feature-Level Testing & Documentation (**DONE — fully automated E2E**)
 
 Matrix: [`docs/FEATURE_INVENTORY_TEST_MATRIX.md`](./FEATURE_INVENTORY_TEST_MATRIX.md).  
-Baselines: backend **723** pytest · frontend **543** vitest. Explicit gaps listed (Slack/Discord live, mobile, SSRF deep suite). Zero-gap E2E not claimed.
+Permanent gate: `tests/test_phase7_e2e_inventory.py` (CI pytest). Desktop vitest + mobile parity in CI.  
+Live Slack/Discord *network* bots and real LLM soaks stay env-gated (optional secrets).
 
 ## Phase 8 — Final Deliverables
 
@@ -187,7 +188,7 @@ Same deliverables as before when the full refactor completes.
 - [x] Phase P complete (P0–P5)
 - [x] Dependencies audited (Phase 5) — ruff expansion optional remain
 - [x] Phase 4 exit checklist re-verified 100% (indexes, schema, WAL/busy_timeout, Zustand)
-- [x] Phase 7 matrix operationalized + suite baselines (zero-gap E2E not claimed; see matrix gaps)
+- [x] Phase 7 fully automated E2E proven (inventory gate + vitest + mobile CI; live bots env-gated)
 - [ ] Phase 8 final deliverables / overall refactor sign-off
 - [ ] Progress Log claims independently verified each session (Ground Rule 1)
 

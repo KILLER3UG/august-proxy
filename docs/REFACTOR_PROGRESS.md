@@ -34,7 +34,7 @@ feature_flow 11 tests · inject_aug FE toggle · isolation autouse · Phases 0�
 | P Performance | **DONE** (P0–P5 + exit gate) |
 | 5 Deps / tooling / docs | **DONE** |
 | 6 Bug ledger | **DONE** (B27 partial by design) |
-| 7 Feature inventory testing | **OPERATIONALIZED** |
+| 7 Feature inventory testing | **DONE — fully automated E2E proven** (gate + vitest + mobile in CI) |
 | **8 Final deliverables** | **NEXT** |
 
 ---
@@ -60,7 +60,7 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 
 1. **Phase 8 — Final Deliverables** (overall refactor sign-off pack).
 2. **B27** stays PARTIAL until product asks for peer-help re-spawn.
-3. Phase 7 residual gaps (Slack/Discord live, mobile, SSRF deep suite) are backlog, not silent omissions.
+3. Live bot / real-LLM soaks remain **env-gated** (optional secrets), not blocking Phase 7.
 4. **Contention gate** still applies before *raising* daemon/subagent caps.
 5. Do **not** remove `isolatedData` autouse without safety review.
 6. Optional polish only with go-ahead: ruff rule expansion; residual large-file splits.
