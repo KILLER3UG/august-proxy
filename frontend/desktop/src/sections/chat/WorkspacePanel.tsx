@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useStore } from '@nanostores/react';
-import { $sessions, updateSessionWorkspace } from '@/store/sessions';
+import { useSessionsStore, updateSessionWorkspace } from '@/store/sessions';
 import { FolderGit2, ChevronRight, ChevronDown, Folder, FolderOpen, FileText, AlertCircle, Trash2, FolderSearch, Link2 } from 'lucide-react';
 import { isTauri } from '@/lib/tauri-detect';
 import { toast } from 'sonner';
@@ -17,7 +16,7 @@ interface FlatFileNode {
 }
 
 export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
-  const sessions = useStore($sessions);
+  const sessions = useSessionsStore((s) => s.sessions);
   const activeSession = useMemo(() => sessions.find(s => s.id === sessionId), [sessions, sessionId]);
   const workspacePath = activeSession?.workspacePath || null;
 

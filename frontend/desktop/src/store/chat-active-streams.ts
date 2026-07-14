@@ -8,12 +8,30 @@
  * endpoint is cheap (one map lookup) and the sidebar is the only consumer.
  */
 
-import { atom } from 'nanostores';
+import { create } from 'zustand';
 import { api } from '@/api/client';
 
 const POLL_INTERVAL_MS = 3000;
 
-export const $activeChatSessions = atom<Record<string, 'streaming'>>({});
+interface ActiveChatStreamsState {
+  active: Record<string, 'streaming'>;
+}
+
+export const useActiveChatStreamsStore = create<ActiveChatStreamsState>(() => ({
+  active: {},
+}));
+
+/** Nanostores-shaped shim for imperative get/set callers. */
+export const $activeChatSessions = {
+  get: (): Record<string, 'streaming'> => useActiveChatStreamsStore.getState().active,
+  set: (active: Record<string, 'streaming'>): void => {
+    useActiveChatStreamsStore.setState({ active });
+  },
+  subscribe: (listener: (active: Record<string, 'streaming'>) => void): (() => void) => {
+    listener(useActiveChatStreamsStore.getState().active);
+    return useActiveChatStreamsStore.subscribe((s) => listener(s.active));
+  },
+};
 
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let inFlight = false;
@@ -28,7 +46,7 @@ async function poll(): Promise<void> {
     for (const [id, status] of Object.entries(active)) {
       if (status === 'streaming') next[id] = 'streaming';
     }
-    $activeChatSessions.set(next);
+    useActiveChatStreamsStore.setState({ active: next });
   } catch (_e: unknown) {
     // Network errors are non-fatal — keep the last known state.
   } finally {

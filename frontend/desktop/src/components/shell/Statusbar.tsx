@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useStore } from '@nanostores/react';
 import { useParams } from 'react-router-dom';
 import { StatusDot, type StatusTone } from '@/components/StatusDot';
-import { $gateway } from '@/store/gateway';
-import { $sessions } from '@/store/sessions';
+import { useGatewayStore } from '@/store/gateway';
+import { useSessionsStore } from '@/store/sessions';
 import { api } from '@/api/client';
 import { subscribeActiveSessions } from '@/sections/chat/chat-runtime';
 
@@ -32,8 +31,8 @@ interface LearningStatus {
 }
 
 export function Statusbar() {
-  const g = useStore($gateway);
-  const sessions = useStore($sessions);
+  const g = useGatewayStore((s) => s.gateway);
+  const sessions = useSessionsStore((s) => s.sessions);
   const { sessionId } = useParams<{ sessionId?: string }>();
   const [now, setNow] = useState(Date.now());
   const [activeSessionIds, setActiveSessionIds] = useState<string[]>([]);

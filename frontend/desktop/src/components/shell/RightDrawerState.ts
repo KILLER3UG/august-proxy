@@ -1,7 +1,6 @@
-/* ── Right drawer state ─ shared open/section/diff state ─────────── */
+/* ── Right drawer state ─ shared open/section/diff state (Zustand) ─ */
 
-import { atom } from 'nanostores';
-import { useStore } from '@nanostores/react';
+import { create } from 'zustand';
 import type { GitDiffResult } from '@/api/git';
 
 export type RightDrawerSectionId = 'preview' | 'diff' | 'terminal' | 'tasks' | 'plan' | 'browser';
@@ -17,23 +16,39 @@ export interface RightDrawerState {
 const MAX_SECTIONS = 4;
 const SECTION_ORDER: RightDrawerSectionId[] = ['preview', 'diff', 'terminal', 'tasks', 'plan', 'browser'];
 
-export const $rightDrawer = atom<RightDrawerState>({
+const initialState: RightDrawerState = {
   open: false,
   sections: [],
-});
+};
 
-export function useRightDrawer() {
-  return useStore($rightDrawer);
+export const useRightDrawerStore = create<RightDrawerState>(() => ({
+  ...initialState,
+}));
+
+/** Nanostores-shaped shim for imperative get/set callers. */
+export const $rightDrawer = {
+  get: (): RightDrawerState => useRightDrawerStore.getState(),
+  set: (state: RightDrawerState): void => {
+    useRightDrawerStore.setState(state, true);
+  },
+  subscribe: (listener: (state: RightDrawerState) => void): (() => void) => {
+    listener(useRightDrawerStore.getState());
+    return useRightDrawerStore.subscribe((s) => listener(s));
+  },
+};
+
+export function useRightDrawer(): RightDrawerState {
+  return useRightDrawerStore();
 }
 
 export function openRightDrawer(section?: RightDrawerSectionId, options: Partial<Pick<RightDrawerState, 'diff' | 'selectedDiffPath'>> = {}) {
-  const current = $rightDrawer.get();
+  const current = useRightDrawerStore.getState();
   const target = section ?? current.activeSection ?? SECTION_ORDER[0];
   const nextSections = current.sections.includes(target)
     ? current.sections
     : [...current.sections, target].slice(-MAX_SECTIONS);
 
-  $rightDrawer.set({
+  useRightDrawerStore.setState({
     ...current,
     ...options,
     open: true,
@@ -47,7 +62,7 @@ export function openRightDrawer(section?: RightDrawerSectionId, options: Partial
  * fresh — no sections will be restored from the previous session.
  */
 export function closeRightDrawer() {
-  $rightDrawer.set({
+  useRightDrawerStore.setState({
     open: false,
     sections: [],
     activeSection: undefined,
@@ -55,14 +70,14 @@ export function closeRightDrawer() {
 }
 
 export function toggleRightDrawerSection(section: RightDrawerSectionId) {
-  const current = $rightDrawer.get();
+  const current = useRightDrawerStore.getState();
   const hasSection = current.sections.includes(section);
 
   if (hasSection) {
     // Closing a section — if it was the last one, the drawer stays open
     // so the "No section selected" placeholder can render.
     const nextSections = current.sections.filter((item) => item !== section);
-    $rightDrawer.set({
+    useRightDrawerStore.setState({
       ...current,
       sections: nextSections,
       activeSection: nextSections.length > 0 ? nextSections[nextSections.length - 1] : undefined,
@@ -72,7 +87,7 @@ export function toggleRightDrawerSection(section: RightDrawerSectionId) {
 
   // Add to the open list (cap at MAX_SECTIONS, drop oldest when full).
   const nextSections = [...current.sections, section].slice(-MAX_SECTIONS);
-  $rightDrawer.set({
+  useRightDrawerStore.setState({
     ...current,
     open: true,
     activeSection: section,
@@ -86,10 +101,10 @@ export function toggleRightDrawerSection(section: RightDrawerSectionId) {
  * drawer itself is a separate action.
  */
 export function closeRightDrawerSection(section: RightDrawerSectionId) {
-  const current = $rightDrawer.get();
+  const current = useRightDrawerStore.getState();
   const nextSections = current.sections.filter((item) => item !== section);
 
-  $rightDrawer.set({
+  useRightDrawerStore.setState({
     ...current,
     sections: nextSections,
     activeSection:
@@ -100,8 +115,8 @@ export function closeRightDrawerSection(section: RightDrawerSectionId) {
 }
 
 export function setActiveRightDrawerSection(section: RightDrawerSectionId) {
-  const current = $rightDrawer.get();
-  $rightDrawer.set({
+  const current = useRightDrawerStore.getState();
+  useRightDrawerStore.setState({
     ...current,
     activeSection: section,
     open: true,
@@ -109,7 +124,7 @@ export function setActiveRightDrawerSection(section: RightDrawerSectionId) {
 }
 
 export function setRightDrawerSections(sections: RightDrawerSectionId[], activeSection: RightDrawerSectionId = sections[0]) {
-  $rightDrawer.set({
+  useRightDrawerStore.setState({
     open: true,
     sections: [...new Set([activeSection, ...sections])].slice(-MAX_SECTIONS),
     activeSection,
@@ -122,13 +137,13 @@ export function setRightDrawerSections(sections: RightDrawerSectionId[], activeS
  * Opens the drawer and sets the new section as active.
  */
 export function addRightDrawerSection(section: RightDrawerSectionId) {
-  const current = $rightDrawer.get();
+  const current = useRightDrawerStore.getState();
   if (current.sections.includes(section)) {
-    $rightDrawer.set({ ...current, activeSection: section, open: true });
+    useRightDrawerStore.setState({ ...current, activeSection: section, open: true });
     return;
   }
   const nextSections = [...current.sections, section].slice(-MAX_SECTIONS);
-  $rightDrawer.set({
+  useRightDrawerStore.setState({
     ...current,
     open: true,
     activeSection: section,
@@ -137,8 +152,8 @@ export function addRightDrawerSection(section: RightDrawerSectionId) {
 }
 
 export function setRightDrawerDiff(diff?: GitDiffResult, selectedDiffPath?: string) {
-  const current = $rightDrawer.get();
-  $rightDrawer.set({
+  const current = useRightDrawerStore.getState();
+  useRightDrawerStore.setState({
     ...current,
     diff,
     selectedDiffPath,
@@ -146,8 +161,8 @@ export function setRightDrawerDiff(diff?: GitDiffResult, selectedDiffPath?: stri
 }
 
 export function clearRightDrawerDiff() {
-  const current = $rightDrawer.get();
-  $rightDrawer.set({
+  const current = useRightDrawerStore.getState();
+  useRightDrawerStore.setState({
     ...current,
     diff: undefined,
     selectedDiffPath: undefined,

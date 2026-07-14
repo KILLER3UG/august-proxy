@@ -1,12 +1,11 @@
-import { useStore } from '@nanostores/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { WifiOff, AlertTriangle, Loader2 } from 'lucide-react';
-import { $gateway } from '@/store/gateway';
+import { useGatewayStore } from '@/store/gateway';
 import { Backdrop } from './Backdrop';
 import { Button } from '@/components/ui/button';
 
 export function ProxyStatusOverlay() {
-  const state = useStore($gateway);
+  const state = useGatewayStore((s) => s.gateway);
   const qc = useQueryClient();
   if (state.status === 'open') return null;
 

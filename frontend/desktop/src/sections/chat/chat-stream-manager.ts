@@ -1,10 +1,10 @@
-import { atom } from 'nanostores';
+import { create } from 'zustand';
 import type { ChatMessage, MessageBlock, ProviderSetupResult } from '@/types/chat';
 import type { WorkbenchMode, EffortLevel } from '@/types/chat';
 import type { WorkbenchSession } from '@/types/workbench';
 import { api } from '@/api/client';
 import { streamWorkbenchChat, streamWorkbenchReconnect, stopWorkbenchChat } from '@/api/workbench';
-import { setSessionStatus, clearSessionStatus, $sessions } from '@/store/sessions';
+import { setSessionStatus, clearSessionStatus, useSessionsStore } from '@/store/sessions';
 import { makeStreamHandlers } from './makeStreamHandlers';
 import { gitApi } from '@/api/git';
 import { chatRuntime } from './chat-runtime';
@@ -47,8 +47,26 @@ function applyUpdater<T>(updater: T | ((prev: T) => T), prev: T): T {
   return typeof updater === 'function' ? (updater as (prev: T) => T)(prev) : updater;
 }
 
-// Global store for the stream states of all sessions
-export const $sessionStreamStates = atom<Record<string, SessionStreamState>>({});
+// Global store for the stream states of all sessions (Zustand — Phase 4 B18)
+interface SessionStreamStoreState {
+  bySession: Record<string, SessionStreamState>;
+}
+
+export const useSessionStreamStore = create<SessionStreamStoreState>(() => ({
+  bySession: {},
+}));
+
+/** Nanostores-shaped shim for imperative get/set/subscribe callers. */
+export const $sessionStreamStates = {
+  get: (): Record<string, SessionStreamState> => useSessionStreamStore.getState().bySession,
+  set: (bySession: Record<string, SessionStreamState>): void => {
+    useSessionStreamStore.setState({ bySession });
+  },
+  subscribe: (listener: (bySession: Record<string, SessionStreamState>) => void): (() => void) => {
+    listener(useSessionStreamStore.getState().bySession);
+    return useSessionStreamStore.subscribe((s) => listener(s.bySession));
+  },
+};
 
 // Keep track of active fetch AbortControllers on the client
 export const activeStreamControllers = new Map<string, AbortController>();
@@ -110,14 +128,14 @@ export function getOrInitSessionStreamState(sessionId: string | null): SessionSt
     };
   }
 
-  const current = $sessionStreamStates.get()[sessionId];
+  const current = useSessionStreamStore.getState().bySession[sessionId];
   if (current) return current;
 
   // Initialize from localStorage or defaults
   const initialMessages = loadMessagesForSession(sessionId);
 
   let workbenchSession: WorkbenchSession | null = null;
-  const sessions = $sessions.get();
+  const sessions = useSessionsStore.getState().sessions;
   const activeSession = sessions.find(s => s.id === sessionId);
   if (activeSession?.workbenchSessionId) {
     workbenchSession = {
@@ -149,9 +167,11 @@ export function getOrInitSessionStreamState(sessionId: string | null): SessionSt
     workbenchSession,
   };
 
-  $sessionStreamStates.set({
-    ...$sessionStreamStates.get(),
-    [sessionId]: state,
+  useSessionStreamStore.setState({
+    bySession: {
+      ...useSessionStreamStore.getState().bySession,
+      [sessionId]: state,
+    },
   });
 
   return state;
@@ -163,9 +183,11 @@ export function updateSessionStreamState(
 ) {
   const current = getOrInitSessionStreamState(sessionId);
   const next = { ...current, ...updater(current) };
-  $sessionStreamStates.set({
-    ...$sessionStreamStates.get(),
-    [sessionId]: next,
+  useSessionStreamStore.setState({
+    bySession: {
+      ...useSessionStreamStore.getState().bySession,
+      [sessionId]: next,
+    },
   });
 }
 

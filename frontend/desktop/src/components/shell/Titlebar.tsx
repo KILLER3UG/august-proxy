@@ -1,12 +1,11 @@
-import { useStore } from '@nanostores/react';
 import { Command, Sun, Moon, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { $theme, toggleTheme } from '@/store/theme';
+import { useResolvedThemeStore, toggleTheme } from '@/store/theme';
 import { toggleCommandPalette } from '@/store/command-palette';
 import { resolveRouteLabel } from '@/routes';
 
 export function Titlebar() {
-  const theme = useStore($theme);
+  const theme = useResolvedThemeStore((s) => s.theme);
   const currentLabel = resolveRouteLabel(location.pathname);
 
   return (

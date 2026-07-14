@@ -4,15 +4,15 @@
  * The SSE event subscriber (chat-stream-manager.ts → ensureSessionSubscriber)
  * writes to this store whenever the backend emits
  * `userMessageQueued` / `userMessageDequeued` / `userMessageInjected`.
- * ChatThread subscribes via `useStore` and renders the pills + injected
- * user bubbles in real time.
+ * ChatThread subscribes via the Zustand hook and renders the pills +
+ * injected user bubbles in real time.
  *
  * The store is kept separate from `$sessionStreamStates` (the per-session
  * message log) because the queue is a short-lived control surface that
  * needs to survive turn-end / session-switch / page-reload (via the
  * GET /api/workbench/chat/queue hydration endpoint).
  */
-import { atom } from 'nanostores';
+import { create } from 'zustand';
 import type { FileAttachment } from '@/types/chat';
 
 export interface QueuedUserMessage {
@@ -22,20 +22,39 @@ export interface QueuedUserMessage {
   queuedAt: string;
 }
 
+interface QueueState {
+  bySession: Record<string, QueuedUserMessage[]>;
+}
+
+export const useQueuedMessagesStore = create<QueueState>(() => ({
+  bySession: {},
+}));
+
 /** Map of sessionId → FIFO list of currently-queued user messages. */
-export const $queuedMessagesBySession = atom<Record<string, QueuedUserMessage[]>>({});
+export const $queuedMessagesBySession = {
+  get: (): Record<string, QueuedUserMessage[]> => useQueuedMessagesStore.getState().bySession,
+  set: (bySession: Record<string, QueuedUserMessage[]>): void => {
+    useQueuedMessagesStore.setState({ bySession });
+  },
+  subscribe: (listener: (bySession: Record<string, QueuedUserMessage[]>) => void): (() => void) => {
+    listener(useQueuedMessagesStore.getState().bySession);
+    return useQueuedMessagesStore.subscribe((s) => listener(s.bySession));
+  },
+};
 
 /** Insert or no-op if an entry with this id is already present. */
 export function upsertQueuedMessage(sessionId: string, entry: QueuedUserMessage): void {
-  const prev = $queuedMessagesBySession.get();
+  const prev = useQueuedMessagesStore.getState().bySession;
   const list = prev[sessionId] ?? [];
   if (list.some(e => e.id === entry.id)) return;
-  $queuedMessagesBySession.set({ ...prev, [sessionId]: [...list, entry] });
+  useQueuedMessagesStore.setState({
+    bySession: { ...prev, [sessionId]: [...list, entry] },
+  });
 }
 
 /** Remove a queued entry by id (no-op if absent). */
 export function removeQueuedMessage(sessionId: string, messageId: string): void {
-  const prev = $queuedMessagesBySession.get();
+  const prev = useQueuedMessagesStore.getState().bySession;
   const list = prev[sessionId];
   if (!list) return;
   const next = list.filter(e => e.id !== messageId);
@@ -43,22 +62,22 @@ export function removeQueuedMessage(sessionId: string, messageId: string): void 
   if (next.length === 0) {
     const { [sessionId]: _drop, ...rest } = prev;
     void _drop;
-    $queuedMessagesBySession.set(rest);
+    useQueuedMessagesStore.setState({ bySession: rest });
   } else {
-    $queuedMessagesBySession.set({ ...prev, [sessionId]: next });
+    useQueuedMessagesStore.setState({ bySession: { ...prev, [sessionId]: next } });
   }
 }
 
 /** Replace the entire queue list for a session (used by hydration and
  *  the SSE `injected` handler to drop drained entries). */
 export function setQueuedMessages(sessionId: string, entries: QueuedUserMessage[]): void {
-  const prev = $queuedMessagesBySession.get();
+  const prev = useQueuedMessagesStore.getState().bySession;
   if (entries.length === 0) {
     const { [sessionId]: _drop, ...rest } = prev;
     void _drop;
-    $queuedMessagesBySession.set(rest);
+    useQueuedMessagesStore.setState({ bySession: rest });
   } else {
-    $queuedMessagesBySession.set({ ...prev, [sessionId]: entries });
+    useQueuedMessagesStore.setState({ bySession: { ...prev, [sessionId]: entries } });
   }
 }
 

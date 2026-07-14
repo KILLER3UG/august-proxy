@@ -11,9 +11,8 @@ import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
-import { useStore } from '@nanostores/react';
 import { createPortal } from 'react-dom';
-import { $sessions, setSessionStatus, clearSessionStatus, renameSession, updateSessionModel, updateSessionWorkbenchMetadata, type Session } from '@/store/sessions';
+import { useSessionsStore, setSessionStatus, clearSessionStatus, renameSession, updateSessionModel, updateSessionWorkbenchMetadata, type Session } from '@/store/sessions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
 import { ToolCallItem as ToolCallItemComp } from '@/components/chat/ToolCallItem';
@@ -53,10 +52,14 @@ import {
   activeStreamControllers,
 } from './chat-stream-manager';
 import {
+  useQueuedMessagesStore,
   $queuedMessagesBySession,
   setQueuedMessages,
   clearQueuedMessages,
+  type QueuedUserMessage,
 } from './queue-store';
+
+const EMPTY_QUEUED_MESSAGES: QueuedUserMessage[] = [];
 import { Markdown } from './ChatMarkdown';
 import { readFileContent, type FileReadResult } from '@/lib/file-reader';
 import { getFileIcon } from '@/lib/file-icon';
@@ -342,7 +345,7 @@ function persistMessages(sessionId: string | null, value: ChatMessage[]) {
 }
 
 export function ChatThread({ sessionId }: { sessionId: string | null }) {
-  const sessions = useStore($sessions);
+  const sessions = useSessionsStore((s) => s.sessions);
   const activeSession = useMemo(() => sessions.find(s => s.id === sessionId), [sessions, sessionId]);
   const [streamState, setStreamState] = useState(() => getOrInitSessionStreamState(sessionId));
 
@@ -507,12 +510,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // visually reads like a second input box. Toggle via the "Preview"
   // button in the composer toolbar.
   const [showPreview, setShowPreview] = useState(false);
-  // Mid-response queued messages live in the queue-store (per-session
-  // atom). ChatThread mirrors a local copy for quick synchronous access;
-  // the SSE subscriber writes back into the store when messages are
-  // added / removed / injected, and useStore on queuedMessages keeps
-  // this view in sync.
-  const queuedMessages = useStore($queuedMessagesBySession)[sessionId ?? ''] ?? [];
+  // Mid-response queued messages live in the queue-store (per-session).
+  // ChatThread mirrors a local copy for quick synchronous access; the
+  // SSE subscriber writes back into the store when messages are added /
+  // removed / injected, and the Zustand selector keeps this view in sync.
+  const queuedMessages = useQueuedMessagesStore(
+    (s) => s.bySession[sessionId ?? ''] ?? EMPTY_QUEUED_MESSAGES,
+  );
 
   // v3: /Exam slash command — overlay the ExamBanner with the given seed.
   const [examActive, setExamActive] = useState(false);

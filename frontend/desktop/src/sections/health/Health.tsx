@@ -4,8 +4,7 @@ import { api } from '@/api/client';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { StatusPill } from '@/components/StatusPill';
 import { SectionHeader } from '@/components/SectionHeader';
-import { useStore } from '@nanostores/react';
-import { $gateway } from '@/store/gateway';
+import { useGatewayStore } from '@/store/gateway';
 import { PageLoader } from '@/components/PageLoader';
 import { Copy, Check, Link2, Terminal, Brain } from 'lucide-react';
 
@@ -25,7 +24,7 @@ interface HealthData {
 }
 
 export function Health() {
-  const g = useStore($gateway);
+  const g = useGatewayStore((s) => s.gateway);
   const { data, isLoading, error } = useQuery({
     queryKey: ['health', 'detailed'],
     queryFn: () => api.get<HealthData>('/api/health/detailed'),

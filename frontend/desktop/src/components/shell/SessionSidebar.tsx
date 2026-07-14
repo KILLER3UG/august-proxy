@@ -1,8 +1,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { SessionList } from "@/components/sidebar/SessionList";
-import { useStore } from "@nanostores/react";
-import { $sessions, $folders, $sessionStates } from "@/store/sessions";
+import { useSessionsStore } from "@/store/sessions";
 
 interface SessionSidebarProps {
   activeId?: string;
@@ -39,9 +38,9 @@ export function SessionSidebar({
   onNewInFolder,
   onNavigate,
 }: SessionSidebarProps) {
-  const _sessions = useStore($sessions);
-  const _folders = useStore($folders);
-  const _sessionStates = useStore($sessionStates);
+  const _sessions = useSessionsStore((s) => s.sessions);
+  const _folders = useSessionsStore((s) => s.folders);
+  const _sessionStates = useSessionsStore((s) => s.sessionStates);
   const [width, setWidth] = useState<number>(loadStoredWidth);
   const [isDragging, setIsDragging] = useState(false);
 
