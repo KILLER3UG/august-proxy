@@ -6,7 +6,7 @@
 
 Act as a Senior Principal Software Architect and Lead Developer. Your task is a comprehensive, end-to-end refactor of **August Proxy** — a large, working AI-agent proxy system: a Tauri + React 19 + TypeScript desktop app (plus an Expo React Native mobile companion) on the frontend, and a FastAPI Python backend spanning ~176 `app/` Python files across **32 routers** (200+ endpoints) and ~95 service files. This is a multi-phase migration of a live system, not a quick cleanup pass — treat the scale below as the default assumption for how you plan your work, not an edge case.
 
-**This is a handoff, not a fresh start — and it's already mid-flight.** Phase 0 is signed off. The old multi-branch merge sequence is **finished** (only `master` / `origin/master` remain for active work; a redundant `refactor/b21-app-file-renames` ref may still exist and is safe to delete). **Phase 2 is SIGNED OFF (2026-07-14)** after full verification (605 pytest, mypy 0/176, ruff clean, CI green). Phase 3 modularization is **in progress** (first extract: `adapters/sse_format.py` from `stream_state`). Residual WIRE TypedDict camelCase and broad adapter camelCase remain deferred tech debt, not Phase 2 blockers. **Pick up from the Progress Log's current step** — do not restart Phase 0 or re-merge closed branches. Before doing anything else, read the Progress Log, then scan the actual repository yourself to confirm what it says is still accurate. Do not take the Progress Log, or any prior audit report it references, at face value — see Ground Rule 1.
+**This is a handoff, not a fresh start — and it's already mid-flight.** Phase 0 is signed off. The old multi-branch merge sequence is **finished** (only `master` / `origin/master` remain for active work; a redundant `refactor/b21-app-file-renames` ref may still exist and is safe to delete). **Phase 2 is SIGNED OFF (2026-07-14).** Phase 3 modularization is **in progress** (sse_format, openai_sse, proxy_tool_defs, tool_html). Phase 4 **missing indexes done** (`5b21a50`); schema rename still needs sign-off. Residual WIRE TypedDict camelCase deferred. **Pick up from the Progress Log's current step** — do not restart Phase 0 or re-merge closed branches. Before doing anything else, read the Progress Log, then scan the actual repository yourself to confirm what it says is still accurate. Do not take the Progress Log, or any prior audit report it references, at face value — see Ground Rule 1.
 
 **Authoritative live tracker:** `docs/REFACTOR_PROGRESS.md` (not repo root). Prefer it over any older chat paste if they disagree — but still verify both against the repo.
 
@@ -121,7 +121,7 @@ Confirm baseline in Progress Log / live tracker before starting — **do not ass
 **Enforcement**
 - Set up/keep automated enforcement: ESLint naming-convention (frontend); Ruff (+ naming lint if added) on Python backend.
 
-## Phase 3 — Structural Refactor (IN PROGRESS; B15 DONE; SSE extract done)
+## Phase 3 — Structural Refactor (IN PROGRESS; B15 DONE; multiple extracts done)
 
 **Modularization**
 - Break up Known Large Files — still open for most targets.
@@ -142,7 +142,7 @@ Confirm baseline in Progress Log / live tracker before starting — **do not ass
 - Keep raw `sqlite3` + `db_writer` design — no ORM reintroduction unless asked.
 - **`db_writer` role — DOCUMENTED (B2 closed):** `_conn()` = WAL/busy_timeout write serialization; `enqueue_write` = priority/drop-policy queue on top (caller: `consolidation_daemon`). See `docs/ARCHITECTURE.md`. Do not "simplify away."
 - `lib/storage_key_migration.py` busy_timeout inconsistency — still low priority / verify current state (B22 fixed a related table-name bug).
-- **Missing indexes — still open:** `messages(sessionId)`, `usageEvents(sessionId)`, `usageEvents(createdAt)`, `sessions(isArchived)`, `blackboard(sessionId)`, `examAttempts(examId)`.
+- **Missing indexes — CLOSED** (`5b21a50`): `messages(sessionId)`, `usageEvents(sessionId/createdAt)`, `sessions(isArchived)`, `blackboard(sessionId)`, `examAttempts(examId)`.
 - **B1a non-atomic JSON writes — CLOSED.** `write_json_atomic` lives in `app/atomic_write.py`. Former sites fixed; curator uses temp + `Path.replace`. Re-verify with grep before assuming closed if time has passed.
 - SQLite table/column camelCase→snake_case: **needs explicit sign-off** (high risk) — not bundled with naming work.
 
@@ -188,7 +188,7 @@ Same deliverables as before when the full refactor completes.
 
 Because this is a large codebase, work iteratively.
 
-**Current step:** **Phase 3 modularization** — extract cohesive pieces from Known Large Files (one branch/CI each). SSE helpers extracted to `adapters/sse_format.py`. Next targets: tool_definitions / openai SSE helpers / proxy_tools / memory_store / workbench (re-count lines first).
+**Current step:** Continue **Phase 3** on remaining large files (`workbench`, `anthropic`, further `tool_definitions`/`memory_store` slices). Phase 4 indexes done; do not start schema rename without sign-off.
 
 **On session start:**
 1. Acknowledge these instructions and the Codebase Reference.
@@ -238,7 +238,8 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 | WIRE **TypedDict** fields (SQLite/JSON) | **Deferred** to Phase 4 schema |
 | CamelModel router scale-up | **✅ Complete** — 0 BaseModel in `app/routers/` |
 | Phase 2 overall | **✅ Signed off 2026-07-14** (evidence pack in Progress Log) |
-| Phase 3 modularization | **In progress** — `sse_format` extract done |
+| Phase 3 modularization | **In progress** — sse_format, openai_sse, proxy_tool_defs, tool_html |
+| Phase 4 missing indexes | **✅ Done** (`5b21a50`) |
 | SQLite schema/table camelCase | **Deferred** — needs explicit sign-off |
 
 ### Priority decision (current)
@@ -377,6 +378,6 @@ Still required before Phase 8 sign-off.
 
 ## Session close note (for the next model)
 
-Stop state: Phase 2 **signed off**; Phase 3 started (`sse_format` extract). Continue Phase 3 large-file modularization. Update `docs/REFACTOR_PROGRESS.md` after each merge. Keep Ground Rule 1 — verify this prompt against HEAD before trusting SHAs.
+Stop state: Phase 2 signed off; Phase 3 wave landed (4 extracts); Phase 4 missing indexes done. Continue Phase 3 on workbench/anthropic/memory_store. Update `docs/REFACTOR_PROGRESS.md` after each merge. Keep Ground Rule 1.
 
 Are you ready to begin? If so, verify the Progress Log and Codebase Reference against the real repository first, report anything that doesn't match, then continue CamelModel scale-up from the current step rather than restarting from scratch.

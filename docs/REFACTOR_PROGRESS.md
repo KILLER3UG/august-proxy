@@ -9,12 +9,11 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 (**Phase 2 signed off**; Phase 3 started — SSE format extract)
-**Current branch state:** `master` tip (= `origin/master`, expect clean). Verify with `git rev-parse HEAD`.
-**Verification baseline on master (Phase 2 sign-off evidence):**
-`pytest 605 passed` · `mypy app/ → 0 errors / 176 source files` ·
-`ruff check app/ → All checks passed` · CI Type check green on residual naming + SSE extract branches
-**CI note:** Prefer `backend-py/.venv` (3.12). System Python 3.11 can fail collection.
+**Last updated:** 2026-07-14 (Phase 3 extracts + Phase 4 missing indexes on master)
+**Current branch state:** `master` tip (= `origin/master`, expect clean). Verify with `git rev-parse HEAD` — tip ≥ `5b21a50`.
+**Verification baseline:**
+`pytest 625 passed` · `mypy app/ → 0 errors` · `ruff check app/ → clean` · CI Type check **green** on master
+**CI note:** Prefer `backend-py/.venv` (3.12).
 
 ### Phase 0 sign-off
 
@@ -64,12 +63,11 @@ TypedDict keys stay camelCase until Phase 4 schema work.
 ## Where to pick up (next session)
 
 1. Verify clean `master` matching `origin/master`.
-2. **Phase 3 modularization** — continue large-file splits, one extract per branch/CI.
-   - Done: `stream_state` SSE helpers → `adapters/sse_format.py`
-   - Next targets (re-count lines first): `workbench.py` (~2011), `tool_definitions.py` (~1314), `anthropic.py` (~1277), `memory_store.py` (~799), `openai.py` (~553), `proxy_tools.py` (~558), `stream_state.py` (~467 residual)
-3. Prefer extract cohesive helpers first (like SSE); characterization tests before risky splits.
-4. Do **not** mix bug fixes with structural extracts (Ground Rule 3).
-5. Do **not** rename SQLite schema without Phase 4 sign-off.
+2. **Continue Phase 3** — remaining large files still open:
+   - `workbench.py` (~2011), `anthropic.py` (~1277), `tool_definitions.py` (~1302 after HTML extract), `memory_store.py` (~804)
+3. **Phase 4** — missing indexes **done**; still open: B18 Zustand, busy_timeout consistency, schema rename (**needs sign-off**).
+4. Prefer cohesive helper extracts; characterization tests before risky splits.
+5. Do **not** rename SQLite schema without explicit user sign-off.
 
 ---
 
@@ -137,34 +135,50 @@ Unchanged closures from Phase 0 evidence pack (B1a atomic writes, B2 db_writer d
 
 ## Phase 3 progress note
 
-| Extract | From | To | Commit | Status |
-|---|---|---|---|---|
-| SSE format helpers | `stream_state.py` | `adapters/sse_format.py` | `6a88ed7` (branch) | ✅ first modularization |
+| Extract | From | To | Status |
+|---|---|---|---|
+| SSE format helpers | `stream_state.py` | `adapters/sse_format.py` | ✅ `6a88ed7` |
+| OpenAI SSE helpers | `openai.py` | `adapters/openai_sse.py` | ✅ `7dd972a` |
+| Proxy tool defs | `proxy_tools.py` | `adapters/proxy_tool_defs.py` | ✅ `d845192` |
+| HTML helpers | `tool_definitions.py` | `services/tool_html.py` | ✅ `bb29e21` |
 
-Known large files (approx lines at Phase 2 sign-off):
+Approx sizes after extracts:
 
 | File | ~Lines |
 |---|---|
-| `services/workbench/workbench.py` | 2011 |
-| `services/tool_definitions.py` | 1314 |
-| `adapters/anthropic.py` | 1277 |
-| `services/memory_store.py` | 799 |
-| `adapters/proxy_tools.py` | 558 |
-| `adapters/openai.py` | 553 |
-| `adapters/stream_state.py` | 467 |
+| `workbench.py` | 2011 (still open) |
+| `anthropic.py` | 1277 (still open) |
+| `tool_definitions.py` | 1302 |
+| `memory_store.py` | 804 |
+| `openai.py` | 493 |
+| `proxy_tools.py` | 310 |
+| `proxy_tool_defs.py` | 306 (new) |
+| `stream_state.py` | 467 |
+
+---
+
+## Phase 4 progress note
+
+| Item | Status |
+|---|---|
+| Missing indexes (`messages.sessionId`, `usageEvents.*`, `sessions.isArchived`, `blackboard.sessionId`, `examAttempts.examId`) | ✅ `5b21a50` |
+| Schema camelCase→snake_case | **Deferred** — needs explicit sign-off |
+| B18 nanostores → Zustand | Open |
+| storage_key_migration busy_timeout consistency | Open / low priority |
 
 ---
 
 ## What's next
 
-1. ✅ Phase 0 + Phase 2 signed off; residual naming + SSE extract landed / landing.
-2. **Continue Phase 3:** next extract from a Known Large File (prefer cohesive helper clusters).
-3. Later: B18 Zustand; indexes; schema rename (sign-off); Phase 7 feature testing.
+1. ✅ Phase 0 + Phase 2 signed off.
+2. ✅ Phase 3 first wave of extracts landed; continue with `anthropic` / `workbench` / `memory_store`.
+3. ✅ Phase 4 missing indexes landed.
+4. Later: B18 Zustand; schema rename (sign-off); Phase 7 feature testing.
 
 ---
 
 ## Open questions for the user
 
-- Preferred next Phase 3 target? (`tool_definitions` / `openai` SSE helpers / `proxy_tools` / `memory_store`)
+- Next Phase 3 target? (`anthropic` SSE/helpers / `workbench` slice / `memory_store` helpers)
+- Approve SQLite schema rename planning? (high risk — not started)
 - Delete leftover `refactor/b21-app-file-renames` refs?
-- Manual CI loop (default) vs automation
