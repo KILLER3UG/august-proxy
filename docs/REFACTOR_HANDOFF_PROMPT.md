@@ -1,12 +1,12 @@
 # Full Codebase Refactor & Modernization Prompt
 ### (Production Refactor Edition — August Proxy)
 
-> **Handoff snapshot:** 2026-07-14 · live tracker: `docs/REFACTOR_PROGRESS.md` · tip: verify with `git rev-parse master` (**Phases 0–4 DONE**)  
+> **Handoff snapshot:** 2026-07-14 · live tracker: `docs/REFACTOR_PROGRESS.md` · tip: verify with `git rev-parse HEAD` (**Phases 0–4 + Phase P DONE**; Phase 5 residual in flight)  
 > Paste this entire document into a new session. Then **verify it against the repo** (Ground Rule 1) before coding.
 
-Act as a Senior Principal Software Architect and Lead Developer. Your task is a comprehensive, end-to-end refactor of **August Proxy** — a large, working AI-agent proxy system: a Tauri + React 19 + TypeScript desktop app (plus an Expo React Native mobile companion) on the frontend, and a FastAPI Python backend spanning ~195 `app/` Python files across **32 routers** (200+ endpoints) and ~95 service files. This is a multi-phase migration of a live system, not a quick cleanup pass — treat the scale below as the default assumption for how you plan your work, not an edge case.
+Act as a Senior Principal Software Architect and Lead Developer. Your task is a comprehensive, end-to-end refactor of **August Proxy** — a large, working AI-agent proxy system: a Tauri + React 19 + TypeScript desktop app (plus an Expo React Native mobile companion) on the frontend, and a FastAPI Python backend spanning ~200 `app/` Python files across **~33 routers** and ~95 service files. This is a multi-phase migration of a live system, not a quick cleanup pass — treat the scale below as the default assumption for how you plan your work, not an edge case.
 
-**This is a handoff, not a fresh start — and it's already mid-flight.** Phase 0–2 are signed off (**B1a** atomic JSON stores closed; **B16** function APIs snake_case closed; residual camelCase **params** / WIRE keys remain by design or debt). **Phase 3 is DONE against modularization exit criteria** (extracts including tool_registrations/`register_all`, workbench providers, SSE/system helpers, memory_schema). Residual large files (`workbench` chat loop, `anthropic` stream translate, `openai`/`proxy_tools`/`stream_state` partial or unsplit) are **optional**, not forgotten. **Phase 4 DONE** including schema rename **closed on live DB** (snake tables/columns + camel wire via `_row_as_wire`; pass 1 merge + pass 2 camel drop verified). Test isolation is **autouse** (`isolatedData`). **Phase P:** **P0 unblocked** (baselines only; P1–P5 gated). Permanent brain DB tooling in `docs/ARCHITECTURE.md`. **Pick up from the Progress Log** — verify against the repo (Ground Rule 1).
+**This is a handoff, not a fresh start — and it's already mid-flight.** Phase 0–2 are signed off (**B1a** atomic JSON stores closed; **B16** function APIs snake_case closed; residual camelCase **params** / WIRE keys remain by design or debt). **Phase 3 is DONE against modularization exit criteria** (extracts including tool_registrations/`register_all`, workbench providers, SSE/system helpers, memory_schema). Residual large files (`workbench` chat loop, `anthropic` stream translate, `openai`/`proxy_tools`/`stream_state` partial or unsplit) are **optional**, not forgotten. **Phase 4 DONE** including schema rename **closed on live DB** (snake tables/columns + camel wire via `_row_as_wire`; pass 1 merge + pass 2 camel drop verified) and **B18 Zustand complete** (zero nanostores). Test isolation is **autouse** (`isolatedData`). **Phase P COMPLETE** (P0 baselines through P5 `chat_stages` / virtualized UI / DEVELOPER_GUIDE checklists). **B26 closed** (dead `QueueFull` path removed). Curator telemetry type is **`SkillUsageRecord`** (not API `UsageRecord`). **Pick up from `docs/REFACTOR_PROGRESS.md`** — verify against the repo (Ground Rule 1).
 
 **Authoritative live tracker:** `docs/REFACTOR_PROGRESS.md` (not repo root). Prefer it over any older chat paste if they disagree — but still verify both against the repo.
 
@@ -171,14 +171,17 @@ Same deliverables as before when the full refactor completes.
 - [x] B16 function APIs snake_case for memory_store / db_writer / proxy_tools (SQL names deferred)
 - [x] B21 app + test filenames snake_case; resolver callables snake_case; INTERNAL TypedDicts converted
 - [x] Phase 2 signed off (2026-07-14) — full verification evidence pack in Progress Log
-- [ ] Naming 100% consistent language-wide (WIRE TypedDicts + remaining adapter/service camelCase deferred)
-- [ ] No remaining dead code (or explicitly listed as pending removal) — B12 `.bak` optional
+- [ ] Naming 100% consistent language-wide (WIRE TypedDicts + residual service **params** deferred)
+- [ ] No remaining dead code (or explicitly listed as pending removal) — B12 `.bak` optional; B26 closed
 - [ ] All flagged bugs documented with suggested fixes
-- [x] `db_writer` role documented in `ARCHITECTURE.md` (B2)
+- [x] `db_writer` role documented in `ARCHITECTURE.md` (B2); B26 dead path removed
 - [x] B1a non-atomic JSON writes closed
 - [x] B15 `jsonUtils` split landed
 - [x] Historical merge-queue branches resolved (merged or dropped)
-- [ ] Dependencies audited, lint/format tooling complete
+- [x] B18 Zustand migration closed
+- [x] Schema rename closed on live DB
+- [x] Phase P complete (P0–P5)
+- [ ] Dependencies audited, lint/format tooling complete (Phase 5 residual)
 - [ ] Every Feature Inventory item tested end-to-end and documented (Phase 7)
 - [ ] Progress Log claims independently verified each session (Ground Rule 1)
 
@@ -188,20 +191,20 @@ Same deliverables as before when the full refactor completes.
 
 Because this is a large codebase, work iteratively.
 
-**Current step:** Optional further Phase 3 slices (workbench chat loop / registerAll / anthropic stream). Phase 4: finish remaining Zustand stores or wait for schema rename sign-off.
+**Current step:** **Phase 5 residual** (docs/tooling polish, open low bugs). Optional Phase 3 large-file slices only with explicit go-ahead. Phase 7 feature testing still ahead of full sign-off. Do **not** re-open Phase P optimizations without new budgets/regressions.
 
 **On session start:**
 1. Acknowledge these instructions and the Codebase Reference.
-2. Read Progress Log + `docs/REFACTOR_PROGRESS.md`; verify against repo (HEAD, branches, open bugs, CamelModel counts).
-3. Confirm working tree clean; note any leftover `refactor/b21-app-file-renames` and offer delete.
-4. Propose the next CamelModel router (or other chunk if user redirects) and **wait for approval** before coding if the change touches auth/data migrations/shared state — for routine CamelModel router conversions, proceed on a feature branch after stating which router, then push/CI before merge.
-5. Do **not** start Phase 3 large-file splits or SQLite schema rename without explicit go-ahead.
+2. Read Progress Log + `docs/REFACTOR_PROGRESS.md`; verify against repo (HEAD, branches, open bugs). Prefer the live tracker over this prompt if they disagree.
+3. Confirm working tree clean; note leftover local `refactor/*` branches (safe to delete after content is on master).
+4. Pick the next Phase 5 residual item (or user-directed chunk). **Wait for approval** before auth/data migrations/shared-state risk, large-file splits, or anything that changes live SQLite schema.
+5. CamelModel router scale-up and schema rename are **done** — do not restart them.
 
 ---
 
 ## Progress Log (verify this, don't just read it — see Ground Rule 1)
 
-*Last updated 2026-07-14 (Phase 2 signed off; Phase 3 started). Tip: `master` / `origin/master` (verify `git rev-parse HEAD`).*
+*Last updated 2026-07-14 (Phases 0–4 + Phase P done; Phase 5 residual). Tip: verify `git rev-parse HEAD` + `docs/REFACTOR_PROGRESS.md`.*
 
 ### Merge Status (historical queue — CLOSED)
 
@@ -241,16 +244,17 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 | Phase 3 modularization | **Substantially complete** (9 extracts; residual large chat/registerAll cores) |
 | Phase 4 missing indexes | **✅ Done** |
 | Phase 4 busy_timeout | **✅ Done** |
-| Phase 4 schema rename | **Design only** — needs sign-off |
-| Phase 4 B18 Zustand | **Pilot done** (browser-store); remaining nanostores open |
-| SQLite schema/table camelCase | **Deferred** — needs explicit sign-off |
+| Phase 4 schema rename | **✅ CLOSED** on live DB (snake-only + camel wire) |
+| Phase 4 B18 Zustand | **✅ CLOSED** — zero nanostores in frontend |
+| Phase P (P0–P5) | **✅ COMPLETE** |
+| SQLite schema/table camelCase | **✅ Migrated** — snake tables; wire still camel via `_row_as_wire` |
 
 ### Priority decision (current)
 
-1. **Continue CamelModel scale-up** (one router at a time) — current rail.
-2. Do **not** mix with large-file splits or SQLite schema migration in the same commit.
-3. Remaining camelCase callables in renamed modules are a **separate** chunk from CamelModel (tracker B21 scope note).
-4. B1/B2 data-safety gate already closed — do not re-open unless verification finds regressions.
+1. **Phase 5 residual** — tooling/docs polish, closed-bug ledger accuracy, optional low bugs (B12, B20).
+2. Do **not** re-open Phase P optimizations without measured regressions or new budgets.
+3. Optional Phase 3 large-file slices only with **explicit** user go-ahead (separate commits).
+4. B1/B2 data-safety + schema rename closed — do not re-open unless verification finds regressions.
 
 ### Bug Tracker (numbered, cumulative — add to this, don't renumber)
 
@@ -258,7 +262,7 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 |---|---|---|---|---|
 | B1a | High | former JSON write sites | Non-atomic JSON writes | **CLOSED** |
 | B2 | Med | `db_writer` / ARCHITECTURE | Queue role (was wrong “priority”) | **AMENDED 2026-07-14** — FIFO + age-drop; see ARCHITECTURE |
-| B26 | Med | `db_writer.enqueue_write` | Dead `QueueFull` low-pri drop (unbounded queue) | **OPEN** — leftover/wrong wiring; age-drop is the live policy |
+| B26 | Med | `db_writer.enqueue_write` | Dead `QueueFull` low-pri drop (unbounded queue) | **CLOSED** — dead path removed; age-drop at dequeue remains |
 | B27 | **High** | `subagent_orchestrator` | Peer-help does not recover. Silent success on failed/empty worker results **fixed** (status + non-empty payload). Production multi-agent uses orchestrator. Recovery/re-spawn still not implemented | **PARTIAL** — correctness fixed; no re-spawn until product asks |
 | B11 | Med | nested `backend-py/backend-py/tests/` | Claimed nest | **Absent / closed** |
 | B12 | Low | `data/*.bak` | Leftover backups | Open — optional delete |
@@ -266,15 +270,15 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 | B15 | Med | `jsonUtils.py` | Mixed responsibilities | **CLOSED** → `json_narrowing.py` + `atomic_write.py` |
 | B16 | Low | memory_store / db_writer / proxy_tools | camelCase function APIs | **CLOSED** (SQL names deferred) |
 | B17 | Med | `fix/mypy-green` | Would delete characterization tests | **Dropped** — branch gone |
-| B18 | Med | desktop frontend | nanostores → Zustand | **Open** — relaunch |
+| B18 | Med | desktop frontend | nanostores → Zustand | **CLOSED** — zero nanostores |
 | B19 | Low | `REMAINING_MYPY_FIXES.md` | Stale branch refs | Marked STALE; paths updated for B21 |
 | B20 | Low | Dockerfile | Claim not re-verified | **Open** |
-| B21 | Med | app filenames + tests | camelCase filenames | **PARTIAL** — 3 app files done; 62 tests + callables/TypedDict fields remain |
+| B21 | Med | app filenames + tests | camelCase filenames | **CLOSED** for app+tests+callables+INTERNAL TypedDicts; WIRE keys deferred by design |
 | B22 | Med | storage_key_migration | Wrong table name | **CLOSED** |
 | B23 | Low | pre-commit dep | Missing | **CLOSED** |
 | B24 | Low | mcp `_saveConfig` | Dead writer | **CLOSED** |
 | B25 | Low | ARCHITECTURE drift | enqueue_write / atomic_write docs | **CLOSED** |
-| — | Low | `UsageRecord` name collision | usage router vs skills curator | **Open** — different types; rename/consolidate carefully |
+| — | Low | `UsageRecord` name collision | usage router vs skills curator | **CLOSED** — curator type is `SkillUsageRecord` |
 | — | Low | `storage_key_migration` connection helper | Consistency with `_conn()` | **Open** — low priority |
 
 ### New features — tracked, but out of this refactor's scope
@@ -298,15 +302,15 @@ Scheduled/known: `workbench.py`, `anthropic.py`, `tool_definitions.py`, plus `ad
 
 Still required before Phase 8 sign-off.
 
-### CamelModel progress (current rail)
+### CamelModel progress (complete)
 
 | Item | Status |
 |---|---|
-| All `app/routers/` request bodies → `CamelModel` | ✅ Complete (`1d66d4d`) |
+| All `app/routers/` request bodies → `CamelModel` | ✅ Complete |
 | Characterization tests `test_camel_model*.py` | ✅ Present |
-| Remaining Phase 2 naming | WIRE TypedDict keys only (deferred); optional curator methods |
+| Remaining Phase 2 naming | WIRE TypedDict keys only (deferred by design); residual camelCase **params** on some service APIs |
 
-**Suggested next:** Phase 3 large-file splits with user go-ahead, or residual naming cleanup.
+**Suggested next:** Phase 5 residual (docs/tooling), optional Phase 3 large-file slices with go-ahead, or Phase 7 feature testing.
 
 ---
 
@@ -360,7 +364,7 @@ Still required before Phase 8 sign-off.
 - `./data/august_brain.sqlite` (`AUGUST_BRAIN_SQLITE_FILE`)
 - Core: `services/memory_store.py` — tables still camelCase names (`memoryStore`, `usageEvents`, …)
 - Write path: `_conn()` WAL + busy_timeout; `enqueue_write` for priority queue (consolidation only)
-- **Missing indexes — still open** (list above in Phase 4)
+- **Missing indexes — CLOSED** (all six present + EXPLAIN-used)
 
 **2. JSON-file stores**
 
@@ -375,14 +379,14 @@ Still required before Phase 8 sign-off.
 - **Frontend:** Tauri + React 19 + TypeScript (desktop), Expo React Native (mobile)
 - **Backend:** FastAPI (Python 3.12+; CI pins 3.12)
 - **Database:** SQLite + JSON stores
-- **Tests / types (baseline at handoff):** pytest **604** collected · mypy **0 / 176** · ruff clean · CI `type-check.yml`
-- **Current priority:** CamelModel scale-up (next router) — not B1a, not branch merges, not Phase 0 redo
+- **Tests / types (re-verify):** prefer full pytest under `backend-py/.venv` (3.12) with `isolatedData` autouse · ruff via pre-commit · CI `type-check.yml`
+- **Current priority:** Phase 5 residual / optional Phase 3 polish / Phase 7 — **not** CamelModel, **not** schema rename, **not** Phase P redo
 - **Risky modules:** `workbench.py`, `memory_store.py`, `db_writer.py`, `self_evolution.py`, `delta_engine.py`, `daemon_manager.py`, `subagent_orchestrator.py`
 
 ---
 
 ## Session close note (for the next model)
 
-Stop state: Phase 2 signed off; Phase 3 substantially complete; Phase 4 almost done (indexes, busy_timeout, schema plan, Zustand pilot). Next: optional further modularization, remaining Zustand stores, or schema rename after sign-off. Keep Ground Rule 1.
+Stop state: Phases 0–4 + Phase P complete. Phase 5 residual started (B26 closed, `SkillUsageRecord` rename). Next: remaining Phase 5 polish, optional large-file modularization with go-ahead, or Phase 7. Keep Ground Rule 1.
 
-Are you ready to begin? If so, verify the Progress Log and Codebase Reference against the real repository first, report anything that doesn't match, then continue CamelModel scale-up from the current step rather than restarting from scratch.
+Are you ready to begin? If so, verify the Progress Log and Codebase Reference against the real repository first, report anything that doesn't match, then continue from **Phase 5 residual** (or the user’s redirect) rather than restarting from scratch.

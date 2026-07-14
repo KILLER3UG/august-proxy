@@ -9,10 +9,10 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 — **Phase P COMPLETE** (P0–P5 workstreams landed)
-**Current branch state:** `master` — verify with `git rev-parse HEAD`.
+**Last updated:** 2026-07-14 — **Phase 5 residual started** (B26 closed; SkillUsageRecord rename)
+**Current branch state:** feature `refactor/phase5-b26-usage-record` (merge to `master` after CI). Verify with `git rev-parse HEAD`.
 **Verification baseline:**
-P0 + P1 cache tests green · schema closed · isolation autouse · db_writer FIFO documented
+P0 + P1 cache tests green · schema closed · isolation autouse · db_writer FIFO · B26 dead path removed
 **CI note:** Prefer `backend-py/.venv` (3.12). Isolation is **autouse** — do not remove.
 
 ### Phase 0 — SIGNED OFF (2026-07-13)
@@ -43,9 +43,12 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 ## Where to pick up (next session)
 
 1. Phase P is **closed** — only re-open for measured regressions or new budgets.
-2. **Contention gate** still applies before *raising* daemon/subagent caps.
-3. Do **not** remove `isolatedData` autouse without safety review.
-4. Phase 5 / Phase 7 remain open on the long roadmap.
+2. **B26 closed** (dead `QueueFull` path removed). **UsageRecord collision closed** (`SkillUsageRecord` in curator).
+3. **Contention gate** still applies before *raising* daemon/subagent caps.
+4. Do **not** remove `isolatedData` autouse without safety review.
+5. **Phase 5** next: dependency audit notes, expand ruff gradually, doc drift (handoff vs tracker), optional B12 `.bak` delete.
+6. **Optional Phase 3 polish** (workbench chat loop / anthropic stream translate / stream_state) — needs explicit go-ahead.
+7. **Phase 7** feature-level testing still open on the long roadmap.
 
 ---
 
@@ -457,24 +460,42 @@ If P0 shows DB is not the bottleneck, P2 may never be worth opening.
 | Phase 4 modernization exit criteria | **met** including schema rename closed on live DB |
 | “100% of entire handoff checklist” | **false** for residual naming params / optional large files |
 | Schema rename | **CLOSED** (pass 1 + pass 2) |
-| Phase P / P0 | **P0 unblocked** |
+| Phase P | **COMPLETE** (P0–P5 streams) |
+| B26 dead QueueFull | **CLOSED** (removed; age-drop remains) |
+| UsageRecord collision | **CLOSED** (`SkillUsageRecord`) |
 | Live test isolation | **Required** — `isolatedData` autouse; opt-in was the root failure mode |
 
 ---
 
 ## What's next
 
-1. Implement **P0 only** when user says start (instrument + measure; no optimizations).
-2. Report baselines; then **separate** go/no-go for any P1+ work.
-3. Phase 5/7 as needed; optional modularization polish not blocking.
+1. ~~P0 / Phase P~~ — **COMPLETE** (see section below).
+2. Finish Phase 5: doc/tooling polish, residual open bugs (B12 optional, B20 Dockerfile).
+3. Optional Phase 3 large-file slices only with explicit go-ahead.
+4. Phase 7 feature inventory testing when ready for overall refactor sign-off.
 
 ---
 
 ## Open questions
 
-- Start P0 instrumentation implementation now?
-- Any extra surfaces to include in P0 (e.g. mobile companion)?
+- Approve optional Phase 3 chat-loop / stream-translate extracts?
+- Expand ruff select rules beyond E4/E7/E9/F in a dedicated PR?
+- Delete optional `data/*.bak` (B12)?
 
+
+---
+
+## Phase 5 residual (2026-07-14 — in progress)
+
+| Item | Status | Evidence |
+|---|---|---|
+| B26 dead `QueueFull` path | ✅ CLOSED | `db_writer.enqueue_write` no longer catches `QueueFull`; ARCHITECTURE updated |
+| `UsageRecord` name collision | ✅ CLOSED | curator → `SkillUsageRecord`; API `routers.usage.UsageRecord` unchanged |
+| Handoff prompt sync | ✅ this session | `REFACTOR_HANDOFF_PROMPT.md` aligned to Phase P complete |
+| Dependency audit write-up | Open | `pyproject` dual dev lists already kept in sync |
+| Ruff rule expansion | Open | intentionally narrow select; expand gradually |
+| B12 `data/*.bak` | Open optional | do not auto-delete |
+| B20 Dockerfile claim | Open | re-verify when touching deploy |
 
 ---
 
