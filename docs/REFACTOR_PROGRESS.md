@@ -34,7 +34,7 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 | **B16** function APIs on `memory_store` / `db_writer` / `proxy_tools` | **CLOSED** — `def` names are snake_case (`save_memory`, `enqueue_write`, `execute_managed_proxy_tool`, …). **Residual naming debt:** many **parameters** still camelCase (`sessionId`, `factKey`). WIRE TypedDict keys still camelCase **by design**. | Phase 2 (not Phase 3/4) |
 | **B1a** non-atomic JSON writes | **CLOSED** for listed sites: `aug_artifact_service` + `gateway/session_bridge` use `write_json_atomic`; `skills/curator` uses temp + `Path.replace`; `mcp_client` stdin JSON-RPC is not a durable JSON store write. **Residual (low, different class):** `consolidation_daemon` skill-draft `.md` uses plain `open(..., 'w')` (markdown staging, not the B1a JSON-store bug). | Phase 0/1 safety (gated Phase 2; closed before scale-up) |
 | **Known large files** beyond workbench/anthropic | **Deferred, not forgotten** — see modularization residual table | Phase 3 optional polish |
-| **Schema rename** | **Implemented as hybrid boundary** (see below) — full **table/column** snake rename + camel **wire**, not dual columns | Phase 4 |
+| **Schema rename** | **PARTIAL / NOT CLOSED on live DB** (see schema spot-check below). Code path + snake DDL exist; real `data/august_brain.sqlite` still has dual camel+snake tables | Phase 4 |
 
 **Correct phrasing:** Phase 3/4 exit criteria for **modularization + Phase 4 modernization menu** are met. That is **not** the same as “100% of every historical audit bullet including residual param naming and optional file splits.”
 
@@ -114,19 +114,44 @@ Phase 3 “done” = major targets modularized enough for safer change, **not** 
 | Schema rename | ✅ hybrid (see below) | User-approved; shipped |
 | B18 Zustand | ✅ | Zero `nanostores` in frontend |
 
-### What “schema hybrid” means (one line + detail)
+### What “schema hybrid” was *intended* to mean
 
-**One line:** Tables/columns were **fully renamed to snake_case in SQLite**; HTTP/JSON **still camelCase** via `_row_as_wire` (`snakeToCamel` on row dicts) — **not** dual columns or a permanent dual schema.
+**Intended design:** Tables/columns **fully renamed** camel→snake in SQLite; HTTP/JSON stays camelCase via `_row_as_wire` — **not** dual live schemas.
 
-| Layer | Convention |
+| Layer | Intended convention |
 |---|---|
 | SQLite DDL / SQL identifiers | `memory_store`, `session_id`, `created_at`, … |
-| Startup migration | `schema_rename_migration.migrate_camel_to_snake` (idempotent) before `CREATE TABLE IF NOT EXISTS` |
-| Python function names | snake_case (B16) |
-| Returned dicts / API JSON | camelCase (`sessionId`, `createdAt`) |
-| WIRE TypedDicts | Still camelCase keys (wire contract) |
+| Startup migration | `migrate_camel_to_snake` before `CREATE TABLE IF NOT EXISTS` |
+| Returned dicts / API JSON | camelCase via `_row_as_wire` |
 
-**Not done / not claimed:** renaming every Python **parameter** to snake_case; converting WIRE TypedDict key names; dual-writing old+new columns.
+### Schema spot-check (live DB) — 2026-07-14 — **FAILED full close**
+
+**DB:** `data/august_brain.sqlite` (~1.6 MB), inspected with `backend-py/scripts/_spotcheck_schema.py`.
+
+| Check | Result |
+|---|---|
+| Snake tables exist | Yes (`memory_store`, `sessions`, `messages`, …) |
+| Snake table **columns** | **All snake** on spot-checked tables (`session_id`, `created_at`, …) — no camelCase column names found |
+| Camel **table names** still present | **Yes — all 10 TABLE_MAP pairs dual** (`memoryStore` + `memory_store`, …) |
+| `migrate_camel_to_snake` on live DB | `needs_migration=True`, change count **0**, still True after — skips rename when both exist |
+| Migration code path | Logs *“Both X and Y exist — skipping table rename (manual merge needed)”* |
+
+**Data split (evidence migration did not finish):**
+
+| Pair | Camel rows | Snake rows | Risk |
+|---|---|---|---|
+| `autoMemories` / `auto_memories` | **100** | 6 | Most auto-memories may be stranded on camel table |
+| `examQuestions` / `exam_questions` | **29** | 0 | Exam data stranded |
+| `examAttempts` / `exam_attempts` | **4** | 0 | Stranded |
+| `configAudit` / `config_audit` | **2** | 0 | Stranded |
+| `usageEvents` / `usage_events` | 4 | 4 | Duplicated or parallel write paths |
+| `memoryStore` / `memory_store` | 2 | 2 | Dual |
+
+**Root cause (code):** When snake tables already exist (e.g. `CREATE TABLE IF NOT EXISTS` ran while camel tables still held data), rename is **skipped** forever; app SQL now targets snake tables → **orphan risk** for camel-only rows.
+
+**Phase 4 schema status:** **Not closed.** Requires an explicit **merge-or-drop** migration (copy camel→snake where missing, then drop camel) + re-verify live DB — **not** a P0 task; separate high-risk data work with user go-ahead.
+
+**Wire hybrid still true for snake paths:** `_row_as_wire` converts snake columns → camel API keys when reads hit snake tables.
 
 ---
 
@@ -160,10 +185,10 @@ If P0 shows DB is not the bottleneck, P2 may never be worth opening.
 |---|---|
 | Phase 0/2 signed off | yes (B1a + B16 function APIs included) |
 | Phase 3 modularization exit criteria | met; residual large files optional |
-| Phase 4 modernization exit criteria | met |
+| Phase 4 modernization exit criteria | **partial** — indexes/busy_timeout/Zustand met; **schema rename not closed on live DB** |
 | “100% of entire handoff checklist” | **false** — use residual ledger |
-| Schema rename | hybrid wire/SQL boundary; full table/column snake rename |
-| Phase P | **P0 only** until further approval |
+| Schema rename | **open defect** — dual tables + stranded data; needs merge migration |
+| Phase P | **P0 only** until further approval; schema merge is **not** P0 |
 
 ---
 

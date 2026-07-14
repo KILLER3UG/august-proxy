@@ -1,16 +1,20 @@
 # Phase 4 — SQLite schema rename plan
 
-> **Status:** **IMPLEMENTED** (2026-07-14).
+> **Status:** **PARTIAL — NOT CLOSED on live DB** (spot-checked 2026-07-14).
 >
-> **What “hybrid” means:** SQLite **tables and columns were fully renamed**
-> camel→snake (idempotent migration + snake DDL). There are **not** dual
-> columns or dual live schemas. **HTTP/JSON wire stays camelCase** by
-> converting row dicts at the boundary (`memory_store._row_as_wire` /
-> `snakeToCamel`). Python function names remain snake_case; WIRE TypedDict
-> **keys** stay camelCase for the API contract.
+> **Intended “hybrid”:** SQLite tables/columns snake_case; HTTP/JSON camelCase
+> via `_row_as_wire`. **Not** dual columns by design.
 >
-> **Shipped via:** `schema_rename_migration.py` + `memory_schema.ensure_schema`
-> + `_row_as_wire` on read paths.
+> **Actual live state (`data/august_brain.sqlite`):** **Dual table names**
+> (e.g. `memoryStore` + `memory_store`) for all mapped renames. Columns on
+> both sides are largely snake already. `migrate_camel_to_snake` **skips**
+> rename when both exist (`needs_migration` stays True, change count 0).
+> Some data remains only on camel tables (e.g. `autoMemories` 100 vs
+> `auto_memories` 6; `examQuestions` 29 vs 0) → orphan risk for app SQL
+> that only queries snake names.
+>
+> **Next (separate approval — not Phase P0):** merge migration
+> (copy missing rows camel→snake, drop camel tables), then re-spot-check.
 >
 > **Refs:** Phase 4 schema rename (design only); Ground Rule 5 (explicit
 > sign-off for schema renames); prior reverse migration in
