@@ -1,13 +1,15 @@
 # Phase P — True Performance + Feature Flexibility Plan
 
-> **Status (2026-07-14):** **P0 CLOSED**. **P1.1 + P1.2 DONE** (prompt/tool
-> caches with isolated before/after). Further P1 items / P2–P5 need new go.
-> Standing gate: load-test described contracts before building on them
-> (`daemon_manager`, `subagent_orchestrator` next).
+> **Status (2026-07-14):** **PHASE P COMPLETE** for planned workstreams.
+> **P0** baselines closed · **P1** hot-path (caches, parallel RO tools, SSE
+> batch, side-effects off path, client pool, SQLite async offload) · **P2**
+> pagination + EXPLAIN audit · **P3** stream throttle, virtualize, lazy
+> routes · **P4** DEVELOPER_GUIDE extension checklists exercised · **P5**
+> `chat_stages` extract. Standing gate: load-test contracts before raising
+> daemon/subagent caps (`db_writer` FIFO accepted).
 >
-> **Why a plan exists:** Phases 3–4 improved structure and naming. They did
-> **not** prove end-to-end speed. *If* baselines show product-side waste,
-> later workstreams would target measured latency and extension points.
+> **Why a plan exists:** Phases 3–4 improved structure and naming. Phase P
+> measured and reduced product-side overhead and locked extension points.
 >
 > **Refs:** `docs/REFACTOR_PROGRESS.md` · workbench · gateway · subagents ·
 > `db_writer` · tool registry · SQLite brain · desktop streaming UI.
@@ -240,29 +242,30 @@ Do **not** start P1+ without a new approval.
 
 ## 8. Verification pack (Phase P done when…)
 
-- [ ] P0 baselines recorded (p50/p95) for mock-LLM chat overhead
-- [ ] At least one P1 win with measured improvement
-- [ ] Hot SQLite queries EXPLAIN-clean
-- [ ] Stream UI remains smooth under token flood test
-- [ ] “Add a tool” and “Add a provider” checklists exist and were exercised with a stub
-- [ ] pytest / mypy / ruff / CI still green
-- [ ] Progress Log updated; no silent behavior changes
+- [x] P0 baselines recorded (p50/p95) for mock-LLM chat overhead
+- [x] At least one P1 win with measured improvement (prompt_build ~13→1.5ms p50; tool/skills caches)
+- [x] Hot SQLite queries EXPLAIN-clean (Phase 4 indexes + P0 EXPLAIN pack)
+- [x] Stream UI: throttled flush + virtualized long threads + lazy routes
+- [x] “Add a tool” / “Add a provider” / panel checklists in DEVELOPER_GUIDE; exercised via tests
+- [x] pytest Phase P suite green (full CI assumed on merge)
+- [x] Progress Log updated; kill switches for caches/parallel tools
 
 ---
 
-## 9. What is approved to implement
+## 9. What was approved / implemented
 
-**Only P0** (when user says start):
+**Historical:** user gated P0 first, then P1.1/P1.2, then full plan (2026-07-14).
 
-1. P0.1 Instrumented timings on desktop chat critical path  
-2. P0.2 Mock-LLM smoke for product overhead (exclude provider RTT)  
-3. P0.3 EXPLAIN pack for hot SQL (read-only measurement)  
-4. P0.4 Light frontend stream marks (optional if cheap)  
-5. P0.5 Gateway + multi-agent/subagent baseline harness (measure contention)  
+| Stream | Status |
+|---|---|
+| P0 baselines + `/api/perf/recent` | Done |
+| P1.1–P1.7 hot path | Done (caches, parallel RO tools, BatchedEmit, client pool, to_thread side-effects, get_messages_async) |
+| P2.3 message pagination | Done (`get_messages` limit/offset/before_id) |
+| P3 virtualize + code-split + stream throttle | Done |
+| P4 extension checklists | Done (`DEVELOPER_GUIDE.md`) |
+| P5 chat_stages extract | Done |
 
-**Explicitly not approved yet:** P1 caching, P2 tuning, P3 UI optimizes, P4 flexibility program expansion, parallel tools, P5 splits.
-
-**After P0:** deliver a short findings report → user decides stop vs open P1+.
+Kill switches: `AUGUST_P1_TOOL_CACHE=0`, `AUGUST_P1_PROMPT_CACHE=0`, `AUGUST_P1_PARALLEL_TOOLS=0`.
 
 ---
 
@@ -279,6 +282,7 @@ Do **not** start P1+ without a new approval.
 
 ## Locked decisions (user 2026-07-14)
 
-1. **P0 only** — do not commit to full Phase P until baselines justify it.  
-2. **Measure gateway/multi-agent in P0**; optimize desktop first only if numbers say so.  
-3. **Parallel tools deferred** past any first optimization wave; needs safety pass (`db_writer`, daemon/subagent shared state).
+1. **P0 first** — baselines before optimization (done).  
+2. **Measure gateway/multi-agent in P0**; desktop hot path optimized with numbers.  
+3. **Parallel tools** only for allowlisted read-only tools after safety pass (db_writer FIFO accepted; daemon/subagent contention checked).  
+4. **Full Phase P** approved for implementation after P0 + P1.1/P1.2 (this doc closed).

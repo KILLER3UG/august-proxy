@@ -186,8 +186,9 @@ def buildSystemPrompt(
     Wires brain_orchestrator classification, workspace, VCS, memory stats,
     whats-new, and guard mode rules — achieving Node.js parity.
 
-    ``tools``: optional pre-built Anthropic tool defs (P1.1 — avoids a second
-    ``toolDefinitions`` call inside the prompt_build span).
+    ``tools``: optional pre-built Anthropic tool defs. Pass them when the
+    caller already built the list so we do not call ``toolDefinitions`` again
+    inside the prompt-build timing span.
     """
     from app.services.memory.context_builder import buildSystemPrompt as ctxBuild
     from app.services.memory_store import get_memory
@@ -467,7 +468,7 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     Phase 3: If progressive disclosure is active and the tool set exceeds
     the threshold, BM25 pre-loads the most relevant tools and defers the rest.
 
-    P1.2: base registry→Anthropic conversion (+ MCP) is cached; progressive
+    The base registry→Anthropic conversion (+ MCP) is cached; progressive
     disclosure still runs per session messages.
     """
     from app.services.workbench import tool_defs_cache
@@ -511,7 +512,7 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     OpenAI/Anthropic format) are normalized to OpenAI format and deduped
     by name, then real MCP server tools are appended.
 
-    P1.2: base conversion is cached by registry generation + MCP signature.
+    Base conversion is cached by registry generation counter + MCP signature.
     """
     from app.services.workbench import tool_defs_cache
 
@@ -732,7 +733,7 @@ async def sendWorkbenchMessageStream(
     5. Handles tool calls in a loop
     6. Emits events for the SSE stream
     """
-    # P0 measurement only (AUGUST_PERF_TIMING=1 or tests force a current trace).
+    # Optional perf span/TTFT tracing (AUGUST_PERF_TIMING=1 or tests force a current trace).
     from app.lib.perf_timing import clear_current, current_trace, start_trace
 
     _owned_trace = False
@@ -740,13 +741,16 @@ async def sendWorkbenchMessageStream(
     if trace is None:
         trace = start_trace('workbench_stream', sessionId=sessionId or '')
         _owned_trace = True
-    if emit is not None:
-        _user_emit = emit
+    from app.lib.batched_emit import BatchedEmit
 
-        def emit(ev: dict[str, object]) -> None:  # type: ignore[no-redef]
-            if ev.get('type') in ('finalOutput', 'thinking', 'toolCall'):
-                trace.mark_ttft()
-            _user_emit(ev)
+    _batched: BatchedEmit | None = None
+    if emit is not None:
+        _batched = BatchedEmit(
+            emit,
+            max_chars=256,
+            on_first_content=trace.mark_ttft,
+        )
+        emit = _batched  # type: ignore[assignment]
 
     try:
         await _sendWorkbenchMessageStreamImpl(
@@ -763,6 +767,8 @@ async def sendWorkbenchMessageStream(
             trace=trace,
         )
     finally:
+        if _batched is not None:
+            _batched.flush()
         if _owned_trace:
             trace.finish()
             clear_current()
@@ -781,7 +787,7 @@ async def _sendWorkbenchMessageStreamImpl(
     signal: asyncio.Event | None = None,
     trace: object | None = None,
 ) -> None:
-    """Implementation of the streaming chat loop (P0 timing hooks via ``trace``)."""
+    """Implementation of the streaming chat loop (optional timing via ``trace``)."""
     from app.lib.perf_timing import PerfTrace
 
     _trace = cast(PerfTrace, trace) if trace is not None else PerfTrace('noop')
@@ -839,7 +845,7 @@ async def _sendWorkbenchMessageStreamImpl(
             session._failure_feedback = None
             session._failure_feedback_age = None
     with _trace.span('prompt_build'):
-        # P1: build tool defs once, pass into system prompt (no double conversion)
+        # Build tool defs once and pass into system prompt (no double conversion).
         tools = toolDefinitions(session)
         openaiTools = openaiToolDefinitions(session)
         systemText = buildSystemPrompt(session, tools=tools)
@@ -992,6 +998,7 @@ async def _sendWorkbenchMessageStreamImpl(
         toolResults: list[dict[str, object]] = []
         planSubmittedThisRound = False
         clarifySubmittedThisRound = False
+        pending_regular: list[tuple[str, dict[str, object], str]] = []
         for tu in toolUses:
             if _isCancelled():
                 break
@@ -1083,6 +1090,11 @@ async def _sendWorkbenchMessageStreamImpl(
                     emit({'type': 'toolResult', 'name': toolName, 'error': blockedReason, 'status': 'blocked'})
                 toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': f'[Blocked] {blockedReason}'})
                 continue
+            pending_regular.append((toolName, toolInput, toolUseId))
+        # Regular tools: chat_stages runs them in parallel when all are read-only.
+        from app.services.workbench.chat_stages import run_regular_tools_stage
+
+        async def _run_regular(toolName: str, toolInput: dict[str, object], toolUseId: str) -> dict[str, object]:
             if emit:
                 emit({'type': 'toolCall', 'id': toolUseId, 'name': toolName, 'input': toolInput, 'status': 'running'})
             try:
@@ -1154,11 +1166,17 @@ async def _sendWorkbenchMessageStreamImpl(
                                 'status': 'success',
                             }
                         )
-            toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': result})
+            return {'tool_use_id': toolUseId, 'role': 'tool', 'content': result}
+
+        toolResults.extend(
+            await run_regular_tools_stage(
+                pending_regular,
+                _run_regular,
+                is_cancelled=_isCancelled,
+            )
+        )
         if not toolResults:
             try:
-                from app.services.workbench.tool_guardrails import ToolCallTracker
-
                 if hasattr(session, '_tool_tracker') and session._tool_tracker:
                     session._tool_tracker.record_text_response()
             except Exception:
@@ -1223,13 +1241,17 @@ async def _sendWorkbenchMessageStreamImpl(
     except Exception:
         pass
     try:
-        asyncio.create_task(asyncio.to_thread(_syncAutoMemory, session, list(currentMessages), auto_memory_model))
-    except Exception:
-        pass
-    try:
         from app.services.memory.self_evolution import reflectOnTurn
+        from app.services.workbench.chat_stages import schedule_post_turn_side_effects
 
-        asyncio.create_task(asyncio.to_thread(reflectOnTurn, list(currentMessages), reflection_model))
+        schedule_post_turn_side_effects(
+            session=session,
+            messages=list(currentMessages),
+            auto_memory_model=auto_memory_model or None,
+            reflection_model=reflection_model or None,
+            sync_auto_memory=_syncAutoMemory,
+            reflect_on_turn=reflectOnTurn,
+        )
     except Exception:
         pass
 

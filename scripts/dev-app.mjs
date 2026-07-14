@@ -35,9 +35,7 @@ function pythonVersionAt(interp) {
     }
 }
 
-// The project requires Python 3.12+ (see backend-py/app/main.py). Never
-// return an interpreter older than this — e.g. the hermes-agent 3.11 venv
-// that happens to sit first on PATH.
+// The project requires Python 3.12+ (see backend-py/pyproject.toml).
 const MIN_PY = { major: 3, minor: 12 };
 
 function isAcceptedVersion(interp) {
@@ -49,14 +47,30 @@ function isAcceptedVersion(interp) {
 
 function findPython() {
     // 1. Prefer the project's own virtualenv (has the exact backend deps).
-    const venvPath = resolve(root, 'backend-py', '.venv', 'Scripts', 'python.exe');
-    if (process.platform === 'win32' && existsSync(venvPath) && isAcceptedVersion(venvPath)) {
+    const venvRel = process.platform === 'win32'
+        ? ['backend-py', '.venv', 'Scripts', 'python.exe']
+        : ['backend-py', '.venv', 'bin', 'python'];
+    const venvPath = resolve(root, ...venvRel);
+    if (existsSync(venvPath) && isAcceptedVersion(venvPath)) {
         return venvPath;
     }
 
-    // 2. Fall back to a PATH lookup — but only accept 3.12+. The `py`
-    //    launcher (already on PATH) selects the newest installed 3.x, so
-    //    this naturally picks whatever Python >=3.12 is installed.
+    // 2. uv: respects backend-py/.python-version (3.12) and managed interpreters.
+    const backendDir = resolve(root, 'backend-py');
+    if (existsSync(backendDir)) {
+        try {
+            const uvPy = execFileSync(
+                'uv',
+                ['run', '--directory', backendDir, 'python', '-c', 'import sys; print(sys.executable)'],
+                { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+            ).toString().trim();
+            if (uvPy && existsSync(uvPy) && isAcceptedVersion(uvPy)) {
+                return uvPy;
+            }
+        } catch { /* uv not installed or not ready */ }
+    }
+
+    // 3. PATH / py launcher — only accept 3.12+.
     const names = process.platform === 'win32'
         ? ['py.exe', 'python3.exe', 'python.exe']
         : ['python3', 'python'];

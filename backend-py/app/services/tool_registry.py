@@ -12,7 +12,7 @@ _registry: dict[str, dict[str, object]] = {}
 ToolHandler = Callable[..., Coroutine[object, object, str]]
 _RESERVEDNames: frozenset[str] = frozenset({'tool_search', 'tool_describe', 'tool_call'})
 _daemonContext: contextvars.ContextVar[bool] = contextvars.ContextVar('daemon_context', default=False)
-# Monotonic generation for P1 tool-def caches (increments on register/clear).
+# Monotonic generation for tool-definition caches (increments on register/clear).
 _generation: int = 0
 _DAEMONBlockedCommandPatterns = [
     'rm ',
@@ -88,15 +88,18 @@ def register(
 
 
 def generation() -> int:
-    """Generation counter for tool-def caches (P1.2). Bumps on each register/unregister."""
+    """Monotonic counter bumped on each register/unregister.
+
+    Tool-definition caches key on this so they rebuild after the registry changes.
+    """
     return _generation
 
 
 def unregister(name: str) -> bool:
     """Remove a registered tool. Returns True if it was present.
 
-    Bumps ``generation()`` so P1 tool-def caches invalidate (withdrawn tools
-    must not keep serving).
+    Bumps ``generation()`` so tool-definition caches drop entries for withdrawn
+    tools and stop serving stale schemas.
     """
     global _generation
     if name not in _registry:

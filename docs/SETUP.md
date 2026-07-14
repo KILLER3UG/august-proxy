@@ -22,7 +22,7 @@ client connected.
 - An API key for at least one provider (Anthropic, OpenAI, OpenRouter, Kilo,
   Opencode, Gemini, etc.). See [`CONFIGURATION.md`](CONFIGURATION.md) for the
   full list.
-- **Docker** (for Option A) **or** **Python 3.13+** (for Option B).
+- **Docker** (for Option A) **or** **Python 3.12+** (for Option B; `uv` recommended).
 - (Optional) The dashboard frontend built into `web-dist/` — it ships pre-built
   in this repo, but you can rebuild it from the frontend source.
 
@@ -60,21 +60,25 @@ Use this for development, or when you don't want Docker.
 ```bash
 cd backend-py
 
-# Create and activate a virtual environment (Python 3.13+)
-python -m venv .venv
-# Windows (PowerShell):     .venv\Scripts\Activate.ps1
-# Windows (cmd):            .venv\Scripts\activate.bat
-# macOS / Linux:            source .venv/bin/activate
+# Recommended: uv pins Python 3.12 via .python-version.
+uv sync --group dev
 
-# Install dependencies (including the dev/test extras)
-pip install -e ".[dev]"
+# Or classic venv (must be Python >= 3.12 — check: python --version)
+# python -m venv .venv
+# Windows (PowerShell):     .venv\Scripts\Activate.ps1
+# macOS / Linux:            source .venv/bin/activate
+# pip install -e ".[dev]"
 
 # (Optional) install browser automation + ML extras
-pip install -e ".[ml]"
-python -m playwright install chromium
+uv sync --extra ml
+uv run playwright install chromium
 
 # Run the server with hot reload
-uvicorn app.main:app --reload --port 8085
+uv run uvicorn app.main:app --reload --port 8085
+
+# Tests (always via uv so the interpreter is 3.12+)
+uv run pytest -q
+# or from repo root: npm run test:backend
 ```
 
 The server listens on **http://localhost:8085**. If `web-dist/` exists the

@@ -1,6 +1,15 @@
-"""Provider client factory — returns the right client for a provider config."""
+"""Provider client factory — returns the right client for a provider config.
+
+Reuses client instances per provider identity (id + apiMode + baseUrl) so the
+underlying ``httpx.AsyncClient`` connection pool is shared across requests.
+``BaseProviderClient`` already creates one HTTP client per instance; pooling
+here avoids constructing a new client object on every call.
+"""
 
 from __future__ import annotations
+
+import threading
+
 from app.providers.clients.base import BaseProviderClient
 from app.providers.clients.anthropic import AnthropicClient
 from app.providers.clients.openai import OpenAIClient
@@ -8,21 +17,26 @@ from app.providers.clients.gemini import GeminiClient
 from app.providers.clients.minimax import MiniMaxClient
 from app.providers.clients.bedrock import BedrockClient
 
+_lock = threading.Lock()
+_client_pool: dict[str, BaseProviderClient] = {}
 
-def getClient(providerConfig: dict[str, object]) -> BaseProviderClient | None:
-    """Return the appropriate client for a provider's ``api_mode``.
 
-    Args:
-        provider_config: A provider config dict (from the registry).
+def _pool_key(providerConfig: dict[str, object]) -> str:
+    return '|'.join(
+        (
+            str(providerConfig.get('id') or providerConfig.get('name') or ''),
+            str(providerConfig.get('apiMode') or 'openaiChat'),
+            str(providerConfig.get('baseUrl') or providerConfig.get('base_url') or ''),
+        )
+    )
 
-    Returns:
-        A client instance, or ``None`` if the api_mode is unknown.
-    """
+
+def _make_client(providerConfig: dict[str, object]) -> BaseProviderClient:
     mode = providerConfig.get('apiMode', 'openaiChat')
     match mode:
         case 'anthropicMessages':
             return AnthropicClient(providerConfig)
-        case 'openaiChat' | 'openaiChat' | 'codexResponses':
+        case 'openaiChat' | 'codexResponses':
             return OpenAIClient(providerConfig)
         case 'geminiOpenai':
             return GeminiClient(providerConfig)
@@ -34,6 +48,33 @@ def getClient(providerConfig: dict[str, object]) -> BaseProviderClient | None:
             return OpenAIClient(providerConfig)
 
 
+def getClient(providerConfig: dict[str, object]) -> BaseProviderClient | None:
+    """Return a pooled client for a provider's ``api_mode``.
+
+    Same provider id + apiMode + baseUrl reuses the instance (and its httpx
+    connection pool). Pass a fresh config dict after credential rotation if
+    the base URL or identity changes.
+    """
+    if not providerConfig:
+        return None
+    key = _pool_key(providerConfig)
+    with _lock:
+        client = _client_pool.get(key)
+        if client is None:
+            client = _make_client(providerConfig)
+            _client_pool[key] = client
+        else:
+            # Keep config pointer fresh for api key resolution
+            client.config = providerConfig
+        return client
+
+
+def clear_client_pool() -> None:
+    """Drop pooled clients (tests / credential rotation)."""
+    with _lock:
+        _client_pool.clear()
+
+
 __all__ = [
     'BaseProviderClient',
     'AnthropicClient',
@@ -42,4 +83,5 @@ __all__ = [
     'MiniMaxClient',
     'BedrockClient',
     'getClient',
+    'clear_client_pool',
 ]

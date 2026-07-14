@@ -1,4 +1,4 @@
-"""P1.2 — cache base workbench tool definitions (registry → provider format).
+"""Cache base workbench tool definitions (registry → provider format).
 
 Caches only the **stable** conversion of registered tools (+ MCP append),
 keyed by ``tool_registry.generation()`` and a light MCP signature.
@@ -6,7 +6,8 @@ keyed by ``tool_registry.generation()`` and a light MCP signature.
 Progressive disclosure / session-message filtering still runs outside this
 cache (see ``toolDefinitions`` in workbench.py).
 
-Disable with env ``AUGUST_P1_TOOL_CACHE=0`` for before/after baselines.
+Disable with env ``AUGUST_P1_TOOL_CACHE=0`` to force a rebuild every call
+(useful for A/B latency measurements).
 """
 
 from __future__ import annotations

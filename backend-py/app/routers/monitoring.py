@@ -45,6 +45,18 @@ from app.services.host_agent import getHostInfo
 router = APIRouter(prefix='/api')
 
 
+@router.get('/perf/recent')
+async def getRecentPerfTraces(limit: int = Query(default=20, ge=1, le=64)):
+    """Recent workbench performance traces (when ``AUGUST_PERF_TIMING=1``).
+
+    Debug/measurement only. Empty list if no traces were recorded.
+    """
+    from app.lib.perf_timing import recent_traces
+
+    traces = recent_traces(limit)
+    return {'traces': traces, 'count': len(traces)}
+
+
 @router.get('/activity')
 async def getActivity():
     """Return recent activity log entries as a bare array.

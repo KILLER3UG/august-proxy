@@ -70,6 +70,11 @@ dev = [
     "pre-commit>=4.6.0",
 ]
 
+# uv uses backend-py/.python-version (3.12). Prefer managed interpreters so the
+# project toolchain stays consistent across machines.
+[tool.uv]
+python-preference = "managed"
+
 # ── Ruff (lint + format) ────────────────────────────────────────────
 # Project convention (Phase 0 sign-off): Python identifiers stay camelCase.
 # Therefore pep8-naming (N*) is intentionally NOT enabled.

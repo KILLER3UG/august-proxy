@@ -9,8 +9,8 @@ Design
 - Each sub-agent task publishes lifecycle events to the shared
   ``AgentMessageBus`` under topics ``task:{taskId}:{progress|result|failure}``.
 
-Peer-help (measured P0/P1 — do not design as recovery)
-------------------------------------------------------
+Peer-help (measured — do not design as recovery)
+------------------------------------------------
 On **unhandled Exception** in the worker slot only, ``_handleFailure`` publishes
 ``task:{id}:failure`` and waits up to ``PEER_HELP_WINDOW_SECONDS`` for a
 ``task:{id}:peerHelp`` signal.  A claim ends the wait early but does **not**

@@ -10,7 +10,7 @@ import {
   summarizeStreamPerf,
 } from '../stream-perf';
 
-describe('stream-perf (P0.4)', () => {
+describe('stream-perf', () => {
   beforeEach(() => {
     clearStreamPerf();
     enableStreamPerf(true);

@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import * as React from 'react';
-import { type ReactNode } from 'react';
+import { type ReactNode, lazy, Suspense } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -10,12 +10,28 @@ import {
   Mic,
   type LucideIcon,
 } from 'lucide-react';
+
 import { ChatThread } from '@/sections/chat/ChatThread';
-import { SettingsPage } from '@/sections/settings/SettingsPage';
 import { SETTINGS_SECTIONS } from '@/settings/settings-registry';
-import { DesignRoute } from '@/pages/DesignRoute';
-import { BrainDashboard } from '@/sections/brain/BrainDashboard';
-import { LiveSurface } from '@/sections/live/LiveSurface';
+import { PageLoader } from '@/components/PageLoader';
+
+// Lazy-load heavy non-chat surfaces so the chat shell stays on the critical path.
+const SettingsPage = lazy(() =>
+  import('@/sections/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })),
+);
+const BrainDashboard = lazy(() =>
+  import('@/sections/brain/BrainDashboard').then((m) => ({ default: m.BrainDashboard })),
+);
+const LiveSurface = lazy(() =>
+  import('@/sections/live/LiveSurface').then((m) => ({ default: m.LiveSurface })),
+);
+const DesignRoute = lazy(() =>
+  import('@/pages/DesignRoute').then((m) => ({ default: m.DesignRoute })),
+);
+
+function Lazy({ children }: { children: ReactNode }) {
+  return React.createElement(Suspense, { fallback: React.createElement(PageLoader) }, children);
+}
 
 export interface SectionRoute {
   path: string;
@@ -47,8 +63,24 @@ function ChatThreadWithParams() {
 export const SECTION_ROUTES: readonly SectionRoute[] = [
   { path: '/', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThread, { sessionId: 'demo' }), nav: true },
   { path: '/c/:sessionId', label: 'Chat', Icon: MessageSquare, element: React.createElement(ChatThreadWithParams) },
-  { path: '/brain', label: 'Brain', Icon: Brain, element: React.createElement(BrainDashboard), nav: true },
-  { path: '/live', label: 'Live', Icon: Mic, element: React.createElement(LiveSurface, { onSwitchToChat: () => { window.location.href = '/'; } }), nav: true },
+  {
+    path: '/brain',
+    label: 'Brain',
+    Icon: Brain,
+    element: React.createElement(Lazy, null, React.createElement(BrainDashboard)),
+    nav: true,
+  },
+  {
+    path: '/live',
+    label: 'Live',
+    Icon: Mic,
+    element: React.createElement(
+      Lazy,
+      null,
+      React.createElement(LiveSurface, { onSwitchToChat: () => { window.location.href = '/'; } }),
+    ),
+    nav: true,
+  },
   { path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, element: React.createElement(Navigate, { to: '/settings/traffic-activity', replace: true }), nav: false },
 ] as const;
 
@@ -70,8 +102,18 @@ export const SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_SECTIONS.map((sect
  * the existing legacy alias map so old URLs (e.g. /settings/traffic)
  * continue to work. */
 export const SETTINGS_ROUTES: readonly SectionRoute[] = [
-  { path: '/settings', label: 'Settings', Icon: Settings, element: React.createElement(SettingsPage) },
-  { path: '/settings/:section', label: 'Settings', Icon: Settings, element: React.createElement(SettingsPage) },
+  {
+    path: '/settings',
+    label: 'Settings',
+    Icon: Settings,
+    element: React.createElement(Lazy, null, React.createElement(SettingsPage)),
+  },
+  {
+    path: '/settings/:section',
+    label: 'Settings',
+    Icon: Settings,
+    element: React.createElement(Lazy, null, React.createElement(SettingsPage)),
+  },
 ] as const;
 
 /* Dev-only design token inspector — tree-shaken out of production. */
@@ -81,7 +123,7 @@ const DEV_ROUTES: readonly SectionRoute[] = import.meta.env.DEV
         path: '/_design',
         label: 'Design',
         Icon: LayoutDashboard,
-        element: React.createElement(DesignRoute),
+        element: React.createElement(Lazy, null, React.createElement(DesignRoute)),
         nav: false,
       },
     ]

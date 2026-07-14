@@ -145,7 +145,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   setSubagentPrompts(new Map());
 
   // ---- update / scheduleUpdate (throttled flush to React state) ----
-  // P0.4: streamPerf* marks when localStorage august_stream_perf=1
+  // streamPerf* marks when localStorage august_stream_perf=1
   streamPerfStart(sessionId);
   let updateTimeout: number | null = null;
   let lastFlushAt = 0;

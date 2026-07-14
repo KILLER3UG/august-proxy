@@ -18,14 +18,26 @@ VENV_PY="$VENV_DIR/bin/python"
 PIP_EXE="$VENV_DIR/bin/pip"
 
 # --- Find Python >= 3.12 -----------------------------------------------
+# Prefer uv (honours backend-py/.python-version), then PATH python3/python.
+is_py_312_plus() {
+  local cmd="$1"
+  "$cmd" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null
+}
+
 find_python() {
-  local candidates=("python3" "python")
+  if command -v uv >/dev/null 2>&1; then
+    local uv_py
+    uv_py="$(uv python find 3.12 2>/dev/null || true)"
+    if [ -n "${uv_py:-}" ] && [ -x "$uv_py" ] && is_py_312_plus "$uv_py"; then
+      echo "$uv_py"
+      return 0
+    fi
+  fi
+  local candidates=("python3.14" "python3.13" "python3.12" "python3" "python")
   for cmd in "${candidates[@]}"; do
-    if command -v "$cmd" >/dev/null 2>&1; then
-      if "$cmd" --version 2>&1 | grep -qE 'Python 3\.(1[2-9]|[2-9][0-9])|Python [4-9]'; then
-        echo "$cmd"
-        return 0
-      fi
+    if command -v "$cmd" >/dev/null 2>&1 && is_py_312_plus "$cmd"; then
+      echo "$cmd"
+      return 0
     fi
   done
   return 1
@@ -37,23 +49,30 @@ if [ ! -d "$BACKEND_DIR" ]; then
 fi
 
 PYCMD="$(find_python)" || {
-  echo "ERROR: Python >= 3.12 is required but not found on PATH." >&2
-  echo "       Install it (https://www.python.org/downloads/) and retry." >&2
+  echo "ERROR: Python >= 3.12 is required but not found." >&2
+  echo "       Install it (https://www.python.org/downloads/) or: uv python install 3.12" >&2
   exit 1
 }
 echo "Using $PYCMD ($($PYCMD --version 2>&1))"
 
-# --- Create venv if missing or invalid --------------------------------
+# --- Create venv if missing, invalid, or older than 3.12 --------------
 NEED_VENV=1
 if [ -x "$VENV_PY" ]; then
-  if "$VENV_PY" -c "import fastapi" >/dev/null 2>&1; then
+  if is_py_312_plus "$VENV_PY" && "$VENV_PY" -c "import fastapi" >/dev/null 2>&1; then
     NEED_VENV=0
+  elif ! is_py_312_plus "$VENV_PY"; then
+    echo "WARNING: existing venv is not Python >= 3.12; recreating." >&2
+    rm -rf "$VENV_DIR"
   fi
 fi
 
 if [ "$NEED_VENV" -eq 1 ]; then
   echo "Creating virtual environment at $VENV_DIR ..."
   "$PYCMD" -m venv "$VENV_DIR" || { echo "ERROR: failed to create venv." >&2; exit 1; }
+  if ! is_py_312_plus "$VENV_PY"; then
+    echo "ERROR: venv Python is still < 3.12. Install 3.12+ and re-run." >&2
+    exit 1
+  fi
 else
   echo "Reusing existing venv at $VENV_DIR"
 fi

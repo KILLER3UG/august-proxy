@@ -1,4 +1,4 @@
-"""P0 performance timing — measurement only, no behaviour change.
+"""Workbench performance timing helpers — measurement only, no behaviour change.
 
 Enable recording with env ``AUGUST_PERF_TIMING=1`` (or force=True in tests).
 Traces accumulate spans (prompt_build, llm_wait, tool_exec, sse_emit proxy,

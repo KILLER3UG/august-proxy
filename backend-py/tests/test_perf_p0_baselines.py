@@ -1,4 +1,4 @@
-"""P0 baselines — measurement only (no optimisations).
+"""Performance baselines — measurement only (no optimisations under test).
 
 Records mock-LLM workbench overhead and multi-agent/blackboard contention
 timings. Does not assert hard product SLOs yet (budgets are recorded for the
@@ -103,7 +103,7 @@ def stub_workbench(monkeypatch, isolatedData):
 
 @pytest.mark.asyncio
 async def test_p0_mock_llm_text_turn_overhead(stub_workbench):
-    """P0.2: mock-LLM text-only turn — collect p50/p95 local overhead."""
+    """Mock-LLM text-only turn — collect p50/p95 local overhead (no network)."""
     holder = stub_workbench
     n = 8
     summaries = []
@@ -131,7 +131,7 @@ async def test_p0_mock_llm_text_turn_overhead(stub_workbench):
 
 @pytest.mark.asyncio
 async def test_p0_mock_llm_tool_round(stub_workbench):
-    """P0.2: one tool round then text — tool_exec + llm_wait spans present."""
+    """One tool round then text — expect tool_exec + llm_wait spans in the trace."""
     holder = stub_workbench
     holder['client'] = StubClient('one_tool')
     try:
@@ -158,7 +158,7 @@ async def test_p0_mock_llm_tool_round(stub_workbench):
 
 @pytest.mark.asyncio
 async def test_p0_multi_agent_blackboard_contention(isolatedData):
-    """P0.5: N concurrent blackboard writers — measure wall time (no optimisations)."""
+    """N concurrent blackboard writers — measure wall time (baseline, no optimisations)."""
     from app.services import blackboard_service
 
     memory_store = pytest.importorskip('app.services.memory_store')
@@ -199,7 +199,7 @@ async def test_p0_multi_agent_blackboard_contention(isolatedData):
 
 @pytest.mark.asyncio
 async def test_p0_db_writer_contention_age_drops_and_high_pri(isolatedData):
-    """P0.5: real db_writer contention — age-drop + high-pri under backlog.
+    """Real db_writer contention — age-drop + high-pri under backlog.
 
     Notes on actual implementation (measured, not assumed):
       * ``asyncio.Queue()`` is **unbounded** — ``QueueFull`` low-pri drop path

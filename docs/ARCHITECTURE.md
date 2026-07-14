@@ -347,16 +347,16 @@ instead of reinventing spot-checks (do **not** treat as disposable one-offs):
 | [`backend-py/scripts/_spotcheck_schema.py`](../backend-py/scripts/_spotcheck_schema.py) | Dual camel/snake inventory + data-coverage checks during rename work. |
 | [`backend-py/scripts/_diff_memory_store_conflicts.py`](../backend-py/scripts/_diff_memory_store_conflicts.py) | Content-diff dual blob keys (`agent_jobs`, `self_evolution_log`) — not timestamp-only. |
 | [`backend-py/scripts/_check_phase4_indexes.py`](../backend-py/scripts/_check_phase4_indexes.py) | Assert all six Phase-4 indexes exist + EXPLAIN sample queries. |
-| [`backend-py/scripts/p0_explain_plans.py`](../backend-py/scripts/p0_explain_plans.py) | P0 EXPLAIN QUERY PLAN pack for hot paths. |
-| [`frontend/desktop/src/lib/stream-perf.ts`](../frontend/desktop/src/lib/stream-perf.ts) | P0.4 stream TTFT/flush marks (`localStorage.august_stream_perf=1`). |
+| [`backend-py/scripts/p0_explain_plans.py`](../backend-py/scripts/p0_explain_plans.py) | EXPLAIN QUERY PLAN pack for hot SQLite paths. |
+| [`frontend/desktop/src/lib/stream-perf.ts`](../frontend/desktop/src/lib/stream-perf.ts) | Stream TTFT/flush marks (`localStorage.august_stream_perf=1`). |
 
 ### Runtime kill switches / measurement flags (incident use)
 
 | Env / flag | Effect |
 |---|---|
 | `AUGUST_PERF_TIMING=1` | Backend workbench span/TTFT logging + ring buffer |
-| `AUGUST_P1_TOOL_CACHE=0` | Disable P1.2 tool-definition cache (force rebuild every call) |
-| `AUGUST_P1_PROMPT_CACHE=0` | Disable P1.1 skills-segment cache |
+| `AUGUST_P1_TOOL_CACHE=0` | Disable tool-definition list cache (force rebuild every call) |
+| `AUGUST_P1_PROMPT_CACHE=0` | Disable skills-segment / prompt-segment cache |
 | `localStorage.august_stream_perf=1` | Frontend stream TTFT/flush marks |
 
 **Tests must not touch the live brain.** `tests/conftest.py` makes `isolatedData`

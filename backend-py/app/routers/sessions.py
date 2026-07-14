@@ -67,10 +67,23 @@ async def deleteSession(sessionId: str):
 
 
 @router.get('/{sessionId}/messages')
-async def getSessionMessages(sessionId: str):
-    """Get messages for a session."""
-    messages = memory_store.get_messages(sessionId)
-    return {'messages': messages}
+async def getSessionMessages(
+    sessionId: str,
+    limit: int | None = None,
+    offset: int = 0,
+):
+    """Get messages for a session.
+
+    SQLite work runs on a worker thread so the event loop stays free.
+    Optional ``limit`` / ``offset`` support paged loads.
+    """
+    messages = await memory_store.get_messages_async(
+        sessionId, limit=limit, offset=offset
+    )
+    return {
+        'messages': messages,
+        'count': memory_store.count_messages(sessionId) if limit is not None else len(messages),
+    }
 
 
 @router.post('/{sessionId}/messages')

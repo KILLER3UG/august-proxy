@@ -7,54 +7,76 @@
 #   .\install.ps1
 #
 # Idempotent: skips venv creation if a valid .venv already exists.
-# Prefers the `py` launcher (py -3) so we avoid the Microsoft Store stub.
+# Prefers uv-managed 3.12, then the py launcher / a PATH python >= 3.12.
 
 $ErrorActionPreference = 'Stop'
 
-$RepoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
-if (-not (Test-Path $RepoRoot)) { $RepoRoot = $PSScriptRoot }
+# install.ps1 lives at the repo root (same as install.sh).
+$RepoRoot = $PSScriptRoot
+if (-not (Test-Path (Join-Path $RepoRoot 'backend-py'))) {
+    $parent = Resolve-Path (Join-Path $PSScriptRoot '..') -ErrorAction SilentlyContinue
+    if ($parent -and (Test-Path (Join-Path $parent 'backend-py'))) {
+        $RepoRoot = $parent.Path
+    }
+}
 $BackendDir = Join-Path $RepoRoot 'backend-py'
 $VenvDir   = Join-Path $BackendDir '.venv'
 $VenvPy    = Join-Path $VenvDir 'Scripts\python.exe'
 $PipExe     = Join-Path $VenvDir 'Scripts\pip.exe'
 
-function Find-Python {
-    # 1. py launcher (preferred — avoids Store stub)
-    try {
-        $v = & py -3 --version 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "Found Python via py launcher: $v"
-            return 'py'
+function Test-PythonVersion {
+    param(
+        [Parameter(Mandatory)][string]$Exe,
+        [string[]]$PrefixArgs = @()
+    )
+    $out = & $Exe @PrefixArgs --version 2>&1 | Out-String
+    if ($out -match 'Python (\d+)\.(\d+)') {
+        $maj = [int]$Matches[1]; $min = [int]$Matches[2]
+        if ($maj -gt 3 -or ($maj -eq 3 -and $min -ge 12)) {
+            return @{ Ok = $true; Version = $out.Trim() }
         }
-    } catch { }
-    # 2. py without -3
-    try {
-        $v = & py --version 2>&1
-        if ($LASTEXITCODE -eq 0) { return 'py' }
-    } catch { }
-    # 3. python3 / python on PATH (reject Store stub path)
+    }
+    return @{ Ok = $false; Version = $out.Trim() }
+}
+
+function Find-Python {
+    # Prefer uv (honours backend-py/.python-version = 3.12), then py >=3.12, then PATH.
+    if (Get-Command uv -ErrorAction SilentlyContinue) {
+        try {
+            $uvPy = (& uv python find 3.12 2>$null | Select-Object -First 1)
+            if ($LASTEXITCODE -eq 0 -and $uvPy) {
+                $path = $uvPy.ToString().Trim()
+                $check = Test-PythonVersion -Exe $path
+                if ($check.Ok) {
+                    Write-Host "Found Python via uv: $($check.Version)"
+                    return @{ Kind = 'path'; Cmd = $path }
+                }
+            }
+        } catch { }
+    }
+    # py launcher with an explicit 3.x that is >= 3.12
+    foreach ($flag in @('-3.14', '-3.13', '-3.12', '-3')) {
+        try {
+            $check = Test-PythonVersion -Exe 'py' -PrefixArgs @($flag)
+            if ($check.Ok) {
+                Write-Host "Found Python via py $flag : $($check.Version)"
+                return @{ Kind = 'py'; Flag = $flag }
+            }
+        } catch { }
+    }
     foreach ($cmd in 'python3', 'python') {
         try {
             $p = (Get-Command $cmd -ErrorAction Stop).Source
             if ($p -and $p -notmatch 'WindowsApps') {
-                $v = & $cmd --version 2>&1
-                if ($LASTEXITCODE -eq 0) { return $cmd }
+                $check = Test-PythonVersion -Exe $cmd
+                if ($check.Ok) {
+                    Write-Host "Found Python on PATH: $($check.Version) ($p)"
+                    return @{ Kind = 'path'; Cmd = $cmd }
+                }
             }
         } catch { }
     }
     return $null
-}
-
-function Assert-Version {
-    param($Cmd)
-    # Parse "Python X.Y.Z" and require >= 3.12
-    $out = & $Cmd --version 2>&1 | Out-String
-    if ($out -match 'Python (\d+)\.(\d+)') {
-        $maj = [int]$Matches[1]; $min = [int]$Matches[2]
-        if ($maj -gt 3 -or ($maj -eq 3 -and $min -ge 12)) { return $true }
-    }
-    Write-Warning "Python >= 3.12 is required (found: $out)"
-    return $false
 }
 
 if (-not (Test-Path $BackendDir)) {
@@ -62,30 +84,40 @@ if (-not (Test-Path $BackendDir)) {
     exit 1
 }
 
-$PyCmd = Find-Python
-if (-not $PyCmd) {
-    Write-Error "No suitable Python found. Install Python 3.12+ (https://www.python.org/downloads/) and ensure 'py' or 'python' is on PATH."
+$Py = Find-Python
+if (-not $Py) {
+    Write-Error "No suitable Python found. Install Python 3.12+ (https://www.python.org/downloads/) or: uv python install 3.12"
     exit 1
 }
-if (-not (Assert-Version $PyCmd)) { exit 1 }
 
-# Create venv if missing or invalid
+# Create venv if missing, invalid, or older than 3.12
 $NeedVenv = $true
 if (Test-Path $VenvPy) {
-    try {
-        $ok = & $VenvPy -c "import fastapi" 2>&1
-        if ($LASTEXITCODE -eq 0) { $NeedVenv = $false }
-    } catch { $NeedVenv = $true }
+    $venvCheck = Test-PythonVersion -Exe $VenvPy
+    if (-not $venvCheck.Ok) {
+        Write-Warning "Existing venv is not Python >= 3.12 ($($venvCheck.Version)); recreating."
+        Remove-Item -Recurse -Force $VenvDir
+    } else {
+        try {
+            $null = & $VenvPy -c "import fastapi" 2>&1
+            if ($LASTEXITCODE -eq 0) { $NeedVenv = $false }
+        } catch { $NeedVenv = $true }
+    }
 }
 
 if ($NeedVenv) {
     Write-Host "Creating virtual environment at $VenvDir ..."
-    if ($PyCmd -eq 'py') {
-        & py -3 -m venv $VenvDir
+    if ($Py.Kind -eq 'py') {
+        & py $Py.Flag -m venv $VenvDir
     } else {
-        & $PyCmd -m venv $VenvDir
+        & $Py.Cmd -m venv $VenvDir
     }
     if ($LASTEXITCODE -ne 0) { Write-Error "Failed to create venv."; exit 1 }
+    $after = Test-PythonVersion -Exe $VenvPy
+    if (-not $after.Ok) {
+        Write-Error "Venv Python is still < 3.12 ($($after.Version)). Install 3.12+ and re-run."
+        exit 1
+    }
 } else {
     Write-Host "Reusing existing venv at $VenvDir"
 }

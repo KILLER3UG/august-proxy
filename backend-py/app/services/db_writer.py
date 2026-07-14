@@ -8,7 +8,7 @@ Usage:
     await enqueue_write(lambda: ..., priority="high")
     await enqueue_write(lambda: ..., priority="low")
 
-**Actual behaviour (verified P0 2026-07-14 — see docs/ARCHITECTURE.md):**
+**Actual behaviour (verified 2026-07-14 — see docs/ARCHITECTURE.md):**
 
 * Shared **FIFO** queue — ``priority`` does **not** reorder items. A "high"
   write still runs after every item already ahead of it.

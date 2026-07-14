@@ -15,7 +15,11 @@ conventions, the test suite, and how to extend the codebase.
 6. [Adding a new provider](#adding-a-new-provider)
 7. [Adding a new workbench tool](#adding-a-new-workbench-tool)
 8. [Adding a new gateway platform](#adding-a-new-gateway-platform)
-9. [Debugging](#debugging)
+9. [Adding a UI panel / settings section](#adding-a-ui-panel--settings-section)
+10. [Adding a background daemon](#adding-a-background-daemon)
+11. [Extension checklists (≤30 min stubs)](#extension-checklists-30-min-stubs)
+12. [Debugging](#debugging)
+13. [Phase P performance knobs](#phase-p-performance-knobs)
 
 ---
 
@@ -204,9 +208,10 @@ report):
 2. Register it in `app/providers/builtin.py`.
 3. If it needs a bespoke client, add `app/providers/clients/<name>.py`
    subclassing `BaseProviderClient`; otherwise the generic OpenAI/Anthropic
-   client is used.
+   client is used via `getClient` (clients are pooled by id + apiMode + baseUrl).
 4. Run `python scripts/gen_providers.py` to regenerate catalog data if needed.
 5. Add the API-key env var to `.env.example`.
+6. Add a unit test that `getClient({...})` returns the expected class.
 
 See `app/providers/anthropic.py` and `app/providers/openai_api.py` for examples.
 
@@ -214,19 +219,23 @@ See `app/providers/anthropic.py` and `app/providers/openai_api.py` for examples.
 
 ## Adding a new workbench tool
 
-1. Write an async handler returning a JSON string (see
-   `app/services/browser/handlers.py` for the `_ok`/`_err` pattern).
-2. Register it in a `register()` function called from
-   `app/services/tool_definitions.py` → `register_all()` (invoked at startup
-   in `main.py` lifespan). Provide a name, description, handler, and JSON-Schema
-   `parameters`.
-3. If the tool is mutating, decide whether it should be blocked in plan/ask
-   mode and update `is_plan_mode_blocked()` in `workbench.py` accordingly.
-4. Add tests under `tests/`.
-
-Tools are dispatched by `app/services/tool_registry.dispatch(name, args)`; the
-workbench sets `current_session_id` before dispatch so per-session state (e.g.
-browser page) is available via `workbench/context.py`.
+1. Prefer a new (or existing) module under
+   `app/services/tool_registrations/<group>_tools.py`.
+2. Write an **async** handler that returns a **string** (JSON or plain text).
+   Pattern: `app/services/tool_registrations/skill_tools.py`.
+3. In that module's `register()`, call `tool_registry.register(name, description,
+   parameters=<JSON Schema>, handler=...)`.
+4. Ensure `tool_registrations/__init__.py` → `register_all()` calls your group
+   (already true for the standard groups).
+5. **Do not** edit the workbench chat loop for normal tools — dispatch is
+   registry-based. Only orchestration-only hooks belong in `workbench.py`.
+6. If the tool is **mutating**, ensure plan/ask guards cover it
+   (`_checkToolGuard` / managed tool policy).
+7. If it is **read-only** and safe for concurrent rounds, consider adding the
+   name to `PARALLEL_SAFE_TOOLS` in `workbench/parallel_tools.py`.
+8. Add tests under `tests/` (handler + optional registry round-trip).
+9. Tool JSON caches invalidate via `tool_registry.generation()` — no manual
+   cache bust required after `register`/`unregister`.
 
 ---
 
@@ -250,6 +259,71 @@ platform surface.
 
 ---
 
+## Adding a UI panel / settings section
+
+1. **Settings section:** add an entry to
+   `frontend/desktop/src/settings/settings-registry.ts`
+   (`id`, `label`, `icon`, component). Routes and sidebar derive from the registry.
+2. **Full section route:** add a lazy-loaded page under `sections/` and register
+   it in `frontend/desktop/src/routes.ts` (prefer `lazy(() => import(...))` so
+   chat stays on the critical path).
+3. **API:** add a router under `backend-py/app/routers/` and include it from
+   `main.py` if new HTTP surface is required.
+4. **State:** use a dedicated Zustand slice or React Query keys; avoid
+   subscribing components to the entire sessions store.
+5. **Types:** Zod schema in `src/api/schemas/*` + TS types; no new `any`.
+6. Smoke: open the route in dev, confirm code-split chunk loads and panel renders.
+
+---
+
+## Adding a background daemon
+
+1. Implement a tick/handler module (see existing daemons under
+   `app/services/` and `daemon_manager`).
+2. Register with `daemon_manager` and gate behind a config flag.
+3. Respect the session/daemon **cap** and backoff schedule (load-tested;
+   do not raise caps without a new contention check).
+4. Writes go through `db_writer` / memory_store APIs — no ad-hoc SQLite writers.
+5. Add a unit test for registration + one tick in isolation.
+
+---
+
+## Extension checklists (≤30 min stubs)
+
+Use these as a stub exercise when adding an extension point. Target: a no-op
+feature in under half an hour without touching the chat loop body.
+
+### Checklist — stub tool
+
+- [ ] New handler in `tool_registrations/*_tools.py` (or temp test register)
+- [ ] `tool_registry.register(...)` with JSON Schema
+- [ ] `pytest` that `dispatch` / handler returns expected string
+- [ ] (Optional) add name to `PARALLEL_SAFE_TOOLS` only if read-only
+- [ ] No edits to `workbench.py` chat loop
+
+**Exercised:** `tests/test_phase_p_remaining.py` + tool registry generation /
+cache tests prove register → list → invalidate without chat-loop edits.
+
+### Checklist — stub provider client
+
+- [ ] Client class or reuse OpenAI/Anthropic via `apiMode`
+- [ ] Builtin entry + `getClient` returns type
+- [ ] Pool reuse: two `getClient` same key → same instance
+- [ ] Test in `tests/test_clients.py` style
+
+**Exercised:** `test_client_pool_reuses_instance` in `test_phase_p_remaining.py`.
+
+### Checklist — stub settings panel
+
+- [ ] Registry entry + lazy section component
+- [ ] No change to ChatThread
+- [ ] Path appears under `/settings/:section`
+
+**Exercised:** settings routes already registry-driven; Settings/Brain/Live are
+lazy-loaded in `routes.ts`.
+
+---
+
 ## Debugging
 
 - **Request inspector**: `GET /api/requests` and `/api/requests/{id}` show
@@ -261,3 +335,19 @@ platform surface.
 - **Stale state**: delete `data/workbench-sessions.json` to reset workbench
   sessions, or `data/august_brain.sqlite` to reset memory (the DB is recreated
   on next start).
+- **Perf traces:** `GET /api/perf/recent` when `AUGUST_PERF_TIMING=1`.
+- **Frontend stream marks:** `localStorage.august_stream_perf=1`.
+
+---
+
+## Performance knobs
+
+| Env / flag | Effect |
+|---|---|
+| `AUGUST_PERF_TIMING=1` | Structured workbench timings + `/api/perf/recent` |
+| `AUGUST_P1_TOOL_CACHE=0` | Disable tool definition list cache |
+| `AUGUST_P1_PROMPT_CACHE=0` | Disable prompt segment / skills catalogue cache |
+| `AUGUST_P1_PARALLEL_TOOLS=0` | Force serial tool execution (no read-only gather) |
+
+Stage boundaries: `app/services/workbench/chat_stages.py` (tool batch + post-turn).
+SSE coalesce: `app/lib/batched_emit.py` (first token flushes immediately; later text chunks coalesce).

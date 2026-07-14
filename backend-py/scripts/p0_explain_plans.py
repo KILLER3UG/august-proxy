@@ -1,4 +1,4 @@
-"""P0.3 — EXPLAIN QUERY PLAN pack for hot brain SQLite queries.
+"""Print EXPLAIN QUERY PLAN for hot brain SQLite queries.
 
 Measurement only. Prints plans for typical workbench/session paths.
 Uses live ``data/august_brain.sqlite`` if present, else a temp schema.

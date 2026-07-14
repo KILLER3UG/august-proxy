@@ -1,4 +1,4 @@
-"""P1.1 — cache semi-stable system-prompt segments (not full turn prompts).
+"""Cache semi-stable system-prompt segments (not full turn prompts).
 
 Caches:
   * skills catalogue text (skills_manifest + available-skills block share one build)
@@ -7,7 +7,8 @@ Caches:
 Does **not** cache volatile Tier-3 pieces (recent messages, auto-memories,
 daemon updates, todos). Tier1/Tier2 still use existing ``prompt_cache``.
 
-Disable with env ``AUGUST_P1_PROMPT_CACHE=0`` for before/after baselines.
+Disable with env ``AUGUST_P1_PROMPT_CACHE=0`` to force a rebuild every turn
+(useful for A/B latency measurements).
 """
 
 from __future__ import annotations

@@ -9,7 +9,7 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 — **P0 closed**; **P1.1/P1.2 landed** (prompt/tool caches, isolated before/after)
+**Last updated:** 2026-07-14 — **Phase P COMPLETE** (P0–P5 workstreams landed)
 **Current branch state:** `master` — verify with `git rev-parse HEAD`.
 **Verification baseline:**
 P0 + P1 cache tests green · schema closed · isolation autouse · db_writer FIFO documented
@@ -19,7 +19,7 @@ P0 + P1 cache tests green · schema closed · isolation autouse · db_writer FIF
 ### Phase 2 — SIGNED OFF (2026-07-14) — includes B1a + B16 (see residual ledger)
 ### Phase 3 — **DONE against modularization exit criteria** (not “all large files gone”)
 ### Phase 4 — **DONE** (all **six** indexes present + EXPLAIN-used; busy_timeout; Zustand; schema closed)
-### Phase P — **P0 CLOSED**; **P1.1 + P1.2 DONE** (caches); P1 rest / P2–P5 **not approved**
+### Phase P — **DONE** (P0 baselines · P1 hot-path · P2 pagination · P3 UI · P4 checklists · P5 chat_stages)
 
 ---
 
@@ -42,8 +42,8 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 
 ## Where to pick up (next session)
 
-1. Optional further Phase P only with explicit go (P1 remaining / P2+).
-2. **Contention gate** before relying on: `daemon_manager` (backoff / 3-daemon cap), `subagent_orchestrator` (peer-help window) — same shape as db_writer was.
+1. Phase P is **closed** — only re-open for measured regressions or new budgets.
+2. **Contention gate** still applies before *raising* daemon/subagent caps.
 3. Do **not** remove `isolatedData` autouse without safety review.
 4. Phase 5 / Phase 7 remain open on the long roadmap.
 
@@ -474,3 +474,26 @@ If P0 shows DB is not the bottleneck, P2 may never be worth opening.
 
 - Start P0 instrumentation implementation now?
 - Any extra surfaces to include in P0 (e.g. mobile companion)?
+
+
+---
+
+## Phase P COMPLETE (2026-07-14)
+
+| Stream | Deliverables |
+|---|---|
+| **P0** | `perf_timing`, mock-LLM baselines, EXPLAIN pack, stream marks, `GET /api/perf/recent` |
+| **P1.1/1.2** | `prompt_segments_cache`, `tool_defs_cache`, kill switches, before/after numbers |
+| **P1.3** | `get_messages_async` + sessions route offload |
+| **P1.4** | `parallel_tools` allowlist + `chat_stages.run_regular_tools_stage` |
+| **P1.5** | `BatchedEmit` TTFT-safe SSE coalesce |
+| **P1.6** | post-turn auto-memory/reflection via `to_thread` + `schedule_post_turn_side_effects` |
+| **P1.7** | provider `getClient` connection pool |
+| **P2.3** | `get_messages(limit/offset/before_id)`, `count_messages` |
+| **P3** | stream throttle (existing), `VirtualizedMessageList`, lazy Settings/Brain/Live |
+| **P4** | DEVELOPER_GUIDE tool/provider/panel/daemon checklists + exercised notes |
+| **P5** | `workbench/chat_stages.py` stage boundaries |
+
+**Tests:** `tests/test_phase_p_remaining.py`, `test_perf_p0_baselines.py`, `test_perf_p1_prompt_tool_cache.py`.
+
+**Decisions retained:** db_writer FIFO (B26); peer-help failure semantics (B27); daemon cap holds.

@@ -1,13 +1,13 @@
 /**
- * P0.4 — frontend stream timing marks (measurement only).
+ * Frontend stream timing marks (measurement only — no behaviour change).
  *
  * Records:
  *  - TTFT: first content flush after stream start
  *  - flush durations (setState apply path)
  *  - inter-flush gaps (throttle behaviour)
  *
- * Enable via localStorage `august_stream_perf=1` or `import.meta.env.DEV`
- * force in tests by calling `enableStreamPerf(true)`.
+ * Enable via localStorage `august_stream_perf=1` or `import.meta.env.DEV`.
+ * Force on in tests with `enableStreamPerf(true)`.
  *
  * Uses Performance API when available; always keeps an in-memory ring buffer
  * for tests / console dumps (`getStreamPerfSnapshot()`).

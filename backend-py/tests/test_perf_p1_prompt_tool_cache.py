@@ -1,8 +1,8 @@
-"""P1.1 / P1.2 — prompt segment + tool-def cache (isolated from schema/db_writer).
+"""Prompt-segment and tool-definition cache tests (isolated from schema/db_writer).
 
-Before/after uses the same mock-LLM harness as P0, toggling:
+Before/after uses the mock-LLM harness, toggling:
   AUGUST_P1_TOOL_CACHE / AUGUST_P1_PROMPT_CACHE
-so regressions are attributable only to this change set.
+so regressions are attributable only to the cache layer.
 """
 
 from __future__ import annotations

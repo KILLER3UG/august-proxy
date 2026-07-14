@@ -91,6 +91,7 @@ import { gitApi, type GitDiffResult } from '@/api/git';
 import { usageApi } from '@/api/usage';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import { ModelPickerCard } from './ModelPickerCard';
+import { VirtualizedMessageList } from './VirtualizedMessageList';
 // Chat domain types live in `@/types/chat` (Phase 2 refactor). Re-export
 // from the canonical location so existing `from './ChatThread'` imports
 // keep working without churn, and import for local use in this file.
@@ -2392,25 +2393,31 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   className="flex-1 overflow-y-auto chat-scroll"
                   style={{ overflowAnchor: 'none' }}
                 >
-                  <div className="mx-auto w-full max-w-3xl px-4 py-8 space-y-5 relative">
-                    {messages.map((m, i) => {
-                      const isReverting = revertingIndex !== null && i > revertingIndex;
+                  {/* Long threads virtualize; short ones use a plain map. */}
+                  <VirtualizedMessageList
+                    messages={messages}
+                    scrollParentRef={scrollRef}
+                    renderMessage={(m, realIndex) => {
+                      const isReverting = revertingIndex !== null && realIndex > revertingIndex;
                       return (
                         <div
-                          key={m.id}
                           className={cn(
-                            "transition-all duration-300 transform",
-                            isReverting ? "opacity-0 -translate-y-4 pointer-events-none" : "opacity-100 translate-y-0"
+                            'transition-all duration-300 transform',
+                            isReverting
+                              ? 'opacity-0 -translate-y-4 pointer-events-none'
+                              : 'opacity-100 translate-y-0',
                           )}
                         >
                           <MessageBubble
                             message={m}
-                            isLast={i === messages.length - 1}
+                            isLast={realIndex === messages.length - 1}
                             streaming={streaming}
                             sessionId={sessionId ?? undefined}
-                            onRevert={() => handleRevert(i)}
-                            onEdit={(text) => handleEdit(i, text)}
-                            onRegenerate={() => { void handleRegenerate(i); }}
+                            onRevert={() => handleRevert(realIndex)}
+                            onEdit={(text) => handleEdit(realIndex, text)}
+                            onRegenerate={() => {
+                              void handleRegenerate(realIndex);
+                            }}
                             onClarifyAnswer={(ans) => handleClarifyAnswer(m.id, ans)}
                             toolProgress={toolProgress}
                             subagentPrompts={subagentPrompts}
@@ -2418,20 +2425,20 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                           />
                         </div>
                       );
-                    })}
-
-                    {/* Streaming indicator — shown at the bottom of the last model message */}
-                    {streaming && messages.length > 0 && <WorkingIndicator />}
-
-                    {/* v4 Voice Command UI / Phase 1C: Inline model picker (registry-driven) */}
-                    {modelPickerActive && (
-                      <ModelPickerCard
-                        sessionId={sessionId ?? ''}
-                        onDismiss={() => setModelPickerActive(false)}
-                        context={{ currentModelId: selectedModel?.id }}
-                      />
-                    )}
-                  </div>
+                    }}
+                    footer={
+                      <>
+                        {streaming && messages.length > 0 && <WorkingIndicator />}
+                        {modelPickerActive && (
+                          <ModelPickerCard
+                            sessionId={sessionId ?? ''}
+                            onDismiss={() => setModelPickerActive(false)}
+                            context={{ currentModelId: selectedModel?.id }}
+                          />
+                        )}
+                      </>
+                    }
+                  />
 
                   {/* Scroll-to-bottom chevron at the right edge */}
                   <div className="sticky bottom-4 z-30 flex justify-end pointer-events-none">
