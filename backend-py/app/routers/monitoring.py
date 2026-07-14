@@ -57,6 +57,14 @@ async def getRecentPerfTraces(limit: int = Query(default=20, ge=1, le=64)):
     return {'traces': traces, 'count': len(traces)}
 
 
+@router.get('/perf/db-writer')
+async def getDbWriterStats():
+    """FIFO write-queue lag / drop counters (measurement only)."""
+    from app.services import db_writer
+
+    return db_writer.get_stats()
+
+
 @router.get('/activity')
 async def getActivity():
     """Return recent activity log entries as a bare array.
