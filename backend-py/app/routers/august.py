@@ -5,25 +5,32 @@ These endpoints match the shapes the existing frontend already calls
 (``manageAugustAliases`` → ``POST /api/august/aliases/manage`` and the
 audit viewer → ``GET /api/august/audit``), so the UI stops 404'ing against
 the Python backend.
+
+Request bodies inherit :class:`CamelModel` so internals are snake_case while
+JSON from the frontend stays camelCase (``targetModel``, ``displayAlias``, etc.).
 """
 
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from app.models.camel_base import CamelModel
 from app.services import alias_service
 from app.services.memory_store import list_config_audit
 
 router = APIRouter(prefix='/api/august')
 
 
-class AliasManageItem(BaseModel):
+class AliasManageItem(CamelModel):
+    """Single alias entry. Internals are snake_case; JSON stays camelCase."""
+
     alias: str
     target_model: str = ''
     target_provider: str = ''
     display_alias: str = ''
 
 
-class AliasManageRequest(BaseModel):
+class AliasManageRequest(CamelModel):
+    """Alias manage body. Internals are snake_case; JSON stays camelCase."""
+
     action: str
     alias: str | None = None
     target_model: str | None = None
