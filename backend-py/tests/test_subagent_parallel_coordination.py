@@ -286,7 +286,11 @@ def coord_env(monkeypatch, tmp_path):
         settings.reload()
     except Exception:
         pass
-    monkeypatch.setattr(wb, '_sessions', {})
+    from app.services.workbench import sessions as sessions_mod
+
+    empty_sessions: dict = {}
+    monkeypatch.setattr(sessions_mod, '_sessions', empty_sessions)
+    monkeypatch.setattr(wb, '_sessions', empty_sessions)
 
     # Ensure the brain/blackboard tables exist in the temp DB.
     memory_store.init()
