@@ -1,19 +1,24 @@
 """Session management API routes.
 
 Port of backend/services/storage/session-store.js.
+
+Request body ``MessageCreate`` inherits :class:`CamelModel` so internals are
+snake_case while JSON from the frontend stays camelCase.
 """
 
 from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from app.models.camel_base import CamelModel
 from app.services import memory_store
 
 router = APIRouter(prefix='/api/sessions')
 
 
-class MessageCreate(BaseModel):
+class MessageCreate(CamelModel):
+    """Session message body. Internals are snake_case; JSON stays camelCase."""
+
     role: str
     content: str
 
