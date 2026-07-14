@@ -22,7 +22,7 @@ Custom-store entry filtering:
 
 from __future__ import annotations
 from typing import Callable, Optional
-from app.json_narrowing import as_str, as_dict, as_list, as_int, as_float
+from app.json_narrowing import as_str, as_dict, as_list, as_int
 from app.services import config_service
 
 _storeCache: Optional[dict[str, object]] = None
@@ -95,9 +95,9 @@ def _customProviderDict(entry: dict[str, object]) -> dict[str, object]:
     consumers can read display_name, description, default_model, etc. without
     KeyError on minimal custom entries.
     """
-    from app.providers.template_loader import getTemplate
+    from app.providers.template_loader import get_template
 
-    tmpl = getTemplate(str(entry.get('id') or '') or str(entry.get('name') or ''))
+    tmpl = get_template(str(entry.get('id') or '') or str(entry.get('name') or ''))
     tmplProfiles: dict[str, object] = {}
     tmplHeaders: dict[str, object] = {}
     tmplEnv: list[object] = []
