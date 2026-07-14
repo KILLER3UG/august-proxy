@@ -63,11 +63,46 @@ async def gitBranch(repoPath: str = ''):
     return {'branches': output}
 
 
+@router.get('/branches')
+async def gitBranches(repoPath: str = ''):
+    """Alias for /branch — frontend shell uses /api/git/branches."""
+    return await gitBranch(repoPath)
+
+
 @router.get('/diff')
 async def gitDiff(repoPath: str = '', target: str = 'HEAD'):
     """Show git diff for unstaged changes."""
     output = await _runGit(repoPath, 'diff', target)
     return {'diff': output}
+
+
+class CheckoutBody(CamelModel):
+    repo_path: str = ''
+    branch: str = ''
+
+
+class CommitBody(CamelModel):
+    repo_path: str = ''
+    message: str = ''
+    all: bool = False
+
+
+@router.post('/checkout')
+async def gitCheckout(body: CheckoutBody):
+    if not body.branch.strip():
+        raise HTTPException(status_code=400, detail='branch is required')
+    output = await _runGit(body.repo_path, 'checkout', body.branch.strip())
+    return {'output': output, 'branch': body.branch.strip()}
+
+
+@router.post('/commit')
+async def gitCommit(body: CommitBody):
+    if not body.message.strip():
+        raise HTTPException(status_code=400, detail='message is required')
+    if body.all:
+        await _runGit(body.repo_path, 'add', '-A')
+    output = await _runGit(body.repo_path, 'commit', '-m', body.message.strip())
+    return {'output': output}
 
 
 @router.post('/command')

@@ -44,6 +44,7 @@ from app.services.memory_store.rest import (
     list_topics,
     record_config_audit,
     record_lifecycle,
+    list_usage,
     record_usage,
     save_fact,
     save_proposal,
@@ -57,7 +58,9 @@ from app.services.memory_store.sessions import (
     delete_session_record,
     get_session,
     list_sessions,
+    list_workbench_blobs,
     save_session,
+    save_workbench_session_sot,
 )
 from app.services.memory_store.wire import _row_as_wire, _session_field
 
@@ -87,6 +90,8 @@ __all__ = [
     'list_topics',
     'search_sessions_by_topic',
     'save_session',
+    'save_workbench_session_sot',
+    'list_workbench_blobs',
     'list_sessions',
     'get_session',
     'delete_session_record',
@@ -96,6 +101,7 @@ __all__ = [
     'get_messages_async',
     'delete_session_messages',
     'record_usage',
+    'list_usage',
     'get_usage',
     'vacuum',
     'get_stats',

@@ -2265,11 +2265,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   todos: [],
                 } : null);
                 if (!active) return;
+                // Server uses this session's chat model (from the last chat turn).
                 const result = await answerWorkbenchBtw({
                   sessionId: active.id,
                   question,
-                  provider: active.provider || "",
-                  agentId: active.agentId,
                 });
                 setWorkbenchBtw(result);
               })();

@@ -36,6 +36,8 @@ export interface WorkbenchSession {
   id: string;
   title?: string;
   provider: string;
+  /** Model id from the last chat turn (BTW and Live reuse it). */
+  model?: string;
   agentId: string;
   agentRole: string;
   agentMode: string;

@@ -7,24 +7,22 @@ from app.services.skills.curator import SkillCurator
 router = APIRouter(prefix='/api/curator')
 
 
-def _curator(request: Request) -> SkillCurator | None:
-    return getattr(request.app.state, 'curator', None)
+def _curator(request: Request) -> SkillCurator:
+    from app.services.runtime_services import get_curator
+
+    return get_curator(request.app)
 
 
 @router.get('/usage')
 async def listUsage(request: Request):
     """List usage telemetry for all tracked skills."""
     c = _curator(request)
-    if not c:
-        raise HTTPException(status_code=503, detail='Curator not running')
     return {'usage': c.list_usage()}
 
 
 @router.post('/pin/{name}')
 async def pinSkill(name: str, request: Request):
     c = _curator(request)
-    if not c:
-        raise HTTPException(status_code=503, detail='Curator not running')
     if not c.pin(name):
         raise HTTPException(status_code=400, detail=f"Cannot pin '{name}': not an agent-authored skill")
     return {'status': 'pinned', 'name': name}
@@ -33,8 +31,6 @@ async def pinSkill(name: str, request: Request):
 @router.post('/unpin/{name}')
 async def unpinSkill(name: str, request: Request):
     c = _curator(request)
-    if not c:
-        raise HTTPException(status_code=503, detail='Curator not running')
     if c.unpin(name):
         return {'status': 'unpinned', 'name': name}
     raise HTTPException(status_code=404, detail=f"Skill '{name}' not tracked")
@@ -43,8 +39,6 @@ async def unpinSkill(name: str, request: Request):
 @router.post('/archive/{name}')
 async def archiveSkill(name: str, request: Request):
     c = _curator(request)
-    if not c:
-        raise HTTPException(status_code=503, detail='Curator not running')
     if not c.archive(name):
         raise HTTPException(status_code=400, detail=f"Cannot archive '{name}'")
     return {'status': 'archived', 'name': name}
@@ -53,8 +47,6 @@ async def archiveSkill(name: str, request: Request):
 @router.post('/restore/{name}')
 async def restoreSkill(name: str, request: Request):
     c = _curator(request)
-    if not c:
-        raise HTTPException(status_code=503, detail='Curator not running')
     if not c.restore(name):
         raise HTTPException(status_code=400, detail=f"Cannot restore '{name}'")
     return {'status': 'restored', 'name': name}
@@ -64,7 +56,5 @@ async def restoreSkill(name: str, request: Request):
 async def runCuration(request: Request, dryRun: bool = False):
     """Run a curation pass now (all transitions, or dry-run)."""
     c = _curator(request)
-    if not c:
-        raise HTTPException(status_code=503, detail='Curator not running')
     report = c.run_curation(dryRun=dryRun)
     return {'report': report}

@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import cast
 import json
 import os
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from app.json_narrowing import as_dict, as_list, as_str
@@ -20,6 +21,8 @@ from app.lib.paths import dataPath
 _DBFile = dataPath('august_vector_memory.json')
 _MAXEntries = 2000
 _EMBEDDINGDim = 384
+# Serialize read-modify-write so concurrent inserts cannot drop each other.
+_db_lock = threading.Lock()
 
 
 def _db_path() -> Path:
@@ -98,7 +101,6 @@ def _cosineSimilarity(a: list[float], b: list[float]) -> float:
 
 def insert(text: str, metadata: dict[str, object] | None = None, namespace: str = 'default') -> dict[str, object]:
     """Insert a text entry with its embedding."""
-    db = _read()
     import uuid
 
     entry: dict[str, object] = {
@@ -109,14 +111,17 @@ def insert(text: str, metadata: dict[str, object] | None = None, namespace: str 
         'namespace': namespace,
         'createdAt': _now(),
     }
-    as_list(db['entries']).append(entry)
-    _write(db)
+    with _db_lock:
+        db = _read()
+        as_list(db['entries']).append(entry)
+        _write(db)
     return entry
 
 
 def search(query: str, namespace: str = 'default', top_k: int = 10) -> list[dict[str, object]]:
     """Search for similar texts by embedding similarity."""
-    db = _read()
+    with _db_lock:
+        db = _read()
     queryVec = _embed(query)
     entries = [e for e in as_list(db['entries']) if as_str(as_dict(e).get('namespace')) == namespace]
     scored = []
@@ -141,18 +146,20 @@ def search(query: str, namespace: str = 'default', top_k: int = 10) -> list[dict
 
 def delete(entryId: str) -> bool:
     """Delete a vector entry by ID."""
-    db = _read()
-    newEntries = [e for e in as_list(db['entries']) if as_str(as_dict(e).get('id')) != entryId]
-    if len(newEntries) == len(as_list(db['entries'])):
-        return False
-    db['entries'] = newEntries
-    _write(db)
+    with _db_lock:
+        db = _read()
+        newEntries = [e for e in as_list(db['entries']) if as_str(as_dict(e).get('id')) != entryId]
+        if len(newEntries) == len(as_list(db['entries'])):
+            return False
+        db['entries'] = newEntries
+        _write(db)
     return True
 
 
 def count(namespace: str = '') -> int:
     """Count entries, optionally by namespace."""
-    db = _read()
+    with _db_lock:
+        db = _read()
     if namespace:
         return len([e for e in as_list(db['entries']) if as_str(as_dict(e).get('namespace')) == namespace])
     return len(as_list(db['entries']))
@@ -160,7 +167,8 @@ def count(namespace: str = '') -> int:
 
 def listNamespaces() -> list[str]:
     """List all namespaces."""
-    db = _read()
+    with _db_lock:
+        db = _read()
     return sorted(set(as_str(as_dict(e).get('namespace'), 'default') for e in as_list(db['entries'])))
 
 

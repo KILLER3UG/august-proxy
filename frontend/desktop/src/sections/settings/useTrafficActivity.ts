@@ -1,9 +1,7 @@
 /* ── useTrafficActivity — shared data layer for Traffic & Activity ──── */
-/* The old Overview/Traffic/Usage/Logs sections each polled /ui/requests,
- * /ui/stats, /ui/activity, and /api/usage/* independently — up to 4x the
- * network calls for the same data. This hook fetches each source once and
- * exposes normalized rows + stats + a merged log feed so every tab in the
- * section reads from one poll cycle. */
+/* Fetches /api/requests, /api/stats, /api/activity, and /api/usage/* once
+ * and exposes normalized rows + stats + a merged log feed so every tab in
+ * the section reads from one poll cycle. */
 
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';

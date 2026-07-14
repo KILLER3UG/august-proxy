@@ -6,9 +6,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -37,6 +34,7 @@ import {
 import { SERVICE_LINKS } from "@/lib/service-links";
 
 interface McpServer {
+  id?: string;
   name: string;
   status:
     | "running"
@@ -44,7 +42,8 @@ interface McpServer {
     | "disabled"
     | "not_started"
     | "error"
-    | "starting";
+    | "starting"
+    | "registered";
   toolCount: number;
   enabled: boolean;
   command?: string;
@@ -62,6 +61,58 @@ interface McpServer {
   tools?: string[];
 }
 
+/** Normalize Python /api/mcp/servers rows for the UI. */
+function normalizeMcpServer(raw: Record<string, unknown>): McpServer {
+  const statusRaw = String(raw.status ?? "stopped");
+  const status = (
+    [
+      "running",
+      "stopped",
+      "disabled",
+      "not_started",
+      "error",
+      "starting",
+      "registered",
+    ] as const
+  ).includes(statusRaw as McpServer["status"])
+    ? (statusRaw as McpServer["status"])
+    : "stopped";
+  const toolsRaw = raw.tools;
+  const tools = Array.isArray(toolsRaw)
+    ? toolsRaw.map((t) =>
+        typeof t === "string"
+          ? t
+          : String((t as { name?: string })?.name ?? ""),
+      ).filter(Boolean)
+    : undefined;
+  return {
+    id: typeof raw.id === "string" ? raw.id : undefined,
+    name: String(raw.name ?? raw.id ?? "unnamed"),
+    status: status === "registered" ? "not_started" : status,
+    toolCount:
+      typeof raw.toolCount === "number"
+        ? raw.toolCount
+        : (tools?.length ?? 0),
+    enabled: raw.enabled !== false && status !== "disabled",
+    command: typeof raw.command === "string" ? raw.command : undefined,
+    url: typeof raw.url === "string" ? raw.url : undefined,
+    args: Array.isArray(raw.args)
+      ? raw.args.map((a) => String(a))
+      : undefined,
+    env:
+      raw.env && typeof raw.env === "object" && !Array.isArray(raw.env)
+        ? (raw.env as Record<string, string>)
+        : undefined,
+    error:
+      typeof raw.error === "string"
+        ? raw.error
+        : raw.error == null
+          ? null
+          : String(raw.error),
+    tools,
+  };
+}
+
 interface McpGlobalEnvVar {
   key: string;
   value: string;
@@ -76,20 +127,6 @@ interface Skill {
   enabled: boolean;
   category?: string;
   trigger?: string;
-}
-
-interface ImportLinkResult {
-  sourceUrl?: string;
-  resolvedUrl?: string;
-  mcpServers?: Array<{ name?: string; command?: string; enabled?: boolean }>;
-  skills?: Array<{ name?: string; enabled?: boolean }>;
-  plugins?: Array<{
-    name?: string;
-    enabled?: boolean;
-    mcpServerCount?: number;
-    skillCount?: number;
-  }>;
-  enabledMcpServers?: string[];
 }
 
 type ServiceName = "google" | "github" | "slack";
@@ -297,8 +334,10 @@ export function MergedMcpSkills() {
   const { data: mcpData, isLoading: mcpLoading } = useQuery({
     queryKey: ["mcp-servers"],
     queryFn: async () => {
-      const res = await api.get<{ status: McpServer[] }>("/ui/mcp");
-      return res.status ?? [];
+      const res = await api.get<{ servers: Record<string, unknown>[] }>(
+        "/api/mcp/servers",
+      );
+      return (res.servers ?? []).map(normalizeMcpServer);
     },
     refetchInterval: 15_000,
   });
@@ -374,7 +413,27 @@ export function MergedMcpSkills() {
 
   const saveMcpServer = useMutation({
     mutationFn: async (server: McpServer) => {
-      await api.post("/ui/mcp", server);
+      // Python API has create + start/stop, not upsert — replace by id when present.
+      if (server.id) {
+        try {
+          await api.delete(`/api/mcp/servers/${encodeURIComponent(server.id)}`);
+        } catch {
+          /* best-effort: create still proceeds */
+        }
+      }
+      const created = await api.post<{ id: string }>("/api/mcp/servers", {
+        name: server.name,
+        command: server.command ?? "",
+        args: server.args ?? [],
+        env: server.env ?? {},
+        url: server.url ?? "",
+        transport: server.url ? "sse" : "stdio",
+      });
+      if (server.enabled !== false && created?.id) {
+        await api.post(
+          `/api/mcp/servers/${encodeURIComponent(created.id)}/start`,
+        );
+      }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
@@ -384,7 +443,23 @@ export function MergedMcpSkills() {
 
   const restartMcpServers = useMutation({
     mutationFn: async () => {
-      await api.post("/ui/mcp/restart");
+      const res = await api.get<{ servers: Array<{ id?: string }> }>(
+        "/api/mcp/servers",
+      );
+      for (const s of res.servers ?? []) {
+        if (!s.id) continue;
+        const id = encodeURIComponent(s.id);
+        try {
+          await api.post(`/api/mcp/servers/${id}/stop`);
+        } catch {
+          /* ignore stop failures */
+        }
+        try {
+          await api.post(`/api/mcp/servers/${id}/start`);
+        } catch {
+          /* ignore start failures per-server */
+        }
+      }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
@@ -429,7 +504,6 @@ export function MergedMcpSkills() {
   const servers = mcpData ?? [];
   const skills = skillsData ?? [];
   const [filter, setFilter] = useState<McpSkillsFilter>("all");
-  const showImport = filter !== "skills";
   const showAccounts = filter === "all";
   const showServers = filter === "all" || filter === "mcp";
   const showSkills = filter === "all" || filter === "skills";
@@ -469,8 +543,6 @@ export function MergedMcpSkills() {
           </div>
         }
       />
-      {showImport && <LinkImportPanel />}
-
       {showAccounts && (
         <div>
           <div className="flex items-center justify-between gap-3">
@@ -1084,110 +1156,6 @@ function ServiceConnectionCard({
           </div>
         </div>
       )}
-    </Card>
-  );
-}
-
-function LinkImportPanel() {
-  const queryClient = useQueryClient();
-  const [link, setLink] = useState("");
-  const [enableMcp, setEnableMcp] = useState(true);
-  const [result, setResult] = useState<ImportLinkResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const importLink = useMutation({
-    mutationFn: async (url: string) => {
-      const res = await api.post("/ui/import-link", { url, enableMcp });
-      return res as ImportLinkResult;
-    },
-    onSuccess: (data) => {
-      setResult(data);
-      setError(null);
-      void queryClient.invalidateQueries({ queryKey: ["mcp-servers"] });
-    },
-    onError: (e) => {
-      setError(e instanceof Error ? e.message : String(e));
-      setResult(null);
-    },
-  });
-
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div>
-          <CardTitle>Paste a GitHub or MCP link</CardTitle>
-          <CardDescription>
-            Paste a repo, raw file, or capability link. August will look for
-            skills, plugins, or MCP server metadata.
-          </CardDescription>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex gap-2">
-          <Input
-            className="h-10 text-xs font-mono"
-            placeholder="https://github.com/owner/repo"
-            value={link}
-            onChange={(e) => setLink(e.target.value)}
-          />
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => importLink.mutate(link.trim())}
-            disabled={importLink.isPending || !link.trim()}
-          >
-            <Link className="size-3.5" />
-            Import
-          </Button>
-        </div>
-
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
-            className="rounded border-border bg-background"
-            checked={enableMcp}
-            onChange={(e) => setEnableMcp(e.target.checked)}
-            disabled={importLink.isPending}
-          />
-          enable MCP servers found in the link
-        </label>
-
-        {error && (
-          <p className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-xs text-danger/90">
-            {error}
-          </p>
-        )}
-        {result && (
-          <div className="rounded-xl border bg-success/10 p-3 text-xs text-success space-y-2">
-            <p className="font-medium">Imported successfully</p>
-            {result.resolvedUrl && (
-              <p className="truncate">Source: {result.resolvedUrl}</p>
-            )}
-            {result.enabledMcpServers?.length ? (
-              <p>MCP servers: {result.enabledMcpServers.join(", ")}</p>
-            ) : (
-              <p>No MCP server was imported from this link.</p>
-            )}
-            {result.skills?.length ? (
-              <p>
-                Skills:{" "}
-                {result.skills
-                  .map((s) => s.name)
-                  .filter(Boolean)
-                  .join(", ")}
-              </p>
-            ) : null}
-            {result.plugins?.length ? (
-              <p>
-                Plugins:{" "}
-                {result.plugins
-                  .map((p) => p.name)
-                  .filter(Boolean)
-                  .join(", ")}
-              </p>
-            ) : null}
-          </div>
-        )}
-      </CardContent>
     </Card>
   );
 }

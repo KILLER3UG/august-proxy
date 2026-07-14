@@ -95,24 +95,30 @@ export const SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_SECTIONS.map((sect
   path: `/settings/${section.id}`,
 }));
 
-/* Settings is now a FULL-SCREEN page (no modal). The SettingsPage
- * component owns the left rail + content area; ChatLayout renders it
- * full-width and hides the chat thread + right drawer when the path is
- * /settings or /settings/:section. The :section param is resolved via
- * the existing legacy alias map so old URLs (e.g. /settings/traffic)
- * continue to work. */
+/* Settings is a FULL-SCREEN page (no modal). One shared element is
+ * mounted for both /settings and /settings/:section so left-rail tab
+ * switches only change the :section param — they do not remount the
+ * shell or re-trigger the lazy Suspense boundary. Section content still
+ * remounts inside SettingsPage so each tab refetches live data on entry. */
+export const SETTINGS_PAGE_ELEMENT: ReactNode = React.createElement(
+  Lazy,
+  null,
+  React.createElement(SettingsPage),
+);
+
+/** Flat route descriptors for nav / labels (actual tree is nested in App). */
 export const SETTINGS_ROUTES: readonly SectionRoute[] = [
   {
     path: '/settings',
     label: 'Settings',
     Icon: Settings,
-    element: React.createElement(Lazy, null, React.createElement(SettingsPage)),
+    element: SETTINGS_PAGE_ELEMENT,
   },
   {
     path: '/settings/:section',
     label: 'Settings',
     Icon: Settings,
-    element: React.createElement(Lazy, null, React.createElement(SettingsPage)),
+    element: SETTINGS_PAGE_ELEMENT,
   },
 ] as const;
 

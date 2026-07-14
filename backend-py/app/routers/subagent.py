@@ -52,11 +52,10 @@ class ProposeBreakdownRequest(CamelModel):
 
 
 def _getOrchestrator(request: Request) -> SubagentOrchestrator:
-    """Get the orchestrator from app state."""
-    orch = getattr(request.app.state, 'subagent_orchestrator', None)
-    if not orch:
-        raise HTTPException(status_code=503, detail='Subagent orchestrator not initialized')
-    return orch
+    """Get the orchestrator — lifespan or lazy init (never permanent 503)."""
+    from app.services.runtime_services import get_orchestrator
+
+    return get_orchestrator(request.app)
 
 
 def _getSession(request: Request) -> object:

@@ -1,7 +1,6 @@
 /* ── UI events — typed wrappers for august:ui-action CustomEvents ── */
-/* Task 5 (frontend portion). The backend persists events as JSONL at
- * /ui/august/ui-events and emits CustomEvents via window.dispatchEvent.
- * These helpers centralize event subscription and dispatch.
+/* Frontend-only CustomEvents (window.dispatchEvent). The workbench/layout
+ * listens for navigate, drawer, guard mode, composer focus, etc.
  */
 
 export type UiAction =

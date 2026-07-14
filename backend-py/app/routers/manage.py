@@ -2,7 +2,6 @@
 Management endpoints — /api/manage/*
 
 Resources that don't fit existing routers: aliases, settings, snapshot.
-Replaces the legacy /ui/august/* action-dispatch pattern.
 """
 
 from __future__ import annotations

@@ -280,21 +280,14 @@ export function ChatLayout() {
             onSelectRightDrawerSection={openWorkbenchSidebar}
           />
           <div className="flex-1 min-h-0 overflow-hidden relative flex">
-            {/* Settings takes the full width (its own internal layout). */}
+            {/* Settings takes the full width (its own internal layout).
+                Do NOT key Outlet on location.pathname here — that remounted
+                the entire SettingsPage (shell + content) on every tab switch
+                and felt like a full page reload. Tab transitions live inside
+                SettingsPage content only. */}
             {isSettings ? (
               <div className="flex-1 min-w-0 h-full">
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.div
-                    key={location.pathname}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                    className="h-full min-w-0"
-                  >
-                    <Outlet />
-                  </motion.div>
-                </AnimatePresence>
+                <Outlet />
               </div>
             ) : (
               <>

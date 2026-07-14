@@ -1,17 +1,11 @@
 """
 Brain dashboard API — /api/brain/* endpoints.
 
-The frontend Memory & Knowledge section (frontend/.../sections/memory/Memory.tsx)
-polls 9 read-only endpoints that aggregate the brain's memory store, vector DB,
-facts, and prompt builder into the shapes the dashboard renders. Originally
-these lived under the Node.js backend's /ui/memory/* and /ui/brain/* routes —
-a legacy "UI-consumed" prefix that is misleading in a clean backend API.
+The frontend Memory & Knowledge section polls these read-only endpoints that
+aggregate the brain's memory store, vector DB, facts, and prompt builder.
 
-This router unifies them under a single /api/brain/* namespace with
-resource-oriented sub-paths, dropping the redundant "memory/" segment entirely
-(no "memory" nesting inside "brain"). It is non-colliding with the core
-memory CRUD router (/api/memory/kv, /facts, /search, /stats), which stays
-unchanged.
+Resource-oriented sub-paths under /api/brain/*; non-colliding with core
+memory CRUD (/api/memory/kv, /facts, /search, /stats).
 
 Endpoints (all GET):
   /api/brain/status       → { count, driver, path, available }

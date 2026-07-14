@@ -9,15 +9,53 @@ import httpx
 
 
 async def getHostInfo() -> dict[str, object]:
+    """Host-agent health shaped for both simple status and HostAgentHealth UI."""
+    from datetime import datetime, timezone
+
+    at = datetime.now(timezone.utc).isoformat()
     baseUrl = os.environ.get('AUGUST_HOST_AGENT_URL', '')
+    base = {
+        'lastComputerActionAt': None,
+        'lastComputerAction': None,
+        'lastComputerTarget': None,
+        'lastObservationAt': None,
+        'lastObservedApp': None,
+        'postObservationCount': 0,
+        'at': at,
+    }
     if not baseUrl:
-        return {'available': False, 'reason': 'AUGUST_HOST_AGENT_URL not set'}
+        return {
+            **base,
+            'available': False,
+            'status': 'disconnected',
+            'reason': 'AUGUST_HOST_AGENT_URL not set',
+        }
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(f'{baseUrl}/health')
-            return {'available': True, 'status': resp.json() if resp.status_code == 200 else {'error': resp.text}}
+            if resp.status_code == 200:
+                payload = resp.json() if resp.headers.get('content-type', '').startswith('application/json') else {}
+                if not isinstance(payload, dict):
+                    payload = {}
+                return {
+                    **base,
+                    **payload,
+                    'available': True,
+                    'status': payload.get('status') or 'connected',
+                }
+            return {
+                **base,
+                'available': False,
+                'status': 'error',
+                'error': resp.text,
+            }
     except httpx.RequestError as exc:
-        return {'available': False, 'error': str(exc)}
+        return {
+            **base,
+            'available': False,
+            'status': 'error',
+            'error': str(exc),
+        }
 
 
 async def executeHostCommand(command: str, args: list[str] | None = None) -> dict[str, object]:

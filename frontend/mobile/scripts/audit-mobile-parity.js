@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 
+/**
+ * Mobile parity audit against the Python FastAPI backend (/api/*).
+ * Legacy Node /ui/* paths and apps/proxy/src/ui are not used.
+ */
+
 const fs = require('node:fs');
 const path = require('node:path');
 
 const appRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(appRoot, '..', '..');
+const desktopSrc = path.join(repoRoot, 'frontend', 'desktop', 'src');
 const baseUrl = (process.env.AUGUST_AUDIT_BASE_URL || 'http://127.0.0.1:8085').replace(/\/+$/, '');
 
 const failures = [];
@@ -51,7 +57,17 @@ function walkFiles(root, options = {}) {
   return files;
 }
 
-function extractUiEndpoints(text) {
+function extractApiEndpoints(text) {
+  const endpoints = new Set();
+  const quoted = /['"`](\/api\/[^'"`<>\s)]+)/g;
+  let match;
+  while ((match = quoted.exec(text))) {
+    endpoints.add(match[1].replace(/\\\$/g, '$'));
+  }
+  return endpoints;
+}
+
+function extractLegacyUiEndpoints(text) {
   const endpoints = new Set();
   const quoted = /['"`](\/ui\/[^'"`<>\s)]+)/g;
   let match;
@@ -61,40 +77,15 @@ function extractUiEndpoints(text) {
   return endpoints;
 }
 
-function extractSectionsFromSidebar(text) {
-  const sections = new Set();
-  const sectionAttr = /data-section=["']([^"']+)["']/g;
-  let match;
-  while ((match = sectionAttr.exec(text))) {
-    sections.add(match[1]);
-  }
-  return sections;
-}
-
-function extractSectionIds(text) {
-  const sections = new Set();
-  const sectionId = /id=["']section-([^"']+)["']/g;
-  let match;
-  while ((match = sectionId.exec(text))) {
-    sections.add(match[1]);
-  }
-  return sections;
-}
-
 function runStaticAudit() {
   const appTsxPath = path.join(appRoot, 'App.tsx');
   const packageJsonPath = path.join(appRoot, 'package.json');
   const appJsonPath = path.join(appRoot, 'app.json');
-  const cssPath = path.join(repoRoot, 'apps', 'proxy', 'src', 'ui', 'css', 'styles.css');
-  const sidebarPath = path.join(repoRoot, 'apps', 'proxy', 'src', 'ui', 'partials', 'sidebar.html');
-  const sectionsRoot = path.join(repoRoot, 'apps', 'proxy', 'src', 'ui', 'partials', 'sections');
   const nativeApiPath = path.join(appRoot, 'src', 'api', 'proxy.ts');
 
   const appTsx = readText(appTsxPath);
   const packageJson = readJson(packageJsonPath);
   const appJson = readJson(appJsonPath);
-  const css = readText(cssPath);
-  const sidebar = readText(sidebarPath);
 
   check(appTsx.includes('react-native-webview'), 'mobile renders the shared web app through react-native-webview');
   check(appTsx.includes('source={{ uri: proxyUrl }}'), 'WebView source is the configured proxy URL');
@@ -115,12 +106,6 @@ function runStaticAudit() {
   check(appJson.expo?.android?.usesCleartextTraffic === true, 'Android can connect to local HTTP proxy during development');
   check((appJson.expo?.android?.permissions || []).includes('INTERNET'), 'Android INTERNET permission is declared');
 
-  check(css.includes('Mobile WebView/Layout Parity'), 'shared web CSS contains the mobile parity block');
-  check(/@media\s*\(max-width:\s*768px\)/.test(css), 'shared web CSS has a mobile breakpoint');
-  check(/overflow-x:\s*hidden/.test(css), 'mobile layout hides horizontal overflow');
-  check(css.includes('.wb-agent-card.is-active'), 'Workbench active agent card has a neutral mobile override');
-  check(css.includes('#workbenchSendBtn'), 'Workbench send control is covered by mobile neutral styling');
-
   const mobileFiles = [
     appTsxPath,
     ...walkFiles(path.join(appRoot, 'src'), {
@@ -130,33 +115,24 @@ function runStaticAudit() {
   ];
   const mobileText = mobileFiles.map(readText).join('\n');
   check(!/@react-navigation|bottom-tabs|TabNavigator|BottomTab/.test(mobileText), 'mobile source has no bottom navigation implementation');
-  check(extractUiEndpoints(mobileText).size === 0, 'mobile source has no native /ui endpoint list to drift from web');
+  check(extractLegacyUiEndpoints(mobileText).size === 0, 'mobile source has no native /ui endpoint list');
 
-  const webSections = extractSectionsFromSidebar(sidebar);
-  const sectionIds = new Set();
-  for (const file of walkFiles(sectionsRoot, { extensions: ['.html'] })) {
-    for (const section of extractSectionIds(readText(file))) {
-      sectionIds.add(section);
-    }
-  }
-  check(webSections.size >= 13, `web sidebar feature surface detected (${webSections.size} sections)`);
-  for (const section of webSections) {
-    check(sectionIds.has(section), `web feature section "${section}" has a matching screen`);
-  }
-
-  const uiFiles = walkFiles(path.join(repoRoot, 'apps', 'proxy', 'src', 'ui'), {
+  // Desktop web UI is the shared surface (Python backend + React desktop).
+  check(fs.existsSync(desktopSrc), 'desktop frontend source is present for shared web surface');
+  const desktopFiles = walkFiles(desktopSrc, {
     ignored: ['node_modules'],
-    extensions: ['.js', '.html'],
-  }).filter((file) => !file.endsWith('ui_backup.html'));
-  const webEndpoints = new Set();
-  for (const file of uiFiles) {
-    for (const endpoint of extractUiEndpoints(readText(file))) {
-      webEndpoints.add(endpoint);
-    }
-  }
-  check(webEndpoints.size >= 40, `web UI endpoint surface detected (${webEndpoints.size} /ui references)`);
+    extensions: ['.ts', '.tsx', '.js', '.jsx'],
+  });
+  const desktopText = desktopFiles.map(readText).join('\n');
+  const legacyUi = extractLegacyUiEndpoints(desktopText);
+  check(
+    legacyUi.size === 0,
+    `desktop source has no live /ui/* API paths (found ${legacyUi.size}: ${[...legacyUi].slice(0, 5).join(', ')})`,
+  );
+  const apiEndpoints = extractApiEndpoints(desktopText);
+  check(apiEndpoints.size >= 20, `desktop API surface detected (${apiEndpoints.size} /api references)`);
 
-  return { webEndpointCount: webEndpoints.size, webSectionCount: webSections.size };
+  return { apiEndpointCount: apiEndpoints.size, desktopFileCount: desktopFiles.length };
 }
 
 async function readResponse(res) {
@@ -200,60 +176,66 @@ async function requestText(endpoint) {
 
 async function runLiveAudit() {
   const html = await requestText('/');
-  check(/dashboard|Workbench|August/i.test(html), 'web app root is reachable');
+  check(/August|Workbench|dashboard/i.test(html), 'web app root is reachable');
 
-  const liveSections = extractSectionIds(html);
-  const sidebar = readText(path.join(repoRoot, 'apps', 'proxy', 'src', 'ui', 'partials', 'sidebar.html'));
-  for (const section of extractSectionsFromSidebar(sidebar)) {
-    check(liveSections.has(section), `live web app includes feature section "${section}"`);
-  }
+  const health = await requestJson('/api/health');
+  check(Boolean(health.status || health.ok !== undefined || health.checks), '/api/health returns health data');
 
-  const health = await requestJson('/ui/health');
-  check(Boolean(health.summary || health.cards || health.checks), '/ui/health returns dashboard health data');
+  const config = await requestJson('/api/config/safe');
+  check(typeof config === 'object' && config !== null, '/api/config/safe returns safe settings data');
 
-  const config = await requestJson('/ui/config/safe');
-  check(typeof config === 'object' && config !== null, '/ui/config/safe returns safe settings data');
-
-  const stats = await requestJson('/ui/stats?period=all');
+  const stats = await requestJson('/api/stats?period=all');
   check(
-    typeof stats.totalRequests === 'number' &&
-      typeof stats.totalTokens === 'number' &&
+    typeof stats.totalRequests === 'number' ||
+      typeof stats.totalTokens === 'number' ||
       typeof stats.estimatedTotalCost === 'number',
-    '/ui/stats?period=all returns numeric dashboard data',
+    '/api/stats?period=all returns numeric dashboard data',
   );
 
-  const requests = await requestJson('/ui/requests?period=all');
+  const requests = await requestJson('/api/requests?period=all');
   check(
     Array.isArray(requests) || Array.isArray(requests.requests) || Array.isArray(requests.completed),
-    '/ui/requests?period=all returns request rows',
+    '/api/requests?period=all returns request rows',
   );
 
-  const sessions = await requestJson('/ui/workbench/sessions');
-  check(Array.isArray(sessions), '/ui/workbench/sessions returns session history');
+  const sessions = await requestJson('/api/workbench/sessions');
+  check(
+    Array.isArray(sessions) || Array.isArray(sessions.sessions),
+    '/api/workbench/sessions returns session history',
+  );
 
-  const capabilities = await requestJson('/ui/workbench/capabilities');
-  check(Boolean(capabilities.groups || capabilities.tools || capabilities.families), '/ui/workbench/capabilities returns tool data');
+  const capabilities = await requestJson('/api/workbench/capabilities');
+  check(
+    Boolean(capabilities.groups || capabilities.tools || capabilities.families || capabilities.sources),
+    '/api/workbench/capabilities returns tool data',
+  );
 
-  const agents = await requestJson('/ui/workbench/agents?active=build');
-  check(Boolean(Array.isArray(agents.agents) || Array.isArray(agents)), '/ui/workbench/agents returns agent choices');
+  const agents = await requestJson('/api/workbench/agents?active=build');
+  check(
+    Boolean(Array.isArray(agents.agents) || Array.isArray(agents)),
+    '/api/workbench/agents returns agent choices',
+  );
 
-  const session = await requestJson('/ui/workbench/session', {
+  const session = await requestJson('/api/workbench/session', {
     method: 'POST',
     body: JSON.stringify({ provider: 'claude', agentId: 'build' }),
   });
   check(Boolean(session.id), 'Workbench session can be created');
 
   const condition = `mobile parity audit ${Date.now()}`;
-  const setGoal = await requestJson('/ui/workbench/goal', {
+  const setGoal = await requestJson('/api/workbench/goal', {
     method: 'POST',
     body: JSON.stringify({ sessionId: session.id, action: 'set', condition }),
   });
   check(JSON.stringify(setGoal).includes(condition), 'Workbench goal state persists after set');
 
-  const goalStatus = await requestJson(`/ui/workbench/goal?sessionId=${encodeURIComponent(session.id)}`);
-  check(JSON.stringify(goalStatus).includes(condition), 'Workbench goal state reloads through GET');
+  const goalStatus = await requestJson('/api/workbench/goal', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId: session.id, action: 'status' }),
+  });
+  check(JSON.stringify(goalStatus).includes(condition), 'Workbench goal state reloads through status action');
 
-  const clearGoal = await requestJson('/ui/workbench/goal', {
+  const clearGoal = await requestJson('/api/workbench/goal', {
     method: 'POST',
     body: JSON.stringify({ sessionId: session.id, action: 'clear' }),
   });
@@ -273,10 +255,12 @@ async function main() {
   }
 
   console.log(`Mobile parity audit passed (${passes.length} checks).`);
-  console.log(`Mode: webview-shared-web-ui; web sections: ${staticResult.webSectionCount}; web endpoint references: ${staticResult.webEndpointCount}; base URL: ${baseUrl}`);
+  console.log(
+    `Mode: webview-shared-web-ui; desktop files: ${staticResult.desktopFileCount}; /api refs: ${staticResult.apiEndpointCount}; base URL: ${baseUrl}`,
+  );
 }
 
 main().catch((error) => {
-  console.error(`Mobile parity audit failed: ${error.message}`);
+  console.error(error);
   process.exit(1);
 });

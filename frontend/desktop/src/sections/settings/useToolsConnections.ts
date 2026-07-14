@@ -1,12 +1,8 @@
 /* ── useToolsConnections — shared data layer for the Tools & Connections
  *   section ──────────────────────────────────────────────────────────
- * The old Services.tsx and Connections.tsx components each independently
- * polled /api/service-connections (and Connections also polled
- * /ui/host-agent/status). This hook is the only fetcher; both the new
- * Overview cards and the modern Accounts subtab read from one cycle. The
- * Servers subtab still mounts the existing <Mcp /> component (a 1200-line
- * CRUD UI we deliberately preserve rather than rewrite) which keeps its
- * own internal polling for MCP server configs. */
+ * Single fetcher for /api/service-connections and /api/host-agent/health.
+ * Overview cards and the Accounts subtab share one poll cycle. The Servers
+ * subtab mounts <Mcp /> which polls /api/mcp/servers for configs. */
 
 import { useQuery } from '@tanstack/react-query';
 import { getHostAgentStatus } from '@/api/api-client';

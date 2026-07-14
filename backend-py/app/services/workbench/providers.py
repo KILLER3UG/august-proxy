@@ -125,6 +125,35 @@ def resolve_model(provider: dict[str, object] | None, model_hint: str = '') -> s
     return ''
 
 
+def resolve_chat_llm(
+    *,
+    model: str = '',
+    model_provider: str = '',
+    session_provider: str = '',
+    session_model: str = '',
+) -> tuple[dict[str, object] | None, str]:
+    """Same resolution order as workbench chat turns.
+
+    Order:
+      1. explicit modelProvider
+      2. model id hint
+      3. session.provider + model/session.model
+      4. first available provider
+    Then model = explicit model → session.model → provider default.
+    """
+    resolved_provider: dict[str, object] | None = None
+    if model_provider:
+        resolved_provider = resolve_workbench_provider(model_provider, '')
+    if not resolved_provider and model:
+        resolved_provider = resolve_workbench_provider('', model)
+    if not resolved_provider:
+        resolved_provider = resolve_workbench_provider(session_provider, model or session_model)
+    if not resolved_provider:
+        resolved_provider = resolve_workbench_provider('', '')
+    resolved_model = resolve_model(resolved_provider, model or session_model or '')
+    return resolved_provider, resolved_model
+
+
 def is_anthropic_provider(provider: dict[str, object] | None) -> bool:
     return provider is not None and as_str(provider.get('apiMode')) == 'anthropicMessages'
 

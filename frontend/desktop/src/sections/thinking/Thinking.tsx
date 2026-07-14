@@ -8,7 +8,7 @@ import { getRequestDetails, type RequestDetailEntry, type Period } from '@/api/a
 
 /**
  * Thinking traces are not a standalone endpoint — they ride along on each
- * captured request in /ui/details (the `thinking` field, set by the
+ * captured request in /api/details (the `thinking` field, set by the
  * anthropic adapter when extended thinking is enabled). We surface the most
  * recent traces here. When no thinking is available, we show a clear empty
  * state instead of fake/mock data.

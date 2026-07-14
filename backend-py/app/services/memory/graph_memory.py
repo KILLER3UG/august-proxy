@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
@@ -19,6 +20,8 @@ _DEFAULTGraphFile = dataPath('august_graph_memory.json')
 _MAXEntities = 1000
 _MAXRelations = 2500
 _MAXObservations = 4000
+# Serialize RMW so concurrent entity/relation writes cannot clobber each other.
+_graph_lock = threading.Lock()
 
 
 def _graphFile() -> Path:
@@ -68,7 +71,7 @@ def _normalize(raw: object) -> dict[str, object]:
     }
 
 
-def _read() -> dict[str, object]:
+def _read_unlocked() -> dict[str, object]:
     p = _graphFile()
     if not p.exists():
         return _defaultGraph()
@@ -78,7 +81,12 @@ def _read() -> dict[str, object]:
         return _defaultGraph()
 
 
-def _write(graph: dict[str, object]) -> None:
+def _read() -> dict[str, object]:
+    with _graph_lock:
+        return _read_unlocked()
+
+
+def _write_unlocked(graph: dict[str, object]) -> None:
     g = _normalize(graph)
     g['updatedAt'] = _now()
     g['entities'] = as_list(g['entities'])[-_MAXEntities:]
@@ -89,28 +97,42 @@ def _write(graph: dict[str, object]) -> None:
     write_json_atomic(p, g, indent=2)
 
 
+def _write(graph: dict[str, object]) -> None:
+    with _graph_lock:
+        _write_unlocked(graph)
+
+
+def _mutate(mutator) -> object:
+    """Read-modify-write under the graph lock."""
+    with _graph_lock:
+        g = _read_unlocked()
+        result = mutator(g)
+        _write_unlocked(g)
+        return result
+
+
 def addEntity(name: str, entityType: str = 'general', metadata: dict[str, object] | None = None) -> dict[str, object]:
-    g = _read()
-    key = _safeKey(name)
-    entities = cast(list[dict[str, object]], as_list(g['entities']))
-    existing = next((e for e in entities if _safeKey(as_str(e.get('name'), '')) == key), None)
-    if existing:
-        existing['updatedAt'] = _now()
-        if metadata:
-            as_dict(existing.setdefault('metadata', {})).update(metadata)
-        _write(g)
-        return existing
-    entity: dict[str, object] = {
-        'id': f'e_{len(entities) + 1}',
-        'name': _compact(name, 200),
-        'type': entityType,
-        'metadata': metadata or {},
-        'createdAt': _now(),
-        'updatedAt': _now(),
-    }
-    entities.append(entity)
-    _write(g)
-    return entity
+    def _do(g: dict[str, object]) -> dict[str, object]:
+        key = _safeKey(name)
+        entities = cast(list[dict[str, object]], as_list(g['entities']))
+        existing = next((e for e in entities if _safeKey(as_str(e.get('name'), '')) == key), None)
+        if existing:
+            existing['updatedAt'] = _now()
+            if metadata:
+                as_dict(existing.setdefault('metadata', {})).update(metadata)
+            return existing
+        ent: dict[str, object] = {
+            'name': name,
+            'type': entityType,
+            'metadata': metadata or {},
+            'createdAt': _now(),
+            'updatedAt': _now(),
+        }
+        entities.append(ent)
+        g['entities'] = entities
+        return ent
+
+    return cast(dict[str, object], _mutate(_do))
 
 
 def getEntity(name: str) -> dict[str, object] | None:
@@ -138,35 +160,36 @@ def searchEntities(query: str) -> list[dict[str, object]]:
 def addRelation(
     source: str, target: str, relationType: str, metadata: dict[str, object] | None = None
 ) -> dict[str, object]:
-    g = _read()
-    srcKey, tgtKey = (_safeKey(source), _safeKey(target))
-    relations = cast(list[dict[str, object]], as_list(g['relations']))
-    existing = next(
-        (
-            r
-            for r in relations
-            if _safeKey(as_str(r.get('source'), '')) == srcKey
-            and _safeKey(as_str(r.get('target'), '')) == tgtKey
-            and (as_str(r.get('type')) == relationType)
-        ),
-        None,
-    )
-    if existing:
-        existing['updatedAt'] = _now()
-        _write(g)
-        return existing
-    rel: dict[str, object] = {
-        'id': f'r_{len(relations) + 1}',
-        'source': source,
-        'target': target,
-        'type': relationType,
-        'metadata': metadata or {},
-        'createdAt': _now(),
-        'updatedAt': _now(),
-    }
-    relations.append(rel)
-    _write(g)
-    return rel
+    def _do(g: dict[str, object]) -> dict[str, object]:
+        srcKey, tgtKey = (_safeKey(source), _safeKey(target))
+        relations = cast(list[dict[str, object]], as_list(g['relations']))
+        existing = next(
+            (
+                r
+                for r in relations
+                if _safeKey(as_str(r.get('source'), '')) == srcKey
+                and _safeKey(as_str(r.get('target'), '')) == tgtKey
+                and (as_str(r.get('type')) == relationType)
+            ),
+            None,
+        )
+        if existing:
+            existing['updatedAt'] = _now()
+            return existing
+        rel: dict[str, object] = {
+            'id': f'r_{len(relations) + 1}',
+            'source': source,
+            'target': target,
+            'type': relationType,
+            'metadata': metadata or {},
+            'createdAt': _now(),
+            'updatedAt': _now(),
+        }
+        relations.append(rel)
+        g['relations'] = relations
+        return rel
+
+    return cast(dict[str, object], _mutate(_do))
 
 
 def getRelations(entityName: str) -> list[dict[str, object]]:
@@ -181,25 +204,34 @@ def getRelations(entityName: str) -> list[dict[str, object]]:
 
 
 def addObservation(entityName: str, content: str, source: str = '') -> dict[str, object]:
-    g = _read()
-    key = _safeKey(entityName)
-    entities = cast(list[dict[str, object]], as_list(g['entities']))
-    entity = next((e for e in entities if _safeKey(as_str(e.get('name'), '')) == key), None)
-    if not entity:
-        entity = addEntity(entityName)
-    observations = cast(list[dict[str, object]], as_list(g['observations']))
-    obs = {
-        'id': f'o_{len(observations) + 1}',
-        'entityKey': key,
-        'entityName': entity['name'],
-        'content': _compact(content, 1000),
-        'source': source,
-        'createdAt': _now(),
-    }
-    observations.append(obs)
-    _write(g)
-    return obs
+    def _do(g: dict[str, object]) -> dict[str, object]:
+        key = _safeKey(entityName)
+        entities = cast(list[dict[str, object]], as_list(g['entities']))
+        entity = next((e for e in entities if _safeKey(as_str(e.get('name'), '')) == key), None)
+        if not entity:
+            entity = {
+                'name': entityName,
+                'type': 'general',
+                'metadata': {},
+                'createdAt': _now(),
+                'updatedAt': _now(),
+            }
+            entities.append(entity)
+            g['entities'] = entities
+        observations = cast(list[dict[str, object]], as_list(g['observations']))
+        obs: dict[str, object] = {
+            'id': f'o_{len(observations) + 1}',
+            'entityKey': key,
+            'entityName': entity['name'],
+            'content': _compact(content, 1000),
+            'source': source,
+            'createdAt': _now(),
+        }
+        observations.append(obs)
+        g['observations'] = observations
+        return obs
 
+    return cast(dict[str, object], _mutate(_do))
 
 def searchObservations(query: str) -> list[dict[str, object]]:
     g = _read()

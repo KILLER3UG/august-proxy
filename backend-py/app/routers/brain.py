@@ -1,7 +1,7 @@
 """
 Brain router — mutation endpoints + System Health (v3, §12).
 
-The /api/brain/learning endpoint is served by ui_memory.py (v3 enhanced
+The /api/brain/learning endpoint is served by the brain dashboard router (v3 enhanced
 that to return the rich aggregation including auto-memories, sleep
 cycle, delta engine, and pending skills). This router adds the
 mutation endpoints (delete/edit heuristic, approve/reject skill,
@@ -61,6 +61,26 @@ async def runConsolidationEndpoint():
 
     stats = await runConsolidation()
     return stats
+
+
+@router.get('/sync-status')
+async def brainSyncStatus():
+    """Workbench session sync and cognitive boot status."""
+    from app.services.workbench.brain_sync import get_sync_stats
+    from app.services.cognitive_boot import get_boot_status
+
+    return {
+        'brainSync': get_sync_stats(),
+        'cognitiveBoot': get_boot_status(),
+    }
+
+
+@router.post('/backfill-workbench')
+async def backfillWorkbench():
+    """Re-run workbench-sessions.json → brain SQLite backfill."""
+    from app.services.workbench.brain_sync import backfill_workbench_json_to_brain
+
+    return backfill_workbench_json_to_brain()
 
 
 @router.get('/health')

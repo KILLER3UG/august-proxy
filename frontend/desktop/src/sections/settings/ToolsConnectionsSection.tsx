@@ -1,7 +1,7 @@
 /* ── Tools & Connections — deeply consolidated section ─────────────── */
 /* Replaces the 3 old top-level sections (MCP & Skills, Connections,
  * host-agent summary inside Connections) with one section that:
- *   • fetches /api/service-connections + /ui/host-agent/status once via
+ *   • fetches /api/service-connections + /api/host-agent/health once via
  *     useToolsConnections — Connections.tsx and Services.tsx no longer
  *     poll the same endpoint independently for read-only views
  *   • renders Overview / Servers / Accounts as subtabs using the

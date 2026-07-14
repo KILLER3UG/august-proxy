@@ -1,18 +1,17 @@
 """MCP server API routes.
 
-Port of backend/services/tools/mcp-client.js + mcp-registry.js + mcp-config.js + mcp-oauth.js.
-Manages MCP server connections, tool discovery, and OAuth flows.
-
-Request body ``MCPServerCreate`` inherits :class:`CamelModel` so internals are
-snake_case while JSON from the frontend stays camelCase.
+Delegates to ``app.services.tools.mcp_client`` so HTTP registration,
+subprocess start/stop, and tool discovery share one in-process registry
+(the workbench tool path uses the same client).
 """
 
 from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException
 from app.models.camel_base import CamelModel
+from app.services.tools import mcp_client
 
 router = APIRouter(prefix='/api/mcp')
-_servers: dict[str, dict[str, object]] = {}
 
 
 class MCPServerCreate(CamelModel):
@@ -29,78 +28,92 @@ class MCPServerCreate(CamelModel):
 @router.get('/servers')
 async def listServers():
     """List all registered MCP servers."""
-    return {'servers': list(_servers.values())}
+    return {'servers': mcp_client.listRegisteredServers()}
 
 
 @router.post('/servers')
 async def createServer(body: MCPServerCreate):
-    """Register a new MCP server."""
-    import uuid
-
-    serverId = f'mcp_{uuid.uuid4().hex[:8]}'
-    server: dict[str, object] = {
-        'id': serverId,
-        'name': body.name,
-        'command': body.command,
-        'args': body.args,
-        'env': body.env,
-        'url': body.url,
-        'transport': body.transport,
-        'status': 'registered',
-        'tools': [],
-    }
-    _servers[serverId] = server
+    """Register a new MCP server (does not start the process yet)."""
+    if not body.command and not body.url:
+        raise HTTPException(status_code=400, detail='command or url is required')
+    # stdio servers need a command; URL-only is stored for future SSE transport.
+    server = mcp_client.registerServer(
+        body.name,
+        body.command or body.url or 'true',
+        args=list(body.args) if body.args else None,
+        env=dict(body.env) if body.env else None,
+    )
+    if body.url:
+        server['url'] = body.url
+    if body.transport:
+        server['transport'] = body.transport
     return server
 
 
 @router.get('/servers/{server_id}')
 async def getServer(serverId: str):
     """Get an MCP server by ID."""
-    server = _servers.get(serverId)
-    if not server:
-        raise HTTPException(status_code=404, detail='Server not found')
-    return server
+    for s in mcp_client.listRegisteredServers():
+        if s.get('id') == serverId:
+            return s
+    raise HTTPException(status_code=404, detail='Server not found')
 
 
 @router.delete('/servers/{server_id}')
 async def deleteServer(serverId: str):
-    """Remove an MCP server."""
-    if serverId not in _servers:
+    """Remove an MCP server and stop its process if running."""
+    if not mcp_client.unregisterServer(serverId):
         raise HTTPException(status_code=404, detail='Server not found')
-    del _servers[serverId]
     return {'status': 'ok'}
 
 
 @router.post('/servers/{server_id}/start')
 async def startServer(serverId: str):
-    """Start an MCP server (stub — MCP execution requires subprocess management)."""
-    server = _servers.get(serverId)
+    """Start an MCP server subprocess and discover its tools."""
+    server = next((s for s in mcp_client.listRegisteredServers() if s.get('id') == serverId), None)
     if not server:
         raise HTTPException(status_code=404, detail='Server not found')
-    server['status'] = 'running'
-    return {'status': 'running', 'message': 'MCP server start requires full MCP client implementation'}
+    tools = await mcp_client.discoverTools(serverId)
+    # Re-read status after start attempt
+    server = next((s for s in mcp_client.listRegisteredServers() if s.get('id') == serverId), server)
+    status = server.get('status', 'error')
+    if status == 'error':
+        raise HTTPException(
+            status_code=500,
+            detail=str(server.get('error') or 'Failed to start MCP server'),
+        )
+    return {
+        'status': status,
+        'tools': tools,
+        'toolCount': len(tools),
+        'id': serverId,
+    }
 
 
 @router.post('/servers/{server_id}/stop')
 async def stopServer(serverId: str):
-    """Stop an MCP server."""
-    server = _servers.get(serverId)
+    """Stop an MCP server subprocess."""
+    server = next((s for s in mcp_client.listRegisteredServers() if s.get('id') == serverId), None)
     if not server:
         raise HTTPException(status_code=404, detail='Server not found')
-    server['status'] = 'stopped'
-    return {'status': 'stopped'}
+    ok = await mcp_client.stopServer(serverId)
+    if not ok:
+        raise HTTPException(status_code=404, detail='Server not found')
+    return {'status': 'stopped', 'id': serverId}
 
 
 @router.get('/tools')
 async def listMcpTools():
-    """List all tools from all MCP servers."""
-    allTools = []
-    for server in _servers.values():
-        allTools.extend(server.get('tools', []))
-    return {'tools': allTools}
+    """List all tools from all MCP servers (discovered cache)."""
+    return {'tools': mcp_client.getAllMcpTools()}
 
 
 @router.get('/config')
 async def getMcpConfig():
-    """Get MCP configuration."""
-    return {'servers': list(_servers.keys()), 'count': len(_servers)}
+    """Get MCP configuration snapshot."""
+    servers = mcp_client.listRegisteredServers()
+    return {
+        'servers': [s.get('id') for s in servers],
+        'count': len(servers),
+        'details': servers,
+    }

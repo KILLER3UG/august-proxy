@@ -163,7 +163,10 @@ export function WorkspaceShell({
                       label={s.label}
                       active={active === s.id}
                       onSelect={() => {
+                        if (s.id === active) return;
                         setQuery('');
+                        // Client-side nav only — SettingsPage stays mounted;
+                        // section content remounts to refetch live data.
                         void navigate(`/settings/${s.id}`);
                       }}
                     />

@@ -1,6 +1,6 @@
-"""Terminal session API routes (legacy /api/terminal/* endpoints).
+"""Terminal session API routes under /api/terminal/*.
 
-Delegates to the same terminal_service as /ui/terminal/* routes.
+Delegates to the same terminal_service as terminal_routes (REST + WS).
 
 Request bodies inherit :class:`CamelModel` so internals are snake_case while
 JSON from the frontend stays camelCase. (All current fields are single-word,

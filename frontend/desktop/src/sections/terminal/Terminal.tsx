@@ -8,11 +8,12 @@ import { Input } from '@/components/ui/input';
 import { TerminalSquare, Plus, ShieldAlert, Check, X, Loader2, Inbox } from 'lucide-react';
 import {
   getTerminalSessions,
+  getTerminalBuffer,
+  createTerminalSession,
   submitTerminalCommand,
   approveTerminalRequest,
   type TerminalSession,
 } from '@/api/api-client';
-import { api } from '@/api/client';
 
 /**
  * Approval-aware terminal. Per the migration plan, this ships after Workbench
@@ -38,7 +39,7 @@ export function Terminal() {
 
   const { data: buffer } = useQuery({
     queryKey: ['terminal-buffer', activeId],
-    queryFn: () => (activeId ? api.get<{ buffer: string } & TerminalSession>(`/ui/terminal/buffer?id=${activeId}`) : Promise.resolve(null)),
+    queryFn: () => (activeId ? getTerminalBuffer(activeId) : Promise.resolve(null)),
     enabled: !!activeId,
     refetchInterval: 2_000,
   });
@@ -63,7 +64,7 @@ export function Terminal() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['terminal-sessions'] }),
   });
   const createSession = useMutation({
-    mutationFn: () => api.post('/ui/terminal/sessions', {}),
+    mutationFn: () => createTerminalSession({}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['terminal-sessions'] }),
   });
 

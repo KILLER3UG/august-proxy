@@ -1,11 +1,9 @@
 """
-UI Terminal routes — /ui/terminal/* endpoints for the frontend terminal UI.
-
-Port of the inline terminal routes in backend/index.js.
+Terminal routes — /api/terminal/* for the frontend terminal UI.
 
 Supports:
 - REST: sessions CRUD, buffer, input, resize, command, approve
-- WebSocket: /ui/terminal/connect for live PTY I/O
+- WebSocket: /api/terminal/connect for live PTY I/O
 
 Request bodies inherit :class:`CamelModel` so internals are snake_case while
 JSON from the frontend stays camelCase. Service layer still expects camelCase

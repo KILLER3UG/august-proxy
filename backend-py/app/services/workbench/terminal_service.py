@@ -1,8 +1,7 @@
 """
 Terminal service — interactive terminal sessions with PTY/stdin support.
 
-Port of backend/services/workbench/terminal-service.js.
-Supports the /ui/terminal/* REST API + WebSocket live I/O.
+Supports the /api/terminal/* REST API + WebSocket live I/O.
 """
 
 from __future__ import annotations

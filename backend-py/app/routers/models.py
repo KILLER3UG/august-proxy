@@ -86,3 +86,99 @@ async def openaiModels():
             for m in models
         ],
     }
+
+
+@router.get('/api/models/catalog')
+async def model_catalog(
+    provider: str = Query(''),
+    capability: str = Query(''),
+    q: str = Query(''),
+):
+    models = await model_service.aggregate()
+    out = []
+    ql = q.lower().strip()
+    pl = provider.lower().strip()
+    for m in models:
+        mid = str(m.get('id', ''))
+        prov = str(m.get('provider', ''))
+        caps = m.get('capabilities') if isinstance(m.get('capabilities'), list) else []
+        if pl and pl not in prov.lower():
+            continue
+        if capability and capability not in caps:
+            continue
+        if ql and ql not in mid.lower() and ql not in prov.lower():
+            continue
+        out.append(
+            {
+                'id': mid,
+                'provider': prov,
+                'aliases': m.get('aliases') if isinstance(m.get('aliases'), list) else [],
+                'capabilities': caps,
+            }
+        )
+    return {'models': out, 'count': len(out)}
+
+
+@router.get('/api/models/capabilities')
+async def model_capabilities():
+    models = await model_service.aggregate()
+    caps: set[str] = set()
+    for m in models:
+        raw = m.get('capabilities')
+        if isinstance(raw, list):
+            for c in raw:
+                caps.add(str(c))
+    # Always advertise a baseline set so filters render.
+    for base in ('chat', 'tools', 'vision', 'reasoning'):
+        caps.add(base)
+    return {'capabilities': sorted(caps)}
+
+
+@router.get('/api/models/aliases')
+async def model_aliases():
+    from app.services import alias_service
+
+    aliases = []
+    try:
+        for a in alias_service.listAliasesWire():
+            aliases.append(
+                {
+                    'alias': a.get('alias') or a.get('displayAlias') or '',
+                    'resolvesTo': a.get('targetModel') or a.get('target_model') or '',
+                    'provider': a.get('targetProvider') or a.get('target_provider') or '',
+                }
+            )
+    except Exception:
+        from app.services.config_service import getConfig
+        from app.json_narrowing import as_list, as_dict
+
+        for raw in as_list(getConfig().get('modelAliases')):
+            a = as_dict(raw)
+            aliases.append(
+                {
+                    'alias': str(a.get('alias') or ''),
+                    'resolvesTo': str(a.get('targetModel') or ''),
+                    'provider': str(a.get('targetProvider') or ''),
+                }
+            )
+    return {'aliases': aliases}
+
+
+class CostEstimateBody(CamelModel):
+    model_id: str = ''
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
+@router.post('/api/models/estimate-cost')
+async def estimate_cost(body: CostEstimateBody):
+    # Placeholder pricing — honest zero when unknown rather than fake numbers.
+    model = body.model_id or 'unknown'
+    return {
+        'model': model,
+        'cost': 0.0,
+        'inputTokens': body.input_tokens,
+        'outputTokens': body.output_tokens,
+        'currency': 'USD',
+        'estimated': False,
+    }

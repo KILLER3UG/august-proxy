@@ -302,19 +302,26 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     conn.execute('CREATE INDEX IF NOT EXISTS idx_exam_attempts_exam ON exam_attempts(exam_id)')
     conn.commit()
     ensure_column(conn, 'usage_events', 'context_tokens', 'INTEGER DEFAULT 0')
+    # Full workbench session JSON + last-update time (primary session store).
+    ensure_column(conn, 'sessions', 'workbench_blob', 'TEXT')
+    ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
+    conn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at)'
+    )
 
 
 # Bump when DDL / indexes change in a way that requires re-running create_*.
 # user_version is set after a successful ensure_schema so warm boots can skip
 # the heavy CREATE IF NOT EXISTS + migration probe when already current.
-_SCHEMA_USER_VERSION = 5
+_SCHEMA_USER_VERSION = 6
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """Idempotently migrate camel→snake (if needed) then create the full brain schema.
 
     Warm path: if ``PRAGMA user_version`` already matches ``_SCHEMA_USER_VERSION``
-    and core tables exist, skip migration + DDL (indexes already present).
+    and core tables exist, skip heavy migration + DDL — but still apply
+    lightweight column adds so upgrades pick up new session fields.
     """
     try:
         ver = int(conn.execute('PRAGMA user_version').fetchone()[0])
@@ -326,6 +333,11 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_store' LIMIT 1"
         ).fetchone()
         if row is not None:
+            # Re-apply additive column migrations (cheap IF NOT EXISTS).
+            ensure_column(conn, 'usage_events', 'context_tokens', 'INTEGER DEFAULT 0')
+            ensure_column(conn, 'sessions', 'workbench_blob', 'TEXT')
+            ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
+            conn.commit()
             return
     migrate_camel_to_snake(conn)
     create_core_schema(conn)

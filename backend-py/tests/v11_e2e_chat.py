@@ -15,20 +15,21 @@ def _initDb():
 
 
 def testBuildSystemPromptDoesNotCrashWithRealisticPayload():
-    """The most common failure mode: build_system_prompt with a real-shaped session."""
+    """build_system_prompt with a real-shaped session must inject memory content."""
     session = {
         'id': 'e2e-test',
-        'user_state': {'profile': 'developer', 'skills': [{'name': 'test', 'description': 'x'}]},
-        'workspace': {'path': '/tmp', 'vcs': 'git on main'},
-        'directives': {'goal': 'test the chat', 'plan': None, 'planApproved': False},
+        'goal': 'test the chat',
+        'workspacePath': '/tmp/e2e-workspace',
+        'vcs': 'git on main',
+        'planApproved': False,
         'learned_heuristics': [{'rule': 'use unicode math'}],
         'core_memory': {'facts': ['user prefers tabs']},
-        'auto_memories': [{'key': 'x', 'content': 'y', 'importance': 0.5}],
+        'auto_memories': [{'key': 'x', 'content': 'e2e-auto-memory-marker', 'importance': 0.5}],
     }
     memory = {
         'core_memory': {'facts': ['user prefers tabs']},
         'learned_heuristics': [{'rule': 'use unicode math'}],
-        'auto_memories': [{'key': 'x', 'content': 'y', 'importance': 0.5}],
+        'auto_memories': [{'key': 'x', 'content': 'e2e-auto-memory-marker', 'importance': 0.5}],
     }
     tools = [
         {'name': 'read_file', 'description': 'read a file', 'parameters': []},
@@ -37,6 +38,11 @@ def testBuildSystemPromptDoesNotCrashWithRealisticPayload():
     result = context_builder.buildSystemPrompt(session=session, memory=memory, tools=tools)
     assert isinstance(result, str)
     assert len(result) > 100
+    assert 'test the chat' in result
+    assert '/tmp/e2e-workspace' in result
+    assert 'use unicode math' in result
+    assert 'user prefers tabs' in result or 'prefers tabs' in result
+    assert 'e2e-auto-memory-marker' in result
 
 
 def testBuildSystemPromptWithCachedT12DoesNotCrash():
@@ -53,8 +59,9 @@ def testSaveAutoMemoryThenBrainQueryRoundTrip():
     uniqueMarker = f'e2euniq{uuid.uuid4().hex[:8]}'
     key = 'v11_e2e_round_trip'
     try:
-        auto_memory.save_auto_memory(key=key, content=f'round trip {uniqueMarker}', importance=0.9)
-        result = memory_store.brain_query(store='auto_memories', query=uniqueMarker, limit=5)
+        auto_memory.saveAutoMemory(key=key, content=f'round trip {uniqueMarker}', importance=0.9)
+        # Store enum is camelCase wire name (autoMemories), not SQL table name.
+        result = memory_store.brain_query(store='autoMemories', query=uniqueMarker, limit=5)
         parsed = json.loads(result)
         assert isinstance(parsed, list)
         assert any((uniqueMarker in str(r.get('content', '')) for r in parsed))
@@ -65,12 +72,12 @@ def testSaveAutoMemoryThenBrainQueryRoundTrip():
 
 
 def testBrainQueryAllStoresNoException():
-    """All 12 stores respond without raising."""
+    """All brain stores respond without raising (wire store names)."""
     import json
 
     stores = [
         'memory',
-        'auto_memories',
+        'autoMemories',
         'heuristics',
         'facts',
         'sessions',
@@ -80,25 +87,27 @@ def testBrainQueryAllStoresNoException():
         'blackboard',
         'daemons',
         'exams',
-        'exam_attempts',
+        'examAttempts',
     ]
     for store in stores:
         result = memory_store.brain_query(store=store, query='', limit=5)
         assert isinstance(result, str)
         parsed = json.loads(result)
         assert isinstance(parsed, (list, dict)), f'{store}: {type(parsed)}'
+        # Unknown/missing table should be structured error dict, not a crash.
+        if isinstance(parsed, dict) and 'error' in parsed:
+            assert 'not available' in parsed['error'] or 'not yet' in parsed['error'] or 'brain_query' in parsed['error']
 
 
 def testFailureFeedbackRoundTrip():
-    """Tool error populates session._failure_feedback; subsequent build_system_prompt
-    includes it via context_builder (we just check the attribute round-trip)."""
+    """Tool error populates session._failure_feedback and lands in the system prompt."""
     import asyncio
     from app.services.workbench.workbench import _executeTool
 
     class FakeSession:
         def __init__(self):
-            self._failureFeedback = None
-            self._failureFeedbackAge = None
+            self._failure_feedback = None
+            self._failure_feedback_age = None
             self.id = 'e2e-feedback'
             self.status = 'idle'
             self.sessionId = 'e2e-feedback'
@@ -114,7 +123,7 @@ def testFailureFeedbackRoundTrip():
         tool_registry.dispatch = boom
         try:
             session = FakeSession()
-            result = await _executeTool(tool_name='run_command', args={'command': 'test'}, session=session)
+            result = await _executeTool('run_command', {'command': 'test'}, session)
             return (result, session._failure_feedback)
         finally:
             tool_registry.dispatch = originalDispatch
@@ -125,3 +134,7 @@ def testFailureFeedbackRoundTrip():
     assert feedback['tool'] == 'run_command'
     assert feedback['error_type'] == 'ValueError'
     assert 'e2e test error' in feedback['error_message']
+    # Prompt path: workbench sessionDict uses failureFeedback (camelCase).
+    prompt = context_builder.buildSystemPrompt(session={'failureFeedback': feedback}, memory={})
+    assert 'e2e test error' in prompt
+    assert '<failure_feedback>' in prompt

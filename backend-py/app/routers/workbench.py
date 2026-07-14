@@ -17,6 +17,8 @@ from app.services.workbench import workbench as wb
 router = APIRouter(prefix='/api/workbench')
 _chatTasks: set[asyncio.Task] = set()
 _cancelled: dict[str, asyncio.Event] = {}
+# One in-flight stream per session (gateway parity). Extra POSTs enqueue.
+_activeStreams: dict[str, asyncio.Task] = {}
 
 
 @router.post('/sessions')
@@ -108,6 +110,9 @@ async def startChat(request: Request):
 
     Returns sessionId immediately; actual events stream through the
     SSE endpoint using the event log.
+
+    If a turn is already streaming for this session, the message is
+    **queued** (not run concurrently) so transcripts cannot race.
     """
     body = await request.json()
     sessionId = body.get('sessionId', str(uuid.uuid4()))
@@ -118,6 +123,22 @@ async def startChat(request: Request):
     model = body.get('model', '')
     modelProvider = body.get('modelProvider', '')
     guardMode = body.get('guardMode', '')
+
+    # One in-flight agent turn per session (same invariant as gateway).
+    # Only key off the live task map — a stale status=='streaming' without a
+    # task must not permanently block the session.
+    existing = _activeStreams.get(sessionId)
+    if existing and not existing.done():
+        entry = wb.enqueueUserMessage(sessionId, message) if message else None
+        return {
+            'status': 'queued',
+            'sessionId': sessionId,
+            'queuedMessageId': (entry or {}).get('id') if entry else None,
+            'message': 'A turn is already in progress; message queued for the next iteration boundary.',
+        }
+    if existing and existing.done():
+        _activeStreams.pop(sessionId, None)
+
     seq = event_log.event_log.append(sessionId, 'started', {'sinceSeq': 0})
     cancelEvent = asyncio.Event()
     _cancelled[sessionId] = cancelEvent
@@ -173,8 +194,11 @@ async def startChat(request: Request):
                 pass
         finally:
             _cancelled.pop(sessionId, None)
+            if _activeStreams.get(sessionId) is task:
+                _activeStreams.pop(sessionId, None)
 
     task = asyncio.create_task(safeStream())
+    _activeStreams[sessionId] = task
     _chatTasks.add(task)
     task.add_done_callback(_chatTasks.discard)
     return {'status': 'started', 'sessionId': sessionId, 'sinceSeq': seq}
@@ -333,6 +357,139 @@ async def respondMutation(request: Request):
         raise HTTPException(status_code=404, detail='Mutation token not found')
     return {'status': 'consumed'}
 
+
+@router.post('/confirm-mutation')
+async def confirmMutationAlias(request: Request):
+    """Alias for POST /mutations/respond (legacy frontend path)."""
+    return await respondMutation(request)
+
+
+@router.post('/guard-mode')
+async def setGuardMode(request: Request):
+    """Update guard mode on a workbench session."""
+    from datetime import datetime, timezone
+    from app.services.workbench.sessions import save_sessions
+
+    body = await request.json()
+    sessionId = body.get('sessionId', '')
+    guardMode = body.get('guardMode', 'full')
+    session = wb.getWorkbenchSession(sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    session.guardMode = wb.normalizeGuardMode(str(guardMode or 'full'))
+    session.updatedAt = datetime.now(timezone.utc).isoformat()
+    save_sessions()
+    return session.toDict()
+
+
+@router.post('/btw')
+async def answerBtw(request: Request):
+    """BTW side-channel: always the same model as chat for this session.
+
+    Uses ``session.model`` and ``session.provider`` only (set by chat turns).
+    Request body is just sessionId + question — no separate model or key.
+    """
+    import uuid
+
+    body = await request.json()
+    sessionId = body.get('sessionId', '')
+    question = (body.get('question') or '').strip()
+    session = wb.getWorkbenchSession(sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    if not question:
+        raise HTTPException(status_code=400, detail='question is required')
+
+    from app.services.workbench.providers import (
+        resolve_chat_llm,
+        is_anthropic_provider,
+        is_openai_provider,
+        call_anthropic_workbench,
+        call_openai_workbench,
+        extract_text,
+    )
+
+    # Hardcoded to chat session LLM — ignore any model/provider overrides on the body.
+    resolvedProvider, resolvedModel = resolve_chat_llm(
+        model=session.model or '',
+        model_provider=session.provider or '',
+        session_provider=session.provider or '',
+        session_model=session.model or '',
+    )
+    if not resolvedProvider or not resolvedModel:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                'No chat model on this session yet. Send a chat message (or pick a model '
+                'in the composer and send once) so BTW can reuse that same LLM.'
+            ),
+        )
+
+    system_text = (
+        'You are answering a quick BTW (by-the-way) question about the '
+        'current workbench session. Be concise. Do not call tools.'
+    )
+    msgs: list[dict[str, object]] = []
+    for m in (session.messages or [])[-8:]:
+        if isinstance(m, dict) and m.get('role') in ('user', 'assistant') and m.get('content'):
+            msgs.append({'role': m['role'], 'content': str(m['content'])[:2000]})
+    msgs.append({'role': 'user', 'content': question})
+
+    answer = ''
+    err = ''
+    try:
+        if is_anthropic_provider(resolvedProvider):
+            result = await call_anthropic_workbench(
+                messages=msgs,
+                system_text=system_text,
+                model=resolvedModel,
+                tools=[],
+                effort='low',
+                provider=resolvedProvider,
+            )
+        elif is_openai_provider(resolvedProvider):
+            result = await call_openai_workbench(
+                messages=msgs,
+                system_text=system_text,
+                model=resolvedModel,
+                tools=[],
+                effort='low',
+                provider=resolvedProvider,
+            )
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Chat provider format unsupported for BTW: {resolvedProvider.get('apiMode')}",
+            )
+        if isinstance(result, dict):
+            if result.get('error'):
+                err = str(result.get('error'))
+            else:
+                answer = str(result.get('text') or result.get('content') or '')
+                if not answer and isinstance(result.get('content'), list):
+                    answer = extract_text(
+                        [b for b in result['content'] if isinstance(b, dict)]  # type: ignore[index]
+                    )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        err = str(exc)
+
+    if not answer:
+        raise HTTPException(
+            status_code=503,
+            detail=err or f'Chat model {resolvedModel} failed on BTW (same model as chat).',
+        )
+
+    pname = str(resolvedProvider.get('name') or resolvedProvider.get('id') or '')
+    return {
+        'id': f'btw_{uuid.uuid4().hex[:10]}',
+        'answer': answer,
+        'model': resolvedModel,
+        'provider': pname,
+        'citations': [],
+        'confidence': 0.8,
+    }
 
 @router.post('/goal')
 async def updateGoal(request: Request):

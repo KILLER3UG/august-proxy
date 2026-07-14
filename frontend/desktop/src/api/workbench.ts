@@ -799,10 +799,9 @@ export async function listWorkbenchCapabilities(): Promise<WorkbenchCapabilities
 export interface AnswerWorkbenchBtwParams {
   sessionId: string;
   question: string;
-  provider?: string;
-  agentId?: string;
 }
 
+/** BTW uses the session's chat model on the server (same as the last chat turn). */
 export async function answerWorkbenchBtw(
   params: AnswerWorkbenchBtwParams
 ): Promise<WorkbenchBtwResult> {
@@ -812,11 +811,15 @@ export async function answerWorkbenchBtw(
     body: JSON.stringify({
       sessionId: params.sessionId,
       question: params.question,
-      provider: params.provider || '',
-      agentId: params.agentId,
     }),
   });
-  if (!res.ok) throw new Error(`answerWorkbenchBtw failed: ${res.status}`);
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({})) as { detail?: string };
+    throw new Error(
+      (typeof detail.detail === 'string' ? detail.detail : null) ||
+        `answerWorkbenchBtw failed: ${res.status}`,
+    );
+  }
   return res.json() as Promise<WorkbenchBtwResult>;
 }
 

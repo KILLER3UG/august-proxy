@@ -4,9 +4,15 @@
  * /settings path so deep links, the command palette, and the titlebar
  * Settings button all route here. Section id is resolved via the same
  * legacy alias map used by the previous modal (so old /settings/:tab
- * URLs continue to resolve). */
+ * URLs continue to resolve).
+ *
+ * Tab switches keep this page (and the left rail) mounted. Only the
+ * active section component remounts so it can refetch live data. */
 
-import { useParams } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   resolveLegacyTab,
   SETTINGS_SECTIONS,
@@ -39,9 +45,35 @@ const DEFAULT_SECTION_ID = 'model-providers';
 
 export function SettingsPage() {
   const params = useParams<{ section?: string }>();
-  const activeId = params.section ? resolveLegacyTab(params.section) : DEFAULT_SECTION_ID;
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const rawSection = params.section;
+  const activeId = rawSection ? resolveLegacyTab(rawSection) : DEFAULT_SECTION_ID;
   const active: SettingsSection =
     SETTINGS_SECTIONS.find((s) => s.id === activeId) ?? SETTINGS_SECTIONS[0];
+  const prevSectionRef = useRef(active.id);
+
+  // Normalize bare /settings → /settings/<default> so deep links and the
+  // left rail stay in sync without remounting this page.
+  useEffect(() => {
+    if (!rawSection) {
+      void navigate(`/settings/${DEFAULT_SECTION_ID}`, { replace: true });
+      return;
+    }
+    // Rewrite legacy aliases in the URL (e.g. /settings/traffic → traffic-activity).
+    if (rawSection !== active.id) {
+      void navigate(`/settings/${active.id}`, { replace: true });
+    }
+  }, [rawSection, active.id, navigate]);
+
+  // Tab switch: remounted section queries may still be within the global
+  // 5s staleTime. Invalidate so the newly active tab always hits the network
+  // for real-time data without reloading the settings shell.
+  useEffect(() => {
+    if (prevSectionRef.current === active.id) return;
+    prevSectionRef.current = active.id;
+    void queryClient.invalidateQueries();
+  }, [active.id, queryClient]);
 
   const SectionComponent = SECTION_COMPONENTS[active.id] ?? SettingsStub;
 
@@ -50,7 +82,20 @@ export function SettingsPage() {
       sections={SETTINGS_SECTIONS as unknown as WorkspaceSectionMeta[]}
       active={active.id}
     >
-      <SectionComponent active={active} />
+      {/* Content-only transition: shell/rail stay put; section remounts
+          (via key) so each tab's useEffect / react-query runs for fresh data. */}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={active.id}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+          className="h-full min-h-0"
+        >
+          <SectionComponent active={active} />
+        </motion.div>
+      </AnimatePresence>
     </WorkspaceShell>
   );
 }

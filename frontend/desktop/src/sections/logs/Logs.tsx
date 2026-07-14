@@ -9,11 +9,10 @@ import { formatTimeAgo } from '@/lib/utils';
 import { getRequests, getActivity, type ActivityEntry, type Period } from '@/api/api-client';
 
 /**
- * Logs view. There is no dedicated /ui/logs endpoint, so we compose the log
- * stream from the two real sources the backend exposes:
- *   - /ui/activity  → human activity events (type + detail + time)
- *   - /ui/requests  → request lifecycle entries (status, error, tokens, cost)
- * These are merged into a single chronological feed and filtered by level.
+ * Logs view. Composes the log stream from:
+ *   - /api/activity  → human activity events (type + detail + time)
+ *   - /api/requests  → request lifecycle entries (status, error, tokens, cost)
+ * Merged into a single chronological feed and filtered by level.
  */
 
 type LogLevel = 'info' | 'warn' | 'error';

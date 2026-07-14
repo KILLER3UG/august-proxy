@@ -3,7 +3,7 @@
  * Thinking) with one section that:
  *   • owns a single selected-request state, so all three subtabs show
  *     the same request when you click a row
- *   • fetches /ui/details + /ui/conversations once (via
+ *   • fetches /api/details + /api/conversations once (via
  *     useConversationInspector) — not 3 independent polls
  *   • renders Readable / Raw / Thinking as subtabs using the new shared
  *     SettingsCard / SettingsTabs / SettingsEmptyState primitives

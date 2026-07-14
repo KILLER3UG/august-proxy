@@ -1,8 +1,7 @@
-/* ── Backend UI API helpers ────────────────────────────────────────── */
-/* Typed wrappers for the /ui/* monitoring & management endpoints.
- * All shapes mirror what backend/lib/logger.js and the route handlers
- * in backend/index.js actually return — do not trust the legacy mock
- * types. Secrets are redacted server-side; we never display raw keys. */
+/* ── Backend API helpers ───────────────────────────────────────────── */
+/* Typed wrappers for Python FastAPI routes under /api/* (and /v1/* via
+ * other modules). Secrets are redacted server-side; we never display raw keys.
+ * Do not use legacy Node /ui/* paths — they are not served. */
 
 import { api } from './client';
 
@@ -291,7 +290,7 @@ export function getAgents(): Promise<{ agents: AgentEntry[] }> {
 }
 
 export function getHostAgentStatus(): Promise<HostAgentStatus> {
-  return api.get<HostAgentStatus>('/api/host-agent/status');
+  return api.get<HostAgentStatus>('/api/host-agent/health');
 }
 
 /* ── Automations ── */

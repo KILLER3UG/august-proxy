@@ -3,7 +3,7 @@
  * permission-profiles and Task 6's app-allowlist write to.
  *
  * Persists via:
- *   - /ui/august/settings/update     (security.allowedRoots, security.filesystemScope)
+ *   - /api/august/settings/update    (security.allowedRoots, security.filesystemScope)
  *   - august__app_policy tool        (per-app allow/ask/deny)
  *
  * Locked decision 1: default scope is 'allowlist'. Setting scope to 'root'
@@ -41,7 +41,7 @@ async function fetchComputerRoots(): Promise<ComputerRoots> {
 }
 
 async function saveComputerRoots(next: Partial<ComputerRoots>): Promise<ComputerRoots> {
-  // Persist via /ui/august/settings/update which writes security.* sub-keys.
+  // Persist via /api/august/settings/update which writes security.* sub-keys.
   if (next.filesystemScope) {
     await setAugustSetting({ keyPath: 'security.filesystemScope', value: next.filesystemScope });
   }

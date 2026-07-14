@@ -80,28 +80,71 @@ _BRAINStores: dict[str, dict[str, object]] = {
     },
 }
 
+# Snake_case / alternate names → canonical store key (models often use SQL names).
+_STORE_ALIASES: dict[str, str] = {
+    'auto_memories': 'autoMemories',
+    'auto-memories': 'autoMemories',
+    'exam_attempts': 'examAttempts',
+    'exam-attempts': 'examAttempts',
+    'learned_heuristics': 'heuristics',
+    'semantic_facts': 'facts',
+    'kv': 'memory',
+    'memory_store': 'memory',
+}
+
+
+def _resolve_store(store: str) -> str:
+    """Map wire/SQL aliases to a canonical ``_BRAINStores`` key."""
+    if store in _BRAINStores:
+        return store
+    if store in _STORE_ALIASES:
+        return _STORE_ALIASES[store]
+    # camelCase ↔ snake_case soft match
+    snake = ''.join((('_' + c.lower()) if c.isupper() else c) for c in store)
+    if snake in _STORE_ALIASES:
+        return _STORE_ALIASES[snake]
+    if snake in _BRAINStores:
+        return snake
+    return store
+
 
 def _brain_query_graph(query: str, filters: dict | None, limit: int) -> str:
     """v1.1: Read graph entities/relations from august_graph_memory.json.
 
     Returns list of {entity, type, attributes} or {source, relation, target} rows.
     If the JSON file is missing or empty, returns an empty list (NOT an error).
+
+    Path resolution matches ``graph_memory``: ``AUGUST_GRAPH_MEMORY_FILE`` env,
+    then ``dataPath('august_graph_memory.json')`` (honours ``AUGUST_DATA_DIR``).
     """
     try:
         import json as _json
         import os as _os
+        from pathlib import Path
+        from app.lib.paths import dataPath
 
-        candidates = [
-            _os.path.join('data', 'august_graph_memory.json'),
-            'august_graph_memory.json',
-            _os.path.expanduser('~/.august/august_graph_memory.json'),
-        ]
-        graphPath = next((p for p in candidates if _os.path.exists(p)), None)
+        candidates: list[Path] = []
+        env = _os.environ.get('AUGUST_GRAPH_MEMORY_FILE')
+        if env:
+            candidates.append(Path(env))
+        candidates.append(dataPath('august_graph_memory.json'))
+        # Legacy cwd-relative fallbacks (older installs).
+        candidates.extend(
+            [
+                Path('data') / 'august_graph_memory.json',
+                Path('august_graph_memory.json'),
+                Path(_os.path.expanduser('~/.august/august_graph_memory.json')),
+            ]
+        )
+        graphPath = next((p for p in candidates if p.exists()), None)
         if graphPath is None:
             return _json.dumps([])
         with open(graphPath, 'r', encoding='utf-8') as f:
             data = _json.load(f)
-    except (ImportError, _json.JSONDecodeError, OSError):
+    except (ImportError, OSError, ValueError):
+        return _json.dumps([])
+    except Exception:
+        # JSONDecodeError and other read errors → empty, not tool crash
         return _json.dumps([])
     rows: list[dict] = []
     entities = data.get('entities', []) if isinstance(data, dict) else []
@@ -185,16 +228,21 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
 
     Unknown or not-yet-shipped stores return a structured error string
     rather than raising — keeps the tool stable across phases.
+
+    Accepts canonical wire names (``autoMemories``) and common aliases
+    (``auto_memories``, SQL-ish names).
     """
     _TOKENCeiling = 2000
     conn = _conn()
-    if store == 'graph':
+    if store in ('graph',):
         return _brain_query_graph(query, filters, limit)
-    if store == 'daemons':
+    if store in ('daemons',):
         return _brain_query_daemons(query, filters, limit)
+    store = _resolve_store(store)
     if store not in _BRAINStores:
+        available = sorted(set(list(_BRAINStores.keys()) + list(_STORE_ALIASES.keys()) + ['graph', 'daemons']))
         return json.dumps(
-            {'error': f"store '{store}' not available in this build", 'available': sorted(_BRAINStores.keys())}
+            {'error': f"store '{store}' not available in this build", 'available': available}
         )
     info = _BRAINStores[store]
     try:

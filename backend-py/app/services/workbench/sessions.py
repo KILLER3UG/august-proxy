@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -139,6 +140,8 @@ class WorkbenchSession:
 # Single source of truth for in-memory store + status listeners
 _sessions: dict[str, WorkbenchSession] = {}
 _status_subscribers: list[Callable[[dict[str, object]], None]] = []
+# Serialize full-file snapshots so concurrent chat tasks cannot interleave dumps.
+_sessions_lock = threading.Lock()
 
 # camelCase aliases (same objects — tests / workbench re-exports)
 _SESSIONFile = _SESSION_FILE
@@ -156,7 +159,23 @@ def _now() -> str:
 
 
 def _load_sessions() -> None:
-    """Load sessions from disk."""
+    """Load sessions from SQLite first; fall back to JSON file once if empty."""
+    try:
+        from app.services import memory_store
+        from app.services.memory_store import list_workbench_blobs
+
+        memory_store.init()
+        blobs = list_workbench_blobs(limit=200)
+        for item in blobs:
+            session = WorkbenchSession.fromDict(item)
+            if session.id:
+                _sessions[session.id] = session
+        if _sessions:
+            return
+    except Exception:
+        logger.exception('SQLite session load failed; trying JSON fallback')
+
+    # Older installs: import workbench-sessions.json into SQLite once.
     path = _sessions_path()
     if not path.exists():
         return
@@ -165,16 +184,41 @@ def _load_sessions() -> None:
         for item in data:
             session = WorkbenchSession.fromDict(item)
             _sessions[session.id] = session
+        if _sessions:
+            save_sessions()
+            logger.info('Migrated %d sessions from JSON file into SQLite', len(_sessions))
     except (json.JSONDecodeError, OSError):
         pass
 
 
 def save_sessions() -> None:
-    """Persist all sessions to disk (keeps last 50)."""
-    sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
-    path = _sessions_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_json_atomic(path, [s.toDict() for s in sorted_sessions], indent=2)
+    """Persist sessions to SQLite (full blob + messages). Keeps last 50.
+
+    Also writes ``workbench-sessions.json`` as a backup export only.
+    """
+    with _sessions_lock:
+        sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
+        keep_ids = {s.id for s in sorted_sessions}
+        for sid in list(_sessions.keys()):
+            if sid not in keep_ids:
+                del _sessions[sid]
+
+        try:
+            from app.services import memory_store
+            from app.services.memory_store import save_workbench_session_sot
+
+            memory_store.init()
+            for s in sorted_sessions:
+                save_workbench_session_sot(s.toDict())
+        except Exception:
+            logger.exception('SQLite session write failed')
+
+        try:
+            path = _sessions_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            write_json_atomic(path, [s.toDict() for s in sorted_sessions], indent=2)
+        except Exception:
+            logger.exception('JSON session export failed (non-fatal; SQLite is primary)')
 
 
 def _emit_session_status(session_id: str) -> None:
@@ -228,6 +272,7 @@ def create_workbench_session(
         session.goal = goal
     _sessions[session_id] = session
     save_sessions()
+    # save_sessions() already writes SQLite (blob + messages).
     _emit_session_status(session_id)
     return session
 
@@ -262,7 +307,9 @@ def list_workbench_sessions() -> list[dict[str, object]]:
 
 
 def delete_workbench_session(session_id: str) -> bool:
-    """Delete a session."""
+    """Delete a session from memory, SQLite, and the JSON export file."""
+    if not _sessions:
+        _load_sessions()
     if session_id not in _sessions:
         return False
     session = _sessions[session_id]
@@ -272,8 +319,20 @@ def delete_workbench_session(session_id: str) -> bool:
         aug_artifact_service.deleteForSession(session.workspacePath or None, session_id)
     except Exception:
         pass
+    try:
+        from app.services.memory_store import delete_session_record, delete_session_messages
+
+        delete_session_messages(session_id)
+        delete_session_record(session_id)
+    except Exception:
+        logger.exception('SQLite session delete failed for %s', session_id)
     del _sessions[session_id]
-    save_sessions()
+    try:
+        path = _sessions_path()
+        remaining = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
+        write_json_atomic(path, [s.toDict() for s in remaining], indent=2)
+    except Exception:
+        pass
     return True
 
 

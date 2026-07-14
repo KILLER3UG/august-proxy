@@ -71,6 +71,7 @@ set_workbench_session_agent = _sessions_mod.set_workbench_session_agent
 # Provider / LLM-call re-exports (tests monkeypatch these names on workbench)
 resolve_workbench_provider = _providers_mod.resolve_workbench_provider
 resolve_model = _providers_mod.resolve_model
+resolve_chat_llm = _providers_mod.resolve_chat_llm
 is_anthropic_provider = _providers_mod.is_anthropic_provider
 is_openai_provider = _providers_mod.is_openai_provider
 extract_text = _providers_mod.extract_text
@@ -82,6 +83,7 @@ background_task_model = _providers_mod.background_task_model
 make_review_llm_client = _providers_mod.make_review_llm_client
 _resolveWorkbenchProvider = _providers_mod.resolve_workbench_provider
 _resolveModel = _providers_mod.resolve_model
+_resolveChatLlm = _providers_mod.resolve_chat_llm
 _isAnthropicProvider = _providers_mod.is_anthropic_provider
 _isOpenaiProvider = _providers_mod.is_openai_provider
 _extractText = _providers_mod.extract_text
@@ -222,7 +224,7 @@ def buildSystemPrompt(
             if prefetched:
                 memory['autoMemories'] = cast('list[JsonValue]', prefetched)
     except Exception:
-        pass
+        logger.debug('prompt: auto-memory prefetch failed', exc_info=True)
     try:
         from app.services.memory_store import _conn as brainConn
 
@@ -233,7 +235,7 @@ def buildSystemPrompt(
         if heuristicsRows:
             memory['learnedHeuristics'] = [dict(r) for r in heuristicsRows]
     except Exception:
-        pass
+        logger.debug('prompt: heuristics load failed', exc_info=True)
     coreFacts = get_memory('coreMemory')
     if coreFacts:
         memory['coreMemory'] = coreFacts
@@ -244,7 +246,7 @@ def buildSystemPrompt(
 
             agentContext = renderAgentContext(session.agentId)
         except Exception:
-            pass
+            logger.debug('prompt: agent context failed', exc_info=True)
     brainPolicy = None
     try:
         from app.services.memory.brain_orchestrator import extractTextFromMessages, classifyTask, policyForTask
@@ -256,7 +258,7 @@ def buildSystemPrompt(
         taskType = classifyTask(taskText)
         brainPolicy = policyForTask(taskType)
     except Exception:
-        pass
+        logger.debug('prompt: brain policy failed', exc_info=True)
     workspacePath = str(session.workspacePath) if hasattr(session, 'workspacePath') and session.workspacePath else ''
     vcsInfo = ''
     if workspacePath:
@@ -273,14 +275,14 @@ def buildSystemPrompt(
                 dirty = ' (dirty)' if status else ' (clean)'
                 vcsInfo = f'{branch}{dirty}'
         except Exception:
-            pass
+            logger.debug('prompt: git vcs probe failed', exc_info=True)
     memoryStats = {}
     try:
         from app.services.memory_store import get_stats as memStats
 
         memoryStats = memStats()
     except Exception:
-        pass
+        logger.debug('prompt: memory stats failed', exc_info=True)
     whatsNew = ''
     if workspacePath:
         try:
@@ -297,7 +299,7 @@ def buildSystemPrompt(
                 lines = log.split('\n')
                 whatsNew = 'Recent git activity:\n' + '\n'.join((f'  - {line}' for line in lines))
         except Exception:
-            pass
+            logger.debug('prompt: git log failed', exc_info=True)
     skillsManifest, skillsExtra = _seg_cache.get_skills_segments()
     cognitiveBudget = None
     try:
@@ -310,7 +312,7 @@ def buildSystemPrompt(
         msgsForBudget = getattr(session, 'messages', []) or []
         cognitiveBudget = computeBudget(msgsForBudget, model=modelName or None, provider=providerName or None)
     except Exception:
-        pass
+        logger.debug('prompt: cognitive budget failed', exc_info=True)
     sessionDict = {
         'goal': session.goal,
         'plan': session.plan,
@@ -325,6 +327,8 @@ def buildSystemPrompt(
         'executionState': getattr(session, '_execution_state', None),
         'workingMemory': getattr(session, '_working_memory', None),
         'subconsciousUpdates': _buildDaemonUpdates(getattr(session, 'id', '')),
+        # Tool self-heal: structured failure from last tool exception (if any).
+        'failureFeedback': getattr(session, '_failure_feedback', None),
     }
     for k in ('coreMemory', 'learnedHeuristics', 'autoMemories'):
         if k in memory:
@@ -341,7 +345,7 @@ def buildSystemPrompt(
             if loaded and loaded.get('body'):
                 augMdBody = as_str(loaded.get('body', ''))
         except Exception:
-            pass
+            logger.debug('prompt: AUG.md load failed', exc_info=True)
     sessionDict['augMd'] = augMdBody
     sessionDict['todos'] = session.todos
     from app.services.workbench.prompt_cache import getCache
@@ -370,7 +374,7 @@ def buildSystemPrompt(
             if t12Parts:
                 promptCache.set(cacheKey, '\n\n'.join(t12Parts))
         except Exception:
-            pass
+            logger.debug('prompt: T1/T2 cache write failed', exc_info=True)
     extraParts: list[str] = []
     if skillsExtra:
         extraParts.append(skillsExtra)
@@ -808,16 +812,19 @@ async def _sendWorkbenchMessageStreamImpl(
     session.messages.append({'role': 'user', 'content': message})
     session.messageCount += 1
     effectiveEffort = resolveEffectiveEffort(effort or as_str(session.metadata.get('effort', '')), session)
-    resolvedProvider = None
-    if modelProvider:
-        resolvedProvider = _resolveWorkbenchProvider(modelProvider, '')
-    if not resolvedProvider and model:
-        resolvedProvider = _resolveWorkbenchProvider('', model)
-    if not resolvedProvider:
-        resolvedProvider = _resolveWorkbenchProvider(session.provider, model)
-    if not resolvedProvider:
-        resolvedProvider = _resolveWorkbenchProvider('', '')
-    resolvedModel = _resolveModel(resolvedProvider, model or '')
+    resolvedProvider, resolvedModel = _resolveChatLlm(
+        model=model or '',
+        model_provider=modelProvider or '',
+        session_provider=session.provider or provider or '',
+        session_model=session.model or '',
+    )
+    # Remember model/provider on the session so BTW and Live use the same ones.
+    if resolvedModel:
+        session.model = resolvedModel
+    if resolvedProvider:
+        pname = as_str(resolvedProvider.get('name') or resolvedProvider.get('id'))
+        if pname:
+            session.provider = pname
     if emit:
         emit({'type': 'started', 'sessionId': sessionId, 'model': resolvedModel})
     if resolvedProvider:
@@ -836,6 +843,12 @@ async def _sendWorkbenchMessageStreamImpl(
                     }
                 )
             session.status = 'idle'
+            session.updatedAt = _now()
+            try:
+                saveSessions()
+            except Exception:
+                logger.exception('workbench save_sessions failed after missing API key')
+            _emitSessionStatus(sessionId)
             if emit:
                 emit({'type': 'done', 'sessionId': sessionId})
             return
@@ -903,6 +916,15 @@ async def _sendWorkbenchMessageStreamImpl(
     toolRound = 0
     while True:
         toolRound += 1
+        if toolRound > MAX_MANAGED_TOOL_ROUNDS:
+            msg = (
+                f'Tool loop exceeded MAX_MANAGED_TOOL_ROUNDS ({MAX_MANAGED_TOOL_ROUNDS}); '
+                'stopping to avoid unbounded cost.'
+            )
+            logger.warning('workbench %s', msg)
+            if emit:
+                emit({'type': 'error', 'message': msg})
+            break
         if _isCancelled():
             break
         if toolRound > 1:
@@ -1201,10 +1223,26 @@ async def _sendWorkbenchMessageStreamImpl(
         session.status = 'idle'
         session.updatedAt = _now()
         with _trace.span('persist'):
+            # Persist session to SQLite (primary); JSON export is best-effort.
             try:
                 saveSessions()
+            except Exception as exc:
+                logger.exception('workbench session persist failed; still emitting done')
+                if emit:
+                    emit(
+                        {
+                            'type': 'error',
+                            'message': f'Session persist failed: {exc}',
+                            'code': 'session_persist_failed',
+                        }
+                    )
+            # Record activity so cognitive idle consolidation timer resets.
+            try:
+                from app.services.cognitive_boot import record_user_activity
+
+                record_user_activity(session.id)
             except Exception:
-                logger.exception('workbench save_sessions failed; still emitting done')
+                pass
             _emitSessionStatus(sessionId)
             if totalInputTokens > 0 or totalOutputTokens > 0:
                 try:

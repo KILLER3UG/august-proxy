@@ -98,6 +98,14 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(refreshMcpTools())
     except Exception:
         pass
+    # Cognitive layers: workbench→brain backfill, db_writer, consolidation,
+    # cron scheduler, daemon manager.
+    try:
+        from app.services.cognitive_boot import start_cognitive_services
+
+        await start_cognitive_services(app)
+    except Exception:
+        logger.exception('Cognitive boot failed (continuing without background layers)')
     _gateway = None
     try:
         from app.services.gateway.runner import startGateway
@@ -106,27 +114,21 @@ async def lifespan(app: FastAPI):
         app.state.gateway_runner = _gateway
     except Exception:
         pass
-    _curator = None
-    _curatorTask = None
     try:
-        from app.services.skills.curator import make_background_curator
+        from app.services.runtime_services import get_curator, get_orchestrator
 
-        _curator, _curatorTask = make_background_curator()
-        app.state.curator = _curator
+        get_curator(app)
+        get_orchestrator(app)
+        logger.info('Curator + subagent orchestrator ready')
+    except Exception:
+        logger.exception('Runtime services (curator/orchestrator) failed to start')
+    # Ensure workbench session blob columns exist before sessions load.
+    try:
+        from app.services import memory_store
+
+        memory_store.init()
     except Exception:
         pass
-    _orchestrator = None
-    try:
-        from app.services.agent_message_bus import AgentMessageBus
-        from app.services.subagent_orchestrator import SubagentOrchestrator
-
-        _bus = AgentMessageBus()
-        _orchestrator = SubagentOrchestrator(_bus, max_workers=5)
-        app.state.subagent_bus = _bus
-        app.state.subagent_orchestrator = _orchestrator
-        logger.info('Subagent orchestrator initialized (max_workers=5)')
-    except Exception:
-        logger.warning('Subagent orchestrator initialization skipped')
     yield
     # Tear down the log-stream hub and root handler on shutdown.
     try:
@@ -137,13 +139,18 @@ async def lifespan(app: FastAPI):
         await log_stream.stopHub()
     except Exception:
         pass
-    if _orchestrator is not None:
-        try:
-            await _orchestrator.close()
-        except Exception:
-            pass
-    if _curatorTask is not None:
-        _curatorTask.cancel()
+    try:
+        from app.services.cognitive_boot import stop_cognitive_services
+
+        await stop_cognitive_services()
+    except Exception:
+        pass
+    try:
+        from app.services.runtime_services import shutdown_runtime_services
+
+        await shutdown_runtime_services()
+    except Exception:
+        pass
     if _gateway is not None:
         try:
             await _gateway.stop()
@@ -191,7 +198,7 @@ from app.routers import monitor_feature_flow as monitorFeatureFlowRoutes  # noqa
 from app.routers import august as augustRoutes  # noqa: E402
 from app.routers import gateway as gatewayRoutes  # noqa: E402
 from app.routers import curator as curatorRoutes  # noqa: E402
-from app.routers import ui_memory as uiMemoryRoutes  # noqa: E402
+from app.routers import brain_dashboard as brainDashboardRoutes  # noqa: E402
 from app.routers import aug as augRoutes  # noqa: E402
 from app.routers import brain as brainRoutes  # noqa: E402
 from app.routers import brain_activity as brainActivityRoutes  # noqa: E402
@@ -200,6 +207,10 @@ from app.routers import exam as examRoutes  # noqa: E402
 from app.routers import live as liveRoutes  # noqa: E402
 from app.routers import calendar as calendarRoutes  # noqa: E402
 from app.routers import subagent as subagentRoutes  # noqa: E402
+from app.routers import service_connections as serviceConnectionsRoutes  # noqa: E402
+from app.routers import automations as automationsRoutes  # noqa: E402
+from app.routers import preview as previewRoutes  # noqa: E402
+from app.routers import security as securityRoutes  # noqa: E402
 
 app.include_router(configRoutes.router)
 app.include_router(providersRoutes.router)
@@ -218,15 +229,17 @@ app.include_router(cronRoutes.router)
 app.include_router(gitRoutes.router)
 app.include_router(desktopAutomationRoutes.router)
 app.include_router(browserRoutes.router)
-app.include_router(terminalRoutes.router)
+# terminal_routes (literal /sessions, /buffer, …) must be registered before
+# terminal's /{sessionId} catch-all, or "sessions" is treated as an id.
 app.include_router(terminalWsRoutes.router)
+app.include_router(terminalRoutes.router)
 app.include_router(manageRoutes.router)
 app.include_router(monitoringRoutes.router)
 app.include_router(monitorFeatureFlowRoutes.router)
 app.include_router(augustRoutes.router)
 app.include_router(gatewayRoutes.router)
 app.include_router(augRoutes.router)
-app.include_router(uiMemoryRoutes.router)
+app.include_router(brainDashboardRoutes.router)
 app.include_router(brainRoutes.router)
 app.include_router(brainConfigRoutes.router)
 app.include_router(brainActivityRoutes.router)
@@ -234,6 +247,10 @@ app.include_router(examRoutes.router)
 app.include_router(liveRoutes.router)
 app.include_router(calendarRoutes.router)
 app.include_router(subagentRoutes.router)
+app.include_router(serviceConnectionsRoutes.router)
+app.include_router(automationsRoutes.router)
+app.include_router(previewRoutes.router)
+app.include_router(securityRoutes.router)
 _WEBDist = settings.webDist
 if _WEBDist.is_dir():
     app.mount('/assets', StaticFiles(directory=str(_WEBDist / 'assets')), name='assets')
@@ -293,10 +310,26 @@ async def healthDetailed():
     ea = gw.get('externalAccess') or {}
     enabled = bool(ea.get('enabled', False))
     hasKey = bool(settings.gatewayApiKey)
+    brain_sync = {}
+    cognitive = {}
+    try:
+        from app.services.workbench.brain_sync import get_sync_stats
+
+        brain_sync = get_sync_stats()
+    except Exception as exc:
+        brain_sync = {'error': str(exc)}
+    try:
+        from app.services.cognitive_boot import get_boot_status
+
+        cognitive = get_boot_status()
+    except Exception as exc:
+        cognitive = {'error': str(exc)}
     return {
         'status': 'ok',
         'mode': 'python',
         'port': settings.port,
         'data_dir': str(settings.dataDir),
         'externalAccess': {'enabled': enabled, 'hasKey': hasKey, 'configured': enabled and hasKey},
+        'brainSync': brain_sync,
+        'cognitiveBoot': cognitive,
     }

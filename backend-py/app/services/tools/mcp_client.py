@@ -122,6 +122,14 @@ async def _stopServerProcess(serverId: str) -> None:
         _servers[serverId]['status'] = 'stopped'
 
 
+async def stopServer(serverId: str) -> bool:
+    """Public stop helper used by the HTTP router."""
+    if serverId not in _servers and serverId not in _processes:
+        return False
+    await _stopServerProcess(serverId)
+    return True
+
+
 async def discoverTools(serverId: str) -> list[dict[str, object]]:
     """Call the tools/list RPC method on an MCP server."""
     proc = await _startServerProcess(serverId)

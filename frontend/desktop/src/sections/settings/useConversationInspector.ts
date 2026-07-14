@@ -1,15 +1,9 @@
 /* ── useConversationInspector — shared data layer for the merged
  *   Conversation Inspector section ──────────────────────────────────
- * The old Inspector/Conversations/Thinking components each fetched their
- * own slice of /ui/details + /ui/conversations independently — and the old
- * Inspector also issued an extra /ui/detail/:reqId call when a row was
- * selected, even though the same data was already in the list response.
- *
- * This hook fetches /ui/details + /ui/conversations once for the chosen
- * period, exposes the unified row list, the selected request, a normalized
+ * Fetches /api/details + /api/conversations once for the chosen period,
+ * exposes the unified row list, the selected request, a normalized
  * transcript for the Readable tab, and an extracted thinking-traces list
- * for the Thinking tab. The three old sub-sections now read from one
- * poll cycle and share a single selected-request state. */
+ * for the Thinking tab. Subtabs share one poll cycle and selected state. */
 
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';

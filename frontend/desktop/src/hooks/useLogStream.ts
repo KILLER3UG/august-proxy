@@ -1,5 +1,5 @@
 /* ── useLogStream — WebSocket subscriber for Settings → Backend Monitor */
-/* Connects to /ui/logs/stream, backfills from /api/logs/recent, appends
+/* Connects to /api/logs/stream, backfills from /api/logs/recent, appends
  * live frames, dedupes by event id, and exposes pause/resume/clear.
  * Reconnects with exponential backoff (1s → 30s). Capped at MAX_EVENTS. */
 

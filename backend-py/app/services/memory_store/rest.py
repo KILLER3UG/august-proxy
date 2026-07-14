@@ -254,6 +254,18 @@ def record_usage(
     return as_int(cursor.lastrowid)
 
 
+def list_usage(*, limit: int = 200) -> list[dict[str, object]]:
+    """List recent usage events (newest first), for GET /api/usage."""
+    conn = _conn()
+    lim = max(1, min(int(limit), 1000))
+    rows = conn.execute(
+        'SELECT id, session_id, model, input_tokens, output_tokens, context_tokens, created_at '
+        'FROM usage_events ORDER BY created_at DESC, id DESC LIMIT ?',
+        (lim,),
+    ).fetchall()
+    return [_row_as_wire(r) for r in rows]
+
+
 def get_usage(sessionId: str) -> dict[str, object]:
     """Get aggregated usage for a session.
 

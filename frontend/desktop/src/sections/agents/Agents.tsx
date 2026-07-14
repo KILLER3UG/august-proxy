@@ -6,13 +6,9 @@ import { ShieldCheck, ShieldAlert, Inbox, Users, GitBranch } from 'lucide-react'
 import { listWorkbenchAgents } from '@/api/workbench';
 
 /**
- * Agent registry view. Combines:
- *   - /ui/workbench/agents  → Workbench agent registry (roles, modes, scopes, team skills)
- *   - /ui/agents            → Agent registry entries (permissions, inherited permissions)
- *
- * Both are read-only here; editing stays in the backend config. The approval
- * gate / capabilities are surfaced as a summary since the live approval flow
- * lives in the chat Workbench panel.
+ * Agent registry view. Reads /api/workbench/agents (roles, modes, scopes,
+ * team skills). Read-only here; editing stays in backend config. Approval
+ * gate / capabilities surface as a summary; live approval is in chat.
  */
 export function Agents() {
   const { data: registry, isLoading } = useQuery({
