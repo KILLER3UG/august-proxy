@@ -158,7 +158,13 @@ async def brainLearning() -> dict[str, object]:
     except Exception:
         pass
     sleepCycle: dict[str, object] = {'lastRunAt': None, 'lastMerged': 0, 'lastPromoted': 0, 'lastDeleted': 0}
-    last = getattr(_cd, '_lastRun', None) or getattr(_cd, '_last_run', None)
+    last = None
+    try:
+        last = _cd.get_last_run() if hasattr(_cd, 'get_last_run') else None
+    except Exception:
+        last = None
+    if not last:
+        last = getattr(_cd, '_lastRun', None) or getattr(_cd, '_last_run', None)
     if last:
         sleepCycle.update(
             {

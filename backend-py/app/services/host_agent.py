@@ -9,7 +9,12 @@ import httpx
 
 
 async def getHostInfo() -> dict[str, object]:
-    """Host-agent health shaped for both simple status and HostAgentHealth UI."""
+    """Host-agent health shaped for both simple status and HostAgentHealth UI.
+
+    When the URL is unset, reports ``local_desktop`` if local automation is
+    importable; computer-use tools stay available locally. When URL is set
+    but unreachable, status is disconnected so the UI can hide computer-use.
+    """
     from datetime import datetime, timezone
 
     at = datetime.now(timezone.utc).isoformat()
@@ -22,13 +27,27 @@ async def getHostInfo() -> dict[str, object]:
         'lastObservedApp': None,
         'postObservationCount': 0,
         'at': at,
+        'computerUseEnabled': False,
     }
     if not baseUrl:
+        local_ok = False
+        try:
+            import app.services.desktop_automation  # noqa: F401
+
+            local_ok = True
+        except Exception:
+            local_ok = False
         return {
             **base,
-            'available': False,
-            'status': 'disconnected',
-            'reason': 'AUGUST_HOST_AGENT_URL not set',
+            'available': local_ok,
+            'status': 'local_desktop' if local_ok else 'disconnected',
+            'reason': (
+                'No AUGUST_HOST_AGENT_URL; using local desktop automation'
+                if local_ok
+                else 'AUGUST_HOST_AGENT_URL not set and local desktop unavailable'
+            ),
+            'computerUseEnabled': local_ok,
+            'mode': 'local' if local_ok else 'off',
         }
     try:
         async with httpx.AsyncClient(timeout=5) as client:
@@ -42,12 +61,16 @@ async def getHostInfo() -> dict[str, object]:
                     **payload,
                     'available': True,
                     'status': payload.get('status') or 'connected',
+                    'computerUseEnabled': True,
+                    'mode': 'remote',
                 }
             return {
                 **base,
                 'available': False,
                 'status': 'error',
                 'error': resp.text,
+                'computerUseEnabled': False,
+                'mode': 'remote',
             }
     except httpx.RequestError as exc:
         return {
@@ -55,6 +78,8 @@ async def getHostInfo() -> dict[str, object]:
             'available': False,
             'status': 'error',
             'error': str(exc),
+            'computerUseEnabled': False,
+            'mode': 'remote',
         }
 
 

@@ -23,13 +23,26 @@ DEFAULT_FEATURES: dict[str, object] = {
 
 
 def getBrainConfig() -> dict[str, object]:
-    """Get the brain configuration, merging defaults with user config."""
-    from app.config import settings
+    """Get brain config from ``auxiliary.cognitive.orchestrator`` (single SoT)."""
+    try:
+        from app.services.cognitive_config import ensure_defaults, get_cognitive
 
-    cfg = settings.config
-    brainCfg = cfg.get('brain_orchestrator', {})
-    if isinstance(brainCfg, dict):
-        return {**DEFAULT_FEATURES, **brainCfg}
+        ensure_defaults()
+        tree = get_cognitive()
+        brain_cfg = tree.get('orchestrator')
+        if isinstance(brain_cfg, dict):
+            return {**DEFAULT_FEATURES, **brain_cfg}
+    except Exception:
+        pass
+    # Fallback: top-level key only if cognitive tree unavailable
+    try:
+        from app.config import settings
+
+        legacy = settings.config.get('brain_orchestrator', {})
+        if isinstance(legacy, dict) and legacy:
+            return {**DEFAULT_FEATURES, **legacy}
+    except Exception:
+        pass
     return dict(DEFAULT_FEATURES)
 
 

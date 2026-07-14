@@ -45,7 +45,14 @@ export function Connections() {
   const connections = Object.values(svcData?.connections || {}) as ServiceConnection[];
   const connectedCount = connections.filter((c) => c.connected).length;
   const hostStatus = hostData?.status || 'unknown';
-  const hostConnected = hostStatus === 'connected' || hostStatus === 'open';
+  const hostConnected =
+    hostStatus === 'connected' ||
+    hostStatus === 'open' ||
+    hostStatus === 'local_desktop' ||
+    Boolean((hostData as { computerUseEnabled?: boolean } | undefined)?.computerUseEnabled);
+  const computerUseOn = Boolean(
+    (hostData as { computerUseEnabled?: boolean } | undefined)?.computerUseEnabled ?? hostConnected,
+  );
 
   return (
     <div className="p-6 space-y-6">
@@ -59,29 +66,31 @@ export function Connections() {
         }
       />
 
-      {/* Host agent */}
-      <Card>
+      {/* Host agent — computer-use only advertised when available */}
+      <Card className={computerUseOn ? '' : 'opacity-80 border-dashed'}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm">
-            <Server className="size-4" /> Host agent
+            <Server className="size-4" /> Host agent / computer use
           </CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {hostConnected ? (
+            {computerUseOn ? (
               <Wifi className="size-5 text-success" />
             ) : (
               <WifiOff className="size-5 text-muted-foreground" />
             )}
             <div>
               <StatusPill
-                tone={hostConnected ? 'good' : 'muted'}
-                label={hostStatus}
+                tone={computerUseOn ? 'good' : 'muted'}
+                label={computerUseOn ? hostStatus : 'computer-use off'}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                {hostConnected
-                  ? 'Host agent is reachable and accepting commands.'
-                  : 'Host agent is not running. Start it to enable file and terminal operations.'}
+                {computerUseOn
+                  ? hostStatus === 'local_desktop'
+                    ? 'Local desktop automation is available (no remote host agent URL).'
+                    : 'Host agent is reachable; computer-use tools are enabled.'
+                  : 'Computer-use tools are hidden. Set AUGUST_HOST_AGENT_URL to a healthy agent, or use local desktop when the URL is unset.'}
               </p>
             </div>
           </div>

@@ -296,6 +296,23 @@ async def putModelFleet(body: dict[str, object]):
     return fleet
 
 
+@router.get('/cognitive')
+async def getCognitiveConfig():
+    """Single cognitive config tree (boot, features, fleet, orchestrator)."""
+    from app.services.cognitive_config import to_public, ensure_defaults
+
+    ensure_defaults()
+    return to_public()
+
+
+@router.put('/cognitive')
+async def putCognitiveConfig(body: dict[str, object]):
+    """Partial update of the cognitive config tree."""
+    from app.services.cognitive_config import update_cognitive
+
+    return update_cognitive(body)
+
+
 @router.get('/live')
 async def getLiveConfig():
     """v4.2: Return the Live config (defaults + user overrides) — see §14.

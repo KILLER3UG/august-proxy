@@ -80,6 +80,37 @@ def saveAutoMemory(key: str, content: object, category: str = 'auto', importance
         )
     except Exception:
         pass
+    # Wire vector + graph planes when feature flags are on (product honesty).
+    try:
+        from app.services.cognitive_config import get_features
+
+        features = get_features()
+        preview = contentJson if isinstance(contentJson, str) else str(contentJson)
+        text = f'{key}: {preview}'[:4000]
+        if features.get('vector_memory', True):
+            try:
+                from app.services.memory import vector_db
+
+                vector_db.insert(
+                    text,
+                    metadata={'key': key, 'category': category, 'source': 'auto_memory'},
+                    namespace='auto_memory',
+                )
+            except Exception:
+                pass
+        if features.get('graph_memory', True):
+            try:
+                from app.services.memory import graph_memory
+
+                graph_memory.addEntity(key, entityType=category or 'memory', metadata={'importance': importance})
+                # Link category → key when category is meaningful
+                if category and category not in ('auto', 'general', ''):
+                    graph_memory.addEntity(category, entityType='category')
+                    graph_memory.addRelation(category, key, 'contains')
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:

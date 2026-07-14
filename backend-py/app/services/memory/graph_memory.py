@@ -1,27 +1,29 @@
 """
-Graph memory — entity-relationship graph stored as JSON.
+Graph memory — entity-relationship graph stored in SQLite.
 
-Port of backend/services/memory/graph-memory.js (617 lines).
+SoT tables: graph_entities, graph_relations, graph_observations.
+One-shot import from ``august_graph_memory.json`` when tables are empty.
 """
 
 from __future__ import annotations
+
 import json
 import os
 import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import cast
-from app.json_narrowing import as_dict, as_int, as_list, as_str
-from app.atomic_write import write_json_atomic
+
+from app.json_narrowing import as_dict, as_list, as_str
 from app.lib.paths import dataPath
 
 _DEFAULTGraphFile = dataPath('august_graph_memory.json')
 _MAXEntities = 1000
 _MAXRelations = 2500
 _MAXObservations = 4000
-# Serialize RMW so concurrent entity/relation writes cannot clobber each other.
-_graph_lock = threading.Lock()
+# RLock: addRelation/addObservation call addEntity while already holding the lock.
+_graph_lock = threading.RLock()
+_json_migrated = False
 
 
 def _graphFile() -> Path:
@@ -43,226 +45,392 @@ def _safeKey(value: str) -> str:
     return key or 'unknown'
 
 
-def _unique(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for v in values:
-        text = _compact(v, 160)
-        key = text.lower()
-        if not text or key in seen:
-            continue
-        seen.add(key)
-        result.append(text)
-    return result
+def _conn():
+    from app.services.memory_store import _conn as get_conn
+    from app.services.memory_schema import create_vector_graph_tables
+
+    c = get_conn()
+    create_vector_graph_tables(c)
+    return c
 
 
-def _defaultGraph() -> dict[str, object]:
-    return {'version': 1, 'updatedAt': _now(), 'entities': [], 'relations': [], 'observations': []}
+def _maybe_migrate_json() -> None:
+    global _json_migrated
+    if _json_migrated:
+        return
+    _json_migrated = True
+    conn = _conn()
+    n = conn.execute('SELECT COUNT(*) AS c FROM graph_entities').fetchone()['c']
+    if n and int(n) > 0:
+        return
+    p = _graphFile()
+    if not p.exists():
+        return
+    try:
+        raw = json.loads(p.read_text('utf-8'))
+        g = raw if isinstance(raw, dict) else {}
+        for e in as_list(g.get('entities'), []):
+            ed = as_dict(e)
+            name = as_str(ed.get('name'))
+            if not name:
+                continue
+            key = _safeKey(name)
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO graph_entities (name_key, name, entity_type, metadata, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    key,
+                    name,
+                    as_str(ed.get('type'), 'general') or 'general',
+                    json.dumps(as_dict(ed.get('metadata'), {})),
+                    as_str(ed.get('createdAt') or ed.get('created_at'), _now()),
+                    as_str(ed.get('updatedAt') or ed.get('updated_at'), _now()),
+                ),
+            )
+        for r in as_list(g.get('relations'), []):
+            rd = as_dict(r)
+            src, tgt = as_str(rd.get('source')), as_str(rd.get('target'))
+            rtype = as_str(rd.get('type'), 'related')
+            if not src or not tgt:
+                continue
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO graph_relations (source_key, target_key, relation_type, metadata, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    _safeKey(src),
+                    _safeKey(tgt),
+                    rtype,
+                    json.dumps(as_dict(rd.get('metadata'), {})),
+                    as_str(rd.get('createdAt'), _now()),
+                    as_str(rd.get('updatedAt'), _now()),
+                ),
+            )
+        for o in as_list(g.get('observations'), []):
+            od = as_dict(o)
+            ekey = as_str(od.get('entityKey') or od.get('entity_key'))
+            if not ekey:
+                ekey = _safeKey(as_str(od.get('entityName') or od.get('entity_name')))
+            content = as_str(od.get('content'))
+            if not content:
+                continue
+            conn.execute(
+                """
+                INSERT INTO graph_observations (entity_key, content, metadata, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    ekey,
+                    content,
+                    json.dumps({'source': as_str(od.get('source'))}),
+                    as_str(od.get('createdAt'), _now()),
+                ),
+            )
+        conn.commit()
+    except Exception:
+        pass
 
 
-def _normalize(raw: object) -> dict[str, object]:
-    g = raw if isinstance(raw, dict) else _defaultGraph()
+def _entity_row(r) -> dict[str, object]:
+    try:
+        meta = json.loads(r['metadata'] or '{}')
+    except (json.JSONDecodeError, TypeError):
+        meta = {}
     return {
-        'version': as_int(g.get('version'), 1),
-        'updatedAt': g.get('updatedAt'),
-        'entities': as_list(g.get('entities'), []),
-        'relations': as_list(g.get('relations'), []),
-        'observations': as_list(g.get('observations'), []),
+        'name': r['name'],
+        'type': r['entity_type'],
+        'metadata': meta if isinstance(meta, dict) else {},
+        'createdAt': r['created_at'],
+        'updatedAt': r['updated_at'],
     }
 
 
-def _read_unlocked() -> dict[str, object]:
-    p = _graphFile()
-    if not p.exists():
-        return _defaultGraph()
-    try:
-        return _normalize(json.loads(p.read_text('utf-8')))
-    except (json.JSONDecodeError, OSError):
-        return _defaultGraph()
-
-
-def _read() -> dict[str, object]:
-    with _graph_lock:
-        return _read_unlocked()
-
-
-def _write_unlocked(graph: dict[str, object]) -> None:
-    g = _normalize(graph)
-    g['updatedAt'] = _now()
-    g['entities'] = as_list(g['entities'])[-_MAXEntities:]
-    g['relations'] = as_list(g['relations'])[-_MAXRelations:]
-    g['observations'] = as_list(g['observations'])[-_MAXObservations:]
-    p = _graphFile()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    write_json_atomic(p, g, indent=2)
-
-
-def _write(graph: dict[str, object]) -> None:
-    with _graph_lock:
-        _write_unlocked(graph)
-
-
-def _mutate(mutator) -> object:
-    """Read-modify-write under the graph lock."""
-    with _graph_lock:
-        g = _read_unlocked()
-        result = mutator(g)
-        _write_unlocked(g)
-        return result
-
-
 def addEntity(name: str, entityType: str = 'general', metadata: dict[str, object] | None = None) -> dict[str, object]:
-    def _do(g: dict[str, object]) -> dict[str, object]:
+    with _graph_lock:
+        _maybe_migrate_json()
+        conn = _conn()
         key = _safeKey(name)
-        entities = cast(list[dict[str, object]], as_list(g['entities']))
-        existing = next((e for e in entities if _safeKey(as_str(e.get('name'), '')) == key), None)
+        now = _now()
+        existing = conn.execute('SELECT * FROM graph_entities WHERE name_key = ?', (key,)).fetchone()
         if existing:
-            existing['updatedAt'] = _now()
+            meta = as_dict(json.loads(existing['metadata'] or '{}') if existing['metadata'] else {}, {})
             if metadata:
-                as_dict(existing.setdefault('metadata', {})).update(metadata)
-            return existing
-        ent: dict[str, object] = {
+                meta.update(metadata)
+            conn.execute(
+                'UPDATE graph_entities SET metadata = ?, updated_at = ?, entity_type = COALESCE(?, entity_type) WHERE name_key = ?',
+                (json.dumps(meta), now, entityType, key),
+            )
+            conn.commit()
+            return {
+                'name': existing['name'],
+                'type': entityType or existing['entity_type'],
+                'metadata': meta,
+                'createdAt': existing['created_at'],
+                'updatedAt': now,
+            }
+        # Cap entities
+        count = conn.execute('SELECT COUNT(*) AS c FROM graph_entities').fetchone()['c']
+        if int(count) >= _MAXEntities:
+            conn.execute(
+                'DELETE FROM graph_entities WHERE name_key IN (SELECT name_key FROM graph_entities ORDER BY updated_at ASC LIMIT 1)'
+            )
+        ent = {
             'name': name,
-            'type': entityType,
+            'type': entityType or 'general',
             'metadata': metadata or {},
-            'createdAt': _now(),
-            'updatedAt': _now(),
+            'createdAt': now,
+            'updatedAt': now,
         }
-        entities.append(ent)
-        g['entities'] = entities
+        conn.execute(
+            """
+            INSERT INTO graph_entities (name_key, name, entity_type, metadata, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (key, name, entityType or 'general', json.dumps(metadata or {}), now, now),
+        )
+        conn.commit()
         return ent
-
-    return cast(dict[str, object], _mutate(_do))
 
 
 def getEntity(name: str) -> dict[str, object] | None:
-    g = _read()
-    key = _safeKey(name)
-    return next(
-        (
-            e
-            for e in cast(list[dict[str, object]], as_list(g['entities']))
-            if _safeKey(as_str(e.get('name'), '')) == key
-        ),
-        None,
-    )
+    with _graph_lock:
+        _maybe_migrate_json()
+        conn = _conn()
+        r = conn.execute('SELECT * FROM graph_entities WHERE name_key = ?', (_safeKey(name),)).fetchone()
+        return _entity_row(r) if r else None
 
 
 def searchEntities(query: str) -> list[dict[str, object]]:
-    g = _read()
-    q = query.lower()
-    entities = cast(list[dict[str, object]], as_list(g['entities']))
-    return [
-        e for e in entities if q in as_str(e.get('name'), '').lower() or q in str(as_dict(e.get('metadata'))).lower()
-    ]
+    with _graph_lock:
+        _maybe_migrate_json()
+        conn = _conn()
+        q = f'%{query.lower()}%'
+        rows = conn.execute(
+            'SELECT * FROM graph_entities WHERE lower(name) LIKE ? OR lower(metadata) LIKE ? LIMIT 50',
+            (q, q),
+        ).fetchall()
+        return [_entity_row(r) for r in rows]
 
 
 def addRelation(
     source: str, target: str, relationType: str, metadata: dict[str, object] | None = None
 ) -> dict[str, object]:
-    def _do(g: dict[str, object]) -> dict[str, object]:
-        srcKey, tgtKey = (_safeKey(source), _safeKey(target))
-        relations = cast(list[dict[str, object]], as_list(g['relations']))
-        existing = next(
-            (
-                r
-                for r in relations
-                if _safeKey(as_str(r.get('source'), '')) == srcKey
-                and _safeKey(as_str(r.get('target'), '')) == tgtKey
-                and (as_str(r.get('type')) == relationType)
-            ),
-            None,
-        )
+    with _graph_lock:
+        _maybe_migrate_json()
+        # Ensure endpoints exist
+        addEntity(source)
+        addEntity(target)
+        conn = _conn()
+        src_key, tgt_key = _safeKey(source), _safeKey(target)
+        now = _now()
+        existing = conn.execute(
+            """
+            SELECT * FROM graph_relations
+            WHERE source_key = ? AND target_key = ? AND relation_type = ?
+            """,
+            (src_key, tgt_key, relationType),
+        ).fetchone()
         if existing:
-            existing['updatedAt'] = _now()
-            return existing
-        rel: dict[str, object] = {
-            'id': f'r_{len(relations) + 1}',
+            conn.execute(
+                'UPDATE graph_relations SET updated_at = ?, metadata = ? WHERE id = ?',
+                (now, json.dumps(metadata or json.loads(existing['metadata'] or '{}')), existing['id']),
+            )
+            conn.commit()
+            return {
+                'id': f"r_{existing['id']}",
+                'source': source,
+                'target': target,
+                'type': relationType,
+                'metadata': metadata or {},
+                'createdAt': existing['created_at'],
+                'updatedAt': now,
+            }
+        count = conn.execute('SELECT COUNT(*) AS c FROM graph_relations').fetchone()['c']
+        if int(count) >= _MAXRelations:
+            conn.execute('DELETE FROM graph_relations WHERE id = (SELECT id FROM graph_relations ORDER BY updated_at ASC LIMIT 1)')
+        cur = conn.execute(
+            """
+            INSERT INTO graph_relations (source_key, target_key, relation_type, metadata, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (src_key, tgt_key, relationType, json.dumps(metadata or {}), now, now),
+        )
+        conn.commit()
+        return {
+            'id': f'r_{cur.lastrowid}',
             'source': source,
             'target': target,
             'type': relationType,
             'metadata': metadata or {},
-            'createdAt': _now(),
-            'updatedAt': _now(),
+            'createdAt': now,
+            'updatedAt': now,
         }
-        relations.append(rel)
-        g['relations'] = relations
-        return rel
-
-    return cast(dict[str, object], _mutate(_do))
 
 
 def getRelations(entityName: str) -> list[dict[str, object]]:
-    g = _read()
-    key = _safeKey(entityName)
-    relations = cast(list[dict[str, object]], as_list(g['relations']))
-    return [
-        r
-        for r in relations
-        if _safeKey(as_str(r.get('source'), '')) == key or _safeKey(as_str(r.get('target'), '')) == key
-    ]
+    with _graph_lock:
+        _maybe_migrate_json()
+        conn = _conn()
+        key = _safeKey(entityName)
+        rows = conn.execute(
+            'SELECT * FROM graph_relations WHERE source_key = ? OR target_key = ?',
+            (key, key),
+        ).fetchall()
+        # Resolve names
+        key_to_name: dict[str, str] = {}
+        for r in rows:
+            for k in (r['source_key'], r['target_key']):
+                if k not in key_to_name:
+                    er = conn.execute('SELECT name FROM graph_entities WHERE name_key = ?', (k,)).fetchone()
+                    key_to_name[k] = er['name'] if er else k
+        out = []
+        for r in rows:
+            try:
+                meta = json.loads(r['metadata'] or '{}')
+            except (json.JSONDecodeError, TypeError):
+                meta = {}
+            out.append(
+                {
+                    'id': f"r_{r['id']}",
+                    'source': key_to_name.get(r['source_key'], r['source_key']),
+                    'target': key_to_name.get(r['target_key'], r['target_key']),
+                    'type': r['relation_type'],
+                    'metadata': meta,
+                    'createdAt': r['created_at'],
+                    'updatedAt': r['updated_at'],
+                }
+            )
+        return out
 
 
 def addObservation(entityName: str, content: str, source: str = '') -> dict[str, object]:
-    def _do(g: dict[str, object]) -> dict[str, object]:
+    with _graph_lock:
+        _maybe_migrate_json()
+        addEntity(entityName)
+        conn = _conn()
         key = _safeKey(entityName)
-        entities = cast(list[dict[str, object]], as_list(g['entities']))
-        entity = next((e for e in entities if _safeKey(as_str(e.get('name'), '')) == key), None)
-        if not entity:
-            entity = {
-                'name': entityName,
-                'type': 'general',
-                'metadata': {},
-                'createdAt': _now(),
-                'updatedAt': _now(),
-            }
-            entities.append(entity)
-            g['entities'] = entities
-        observations = cast(list[dict[str, object]], as_list(g['observations']))
-        obs: dict[str, object] = {
-            'id': f'o_{len(observations) + 1}',
+        now = _now()
+        count = conn.execute('SELECT COUNT(*) AS c FROM graph_observations').fetchone()['c']
+        if int(count) >= _MAXObservations:
+            conn.execute(
+                'DELETE FROM graph_observations WHERE id = (SELECT id FROM graph_observations ORDER BY created_at ASC LIMIT 1)'
+            )
+        cur = conn.execute(
+            """
+            INSERT INTO graph_observations (entity_key, content, metadata, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (key, _compact(content, 1000), json.dumps({'source': source}), now),
+        )
+        conn.commit()
+        return {
+            'id': f'o_{cur.lastrowid}',
             'entityKey': key,
-            'entityName': entity['name'],
+            'entityName': entityName,
             'content': _compact(content, 1000),
             'source': source,
-            'createdAt': _now(),
+            'createdAt': now,
         }
-        observations.append(obs)
-        g['observations'] = observations
-        return obs
 
-    return cast(dict[str, object], _mutate(_do))
 
 def searchObservations(query: str) -> list[dict[str, object]]:
-    g = _read()
-    q = query.lower()
-    observations = cast(list[dict[str, object]], as_list(g['observations']))
-    return [o for o in observations if q in as_str(o.get('content'), '').lower()]
+    with _graph_lock:
+        _maybe_migrate_json()
+        conn = _conn()
+        q = f'%{query.lower()}%'
+        rows = conn.execute(
+            'SELECT * FROM graph_observations WHERE lower(content) LIKE ? LIMIT 50', (q,)
+        ).fetchall()
+        out = []
+        for r in rows:
+            try:
+                meta = json.loads(r['metadata'] or '{}')
+            except (json.JSONDecodeError, TypeError):
+                meta = {}
+            out.append(
+                {
+                    'id': f"o_{r['id']}",
+                    'entityKey': r['entity_key'],
+                    'content': r['content'],
+                    'source': as_str(as_dict(meta).get('source')),
+                    'createdAt': r['created_at'],
+                }
+            )
+        return out
 
 
 def explore(entityName: str, depth: int = 1) -> dict[str, object]:
-    """Explore the graph from an entity outward to given depth."""
-    g = _read()
-    key = _safeKey(entityName)
-    entities = cast(list[dict[str, object]], as_list(g['entities']))
-    entity = next((e for e in entities if _safeKey(as_str(e.get('name'), '')) == key), None)
+    entity = getEntity(entityName)
     if not entity:
         return {'entity': None, 'relations': [], 'related': []}
     relations = getRelations(entityName)
-    relatedNames = set()
+    key = _safeKey(entityName)
+    related_names: set[str] = set()
     for r in relations:
         if _safeKey(as_str(r.get('source'), '')) != key:
-            relatedNames.add(r['source'])
+            related_names.add(as_str(r.get('source')))
         if _safeKey(as_str(r.get('target'), '')) != key:
-            relatedNames.add(r['target'])
-    related = [e for e in entities if e['name'] in relatedNames]
+            related_names.add(as_str(r.get('target')))
+    related = [e for n in related_names if (e := getEntity(n))]
     return {'entity': entity, 'relations': relations, 'related': related}
 
 
 def graphStats() -> dict[str, object]:
-    g = _read()
-    return {
-        'entities': len(as_list(g['entities'])),
-        'relations': len(as_list(g['relations'])),
-        'observations': len(as_list(g['observations'])),
-    }
+    with _graph_lock:
+        _maybe_migrate_json()
+        conn = _conn()
+        return {
+            'entities': int(conn.execute('SELECT COUNT(*) AS c FROM graph_entities').fetchone()['c']),
+            'relations': int(conn.execute('SELECT COUNT(*) AS c FROM graph_relations').fetchone()['c']),
+            'observations': int(conn.execute('SELECT COUNT(*) AS c FROM graph_observations').fetchone()['c']),
+        }
+
+
+def _read() -> dict[str, object]:
+    """Compatibility shape for callers that expect the old JSON graph."""
+    with _graph_lock:
+        _maybe_migrate_json()
+        conn = _conn()
+        entities = [_entity_row(r) for r in conn.execute('SELECT * FROM graph_entities').fetchall()]
+        relations = []
+        for r in conn.execute('SELECT * FROM graph_relations').fetchall():
+            try:
+                meta = json.loads(r['metadata'] or '{}')
+            except (json.JSONDecodeError, TypeError):
+                meta = {}
+            src = conn.execute('SELECT name FROM graph_entities WHERE name_key = ?', (r['source_key'],)).fetchone()
+            tgt = conn.execute('SELECT name FROM graph_entities WHERE name_key = ?', (r['target_key'],)).fetchone()
+            relations.append(
+                {
+                    'id': f"r_{r['id']}",
+                    'source': src['name'] if src else r['source_key'],
+                    'target': tgt['name'] if tgt else r['target_key'],
+                    'type': r['relation_type'],
+                    'metadata': meta,
+                }
+            )
+        observations = []
+        for o in conn.execute('SELECT * FROM graph_observations').fetchall():
+            try:
+                meta = json.loads(o['metadata'] or '{}')
+            except (json.JSONDecodeError, TypeError):
+                meta = {}
+            observations.append(
+                {
+                    'id': f"o_{o['id']}",
+                    'entityKey': o['entity_key'],
+                    'content': o['content'],
+                    'source': as_str(as_dict(meta).get('source')),
+                    'createdAt': o['created_at'],
+                }
+            )
+        return {
+            'version': 2,
+            'updatedAt': _now(),
+            'entities': entities,
+            'relations': relations,
+            'observations': observations,
+        }

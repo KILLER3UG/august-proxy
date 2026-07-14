@@ -1,10 +1,54 @@
-/* v3 — Learning tab: heuristics, auto-memories, facts, sleep cycle, delta engine, skill genesis */
-import { Sparkles, Brain, Clock, Zap, ListChecks } from 'lucide-react';
+/* v3 — Learning tab: heuristics, auto-memories, facts, sleep cycle, mutations */
+import { Sparkles, Brain, Clock, Zap, ListChecks, Trash2, Check, X, Play } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { useLearningData } from '@/hooks/useLearningData';
+import { api } from '@/api/client';
 
 export function LearningTab() {
   const { data, error } = useLearningData();
+  const qc = useQueryClient();
+
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ['brain-learning'] });
+  };
+
+  const deleteHeuristic = useMutation({
+    mutationFn: (id: number) => api.delete(`/api/brain/heuristics/${id}`),
+    onSuccess: () => {
+      toast.success('Heuristic deleted');
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message || 'Delete failed'),
+  });
+
+  const approveSkill = useMutation({
+    mutationFn: (name: string) => api.post(`/api/brain/skills/${encodeURIComponent(name)}/approve`, {}),
+    onSuccess: () => {
+      toast.success('Skill approved');
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message || 'Approve failed'),
+  });
+
+  const rejectSkill = useMutation({
+    mutationFn: (name: string) => api.post(`/api/brain/skills/${encodeURIComponent(name)}/reject`, {}),
+    onSuccess: () => {
+      toast.success('Skill rejected');
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message || 'Reject failed'),
+  });
+
+  const runConsolidation = useMutation({
+    mutationFn: () => api.post('/api/brain/run-consolidation', {}),
+    onSuccess: () => {
+      toast.success('Consolidation finished');
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message || 'Consolidation failed'),
+  });
 
   if (error) {
     return <div className="p-4 text-danger">Error loading brain data: {error.message}</div>;
@@ -58,6 +102,17 @@ export function LearningTab() {
                     <span>{h.category}</span>
                   </span>
                 </div>
+                <button
+                  type="button"
+                  title="Delete heuristic"
+                  className="text-muted-foreground hover:text-danger p-1"
+                  data-testid={`delete-heuristic-${h.id}`}
+                  onClick={() => {
+                    if (confirm('Delete this heuristic?')) deleteHeuristic.mutate(h.id);
+                  }}
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
               </li>
             ))}
           </ul>
@@ -78,91 +133,94 @@ export function LearningTab() {
           <ul className="space-y-2 max-h-60 overflow-y-auto">
             {data.autoMemories.map((m) => (
               <li key={m.id} className="text-xs p-2 rounded hover:bg-muted/30">
-                <p>{m.content}</p>
-                <span className="text-[10px] text-muted-foreground">
-                  importance: {m.importance.toFixed(2)}
-                </span>
+                <p className="font-medium">{m.key}</p>
+                <p className="text-muted-foreground line-clamp-2">{m.content}</p>
               </li>
             ))}
           </ul>
         )}
       </Card>
 
-      {/* Core facts */}
-      <Card className="p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="size-4 text-warning" />
-          <h3 className="font-medium text-sm">Core facts</h3>
-        </div>
-        {data.coreFacts ? (
-          <pre className="text-xs text-muted-foreground whitespace-pre-wrap max-h-60 overflow-y-auto">
-            {JSON.stringify(data.coreFacts, null, 2).slice(0, 800)}
-          </pre>
-        ) : (
-          <p className="text-xs text-muted-foreground">No core facts yet.</p>
-        )}
-      </Card>
-
       {/* Sleep cycle */}
       <Card className="p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <Clock className="size-4 text-primary" />
-          <h3 className="font-medium text-sm">Sleep cycle</h3>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Clock className="size-4 text-primary" />
+            <h3 className="font-medium text-sm">Sleep cycle</h3>
+          </div>
+          <button
+            type="button"
+            className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground disabled:opacity-50"
+            disabled={runConsolidation.isPending}
+            data-testid="learning-run-consolidation"
+            onClick={() => runConsolidation.mutate()}
+          >
+            <Play className="size-3 inline mr-1" />
+            Run now
+          </button>
         </div>
-        {data.sleepCycle.lastRunAt ? (
-          <p className="text-xs text-muted-foreground">
-            Last run: {new Date(data.sleepCycle.lastRunAt).toLocaleString()}
-            <br />
-            {data.sleepCycle.lastMerged} merges, {data.sleepCycle.lastPromoted} promotions,{' '}
-            {data.sleepCycle.lastDeleted} deletions
-          </p>
-        ) : (
-          <p className="text-xs text-muted-foreground">No consolidation runs yet.</p>
-        )}
-      </Card>
-
-      {/* Delta engine */}
-      <Card className="p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <Zap className="size-4 text-warning" />
-          <h3 className="font-medium text-sm">Delta engine</h3>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Queue: {data.deltaEngine.queueSize} ·{' '}
-          Consent: {data.deltaEngine.consentGranted ? 'granted' : 'not granted'}
-        </p>
-        <p className="text-[10px] text-muted-foreground">
-          Last flush:{' '}
-          {data.deltaEngine.lastFlushAt
-            ? new Date(data.deltaEngine.lastFlushAt).toLocaleString()
-            : 'never'}
-        </p>
+        <dl className="text-xs grid grid-cols-2 gap-1">
+          <dt className="text-muted-foreground">Last run</dt>
+          <dd>{data.sleepCycle.lastRunAt ?? 'never'}</dd>
+          <dt className="text-muted-foreground">Merged</dt>
+          <dd>{data.sleepCycle.lastMerged}</dd>
+          <dt className="text-muted-foreground">Promoted</dt>
+          <dd>{data.sleepCycle.lastPromoted}</dd>
+          <dt className="text-muted-foreground">Deleted</dt>
+          <dd>{data.sleepCycle.lastDeleted}</dd>
+        </dl>
       </Card>
 
       {/* Pending skills */}
       <Card className="p-4 space-y-3 md:col-span-2">
         <div className="flex items-center gap-2">
           <Sparkles className="size-4 text-primary" />
-          <h3 className="font-medium text-sm">Skill genesis (pending approval)</h3>
+          <h3 className="font-medium text-sm">Pending skills</h3>
         </div>
         {data.pendingSkills.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No evolving skills pending yet. As you collaborate on complex tasks, August turns successful workflows into skills made for you.
-          </p>
+          <p className="text-xs text-muted-foreground">No skills awaiting approval.</p>
         ) : (
-          <ul className="space-y-2 max-h-60 overflow-y-auto">
+          <ul className="space-y-2">
             {data.pendingSkills.map((s) => (
-              <li key={s.id} className="text-xs p-2 rounded hover:bg-muted/30">
-                <strong>{s.name}</strong>: {s.description}
-                {s.triggerText && (
-                  <span className="block text-[10px] text-muted-foreground">
-                    trigger: {s.triggerText}
-                  </span>
-                )}
+              <li key={s.id} className="text-xs flex items-start gap-2 p-2 rounded border border-border">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium">{s.name}</p>
+                  <p className="text-muted-foreground">{s.description}</p>
+                </div>
+                <button
+                  type="button"
+                  className="p-1 text-success"
+                  title="Approve"
+                  data-testid={`approve-skill-${s.name}`}
+                  onClick={() => approveSkill.mutate(s.name)}
+                >
+                  <Check className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  className="p-1 text-danger"
+                  title="Reject"
+                  data-testid={`reject-skill-${s.name}`}
+                  onClick={() => rejectSkill.mutate(s.name)}
+                >
+                  <X className="size-3.5" />
+                </button>
               </li>
             ))}
           </ul>
         )}
+      </Card>
+
+      {/* Delta engine (read) */}
+      <Card className="p-4 space-y-2 md:col-span-2">
+        <div className="flex items-center gap-2">
+          <Zap className="size-4 text-primary" />
+          <h3 className="font-medium text-sm">Delta engine</h3>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Consent: {data.deltaEngine.consentGranted ? 'granted' : 'not granted'} · Queue:{' '}
+          {data.deltaEngine.queueSize} · Last flush: {data.deltaEngine.lastFlushAt ?? 'never'}
+        </p>
       </Card>
     </div>
   );

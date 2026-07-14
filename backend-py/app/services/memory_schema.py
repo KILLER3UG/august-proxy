@@ -308,12 +308,76 @@ def create_extended_tables(conn: sqlite3.Connection) -> None:
     conn.execute(
         'CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at)'
     )
+    create_vector_graph_tables(conn)
+
+
+def create_vector_graph_tables(conn: sqlite3.Connection) -> None:
+    """Vector embeddings + knowledge graph — SQLite SoT (replaces JSON files)."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS vector_entries (
+            id TEXT PRIMARY KEY,
+            text TEXT NOT NULL,
+            embedding TEXT NOT NULL,
+            metadata TEXT DEFAULT '{}',
+            namespace TEXT DEFAULT 'default',
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_vector_namespace ON vector_entries(namespace)'
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS graph_entities (
+            name_key TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            entity_type TEXT DEFAULT 'general',
+            metadata TEXT DEFAULT '{}',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS graph_relations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_key TEXT NOT NULL,
+            target_key TEXT NOT NULL,
+            relation_type TEXT NOT NULL,
+            metadata TEXT DEFAULT '{}',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(source_key, target_key, relation_type)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS graph_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_key TEXT NOT NULL,
+            content TEXT NOT NULL,
+            metadata TEXT DEFAULT '{}',
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_graph_rel_source ON graph_relations(source_key)'
+    )
+    conn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_graph_obs_entity ON graph_observations(entity_key)'
+    )
+    conn.commit()
 
 
 # Bump when DDL / indexes change in a way that requires re-running create_*.
 # user_version is set after a successful ensure_schema so warm boots can skip
 # the heavy CREATE IF NOT EXISTS + migration probe when already current.
-_SCHEMA_USER_VERSION = 6
+_SCHEMA_USER_VERSION = 7
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -337,6 +401,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ensure_column(conn, 'usage_events', 'context_tokens', 'INTEGER DEFAULT 0')
             ensure_column(conn, 'sessions', 'workbench_blob', 'TEXT')
             ensure_column(conn, 'sessions', 'updated_at', 'TEXT')
+            create_vector_graph_tables(conn)
             conn.commit()
             return
     migrate_camel_to_snake(conn)

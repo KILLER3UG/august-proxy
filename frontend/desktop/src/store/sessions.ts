@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { listManageSessions } from '@/api/api-client';
+import { getWorkbenchSessions } from '@/api/workbench';
 
 export interface Session {
   id: string;
@@ -232,57 +232,56 @@ export function clearAllSessions(includeArchived: boolean = true) {
 }
 
 /**
- * Fetch sessions from the backend brain database and reconcile with the
- * frontend's localStorage store. Sessions deleted by the model (via the
- * delete_session / delete_folder tools) are removed from the sidebar;
- * new sessions created on the backend are added. Frontend-only fields
- * (lastMessage, workbenchSessionId, …) are preserved during merge.
+ * Reconcile chat sidebar sessions from the workbench session SoT only
+ * (`GET /api/workbench/sessions`). Do not use `/api/sessions` for chat —
+ * that plane is non-chat / manage-only.
  *
- * Call this periodically or after the model reports a deletion.
+ * Match order: local.workbenchSessionId → local.id → backend id.
+ * Frontend-only fields (lastMessage, folderId, …) are preserved on merge.
  * Silently falls back to local state if the backend is unavailable.
  */
 export async function reconcileSessionsFromBackend(): Promise<void> {
   try {
-    const backendSessions = await listManageSessions();
+    const backendSessions = await getWorkbenchSessions();
     const backendMap = new Map(backendSessions.map(s => [s.id, s]));
 
     const current = useSessionsStore.getState().sessions;
     const merged: Session[] = [];
+    const claimed = new Set<string>();
     const now = new Date().toISOString();
 
     for (const local of current) {
-      const backend = backendMap.get(local.id);
+      const key = local.workbenchSessionId || local.id;
+      const backend = backendMap.get(key) ?? backendMap.get(local.id);
       if (backend) {
-        // Merge frontend-only fields with authoritative backend fields.
+        claimed.add(backend.id);
         merged.push({
           ...local,
-          title: (backend.title as string) ?? local.title,
-          startedAt: (backend['startedAt'] as string) ?? local.startedAt,
-          messageCount: (backend['messageCount'] as number) ?? local.messageCount,
-          provider: (backend.provider as string) ?? local.provider,
-          model: (backend.model as string) ?? local.model,
-          folderId: (backend['folderId'] as string) ?? local.folderId ?? null,
-          isArchived: (backend['isArchived'] as boolean) ?? local.isArchived ?? false,
-          workspacePath: (backend['workspacePath'] as string) ?? local.workspacePath ?? null,
+          id: local.id.startsWith('wb_') || local.id === backend.id ? backend.id : local.id,
+          workbenchSessionId: backend.id,
+          title: (backend.title as string | undefined) || local.title,
+          startedAt: local.startedAt,
+          messageCount: backend.messageCount ?? local.messageCount,
+          provider: backend.provider || local.provider,
+          model: (backend.model as string | undefined) || local.model,
+          workbenchProvider: backend.provider || local.workbenchProvider,
         });
-        backendMap.delete(local.id);
       }
-      // Session not in backend → was deleted by the model → drop it.
+      // Not in workbench SoT → dropped from sidebar (deleted server-side).
     }
 
-    // Add sessions that exist on the backend but not yet in local state.
-    for (const [, bs] of backendMap) {
+    for (const bs of backendSessions) {
+      if (claimed.has(bs.id)) continue;
       merged.push({
         id: bs.id,
-        title: (bs.title as string) ?? 'New Session',
-        startedAt: (bs['startedAt'] as string) ?? now,
-        messageCount: (bs['messageCount'] as number) ?? 0,
+        title: (bs.title as string | undefined) || 'New Session',
+        startedAt: (bs.updatedAt as string | undefined) || now,
+        messageCount: bs.messageCount ?? 0,
         lastMessage: 'Conversation started.',
-        provider: (bs.provider as string) ?? '',
-        model: (bs.model as string) ?? '',
-        folderId: (bs['folderId'] as string) ?? null,
-        isArchived: (bs['isArchived'] as boolean) ?? false,
-        workspacePath: (bs['workspacePath'] as string) ?? null,
+        provider: bs.provider || '',
+        model: (bs.model as string | undefined) || '',
+        workbenchSessionId: bs.id,
+        workbenchProvider: bs.provider || '',
       });
     }
 

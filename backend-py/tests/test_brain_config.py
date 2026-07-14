@@ -63,6 +63,7 @@ async def testGetReflectsPersistedOverrides(client, isolatedData, monkeypatch):
     from app.lib.paths import dataPath
 
     cfgPath = dataPath('config.json')
+    # Legacy top-level key must migrate into auxiliary.cognitive.orchestrator.
     cfgPath.write_text(json.dumps({'brain_orchestrator': {'enabled': False, 'max_agent_depth': 2}}), 'utf-8')
     resp = await client.get('/api/brain/config')
     assert resp.status_code == 200
@@ -76,7 +77,7 @@ async def testGetReflectsPersistedOverrides(client, isolatedData, monkeypatch):
 
 @pytest.mark.asyncio
 async def testPutMergesAndAudits(client, isolatedData):
-    """Valid patch merges into cfg.brain_orchestrator + writes an audit row."""
+    """Valid patch merges into cognitive.orchestrator + writes an audit row."""
     resp = await client.put('/api/brain/config', json={'enabled': False, 'maxAgentDepth': 3})
     assert resp.status_code == 200
     body = resp.json()

@@ -91,13 +91,43 @@ class SessionBridge:
         self._cancels: dict[str, asyncio.Event] = {}
 
     def sessionIdFor(self, sessionKey: str) -> str:
-        """Resolve (creating on first contact) the workbench session id."""
+        """Resolve (creating on first contact) the workbench session id.
+
+        Mapping is cached in ``gateway/session_map.json`` (export/cache).
+        On create, the gateway key is also written into the workbench session
+        ``metadata.gatewayKey`` so the blob SoT can rebuild the map.
+        """
         sid = self._map.get(sessionKey)
+        if not sid:
+            try:
+                from app.services.memory_store.sessions import list_workbench_blobs
+
+                for blob in list_workbench_blobs() or []:
+                    if not isinstance(blob, dict):
+                        continue
+                    meta = blob.get('metadata') if isinstance(blob.get('metadata'), dict) else {}
+                    if meta.get('gatewayKey') == sessionKey or blob.get('gatewayKey') == sessionKey:
+                        sid = as_str(blob.get('id'), '')
+                        if sid:
+                            break
+            except Exception:
+                log.debug('gateway: blob scan for gatewayKey failed', exc_info=True)
         if not sid:
             session = self._sessionFactory(provider=self._provider, agentId=self._agentId, guardMode=self._guardMode)
             sid = getattr(session, 'id', None) or str(session)
-            self._map[sessionKey] = sid
-            _saveMap(self._mapPath, self._map)
+            try:
+                meta = getattr(session, 'metadata', None)
+                if not isinstance(meta, dict):
+                    meta = {}
+                    session.metadata = meta  # type: ignore[attr-defined]
+                meta['gatewayKey'] = sessionKey
+                from app.services.workbench.sessions import save_sessions
+
+                save_sessions()
+            except Exception:
+                log.debug('could not stamp gatewayKey on workbench session', exc_info=True)
+        self._map[sessionKey] = sid
+        _saveMap(self._mapPath, self._map)
         return sid
 
     def getSessionId(self, sessionKey: str) -> str | None:

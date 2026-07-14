@@ -194,8 +194,11 @@ def _load_sessions() -> None:
 def save_sessions() -> None:
     """Persist sessions to SQLite (full blob + messages). Keeps last 50.
 
-    Also writes ``workbench-sessions.json`` as a backup export only.
+    JSON export is **off by default**. Set ``AUGUST_SESSION_JSON_EXPORT=1``
+    to write ``workbench-sessions.json`` as an admin backup only — never the SoT.
     """
+    import os
+
     with _sessions_lock:
         sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
         keep_ids = {s.id for s in sorted_sessions}
@@ -213,12 +216,49 @@ def save_sessions() -> None:
         except Exception:
             logger.exception('SQLite session write failed')
 
-        try:
-            path = _sessions_path()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            write_json_atomic(path, [s.toDict() for s in sorted_sessions], indent=2)
-        except Exception:
-            logger.exception('JSON session export failed (non-fatal; SQLite is primary)')
+        export = os.environ.get('AUGUST_SESSION_JSON_EXPORT', '').strip().lower() in (
+            '1',
+            'true',
+            'yes',
+            'on',
+        )
+        if export:
+            try:
+                path = _sessions_path()
+                path.parent.mkdir(parents=True, exist_ok=True)
+                write_json_atomic(path, [s.toDict() for s in sorted_sessions], indent=2)
+            except Exception:
+                logger.exception('JSON session export failed (non-fatal; SQLite is primary)')
+
+
+def export_sessions_json() -> Path:
+    """Admin one-shot: write workbench-sessions.json from current SQLite/in-memory SoT."""
+    with _sessions_lock:
+        if not _sessions:
+            _load_sessions()
+        sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
+        path = _sessions_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_json_atomic(path, [s.toDict() for s in sorted_sessions], indent=2)
+        return path
+
+
+def reload_sessions_from_sot() -> int:
+    """Clear in-memory cache and reload from SQLite only (no JSON). For smoke/tests."""
+    _sessions.clear()
+    try:
+        from app.services import memory_store
+        from app.services.memory_store import list_workbench_blobs
+
+        memory_store.init()
+        blobs = list_workbench_blobs(limit=200)
+        for item in blobs:
+            session = WorkbenchSession.fromDict(item)
+            if session.id:
+                _sessions[session.id] = session
+    except Exception:
+        logger.exception('reload_sessions_from_sot failed')
+    return len(_sessions)
 
 
 def _emit_session_status(session_id: str) -> None:
@@ -273,6 +313,13 @@ def create_workbench_session(
     _sessions[session_id] = session
     save_sessions()
     # save_sessions() already writes SQLite (blob + messages).
+    if session.workspacePath:
+        try:
+            from app.services.cognitive_boot import attach_session_watcher
+
+            attach_session_watcher(session_id, session.workspacePath)
+        except Exception:
+            pass
     _emit_session_status(session_id)
     return session
 

@@ -85,42 +85,58 @@ async def backfillWorkbench():
 
 @router.get('/health')
 async def getHealth():
-    """Per-phase status: flags + selfcheck() with detail + last_check_at."""
-    from app.config import settings
+    """Per-phase status from the single cognitive config tree + real probes.
+
+    Flags come from ``auxiliary.cognitive.features`` (and boot services),
+    not a separate dead schema. Boot service rows are included so operators
+    see what is actually running.
+    """
     import time
 
-    try:
-        cfg = settings.config
-        layersCfg = cfg.get('auxiliary', {}).get('cognitive_layers', {})
-    except Exception:
-        layersCfg = {}
+    from app.services.cognitive_boot import get_boot_status
+    from app.services.cognitive_config import ensure_defaults, get_features, get_boot_layers
+    from app.services.db_writer import get_stats as db_writer_stats
+    from app.services.consolidation_daemon import get_last_run
+
+    ensure_defaults()
+    features = get_features()
+    boot = get_boot_layers()
+    boot_status = get_boot_status()
     phases = [
-        ('heuristics', 'Phase 4 — Learned Heuristics'),
-        ('execution_state', 'Phase 5 — Execution State'),
-        ('scratchpad', 'Phase 6 — Working Memory'),
-        ('tool_guardrails', 'Phase 6 — Loop Guardrails'),
-        ('progressive_disclosure', 'Phase 3 — BM25'),
-        ('prompt_caching', 'Phase 7 — Prompt Caching'),
-        ('cognitive_budget', 'Phase 2 — Cognitive Budgeting'),
-        ('daemons', 'Phase 8 — Subconscious Daemons'),
-        ('blackboard', 'Phase 10 — Blackboard'),
-        ('env_watcher', 'Phase 10 — Env Watcher'),
-        ('verifier_reflex', 'Phase 10 — Verifier Reflex'),
-        ('skill_genesis', 'Phase 10 — Skill Genesis'),
+        ('heuristics', 'Learned Heuristics'),
+        ('execution_state', 'Execution State'),
+        ('scratchpad', 'Working Memory'),
+        ('tool_guardrails', 'Loop Guardrails'),
+        ('progressive_disclosure', 'BM25 Tool Catalog'),
+        ('prompt_caching', 'Prompt Caching'),
+        ('cognitive_budget', 'Cognitive Budgeting'),
+        ('daemons', 'Subconscious Daemons'),
+        ('blackboard', 'Blackboard'),
+        ('env_watcher', 'Env Watcher'),
+        ('verifier_reflex', 'Verifier Reflex'),
+        ('skill_genesis', 'Skill Genesis'),
+        ('vector_memory', 'Vector Memory'),
+        ('graph_memory', 'Graph Memory'),
     ]
     nowIso = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
     results = []
     for flagKey, label in phases:
-        flagVal = bool(layersCfg.get(flagKey, False))
+        # env_watcher feature tracks boot.environment_watcher when set
+        if flagKey == 'env_watcher':
+            flagVal = bool(features.get('env_watcher', False) or boot.get('environment_watcher', False))
+        else:
+            flagVal = bool(features.get(flagKey, False))
         if not flagVal:
             results.append(
                 {
                     'layer': label,
                     'flag': flagKey,
                     'flagValue': False,
+                    'flag_value': False,
                     'status': 'off',
                     'detail': 'feature flag disabled',
                     'lastCheckAt': nowIso,
+                    'last_check_at': nowIso,
                 }
             )
             continue
@@ -130,12 +146,64 @@ async def getHealth():
                 'layer': label,
                 'flag': flagKey,
                 'flagValue': True,
+                'flag_value': True,
                 'status': check['status'],
                 'detail': check['detail'],
                 'lastCheckAt': nowIso,
+                'last_check_at': nowIso,
             }
         )
-    return {'phases': results}
+    # Boot services honesty row
+    services = boot_status.get('services') if isinstance(boot_status, dict) else {}
+    results.append(
+        {
+            'layer': 'Cognitive Boot',
+            'flag': 'cognitive_boot',
+            'flagValue': bool(boot_status.get('started')),
+            'flag_value': bool(boot_status.get('started')),
+            'status': 'on & healthy' if boot_status.get('started') else 'off',
+            'detail': f"services={list(services.keys()) if isinstance(services, dict) else []}",
+            'lastCheckAt': nowIso,
+            'last_check_at': nowIso,
+        }
+    )
+    last_run = get_last_run()
+    results.append(
+        {
+            'layer': 'Consolidation',
+            'flag': 'consolidation',
+            'flagValue': bool(boot.get('consolidation')),
+            'flag_value': bool(boot.get('consolidation')),
+            'status': 'on & healthy' if boot.get('consolidation') else 'off',
+            'detail': f'last_run={last_run}' if last_run else 'no consolidation runs yet',
+            'lastCheckAt': nowIso,
+            'last_check_at': nowIso,
+        }
+    )
+    try:
+        dw = db_writer_stats()
+    except Exception:
+        dw = {}
+    results.append(
+        {
+            'layer': 'DB Writer',
+            'flag': 'db_writer',
+            'flagValue': bool(boot.get('db_writer')),
+            'flag_value': bool(boot.get('db_writer')),
+            'status': 'on & healthy' if boot.get('db_writer') else 'off',
+            'detail': f"depth={dw.get('queue_depth')} dropped_low={dw.get('dropped_low')} executed={dw.get('executed')}",
+            'lastCheckAt': nowIso,
+            'last_check_at': nowIso,
+        }
+    )
+    return {
+        'phases': results,
+        'cognitiveBoot': boot_status,
+        'features': features,
+        'boot': boot,
+        'consolidationLastRun': last_run,
+        'dbWriter': dw,
+    }
 
 
 def _runSelfcheck(flagKey: str) -> dict:
@@ -218,14 +286,20 @@ def _runSelfcheck(flagKey: str) -> dict:
             n = int(row[0]) if row else 0
             return {'status': 'on & healthy', 'detail': f'{n} note{("s" if n != 1 else "")} on blackboard'}
         elif flagKey == 'env_watcher':
-            from app.services.memory_store import _conn
+            from app.services.cognitive_boot import get_boot_status
+            from app.services.environment_watcher import getRecentChanges
 
-            try:
-                row = _conn().execute('SELECT MAX(timestamp) FROM env_change_log').fetchone()
-                last = row[0] if row else None
-            except Exception:
-                last = None
-            return {'status': 'on & healthy', 'detail': f'last event: {last or "none yet"}'}
+            boot = get_boot_status()
+            sessions = boot.get('session_watchers') if isinstance(boot, dict) else []
+            n = len(sessions) if isinstance(sessions, list) else 0
+            recent = 0
+            if isinstance(sessions, list):
+                for sid in sessions:
+                    recent += len(getRecentChanges(str(sid), maxAgeSeconds=3600))
+            return {
+                'status': 'on & healthy',
+                'detail': f'{n} session watcher(s), {recent} recent event(s)',
+            }
         elif flagKey == 'verifier_reflex':
             from app.services.memory_store import _conn
 
@@ -241,6 +315,21 @@ def _runSelfcheck(flagKey: str) -> dict:
             row = _conn().execute("SELECT COUNT(*) FROM pending_skills WHERE status = 'pending'").fetchone()
             n = int(row[0]) if row else 0
             return {'status': 'on & healthy', 'detail': f'{n} pending skill{("s" if n != 1 else "")}'}
+        elif flagKey == 'vector_memory':
+            from app.services.memory import vector_db
+
+            n = int(vector_db.count() or 0)
+            return {'status': 'on & healthy', 'detail': f'{n} vector entr{"y" if n == 1 else "ies"}'}
+        elif flagKey == 'graph_memory':
+            from app.services.memory import graph_memory
+
+            try:
+                g = graph_memory._read() if hasattr(graph_memory, '_read') else {}
+                entities = g.get('entities') if isinstance(g, dict) else []
+                n = len(entities) if isinstance(entities, list) else 0
+            except Exception:
+                n = 0
+            return {'status': 'on & healthy', 'detail': f'{n} graph entit{"y" if n == 1 else "ies"}'}
         else:
             return {'status': 'on & healthy', 'detail': 'no probe defined'}
     except Exception as exc:

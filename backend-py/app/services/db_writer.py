@@ -66,9 +66,17 @@ _stats: dict[str, float | int] = {
 class QueueItem:
     """A queued write operation."""
 
-    def __init__(self, fn: Callable[[], object], priority: str = 'low'):
+    def __init__(
+        self,
+        fn: Callable[[], object],
+        priority: str = 'low',
+        *,
+        must_succeed: bool = False,
+    ):
         self.fn = fn
         self.priority = priority
+        # Must-succeed writes are never age-dropped (brain integrity).
+        self.must_succeed = must_succeed or priority == 'high'
         self.enqueued_at = time.monotonic()
         self.id = id(self)
 
@@ -130,22 +138,31 @@ def _bump(**kwargs: float | int) -> None:
                 _stats[k] = int(_stats.get(k) or 0) + int(v)
 
 
-async def enqueue_write(fn: Callable[[], object], priority: str = 'low') -> bool:
+async def enqueue_write(
+    fn: Callable[[], object],
+    priority: str = 'low',
+    *,
+    must_succeed: bool = False,
+) -> bool:
     """Enqueue a write operation (FIFO — priority does not reorder).
 
     Returns True if the write was enqueued, False only if the queue could not
     be initialized or (for high priority) the put wait timed out. With the
-    current unbounded queue, put always succeeds once initialized. Low-pri
-    age-based drops happen later in ``_drain_loop``, not at enqueue time.
+    current unbounded queue, put always succeeds once initialized.
+
+    Low-pri age-based drops happen later in ``_drain_loop`` only when
+    ``must_succeed`` is False and priority is not ``high``. Brain /
+    consolidation mutations should pass ``must_succeed=True`` or
+    ``priority='high'`` so they are never age-dropped.
     """
     ensure_queue()
     queue = _write_queue
     if queue is None:
         logger.error('DB write queue not initialized')
         return False
-    item = QueueItem(fn, priority)
+    item = QueueItem(fn, priority, must_succeed=must_succeed)
     try:
-        if priority == 'high':
+        if item.must_succeed or priority == 'high':
             # wait_for reserved for a possible future bounded queue; unbounded today.
             await asyncio.wait_for(queue.put(item), timeout=_HIGH_DRAIN_TIMEOUT)
         else:
@@ -153,17 +170,22 @@ async def enqueue_write(fn: Callable[[], object], priority: str = 'low') -> bool
         _bump(enqueued=1)
         return True
     except asyncio.TimeoutError:
-        logger.error('Write queue timed out on high-priority write')
+        logger.error('Write queue timed out on must-succeed / high-priority write')
         return False
 
 
-async def enqueue_write_sync(fn: Callable[[], object], priority: str = 'low') -> bool:
+async def enqueue_write_sync(
+    fn: Callable[[], object],
+    priority: str = 'low',
+    *,
+    must_succeed: bool = False,
+) -> bool:
     """Synchronous version for use from non-async contexts.
 
     Creates a new event loop if needed (safe for sync callers in
     thread-pool or background tasks).
     """
-    return await enqueue_write(fn, priority)
+    return await enqueue_write(fn, priority, must_succeed=must_succeed)
 
 
 async def _drain_loop():
@@ -175,7 +197,7 @@ async def _drain_loop():
             item: QueueItem = await _write_queue.get()
             wait_ms = (time.monotonic() - item.enqueued_at) * 1000.0
             _bump(last_wait_ms=wait_ms, max_wait_ms=wait_ms, total_wait_ms=wait_ms)
-            if item.priority == 'low':
+            if item.priority == 'low' and not item.must_succeed:
                 elapsed = time.monotonic() - item.enqueued_at
                 if elapsed > _low_drop_after():
                     logger.info(

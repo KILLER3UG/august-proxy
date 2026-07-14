@@ -15,7 +15,7 @@ import os
 import uuid
 from pathlib import Path
 from app.lib.paths import dataPath
-from app.json_narrowing import as_str, as_list
+from app.json_narrowing import as_str, as_list, as_dict
 
 _mcpCleanupTasks: set[asyncio.Task] = set()
 MCP_CONFIG_FILE = 'mcp-servers.json'
@@ -42,16 +42,46 @@ def _loadConfig() -> dict[str, object]:
         return {}
 
 
+def _saveConfig() -> None:
+    """Persist the in-memory registry to mcp-servers.json."""
+    path = _mcpConfigPath()
+    servers_out: dict[str, object] = {}
+    for sid, srv in _servers.items():
+        if not isinstance(srv, dict):
+            continue
+        servers_out[sid] = {
+            'id': sid,
+            'name': srv.get('name', ''),
+            'command': srv.get('command', ''),
+            'args': list(as_list(srv.get('args'))),
+            'env': dict(as_dict(srv.get('env'), {})),  # type: ignore[arg-type]
+            'enabled': bool(srv.get('enabled', True)),
+            'transport': as_str(srv.get('transport'), 'stdio'),
+            'url': as_str(srv.get('url'), ''),
+        }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({'servers': servers_out}, indent=2), encoding='utf-8')
+
+
 def listRegisteredServers() -> list[dict[str, object]]:
     """List all registered MCP servers."""
     return list(_servers.values())
 
 
 def registerServer(
-    name: str, command: str, args: list[str] | None = None, env: dict[str, str] | None = None
+    name: str,
+    command: str,
+    args: list[str] | None = None,
+    env: dict[str, str] | None = None,
+    *,
+    enabled: bool = True,
+    transport: str = 'stdio',
+    url: str = '',
+    server_id: str | None = None,
+    persist: bool = True,
 ) -> dict[str, object]:
-    """Register an MCP server."""
-    serverId = f'mcp_{uuid.uuid4().hex[:8]}'
+    """Register an MCP server and optionally persist to disk."""
+    serverId = server_id or f'mcp_{uuid.uuid4().hex[:8]}'
     server: dict[str, object] = {
         'id': serverId,
         'name': name,
@@ -59,8 +89,16 @@ def registerServer(
         'args': args or [],
         'env': env or {},
         'status': 'registered',
+        'enabled': enabled,
+        'transport': transport or 'stdio',
+        'url': url or '',
     }
     _servers[serverId] = server
+    if persist:
+        try:
+            _saveConfig()
+        except OSError:
+            pass
     return server
 
 
@@ -73,20 +111,68 @@ def unregisterServer(serverId: str) -> bool:
     task.add_done_callback(_mcpCleanupTasks.discard)
     del _servers[serverId]
     _toolsCache.pop(serverId, None)
+    try:
+        _saveConfig()
+    except OSError:
+        pass
     return True
 
 
+async def _mcp_initialize(proc: asyncio.subprocess.Process) -> bool:
+    """Send MCP initialize + notifications/initialized handshake over stdio."""
+    if not proc.stdin or not proc.stdout:
+        return False
+    init_req = {
+        'jsonrpc': '2.0',
+        'id': 0,
+        'method': 'initialize',
+        'params': {
+            'protocolVersion': '2024-11-05',
+            'capabilities': {},
+            'clientInfo': {'name': 'august-proxy', 'version': '1.0.0'},
+        },
+    }
+    try:
+        proc.stdin.write((json.dumps(init_req) + '\n').encode())
+        await proc.stdin.drain()
+        raw = await asyncio.wait_for(proc.stdout.readline(), timeout=10)
+        if not raw:
+            return False
+        # Best-effort: accept any JSON-RPC response; some servers reply without id match.
+        try:
+            json.loads(raw.decode())
+        except json.JSONDecodeError:
+            return False
+        note = {'jsonrpc': '2.0', 'method': 'notifications/initialized'}
+        proc.stdin.write((json.dumps(note) + '\n').encode())
+        await proc.stdin.drain()
+        return True
+    except (asyncio.TimeoutError, ConnectionError, OSError):
+        return False
+
+
 async def _startServerProcess(serverId: str) -> asyncio.subprocess.Process | None:
-    """Start an MCP server subprocess."""
+    """Start an MCP server subprocess (stdio) with initialize handshake."""
     server = _servers.get(serverId)
     if not server:
         return None
     if serverId in _processes:
         return _processes[serverId]
+    transport = as_str(server.get('transport'), 'stdio')
+    if transport == 'sse' or transport == 'http':
+        # SSE/HTTP transport: store URL only; tools/list via HTTP JSON-RPC.
+        url = as_str(server.get('url'), '')
+        if not url:
+            server['status'] = 'error'
+            server['error'] = 'SSE/HTTP transport requires url'
+            return None
+        server['status'] = 'running'
+        server['transport'] = transport
+        return None  # no local process; discoverTools handles HTTP
     env = dict(os.environ)
     env_cfg = server.get('env', {})
     if isinstance(env_cfg, dict):
-        env.update(env_cfg)
+        env.update({str(k): str(v) for k, v in env_cfg.items()})
     args_list = [as_str(a) for a in as_list(server.get('args'))]
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -98,6 +184,12 @@ async def _startServerProcess(serverId: str) -> asyncio.subprocess.Process | Non
             env=env,
         )
         _processes[serverId] = proc
+        ok = await _mcp_initialize(proc)
+        if not ok:
+            # Some servers still work without strict handshake; mark running anyway.
+            server['handshake'] = 'skipped_or_failed'
+        else:
+            server['handshake'] = 'ok'
         server['status'] = 'running'
         return proc
     except (FileNotFoundError, PermissionError) as exc:
@@ -130,8 +222,39 @@ async def stopServer(serverId: str) -> bool:
     return True
 
 
+async def _discover_tools_http(serverId: str, url: str) -> list[dict[str, object]]:
+    """tools/list over HTTP JSON-RPC (SSE endpoint base URL)."""
+    import httpx
+
+    request = {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list', 'params': {}}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, json=request, headers={'Accept': 'application/json, text/event-stream'})
+            resp.raise_for_status()
+            data = resp.json()
+            tools = as_list(as_dict(data.get('result'), {}).get('tools'), [])
+            typed = [t for t in tools if isinstance(t, dict)]
+            _toolsCache[serverId] = typed  # type: ignore[assignment]
+            return typed  # type: ignore[return-value]
+    except Exception as exc:
+        srv = _servers.get(serverId)
+        if isinstance(srv, dict):
+            srv['error'] = str(exc)
+        return []
+
+
 async def discoverTools(serverId: str) -> list[dict[str, object]]:
-    """Call the tools/list RPC method on an MCP server."""
+    """Call the tools/list RPC method on an MCP server (stdio or HTTP)."""
+    server = _servers.get(serverId)
+    if not server:
+        return []
+    transport = as_str(server.get('transport'), 'stdio')
+    if transport in ('sse', 'http'):
+        url = as_str(server.get('url'), '')
+        if not url:
+            return []
+        return await _discover_tools_http(serverId, url)
+
     proc = await _startServerProcess(serverId)
     if not proc or not proc.stdin or (not proc.stdout):
         return []
@@ -234,6 +357,66 @@ async def refreshMcpTools() -> None:
             srv = _servers.get(serverId)
             if isinstance(srv, dict):
                 srv['error'] = str(exc)
+
+
+async def load_and_start_from_config() -> dict[str, object]:
+    """Load mcp-servers.json, register, auto-start enabled servers, discover tools.
+
+    Idempotent for already-registered ids. Returns a status summary for boot.
+    """
+    raw = _loadConfig()
+    servers_raw = raw.get('servers', raw)
+    loaded = 0
+    started = 0
+    errors: list[str] = []
+    if isinstance(servers_raw, dict):
+        items = list(servers_raw.items())
+    elif isinstance(servers_raw, list):
+        items = [(as_str(s.get('id'), f'mcp_{i}'), s) for i, s in enumerate(servers_raw) if isinstance(s, dict)]
+    else:
+        items = []
+
+    for sid, entry in items:
+        if not isinstance(entry, dict):
+            continue
+        name = as_str(entry.get('name'), sid)
+        command = as_str(entry.get('command'), '')
+        enabled = bool(entry.get('enabled', True))
+        transport = as_str(entry.get('transport'), 'stdio')
+        url = as_str(entry.get('url'), '')
+        args = [as_str(a) for a in as_list(entry.get('args'))]
+        env_raw = entry.get('env') if isinstance(entry.get('env'), dict) else {}
+        env = {str(k): str(v) for k, v in env_raw.items()} if isinstance(env_raw, dict) else {}
+        if sid in _servers:
+            continue
+        if not command and transport == 'stdio':
+            continue
+        registerServer(
+            name,
+            command,
+            args=args,
+            env=env,
+            enabled=enabled,
+            transport=transport,
+            url=url,
+            server_id=str(sid),
+            persist=False,
+        )
+        loaded += 1
+        if enabled:
+            try:
+                await _startServerProcess(str(sid))
+                await discoverTools(str(sid))
+                started += 1
+            except Exception as exc:
+                errors.append(f'{sid}: {exc}')
+    return {'ok': True, 'loaded': loaded, 'started': started, 'errors': errors, 'registered': len(_servers)}
+
+
+async def stop_all_servers() -> None:
+    """Stop every running MCP subprocess (shutdown path)."""
+    for sid in list(_processes.keys()):
+        await _stopServerProcess(sid)
 
 
 def isMcpToolName(name: str) -> bool:

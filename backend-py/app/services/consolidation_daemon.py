@@ -21,8 +21,47 @@ _CONSOLIDATIONInterval = 86400
 _RECENTProtectionCount = 20
 _SKILLDraftRateLimit = 1
 _stagingDir = os.path.join('data', 'skills', 'staging')
+_staging_dir = _stagingDir
 _activeSkillsDir = os.path.join('skills')
 _lastRun: dict[str, object] | None = None
+_last_run = None  # kept in sync by _persist_last_run for tests
+_LAST_RUN_KEY = 'cognitive:consolidation:last_run'
+
+
+def get_last_run() -> dict[str, object] | None:
+    """Return last consolidation summary (memory first, then process cache)."""
+    global _lastRun
+    if _lastRun is not None:
+        return dict(_lastRun)
+    try:
+        from app.services.memory_store import get_memory
+
+        stored = get_memory(_LAST_RUN_KEY)
+        if isinstance(stored, dict):
+            _lastRun = dict(stored)
+            return dict(stored)
+    except Exception:
+        pass
+    return None
+
+
+def _persist_last_run(stats: ConsolidationSummaryDict) -> None:
+    global _lastRun, _last_run
+    payload: dict[str, object] = {
+        'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        'merged': stats.get('merged', 0),
+        'promoted': stats.get('promoted', 0),
+        'deleted_stale': stats.get('deleted_stale', 0),
+        'errors': list(stats.get('errors') or []),
+    }
+    _lastRun = payload
+    _last_run = payload
+    try:
+        from app.services.brain_write_facade import save_kv
+
+        save_kv(_LAST_RUN_KEY, payload)
+    except Exception:
+        logger.debug('persist consolidation last_run failed', exc_info=True)
 
 
 def _sanitizeSkillName(name: str) -> str:
@@ -49,6 +88,11 @@ def _sanitizeSkillName(name: str) -> str:
     for p in parts[1:]:
         result += p[0].upper() + p[1:].lower() if len(p) > 0 else ''
     return result[:50]
+
+
+async def _call_hippocampus(prompt: str) -> str:
+    """Snake-case alias for tests and newer callers."""
+    return await _callHippocampus(prompt)
 
 
 async def _callHippocampus(prompt: str) -> str:
@@ -170,7 +214,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                 def _deleteMerged(i: object = rid) -> object:
                     return conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
 
-                await enqueue_write(_deleteMerged)
+                await enqueue_write(_deleteMerged, must_succeed=True)
             if mergedRule:
 
                 def _updateMerged(k: object = keepId, m: object = mergedRule) -> object:
@@ -178,7 +222,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                         "UPDATE learned_heuristics SET rule = ?, updated_at = datetime('now') WHERE id = ?", (m, k)
                     )
 
-                await enqueue_write(_updateMerged)
+                await enqueue_write(_updateMerged, must_succeed=True)
             stats['merged'] += 1
         for promoRaw in as_list(plan.get('promote'), []):
             promo = as_dict(promoRaw)
@@ -193,7 +237,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                     (k, v, 'auto-promoted', 'consolidation', 0.8),
                 )
 
-            await enqueue_write(_insertFact)
+            await enqueue_write(_insertFact, must_succeed=True)
             stats['promoted'] += 1
         for did in as_list(plan.get('delete'), []):
             if did in recentIds:
@@ -202,18 +246,12 @@ async def runConsolidation() -> ConsolidationSummaryDict:
             def _deleteStale(i: object = did) -> object:
                 return conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
 
-            await enqueue_write(_deleteStale)
+            await enqueue_write(_deleteStale, must_succeed=True)
             stats['deleted_stale'] += 1
     except Exception as exc:
         stats['errors'].append(str(exc))
         logger.error('Consolidation error: %s', exc)
-    global _lastRun
-    _lastRun = {
-        'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-        'merged': stats['merged'],
-        'promoted': stats['promoted'],
-        'deleted_stale': stats['deleted_stale'],
-    }
+    _persist_last_run(stats)
     from app.services.brain_event_bus import emitBrainEvent
 
     summaryParts = []

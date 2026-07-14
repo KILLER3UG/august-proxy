@@ -2,12 +2,14 @@
 August Live — voice + command execution router.
 
 Live reuses workbench sessions (same store as chat). No fake session ids.
-STT/TTS return clear errors when providers are not configured.
+STT/TTS use real OpenAI-compatible providers when configured in Live settings.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import base64
+
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from app.models.camel_base import CamelModel
 from app.services.workbench import workbench as wb
 
@@ -82,11 +84,7 @@ async def liveSession(body: LiveSessionBody) -> dict[str, object]:
 
 @router.post('/turn')
 async def liveTurn(body: LiveTurnBody) -> dict[str, object]:
-    """Run a Live turn through the workbench chat path (non-stream summary).
-
-    Full SSE streaming is available via ``POST /api/workbench/chat`` + stream.
-    This endpoint returns a synchronous text summary for voice UIs that poll.
-    """
+    """Run a Live turn through the workbench chat path (non-stream summary)."""
     transcript = (body.transcript or '').strip()
     if not transcript:
         raise HTTPException(status_code=400, detail='transcript is required')
@@ -156,7 +154,6 @@ async def liveTurn(body: LiveTurnBody) -> dict[str, object]:
         answer = ''
 
     if not answer:
-        # Honest partial: session is real; model reply needs API key.
         answer = (
             f'Heard: {transcript[:200]}. '
             'Configure a provider API key for full Live model replies, '
@@ -182,44 +179,58 @@ async def liveTurn(body: LiveTurnBody) -> dict[str, object]:
     }
 
 
-@router.post('/stt')
-async def liveStt(body: SttBody) -> dict[str, object]:
-    """Speech-to-text — honest fail when no STT provider is configured."""
-    from app.services.config_service import getConfig
-    from app.json_narrowing import as_dict
+async def _stt_from_bytes(audio: bytes, filename: str = 'audio.webm', content_type: str = 'audio/webm') -> dict[str, object]:
+    from app.services.live_speech import transcribe_audio
 
-    cfg = getConfig()
-    live = as_dict(cfg.get('live')) if cfg.get('live') is not None else {}
-    stt = as_dict(live.get('stt')) if live.get('stt') is not None else {}
-    if not stt.get('provider') and not stt.get('enabled'):
-        raise HTTPException(
-            status_code=501,
-            detail='STT not configured. Set live.stt in config or use browser Web Speech and POST /api/live/turn with transcript.',
-        )
-    # Provider-specific STT is not fully wired; refuse silent success.
-    raise HTTPException(
-        status_code=501,
-        detail=f"STT provider '{stt.get('provider')}' is configured but server-side STT is not implemented yet. Use browser STT → /api/live/turn.",
-    )
+    result = await transcribe_audio(audio, filename=filename, content_type=content_type)
+    if not result.get('ok'):
+        raise HTTPException(status_code=int(result.get('status') or 501), detail=str(result.get('error') or 'STT failed'))
+    return {
+        'transcript': result.get('transcript') or '',
+        'partial': False,
+        'model': result.get('model'),
+        'provider': result.get('provider'),
+    }
+
+
+@router.post('/stt')
+async def liveSttJson(body: SttBody) -> dict[str, object]:
+    """Speech-to-text from base64 audio (JSON body)."""
+    if not (body.audio_base64 or '').strip():
+        raise HTTPException(status_code=400, detail='audio_base64 is required (or POST multipart file to /api/live/stt/upload)')
+    try:
+        raw = base64.b64decode(body.audio_base64)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f'invalid base64 audio: {exc}') from exc
+    fmt = (body.format or 'webm').lstrip('.')
+    return await _stt_from_bytes(raw, filename=f'audio.{fmt}', content_type=f'audio/{fmt}')
+
+
+@router.post('/stt/upload')
+async def liveSttUpload(audio: UploadFile = File(...)) -> dict[str, object]:
+    """Speech-to-text from multipart file upload (browser MediaRecorder)."""
+    raw = await audio.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail='empty audio upload')
+    filename = audio.filename or 'audio.webm'
+    content_type = audio.content_type or 'audio/webm'
+    return await _stt_from_bytes(raw, filename=filename, content_type=content_type)
 
 
 @router.post('/tts')
 async def liveTts(body: TtsBody) -> dict[str, object]:
-    """Text-to-speech — honest fail when no TTS provider is configured."""
-    from app.services.config_service import getConfig
-    from app.json_narrowing import as_dict
+    """Text-to-speech — real OpenAI-compatible provider when configured."""
+    from app.services.live_speech import synthesize_speech
 
     if not (body.text or '').strip():
         raise HTTPException(status_code=400, detail='text is required')
-    cfg = getConfig()
-    live = as_dict(cfg.get('live')) if cfg.get('live') is not None else {}
-    tts = as_dict(live.get('tts')) if live.get('tts') is not None else {}
-    if not tts.get('provider') and not tts.get('enabled'):
-        raise HTTPException(
-            status_code=501,
-            detail='TTS not configured. Use browser speechSynthesis or set live.tts in config.',
-        )
-    raise HTTPException(
-        status_code=501,
-        detail=f"TTS provider '{tts.get('provider')}' is configured but server-side TTS is not implemented yet.",
-    )
+    result = await synthesize_speech(body.text.strip(), voice=body.voice or '')
+    if not result.get('ok'):
+        raise HTTPException(status_code=int(result.get('status') or 501), detail=str(result.get('error') or 'TTS failed'))
+    return {
+        'audio': result.get('audio'),
+        'format': result.get('format') or 'mp3',
+        'model': result.get('model'),
+        'voice': result.get('voice'),
+        'provider': result.get('provider'),
+    }

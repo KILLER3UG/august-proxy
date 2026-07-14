@@ -224,20 +224,53 @@ class Scheduler:
         self._idleTask: asyncio.Task | None = None
         self._stopped = False
         self._lastActivity: float = time.monotonic()
+        self._last_activity: float = self._lastActivity
         self._idleResets: int = 0
+        self._idle_resets: int = 0
 
-    def registerPeriodic(self, name: str, fn: Callable[[], Awaitable[None]], intervalSeconds: float) -> None:
-        """Register a task to run every `interval_seconds`."""
-        self._periodic.append((name, fn, intervalSeconds))
+    def registerPeriodic(
+        self,
+        name: str,
+        fn: Callable[[], Awaitable[None]],
+        intervalSeconds: float | None = None,
+        *,
+        interval_seconds: float | None = None,
+    ) -> None:
+        """Register a task to run every interval seconds."""
+        interval = intervalSeconds if intervalSeconds is not None else interval_seconds
+        if interval is None:
+            raise TypeError('intervalSeconds is required')
+        self._periodic.append((name, fn, float(interval)))
 
-    def registerIdle(self, name: str, fn: Callable[[], Awaitable[None]], idleThresholdSeconds: float = 300.0) -> None:
-        """Register a task to run when no activity for `idle_threshold_seconds`."""
-        self._idle.append((name, fn, idleThresholdSeconds))
+    def registerIdle(
+        self,
+        name: str,
+        fn: Callable[[], Awaitable[None]],
+        idleThresholdSeconds: float | None = None,
+        *,
+        idle_threshold_seconds: float | None = None,
+    ) -> None:
+        """Register a task to run when no activity for the idle threshold."""
+        threshold = idleThresholdSeconds if idleThresholdSeconds is not None else idle_threshold_seconds
+        if threshold is None:
+            threshold = 300.0
+        self._idle.append((name, fn, float(threshold)))
 
-    def recordActivity(self, sessionId: str) -> None:
+    # Snake_case aliases (tests + cognitive_boot)
+    register_periodic = registerPeriodic
+    register_idle = registerIdle
+    registerInterval = registerPeriodic
+    register_interval = registerPeriodic
+
+    def recordActivity(self, sessionId: str = '') -> None:
         """Reset the idle timer. Called by workbench on each turn."""
-        self._lastActivity = time.monotonic()
+        now = time.monotonic()
+        self._lastActivity = now
+        self._last_activity = now
         self._idleResets += 1
+        self._idle_resets += 1
+
+    record_activity = recordActivity
 
     async def start(self) -> None:
         """Boot the scheduler. Idempotent."""

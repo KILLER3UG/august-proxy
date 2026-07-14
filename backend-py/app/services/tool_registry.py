@@ -119,14 +119,79 @@ def getTool(name: str) -> dict[str, object] | None:
     return _registry.get(name)
 
 
-def listTools() -> list[dict[str, object]]:
-    """List all registered tools in Anthropic/OpenAI-compatible format."""
+def listRaw() -> list[dict[str, object]]:
+    """List all registered tools in raw (internal) format with keywords."""
+    return list(_registry.values())
+
+
+_DESKTOP_TOOL_PREFIXES = (
+    'desktop_',
+    'computer_',
+    'host_',
+)
+
+
+def is_host_agent_tool(name: str) -> bool:
+    """Tools that require a reachable host agent / local desktop automation."""
+    if not isinstance(name, str):
+        return False
+    return name.startswith(_DESKTOP_TOOL_PREFIXES) or name in (
+        'screenshot',
+        'computer_use',
+        'move_mouse',
+        'click_mouse',
+        'type_text',
+    )
+
+
+async def host_agent_available() -> bool:
+    """True when host agent URL is set and health responds, or local desktop is usable."""
+    import os
+
+    url = os.environ.get('AUGUST_HOST_AGENT_URL', '').strip()
+    if url:
+        try:
+            from app.services.host_agent import getHostInfo
+
+            info = await getHostInfo()
+            return bool(info.get('available'))
+        except Exception:
+            return False
+    # Local pyautogui path: available when import works (desktop_automation)
+    try:
+        import app.services.desktop_automation as da  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+def listTools(*, include_host_agent: bool | None = None) -> list[dict[str, object]]:
+    """List tools; hide host/desktop tools when host agent is unavailable.
+
+    ``include_host_agent``:
+      - None: best-effort sync check (env URL unset → keep local desktop tools)
+      - True/False: force include/exclude
+    """
+    show_host = include_host_agent
+    if show_host is None:
+        import os
+
+        url = os.environ.get('AUGUST_HOST_AGENT_URL', '').strip()
+        # When URL is set but we can't async-check here, hide until proven up
+        # (callers that need async should pass include_host_agent after await).
+        if url:
+            show_host = False
+        else:
+            show_host = True  # local desktop path
     result: list[dict[str, object]] = []
     for t in _registry.values():
         name = t.get('name')
+        assert isinstance(name, str)
+        if not show_host and is_host_agent_tool(name):
+            continue
         description = t.get('description')
         parameters = t.get('parameters')
-        assert isinstance(name, str)
         assert isinstance(description, str)
         assert isinstance(parameters, dict)
         result.append(
@@ -135,20 +200,26 @@ def listTools() -> list[dict[str, object]]:
     return result
 
 
-def listRaw() -> list[dict[str, object]]:
-    """List all registered tools in raw (internal) format with keywords."""
-    return list(_registry.values())
-
-
 async def dispatch(name: str, args: dict[str, object]) -> str:
     """Dispatch a tool call by name and arguments.
 
     v2: When called from a daemon (set via set_daemon_context), `run_command`
     rejects mutating commands per the daemon blocklist.
+    Host/desktop tools refuse when the host agent is configured but down.
     """
     tool = _registry.get(name)
     if not tool:
         return f'Error: Tool "{name}" not found.'
+    if is_host_agent_tool(name):
+        import os
+
+        if os.environ.get('AUGUST_HOST_AGENT_URL', '').strip():
+            if not await host_agent_available():
+                return (
+                    f'[UNAVAILABLE] Tool "{name}" requires the host agent, '
+                    'which is disconnected. Set AUGUST_HOST_AGENT_URL to a healthy '
+                    'agent or clear it to use local desktop automation.'
+                )
     if name == 'run_command' and isDaemonContext():
         command = args.get('command', '')
         assert isinstance(command, str)

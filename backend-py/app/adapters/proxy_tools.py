@@ -104,56 +104,97 @@ def get_managed_web_local_tool_name(toolName: str) -> str:
     return 'web_fetch'
 
 
-def _stub_is_tool_name(name: str) -> bool:
-    return False
+def _log_activity(category: str, detail: str) -> None:
+    try:
+        from app.services import logger as _tl
 
-
-def _stub_execute_tool(name: str, args: dict[str, object]) -> str:
-    return f'Stub: {name} not yet implemented'
-
-
-def _stub_log_activity(category: str, detail: str) -> None:
-    pass
+        _tl.emitLogEvent({'category': category.lower(), 'level': 'info', 'message': detail})
+    except Exception:
+        pass
 
 
 def _get_brain_config() -> dict[str, object]:
-    """Placeholder — returns defaults until brain-orchestrator is ported."""
-    return {'adapter_parallel_tools': False}
+    try:
+        from app.services.cognitive_config import get_features
+
+        features = get_features()
+        return {'adapter_parallel_tools': bool(features.get('tool_guardrails', False))}
+    except Exception:
+        return {'adapter_parallel_tools': False}
 
 
 def _record_tool_failure(info: dict[str, object]) -> None:
-    """Placeholder — no-op until tool-failure-memory is ported."""
-    pass
+    try:
+        from app.services.memory.tool_failure_memory import recordToolFailure
+
+        recordToolFailure(info)
+    except Exception:
+        pass
 
 
 def _validate_tool_arguments(
     toolCall: dict[str, object], toolDefinitions: list[dict[str, object]], messages: list[dict[str, object]]
 ) -> dict[str, object]:
-    """Placeholder — returns valid until validator is ported."""
+    """Basic validation: tool name present; unknown tools still allowed if managed."""
+    func = toolCall.get('function') if isinstance(toolCall.get('function'), dict) else toolCall
+    assert isinstance(func, dict)
+    name = func.get('name')
+    if not name or not isinstance(name, str):
+        return {'valid': False, 'error': 'missing tool name'}
     return {'valid': True}
 
 
 def _execute_tool_batch(
     toolCalls: list[dict[str, object]], executeOne: Callable[..., object], options: dict[str, object] | None = None
 ) -> list[object]:
-    """Placeholder — returns empty list until tool-executor is ported."""
-    return []
+    """Execute tool calls sequentially via executeOne."""
+    results: list[object] = []
+    for tc in toolCalls:
+        results.append(executeOne(tc))
+    return results
 
 
 def _is_tool_parallel_safe(toolName: str, args: dict[str, object] | None = None) -> bool:
-    """Placeholder — returns False until managed-tool-policy is ported."""
-    return False
+    try:
+        from app.services.workbench.managed_tool_policy import is_parallel_safe
+
+        return bool(is_parallel_safe(toolName, args or {}))
+    except Exception:
+        return False
 
 
 def is_proxy_managed_local_tool_name(name: str) -> bool:
     """Check if a tool name is proxy-managed."""
-    return (
-        is_managed_web_tool_name(name)
-        or is_managed_bash_tool_name(name)
-        or _stub_is_tool_name(name)
-        or _stub_is_tool_name(name)
-        or _stub_is_tool_name(name)
-    )
+    return is_managed_web_tool_name(name) or is_managed_bash_tool_name(name)
+
+
+def _registry_name_for_proxy(toolName: str) -> str:
+    """Map proxy/managed tool names to tool_registry names."""
+    if is_managed_web_tool_name(toolName):
+        return get_managed_web_local_tool_name(toolName)
+    if is_managed_bash_tool_name(toolName):
+        return 'run_command'
+    return toolName
+
+
+def _normalize_registry_args(registry_name: str, args: dict[str, object]) -> dict[str, object]:
+    """Map common proxy arg shapes onto registry handler kwargs."""
+    args = dict(args or {})
+    if registry_name == 'run_command':
+        if 'command' not in args:
+            for key in ('cmd', 'bash', 'script', 'input'):
+                if key in args:
+                    args['command'] = args[key]
+                    break
+    if registry_name == 'web_search':
+        if 'query' not in args and 'q' in args:
+            args['query'] = args['q']
+        if 'maxResults' not in args and 'max_results' in args:
+            args['maxResults'] = args['max_results']
+    if registry_name == 'web_fetch':
+        if 'url' not in args and 'uri' in args:
+            args['url'] = args['uri']
+    return args
 
 
 def remember_managed_local_tool_definitions(
@@ -280,22 +321,40 @@ async def execute_managed_proxy_tool(
     onProgress: Callable[[str], None] | None = None,
     parentSignal: object = None,
 ) -> object:
-    """Execute a managed proxy tool by dispatching to the correct backend.
+    """Execute a managed proxy tool via the real tool_registry.
 
-    Currently stubs all external service calls. Real implementations come
-    in Phases 3-5 (tool handlers, MCP client, etc.).
+    Never returns a fake ``Stub:`` success string. Unregistered tools
+    raise so the caller surfaces an honest error to the model.
     """
-    if is_managed_web_tool_name(toolName):
-        localName = get_managed_web_local_tool_name(toolName)
-        _stub_log_activity('WEB', f'{toolName} executed locally')
-        return _stub_execute_tool(localName, args or {})
-    if is_managed_bash_tool_name(toolName):
-        _stub_log_activity('BASH', f'{toolName} executed locally')
-        return _stub_execute_tool(toolName, args or {})
-    if _stub_is_tool_name(toolName):
-        _stub_log_activity('TOOL', f'{toolName} executed by proxy')
-        return _stub_execute_tool(toolName, args or {})
-    raise ValueError(f'Unsupported managed proxy tool: {toolName}')
+    if not is_proxy_managed_local_tool_name(toolName):
+        raise ValueError(f'Unsupported managed proxy tool: {toolName}')
+
+    registry_name = _registry_name_for_proxy(toolName)
+    normalized = _normalize_registry_args(registry_name, args or {})
+    if workspace_path and 'workspace_path' not in normalized and 'cwd' not in normalized:
+        # run_command may accept cwd; ignore if handler does not.
+        if registry_name == 'run_command':
+            normalized.setdefault('cwd', workspace_path)
+
+    try:
+        from app.services import tool_registry
+        from app.services.tool_registrations import register_all
+
+        if not tool_registry.get(registry_name):
+            register_all()
+
+        if onProgress:
+            onProgress(f'Executing {registry_name}')
+        _log_activity('TOOL', f'{toolName} → registry:{registry_name}')
+        result = await tool_registry.dispatch(registry_name, normalized)
+        if isinstance(result, str) and result.startswith('Error: Tool "') and 'not found' in result:
+            raise RuntimeError(result)
+        return result
+    except Exception as exc:
+        _record_tool_failure(
+            {'tool_name': toolName, 'args': normalized, 'error': str(exc), 'phase': 'proxy-managed-tool'}
+        )
+        raise
 
 
 async def execute_managed_openai_tool_calls(
@@ -327,7 +386,7 @@ async def execute_managed_openai_tool_calls(
         syntheticCall: dict[str, object] = {'function': {'name': toolName, 'arguments': argsRaw}}
         validation = _validate_tool_arguments(syntheticCall, knownTools, messages)
         if not validation.get('valid'):
-            _stub_log_activity('VALIDATOR', f"OpenAI tool '{toolName}' rejected: {validation.get('error')}")
+            _log_activity('VALIDATOR', f"OpenAI tool '{toolName}' rejected: {validation.get('error')}")
             results.append(
                 {
                     'tool_call_id': tc.get('id'),

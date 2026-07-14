@@ -1,22 +1,22 @@
 """Start optional cognitive background services during app lifespan.
 
-Controlled by ``config.json → auxiliary.cognitive_layers`` (and env overrides).
-Defaults favour keeping data planes warm without requiring a perfect config.
+Controlled by the single ``auxiliary.cognitive`` tree
+(see ``cognitive_config``). Defaults favour keeping data planes warm
+without requiring a perfect config.
 
 Services
 --------
 * **db_writer** queue worker
 * **cron scheduler** (scheduled-jobs.json)
-* **consolidation** sleep-cycle loop (interval, default 24h)
+* **consolidation** sleep-cycle loop (one path only: Cognitive Scheduler)
 * **workbench→brain backfill** on startup
-* **environment_watcher** only when explicitly enabled (needs a root path)
+* **environment_watcher** only when enabled (session-scoped attach)
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from typing import Any
 
 logger = logging.getLogger('cognitive_boot')
@@ -28,6 +28,8 @@ _status: dict[str, Any] = {
     'services': {},
     'errors': [],
 }
+_consolidation_lock = asyncio.Lock()
+_session_watchers: dict[str, object] = {}
 
 
 def get_boot_status() -> dict[str, object]:
@@ -35,6 +37,7 @@ def get_boot_status() -> dict[str, object]:
         'started': bool(_status.get('started')),
         'services': dict(_status.get('services') or {}),
         'errors': list(_status.get('errors') or []),
+        'session_watchers': list(_session_watchers.keys()),
     }
 
 
@@ -53,89 +56,12 @@ def record_user_activity(session_id: str = '') -> None:
             logger.debug('record_user_activity failed', exc_info=True)
 
 
-def _layers() -> dict[str, bool]:
-    """Resolve which cognitive services to start."""
-    # Env master switch: AUGUST_COGNITIVE_BOOT=0 disables everything optional.
-    master = os.environ.get('AUGUST_COGNITIVE_BOOT', '1').strip().lower()
-    if master in ('0', 'false', 'no', 'off'):
-        return {
-            'db_writer': False,
-            'cron_scheduler': False,
-            'consolidation': False,
-            'backfill_workbench': False,
-            'environment_watcher': False,
-        }
+async def run_consolidation_once() -> dict[str, object]:
+    """Run consolidation with a process-wide mutex (interval + idle share this)."""
+    async with _consolidation_lock:
+        from app.services.consolidation_daemon import runConsolidation
 
-    cfg_layers: dict[str, object] = {}
-    try:
-        from app.config import settings
-
-        aux = settings.config.get('auxiliary') if isinstance(settings.config, dict) else {}
-        if isinstance(aux, dict):
-            raw = aux.get('cognitive_layers')
-            if isinstance(raw, dict):
-                cfg_layers = raw
-    except Exception:
-        pass
-
-    def flag(name: str, default: bool) -> bool:
-        env_key = f'AUGUST_LAYER_{name.upper()}'
-        if env_key in os.environ:
-            return os.environ[env_key].strip().lower() in ('1', 'true', 'yes', 'on')
-        val = cfg_layers.get(name)
-        if isinstance(val, bool):
-            return val
-        return default
-
-    return {
-        # Lightweight / safe defaults ON so gaps stay closed without config.
-        'db_writer': flag('db_writer', True),
-        'cron_scheduler': flag('scheduler', True) or flag('cron_scheduler', True),
-        'consolidation': flag('consolidation', True) or flag('sleep_cycle', True),
-        'backfill_workbench': flag('backfill_workbench', True),
-        'environment_watcher': flag('environment_watcher', False),
-    }
-
-
-def _consolidation_interval_s() -> float:
-    env = os.environ.get('AUGUST_CONSOLIDATION_INTERVAL_S')
-    if env:
-        try:
-            return max(60.0, float(env))
-        except ValueError:
-            pass
-    try:
-        from app.config import settings
-
-        aux = settings.config.get('auxiliary') if isinstance(settings.config, dict) else {}
-        if isinstance(aux, dict):
-            raw = aux.get('consolidationIntervalS') or aux.get('consolidation_interval_s')
-            if raw is not None:
-                return max(60.0, float(raw))
-    except Exception:
-        pass
-    return 86400.0  # 24h
-
-
-async def _consolidation_loop(interval_s: float) -> None:
-    from app.services.consolidation_daemon import runConsolidation
-
-    logger.info('Consolidation loop started (interval=%.0fs)', interval_s)
-    # First run deferred by interval so startup stays fast; set
-    # AUGUST_CONSOLIDATION_RUN_ON_BOOT=1 to fire once immediately.
-    if os.environ.get('AUGUST_CONSOLIDATION_RUN_ON_BOOT', '').strip() in ('1', 'true', 'yes'):
-        try:
-            await runConsolidation()
-        except Exception:
-            logger.exception('consolidation on-boot run failed')
-    while True:
-        try:
-            await asyncio.sleep(interval_s)
-            await runConsolidation()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception('consolidation loop iteration failed')
+        return await runConsolidation()
 
 
 async def start_cognitive_services(app: object | None = None) -> dict[str, object]:
@@ -144,7 +70,10 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
     if _status.get('started'):
         return get_boot_status()
 
-    layers = _layers()
+    from app.services.cognitive_config import ensure_defaults, get_boot_layers, get_consolidation_interval_s
+
+    ensure_defaults()
+    layers = get_boot_layers()
     services: dict[str, object] = {}
     errors: list[str] = []
 
@@ -176,7 +105,7 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
     else:
         services['db_writer'] = {'skipped': True}
 
-    # 3) Cron job scheduler (scheduled-jobs.json)
+    # 3) Cron job scheduler (scheduled-jobs.json) — separate from cognitive idle/interval
     if layers.get('cron_scheduler'):
         try:
             from app.services.scheduler import startScheduler
@@ -191,35 +120,49 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
     else:
         services['cron_scheduler'] = {'skipped': True}
 
-    # 4) Consolidation sleep cycle
-    if layers.get('consolidation'):
-        try:
-            interval = _consolidation_interval_s()
-            t = asyncio.create_task(_consolidation_loop(interval), name='consolidation_loop')
-            _tasks.append(t)
-            services['consolidation'] = {'ok': True, 'interval_s': interval}
-        except Exception as exc:
-            logger.exception('consolidation loop start failed')
-            errors.append(f'consolidation: {exc}')
-            services['consolidation'] = {'ok': False, 'error': str(exc)}
-    else:
-        services['consolidation'] = {'skipped': True}
-
-    # 5) Cognitive Scheduler instance (idle hooks available for workbench)
+    # 4) One Cognitive Scheduler: interval consolidation + idle hook (mutex-deduped)
     try:
         from app.services.scheduler import Scheduler
+        import os
 
         _cognitive_scheduler = Scheduler()
-        # Optional: register consolidation as idle job when idle threshold hits
         if layers.get('consolidation'):
+            interval = get_consolidation_interval_s()
+
+            async def _interval_consolidate() -> None:
+                await run_consolidation_once()
+
+            # Prefer scheduler interval registration when available; else task.
+            if hasattr(_cognitive_scheduler, 'registerInterval'):
+                _cognitive_scheduler.registerInterval('consolidation', _interval_consolidate, interval)
+            else:
+                async def _consolidation_loop() -> None:
+                    if os.environ.get('AUGUST_CONSOLIDATION_RUN_ON_BOOT', '').strip() in ('1', 'true', 'yes'):
+                        try:
+                            await run_consolidation_once()
+                        except Exception:
+                            logger.exception('consolidation on-boot run failed')
+                    while True:
+                        try:
+                            await asyncio.sleep(interval)
+                            await run_consolidation_once()
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
+                            logger.exception('consolidation loop iteration failed')
+
+                t = asyncio.create_task(_consolidation_loop(), name='consolidation_loop')
+                _tasks.append(t)
 
             async def _idle_consolidate() -> None:
-                from app.services.consolidation_daemon import runConsolidation
-
-                await runConsolidation()
+                await run_consolidation_once()
 
             idle_s = float(os.environ.get('AUGUST_CONSOLIDATION_IDLE_S', '1800'))
             _cognitive_scheduler.registerIdle('consolidation_idle', _idle_consolidate, idle_s)
+            services['consolidation'] = {'ok': True, 'interval_s': interval, 'idle_s': idle_s}
+        else:
+            services['consolidation'] = {'skipped': True}
+
         await _cognitive_scheduler.start()
         services['cognitive_scheduler'] = {'ok': True}
         if app is not None and hasattr(app, 'state'):
@@ -228,12 +171,14 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
         logger.exception('cognitive Scheduler start failed')
         errors.append(f'cognitive_scheduler: {exc}')
         services['cognitive_scheduler'] = {'ok': False, 'error': str(exc)}
+        if 'consolidation' not in services:
+            services['consolidation'] = {'ok': False, 'error': str(exc)}
 
-    # 6) Environment watcher — only when flagged (needs workspace root later)
+    # 5) Environment watcher — session attach when workspacePath is set
     if layers.get('environment_watcher'):
         services['environment_watcher'] = {
             'ok': True,
-            'note': 'enabled; watchers attach per-session when workspacePath is set',
+            'note': 'enabled; attach via attach_session_watcher(session_id, workspace_path)',
         }
     else:
         services['environment_watcher'] = {'skipped': True}
@@ -248,6 +193,17 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
         errors.append(f'daemon_manager: {exc}')
         services['daemon_manager'] = {'ok': False, 'error': str(exc)}
 
+    # MCP: load durable config and auto-start enabled servers
+    try:
+        from app.services.tools.mcp_client import load_and_start_from_config
+
+        mcp_status = await load_and_start_from_config()
+        services['mcp'] = mcp_status
+    except Exception as exc:
+        logger.exception('MCP boot load failed')
+        errors.append(f'mcp: {exc}')
+        services['mcp'] = {'ok': False, 'error': str(exc)}
+
     _status['started'] = True
     _status['services'] = services
     _status['errors'] = errors
@@ -257,9 +213,71 @@ async def start_cognitive_services(app: object | None = None) -> dict[str, objec
     return get_boot_status()
 
 
+def attach_session_watcher(session_id: str, workspace_path: str) -> dict[str, object]:
+    """Start a session-scoped environment watcher and log events to SQLite.
+
+    No-op when environment_watcher boot flag is off or path is empty.
+    """
+    from app.services.cognitive_config import get_boot_layers
+
+    layers = get_boot_layers()
+    if not layers.get('environment_watcher'):
+        return {'ok': False, 'skipped': True, 'reason': 'environment_watcher disabled'}
+    if not session_id or not workspace_path:
+        return {'ok': False, 'skipped': True, 'reason': 'missing session_id or workspace_path'}
+    if session_id in _session_watchers:
+        return {'ok': True, 'already': True, 'session_id': session_id}
+
+    try:
+        from app.services.environment_watcher import EnvironmentWatcher, recordChange
+        from app.services.brain_write_facade import save_kv
+        import time
+
+        def _on_event(e: object) -> None:
+            path = getattr(e, 'path', '')
+            kind = getattr(e, 'kind', 'change')
+            ts = float(getattr(e, 'timestamp', time.time()))
+            source = getattr(e, 'source', 'watcher')
+            change = {'path': path, 'kind': kind, 'timestamp': ts, 'source': source}
+            recordChange(session_id, change)
+            try:
+                # Append-only log keyed by session (last 100 events).
+                from app.services.memory_store import get_memory
+
+                key = f'env_events:{session_id}'
+                existing = get_memory(key)
+                events = existing if isinstance(existing, list) else []
+                events = list(events)[-99:] + [change]
+                save_kv(key, events)
+            except Exception:
+                logger.debug('env event SQLite log failed', exc_info=True)
+
+        watcher = EnvironmentWatcher()
+        if hasattr(watcher, 'subscribe'):
+            watcher.subscribe(_on_event)
+        if hasattr(watcher, 'start'):
+            watcher.start(workspace_path)
+        _session_watchers[session_id] = watcher
+        return {'ok': True, 'session_id': session_id, 'workspace_path': workspace_path}
+    except Exception as exc:
+        logger.warning('attach_session_watcher failed: %s', exc)
+        return {'ok': False, 'error': str(exc)}
+
+
+def detach_session_watcher(session_id: str) -> None:
+    w = _session_watchers.pop(session_id, None)
+    if w is not None and hasattr(w, 'stop'):
+        try:
+            w.stop()  # type: ignore[operator]
+        except Exception:
+            pass
+
+
 async def stop_cognitive_services() -> None:
     """Cancel background tasks started by ``start_cognitive_services``."""
     global _cognitive_scheduler
+    for sid in list(_session_watchers.keys()):
+        detach_session_watcher(sid)
     for t in list(_tasks):
         t.cancel()
     for t in list(_tasks):
@@ -287,6 +305,13 @@ async def stop_cognitive_services() -> None:
         from app.services.db_writer import shutdown as db_shutdown
 
         await db_shutdown()
+    except Exception:
+        pass
+
+    try:
+        from app.services.tools.mcp_client import stop_all_servers
+
+        await stop_all_servers()
     except Exception:
         pass
 

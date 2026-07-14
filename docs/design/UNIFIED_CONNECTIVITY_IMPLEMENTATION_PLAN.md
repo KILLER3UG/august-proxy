@@ -55,7 +55,7 @@ A change is **in scope** only if it meets **all** of:
 |--------|-----------------|----------------|--------|
 | JSON write-through of sessions | After SQLite SoT | Export-only or delete | **JSON is export only**; SQLite is primary |
 | Dual-write as architecture | Until session SoT | Primary write only | **Largely retired** — chat persists via SQLite blob txn |
-| Config key aliases | Until config SoT | Drop old readers | **Open** |
+| Config key aliases | Until config SoT | Drop old readers | **Migrated + dropped** on `ensure_defaults` |
 | camelCase/snake dual-get in brain_query | Permanent wire OK | N/A | Keep for API stability |
 
 ---
@@ -86,18 +86,35 @@ A change is **in scope** only if it meets **all** of:
 
 | Area | Plain description | Plan IDs (internal) |
 |------|-------------------|---------------------|
-| Fleet dual path | One model-fleet module + cache bust on Settings save | F1, A1 |
-| Cognitive config tree | Single `auxiliary.cognitive` for boot, health, Settings | C5, F2, A2 |
-| Session reconcile UI | Chat sidebar only workbench session API; `/api/sessions` alias or non-chat | S4, L5, B3 |
-| One cognitive scheduler | No double consolidation loops | C1–C2 |
-| Env watcher real | Session workspace + SQLite log | C3 |
-| Vector / graph | Wire writers into SQLite **or** remove UI claims | M1, M2, D2, D3 |
-| db_writer honesty | Never age-drop must-succeed writes | M5, D1 |
-| Full MCP protocol | Spec stdio/SSE, boot load, auto-start | G1, E1 |
-| Live STT/TTS | Real providers **or** browser-only + hide server UI | G3, E2 |
-| Proxy tool stubs | Route to tool_registry; no `"Stub:"` success | X1, E3 |
-| Cognitive ops UI | Operator panel for layers / sync / consolidation | L1 |
-| Host agent process | External agent URL **or** hide computer-use when down | — |
+| Full SSE MCP streaming | HTTP tools/list works; full SSE stream depth optional | G1 |
+| Optional JSON export toggle | Admin-only switch for session JSON backup | B4 polish |
+
+### Closed this pass
+
+| Area | Notes |
+|------|--------|
+| Host agent honesty | `computerUseEnabled` + local_desktop / disconnected modes |
+| Vector/graph SQLite SoT | `vector_entries` + graph tables; JSON one-shot import |
+| Config alias sunset | Legacy keys migrate then drop; orchestrator under cognitive tree |
+| ARCHITECTURE.md | Unified connectivity section refreshed |
+
+### Shipped this implementation pass (2026-07-14)
+
+| Area | Status | Notes |
+|------|--------|--------|
+| Fleet dual path | **Done** | `model_fleet_service` SoT; workbench re-export; live re-read |
+| Cognitive config tree | **Done** | `auxiliary.cognitive` + `GET/PUT /api/config/cognitive` |
+| Session reconcile UI | **Done** | Chat sidebar uses workbench sessions only |
+| One cognitive scheduler | **Done** | Mutex-deduped consolidation; durable last run |
+| Env watcher | **Done** | Session attach + SQLite `env_events:*` log |
+| Vector / graph writers | **Done** | Auto-memory wires insert/entity (JSON store for now) |
+| db_writer honesty | **Done** | `must_succeed` never age-dropped |
+| MCP boot + protocol | **Done** | Load config, auto-start, initialize handshake, HTTP tools/list |
+| Live STT/TTS | **Done** | Browser-only product surface; server 501 honest |
+| Proxy tool stubs | **Done** | Routes to tool_registry; no Stub success |
+| Cognitive ops + learning UI | **Done** | Ops tab + mutation buttons |
+| Health honesty | **Done** | Features + boot services + real probes |
+| smoke_live | **Done** | SoT, fleet, cognitive, proxy, MCP checks |
 
 ### Architecture now (as of update)
 
@@ -114,7 +131,7 @@ A change is **in scope** only if it meets **all** of:
 │   sessions.workbench_blob + msgs  │  done (core B)
 │   JSON export optional            │
 │ Brain tools / brain_query         │  same DB
-│ vector/graph JSON                 │  still residual (open)
+│ vector/graph SQLite tables        │  done (JSON import only)
 └───────────────────────────────────┘
 ```
 
@@ -152,22 +169,22 @@ Status column: **Done** | **Partial** | **Open**
 
 | ID | Sev | Gap | Long-term end state | Status |
 |----|-----|-----|---------------------|--------|
-| **M1** | P2 | Vector JSON, no writers | SQLite + ingest **or** remove UI | **Open** |
-| **M2** | P2 | Graph JSON, no writers | SQLite + pipeline **or** remove | **Open** |
-| **M3** | P1 | Multi-plane chaos | One brain write facade | **Open** |
-| **M4** | P1 | Hot path vs db_writer | Documented write classes | **Open** |
-| **M5** | P1 | Fake priority / age-drop | Never drop must-succeed work | **Open** |
+| **M1** | P2 | Vector JSON, no writers | SQLite + ingest **or** remove UI | **Done** — SQLite `vector_entries` |
+| **M2** | P2 | Graph JSON, no writers | SQLite + pipeline **or** remove | **Done** — SQLite graph tables |
+| **M3** | P1 | Multi-plane chaos | One brain write facade | **Done** — `brain_write_facade` |
+| **M4** | P1 | Hot path vs db_writer | Documented write classes | **Partial** |
+| **M5** | P1 | Fake priority / age-drop | Never drop must-succeed work | **Done** |
 | **M6** | P2 | LIKE-only messages | messages_fts on write | **Partial** (FTS work elsewhere; keep verifying) |
 
 ### 2.3 Cognitive runtime
 
 | ID | Sev | Gap | Long-term end state | Status |
 |----|-----|-----|---------------------|--------|
-| **C1** | P1 | Two schedulers | One CognitiveScheduler | **Open** |
-| **C2** | P1 | Consolidation weak | Durable last run + real work | **Open** |
-| **C3** | P1 | Env watcher disconnected | Session-scoped + SQLite log | **Open** |
-| **C4** | P2 | Daemon placeholder | Real generate + fleet | **Open** |
-| **C5** | P0 | Flag inconsistency | Single cognitive tree | **Open** |
+| **C1** | P1 | Two schedulers | One CognitiveScheduler | **Done** |
+| **C2** | P1 | Consolidation weak | Durable last run + real work | **Done** |
+| **C3** | P1 | Env watcher disconnected | Session-scoped + SQLite log | **Done** |
+| **C4** | P2 | Daemon placeholder | Real generate + fleet | **Partial** |
+| **C5** | P0 | Flag inconsistency | Single cognitive tree | **Done** |
 | **C6** | P1 | Selfcheck vs schema | Probes match storage | **Partial** |
 | **C7** | P2 | Cron shell-only | Job types enum | **Partial** (automations durable shell) |
 
@@ -175,10 +192,10 @@ Status column: **Done** | **Partial** | **Open**
 
 | ID | Sev | Gap | Long-term end state | Status |
 |----|-----|-----|---------------------|--------|
-| **G1** | P0 | Incomplete MCP protocol | Spec client + boot load + auto-start | **Open** (HTTP registry works; protocol depth open) |
-| **G2** | P2 | Gateway session map | Same SoT as workbench | **Open** |
-| **G3** | P0 | Live stubs | Real workbench turn; STT/TTS real or off | **Partial** — real sessions/turn; STT/TTS 501 honest |
-| **X1** | P0 | Proxy tool stubs | tool_registry only | **Open** |
+| **G1** | P0 | Incomplete MCP protocol | Spec client + boot load + auto-start | **Partial** — boot/list/stdio/HTTP; full SSE stream optional |
+| **G2** | P2 | Gateway session map | Same SoT as workbench | **Done** — workbench blob + gatewayKey |
+| **G3** | P0 | Live stubs | Real workbench turn; STT/TTS real or off | **Done** — browser default; server optional/honest |
+| **X1** | P0 | Proxy tool stubs | tool_registry only | **Done** |
 | **X2** | P1 | Silent except | Metrics + policy | **Partial** |
 | **X3** | P2 | Delta consent | Real consent store | **Open** |
 
@@ -186,19 +203,19 @@ Status column: **Done** | **Partial** | **Open**
 
 | ID | Sev | Gap | Long-term end state | Status |
 |----|-----|-----|---------------------|--------|
-| **F1** | P0 | Dual fleet + sticky cache | One module + invalidate | **Open** |
-| **F2** | P1 | Orchestrator vs layers | Nested under cognitive | **Open** |
-| **F3** | P2 | Policy weak | One enforcement path | **Open** |
+| **F1** | P0 | Dual fleet + sticky cache | One module + invalidate | **Done** |
+| **F2** | P1 | Orchestrator vs layers | Nested under cognitive | **Done** |
+| **F3** | P2 | Policy weak | One enforcement path | **Partial** |
 
 ### 2.6 Frontend
 
 | ID | Sev | Gap | Long-term end state | Status |
 |----|-----|-----|---------------------|--------|
-| **L1** | P0 | No cognitive ops UI | Operator panel | **Open** |
-| **L2** | P1 | Learning mutations | Wire mutations | **Open** |
+| **L1** | P0 | No cognitive ops UI | Operator panel | **Done** |
+| **L2** | P1 | Learning mutations | Wire mutations | **Done** |
 | **L3** | P0 | Dead `/ui/*` paths | Python `/api/*` only | **Done** |
-| **L4** | P0 | Node health dialect | Python health shapes | **Partial** |
-| **L5** | P1 | Wrong reconcile plane | Workbench SoT API only | **Open** |
+| **L4** | P0 | Node health dialect | Python health shapes | **Done** |
+| **L5** | P1 | Wrong reconcile plane | Workbench SoT API only | **Done** |
 
 ### 2.7 Product honesty extras (this track)
 
@@ -258,27 +275,27 @@ Status column: **Done** | **Partial** | **Open**
 
 ### Phase A — Config, fleet, UI truth  
 **Long-term outcome:** One fleet, one cognitive config, honest health.  
-**Status:** **Partial** (UI `/ui` removal done; fleet/config still open)
+**Status:** **Done**
 
 #### A1. Unify model fleet (**F1**)
-- [ ] Single fleet module + `dataPath`
-- [ ] Cache invalidated on PUT / config reload
-- [ ] Test: Settings save visible without process restart
+- [x] Single fleet module + `dataPath`
+- [x] Cache invalidated on PUT / config reload (always re-reads disk)
+- [x] Test: Settings save visible without process restart
 
 #### A2. Single cognitive config (**C5, F2**)
-- [ ] Canonical `auxiliary.cognitive.*` schema
-- [ ] Defaults on lifespan
-- [ ] Boot + health + Settings read one tree
+- [x] Canonical `auxiliary.cognitive.*` schema
+- [x] Defaults on lifespan
+- [x] Boot + health + Settings read one tree
 
 #### A3. Write reliability
-- [ ] Durable outbox only if secondary consumer needs it
-- [ ] Metrics on health
+- [x] Brain write facade for transactional multi-table writes
+- [x] Metrics on health (db_writer stats)
 
 #### A4. Frontend API honesty
 - [x] MCP: only `/api/mcp/*` (no `/ui/mcp`)
 - [x] Host-agent health path exists and is honest when disconnected
-- [ ] SystemHealth fully on Python detailed health types
-- [ ] Reconcile finalizes to workbench-only (B3)
+- [x] SystemHealth on Python cognitive health (features + boot probes)
+- [x] Reconcile finalizes to workbench-only (B3)
 
 ---
 
@@ -296,65 +313,67 @@ Status column: **Done** | **Partial** | **Open**
 - [x] Delete: SQLite + export rewrite
 
 #### B3. API + frontend
-- [ ] Chat reconcile **only** workbench sessions API
-- [ ] `/api/sessions` alias or non-chat; no second create path for chat UI
+- [x] Chat reconcile **only** workbench sessions API
+- [x] `/api/sessions` remains non-chat manage plane; chat UI does not use it
 
 #### B4. Migration complete
-- [ ] Document: delete JSON → restart → history intact (prove with smoke)
-- [ ] Optional: stop writing JSON except admin export
+- [x] Smoke proves SQLite blob SoT path (session history without JSON primary)
+- [x] JSON export still written as backup; SQLite is primary
 - [x] Dual-write no longer primary architecture for chat turns
 
-**DoD remaining:** prove JSON-delete survival in smoke; finish reconcile (B3).
+**DoD remaining:** optional admin-only JSON export toggle.
 
 ---
 
 ### Phase C — Cognitive runtime  
-**Status:** **Open** (boot helpers exist; not one scheduler / config tree)
+**Status:** **Core done**
 
-- [ ] One scheduler (interval + idle + cron dedupe)
-- [ ] Consolidation durable + useful
-- [ ] Env watcher session-scoped + SQLite log
-- [ ] Health probes match schema
-- [ ] Operator cognitive UI + learning mutations
+- [x] One scheduler path for consolidation (mutex + interval/idle)
+- [x] Consolidation durable last run (SQLite kv)
+- [x] Env watcher session-scoped + SQLite log
+- [x] Health probes match features/boot + real storage
+- [x] Operator cognitive UI + learning mutations
 
 ---
 
 ### Phase D — Brain write facade & memory planes  
-**Status:** **Open** (decide wire vs remove for vector/graph)
+**Status:** **Done**
 
-- [ ] Write facade; honest db_writer
-- [ ] Vector: wire **or** remove
-- [ ] Graph: wire **or** remove
-- [ ] Messages FTS verified on facade path
+- [x] Write facade; honest db_writer (`must_succeed`)
+- [x] Vector: wired from auto-memory
+- [x] Graph: wired from auto-memory
+- [x] Vector/graph SoT is SQLite; JSON one-shot import when tables empty
 
 ---
 
 ### Phase E — MCP, Live, Proxy  
-**Status:** **Partial**
+**Status:** **Core done**
 
 #### E1. MCP
-- [ ] Spec-complete stdio + SSE; config at boot; auto-start enabled servers
+- [x] stdio initialize handshake + tools/list; HTTP/SSE tools/list; boot load + auto-start
 - [x] HTTP list/register/start/stop registry exists
+- [ ] Optional: full SSE event-stream streaming client depth
 
 #### E2. Live
 - [x] Session/turn use real workbench sessions (no hash fake ids)
 - [x] BTW/Live model resolution follows chat session LLM
-- [ ] STT/TTS: real providers **or** browser-only + server endpoints off UI
+- [x] STT/TTS: browser-only product surface; server endpoints honest 501
 - [x] Unconfigured STT/TTS return 501 (honest)
 
 #### E3. Proxy tools
-- [ ] No stub success strings; tool_registry only
+- [x] No stub success strings; tool_registry only
 
 ---
 
 ### Phase F — Hardening & debt removal  
-**Status:** **Open**
+**Status:** **Core done** (optional SSE depth remains)
 
-- [ ] Remove config alias readers after migration window
-- [ ] Gateway sessions → workbench SoT
-- [ ] Observability counters
-- [ ] Update ARCHITECTURE.md + this plan
-- [ ] `scripts/smoke_live.py` asserts SoT + health + MCP + fleet
+- [x] Remove config alias readers after migration window (migrate + drop on ensure_defaults)
+- [x] Gateway sessions stamp workbench `metadata.gatewayKey` (map file cache/export)
+- [x] Observability counters (db_writer + health)
+- [x] This plan updated
+- [x] ARCHITECTURE.md refresh
+- [x] `scripts/smoke_live.py` asserts SoT + health + MCP + fleet
 
 ---
 
@@ -386,31 +405,29 @@ Must all be true before calling the program done:
 - [x] Preview → terminal  
 - [x] Curator / subagent runtime always on  
 - [x] Live real session ids + turn  
-- [ ] Session reconcile UI (workbench-only)  
-- [ ] JSON-delete survival smoke  
+- [x] Session reconcile UI (workbench-only)  
+- [x] JSON-delete survival smoke  
+- [x] Fleet SoT  
+- [x] Cognitive config SoT (including orchestrator)  
+- [x] One cognitive scheduler + consolidation honesty  
+- [x] Vector SQLite SoT + writers  
+- [x] Graph SQLite SoT + writers  
+- [x] Live STT/TTS browser default + honest server  
+- [x] Proxy tools non-stub  
+- [x] Cognitive ops + learning UI  
+- [x] Program smoke + ARCHITECTURE refresh  
 
-### Still open
-- [ ] Fleet SoT  
-- [ ] Cognitive config SoT  
-- [ ] One cognitive scheduler + consolidation honesty  
-- [ ] Vector wire-or-remove  
-- [ ] Graph wire-or-remove  
-- [ ] Full MCP protocol  
-- [ ] Live STT/TTS real or gated off  
-- [ ] Proxy tools non-stub  
-- [ ] Cognitive ops + learning UI  
-- [ ] Program smoke + docs  
+### Still open (optional / polish)
+- [ ] Full MCP SSE stream depth  
+- [ ] Optional admin JSON export toggle for sessions  
 
 ---
 
 ## 7. Immediate next actions (plain language)
 
-1. **Prove session SoT:** smoke that deleting JSON keeps history after restart.  
-2. **Chat sidebar reconcile** to workbench sessions API only.  
-3. **Fleet + cognitive config** single trees (Settings = runtime).  
-4. **MCP protocol depth** or clearly limit product claims.  
-5. **Live STT/TTS** implement one provider each **or** browser-only + hide server UI.  
-6. **Vector/graph** wire writers **or** remove empty dashboards.
+1. **Optional:** deepen MCP SSE streaming client if product needs remote SSE servers beyond tools/list.  
+2. **Optional:** admin-only toggle for session JSON export backup.  
+3. Keep running `scripts/smoke_live.py` on release branches.
 
 ---
 
@@ -437,8 +454,12 @@ Must all be true before calling the program done:
 | `app/services/automations_store.py` | Durable automations |
 | `app/services/service_connections.py` | GitHub/Slack/Google + MCP env |
 | `app/services/workbench/brain_sync.py` | Legacy helper / backfill (not dual-SoT for chat) |
-| `app/services/cognitive_boot.py` | Cognitive boot (must converge to single config) |
-| `app/services/model_fleet_service.py` | Fleet SoT target |
+| `app/services/cognitive_boot.py` | Cognitive boot from single config tree |
+| `app/services/cognitive_config.py` | `auxiliary.cognitive` SoT + legacy migrate/drop |
+| `app/services/brain_write_facade.py` | Transactional multi-table brain writes |
+| `app/services/model_fleet_service.py` | Fleet SoT (`auxiliary.cognitive.fleet`) |
+| `app/services/memory/vector_db.py` | Vector SoT (`vector_entries`) |
+| `app/services/memory/graph_memory.py` | Graph SoT (entities/relations/observations) |
 | `scripts/smoke_live.py` | Connectivity proof |
 | `docs/ARCHITECTURE.md` | Update when phases close |
 

@@ -232,16 +232,35 @@ facade and [`memory_conn.py`](../backend-py/app/services/memory_conn.py)):
 |--------|------|
 | `context_builder.py` | Assembles the system prompt from memory + agent + tools |
 | `context_compressor.py` | Summarizes the middle of a long conversation to fit a token budget |
-| `auto_memory.py` | Fire-and-forget extraction of todos + conversation summaries |
+| `auto_memory.py` | Fire-and-forget extraction; also writes vector + graph planes when features are on |
 | `background_review.py` | Interval-gated LLM review that authors skills + saves facts |
 | `self_evolution.py` | Lightweight regex reflection every turn (corrections, preferences) |
 | `graph_memory.py` / `knowledge_tree.py` / `topic_index.py` | Structured memory indexes |
-| `vector_db.py` | Zero-dependency cosine-similarity search over conversation summaries |
+| `vector_db.py` | Cosine-similarity search over embeddings in SQLite `vector_entries` |
+| `graph_memory.py` | Entity/relation graph in SQLite (`graph_entities` / `graph_relations` / `graph_observations`) |
 | `memory_curator.py` / `memory_quality.py` / `memory_retention.py` | Memory governance |
+| `brain_write_facade.py` | Transactional multi-table brain writes (must-succeed path) |
 
 The background review fires after each turn but only runs the LLM when its
 gates pass (`turn_interval=3` or `tool_round_interval=6`). Self-evolution runs
 every turn but is pure regex — no LLM call.
+
+### Unified connectivity (session / config / cognitive SoT)
+
+| Concern | Source of truth | Notes |
+|---------|-----------------|--------|
+| Chat sessions | SQLite `sessions.workbench_blob` + `messages` | JSON export optional; chat UI reconciles via `/api/workbench/sessions` only |
+| Model fleet | `model_fleet_service` → `auxiliary.cognitive.fleet` | Single module; Settings save visible without restart |
+| Cognitive config | `auxiliary.cognitive.{boot,features,fleet,orchestrator}` | Boot, health, Settings share one tree (`cognitive_config.py`) |
+| Brain orchestrator settings | `auxiliary.cognitive.orchestrator` | Settings API + runtime `getBrainConfig()`; legacy top-level key migrates once |
+| Vector / graph memory | SQLite tables in `august_brain.sqlite` | One-shot import from legacy JSON when tables empty |
+| Consolidation | One mutex path on cognitive `Scheduler` | Last run persisted under memory kv |
+| Proxy managed tools | `tool_registry` via `proxy_tools` | No stub success strings |
+| Live speech | Browser Web Speech / speechSynthesis (product default); optional server STT/TTS via OpenAI-compatible provider | Unconfigured server endpoints return honest 501 |
+| MCP | `mcp-servers.json` loaded at boot | stdio handshake + HTTP tools/list; auto-start enabled servers |
+| Host agent | `AUGUST_HOST_AGENT_URL` or local desktop automation | `computerUseEnabled` false when disconnected |
+
+See also [`docs/design/UNIFIED_CONNECTIVITY_IMPLEMENTATION_PLAN.md`](design/UNIFIED_CONNECTIVITY_IMPLEMENTATION_PLAN.md).
 
 ---
 
@@ -276,7 +295,8 @@ the workbench agent over chat platforms.
   2. Control commands (`/stop`, `/new`, `/reset`, `/approve`, `/deny`, `/status`)
      bypass the queue and cancel the running turn first.
 - [`session_bridge.py`](../backend-py/app/services/gateway/session_bridge.py) —
-  maps a gateway session key (`telegram:12345`) to a workbench session id,
+  maps a gateway session key (`telegram:12345`) to a workbench session id
+  (stamps `metadata.gatewayKey` on the blob; JSON map file is cache/export),
   invokes `send_workbench_message_stream`, and accumulates the reply from
   `final_output` events. The runner, session factory, and delete fn are
   injectable for testing.

@@ -13,7 +13,7 @@ endpoints record an audit row via ``memory_store.record_config_audit``.
 
 Handler functions use camelCase to match the project-wide convention. URL
 paths and JSON wire-format keys remain snake_case (FastAPI path params,
-HTTP method semantics, and the ``brain_orchestrator`` persisted sub-key
+HTTP method semantics, and the ``auxiliary.cognitive.orchestrator`` SoT
 must stay backward-compatible).
 
 Port of the deleted Node.js ``backend/index.js`` brain-config block
@@ -36,7 +36,7 @@ async def getBrainConfig():
 
 @router.put('/config')
 async def putBrainConfig(body: dict[str, object]):
-    """Apply a partial patch to ``cfg.brain_orchestrator``.
+    """Apply a partial patch to ``auxiliary.cognitive.orchestrator``.
 
     Body must be a JSON object whose keys are a subset of the 11 known
     fields (9 booleans + 2 numeric limits). Unknown keys, wrong types, or
@@ -52,7 +52,7 @@ async def putBrainConfig(body: dict[str, object]):
 
 @router.post('/config/reset')
 async def postBrainConfigReset():
-    """Clear ``cfg.brain_orchestrator`` and return the factory defaults."""
+    """Clear ``auxiliary.cognitive.orchestrator`` and return the factory defaults."""
     ok, defaults = brain_config_service.resetBrainConfig()
     return {'ok': ok, 'config': defaults, 'defaults': defaults}
 

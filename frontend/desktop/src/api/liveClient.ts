@@ -46,10 +46,20 @@ export const liveClient = {
 
   async transcribe(audio: Blob): Promise<{ transcript: string; partial: boolean }> {
     const form = new FormData();
-    form.append('audio', audio);
+    form.append('audio', audio, 'audio.webm');
     try {
-      const resp = await fetch(`${API_BASE}/stt`, { method: 'POST', body: form });
-      if (!resp.ok) return { transcript: '', partial: false };
+      // Real server STT accepts multipart at /stt/upload
+      const resp = await fetch(`${API_BASE}/stt/upload`, { method: 'POST', body: form });
+      if (!resp.ok) {
+        // Fallback: base64 JSON body
+        const buf = await audio.arrayBuffer();
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        const j = await jsonRequest<{ transcript?: string }>('/stt', {
+          audioBase64: b64,
+          format: 'webm',
+        });
+        return { transcript: j?.transcript ?? '', partial: false };
+      }
       return (await resp.json()) as { transcript: string; partial: boolean };
     } catch {
       return { transcript: '', partial: false };

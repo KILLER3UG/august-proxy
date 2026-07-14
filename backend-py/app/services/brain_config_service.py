@@ -1,20 +1,13 @@
 """
 Brain Orchestrator settings-tab API service.
 
-Port of the deleted Node.js ``backend/services/memory/brain-orchestrator.js``
-settings helpers (commit 6d61910). Reads/writes the ``brain_orchestrator``
-sub-key of ``config.json`` and surfaces it to the frontend as the camelCase
-``BrainConfig`` shape the React ``BrainSettings`` page expects.
+Reads/writes ``config.json → auxiliary.cognitive.orchestrator`` (snake_case
+fields) and surfaces the camelCase ``BrainConfig`` shape the React
+``BrainSettings`` page expects.
 
-Persisted key (snake_case in JSON) is the existing one used by
-``app.services.memory.brain_orchestrator.get_brain_config``. The response keys
-(camelCase) match the ``BrainConfig`` TypeScript interface in
-``frontend/desktop/src/api/workbench.ts``.
-
-Naming convention: this module uses camelCase for functions and local
-variables (per project-wide convention). JSON wire keys and the
-``brain_orchestrator`` persisted sub-key remain snake_case for backward
-compatibility with the existing reader at ``brain_orchestrator.py:34``.
+One-shot migration from legacy top-level ``brain_orchestrator`` is handled by
+``cognitive_config.ensure_defaults``. Runtime readers never dual-read after
+that migrate.
 
 Response shapes (match the frontend types):
 
@@ -89,16 +82,31 @@ def getDefaults() -> BrainConfigDict:
 
 
 def _loadPersisted() -> dict[str, object]:
-    """Read ``cfg.brain_orchestrator`` (snake_case) from disk. Always fresh."""
-    cfg = config_service.getConfig()
-    val = cfg.get('brain_orchestrator')
-    return val if isinstance(val, dict) else {}
+    """Read ``auxiliary.cognitive.orchestrator`` (snake_case). Always fresh."""
+    from app.services.cognitive_config import ensure_defaults, get_cognitive
+
+    ensure_defaults()
+    tree = get_cognitive()
+    val = tree.get('orchestrator')
+    return dict(val) if isinstance(val, dict) else {}
 
 
 def _savePersisted(snakeCfg: dict[str, object]) -> None:
-    """Write snake_case ``cfg.brain_orchestrator`` and refresh the in-memory cache."""
+    """Replace ``auxiliary.cognitive.orchestrator``; drop legacy top-level key."""
+    from app.services.cognitive_config import ensure_defaults
+
+    ensure_defaults()
     cfg = config_service.getConfig()
-    cfg['brain_orchestrator'] = snakeCfg
+    aux = cfg.get('auxiliary')
+    if not isinstance(aux, dict):
+        aux = {}
+        cfg['auxiliary'] = aux
+    cognitive = aux.get('cognitive')
+    if not isinstance(cognitive, dict):
+        cognitive = {}
+        aux['cognitive'] = cognitive
+    cognitive['orchestrator'] = dict(snakeCfg)
+    cfg.pop('brain_orchestrator', None)
     config_service.saveConfig(cfg)
     settings.reload()
 
@@ -226,10 +234,7 @@ def saveBrainConfig(patch: dict[str, object]) -> tuple[bool, str, BrainConfigDic
 def resetBrainConfig() -> tuple[bool, BrainConfigDict]:
     """Drop the persisted override entirely. Returns (ok, defaults_camel)."""
     before = _loadPersisted()
-    cfg = config_service.getConfig()
-    cfg.pop('brain_orchestrator', None)
-    config_service.saveConfig(cfg)
-    settings.reload()
+    _savePersisted({})
     record_config_audit('brain', 'reset', 'user', before=before, after={})
     return (True, _defaultsCamel())
 
