@@ -218,7 +218,7 @@ def _runSelfcheck(flagKey: str) -> dict:
         elif flagKey == 'skill_genesis':
             from app.services.memory_store import _conn
 
-            row = _conn().execute("SELECT COUNT(*) FROM pendingSkills WHERE status = 'pending'").fetchone()
+            row = _conn().execute("SELECT COUNT(*) FROM pending_skills WHERE status = 'pending'").fetchone()
             n = int(row[0]) if row else 0
             return {'status': 'on & healthy', 'detail': f'{n} pending skill{("s" if n != 1 else "")}'}
         else:

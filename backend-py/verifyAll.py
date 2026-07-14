@@ -19,7 +19,8 @@ from app.services.memory_store import init, get_stats  # noqa: E402
 
 init()
 stats = get_stats()
-expected = ['memory_store', 'facts', 'proposals', 'sessions', 'messages', 'usage_events', 'session_topics']
+# get_stats returns camelCase wire keys for table counts
+expected = ['memoryStore', 'facts', 'proposals', 'sessions', 'messages', 'usageEvents', 'sessionTopics']
 for t in expected:
     if stats.get(t) is not None:
         print(f'  Table {t}: {stats[t]}')
@@ -31,14 +32,16 @@ conn = sqlite3.connect(str(dbPath))
 cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
 tables = {r[0] for r in cursor.fetchall()}
 for t in [
-    'learnedHeuristics',
-    'autoMemories',
-    'autoMemoriesFts',
-    'episodicTimeline',
+    'learned_heuristics',
+    'auto_memories',
+    'auto_memories_fts',
+    'episodic_timeline',
     'blackboard',
     'exams',
     'exam_questions',
     'exam_attempts',
+    'pending_skills',
+    'memory_store',
 ]:
     if t in tables:
         print(f'  {t}: OK')

@@ -48,7 +48,7 @@ async def brainStatus() -> dict[str, object]:
 
         stats = memory_store.get_stats() or {}
         dbPath = dataPath('august_brain.sqlite')
-        count = as_int(stats.get('memory_store'), 0)
+        count = as_int(stats.get('memoryStore') or stats.get('memory_store'), 0)
         return {'count': count, 'driver': 'sqlite', 'path': str(dbPath), 'available': True}
     except Exception as exc:
         return {'count': 0, 'driver': 'sqlite', 'path': '', 'available': False, 'error': str(exc)}
@@ -156,11 +156,11 @@ async def brainLearning() -> dict[str, object]:
         rows = (
             memory_store._conn()
             .execute(
-                'SELECT id, key, content, importance, createdAt FROM autoMemories ORDER BY importance DESC, id DESC LIMIT 20'
+                'SELECT id, key, content, importance, created_at FROM auto_memories ORDER BY importance DESC, id DESC LIMIT 20'
             )
             .fetchall()
         )
-        autoMemories = [dict(r) for r in rows]
+        autoMemories = [memory_store._row_as_wire(r) for r in rows]
     except Exception:
         pass
     sleepCycle: dict[str, object] = {'lastRunAt': None, 'lastMerged': 0, 'lastPromoted': 0, 'lastDeleted': 0}
@@ -179,11 +179,11 @@ async def brainLearning() -> dict[str, object]:
         rows = (
             memory_store._conn()
             .execute(
-                "SELECT id, name, description, triggerText, draftPath, sourceSessionId, createdAt, status, useCount FROM pendingSkills WHERE status = 'pending' ORDER BY createdAt DESC"
+                "SELECT id, name, description, trigger_text, draft_path, source_session_id, created_at, status, use_count FROM pending_skills WHERE status = 'pending' ORDER BY created_at DESC"
             )
             .fetchall()
         )
-        pendingSkills = [dict(r) for r in rows]
+        pendingSkills = [memory_store._row_as_wire(r) for r in rows]
     except Exception:
         pass
     try:
@@ -191,7 +191,7 @@ async def brainLearning() -> dict[str, object]:
     except Exception:
         topics = []
     lastTopic = topics[0].get('topic') if topics else None
-    lastAt = topics[0].get('classified_at') if topics else None
+    lastAt = (topics[0].get('classifiedAt') or topics[0].get('classified_at')) if topics else None
     backgroundReview = {'status': 'idle', 'lastStartedAt': lastAt, 'lastTopic': lastTopic}
     return {
         'status': 'idle',
@@ -337,7 +337,7 @@ async def brainGraph() -> dict[str, object]:
     entityTypes: dict[str, int] = {}
     try:
         stats = memory_store.get_stats() or {}
-        counts['entities'] = as_int(stats.get('memory_store'), 0)
+        counts['entities'] = as_int(stats.get('memoryStore') or stats.get('memory_store'), 0)
         counts['observations'] = as_int(stats.get('facts'), 0)
         entityTypes['memory'] = counts['entities']
         entityTypes['fact'] = counts['observations']

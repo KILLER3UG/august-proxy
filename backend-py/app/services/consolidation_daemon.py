@@ -135,9 +135,9 @@ async def runConsolidation() -> ConsolidationSummaryDict:
 
         conn = _conn()
         autoMemories = [
-            dict(r) for r in conn.execute('SELECT * FROM autoMemories ORDER BY id DESC LIMIT 100').fetchall()
+            dict(r) for r in conn.execute('SELECT * FROM auto_memories ORDER BY id DESC LIMIT 100').fetchall()
         ]
-        heuristics = [dict(r) for r in conn.execute('SELECT * FROM learnedHeuristics ORDER BY id DESC').fetchall()]
+        heuristics = [dict(r) for r in conn.execute('SELECT * FROM learned_heuristics ORDER BY id DESC').fetchall()]
         if not heuristics:
             return stats
         prompt = f"""Review these auto_memories and learned_heuristics. Return a JSON plan:\n{{'merge': [{{'keepId': int, 'removeIds': [int, ...], 'mergedRule': str}}],\n 'promote': [{{'pattern': str, 'factKey': str, 'factValue': str}}],\n 'delete': [int, ...]}}\nAuto memories ({len(autoMemories)}):\n{json.dumps(autoMemories, default=str)[:2000]}\n\nHeuristics ({len(heuristics)}):\n{json.dumps(heuristics, default=str)[:2000]}\n\nPreserve the most recent 20 rules (do not delete them).\nIf there's nothing to do, return {{"merge": [], "promote": [], "delete": []}}.\n"""
@@ -153,7 +153,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
         recentIds = {
             r['id']
             for r in conn.execute(
-                'SELECT id FROM learnedHeuristics ORDER BY id DESC LIMIT ?', (_RECENTProtectionCount,)
+                'SELECT id FROM learned_heuristics ORDER BY id DESC LIMIT ?', (_RECENTProtectionCount,)
             ).fetchall()
         }
         for mergeRaw in as_list(plan.get('merge'), []):
@@ -168,14 +168,14 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                     continue
 
                 def _deleteMerged(i: object = rid) -> object:
-                    return conn.execute('DELETE FROM learnedHeuristics WHERE id = ?', (i,))
+                    return conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
 
                 await enqueue_write(_deleteMerged)
             if mergedRule:
 
                 def _updateMerged(k: object = keepId, m: object = mergedRule) -> object:
                     return conn.execute(
-                        "UPDATE learnedHeuristics SET rule = ?, updatedAt = datetime('now') WHERE id = ?", (m, k)
+                        "UPDATE learned_heuristics SET rule = ?, updated_at = datetime('now') WHERE id = ?", (m, k)
                     )
 
                 await enqueue_write(_updateMerged)
@@ -189,7 +189,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
 
             def _insertFact(k: object = factKey, v: object = factValue) -> object:
                 return conn.execute(
-                    'INSERT INTO facts (factKey, factValue, category, source, confidence) VALUES (?, ?, ?, ?, ?)',
+                    'INSERT INTO facts (fact_key, fact_value, category, source, confidence) VALUES (?, ?, ?, ?, ?)',
                     (k, v, 'auto-promoted', 'consolidation', 0.8),
                 )
 
@@ -200,7 +200,7 @@ async def runConsolidation() -> ConsolidationSummaryDict:
                 continue
 
             def _deleteStale(i: object = did) -> object:
-                return conn.execute('DELETE FROM learnedHeuristics WHERE id = ?', (i,))
+                return conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (i,))
 
             await enqueue_write(_deleteStale)
             stats['deleted_stale'] += 1
@@ -252,7 +252,7 @@ async def draftSkillForSession(sessionId: str) -> str | None:
         conn = _conn()
         today = time.strftime('%Y-%m-%d')
         recent = conn.execute(
-            "SELECT COUNT(*) as c FROM pendingSkills WHERE createdAt >= ? AND createdBy = 'auto-gen'", (today,)
+            "SELECT COUNT(*) as c FROM pending_skills WHERE created_at >= ? AND created_by = 'auto-gen'", (today,)
         ).fetchone()
         if recent['c'] >= _SKILLDraftRateLimit:
             return None
@@ -281,7 +281,7 @@ async def draftSkillForSession(sessionId: str) -> str | None:
         with open(draftPath, 'w', encoding='utf-8') as f:
             f.write(content)
         conn.execute(
-            'INSERT INTO pendingSkills (name, description, triggerText, draftPath, sourceSessionId, sourceWorkflow) VALUES (?, ?, ?, ?, ?, ?)',
+            'INSERT INTO pending_skills (name, description, trigger_text, draft_path, source_session_id, source_workflow) VALUES (?, ?, ?, ?, ?, ?)',
             (name, description, trigger, draftPath, sessionId, summary[:500]),
         )
         conn.commit()
@@ -301,17 +301,17 @@ def approvePendingSkill(name: str) -> bool:
         from app.services.memory_store import _conn
 
         conn = _conn()
-        row = conn.execute('SELECT draftPath FROM pendingSkills WHERE name = ?', (name,)).fetchone()
+        row = conn.execute('SELECT draft_path FROM pending_skills WHERE name = ?', (name,)).fetchone()
         if not row:
             return False
-        draftPath = row['draftPath']
+        draftPath = row['draft_path']
         if not os.path.exists(draftPath):
             return False
         os.makedirs(_activeSkillsDir, exist_ok=True)
         import shutil
 
         shutil.move(draftPath, os.path.join(_activeSkillsDir, f'{name}.md'))
-        conn.execute("UPDATE pendingSkills SET status = 'approved' WHERE name = ?", (name,))
+        conn.execute("UPDATE pending_skills SET status = 'approved' WHERE name = ?", (name,))
         conn.commit()
         emitBrainEvent(
             category='skill_genesis',
@@ -334,13 +334,13 @@ def rejectPendingSkill(name: str) -> bool:
         from app.services.memory_store import _conn
 
         conn = _conn()
-        row = conn.execute('SELECT draftPath FROM pendingSkills WHERE name = ?', (name,)).fetchone()
+        row = conn.execute('SELECT draft_path FROM pending_skills WHERE name = ?', (name,)).fetchone()
         if not row:
             return False
-        draftPath = row['draftPath']
+        draftPath = row['draft_path']
         if os.path.exists(draftPath):
             os.remove(draftPath)
-        conn.execute("UPDATE pendingSkills SET status = 'rejected' WHERE name = ?", (name,))
+        conn.execute("UPDATE pending_skills SET status = 'rejected' WHERE name = ?", (name,))
         conn.commit()
         emitBrainEvent(
             category='skill_genesis',

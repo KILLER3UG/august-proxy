@@ -57,7 +57,7 @@ def setupDb():
 
     conn = _conn()
     conn.executescript(
-        '\n        PRAGMA foreign_keys = OFF;\n        DELETE FROM messages;\n        DELETE FROM sessions;\n        DELETE FROM usageEvents;\n        DELETE FROM lifecycle;\n        DELETE FROM proposals;\n        DELETE FROM sessionTopics;\n        DELETE FROM facts;\n        DELETE FROM memoryStore;\n        PRAGMA foreign_keys = ON;\n    '
+        '\n        PRAGMA foreign_keys = OFF;\n        DELETE FROM messages;\n        DELETE FROM sessions;\n        DELETE FROM usage_events;\n        DELETE FROM lifecycle;\n        DELETE FROM proposals;\n        DELETE FROM session_topics;\n        DELETE FROM facts;\n        DELETE FROM memory_store;\n        PRAGMA foreign_keys = ON;\n    '
     )
     conn.commit()
     close()

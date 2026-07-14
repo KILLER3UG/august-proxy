@@ -4,10 +4,10 @@ storage keys.
 
 After the snake_case → camelCase migration, the JSON-blob memory keys are
 ``coreMemory`` and ``userProfile`` (was ``core_memory`` and ``user_profile``).
-The SQLite tables ``learnedHeuristics`` / ``autoMemories`` are renamed by
-``scripts.migrateDbColumns.migrateDatabase``.
+Table schema renames (camel→snake) are handled by
+``app.services.schema_rename_migration`` via ``ensure_schema``.
 
-This module handles the JSON-blob side: scans ``memoryStore`` rows, finds
+This module handles the JSON-blob side: scans ``memory_store`` rows, finds
 legacy snake_case keys, and rewrites the row in place. It is safe to call
 on every startup (no-op if migration is already applied).
 """
@@ -38,10 +38,25 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _memory_table(conn: sqlite3.Connection) -> str:
+    """Prefer snake_case table; fall back to legacy camelCase for partial DBs."""
+    names = {
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('memory_store', 'memoryStore')"
+        ).fetchall()
+    }
+    if 'memory_store' in names:
+        return 'memory_store'
+    if 'memoryStore' in names:
+        return 'memoryStore'
+    return 'memory_store'
+
+
 def migrate_storage_keys(db_path: Path) -> None:
     """Walk the brain SQLite database and migrate legacy snake_case keys.
 
-    For each row in ``memoryStore`` whose ``key`` column matches a legacy
+    For each row in ``memory_store`` whose ``key`` column matches a legacy
     name, copy the ``value`` to the new key and delete the old row.
     Idempotent: re-running on an already-migrated DB is a no-op.
     """
@@ -49,15 +64,16 @@ def migrate_storage_keys(db_path: Path) -> None:
         return
     conn = _connect(db_path)
     try:
+        table = _memory_table(conn)
         for old_key, new_key in BLOB_KEY_RENAMES.items():
-            old_row = conn.execute('SELECT value FROM memoryStore WHERE key = ?', (old_key,)).fetchone()
+            old_row = conn.execute(f'SELECT value FROM {table} WHERE key = ?', (old_key,)).fetchone()
             if old_row is None:
                 continue
-            new_row = conn.execute('SELECT value FROM memoryStore WHERE key = ?', (new_key,)).fetchone()
+            new_row = conn.execute(f'SELECT value FROM {table} WHERE key = ?', (new_key,)).fetchone()
             if new_row is None:
-                conn.execute('INSERT INTO memoryStore(key, value) VALUES (?, ?)', (new_key, old_row['value']))
+                conn.execute(f'INSERT INTO {table}(key, value) VALUES (?, ?)', (new_key, old_row['value']))
                 logger.info('Migrated memory blob key: %s → %s', old_key, new_key)
-            conn.execute('DELETE FROM memoryStore WHERE key = ?', (old_key,))
+            conn.execute(f'DELETE FROM {table} WHERE key = ?', (old_key,))
         conn.commit()
     finally:
         conn.close()
@@ -73,8 +89,9 @@ def is_already_migrated(db_path: Path) -> bool:
         return True
     conn = _connect(db_path)
     try:
+        table = _memory_table(conn)
         for old_key in BLOB_KEY_RENAMES:
-            row = conn.execute('SELECT 1 FROM memoryStore WHERE key = ? LIMIT 1', (old_key,)).fetchone()
+            row = conn.execute(f'SELECT 1 FROM {table} WHERE key = ? LIMIT 1', (old_key,)).fetchone()
             if row is not None:
                 return False
         return True

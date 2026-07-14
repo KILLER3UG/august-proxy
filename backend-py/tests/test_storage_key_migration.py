@@ -2,18 +2,14 @@
 
 The startup migration renames legacy snake_case JSON-blob keys
 (``core_memory`` -> ``coreMemory``, ``user_profile`` -> ``userProfile``)
-in the ``memoryStore`` table. It is called from ``app/main.py:97`` on
+in the ``memory_store`` table. It is called from ``app/main.py`` on
 every startup.
 
-B22: prior to the fix, every SQL query in this module referenced
-``memory_store`` (snake_case), which does not exist as a table; the
-real table is ``memoryStore`` (camelCase, per
-``scripts/migrateDbColumns.py:74``). The module therefore raised
-``sqlite3.OperationalError: no such table: memory_store`` on every
-startup, silently caught by ``main.py``.
+Phase 4: brain tables are snake_case; this module queries ``memory_store``
+(with a fallback for legacy ``memoryStore`` if present).
 
-These tests build a small in-memory SQLite database with the
-``memoryStore`` schema and exercise the real (file-based) ``migrate_storage_keys``
+These tests build a small file SQLite database with the
+``memory_store`` schema and exercise the real ``migrate_storage_keys``
 function against it.
 """
 
@@ -32,19 +28,19 @@ from app.lib.storage_key_migration import (
 
 
 def _seedDb(path: Path, rows: dict[str, str]) -> None:
-    """Create a fresh SQLite DB with the ``memoryStore`` schema and seed rows."""
+    """Create a fresh SQLite DB with the ``memory_store`` schema and seed rows."""
     conn = sqlite3.connect(str(path))
     try:
         conn.executescript(
             """
-            CREATE TABLE memoryStore (
+            CREATE TABLE memory_store (
                 key   TEXT PRIMARY KEY,
                 value TEXT
             );
             """
         )
         for k, v in rows.items():
-            conn.execute('INSERT INTO memoryStore(key, value) VALUES (?, ?)', (k, v))
+            conn.execute('INSERT INTO memory_store(key, value) VALUES (?, ?)', (k, v))
         conn.commit()
     finally:
         conn.close()
@@ -53,10 +49,9 @@ def _seedDb(path: Path, rows: dict[str, str]) -> None:
 def _readKeys(path: Path) -> set[str]:
     conn = sqlite3.connect(str(path))
     try:
-        return {row[0] for row in conn.execute('SELECT key FROM memoryStore')}
+        return {row[0] for row in conn.execute('SELECT key FROM memory_store')}
     finally:
         conn.close()
-
 
 def testMigrateRenamesLegacyKeys(tmp_path: Path):
     db = tmp_path / 'brain.sqlite'
