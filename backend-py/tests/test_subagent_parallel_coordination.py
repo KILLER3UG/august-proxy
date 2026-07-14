@@ -300,7 +300,7 @@ def coord_env(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         modelResolver,
-        'resolveOrFallback',
+        'resolve_or_fallback',
         lambda *a, **kw: {'provider': 'stub-anthropic', 'model': 'stub-claude'},
     )
     import app.services.fallback_service as fallbackService

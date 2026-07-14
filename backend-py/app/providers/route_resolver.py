@@ -4,7 +4,7 @@ Route a model ID to the best provider.
 Port of backend/providers/route-resolver.js + model-resolver.js.
 
 NOTE: Alias resolution is handled by ``app.services.aliasMappingService``
-BEFORE this function is called. ``resolveForModel`` receives the already-
+BEFORE this function is called. ``resolve_for_model`` receives the already-
 resolved backend model ID and finds a provider that can serve it.
 
 Resolution order:
@@ -22,7 +22,7 @@ from app.json_narrowing import as_dict, as_list, as_str
 from app.providers import resolver
 
 
-def _hasCredentials(provider: dict[str, object]) -> bool:
+def _has_credentials(provider: dict[str, object]) -> bool:
     """Check if a provider has API credentials configured."""
     from app.providers.clients import getClient
 
@@ -32,7 +32,7 @@ def _hasCredentials(provider: dict[str, object]) -> bool:
     return client.resolveApiKey() is not None
 
 
-def resolveForModel(modelId: str, hint: Optional[str] = None) -> Optional[dict[str, object]]:
+def resolve_for_model(model_id: str, hint: Optional[str] = None) -> Optional[dict[str, object]]:
     """
     Find the best provider for a model ID.
 
@@ -43,7 +43,7 @@ def resolveForModel(modelId: str, hint: Optional[str] = None) -> Optional[dict[s
     providers = resolver.list_available()
     if not providers:
         return None
-    modelLower = modelId.lower()
+    modelLower = model_id.lower()
     if hint:
         for p in providers:
             if as_str(p.get('name'), '').lower() == hint.lower():
@@ -52,24 +52,24 @@ def resolveForModel(modelId: str, hint: Optional[str] = None) -> Optional[dict[s
                 return p
     for p in providers:
         profiles = as_dict(p.get('model_profiles'), {})
-        if (modelId in profiles or modelLower in {k.lower() for k in profiles}) and _hasCredentials(p):
+        if (model_id in profiles or modelLower in {k.lower() for k in profiles}) and _has_credentials(p):
             return p
     for p in providers:
         pname = as_str(p.get('name'), '').lower().split()[0]
-        if modelLower.startswith(pname) and _hasCredentials(p):
+        if modelLower.startswith(pname) and _has_credentials(p):
             return p
     for p in providers:
         profiles = as_dict(p.get('model_profiles'), {})
         for profileKey in profiles:
-            if profileKey != '*' and modelLower.startswith(profileKey.lower()) and _hasCredentials(p):
+            if profileKey != '*' and modelLower.startswith(profileKey.lower()) and _has_credentials(p):
                 return p
     for p in providers:
         for alias in as_list(p.get('aliases'), []):
-            if modelLower.startswith(as_str(alias).lower()) and _hasCredentials(p):
+            if modelLower.startswith(as_str(alias).lower()) and _has_credentials(p):
                 return p
     for p in providers:
         profiles = as_dict(p.get('model_profiles'), {})
-        if modelId in profiles or modelLower in {k.lower() for k in profiles}:
+        if model_id in profiles or modelLower in {k.lower() for k in profiles}:
             return p
     for p in providers:
         pname = as_str(p.get('name'), '').lower().split()[0]

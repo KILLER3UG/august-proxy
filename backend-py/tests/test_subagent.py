@@ -31,7 +31,7 @@ def testExecuteSubAgentRunsAndEmits(monkeypatch, isolatedData):
     import app.providers.model_resolver as mr
 
     monkeypatch.setattr(
-        mr, 'resolveOrFallback', lambda *a, **k: {'model': 'm', 'provider': 'Test', 'is_fallback': False}
+        mr, 'resolve_or_fallback', lambda *a, **k: {'model': 'm', 'provider': 'Test', 'is_fallback': False}
     )
     import app.services.fallback_service as fs
 

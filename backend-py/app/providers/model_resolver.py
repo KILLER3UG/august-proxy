@@ -53,7 +53,7 @@ def _normalize(input: object) -> str | None:
     return s or None
 
 
-def _hasCredentials(provider: dict[str, object]) -> bool:
+def _has_credentials(provider: dict[str, object]) -> bool:
     """Check if a provider has API credentials configured."""
     from app.providers.clients import getClient
 
@@ -94,7 +94,7 @@ def resolve(input: str | None, provider_hint: str | None = None, default_alias: 
         raise ModelResolutionError(str(exc), input=normalized, reason='no_matching_provider') from exc
 
 
-def resolveOrFallback(
+def resolve_or_fallback(
     input: str | None, provider_hint: str | None = None, default_alias: str | None = None
 ) -> dict[str, object] | None:
     """Resolve with graceful fallback to the active provider. Never raises.
@@ -123,15 +123,15 @@ def resolveOrFallback(
     return None
 
 
-def getAliasForModel(modelId: str) -> str | None:
+def get_alias_for_model(model_id: str) -> str | None:
     """Reverse lookup: given a raw model ID, find the alias that maps to it."""
-    return _getReverseAlias(modelId)
+    return _getReverseAlias(model_id)
 
 
-def listAliases() -> list[str]:
+def list_aliases() -> list[str]:
     """Return every alias the system knows about, deduplicated."""
     return listAliasNames()
 
 
-def getDefaultAlias() -> str:
+def get_default_alias() -> str:
     return DEFAULT_ALIAS

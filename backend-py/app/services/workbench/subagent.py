@@ -59,8 +59,8 @@ async def executeSubAgent(
     session: object, agentId: str, goal: str, context: str = '', emit: Callable[[dict[str, object]], None] | None = None
 ) -> dict[str, object]:
     """Execute a sub-agent task and return ``{jobId, agentId, status, result}``."""
-    from app.providers.model_resolver import resolveOrFallback
-    from app.providers.route_resolver import resolveForModel
+    from app.providers.model_resolver import resolve_or_fallback
+    from app.providers.route_resolver import resolve_for_model
     from app.services.fallback_service import getFallback
     from app.services.tool_registry import dispatch as dispatchTool
     from app.services.workbench.workbench import (
@@ -101,13 +101,13 @@ async def executeSubAgent(
             }
         )
     aliasHint = as_str(agent.get('modelAlias')) or parentAlias or ''
-    resolution = resolveOrFallback(aliasHint, provider_hint=getattr(session, 'provider', '') or '')
+    resolution = resolve_or_fallback(aliasHint, provider_hint=getattr(session, 'provider', '') or '')
     model = as_str((resolution or {}).get('model')) or aliasHint or ''
     providerName = as_str((resolution or {}).get('provider')) or ''
     isFallback = as_bool((resolution or {}).get('is_fallback', False))
     provider = _resolveWorkbenchProvider(providerName, model)
     if not provider:
-        provider = resolveForModel(model, providerName) if model else None
+        provider = resolve_for_model(model, providerName) if model else None
     fb = getFallback()
     if (
         as_bool(fb.get('enabled', False))
@@ -115,7 +115,7 @@ async def executeSubAgent(
         and (as_str(fb.get('provider')) or as_str(fb.get('model')))
     ):
         fbModel = as_str(fb.get('model')) or model
-        fbProvider = resolveForModel(fbModel, as_str(fb.get('provider')) or '')
+        fbProvider = resolve_for_model(fbModel, as_str(fb.get('provider')) or '')
         if fbProvider:
             provider = fbProvider
             model = fbModel

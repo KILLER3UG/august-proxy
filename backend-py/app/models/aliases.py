@@ -33,7 +33,7 @@ that makes the proxy completely transparent to the client.
 Resolution order (see aliasMappingService.py):
 1. User-defined alias (config.json ``modelAliases``) → targetProvider + targetModel
 2. Built-in public alias (identity, e.g. ``claude-sonnet-4-6`` → itself)
-3. Direct provider routing (``resolveForModel`` credential-aware)
+3. Direct provider routing (``resolve_for_model`` credential-aware)
 4. Fallback to active provider
 """
 

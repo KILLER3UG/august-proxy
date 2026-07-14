@@ -74,10 +74,10 @@ def configureFallback(
 
 def testFallback(model: str) -> dict[str, object]:
     """Probe resolution of a model id without saving anything."""
-    from app.providers.model_resolver import resolveOrFallback
+    from app.providers.model_resolver import resolve_or_fallback
 
     try:
-        result = resolveOrFallback(model)
+        result = resolve_or_fallback(model)
     except Exception as exc:
         return {'ok': False, 'error': str(exc), 'model': model}
     if not result:

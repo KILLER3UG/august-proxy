@@ -30,7 +30,7 @@ Example::
 Resolution order (documented here so developers don't need to hunt):
 1. User-defined alias (``config.json modelAliases``) → targetProvider + targetModel
 2. Built-in public alias (identity, e.g. ``claude-sonnet-4-6`` → itself)
-3. Direct provider routing (``resolveForModel`` credential-aware)
+3. Direct provider routing (``resolve_for_model`` credential-aware)
 4. Fallback to active provider
 """
 
@@ -41,7 +41,7 @@ import logging
 from app.config import settings
 from app.models.aliases import AliasMapping, AliasResolutionResult
 from app.providers import resolver as providerResolver
-from app.providers.route_resolver import resolveForModel
+from app.providers.route_resolver import resolve_for_model
 from app.json_narrowing import as_str
 
 logger = logging.getLogger(__name__)
@@ -134,7 +134,7 @@ def resolveAlias(
     1. User-defined alias (``config.json modelAliases``) — exact match
        → uses ``targetProvider`` + ``targetModel`` from the alias
     2. Built-in public alias (identity, e.g. ``claude-sonnet-4-6`` → itself)
-    3. Direct provider routing (``resolveForModel`` credential-aware)
+    3. Direct provider routing (``resolve_for_model`` credential-aware)
     4. Fallback to default alias or active provider
 
     Args:
@@ -157,7 +157,7 @@ def resolveAlias(
     # feature: "display claude-sonnet, route to deepseek-chat".
     userAlias = _findUserAlias(normalized)
     if userAlias is not None and userAlias.target_model:
-        routed = resolveForModel(
+        routed = resolve_for_model(
             userAlias.target_model,
             hint=userAlias.target_provider or provider_hint,
         )
@@ -176,7 +176,7 @@ def resolveAlias(
             # Canonical Claude model IDs map to themselves. This ensures clients
             # using official model names work even without a user-defined alias.
     if normalized in BUILTIN_PUBLIC_ALIASES:
-        routed = resolveForModel(normalized, hint=provider_hint)
+        routed = resolve_for_model(normalized, hint=provider_hint)
         if routed is not None and _hasCredentials(routed):
             return AliasResolutionResult(
                 alias=normalized,
@@ -190,7 +190,7 @@ def resolveAlias(
             # ── Step 3: Direct provider routing ─────────────────────────────────
             # If the input looks like a raw model ID (not an alias), try to route
             # it directly to a provider that supports it.
-    routed = resolveForModel(normalized, hint=provider_hint)
+    routed = resolve_for_model(normalized, hint=provider_hint)
     if routed is not None and _hasCredentials(routed):
         return AliasResolutionResult(
             alias=normalized,
