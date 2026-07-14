@@ -94,32 +94,36 @@ async def test_chat_stages_parallel_vs_serial():
     from app.services.workbench.chat_stages import run_regular_tools_stage
 
     order: list[str] = []
+    concurrent = 0
+    max_concurrent = 0
 
     async def run_one(name: str, _inp: dict, tid: str) -> dict:
+        nonlocal concurrent, max_concurrent
         order.append(name)
-        await asyncio.sleep(0.015)
+        concurrent += 1
+        max_concurrent = max(max_concurrent, concurrent)
+        await asyncio.sleep(0.02)
+        concurrent -= 1
         return {'tool_use_id': tid, 'role': 'tool', 'content': name}
 
     pending = [
         ('list_skills', {}, 'a'),
         ('memory_search', {}, 'b'),
     ]
-    t0 = asyncio.get_event_loop().time()
+    max_concurrent = 0
     out = await run_regular_tools_stage(pending, run_one)
-    elapsed = asyncio.get_event_loop().time() - t0
     assert len(out) == 2
-    assert elapsed < 0.045  # parallel path (two ~15ms sleeps concurrent)
+    assert max_concurrent >= 2  # all-read-only batch runs concurrently
 
     order.clear()
+    max_concurrent = 0
     pending_mut = [
         ('write_file', {}, 'c'),
         ('list_skills', {}, 'd'),
     ]
-    t1 = asyncio.get_event_loop().time()
     out2 = await run_regular_tools_stage(pending_mut, run_one)
-    elapsed2 = asyncio.get_event_loop().time() - t1
     assert len(out2) == 2
-    assert elapsed2 >= 0.025  # serial when any non-safe
+    assert max_concurrent == 1  # any non-safe → fully serial
     assert order == ['write_file', 'list_skills']
 
 
