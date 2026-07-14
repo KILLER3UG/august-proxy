@@ -169,12 +169,13 @@ async def call_anthropic_workbench(
 ) -> dict[str, object]:
     """Call an Anthropic-format model with progressive streaming.
 
-    Emits ``thinking``, ``final_output``, and ``tool_use`` events as
-    tokens arrive. Returns the full aggregated response dict with
-    ``content``, ``text``, ``thinking``, and ``tool_uses`` keys.
+    Emits ``thinking`` / ``finalOutput`` as tokens arrive. Returns the full
+    aggregated response dict with ``content``, ``text``, ``thinking``, and
+    ``tool_uses`` keys.
     """
     from app.adapters.anthropic import buildAnthropicUpstreamRequest
     from app.providers.clients import getClient
+    from app.services.workbench.stream_translate import AnthropicWorkbenchStreamAggregator
 
     if not provider:
         provider = resolve_workbench_provider('', model)
@@ -197,88 +198,15 @@ async def call_anthropic_workbench(
     thinkingBudget = effort_to_thinking_budget(effort)
     if thinkingBudget > 0 and supports_thinking(provider, model):
         body['thinking'] = {'type': 'enabled', 'budget_tokens': thinkingBudget}
-    contentBlocks: list[dict[str, object]] = []
-    accumulatedText = ''
-    accumulatedThinking = ''
-    toolUses: list[dict[str, object]] = []
-    currentToolBlock: dict[str, object] | None = None
-    currentToolInputParts: list[str] = []
-    usage: dict[str, int] = {}
+    agg = AnthropicWorkbenchStreamAggregator(emit=emit)
     try:
         async for event in client.messages_stream(body):
-            eventType = event.get('_event_type', '')
-            if eventType == 'content_block_start':
-                block = as_dict(event.get('content_block', {}))
-                blockType = block.get('type', '')
-                if blockType == 'tool_use':
-                    currentToolBlock = {
-                        'type': 'tool_use',
-                        'id': block.get('id', f'toolu_{uuid.uuid4().hex[:16]}'),
-                        'name': block.get('name', ''),
-                        'input': {},
-                    }
-                    currentToolInputParts = []
-                elif blockType == 'text':
-                    text = as_str(block.get('text', ''))
-                    if text:
-                        accumulatedText += text
-                        if emit:
-                            emit({'type': 'finalOutput', 'content': text})
-                elif blockType == 'thinking':
-                    text = as_str(block.get('thinking', ''))
-                    if text:
-                        accumulatedThinking += text
-                        if emit:
-                            emit({'type': 'thinking', 'content': text})
-            elif eventType == 'content_block_delta':
-                delta = as_dict(event.get('delta', {}))
-                deltaType = delta.get('type', '')
-                if deltaType == 'text_delta':
-                    text = as_str(delta.get('text', ''))
-                    if text:
-                        accumulatedText += text
-                        if emit:
-                            emit({'type': 'finalOutput', 'content': text})
-                elif deltaType == 'thinking_delta':
-                    text = as_str(delta.get('thinking', ''))
-                    if text:
-                        accumulatedThinking += text
-                        if emit:
-                            emit({'type': 'thinking', 'content': text})
-                elif deltaType == 'input_json_delta':
-                    currentToolInputParts.append(as_str(delta.get('partial_json', '')))
-            elif eventType == 'content_block_stop':
-                if currentToolBlock:
-                    raw = ''.join(currentToolInputParts)
-                    if raw:
-                        try:
-                            currentToolBlock['input'] = json.loads(raw)
-                        except json.JSONDecodeError:
-                            currentToolBlock['input'] = {'_raw': raw}
-                    toolUses.append(currentToolBlock)
-                    currentToolBlock = None
-                    currentToolInputParts = []
-            elif eventType == 'message_delta':
-                msgUsage = as_dict(event.get('usage', {}))
-                if msgUsage:
-                    usage['input_tokens'] = as_int(msgUsage.get('input_tokens', 0))
-                    usage['output_tokens'] = as_int(msgUsage.get('output_tokens', 0))
-            elif eventType == 'error':
-                return {'error': f'Stream error: {event}'}
+            agg.on_event(event)
+            if agg.error:
+                return {'error': agg.error}
     except Exception as exc:
         return {'error': str(exc)}
-    if accumulatedThinking:
-        contentBlocks.append({'type': 'thinking', 'text': accumulatedThinking})
-    if accumulatedText:
-        contentBlocks.append({'type': 'text', 'text': accumulatedText})
-    contentBlocks.extend(toolUses)
-    return {
-        'content': contentBlocks,
-        'text': accumulatedText,
-        'thinking': accumulatedThinking,
-        'tool_uses': toolUses,
-        'usage': usage,
-    }
+    return agg.result()
 
 
 async def call_openai_workbench(
