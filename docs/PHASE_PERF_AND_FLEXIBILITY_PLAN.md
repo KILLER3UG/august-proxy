@@ -1,8 +1,8 @@
 # Phase P — True Performance + Feature Flexibility Plan
 
-> **Status (2026-07-14):** **P0 DONE** (baselines recorded in
-> `docs/REFACTOR_PROGRESS.md`). **P1–P5 not approved** — need a separate
-> go/no-go after reviewing numbers.
+> **Status (2026-07-14):** **P0 CLOSED** after review-gap closure (frontend
+> stream marks, db_writer contention, all six indexes EXPLAIN-proven).
+> Numbers in `docs/REFACTOR_PROGRESS.md`. **P1–P5 not approved.**
 >
 > **Why a plan exists:** Phases 3–4 improved structure and naming. They did
 > **not** prove end-to-end speed. *If* baselines show product-side waste,

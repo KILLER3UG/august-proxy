@@ -346,6 +346,9 @@ instead of reinventing spot-checks (do **not** treat as disposable one-offs):
 | [`backend-py/scripts/_verify_fts_sync.py`](../backend-py/scripts/_verify_fts_sync.py) | Assert FTS5 virtual tables cover base rows (rowid + sample MATCH). |
 | [`backend-py/scripts/_spotcheck_schema.py`](../backend-py/scripts/_spotcheck_schema.py) | Dual camel/snake inventory + data-coverage checks during rename work. |
 | [`backend-py/scripts/_diff_memory_store_conflicts.py`](../backend-py/scripts/_diff_memory_store_conflicts.py) | Content-diff dual blob keys (`agent_jobs`, `self_evolution_log`) — not timestamp-only. |
+| [`backend-py/scripts/_check_phase4_indexes.py`](../backend-py/scripts/_check_phase4_indexes.py) | Assert all six Phase-4 indexes exist + EXPLAIN sample queries. |
+| [`backend-py/scripts/p0_explain_plans.py`](../backend-py/scripts/p0_explain_plans.py) | P0 EXPLAIN QUERY PLAN pack for hot paths. |
+| [`frontend/desktop/src/lib/stream-perf.ts`](../frontend/desktop/src/lib/stream-perf.ts) | P0.4 stream TTFT/flush marks (`localStorage.august_stream_perf=1`). |
 
 **Tests must not touch the live brain.** `tests/conftest.py` makes `isolatedData`
 **autouse** (temp `AUGUST_DATA_DIR` + `AUGUST_BRAIN_SQLITE_FILE`). Do not remove

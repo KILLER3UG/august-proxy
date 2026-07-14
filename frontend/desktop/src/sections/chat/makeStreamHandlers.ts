@@ -34,6 +34,12 @@ import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
 import { applyToolProgress } from '@/lib/tool-progress';
 import { pushBrowserAction } from '@/lib/browser-store';
 import { applySubagentEvent } from './chat-stream-manager';
+import {
+  streamPerfContent,
+  streamPerfEnd,
+  streamPerfFlush,
+  streamPerfStart,
+} from '@/lib/stream-perf';
 
 export interface MakeStreamHandlersOptions {
   sessionId: string;
@@ -139,6 +145,8 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   setSubagentPrompts(new Map());
 
   // ---- update / scheduleUpdate (throttled flush to React state) ----
+  // P0.4: streamPerf* marks when localStorage august_stream_perf=1
+  streamPerfStart(sessionId);
   let updateTimeout: number | null = null;
   let lastFlushAt = 0;
   const update = () => {
@@ -157,10 +165,12 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
   const flushUpdate = () => {
     updateTimeout = null;
     lastFlushAt = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-    update();
+    streamPerfFlush(sessionId, update);
   };
   const scheduleUpdate = () => {
     if (updateTimeout !== null) return;
+    // First content for TTFT: any scheduled UI update implies stream content arrived
+    streamPerfContent(sessionId);
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     const delay = Math.max(0, streamUpdateIntervalMs - (now - lastFlushAt));
     updateTimeout = window.setTimeout(flushUpdate, delay);
@@ -176,6 +186,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
     if (finished) return;
     finished = true;
     cancelPendingUpdate();
+    streamPerfEnd(sessionId);
     setMessages(prev => prev.map(msg =>
       msg.id === assistantMsgId ? {
         ...msg,

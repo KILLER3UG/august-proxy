@@ -198,30 +198,136 @@ async def test_p0_multi_agent_blackboard_contention(isolatedData):
 
 
 @pytest.mark.asyncio
-async def test_p0_db_writer_queue_lag(isolatedData):
-    """P0.5: enqueue_write lag under burst — measurement only."""
-    from app.services import db_writer, memory_store
+async def test_p0_db_writer_contention_age_drops_and_high_pri(isolatedData):
+    """P0.5: real db_writer contention — age-drop + high-pri under backlog.
 
-    memory_store.init()
-    db_writer.ensure_queue()
-    lags: list[float] = []
+    Notes on actual implementation (measured, not assumed):
+      * ``asyncio.Queue()`` is **unbounded** — ``QueueFull`` low-pri drop path
+        never fires in production config.
+      * Real drop policy is **age-based**: low-pri items older than
+        ``_LOW_DROP_AFTER`` (2.0s) are skipped when dequeued.
+      * High/low share one FIFO queue — high does not jump the queue; it only
+        gets a longer put-timeout (unused with unbounded queue).
 
-    def _write(i: int) -> None:
-        memory_store.save_memory(f'p0_burst_{i}', {'i': i})
+    This test saturates with slow low-pri work, then:
+      1. Confirms some low-pri items are dropped by age.
+      2. Measures high-pri enqueue→completion wall time under that backlog.
+    """
+    from app.services import db_writer as dbw
 
+    # Fresh queue (fixture may leave none)
+    if dbw._worker_task and not dbw._worker_task.done():
+        dbw._worker_task.cancel()
+        try:
+            await dbw._worker_task
+        except asyncio.CancelledError:
+            pass
+    dbw._write_queue = None
+    dbw._worker_task = None
+    dbw.ensure_queue()
+
+    executed: list[str] = []
+
+    def slow_work(label: str, hold_s: float = 0.35) -> None:
+        time.sleep(hold_s)
+        executed.append(label)
+
+    # Flood low-priority slow writes so later items age past 2s before dequeue
+    n_low = 12
+    for i in range(n_low):
+        ok = await dbw.enqueue_write(lambda i=i: slow_work(f'low-{i}', 0.35), priority='low')
+        assert ok is True  # unbounded queue always accepts
+
+    high_done = asyncio.Event()
+    high_started = time.perf_counter()
+    high_finished_ms: list[float] = []
+
+    def high_work() -> None:
+        high_finished_ms.append((time.perf_counter() - high_started) * 1000.0)
+        executed.append('high')
+        high_done.set()
+
+    t_enq0 = time.perf_counter()
+    high_ok = await dbw.enqueue_write(high_work, priority='high')
+    high_enqueue_ms = (time.perf_counter() - t_enq0) * 1000.0
+    assert high_ok is True
+
+    # Wait for high to run (may sit behind several 0.35s lows)
+    try:
+        await asyncio.wait_for(high_done.wait(), timeout=30.0)
+    except asyncio.TimeoutError:
+        pytest.fail('high-priority write never completed under backlog')
+
+    # Drain remaining
+    await asyncio.sleep(0.5)
+    for _ in range(50):
+        if dbw._write_queue and dbw._write_queue.empty():
+            break
+        await asyncio.sleep(0.1)
+
+    low_executed = [x for x in executed if x.startswith('low-')]
+    dropped_est = n_low - len(low_executed)
+    high_completion_ms = high_finished_ms[0] if high_finished_ms else None
+
+    report = {
+        'n_low_enqueued': n_low,
+        'n_low_executed': len(low_executed),
+        'n_low_dropped_est': dropped_est,
+        'high_enqueue_ms': round(high_enqueue_ms, 3),
+        'high_completion_ms': round(high_completion_ms, 3) if high_completion_ms is not None else None,
+        'high_within_5s_budget': (
+            high_completion_ms is not None and high_completion_ms < dbw._HIGH_DRAIN_TIMEOUT * 1000
+        ),
+        'note': 'Queue unbounded: drops are age-based at dequeue, not QueueFull',
+    }
+    print('P0_BASELINE_DB_WRITER_CONTENTION', report)
+
+    # Prove drop policy does something under this load
+    assert dropped_est >= 1, f'expected some age-based low drops, got {report}'
+    assert 'high' in executed
+    assert high_completion_ms is not None
+    # Documented high put timeout is 5s; completion under FIFO may exceed that —
+    # record whether it stayed under budget without failing the suite if machine is slow.
+    # Hard fail only if absurdly stuck.
+    assert high_completion_ms < 30000
+
+
+@pytest.mark.asyncio
+async def test_p0_persist_tail_variance(stub_workbench):
+    """Diagnose persist p95 spread: isolate saveSessions vs full stream persist span."""
+    from app.services.workbench import sessions as sessions_mod
+    from app.services.workbench.sessions import WorkbenchSession, saveSessions
+
+    # Build a realistic in-memory session blob
+    sessions_mod._sessions.clear()
     for i in range(20):
+        s = WorkbenchSession(
+            id=f'p0-persist-{i}',
+            title=f's{i}',
+            provider='stub',
+            model='stub',
+        )
+        s.messages = [{'role': 'user', 'content': f'x{i}' * 50} for _ in range(5)]
+        sessions_mod._sessions[s.id] = s
+
+    samples: list[float] = []
+    for _ in range(30):
         t0 = time.perf_counter()
-        ok = await db_writer.enqueue_write(lambda i=i: _write(i), priority='high')
-        lags.append((time.perf_counter() - t0) * 1000.0)
-        assert ok is True or ok is False  # API returns bool
-    # drain a bit
-    await asyncio.sleep(0.2)
+        saveSessions()
+        samples.append((time.perf_counter() - t0) * 1000.0)
+
+    samples.sort()
+    p50 = samples[len(samples) // 2]
+    p95 = samples[int((len(samples) - 1) * 0.95)]
     print(
-        'P0_BASELINE_DB_WRITER',
+        'P0_BASELINE_PERSIST_ISOLATED',
         {
-            'n': len(lags),
-            'p50_ms': round(statistics.median(lags), 3),
-            'max_ms': round(max(lags), 3),
+            'n': len(samples),
+            'p50_ms': round(p50, 3),
+            'p95_ms': round(p95, 3),
+            'max_ms': round(max(samples), 3),
+            'min_ms': round(min(samples), 3),
+            'note': 'saveSessions only; stream persist span also includes record_usage + status emit',
         },
     )
-    assert max(lags) < 10000
+    assert p50 < 500

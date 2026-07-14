@@ -9,17 +9,17 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 — **P0 baselines landed** (measure-only); P1–P5 still gated
+**Last updated:** 2026-07-14 — **P0 closed** after frontend marks + db_writer contention + full index EXPLAIN
 **Current branch state:** `master` — verify with `git rev-parse HEAD`.
 **Verification baseline:**
-P0 suite green · schema closed · isolation autouse · full suite still expected 680+ + P0 tests
+P0 suite green · stream-perf vitest green · schema closed · isolation autouse
 **CI note:** Prefer `backend-py/.venv` (3.12). Isolation is **autouse** — do not remove.
 
 ### Phase 0 — SIGNED OFF (2026-07-13)
 ### Phase 2 — SIGNED OFF (2026-07-14) — includes B1a + B16 (see residual ledger)
 ### Phase 3 — **DONE against modularization exit criteria** (not “all large files gone”)
-### Phase 4 — **DONE** (indexes, busy_timeout, Zustand, schema rename hybrid **closed on live DB**)
-### Phase P — **P0 DONE** (baselines recorded); P1–P5 **not approved**
+### Phase 4 — **DONE** (all **six** indexes present + EXPLAIN-used; busy_timeout; Zustand; schema closed)
+### Phase P — **P0 CLOSED**; P1–P5 **not approved** (hold optimisations until explicit go)
 
 ---
 
@@ -48,58 +48,91 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 
 ---
 
-## Phase P0 baselines (2026-07-14, this machine — mock LLM, no network)
+## Phase P0 baselines (2026-07-14 — measure-only; closed after review gaps)
 
 **How to re-run:**  
 `pytest backend-py/tests/test_perf_p0_baselines.py -q -s`  
 `python backend-py/scripts/p0_explain_plans.py`  
-Enable live timing logs: `AUGUST_PERF_TIMING=1`.
+`python backend-py/scripts/_check_phase4_indexes.py`  
+`npx vitest run src/lib/__tests__/stream-perf.test.ts` (from `frontend/desktop`)  
+Enable backend logs: `AUGUST_PERF_TIMING=1`. Frontend: `localStorage.august_stream_perf='1'`.
 
 ### Mock-LLM workbench (product overhead only)
 
 | Metric | p50 | p95 | Notes |
 |---|---|---|---|
-| **total_ms** (text turn) | ~37–41 ms | ~54–83 ms | 8 runs; stub Anthropic stream |
-| **ttft_ms** | ~28–29 ms | ~39–40 ms | first `finalOutput`/`thinking`/`toolCall` |
-| **prompt_build** sum | ~23 ms | ~30–32 ms | system prompt + tool defs |
-| **llm_wait** sum | ~0.2 ms | ~4 ms | stub only — **not** provider RTT |
-| **persist** sum | ~7–10 ms | ~18–54 ms | save sessions + usage |
-| **tool_exec** (1× list_skills) | ~11 ms | — | one tool round then text |
+| **total_ms** (text turn) | ~35–41 ms | ~53–83 ms | 8 runs; stub Anthropic stream |
+| **ttft_ms** | ~27–29 ms | ~39–40 ms | first content emit |
+| **prompt_build** sum | ~22–23 ms | ~30–32 ms | system prompt + tool defs (~55–60% of local turn) |
+| **llm_wait** sum | ~0.2 ms | ~4 ms | **stub only — not provider RTT** |
+| **persist** (in-stream span) | ~7 ms | ~18–54 ms | see persist diagnosis below |
+| **tool_exec** (1× list_skills) | ~10–11 ms | — | one tool round then text |
 
-**Interpretation:** With a stub model, **prompt_build dominates** local overhead (~60% of turn). Real provider RTT will dwarf these numbers; P1 should not chase LLM wait until live RTT is separated. Persist is second; worth watching under load.
+### Persist p95 spread (second look)
+
+| Measurement | p50 | p95 | Finding |
+|---|---|---|---|
+| In-stream `persist` span (mixed suite) | ~7–10 ms | up to ~54 ms | Includes `saveSessions` + `record_usage` + status emit; first runs pay cold path |
+| **Isolated `saveSessions()` only** (30 runs, 20 sessions) | **~4.4 ms** | **~5.8 ms** | Tight — not unexplained SQLite chaos |
+
+**Conclusion:** Stream-level persist p95 was mostly **first-sample / cold + extra work in the span**, not indexless table scans. Isolated session JSON write is stable.
 
 ### Multi-agent / shared state
 
 | Metric | Value | Notes |
 |---|---|---|
-| Blackboard 8 agents × 5 write+read | ~316 ms wall | 40 notes; concurrent `to_thread` |
-| `db_writer` enqueue lag (20 high) | p50 ~0.007 ms, max ~0.05 ms | empty queue; not a load test |
+| Blackboard 8×5 write+read | ~309–316 ms wall | 40 notes |
+| **`db_writer` contention** (not idle) | see below | |
 
-### EXPLAIN QUERY PLAN (live brain)
+### `db_writer` contention (real load)
 
-| Query | Plan note |
+Implementation facts measured:
+
+- Queue is **unbounded** → `QueueFull` low-pri drop path is **dead** in current config.
+- Real drop policy is **age-based**: low-pri skipped if age > `_LOW_DROP_AFTER` (2.0s) at dequeue.
+- High/low share **FIFO** — high does not jump the queue.
+
+| Result (12 slow low-pri @ 0.35s each + 1 high) | Value |
 |---|---|
-| sessions by `is_archived` | **INDEX** `idx_sessions_archived` |
-| messages by `session_id` | **INDEX** `idx_messages_session` |
-| usage by `session_id` | **INDEX** `idx_usage_events_session` |
-| blackboard by `session_id` | **INDEX** `idx_blackboard_session` |
-| memory_store by key | **PK/autoindex** |
-| memory_store_fts MATCH | FTS virtual index |
+| low executed / dropped (est.) | **6 / 6** |
+| high enqueue_ms | ~0.02 ms |
+| high completion_ms (FIFO wait) | **~2100 ms** |
+| high within 5s put-timeout budget | **yes** (put itself is instant; completion is FIFO wait) |
 
-No full-table SCAN on hot session/message paths in this pack.
+### Phase-4 indexes — all six present + EXPLAIN-used
 
-### Code added (measurement only)
+| Index | Present | EXPLAIN |
+|---|---|---|
+| `idx_messages_session` | YES | SEARCH messages |
+| `idx_usage_events_session` | YES | SEARCH usage_events |
+| `idx_usage_events_created` | YES | SCAN…USING INDEX (by `created_at`) |
+| `idx_sessions_archived` | YES | SEARCH sessions |
+| `idx_blackboard_session` | YES | SEARCH blackboard |
+| `idx_exam_attempts_exam` | YES | SEARCH exam_attempts |
+
+Script: `backend-py/scripts/_check_phase4_indexes.py` → `ALL_SIX_PRESENT`.
+
+### P0.4 Frontend stream profiler
+
+| Piece | Detail |
+|---|---|
+| Module | `frontend/desktop/src/lib/stream-perf.ts` |
+| Wired into | `makeStreamHandlers` flush throttle (`streamPerfStart/Content/Flush/End`) |
+| Enable | `localStorage.setItem('august_stream_perf','1')` |
+| Tests | `src/lib/__tests__/stream-perf.test.ts` (3 passed) |
+| Marks | TTFT, flush duration, inter-flush gap; Performance API marks when available |
+
+### Code (measurement only)
 
 | Path | Role |
 |---|---|
-| `app/lib/perf_timing.py` | Traces, spans, TTFT, ring buffer, percentiles |
-| `workbench` stream | Spans: `prompt_build`, `llm_wait`, `tool_exec`, `persist` |
-| `tests/test_perf_p0_baselines.py` | Mock-LLM + blackboard + db_writer harnesses |
-| `scripts/p0_explain_plans.py` | EXPLAIN pack |
-| `scripts/p0_run_baselines.py` | Convenience runner |
+| `app/lib/perf_timing.py` | Backend traces |
+| workbench stream | `prompt_build` / `llm_wait` / `tool_exec` / `persist` |
+| `tests/test_perf_p0_baselines.py` | Mock-LLM + blackboard + **contention** db_writer + persist isolate |
+| `scripts/p0_explain_plans.py` | EXPLAIN pack (includes all six indexes) |
+| `lib/stream-perf.ts` | Frontend P0.4 |
 
-**Not done (P0):** frontend stream profiler (optional P0.4) — deferred as non-blocking.  
-**Not started:** P1+ optimisations.
+**P1+ still gated** — do not start optimisations without a separate approval.
 
 ---
 

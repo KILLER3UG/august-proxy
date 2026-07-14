@@ -51,6 +51,16 @@ QUERIES: list[tuple[str, str]] = [
         "memory_store_by_key",
         "SELECT key, value, updated_at FROM memory_store WHERE key = ?",
     ),
+    # Phase-4 gap list completeness (all six indexes)
+    (
+        "usage_events_by_created",
+        "SELECT id, session_id, created_at FROM usage_events ORDER BY created_at DESC LIMIT 20",
+    ),
+    (
+        "exam_attempts_by_exam",
+        "SELECT id, exam_id, question_id, is_correct FROM exam_attempts "
+        "WHERE exam_id = ? ORDER BY answered_at DESC",
+    ),
 ]
 
 
