@@ -4,6 +4,8 @@ Stream state dataclasses for proxy adapter accumulators.
 Replaces ad-hoc dict-based stream states with typed @dataclass classes
 that encapsulate accumulation logic in methods rather than scattered
 functions operating on raw dicts.
+
+SSE line formatting lives in :mod:`app.adapters.sse_format` (Phase 3 extract).
 """
 
 from __future__ import annotations
@@ -13,18 +15,11 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.adapters.sse_format import write_sse_data_only, write_sse_event
 
-# ── SSE formatting helpers ───────────────────────────────────────────────
-
-
-def writeSseEvent(event: str, data: dict[str, Any]) -> str:
-    """Serialize an Anthropic-style SSE event line."""
-    return f'event: {event}\ndata: {json.dumps(data)}\n\n'
-
-
-def writeSseDataOnly(data: dict[str, Any]) -> str:
-    """Serialize a data-only SSE line (event line omitted)."""
-    return f'data: {json.dumps(data)}\n\n'
+# Back-compat aliases (previous camelCase names on this module).
+writeSseEvent = write_sse_event
+writeSseDataOnly = write_sse_data_only
 
 
 # ── Tool call accumulation ──────────────────────────────────────────────
@@ -322,7 +317,7 @@ class OpenaiToAnthropicStreamState:
         if not self._started:
             self._started = True
             events.append(
-                writeSseEvent(
+                write_sse_event(
                     'message_start',
                     {
                         'type': 'message_start',
@@ -348,7 +343,7 @@ class OpenaiToAnthropicStreamState:
                 self.data.current_index += 1
                 idx = self.data.current_index
                 events.append(
-                    writeSseEvent(
+                    write_sse_event(
                         'content_block_start',
                         {
                             'type': 'content_block_start',
@@ -358,7 +353,7 @@ class OpenaiToAnthropicStreamState:
                     )
                 )
             events.append(
-                writeSseEvent(
+                write_sse_event(
                     'content_block_delta',
                     {
                         'type': 'content_block_delta',
@@ -377,7 +372,7 @@ class OpenaiToAnthropicStreamState:
                 self.data.current_index += 1
                 idx = self.data.current_index
                 events.append(
-                    writeSseEvent(
+                    write_sse_event(
                         'content_block_start',
                         {
                             'type': 'content_block_start',
@@ -387,7 +382,7 @@ class OpenaiToAnthropicStreamState:
                     )
                 )
             events.append(
-                writeSseEvent(
+                write_sse_event(
                     'content_block_delta',
                     {
                         'type': 'content_block_delta',
@@ -421,7 +416,7 @@ class OpenaiToAnthropicStreamState:
             self._emit_tool_use_blocks(events)
             anthropic_stop = self._map_finish_reason(finish_reason)
             events.append(
-                writeSseEvent(
+                write_sse_event(
                     'message_delta',
                     {
                         'type': 'message_delta',
@@ -433,7 +428,7 @@ class OpenaiToAnthropicStreamState:
                     },
                 )
             )
-            events.append(writeSseEvent('message_stop', {'type': 'message_stop'}))
+            events.append(write_sse_event('message_stop', {'type': 'message_stop'}))
 
         # Capture upstream usage stats
         chunk_usage = chunk.get('usage')
@@ -450,7 +445,7 @@ class OpenaiToAnthropicStreamState:
         idx = self.data.current_index
         if self._text_block_started:
             events.append(
-                writeSseEvent(
+                write_sse_event(
                     'content_block_stop',
                     {
                         'type': 'content_block_stop',
@@ -460,7 +455,7 @@ class OpenaiToAnthropicStreamState:
             )
         if self._reasoning_block_started:
             events.append(
-                writeSseEvent(
+                write_sse_event(
                     'content_block_stop',
                     {
                         'type': 'content_block_stop',
@@ -476,7 +471,7 @@ class OpenaiToAnthropicStreamState:
             idx = self.data.current_index
             tu = tc.to_anthropic_tool_use()
             events.append(
-                writeSseEvent(
+                write_sse_event(
                     'content_block_start',
                     {
                         'type': 'content_block_start',
@@ -486,7 +481,7 @@ class OpenaiToAnthropicStreamState:
                 )
             )
             events.append(
-                writeSseEvent(
+                write_sse_event(
                     'content_block_delta',
                     {
                         'type': 'content_block_delta',
@@ -496,7 +491,7 @@ class OpenaiToAnthropicStreamState:
                 )
             )
             events.append(
-                writeSseEvent(
+                write_sse_event(
                     'content_block_stop',
                     {
                         'type': 'content_block_stop',
