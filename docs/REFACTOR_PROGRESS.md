@@ -61,21 +61,63 @@ not only after a surprise finding.
 | `subagent_orchestrator` peer-help | **Checked** (below) — window exists; “recovery/escalation” overstated |
 | `daemon_manager` | Still unchecked — backoff + 3-daemon cap |
 
-### Subagent peer-help contention check (2026-07-14)
+### Subagent peer-help + result handling (2026-07-14) — **higher severity than B26**
 
-Stated (module docstring): failure → 5s peer-help claim window → if no claim, **escalate**.
+This is **not** the same class as db_writer’s misnamed priority. Peer-help does
+not recover work; and until fixed, worker `{status: failed}` dicts were marked
+**`completed`** because the orchestrator used `if result:` on a always-truthy dict.
 
-| Measured | Result |
+#### Production reliance (verified in repo)
+
+| Surface | Uses orchestrator? | Depends on peer-help *recovery*? |
+|---|---|---|
+| Tool `spawn_subagents` → `executeSpawnSubagents` → `waitForAll` | **Yes** | **No** consumer of peerHelp re-run (none exists). **Yes** depends on `handle.status` for succeeded/failed counts |
+| `POST /api/subagents/spawn` | **Yes** | Same |
+| `main.py` lifespan attaches orchestrator to `app.state` | **Yes** | Wired for production use |
+| Any code that re-spawns on peerHelp | **None found** | — |
+
+#### Measured behaviour
+
+| Path | What happens |
 |---|---|
-| No claim | Waits **~5s** (`PEER_HELP_WINDOW_SECONDS`), then **log only** (`No peer claimed…`) — **no re-spawn, no escalated status** |
-| Peer publishes `task:{id}:peerHelp` within window | Wait ends early (~0.4s) — **claim does not re-run the task** or change result |
-| Worker returns empty/falsy result | Status `failed` **without** opening peer-help (only `Exception` path calls `_handleFailure`) |
-| 4 concurrent failures | Windows run in parallel; no deadlock |
+| Exception in worker slot | `_handleFailure`: 5s wait for `peerHelp` signal; claim ends wait only; **no re-run** |
+| Worker returns `{status: 'failed', ...}` | **Pre-fix:** handle.status=`completed`, `subagentCompleted` fired (**silent success**). **Post-fix:** handle.status=`failed`, `subagentFailed` |
+| Worker returns `''` / falsy | `failed`, no peer-help window |
+| Result content validation | Worker checks `subResult.status` string only; orchestrator previously ignored it. No validation that `result` text is non-empty when status is completed |
 
-**Product decision:** document truth; treat “peer-help recovery” as **wait/claim-signal only**, not automatic recovery. **B27 OPEN** — docstring/contract vs code (missing escalation + empty-result skip).
+#### Decision table (explicit — not pattern-matched to B26)
 
-Tests: `tests/test_subagent_peer_help_contention.py`
+| Question | Answer |
+|---|---|
+| Does anything rely on peer-help *recovering* a failed subagent? | **No** — no re-spawn path and no callers of recovery; multi-agent still runs via orchestrator for **delegation + status tally** |
+| Is “silent no-recovery” only doc debt? | **No** for result→status: failed workers were counted **completed** in `spawn_subagents` tallies — live correctness gap |
+| Accept peer-help as non-recovering wait/signal? | **Yes** for now — do not claim recovery; real re-spawn needs a product feature |
+| Accept silent success on `{status:failed}` dict? | **No** — fixed in orchestrator (`_result_is_failure`) |
+| What triggers implementing real peer recovery? | Product asks for multi-agent reliability / re-spawn on failure; until then B27 tracks remaining gaps |
 
+| B27 remainder (OPEN) | Notes |
+|---|---|
+| No automatic re-spawn / escalation after no claim | By design until product prioritizes |
+| Peer claim does not re-run work | Documented |
+| Logical failure does not open peer-help wait | OK while recovery is a no-op |
+
+| B27 fixes (behavior commits, not docs-only) | |
+|---|---|
+| Failed worker `{status: failed}` → handle failed | `fix(subagent): treat failed status…` |
+| `{status: completed, result: ''}` / whitespace → failed | same family, non-empty payload required |
+
+Tests: `tests/test_subagent_peer_help_contention.py`.
+
+### Daemon manager contention check (2026-07-14)
+
+| Contract | Measured |
+|---|---|
+| Max 3 daemons / session | **Enforced**; 4th returns error; other sessions independent; `errored` frees a slot |
+| Concurrent 8 spawns | Exactly 3 ok / 5 errors; live ≤ 3 |
+| Backoff schedule | First delay = `BACKOFF_SCHEDULE[0]` (5s) on forced errors |
+| `BACKOFF_CAP` 300 | **Does not bind** with current schedule (max 135) — cap is dead for today's constants |
+
+Tests: `tests/test_daemon_manager_contention.py`. No production code change (contracts hold for cap; cap constant is soft dead).
 ---
 
 ## P1.1 / P1.2 — prompt segments + tool defs (isolated)

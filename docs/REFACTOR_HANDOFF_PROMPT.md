@@ -259,7 +259,7 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 | B1a | High | former JSON write sites | Non-atomic JSON writes | **CLOSED** |
 | B2 | Med | `db_writer` / ARCHITECTURE | Queue role (was wrong “priority”) | **AMENDED 2026-07-14** — FIFO + age-drop; see ARCHITECTURE |
 | B26 | Med | `db_writer.enqueue_write` | Dead `QueueFull` low-pri drop (unbounded queue) | **OPEN** — leftover/wrong wiring; age-drop is the live policy |
-| B27 | Med | `subagent_orchestrator` | Peer-help “escalation/recovery” overstated: no claim = log only; claim ≠ re-run; empty result skips window | **OPEN** — doc vs code; see peer-help contention tests |
+| B27 | **High** | `subagent_orchestrator` | Peer-help does not recover. Silent success on failed/empty worker results **fixed** (status + non-empty payload). Production multi-agent uses orchestrator. Recovery/re-spawn still not implemented | **PARTIAL** — correctness fixed; no re-spawn until product asks |
 | B11 | Med | nested `backend-py/backend-py/tests/` | Claimed nest | **Absent / closed** |
 | B12 | Low | `data/*.bak` | Leftover backups | Open — optional delete |
 | B13–B14 | Low | docs scratch / `server.log` | Stray artifacts | **CLOSED** |
