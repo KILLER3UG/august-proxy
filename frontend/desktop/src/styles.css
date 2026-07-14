@@ -446,6 +446,29 @@ input::placeholder {
   letter-spacing: -0.005em;
 }
 
+/* Long session / status titles: horizontal marquee when overflow */
+@keyframes marqueeTitleScroll {
+  0%,
+  12% {
+    transform: translateX(0);
+  }
+  88%,
+  100% {
+    transform: translateX(calc(-100% + min(100%, 12rem)));
+  }
+}
+
+.marquee-title-scroll {
+  animation: marqueeTitleScroll 8s ease-in-out infinite;
+  padding-right: 1.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-title-scroll {
+    animation: none;
+  }
+}
+
 .session-list-meta {
   font-size: 0.6875rem;
   line-height: 1.4;

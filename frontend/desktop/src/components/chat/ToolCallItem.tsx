@@ -11,6 +11,7 @@ import { getToolLabel } from '@/lib/tool-labels';
 import { formatToolContext, formatToolResult, formatToolError, type FormattedContext } from '@/lib/tool-context-format';
 import type { ProviderSetupResult } from '@/types/chat';
 import { ProviderSetupWidget } from '@/components/chat/ProviderSetupWidget';
+import { useLiveBackendAction } from '@/hooks/useLiveBackendAction';
 
 /**
  * Extract a filename hint from a tool's JSON context (best-effort).
@@ -244,6 +245,8 @@ export function ToolCallItem({
   const [approvalStatus, setApprovalStatus] = useState<'idle' | 'confirming' | 'confirmed'>('idle');
 
   const isRunning = tool.status === 'running';
+  // Live backend stage while this tool action is executing on the server.
+  const liveBackend = useLiveBackendAction(isRunning);
   // Safety timeout: if a tool has been running for > 120 seconds without a
   // result event, treat it as stalled — show a warning so the user knows
   // something went wrong rather than seeing an infinite spinner.
@@ -333,6 +336,15 @@ export function ToolCallItem({
             )}
           </span>
           <span className="flex items-center gap-1.5 shrink-0 ml-auto pl-2">
+            {isRunning && liveBackend.label && (
+              <span
+                className="tool-row-meta text-sky-300/90 max-w-[7.5rem] truncate"
+                data-testid="tool-live-backend"
+                title={liveBackend.label}
+              >
+                {liveBackend.active?.stage || 'backend'}
+              </span>
+            )}
             {toolStalled ? (
               <span className="inline-flex items-center gap-1">
                 <AlertCircle className="size-3 text-warning" />

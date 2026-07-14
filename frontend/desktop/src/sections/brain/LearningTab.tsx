@@ -72,7 +72,7 @@ export function LearningTab() {
         </div>
         {data.autoMemories.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No auto-memories captured yet. The model saves them as you chat.
+            No persistent memories yet. As you share preferences and facts, August remembers so you never have to repeat yourself.
           </p>
         ) : (
           <ul className="space-y-2 max-h-60 overflow-y-auto">
@@ -147,7 +147,7 @@ export function LearningTab() {
         </div>
         {data.pendingSkills.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No auto-generated skills pending review. The brain drafts skills from complex successful sessions.
+            No evolving skills pending yet. As you collaborate on complex tasks, August turns successful workflows into skills made for you.
           </p>
         ) : (
           <ul className="space-y-2 max-h-60 overflow-y-auto">

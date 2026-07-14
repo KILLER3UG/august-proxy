@@ -40,15 +40,42 @@ async def run_regular_tools_stage(
     cancel = is_cancelled or (lambda: False)
     if cancel():
         return []
+
+    def _emit_tool(stage: str, name: str, status: str = 'running', error: str | None = None) -> None:
+        try:
+            from app.services.feature_flow import emit_feature_flow
+
+            emit_feature_flow(
+                feature='tools',
+                stage=stage,
+                summary=f'Tool {stage}: {name}',
+                status=status,
+                error=error,
+                meta={'tool': name},
+            )
+        except Exception:
+            pass
+
+    async def _run_tracked(name: str, inp: dict[str, object], tid: str) -> dict[str, object]:
+        _emit_tool('exec', name, 'running')
+        try:
+            result = await run_one(name, inp, tid)
+            ok = not (isinstance(result, dict) and result.get('is_error'))
+            _emit_tool('result', name, 'ok' if ok else 'error', error=None if ok else 'tool error')
+            return result
+        except Exception as exc:
+            _emit_tool('result', name, 'error', error=str(exc)[:200])
+            raise
+
     if len(pending) > 1 and all(is_parallel_safe(n) for n, _, _ in pending):
         return list(
-            await asyncio.gather(*[run_one(n, inp, tid) for n, inp, tid in pending])
+            await asyncio.gather(*[_run_tracked(n, inp, tid) for n, inp, tid in pending])
         )
     out: list[dict[str, object]] = []
     for tool_name, tool_input, tool_use_id in pending:
         if cancel():
             break
-        out.append(await run_one(tool_name, tool_input, tool_use_id))
+        out.append(await _run_tracked(tool_name, tool_input, tool_use_id))
     return out
 
 

@@ -6,6 +6,8 @@ import { useGatewayStore } from '@/store/gateway';
 import { useSessionsStore } from '@/store/sessions';
 import { api } from '@/api/client';
 import { subscribeActiveSessions } from '@/sections/chat/chat-runtime';
+import { useLiveBackendAction } from '@/hooks/useLiveBackendAction';
+import { MarqueeTitle } from '@/components/ui/MarqueeTitle';
 
 interface LearningStatus {
   status: 'idle' | 'learning' | 'evolved' | 'skipped' | 'failed';
@@ -76,36 +78,63 @@ export function Statusbar() {
   const gatewayTone: StatusTone = g.status === 'open' ? 'good' : g.status === 'connecting' ? 'muted' : 'bad';
   const gatewayLabel = g.status === 'open' ? `gateway :${g.port || '?'}` : g.status;
   const learningView = getLearningView(learning);
+  const liveBackend = useLiveBackendAction(true);
+  const showLiveBackend =
+    liveBackend.isLive || activeSessionLabels.length > 0 || liveBackend.error != null;
   const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(activeSession?.startedAt || new Date().toISOString())) / 1000));
 
   return (
     <div className="flex items-center justify-end mt-1 px-1">
-      <div className="flex items-center gap-3 text-[12px] text-muted-foreground font-mono">
-        <span className="inline-flex items-center gap-1.5">
+      <div className="flex items-center gap-3 text-[12px] text-muted-foreground font-mono max-w-full min-w-0">
+        <span className="inline-flex items-center gap-1.5 shrink-0">
           <StatusDot tone={gatewayTone} className="size-1.5" />
           {gatewayLabel}
         </span>
-        <span className="text-muted-foreground/30">·</span>
-        <span className="inline-flex items-center gap-1.5">
+        <span className="text-muted-foreground/30 shrink-0">·</span>
+        <span className="inline-flex items-center gap-1.5 shrink-0">
           <StatusDot
             tone={learningView.tone}
             className={cnPulse(learningView.tone === 'warn' && learning?.status === 'learning', 'size-1.5')}
           />
           {learningView.label}
         </span>
-        {activeSessionLabels.length > 0 && (
+        {showLiveBackend && (
           <>
-            <span className="text-muted-foreground/30">·</span>
-            <span className="inline-flex items-center gap-1.5">
-              <StatusDot tone="warn" className="size-1.5 animate-pulse" />
-              {activeSessionLabels.length === 1
-                ? `${activeSessionLabels[0]} working`
-                : `${activeSessionLabels.length} chats working`}
+            <span className="text-muted-foreground/30 shrink-0">·</span>
+            <span
+              className="inline-flex items-center gap-1.5 min-w-0 max-w-[14rem]"
+              data-testid="statusbar-live-backend"
+              title={liveBackend.label || 'Live backend'}
+            >
+              <StatusDot
+                tone={liveBackend.error ? 'bad' : 'warn'}
+                className={cnPulse(Boolean(liveBackend.running), 'size-1.5')}
+              />
+              <MarqueeTitle
+                text={liveBackend.label || (activeSessionLabels.length ? 'Backend running' : 'Live backend')}
+                className="min-w-0"
+              />
             </span>
           </>
         )}
-        <span className="text-muted-foreground/30">·</span>
-        <span className="tabular-nums">{formatClock(elapsedSeconds)}</span>
+        {activeSessionLabels.length > 0 && (
+          <>
+            <span className="text-muted-foreground/30 shrink-0">·</span>
+            <span className="inline-flex items-center gap-1.5 min-w-0 max-w-[12rem]">
+              <StatusDot tone="warn" className="size-1.5 animate-pulse" />
+              <MarqueeTitle
+                text={
+                  activeSessionLabels.length === 1
+                    ? `${activeSessionLabels[0]} working`
+                    : `${activeSessionLabels.length} chats working`
+                }
+                className="min-w-0"
+              />
+            </span>
+          </>
+        )}
+        <span className="text-muted-foreground/30 shrink-0">·</span>
+        <span className="tabular-nums shrink-0">{formatClock(elapsedSeconds)}</span>
       </div>
     </div>
   );

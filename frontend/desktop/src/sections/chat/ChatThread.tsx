@@ -27,6 +27,7 @@ import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { SubagentBlock } from '@/components/chat/SubagentBlock';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
+import { CollaborationInsights } from '@/components/chat/CollaborationInsights';
 import { ExamHost } from '@/sections/exam/ExamHost';
 import { useModels } from '@/hooks/useModels';
 import { useProviderAvailability } from '@/hooks/useProviderAvailability';
@@ -2217,6 +2218,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       />
       <div className="flex-1 flex flex-col min-w-0 bg-background h-full overflow-hidden relative">
         <ApprovalBanner sessionId={workbenchSession?.id ?? null} />
+        <CollaborationInsights />
         {examActive && (
           <ExamHost
             topic={examSeed.topic}

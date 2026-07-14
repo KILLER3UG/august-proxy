@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { isTauri } from "@/lib/tauri-detect";
 import { fadeUp, hoverScale } from "@/lib/motion";
+import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
 import {
   useSessionsStore,
   clearSessionStatus,
@@ -824,14 +825,19 @@ function SessionRow({
           {session.workspacePath && (
             <FolderIcon className="size-3 text-muted-foreground/50 shrink-0" />
           )}
-          <p
+          <div
             className={cn(
-              "truncate flex-1 session-list-title",
+              "flex-1 min-w-0 session-list-title",
               active ? "text-foreground font-semibold" : "text-foreground/75",
             )}
           >
-            {session.title}
-          </p>
+            <MarqueeTitle
+              text={session.title}
+              data-testid="session-list-title"
+              className="w-full"
+              innerClassName={active ? "font-semibold" : undefined}
+            />
+          </div>
         </div>
         <AnimatePresence>
           {status === "streaming" && (

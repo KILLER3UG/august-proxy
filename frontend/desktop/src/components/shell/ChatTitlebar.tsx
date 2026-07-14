@@ -18,6 +18,7 @@ import { isTauri } from "@/lib/tauri-detect";
 import { toast } from "sonner";
 import { RightDrawerDropdown } from "./RightDrawerLauncher";
 import { BrainIndicator } from "./BrainIndicator";
+import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
 import type { Session } from "@/store/sessions";
 import type { RightDrawerSectionId } from "./RightDrawerState";
 
@@ -173,9 +174,13 @@ export function ChatTitlebar({
           </button>
         )}
 
-        <div className="flex items-center gap-2 px-2 min-w-0">
-          <h1 className="text-[13px] font-medium text-foreground truncate">
-            {session?.title ?? "General Assistance Conversation Started"}
+        <div className="flex items-center gap-2 px-2 min-w-0 max-w-[min(42vw,28rem)]">
+          <h1 className="text-[13px] font-medium text-foreground min-w-0 flex-1">
+            <MarqueeTitle
+              text={session?.title ?? "General Assistance Conversation Started"}
+              data-testid="session-bar-title"
+              className="w-full"
+            />
           </h1>
           {currentBranch && (
             <span

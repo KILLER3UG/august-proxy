@@ -137,6 +137,22 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
                     SkillCurator().bump_use(name)
                 except Exception:
                     pass
+                try:
+                    from app.services.feature_flow import emit_feature_flow
+
+                    emit_feature_flow(
+                        feature='skills',
+                        stage='apply',
+                        summary=f'Evolving skill created for you: {name}',
+                        status='ok',
+                        meta={
+                            'name': name,
+                            'action': 'create',
+                            'description': as_str(recDict.get('description'), '')[:120],
+                        },
+                    )
+                except Exception:
+                    pass
             elif action == 'patch':
                 skill_service.patchSkill(
                     name,
@@ -148,6 +164,18 @@ async def _doReview(messagesSnapshot: list[dict[str, object]], *, llm_client: Re
                     from app.services.skills.curator import SkillCurator
 
                     SkillCurator().bump_use(name)
+                except Exception:
+                    pass
+                try:
+                    from app.services.feature_flow import emit_feature_flow
+
+                    emit_feature_flow(
+                        feature='skills',
+                        stage='apply',
+                        summary=f'Evolving skill updated: {name}',
+                        status='ok',
+                        meta={'name': name, 'action': 'patch'},
+                    )
                 except Exception:
                     pass
         except Exception as exc:

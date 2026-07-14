@@ -48,7 +48,7 @@ def saveAutoMemory(key: str, content: object, category: str = 'auto', importance
         (_MAXMemories,),
     )
     conn.commit()
-    # Surface auto-memory writes in the Backend Monitor.
+    # Surface auto-memory writes in the Backend Monitor + Feature Flow.
     try:
         from app.services import logger as _tl
 
@@ -59,6 +59,24 @@ def saveAutoMemory(key: str, content: object, category: str = 'auto', importance
                 'message': f'Auto-memory saved: {key}',
                 'metadata': {'key': key, 'category': category, 'importance': importance},
             }
+        )
+    except Exception:
+        pass
+    try:
+        from app.services.feature_flow import emit_feature_flow
+
+        preview = contentJson if isinstance(contentJson, str) else str(contentJson)
+        emit_feature_flow(
+            feature='memory',
+            stage='write',
+            summary=f'Remembered: {key}',
+            status='ok',
+            meta={
+                'key': key,
+                'category': category,
+                'importance': importance,
+                'preview': preview[:160],
+            },
         )
     except Exception:
         pass
