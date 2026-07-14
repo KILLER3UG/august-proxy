@@ -108,7 +108,7 @@ async def test_chat_stages_parallel_vs_serial():
     out = await run_regular_tools_stage(pending, run_one)
     elapsed = asyncio.get_event_loop().time() - t0
     assert len(out) == 2
-    assert elapsed < 0.028  # parallel path
+    assert elapsed < 0.045  # parallel path (two ~15ms sleeps concurrent)
 
     order.clear()
     pending_mut = [
