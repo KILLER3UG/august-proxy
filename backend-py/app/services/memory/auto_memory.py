@@ -32,19 +32,19 @@ def saveAutoMemory(key: str, content: object, category: str = 'auto', importance
     conn = _conn()
     now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     contentJson = content if isinstance(content, str) else json.dumps(content)
-    existing = conn.execute('SELECT id FROM autoMemories WHERE key = ?', (key,)).fetchone()
+    existing = conn.execute('SELECT id FROM auto_memories WHERE key = ?', (key,)).fetchone()
     if existing:
         conn.execute(
-            'UPDATE autoMemories SET content = ?, importance = ?, updatedAt = ? WHERE id = ?',
+            'UPDATE auto_memories SET content = ?, importance = ?, updated_at = ? WHERE id = ?',
             (contentJson, importance, now, existing['id']),
         )
     else:
         conn.execute(
-            'INSERT INTO autoMemories (key, content, category, importance, createdAt) VALUES (?, ?, ?, ?, ?)',
+            'INSERT INTO auto_memories (key, content, category, importance, created_at) VALUES (?, ?, ?, ?, ?)',
             (key, contentJson, category, importance, now),
         )
     conn.execute(
-        '\n        DELETE FROM autoMemories WHERE id NOT IN (\n            SELECT id FROM autoMemories ORDER BY importance DESC, id DESC LIMIT ?\n        )\n    ',
+        '\n        DELETE FROM auto_memories WHERE id NOT IN (\n            SELECT id FROM auto_memories ORDER BY importance DESC, id DESC LIMIT ?\n        )\n    ',
         (_MAXMemories,),
     )
     conn.commit()
@@ -68,11 +68,13 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
     """Find memories relevant to a query using FTS5 ranking.
 
     Falls back to LIKE-based search if FTS returns nothing.
+    Returned keys keep camelCase ``createdAt`` for wire/API consumers.
     """
     conn = _conn()
     try:
         rows = conn.execute(
-            'SELECT key, content, category, importance, createdAt FROM autoMemories_fts WHERE content MATCH ? ORDER BY rank LIMIT ?',
+            'SELECT key, content, category, importance, created_at AS createdAt '
+            'FROM auto_memories_fts WHERE content MATCH ? ORDER BY rank LIMIT ?',
             (query, limit),
         ).fetchall()
         if rows:
@@ -87,7 +89,9 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
             return result
     except Exception:
         pass
-    allRows = conn.execute('SELECT key, content, category, importance, createdAt FROM autoMemories').fetchall()
+    allRows = conn.execute(
+        'SELECT key, content, category, importance, created_at AS createdAt FROM auto_memories'
+    ).fetchall()
     scored = []
     q = query.lower()
     for r in allRows:
@@ -116,6 +120,7 @@ def deleteOrphanedBlob() -> bool:
     Returns True if the blob was found and deleted, False otherwise.
     Call this once after migration to avoid polluting LIKE-based searches.
     """
+    # Blob key name stays camelCase (row key, not a table/column).
     blob = get_memory('autoMemories')
     if blob is not None:
         save_memory('autoMemories', None)

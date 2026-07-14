@@ -4,17 +4,17 @@ Heuristics service — CRUD over the learned_heuristics table (Phase 4).
 The table was created in Phase 0; this service provides the application
 layer for adding, removing, listing, and clearing heuristics.
 
-Writes are performed DIRECTLY through ``memoryStore`` (the shared,
+Writes are performed DIRECTLY through ``memory_store`` (the shared,
 thread-local brain connection). Every connection opened by
-``memoryStore._conn`` sets ``PRAGMA journal_mode=WAL`` and
+``memory_store._conn`` sets ``PRAGMA journal_mode=WAL`` and
 ``PRAGMA busy_timeout=10000``, so direct writes from the many callers are
 safe from "database is locked" errors and corruption under WAL.
 
-``db_writer`` (``app.services.dbWriter``) is a SEPARATE single-writer queue
+``db_writer`` (``app.services.db_writer``) is a SEPARATE single-writer queue
 that serializes writes through one asyncio worker task. It is an ADDITIONAL
 serialization layer, NOT the universal write path: as of this writing it is
-used only by ``consolidationDaemon``. This service does NOT enqueue through
-``db_writer``; it commits changes directly via ``memoryStore``.
+used only by ``consolidation_daemon``. This service does NOT enqueue through
+``db_writer``; it commits changes directly via ``memory_store``.
 """
 
 from __future__ import annotations
@@ -28,16 +28,21 @@ def _conn():
 
 
 def listHeuristics(category: str = '') -> list[dict[str, object]]:
-    """List all learned heuristics, optionally filtered by category."""
+    """List all learned heuristics, optionally filtered by category.
+
+    Row keys use camelCase aliases (createdAt, updatedAt) for the API wire format.
+    """
     conn = _conn()
     if category:
         rows = conn.execute(
-            'SELECT id, rule, source, category, createdAt, updatedAt FROM learnedHeuristics WHERE category = ? ORDER BY updatedAt DESC',
+            'SELECT id, rule, source, category, created_at AS createdAt, updated_at AS updatedAt '
+            'FROM learned_heuristics WHERE category = ? ORDER BY updated_at DESC',
             (category,),
         ).fetchall()
     else:
         rows = conn.execute(
-            'SELECT id, rule, source, category, createdAt, updatedAt FROM learnedHeuristics ORDER BY updatedAt DESC'
+            'SELECT id, rule, source, category, created_at AS createdAt, updated_at AS updatedAt '
+            'FROM learned_heuristics ORDER BY updated_at DESC'
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -50,11 +55,11 @@ def addHeuristic(rule: str, source: str = 'auto', category: str = 'general') -> 
     if not rule or not rule.strip():
         return None
     conn = _conn()
-    existing = conn.execute('SELECT id FROM learnedHeuristics WHERE rule = ?', (rule.strip(),)).fetchone()
+    existing = conn.execute('SELECT id FROM learned_heuristics WHERE rule = ?', (rule.strip(),)).fetchone()
     if existing:
         return None
     conn.execute(
-        "INSERT INTO learnedHeuristics (rule, source, category, updatedAt) VALUES (?, ?, ?, datetime('now'))",
+        "INSERT INTO learned_heuristics (rule, source, category, updated_at) VALUES (?, ?, ?, datetime('now'))",
         (rule.strip(), source, category),
     )
     conn.commit()
@@ -76,7 +81,7 @@ def addHeuristic(rule: str, source: str = 'auto', category: str = 'general') -> 
 def removeHeuristic(ruleId: int) -> bool:
     """Remove a heuristic by id. Returns True if it existed."""
     conn = _conn()
-    cursor = conn.execute('DELETE FROM learnedHeuristics WHERE id = ?', (ruleId,))
+    cursor = conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (ruleId,))
     conn.commit()
     return cursor.rowcount > 0
 
@@ -84,7 +89,7 @@ def removeHeuristic(ruleId: int) -> bool:
 def removeByRule(rule: str) -> bool:
     """Remove a heuristic by exact rule text. Returns True if it existed."""
     conn = _conn()
-    cursor = conn.execute('DELETE FROM learnedHeuristics WHERE rule = ?', (rule.strip(),))
+    cursor = conn.execute('DELETE FROM learned_heuristics WHERE rule = ?', (rule.strip(),))
     conn.commit()
     return cursor.rowcount > 0
 
@@ -93,9 +98,9 @@ def clearHeuristics(category: str = '') -> int:
     """Clear all heuristics, optionally filtered by category. Returns count removed."""
     conn = _conn()
     if category:
-        cursor = conn.execute('DELETE FROM learnedHeuristics WHERE category = ?', (category,))
+        cursor = conn.execute('DELETE FROM learned_heuristics WHERE category = ?', (category,))
     else:
-        cursor = conn.execute('DELETE FROM learnedHeuristics')
+        cursor = conn.execute('DELETE FROM learned_heuristics')
     conn.commit()
     return cursor.rowcount
 
@@ -104,16 +109,16 @@ def countHeuristics(category: str = '') -> int:
     """Count heuristics, optionally filtered by category."""
     conn = _conn()
     if category:
-        row = conn.execute('SELECT COUNT(*) FROM learnedHeuristics WHERE category = ?', (category,)).fetchone()
+        row = conn.execute('SELECT COUNT(*) FROM learned_heuristics WHERE category = ?', (category,)).fetchone()
     else:
-        row = conn.execute('SELECT COUNT(*) FROM learnedHeuristics').fetchone()
+        row = conn.execute('SELECT COUNT(*) FROM learned_heuristics').fetchone()
     return row[0] if row else 0
 
 
 def removeHeuristicById(heuristicId: int) -> bool:
     """v3: Remove a heuristic by id. Returns True if found and deleted."""
     conn = _conn()
-    cur = conn.execute('DELETE FROM learnedHeuristics WHERE id = ?', (heuristicId,))
+    cur = conn.execute('DELETE FROM learned_heuristics WHERE id = ?', (heuristicId,))
     conn.commit()
     return cur.rowcount > 0
 
@@ -122,7 +127,7 @@ def updateHeuristic(heuristicId: int, newRule: str) -> bool:
     """v3: Update a heuristic's rule text. Returns True if found and updated."""
     conn = _conn()
     cur = conn.execute(
-        "UPDATE learnedHeuristics SET rule = ?, updatedAt = datetime('now') WHERE id = ?", (newRule, heuristicId)
+        "UPDATE learned_heuristics SET rule = ?, updated_at = datetime('now') WHERE id = ?", (newRule, heuristicId)
     )
     conn.commit()
     return cur.rowcount > 0

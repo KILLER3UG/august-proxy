@@ -156,7 +156,7 @@ async def brainLearning() -> dict[str, object]:
         rows = (
             memory_store._conn()
             .execute(
-                'SELECT id, key, content, importance, createdAt FROM autoMemories ORDER BY importance DESC, id DESC LIMIT 20'
+                'SELECT id, key, content, importance, created_at AS createdAt FROM auto_memories ORDER BY importance DESC, id DESC LIMIT 20'
             )
             .fetchall()
         )
@@ -179,7 +179,7 @@ async def brainLearning() -> dict[str, object]:
         rows = (
             memory_store._conn()
             .execute(
-                "SELECT id, name, description, triggerText, draftPath, sourceSessionId, createdAt, status, useCount FROM pendingSkills WHERE status = 'pending' ORDER BY createdAt DESC"
+                "SELECT id, name, description, trigger_text AS triggerText, draft_path AS draftPath, source_session_id AS sourceSessionId, created_at AS createdAt, status, use_count AS useCount FROM pending_skills WHERE status = 'pending' ORDER BY created_at DESC"
             )
             .fetchall()
         )

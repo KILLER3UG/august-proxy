@@ -31,7 +31,7 @@ def temp_brain(monkeypatch, tmp_path):
     memory_store.init()
     conn = memory_store._conn()
     conn.execute(
-        "INSERT INTO learnedHeuristics (rule, source, category) VALUES (?, ?, ?)",
+        "INSERT INTO learned_heuristics (rule, source, category) VALUES (?, ?, ?)",
         ('seed rule', 'auto', 'general'),
     )
     conn.commit()

@@ -54,7 +54,7 @@ def writeNote(
     elif ttlSeconds and ttlSeconds > 0:
         expires = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(time.time() + ttlSeconds))
     conn.execute(
-        'INSERT INTO blackboard (sessionId, agent, key, value, priority, expiresAt) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO blackboard (session_id, agent, key, value, priority, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
         (sessionId, agent, key, json.dumps(value) if not isinstance(value, str) else value, priority, expires),
     )
     conn.commit()
@@ -65,10 +65,17 @@ def readNotes(sessionId: str, agent: str = '', key: str = '', ack: bool = False)
 
     v2: If `ack=True`, the read notes are deleted on read (acknowledged
     by the consumer).
+
+    Returned dict keys stay camelCase for the wire/API contract even though
+    SQLite columns are snake_case (Phase 4 schema rename).
     """
     conn = _conn()
     _cleanupExpired(conn)
-    query = 'SELECT * FROM blackboard WHERE sessionId = ?'
+    query = (
+        'SELECT id, session_id AS sessionId, agent, key, value, priority, '
+        'created_at AS createdAt, expires_at AS expiresAt '
+        'FROM blackboard WHERE session_id = ?'
+    )
     params: list[object] = [sessionId]
     if agent:
         query += ' AND agent = ?'
@@ -76,7 +83,7 @@ def readNotes(sessionId: str, agent: str = '', key: str = '', ack: bool = False)
     if key:
         query += ' AND key = ?'
         params.append(key)
-    query += ' ORDER BY priority DESC, createdAt DESC'
+    query += ' ORDER BY priority DESC, created_at DESC'
     rows = conn.execute(query, params).fetchall()
     rawNotes: list[dict[str, object]] = [dict(r) for r in rows]
     notes = rawNotes
@@ -92,14 +99,14 @@ def clearNotes(sessionId: str, agent: str = '') -> int:
     """Clear blackboard notes, optionally for a specific agent."""
     conn = _conn()
     if agent:
-        cursor = conn.execute('DELETE FROM blackboard WHERE sessionId = ? AND agent = ?', (sessionId, agent))
+        cursor = conn.execute('DELETE FROM blackboard WHERE session_id = ? AND agent = ?', (sessionId, agent))
     else:
-        cursor = conn.execute('DELETE FROM blackboard WHERE sessionId = ?', (sessionId,))
+        cursor = conn.execute('DELETE FROM blackboard WHERE session_id = ?', (sessionId,))
     conn.commit()
     return cursor.rowcount
 
 
 def _cleanupExpired(conn) -> None:
     """Delete expired notes."""
-    conn.execute("DELETE FROM blackboard WHERE expiresAt IS NOT NULL AND expiresAt < datetime('now')")
+    conn.execute("DELETE FROM blackboard WHERE expires_at IS NOT NULL AND expires_at < datetime('now')")
     conn.commit()

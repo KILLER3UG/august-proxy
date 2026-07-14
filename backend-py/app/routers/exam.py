@@ -61,18 +61,18 @@ async def generateExam(body: dict[str, object]):
     conn = _db()
     source = 'files' if files else 'topic' if as_str(body.get('topic')) else 'model'
     cur = conn.execute(
-        'INSERT INTO exams (title, topic, source, sourceFiles) VALUES (?, ?, ?, ?)',
+        'INSERT INTO exams (title, topic, source, source_files) VALUES (?, ?, ?, ?)',
         (f'Exam: {topic[:80]}', topic, source, sourceFiles),
     )
     examId = cur.lastrowid
     for i, q in enumerate(questions):
         conn.execute(
-            'INSERT INTO examQuestions (examId, position, stem, options, correctIndex, rationale, origin) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO exam_questions (exam_id, position, stem, options, correct_index, rationale, origin) VALUES (?, ?, ?, ?, ?, ?, ?)',
             (examId, i + 1, q['stem'], json.dumps(q['options']), q['correct_index'], q['rationale'], 'generated'),
         )
     conn.commit()
     first = conn.execute(
-        'SELECT id, position, stem, options FROM examQuestions WHERE examId = ? ORDER BY position LIMIT 1', (examId,)
+        'SELECT id, position, stem, options FROM exam_questions WHERE exam_id = ? ORDER BY position LIMIT 1', (examId,)
     ).fetchone()
     firstQ = exam_service.stripAnswer(
         {
@@ -103,7 +103,7 @@ async def addQuestion(examId: int, body: dict[str, object]):
         raise HTTPException(status_code=404, detail='Exam not found')
     topic = exam['topic'] or 'general'
     existing = conn.execute(
-        'SELECT stem, options FROM examQuestions WHERE examId = ? ORDER BY position LIMIT 3', (examId,)
+        'SELECT stem, options FROM exam_questions WHERE exam_id = ? ORDER BY position LIMIT 3', (examId,)
     ).fetchall()
     similar = []
     for row in existing:
@@ -120,16 +120,16 @@ async def addQuestion(examId: int, body: dict[str, object]):
     if afterPosition is not None:
         afterPos = as_int(afterPosition)
         conn.execute(
-            'UPDATE examQuestions SET position = position + 1 WHERE examId = ? AND position > ?', (examId, afterPos)
+            'UPDATE exam_questions SET position = position + 1 WHERE exam_id = ? AND position > ?', (examId, afterPos)
         )
         nextPos = afterPos + 1
     else:
         row = conn.execute(
-            'SELECT COALESCE(MAX(position), 0) + 1 FROM examQuestions WHERE examId = ?', (examId,)
+            'SELECT COALESCE(MAX(position), 0) + 1 FROM exam_questions WHERE exam_id = ?', (examId,)
         ).fetchone()
         nextPos = row[0]
     cur = conn.execute(
-        'INSERT INTO examQuestions (examId, position, stem, options, correctIndex, rationale, origin) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO exam_questions (exam_id, position, stem, options, correct_index, rationale, origin) VALUES (?, ?, ?, ?, ?, ?, ?)',
         (
             examId,
             nextPos,
@@ -153,7 +153,7 @@ async def getQuestion(examId: int, position: int):
     """Fetch one question. NEVER leaks correct_index or rationale (the authoring invariant)."""
     conn = _db()
     q = conn.execute(
-        'SELECT id, stem, options FROM examQuestions WHERE examId = ? AND position = ?', (examId, position)
+        'SELECT id, stem, options FROM exam_questions WHERE exam_id = ? AND position = ?', (examId, position)
     ).fetchone()
     if not q:
         raise HTTPException(status_code=404, detail='Question not found')
@@ -169,17 +169,17 @@ async def answerQuestion(examId: int, body: dict[str, object]):
     selectedIndex = body.get('selectedIndex')
     conn = _db()
     q = conn.execute(
-        'SELECT correctIndex, rationale FROM examQuestions WHERE id = ? AND examId = ?', (questionId, examId)
+        'SELECT correct_index, rationale FROM exam_questions WHERE id = ? AND exam_id = ?', (questionId, examId)
     ).fetchone()
     if not q:
         raise HTTPException(status_code=404, detail='Question not found')
-    isCorrect = 1 if selectedIndex == q['correctIndex'] else 0
+    isCorrect = 1 if selectedIndex == q['correct_index'] else 0
     conn.execute(
-        "INSERT INTO examAttempts (examId, questionId, selectedIndex, isCorrect, answeredAt) VALUES (?, ?, ?, ?, datetime('now'))",
+        "INSERT INTO exam_attempts (exam_id, question_id, selected_index, is_correct, answered_at) VALUES (?, ?, ?, ?, datetime('now'))",
         (examId, questionId, selectedIndex, isCorrect),
     )
     conn.commit()
-    return {'isCorrect': bool(isCorrect), 'correctIndex': q['correctIndex'], 'rationale': q['rationale']}
+    return {'isCorrect': bool(isCorrect), 'correctIndex': q['correct_index'], 'rationale': q['rationale']}
 
 
 @router.post('/{examId}/help')
@@ -189,7 +189,7 @@ async def helpQuestion(examId: int, body: dict[str, object]):
     ask = as_str(body.get('ask'), '')
     conn = _db()
     q = conn.execute(
-        'SELECT stem, options FROM examQuestions WHERE id = ? AND examId = ?', (questionId, examId)
+        'SELECT stem, options FROM exam_questions WHERE id = ? AND exam_id = ?', (questionId, examId)
     ).fetchone()
     if not q:
         raise HTTPException(status_code=404, detail='Question not found')
@@ -198,7 +198,7 @@ async def helpQuestion(examId: int, body: dict[str, object]):
         stem=q['stem'], options=options, userQuestion=ask or 'Explain this question.'
     )
     try:
-        conn.execute('UPDATE examAttempts SET askedForHelp = 1 WHERE questionId = ?', (questionId,))
+        conn.execute('UPDATE exam_attempts SET asked_for_help = 1 WHERE question_id = ?', (questionId,))
         conn.commit()
     except Exception:
         pass
