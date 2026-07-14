@@ -67,6 +67,7 @@ from app.adapters.anthropic_system import (
     should_inject_reminder_message,
     system_blocks_to_text,
 )
+from app.adapters import anthropic_stream_translate as _anthropic_stream_translate
 from app.providers import resolver as providerResolver
 from app.providers.model_resolver import resolve
 from app.providers.clients import getClient
@@ -93,8 +94,13 @@ buildOpenaiSystemPrompt = build_openai_system_prompt
 buildAnthropicSystemBlocks = build_anthropic_system_blocks
 appendTextToSystemBlocks = append_text_to_system_blocks
 
-# Stream translate helpers are imported above so
-# ``from app.adapters.anthropic import streamOpenaiDeltaAsAnthropic`` keeps working.
+# Stream translate helpers (extracted); assignment keeps ruff from stripping.
+streamOpenaiDeltaAsAnthropic = _anthropic_stream_translate.streamOpenaiDeltaAsAnthropic
+createOpenaiToAnthropicStreamState = _anthropic_stream_translate.createOpenaiToAnthropicStreamState
+createAnthropicNativeStreamState = _anthropic_stream_translate.createAnthropicNativeStreamState
+buildOpenaiAggregatedForAnthropicFromStream = (
+    _anthropic_stream_translate.buildOpenaiAggregatedForAnthropicFromStream
+)
 
 MAX_MANAGED_TOOL_ROUNDS = 10
 
