@@ -187,6 +187,7 @@ from app.routers import terminal as terminalRoutes  # noqa: E402
 from app.routers import terminal_routes as terminalWsRoutes  # noqa: E402
 from app.routers import manage as manageRoutes  # noqa: E402
 from app.routers import monitoring as monitoringRoutes  # noqa: E402
+from app.routers import monitor_feature_flow as monitorFeatureFlowRoutes  # noqa: E402
 from app.routers import august as augustRoutes  # noqa: E402
 from app.routers import gateway as gatewayRoutes  # noqa: E402
 from app.routers import curator as curatorRoutes  # noqa: E402
@@ -221,6 +222,7 @@ app.include_router(terminalRoutes.router)
 app.include_router(terminalWsRoutes.router)
 app.include_router(manageRoutes.router)
 app.include_router(monitoringRoutes.router)
+app.include_router(monitorFeatureFlowRoutes.router)
 app.include_router(augustRoutes.router)
 app.include_router(gatewayRoutes.router)
 app.include_router(augRoutes.router)

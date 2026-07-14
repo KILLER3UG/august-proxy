@@ -27,6 +27,7 @@ import { DeveloperConsoleSection } from './DeveloperConsoleSection';
 import { ComputerAccessSettings } from './ComputerAccessSettings';
 import { ObservabilitySection } from './ObservabilitySection';
 import { BackendMonitorSection } from './BackendMonitorSection';
+import { FeatureFlowSection } from './FeatureFlowSection';
 import { SkillsSection } from './SkillsSection';
 import { ComputerUseSection } from './ComputerUseSection';
 import { ExternalAccessSection } from './ExternalAccessSection';
@@ -76,6 +77,7 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   // resolveLegacyTab + legacyAliases in the registry), so no entry here.
   observability: ObservabilitySectionWrapper,
   'backend-monitor': BackendMonitorWrapper,
+  'feature-flow': FeatureFlowWrapper,
   'skill-curator': SkillsWrapper,
   'skills-authoring': SkillsWrapper,
   skills: SkillsWrapper,
@@ -87,6 +89,7 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
 function ComputerAccessSettingsWrapper() { return <ComputerAccessSettings />; }
 function ObservabilitySectionWrapper() { return <ObservabilitySection />; }
 function BackendMonitorWrapper() { return <BackendMonitorSection />; }
+function FeatureFlowWrapper() { return <FeatureFlowSection />; }
 function ExternalAccessWrapper() { return <ExternalAccessSection />; }
 
 function UsageWrapper() { return <WorkspaceUsageSection />; }

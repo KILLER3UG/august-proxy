@@ -358,6 +358,35 @@ class ExternalAccessUpdate(CamelModel):
     enabled: bool
 
 
+class InjectAugOnProxyUpdate(CamelModel):
+    """Toggle optional AUG.md injection on /v1 proxy paths."""
+
+    enabled: bool
+
+
+@router.get('/inject-aug-on-proxy')
+async def get_inject_aug_on_proxy():
+    """Return whether proxy-path AUG.md injection is enabled (default false)."""
+    cfg = config_service.getConfig()
+    enabled = bool(cfg.get('injectAugOnProxy') or cfg.get('inject_aug_on_proxy'))
+    return {'enabled': enabled}
+
+
+@router.put('/inject-aug-on-proxy')
+async def put_inject_aug_on_proxy(body: InjectAugOnProxyUpdate):
+    """Enable/disable injecting AUG.md into /v1/messages and /v1/chat/completions."""
+    cfg = config_service.getConfig()
+    cfg['injectAugOnProxy'] = bool(body.enabled)
+    # Drop legacy snake key if present so one source of truth remains.
+    cfg.pop('inject_aug_on_proxy', None)
+    config_service.saveConfig(cfg)
+    try:
+        settings.reload()
+    except Exception:
+        pass
+    return {'enabled': bool(cfg['injectAugOnProxy'])}
+
+
 @router.put('/external-access')
 async def putExternalAccess(body: ExternalAccessUpdate):
     """Toggle external API gateway access on/off.

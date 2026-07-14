@@ -287,18 +287,20 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 | — | Low | `storage_key_migration` connection helper | Consistency with `_conn()` | **CLOSED** — WAL + busy_timeout=10000 verified |
 | B28 | Med | `adapters/anthropic` re-exports | Stream translate extract dropped facade imports (test collection fail) | **CLOSED** — re-export from `anthropic_stream_translate` |
 
-### New features — tracked, but out of this refactor's scope
+### New features — tracked (implemented 2026-07-14)
 
-Same as before — do **not** fold into behavior-preserving phases:
+Previously out-of-phase; **shipped** on user request before Phase 8:
 
-**Feature Workstream — Real-Time Feature Flow Visualization UI** (backend execution visualizer, frontend)
-- Feature Flow Schema & Events via log stream or `/api/monitor/events` SSE
-- Trace animations; real-time error visualization; Feature Inventory Directory UI
+**Feature Workstream — Real-Time Feature Flow Visualization UI** — **DONE**
+- Feature Flow Schema & Events: `app/services/feature_flow.py` + `GET/SSE /api/monitor/events`
+- Feature Inventory Directory: `GET /api/monitor/features`
+- Frontend Settings → **Feature Flow** (animated stage rail + error filter + inventory)
+- Also mirrors into Backend Monitor category `feature_flow`
 
-**Feature Workstream — Optional Proxy-Path AUG.md Injection** (backend + settings UI)
-- Config flag `inject_aug_on_proxy` (default `False`)
-- When enabled, inject `AUG.md` into `/v1/messages` and `/v1/chat/completions` system prompt
-- Frontend settings toggle
+**Feature Workstream — Optional Proxy-Path AUG.md Injection** — **DONE**
+- Config flag `injectAugOnProxy` (default `False`) via `/api/config/inject-aug-on-proxy`
+- When enabled, injects `AUG.md` into `/v1/messages` and `/v1/chat/completions`
+- Settings → API Access toggle
 
 ### Modularization gap (still open)
 

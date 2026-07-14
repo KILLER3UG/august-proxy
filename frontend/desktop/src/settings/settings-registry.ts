@@ -30,6 +30,7 @@ import {
   Bot,
   ClipboardList,
   Cpu,
+  GitBranch,
   Globe,
   LineChart,
   MessagesSquare,
@@ -282,6 +283,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     // Note: 'memory' is owned by memory-knowledge. 'console' is owned
     // by developer-console. 'monitor' is the dominant discoverer here.
     keywords: ['logs', 'live', 'stream', 'events', 'monitor', 'websocket', 'proxy', 'scheduler'],
+  },
+  {
+    id: 'feature-flow',
+    label: 'Feature Flow',
+    description: 'Animated live pipeline of backend feature execution with inventory directory.',
+    icon: GitBranch,
+    category: 'activity',
+    tier: 'advanced',
+    keywords: ['feature', 'flow', 'pipeline', 'animation', 'inventory', 'sse', 'execution'],
+    legacyAliases: ['feature-flow-viz', 'execution-visualizer'],
   },
   {
     id: 'plans',

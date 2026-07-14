@@ -26,6 +26,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getExternalAccessConfig,
   updateExternalAccessConfig,
+  getInjectAugOnProxy,
+  updateInjectAugOnProxy,
   type ExternalAccessConfig,
 } from '@/api/api-client';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
@@ -88,11 +90,21 @@ function StatusDot({ tone }: { tone: 'success' | 'warning' | 'muted' }) {
 export function ExternalAccessSection() {
   const qc = useQueryClient();
   const query = useExtAccessQuery();
+  const augQuery = useQuery({
+    queryKey: ['inject-aug-on-proxy'],
+    queryFn: getInjectAugOnProxy,
+  });
   const mutation = useMutation({
     mutationFn: (next: boolean) => updateExternalAccessConfig({ enabled: next }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['external-access'] });
       void qc.invalidateQueries({ queryKey: ['health', 'detailed'] });
+    },
+  });
+  const augMutation = useMutation({
+    mutationFn: (next: boolean) => updateInjectAugOnProxy({ enabled: next }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['inject-aug-on-proxy'] });
     },
   });
 
@@ -175,6 +187,19 @@ export function ExternalAccessSection() {
             }
             disabled={mutation.isPending}
           />
+          <div className="border-t border-white/[0.06] pt-3">
+            <SettingsToggle
+              checked={Boolean(augQuery.data?.enabled)}
+              onCheckedChange={(next) => augMutation.mutate(next)}
+              label="Inject AUG.md on proxy path"
+              description={
+                augQuery.data?.enabled
+                  ? 'When a client hits /v1/messages or /v1/chat/completions, project AUG.md is appended to the system prompt.'
+                  : 'Off by default. Enable to inject workspace AUG.md into external proxy requests.'
+              }
+              disabled={augMutation.isPending || augQuery.isLoading}
+            />
+          </div>
           {mutation.isError && (
             <p className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />

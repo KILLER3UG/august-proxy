@@ -40,6 +40,7 @@ const CATEGORY_META: Record<string, { label: string; chip: string; row: string; 
     auto_memory:           { label: 'Auto-Memory',   chip: 'bg-purple-500/10 text-purple-300 border-purple-500/30',     row: 'text-purple-300',                    icon: Activity },
     scheduler:             { label: 'Scheduler',     chip: 'bg-orange-500/10 text-orange-300 border-orange-500/30',     row: 'text-orange-300',                    icon: Activity },
     security:              { label: 'Security',      chip: 'bg-danger/10 text-danger border-danger/30',                 row: 'text-danger font-semibold',           icon: AlertTriangle },
+    feature_flow:          { label: 'Feature Flow',  chip: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30', row: 'text-emerald-300',                    icon: Activity },
     error:                 { label: 'Error',         chip: 'bg-danger/10 text-danger border-danger/30',                 row: 'text-danger font-semibold',           icon: AlertTriangle },
     info:                  { label: 'Info',          chip: 'bg-muted text-muted-foreground border-border',              row: 'text-foreground/80',                 icon: CircleDot },
 };

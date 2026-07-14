@@ -9,11 +9,18 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 — **Phase 5 closed** · **Phase 6 bug ledger closed** · **Phase 7 matrix operationalized**
-**Current branch state:** `master` (verify `git rev-parse HEAD`). Phase 6/7 work merges via `refactor/phase6-7-inventory`.
+**Last updated:** 2026-07-14 — **Out-of-phase feature workstreams shipped** (Feature Flow UI + AUG inject)
+**Current branch state:** `feat/feature-flow-and-aug-inject` → merge to `master`. Verify `git rev-parse HEAD`.
 **Verification baseline:**
-pytest **723 passed** · vitest **543 passed** · Phase 4 indexes · isolation autouse
+feature_flow tests · settings-registry 18 sections · isolation autouse
 **CI note:** Prefer `backend-py/.venv` (3.12). Isolation is **autouse** — do not remove.
+
+### Feature workstreams (from handoff — not numbered phases)
+
+| Workstream | Status | Surface |
+|---|---|---|
+| Real-Time Feature Flow Visualization | ✅ | `/api/monitor/events` SSE + Settings → Feature Flow |
+| Optional Proxy-Path AUG.md Injection | ✅ | `injectAugOnProxy` + API Access toggle |
 
 ### Phase 0 — SIGNED OFF (2026-07-13)
 ### Phase 2 — SIGNED OFF (2026-07-14) — includes B1a + B16 (see residual ledger)

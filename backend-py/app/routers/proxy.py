@@ -24,6 +24,8 @@ from app.json_narrowing import as_str, as_dict, as_list, as_int
 from app.lib.gateway_auth import require_gateway_key
 from app.providers import resolver as providerResolver
 from app.services import logger as trafficLogger
+from app.services.feature_flow import emit_feature_flow
+from app.services import config_service
 
 router = APIRouter()
 
@@ -68,6 +70,84 @@ def _emit(category: str, level: str, message: str, metadata: object = None) -> N
         pass
 
 
+def _inject_aug_enabled() -> bool:
+    """Read ``injectAugOnProxy`` from config.json (default False)."""
+    try:
+        cfg = config_service.getConfig()
+        return bool(cfg.get('injectAugOnProxy') or cfg.get('inject_aug_on_proxy'))
+    except Exception:
+        return False
+
+
+def _maybe_inject_aug_into_body(body: dict[str, object], endpoint: str) -> dict[str, object]:
+    """When enabled, append AUG.md body into the proxy system prompt.
+
+    Default off — does not change proxy behaviour until the user toggles
+    Settings → API Access → Inject AUG.md on proxy path.
+    """
+    if not _inject_aug_enabled():
+        return body
+    try:
+        from app.services import aug_directive_service
+
+        loaded = aug_directive_service.load(None)
+        if not loaded:
+            emit_feature_flow(
+                feature='proxy',
+                stage='inject',
+                summary='AUG inject enabled but AUG.md not found',
+                status='ok',
+                meta={'endpoint': endpoint, 'injected': False},
+            )
+            return body
+        aug_body = str(loaded.get('body') or '').strip()
+        if not aug_body:
+            return body
+        block = f'<aug_directives>\n{aug_body}\n</aug_directives>'
+        out = dict(body)
+        if endpoint == 'messages':
+            # Anthropic: system can be string or list of blocks
+            system = out.get('system')
+            if isinstance(system, str):
+                out['system'] = system + '\n\n' + block
+            elif isinstance(system, list):
+                out['system'] = list(system) + [{'type': 'text', 'text': block}]
+            else:
+                out['system'] = [{'type': 'text', 'text': block}]
+        else:
+            # OpenAI chat: inject/append system message
+            messages = list(out.get('messages') or []) if isinstance(out.get('messages'), list) else []
+            if messages and isinstance(messages[0], dict) and messages[0].get('role') == 'system':
+                first = dict(messages[0])
+                content = first.get('content')
+                if isinstance(content, str):
+                    first['content'] = content + '\n\n' + block
+                else:
+                    first['content'] = block
+                messages[0] = first
+            else:
+                messages.insert(0, {'role': 'system', 'content': block})
+            out['messages'] = messages
+        emit_feature_flow(
+            feature='proxy',
+            stage='inject',
+            summary='Injected AUG.md into proxy system prompt',
+            status='ok',
+            meta={'endpoint': endpoint, 'injected': True, 'chars': len(aug_body)},
+        )
+        return out
+    except Exception as exc:
+        emit_feature_flow(
+            feature='proxy',
+            stage='inject',
+            summary=f'AUG inject failed: {exc}',
+            status='error',
+            error=str(exc)[:300],
+            meta={'endpoint': endpoint},
+        )
+        return body
+
+
 def _safeInt(v: object) -> int:
     try:
         return int(v) if isinstance(v, (int, float, str)) else 0
@@ -106,6 +186,22 @@ async def _trackRequest(endpoint: str, body: dict[str, object], request: Request
             'sessionId': as_str(body.get('sessionId')) or as_str(body.get('session_id')) or '',
         },
     )
+    emit_feature_flow(
+        feature='proxy',
+        stage='start',
+        summary=f'{_clientTypeFor(endpoint)} /v1/{endpoint} → {model}',
+        status='running',
+        trace_id=reqId,
+        meta={'model': model, 'endpoint': endpoint},
+    )
+    emit_feature_flow(
+        feature='proxy',
+        stage='route',
+        summary=f'Routed to {model}',
+        status='running',
+        trace_id=reqId,
+        meta={'model': model},
+    )
     return reqId
 
 
@@ -117,6 +213,14 @@ def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
         trafficLogger.endRequest(reqId, {'error': as_str(result.get('error'))})
         trafficLogger.logActivity('request_error', f'[{reqId}] {result.get("error")}')
         _emit('error', 'error', f'Proxy request failed: {result.get("error")}', {'reqId': reqId})
+        emit_feature_flow(
+            feature='proxy',
+            stage='error',
+            summary=f'Proxy error: {result.get("error")}',
+            status='error',
+            trace_id=reqId,
+            error=as_str(result.get('error'))[:500],
+        )
         return result
     trafficLogger.capture_response(reqId, result)
     usage = as_dict(result.get('usage'), {})
@@ -136,6 +240,21 @@ def _endNonStream(reqId: str, result: dict[str, object]) -> dict[str, object]:
             'outputTokens': outT,
             'model': as_str(result.get('model'), 'unknown'),
         },
+    )
+    emit_feature_flow(
+        feature='proxy',
+        stage='upstream',
+        summary=f'Upstream complete ({inT + outT} tokens)',
+        status='ok',
+        trace_id=reqId,
+        meta={'inputTokens': inT, 'outputTokens': outT},
+    )
+    emit_feature_flow(
+        feature='proxy',
+        stage='end',
+        summary='Proxy request complete',
+        status='ok',
+        trace_id=reqId,
     )
     return result
 
@@ -170,12 +289,35 @@ async def _wrapStream(reqId: str, stream: AsyncIterator[str]) -> AsyncIterator[s
         trafficLogger.capture_error(reqId, str(exc)[:500])
         trafficLogger.endRequest(reqId, {'error': str(exc)})
         trafficLogger.logActivity('request_error', f'[{reqId}] stream error: {exc}')
+        emit_feature_flow(
+            feature='proxy',
+            stage='error',
+            summary=f'Stream error: {exc}',
+            status='error',
+            trace_id=reqId,
+            error=str(exc)[:500],
+        )
         raise
     else:
         if inT or outT:
             trafficLogger.capture_tokens(reqId, inT, outT)
         trafficLogger.endRequest(reqId, {'usage': {'input_tokens': inT, 'output_tokens': outT}})
         trafficLogger.logActivity('request_complete', f'[{reqId}] stream ok ({inT + outT} tok)')
+        emit_feature_flow(
+            feature='proxy',
+            stage='stream',
+            summary=f'Stream complete ({inT + outT} tokens)',
+            status='ok',
+            trace_id=reqId,
+            meta={'inputTokens': inT, 'outputTokens': outT},
+        )
+        emit_feature_flow(
+            feature='proxy',
+            stage='end',
+            summary='Proxy stream complete',
+            status='ok',
+            trace_id=reqId,
+        )
     finally:
         pass
 
@@ -194,7 +336,15 @@ async def anthropicMessages(request: Request, _auth: bool = Depends(require_gate
     body = await _readJsonBody(request, 'messages')
     if isinstance(body, JSONResponse):
         return body
+    body = _maybe_inject_aug_into_body(body, 'messages')
     reqId = await _trackRequest('messages', body, request)
+    emit_feature_flow(
+        feature='proxy',
+        stage='translate',
+        summary='Anthropic message path',
+        status='running',
+        trace_id=reqId,
+    )
     result, headers = await anthropicAdapter.handleMessages(body, request)
     if isinstance(result, dict):
         return _endNonStream(reqId, result)
@@ -221,7 +371,15 @@ async def openaiChat(request: Request, _auth: bool = Depends(require_gateway_key
     body = await _readJsonBody(request, 'chat/completions')
     if isinstance(body, JSONResponse):
         return body
+    body = _maybe_inject_aug_into_body(body, 'chat/completions')
     reqId = await _trackRequest('chat/completions', body, request)
+    emit_feature_flow(
+        feature='proxy',
+        stage='translate',
+        summary='OpenAI chat completions path',
+        status='running',
+        trace_id=reqId,
+    )
     result, headers = await openaiAdapter.handleChatCompletions(body, request)
     if isinstance(result, dict):
         return _endNonStream(reqId, result)
