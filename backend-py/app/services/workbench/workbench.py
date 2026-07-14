@@ -1,11 +1,10 @@
 """
-Workbench chat engine — session management, streaming chat loop,
-tool execution, and plan/approval workflow.
+Workbench chat engine — streaming chat loop, tool execution, and plan/approval.
 
 Port of backend/services/workbench/workbench.js (3,675 lines).
 
 Key subsystems:
-- Session CRUD (create, get, list, delete, reset)
+- Session CRUD — see sessions.py (re-exported below for API stability)
 - Streaming chat loop (Anthropic and OpenAI, streaming and non-streaming)
 - Tool execution dispatch (15+ tool types)
 - Plan/approval gate (plan mode, pending mutations, approval tokens)
@@ -20,333 +19,53 @@ import asyncio
 import json
 import logging
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Callable, TYPE_CHECKING, cast
-from app.json_narrowing import as_str, as_dict, as_list, as_int, as_float, as_bool
-from app.atomic_write import write_json_atomic
+from typing import Callable, cast
+from app.json_narrowing import as_str, as_dict, as_list, as_int, as_bool
 from app.type_aliases import JsonValue
+from app.services.workbench import sessions as _sessions_mod
+from app.services.workbench.sessions import (
+    WorkbenchSession,
+    _sessions,
+    _now,
+    saveSessions,
+    _emitSessionStatus,
+    createWorkbenchSession,
+    getWorkbenchSession,
+)
 from app.services.workbench.effort import (
     resolve_effective_effort,
     effort_to_thinking_budget,
     effort_to_prompt_instruction,
     effort_to_openai_reasoning_effort,
 )
-
-if TYPE_CHECKING:
-    from app.services.workbench.tool_guardrails import ToolCallTracker
 from app.models import AnthropicRequest, ChatCompletionRequest
+
 logger = logging.getLogger('workbench')
 MAX_MANAGED_TOOL_ROUNDS = 10
 WORKBENCH_TOKEN_BUDGET = 2000000
 
-
-# camelCase wrappers for back-compat (tests / external callers with camelCase kwargs)
-def resolveEffectiveEffort(
-    incoming: str | None,
-    session: 'WorkbenchSession',
-    modelEntry: dict[str, object] | None = None,
-) -> str:
-    return resolve_effective_effort(incoming, session, modelEntry)
-
-
-def effortToThinkingBudget(effort: str, modelMax: int = 32000, maxTokens: int = 8192) -> int:
-    return effort_to_thinking_budget(effort, model_max=modelMax, max_tokens=maxTokens)
-
-
-def effortToPromptInstruction(effort: str) -> str:
-    return effort_to_prompt_instruction(effort)
-
-
-def effortToOpenaiReasoningEffort(effort: str) -> str:
-    return effort_to_openai_reasoning_effort(effort)
-
-
-@dataclass
-class WorkbenchSession:
-    """In-memory representation of a workbench session.
-
-    Persisted to disk as JSON via saveSessions().
-    """
-
-    id: str = ''
-    title: str = 'New Session'
-    provider: str = ''
-    model: str = ''
-    agentId: str = ''
-    guardMode: str = 'full'
-    createdAt: str = ''
-    updatedAt: str = ''
-    startedAt: str = ''
-    messageCount: int = 0
-    mutationCount: int = 0
-    workspacePath: str = ''
-    goal: str = ''
-    plan: dict[str, object] | None = None
-    planApproved: bool = False
-    clarify: dict[str, object] | None = None
-    todos: list[dict[str, object]] | None = None
-    messages: list[dict[str, object]] = field(default_factory=list)
-    pendingMutations: list[dict[str, object]] = field(default_factory=list)
-    mutationLog: list[dict[str, object]] = field(default_factory=list)
-    status: str = 'idle'
-    metadata: dict[str, object] = field(default_factory=dict)
-    totalInputTokens: int = 0
-    totalOutputTokens: int = 0
-    totalCost: float = 0.0
-    queuedUserMessages: list[dict[str, object]] = field(default_factory=list)
-    # Dynamically-set instance attrs (declared so mypy can track them)
-    _tool_assembly: object | None = None
-    _failure_feedback: object | None = None
-    _failure_feedback_age: int | None = None
-    _last_compaction_turn: int | None = None
-    _tool_tracker: 'ToolCallTracker | None' = None
-    _execution_state: object | None = None
-    _working_memory: object | None = None
-    _state_lock: 'asyncio.Lock | None' = None
-
-    def toDict(self) -> dict[str, object]:
-        return {
-            'id': self.id,
-            'title': self.title,
-            'provider': self.provider,
-            'model': self.model,
-            'agentId': self.agentId,
-            'guardMode': self.guardMode,
-            'createdAt': self.createdAt,
-            'updatedAt': self.updatedAt,
-            'startedAt': self.startedAt,
-            'messageCount': self.messageCount,
-            'mutationCount': self.mutationCount,
-            'workspacePath': self.workspacePath,
-            'goal': self.goal,
-            'plan': self.plan,
-            'planApproved': self.planApproved,
-            'clarify': self.clarify,
-            'todos': self.todos,
-            'messages': self.messages,
-            'pendingMutations': self.pendingMutations,
-            'mutationLog': self.mutationLog,
-            'status': self.status,
-            'metadata': self.metadata,
-            'totalInputTokens': self.totalInputTokens,
-            'totalOutputTokens': self.totalOutputTokens,
-            'totalCost': self.totalCost,
-            'queuedUserMessages': self.queuedUserMessages,
-        }
-
-    @staticmethod
-    def fromDict(d: dict[str, object]) -> WorkbenchSession:
-        return WorkbenchSession(
-            id=as_str(d.get('id', '')),
-            title=as_str(d.get('title', 'New Session')),
-            provider=as_str(d.get('provider', '')),
-            model=as_str(d.get('model', '')),
-            agentId=as_str(d.get('agentId', '')),
-            guardMode=as_str(d.get('guardMode', 'full')),
-            createdAt=as_str(d.get('createdAt', '')),
-            updatedAt=as_str(d.get('updatedAt', '')),
-            startedAt=as_str(d.get('startedAt', '')),
-            messageCount=as_int(d.get('messageCount', 0)),
-            mutationCount=as_int(d.get('mutationCount', 0)),
-            workspacePath=as_str(d.get('workspacePath', '')),
-            goal=as_str(d.get('goal', '')),
-            plan=as_dict(d.get('plan')),
-            planApproved=as_bool(d.get('planApproved', False)),
-            clarify=as_dict(d.get('clarify')),
-            todos=cast('list[dict[str, object]]', as_list(d.get('todos'))),
-            messages=cast('list[dict[str, object]]', as_list(d.get('messages', []))),
-            pendingMutations=cast('list[dict[str, object]]', as_list(d.get('pendingMutations', []))),
-            mutationLog=cast('list[dict[str, object]]', as_list(d.get('mutationLog', []))),
-            status=as_str(d.get('status', 'idle')),
-            metadata=as_dict(d.get('metadata', {})),
-            totalInputTokens=as_int(d.get('totalInputTokens', 0)),
-            totalOutputTokens=as_int(d.get('totalOutputTokens', 0)),
-            totalCost=as_float(d.get('totalCost', 0.0)),
-            queuedUserMessages=cast('list[dict[str, object]]', as_list(d.get('queuedUserMessages', []))),
-        )
-
-
-_SESSIONFile = 'workbench-sessions.json'
-_sessions: dict[str, WorkbenchSession] = {}
-_statusSubscribers: list[Callable[[dict[str, object]], None]] = []
-
-
-def _sessionsPath() -> Path:
-    from app.lib.paths import dataPath
-
-    return dataPath(_SESSIONFile)
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-
-
-def _loadSessions() -> None:
-    """Load sessions from disk."""
-    path = _sessionsPath()
-    if not path.exists():
-        return
-    try:
-        data = json.loads(path.read_text('utf-8'))
-        for item in data:
-            session = WorkbenchSession.fromDict(item)
-            _sessions[session.id] = session
-    except (json.JSONDecodeError, OSError):
-        pass
-
-
-def saveSessions() -> None:
-    """Persist all sessions to disk (keeps last 50)."""
-    sortedSessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
-    path = _sessionsPath()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_json_atomic(path, [s.toDict() for s in sortedSessions], indent=2)
-
-
-def _emitSessionStatus(sessionId: str) -> None:
-    """Notify status subscribers of a session status change."""
-    session = _sessions.get(sessionId)
-    if not session:
-        return
-    event = {
-        'type': 'session_status',
-        'sessionId': sessionId,
-        'status': session.status,
-        'guardMode': session.guardMode,
-        'pendingMutations': len(session.pendingMutations) > 0,
-    }
-    for cb in _statusSubscribers:
-        try:
-            cb(event)
-        except Exception:
-            pass
-
-
-def createWorkbenchSession(
-    provider: str = '', agentId: str = '', guardMode: str = '', task: str = '', goal: str = ''
-) -> WorkbenchSession:
-    """Create a new workbench session."""
-    sessionId = f'wb_{uuid.uuid4().hex[:12]}'
-    now = _now()
-    session = WorkbenchSession(
-        id=sessionId,
-        provider=provider,
-        agentId=agentId,
-        guardMode=normalizeGuardMode(guardMode or 'full'),
-        goal=goal,
-        createdAt=now,
-        updatedAt=now,
-        startedAt=now,
-    )
-    if goal:
-        session.goal = goal
-    _sessions[sessionId] = session
-    saveSessions()
-    _emitSessionStatus(sessionId)
-    return session
-
-
-def getWorkbenchSession(sessionId: str | None) -> WorkbenchSession | None:
-    """Get a session by ID. Returns None if not found."""
-    if not sessionId:
-        return None
-    if not _sessions:
-        _loadSessions()
-    return _sessions.get(sessionId)
-
-
-def setWorkbenchSessionAgent(sessionId: str, agentId: str) -> WorkbenchSession | None:
-    """Bind (or clear) an agent on a session so its context shapes the prompt."""
-    session = getWorkbenchSession(sessionId)
-    if not session:
-        return None
-    session.agentId = agentId or ''
-    session.updatedAt = _now()
-    saveSessions()
-    _emitSessionStatus(sessionId)
-    return session
-
-
-def listWorkbenchSessions() -> list[dict[str, object]]:
-    """Return all sessions summarized."""
-    if not _sessions:
-        _loadSessions()
-    sortedSessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)
-    return [summarizeSession(s) for s in sortedSessions]
-
-
-def deleteWorkbenchSession(sessionId: str) -> bool:
-    """Delete a session."""
-    if sessionId not in _sessions:
-        return False
-    session = _sessions[sessionId]
-    try:
-        from app.services import aug_artifact_service
-
-        aug_artifact_service.deleteForSession(session.workspacePath or None, sessionId)
-    except Exception:
-        pass
-    del _sessions[sessionId]
-    saveSessions()
-    return True
-
-
-def resetWorkbenchSession(sessionId: str, provider: str = '', agentId: str = '') -> WorkbenchSession | None:
-    """Delete and recreate a session."""
-    deleteWorkbenchSession(sessionId)
-    return createWorkbenchSession(provider=provider, agentId=agentId)
-
-
-def summarizeSession(session: WorkbenchSession) -> dict[str, object]:
-    """Return a lightweight summary of a session."""
-    return {
-        'id': session.id,
-        'title': session.title,
-        'provider': session.provider,
-        'model': session.model,
-        'agentId': session.agentId,
-        'guardMode': session.guardMode,
-        'goal': session.goal,
-        'plan': session.plan is not None,
-        'planApproved': session.planApproved,
-        'messageCount': session.messageCount,
-        'mutationCount': session.mutationCount,
-        'status': session.status,
-        'createdAt': session.createdAt,
-        'updatedAt': session.updatedAt,
-        'startedAt': session.startedAt,
-        'workspacePath': session.workspacePath,
-    }
-
-
-def getWorkbenchSessionStatus(sessionId: str) -> dict[str, object] | None:
-    """Return flat status for the UI's approval banner."""
-    session = _sessions.get(sessionId)
-    if not session:
-        return None
-    hasPending = len(session.pendingMutations) > 0
-    return {
-        'sessionId': sessionId,
-        'status': session.status,
-        'guardMode': session.guardMode,
-        'pendingMutation': session.pendingMutations[-1] if hasPending else None,
-        'plan': session.plan,
-        'planApproved': session.planApproved,
-        'todos': session.todos,
-    }
-
-
-def subscribeSessionStatus(callback: Callable[[dict[str, object]], None]) -> Callable[[], None]:
-    """Register a session status subscriber. Returns unsubscribe function."""
-    _statusSubscribers.append(callback)
-
-    def unsubscribe() -> None:
-        if callback in _statusSubscribers:
-            _statusSubscribers.remove(callback)
-
-    return unsubscribe
+# Session API re-exports (explicit bindings so external importers keep working;
+# ruff F401 would strip pure unused imports from the import list above).
+_statusSubscribers = _sessions_mod._statusSubscribers
+_sessionsPath = _sessions_mod._sessionsPath
+_loadSessions = _sessions_mod._loadSessions
+setWorkbenchSessionAgent = _sessions_mod.setWorkbenchSessionAgent
+listWorkbenchSessions = _sessions_mod.listWorkbenchSessions
+deleteWorkbenchSession = _sessions_mod.deleteWorkbenchSession
+resetWorkbenchSession = _sessions_mod.resetWorkbenchSession
+summarizeSession = _sessions_mod.summarizeSession
+getWorkbenchSessionStatus = _sessions_mod.getWorkbenchSessionStatus
+subscribeSessionStatus = _sessions_mod.subscribeSessionStatus
+save_sessions = _sessions_mod.save_sessions
+create_workbench_session = _sessions_mod.create_workbench_session
+get_workbench_session = _sessions_mod.get_workbench_session
+list_workbench_sessions = _sessions_mod.list_workbench_sessions
+delete_workbench_session = _sessions_mod.delete_workbench_session
+reset_workbench_session = _sessions_mod.reset_workbench_session
+summarize_session = _sessions_mod.summarize_session
+get_workbench_session_status = _sessions_mod.get_workbench_session_status
+subscribe_session_status = _sessions_mod.subscribe_session_status
+set_workbench_session_agent = _sessions_mod.set_workbench_session_agent
 
 
 def normalizeGuardMode(mode: str) -> str:
@@ -715,6 +434,25 @@ def _xmlEscape(s: str) -> str:
     return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
 
 
+# camelCase wrappers for back-compat (tests / external callers)
+def resolveEffectiveEffort(
+    incoming: str | None, session: WorkbenchSession, modelEntry: dict[str, object] | None = None
+) -> str:
+    return resolve_effective_effort(incoming, session, modelEntry)
+
+
+def effortToThinkingBudget(effort: str, modelMax: int = 32000, maxTokens: int = 8192) -> int:
+    return effort_to_thinking_budget(effort, model_max=modelMax, max_tokens=maxTokens)
+
+
+def effortToPromptInstruction(effort: str) -> str:
+    return effort_to_prompt_instruction(effort)
+
+
+def effortToOpenaiReasoningEffort(effort: str) -> str:
+    return effort_to_openai_reasoning_effort(effort)
+
+
 def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     """Return tool definitions in Anthropic format for a session.
 
@@ -1001,7 +739,7 @@ async def sendWorkbenchMessageStream(
     _emitSessionStatus(sessionId)
     session.messages.append({'role': 'user', 'content': message})
     session.messageCount += 1
-    effectiveEffort = resolve_effective_effort(effort or as_str(session.metadata.get('effort', '')), session)
+    effectiveEffort = resolveEffectiveEffort(effort or as_str(session.metadata.get('effort', '')), session)
     resolvedProvider = None
     if modelProvider:
         resolvedProvider = _resolveWorkbenchProvider(modelProvider, '')
@@ -1620,7 +1358,7 @@ async def _callAnthropicWorkbench(
     body['messages'] = anthropicMessages
     if tools:
         body['tools'] = tools
-    thinkingBudget = effort_to_thinking_budget(effort)
+    thinkingBudget = effortToThinkingBudget(effort)
     if thinkingBudget > 0 and _supportsThinking(provider, model):
         body['thinking'] = {'type': 'enabled', 'budget_tokens': thinkingBudget}
     contentBlocks: list[dict[str, object]] = []
@@ -1744,7 +1482,7 @@ async def _callOpenaiWorkbench(
     body['max_tokens'] = 8192
     if tools:
         body['tools'] = tools
-    reasoning = effort_to_openai_reasoning_effort(effort)
+    reasoning = effortToOpenaiReasoningEffort(effort)
     if reasoning:
         body['reasoning_effort'] = reasoning
         contentText = ''

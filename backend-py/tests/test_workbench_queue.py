@@ -147,7 +147,11 @@ class TestChatLoopInjection:
         monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
         monkeypatch.setattr(settings, 'dataDir', tmp_path)
         settings.reload()
-        monkeypatch.setattr(wb, '_sessions', {})
+        from app.services.workbench import sessions as sessions_mod
+
+        empty_sessions: dict = {}
+        monkeypatch.setattr(sessions_mod, '_sessions', empty_sessions)
+        monkeypatch.setattr(wb, '_sessions', empty_sessions)
         monkeypatch.setattr(
             wb,
             '_resolveWorkbenchProvider',

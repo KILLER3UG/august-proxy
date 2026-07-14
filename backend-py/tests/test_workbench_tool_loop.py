@@ -75,7 +75,11 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(settings, 'dataDir', tmp_path)
     settings.reload()
-    monkeypatch.setattr(wb, '_sessions', {})
+    from app.services.workbench import sessions as sessions_mod
+
+    empty_sessions: dict = {}
+    monkeypatch.setattr(sessions_mod, '_sessions', empty_sessions)
+    monkeypatch.setattr(wb, '_sessions', empty_sessions)
     monkeypatch.setattr(asyncio, 'create_task', lambda coro, **kw: asyncio.ensure_future(coro))
     monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **kw: STUB_PROVIDER)
     monkeypatch.setattr(wb, '_resolveModel', lambda p, hint='': 'stub-claude')
