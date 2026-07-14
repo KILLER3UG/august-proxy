@@ -2,9 +2,9 @@
 /* Tests the consolidated SkillsSection that replaces the old
  * CuratorSection + SkillsAuthoringSection. Covers:
  *   • 4 stat tiles with initial zero values
- *   • unified table populated after /api/skills + /api/curator/usage load
+ *   • card grid populated after /api/skills + /api/curator/usage load
  *   • + New button switches mode to create form
- *   • clicking a row opens the detail view
+ *   • clicking a card opens the detail view
  *   • hover-revealed icon actions (pin/unpin/archive/restore)
  *   • lifecycle row exposes Run + Dry run buttons
  *
@@ -146,12 +146,12 @@ describe('SkillsSection — unified skills + curator surface', () => {
     expect(screen.getAllByText('2').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('populates the unified table from /api/skills + /api/curator/usage', async () => {
+  it('populates the card grid from /api/skills + /api/curator/usage', async () => {
     installFixtures();
     render(<SkillsSection />);
 
-    // Both fixture skill names should appear as table cells.
     await waitFor(() => {
+      expect(screen.getByTestId('skills-card-grid')).toBeTruthy();
       expect(screen.getByText('alpha')).toBeTruthy();
       expect(screen.getByText('beta')).toBeTruthy();
     });
@@ -160,8 +160,8 @@ describe('SkillsSection — unified skills + curator surface', () => {
     expect(screen.getAllByText('Active').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Stale').length).toBeGreaterThan(0);
 
-    // Usage is merged into the row — alpha.useCount=7, beta.useCount=0.
-    expect(screen.getByText('7')).toBeTruthy();
+    // Usage is merged into the card — alpha.useCount=7.
+    expect(screen.getByText(/7 use/i)).toBeTruthy();
   });
 
   it('clicking [+] New switches mode to the create form', async () => {
@@ -182,37 +182,32 @@ describe('SkillsSection — unified skills + curator surface', () => {
     });
   });
 
-  it('clicking a table row opens the detail view', async () => {
+  it('clicking a skill card opens the detail view', async () => {
     installFixtures();
     render(<SkillsSection />);
 
-    const row = await waitFor(() => screen.getByText('alpha'));
-    fireEvent.click(row);
+    const card = await waitFor(() => screen.getByTestId('skill-card-alpha'));
+    fireEvent.click(card);
 
-    // Detail view renders the heading with the skill name and the
-    // "Instructions (SKILL.md body)" section.
     await waitFor(() => {
-      expect(screen.getByText(/Instructions \(SKILL\.md body\)/i)).toBeTruthy();
-      // The mock detail body comes back from the api.get mock.
+      expect(screen.getByText(/Instructions \(SKILL\.md\)/i)).toBeTruthy();
       expect(screen.getByText(/instructions body/i)).toBeTruthy();
     });
 
-    // Detail header has Edit + Delete actions.
     expect(screen.getByRole('button', { name: /Edit/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Delete/i })).toBeTruthy();
   });
 
-  it('exposes hover-revealed pin/unpin/archive/restore icon buttons per row', async () => {
+  it('exposes pin/unpin/archive/restore icon buttons per card', async () => {
     installFixtures();
     render(<SkillsSection />);
 
-    await waitFor(() => screen.getByText('alpha'));
+    await waitFor(() => screen.getByTestId('skills-card-grid'));
 
     // alpha is pinned → Unpin button. beta is not pinned → Pin button.
     expect(screen.getByRole('button', { name: /unpin/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^pin$/i })).toBeTruthy();
 
-    // Both rows expose Archive + Restore.
     expect(screen.getAllByRole('button', { name: /^archive$/i }).length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByRole('button', { name: /^restore$/i }).length).toBeGreaterThanOrEqual(2);
   });

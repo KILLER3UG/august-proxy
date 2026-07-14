@@ -1,18 +1,12 @@
-/* ── Skills — unified, modern, beginner-friendly settings surface ──────── */
-/* Merges the previous "Skill Authoring" (CRUD on /api/skills) and "Skill
- * Catalogue" (lifecycle on /api/curator) sections into a single calm
- * screen. Preserves every previous feature:
+/* ── Skills — unified card catalog (3 columns) ───────────────────────── */
+/* Same surface language as Integrations: big header, search, stat tiles,
+ * responsive card grid (1 / 2 / 3 columns), detail drill-down.
  *
  *   • Stat tiles: Active / Stale / Archived / Tracked
- *   • Run Now / Dry Run curator actions + report banner
- *   • Unified skill table merged from /api/skills + /api/curator/usage
- *   • Row-click → detail view (SKILL.md body + metadata)
- *   • + New → create form (Name / Description / Trigger / Category / Body)
- *   • Edit / Delete with confirmation modal (authoring)
- *   • Pin / Unpin / Archive / Restore row actions (curator)
- *
- * Layout language: generous whitespace, hairline borders, one primary
- * action, row-hover-revealed icon controls. */
+ *   • Card grid from /api/skills + /api/curator/usage
+ *   • Card click → detail (SKILL.md via chat Markdown)
+ *   • + New → create form; Edit / Delete; pin / archive / restore
+ *   • Lifecycle Run / Dry run */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -36,6 +30,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { api } from '@/api/client';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
+import { cn } from '@/lib/utils';
 
 /* ── Types ──────────────────────────────────────────────────────────── */
 
@@ -70,7 +65,7 @@ interface CuratorReport {
   errors: string[];
 }
 
-/** One row in the unified table. */
+/** One card in the catalog grid. */
 interface SkillRow {
   name: string;
   description: string;
@@ -343,9 +338,16 @@ export function SkillsSection() {
   }
 
   const isFormMode = mode === 'create' || mode === 'edit';
+  const filteredRows = search
+    ? rows.filter(
+        (r) =>
+          r.name.toLowerCase().includes(search.toLowerCase()) ||
+          r.description.toLowerCase().includes(search.toLowerCase()),
+      )
+    : rows;
 
   return (
-    <div className="px-10 py-8 space-y-8 h-full flex flex-col overflow-auto">
+    <div className="px-8 py-6 space-y-6 h-full flex flex-col overflow-hidden">
       {/* ── Header ──────────────────────────────────────────────── */}
       <header className="shrink-0 flex items-end justify-between gap-4">
         <div>
@@ -364,7 +366,7 @@ export function SkillsSection() {
           {(isFormMode || mode === 'detail') && (
             <button
               onClick={() => { setMode('list'); setSelected(null); }}
-              className="inline-flex items-center gap-1 rounded-lg border border-white/[0.06] bg-card px-3 py-1.5 text-sm text-foreground hover:bg-card/80"
+              className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card px-3 py-1.5 text-sm text-foreground hover:bg-muted/40"
             >
               <ArrowLeft className="size-4" /> Back
             </button>
@@ -404,7 +406,7 @@ export function SkillsSection() {
       )}
 
       {report && mode === 'list' && (
-        <div className="rounded-lg border border-white/[0.06] bg-card/60 p-4 text-sm space-y-1">
+        <div className="rounded-lg border border-border/60 bg-card p-4 text-sm space-y-1">
           <p className="font-medium">Curation run complete</p>
           <p className="text-muted-foreground">
             {report.staled.length > 0 ? `Staled: ${report.staled.join(', ')}. ` : 'No skills staled. '}
@@ -414,10 +416,9 @@ export function SkillsSection() {
         </div>
       )}
 
-      {/* ── List view ──────────────────────────────────────────── */}
+      {/* ── Catalog: stat tiles + 3-column card grid ─────────────── */}
       {mode === 'list' && (
-        <>
-          {/* Stat tiles */}
+        <div className="min-h-0 flex-1 overflow-auto space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatTile icon={<CheckCircle className="size-4" />} label="Active" value={activeCount} />
             <StatTile icon={<Clock className="size-4" />} label="Stale" value={staleCount} tone={staleCount > 0 ? 'warn' : 'muted'} />
@@ -425,7 +426,6 @@ export function SkillsSection() {
             <StatTile icon={<BookOpen className="size-4" />} label="Tracked" value={trackedCount} />
           </div>
 
-          {/* Search */}
           <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <input
@@ -433,82 +433,39 @@ export function SkillsSection() {
               placeholder="Search skills…"
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
-              className="w-full rounded-lg border border-white/[0.06] bg-card/60 pl-10 pr-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-full rounded-lg border border-border/60 bg-muted/40 pl-10 pr-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
             />
           </div>
 
-          {/* Unified table */}
-          <div className="rounded-xl border border-white/[0.06] bg-card/60 overflow-hidden">
-            <div className="overflow-auto max-h-[420px]">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-card/95">
-                  <tr className="border-b border-white/[0.06] text-left text-muted-foreground">
-                    <th className="px-5 py-2 font-medium">Name</th>
-                    <th className="px-5 py-2 font-medium">State</th>
-                    <th className="px-5 py-2 font-medium">Source</th>
-                    <th className="px-5 py-2 font-medium">Uses</th>
-                    <th className="px-5 py-2 font-medium">Last used</th>
-                    <th className="px-5 py-2 font-medium text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-5 py-10 text-center text-muted-foreground">
-                        {search ? 'No skills match your search.' : 'No skills yet. Click New to add one.'}
-                      </td>
-                    </tr>
-                  ) : (
-                    rows.map((r) => (
-                      <tr
-                        key={r.name}
-                        className="group border-b border-white/[0.06] hover:bg-white/[0.02] cursor-pointer"
-                        onClick={() => void openSkill(r.name)}
-                      >
-                        <td className="px-5 py-3 font-medium">{r.name}</td>
-                        <td className="px-5 py-3"><StateBadge state={r.state} /></td>
-                        <td className="px-5 py-3 text-muted-foreground">{r.source}</td>
-                        <td className="px-5 py-3 text-muted-foreground">{r.useCount}</td>
-                        <td className="px-5 py-3 text-muted-foreground">
-                          {r.lastUsedAt ? new Date(r.lastUsedAt * 1000).toLocaleDateString() : '—'}
-                        </td>
-                        <td className="px-5 py-3">
-                          <div
-                            className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <RowIconButton
-                              title={r.pinned ? 'Unpin' : 'Pin'}
-                              onClick={() => void handleTogglePin(r.name, r.pinned)}
-                            >
-                              {r.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-                            </RowIconButton>
-                            <RowIconButton
-                              title="Archive"
-                              onClick={() => void handleArchive(r.name)}
-                              disabled={r.state === 'archived'}
-                            >
-                              <Archive className="size-4" />
-                            </RowIconButton>
-                            <RowIconButton
-                              title="Restore"
-                              onClick={() => void handleRestore(r.name)}
-                              disabled={r.state !== 'archived'}
-                            >
-                              <RotateCcw className="size-4" />
-                            </RowIconButton>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+          {filteredRows.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/20 px-6 py-12 text-center">
+              <BookOpen className="mb-3 size-10 p-1 rounded-full bg-muted/40 text-muted-foreground" />
+              <p className="text-sm font-medium text-foreground">
+                {search ? 'No skills match your search.' : 'No skills yet.'}
+              </p>
+              <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">
+                Click <span className="font-medium">New</span> to author your first skill.
+              </p>
             </div>
-          </div>
+          ) : (
+            <div
+              className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+              data-testid="skills-card-grid"
+            >
+              {filteredRows.map((r) => (
+                <SkillCard
+                  key={r.name}
+                  row={r}
+                  onOpen={() => void openSkill(r.name)}
+                  onTogglePin={() => void handleTogglePin(r.name, r.pinned)}
+                  onArchive={() => void handleArchive(r.name)}
+                  onRestore={() => void handleRestore(r.name)}
+                />
+              ))}
+            </div>
+          )}
 
-          {/* Lifecycle row */}
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/[0.06] bg-card/40 px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border/60 bg-card px-5 py-4">
             <div className="flex items-start gap-3">
               <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <div className="text-sm text-muted-foreground">
@@ -520,7 +477,7 @@ export function SkillsSection() {
               <button
                 onClick={() => void handleRunCurator(false)}
                 disabled={running}
-                className="inline-flex items-center gap-2 rounded-lg border border-white/[0.06] bg-card px-3 py-1.5 text-sm text-foreground hover:bg-card/80 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-sm text-foreground hover:bg-muted/50 disabled:opacity-50"
               >
                 <RefreshCw className={`size-4 ${running ? 'animate-spin' : ''}`} />
                 Run
@@ -528,13 +485,13 @@ export function SkillsSection() {
               <button
                 onClick={() => void handleRunCurator(true)}
                 disabled={running}
-                className="inline-flex items-center gap-2 rounded-lg border border-white/[0.06] bg-card px-3 py-1.5 text-sm text-foreground hover:bg-card/80 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-sm text-foreground hover:bg-muted/50 disabled:opacity-50"
               >
                 Dry run
               </button>
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {/* ── Detail view ────────────────────────────────────────── */}
@@ -555,7 +512,7 @@ export function SkillsSection() {
 
           <div className="rounded-xl border border-border/60 bg-card p-5">
             <h3 className="text-sm font-semibold mb-3 text-foreground">Instructions (SKILL.md)</h3>
-            <div className="max-h-[28rem] overflow-auto rounded-lg border border-border/40 bg-muted/20 px-4 py-3">
+            <div className="max-h-[28rem] overflow-auto rounded-lg border border-border/40 bg-muted/20 px-4 py-3 markdown-content">
               {selected.instructions?.trim() ? (
                 <Markdown content={selected.instructions} />
               ) : (
@@ -691,6 +648,92 @@ export function SkillsSection() {
 
 /* ── Sub-components ─────────────────────────────────────────────────── */
 
+function SkillCard({
+  row,
+  onOpen,
+  onTogglePin,
+  onArchive,
+  onRestore,
+}: {
+  row: SkillRow;
+  onOpen: () => void;
+  onTogglePin: () => void;
+  onArchive: () => void;
+  onRestore: () => void;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className={cn(
+        'group relative w-full rounded-xl border border-border/60 bg-card p-4 text-left cursor-pointer',
+        'transition hover:border-border hover:bg-card/90',
+        'focus:outline-none focus:ring-1 focus:ring-primary/40',
+      )}
+      data-testid={`skill-card-${row.name}`}
+    >
+      <div className="flex items-start gap-3">
+        <div className="grid size-10 shrink-0 place-items-center rounded-lg border border-border/50 bg-muted/40 text-sm font-semibold text-foreground">
+          {row.name.slice(0, 2).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-sm font-semibold text-foreground">{row.name}</span>
+            {row.pinned && <Pin className="size-3 shrink-0 text-muted-foreground" />}
+          </div>
+          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+            {row.description || 'No description'}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <StateBadge state={row.state} />
+            <span className="rounded-md border border-border bg-muted/30 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+              {row.source}
+            </span>
+            {row.useCount > 0 && (
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {row.useCount} use{row.useCount === 1 ? '' : 's'}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+      <div
+        className="mt-3 flex items-center justify-end gap-1 opacity-0 transition group-hover:opacity-100"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        <RowIconButton
+          title={row.pinned ? 'Unpin' : 'Pin'}
+          onClick={onTogglePin}
+        >
+          {row.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+        </RowIconButton>
+        <RowIconButton
+          title="Archive"
+          onClick={onArchive}
+          disabled={row.state === 'archived'}
+        >
+          <Archive className="size-4" />
+        </RowIconButton>
+        <RowIconButton
+          title="Restore"
+          onClick={onRestore}
+          disabled={row.state !== 'archived'}
+        >
+          <RotateCcw className="size-4" />
+        </RowIconButton>
+      </div>
+    </div>
+  );
+}
+
 function StatTile({ icon, label, value, tone = 'muted' }: {
   icon: React.ReactNode;
   label: string;
@@ -699,7 +742,7 @@ function StatTile({ icon, label, value, tone = 'muted' }: {
 }) {
   const valueClass = tone === 'warn' && value > 0 ? 'text-warning' : 'text-foreground';
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4">
+    <div className="rounded-xl border border-border/60 bg-card p-4">
       <div className="flex items-center gap-2 mb-2 text-muted-foreground">
         {icon}
         <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
@@ -734,7 +777,7 @@ function RowIconButton({
       aria-label={title}
       onClick={onClick}
       disabled={disabled}
-      className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-white/[0.06] hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition"
+      className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-muted/50 hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition"
     >
       {children}
     </button>
