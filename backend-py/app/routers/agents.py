@@ -7,15 +7,15 @@ update route and a rooted-tree query used by the frontend AgentTree.
 
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from app.models.camel_base import CamelModel
 from app.services.tools import agent_registry
 
 router = APIRouter(prefix='/api/agents')
 
 
-class AgentCreate(BaseModel):
+class AgentCreate(CamelModel):
     name: str
-    parentId: str = ''
+    parent_id: str = ''
     parent_agent: str = ''
     permissions: list[str] = []
     toolsets: list[str] = []
@@ -27,9 +27,9 @@ class AgentCreate(BaseModel):
     description: str = ''
 
 
-class AgentUpdate(BaseModel):
+class AgentUpdate(CamelModel):
     name: str | None = None
-    parentId: str | None = None
+    parent_id: str | None = None
     permissions: list[str] | None = None
     toolsets: list[str] | None = None
     tools: list[str] | None = None
@@ -40,8 +40,8 @@ class AgentUpdate(BaseModel):
     description: str | None = None
 
 
-class AgentJob(BaseModel):
-    agentId: str
+class AgentJob(CamelModel):
+    agent_id: str
     goal: str
     context: str = ''
 
@@ -57,7 +57,7 @@ async def createAgent(body: AgentCreate):
     """Register a new agent (persisted)."""
     return agent_registry.createAgent(
         name=body.name,
-        parentId=body.parentId,
+        parentId=body.parent_id,
         parent_agent=body.parent_agent,
         permissions=body.permissions,
         toolsets=body.toolsets,
@@ -88,7 +88,8 @@ async def getAgent(agentId: str):
 @router.put('/{agentId}')
 async def updateAgent(agentId: str, body: AgentUpdate):
     """Update an existing agent's configuration."""
-    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    # Service layer stores camelCase keys (parentId, modelAlias, …).
+    updates = {k: v for k, v in body.model_dump(by_alias=True).items() if v is not None}
     agent = agent_registry.updateAgent(agentId, updates, actor='ui')
     if not agent:
         raise HTTPException(status_code=404, detail='Agent not found')
@@ -113,7 +114,7 @@ async def getAgentTree(agentId: str):
 
 @router.post('/jobs')
 async def createJob(body: AgentJob):
-    return agent_registry.createJob(body.agentId, body.goal, body.context)
+    return agent_registry.createJob(body.agent_id, body.goal, body.context)
 
 
 @router.get('/jobs')
