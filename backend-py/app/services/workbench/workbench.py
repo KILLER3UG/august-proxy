@@ -10,7 +10,7 @@ Key subsystems:
 - Tool execution dispatch (15+ tool types)
 - Plan/approval gate (plan mode, pending mutations, approval tokens)
 - System prompt building (3-tier cache structure)
-- Effort/thinking budget resolution
+- Effort/thinking budget resolution (see effort.py; re-exported below)
 - Goal system (stubbed)
 - Subagent dispatch (stubbed)
 """
@@ -27,6 +27,12 @@ from typing import Callable, TYPE_CHECKING, cast
 from app.json_narrowing import as_str, as_dict, as_list, as_int, as_float, as_bool
 from app.atomic_write import write_json_atomic
 from app.type_aliases import JsonValue
+from app.services.workbench.effort import (
+    resolve_effective_effort,
+    effort_to_thinking_budget,
+    effort_to_prompt_instruction,
+    effort_to_openai_reasoning_effort,
+)
 
 if TYPE_CHECKING:
     from app.services.workbench.tool_guardrails import ToolCallTracker
@@ -34,6 +40,27 @@ from app.models import AnthropicRequest, ChatCompletionRequest
 logger = logging.getLogger('workbench')
 MAX_MANAGED_TOOL_ROUNDS = 10
 WORKBENCH_TOKEN_BUDGET = 2000000
+
+
+# camelCase wrappers for back-compat (tests / external callers with camelCase kwargs)
+def resolveEffectiveEffort(
+    incoming: str | None,
+    session: 'WorkbenchSession',
+    modelEntry: dict[str, object] | None = None,
+) -> str:
+    return resolve_effective_effort(incoming, session, modelEntry)
+
+
+def effortToThinkingBudget(effort: str, modelMax: int = 32000, maxTokens: int = 8192) -> int:
+    return effort_to_thinking_budget(effort, model_max=modelMax, max_tokens=maxTokens)
+
+
+def effortToPromptInstruction(effort: str) -> str:
+    return effort_to_prompt_instruction(effort)
+
+
+def effortToOpenaiReasoningEffort(effort: str) -> str:
+    return effort_to_openai_reasoning_effort(effort)
 
 
 @dataclass
@@ -688,45 +715,6 @@ def _xmlEscape(s: str) -> str:
     return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
 
 
-def resolveEffectiveEffort(
-    incoming: str | None, session: WorkbenchSession, modelEntry: dict[str, object] | None = None
-) -> str:
-    """Resolve the effort level from incoming param, session, or model default."""
-    if incoming and incoming in ('low', 'medium', 'high', 'max'):
-        return incoming
-    if session.metadata.get('effort') in ('low', 'medium', 'high', 'max'):
-        return as_str(session.metadata.get('effort'))
-    return 'medium'
-
-
-def effortToThinkingBudget(effort: str, modelMax: int = 32000, maxTokens: int = 8192) -> int:
-    """Map effort to Anthropic thinking budget tokens."""
-    mapping = {
-        'low': min(4096, maxTokens),
-        'medium': min(8192, maxTokens),
-        'high': min(16000, maxTokens),
-        'max': min(modelMax, maxTokens * 2),
-    }
-    return mapping.get(effort, 8192)
-
-
-def effortToPromptInstruction(effort: str) -> str:
-    """Map effort to a system-prompt instruction."""
-    instructions = {
-        'low': 'Provide quick, concise responses. Minimize analysis.',
-        'medium': 'Provide balanced responses with moderate analysis.',
-        'high': 'Provide thorough, detailed analysis. Take your time.',
-        'max': 'Provide exhaustive, comprehensive analysis. Leave nothing out.',
-    }
-    return instructions.get(effort, instructions['medium'])
-
-
-def effortToOpenaiReasoningEffort(effort: str) -> str:
-    """Map August's 4-level effort to OpenAI's 3-level reasoning_effort."""
-    mapping = {'low': 'low', 'medium': 'medium', 'high': 'high', 'max': 'high'}
-    return mapping.get(effort, 'medium')
-
-
 def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     """Return tool definitions in Anthropic format for a session.
 
@@ -1013,7 +1001,7 @@ async def sendWorkbenchMessageStream(
     _emitSessionStatus(sessionId)
     session.messages.append({'role': 'user', 'content': message})
     session.messageCount += 1
-    effectiveEffort = resolveEffectiveEffort(effort or as_str(session.metadata.get('effort', '')), session)
+    effectiveEffort = resolve_effective_effort(effort or as_str(session.metadata.get('effort', '')), session)
     resolvedProvider = None
     if modelProvider:
         resolvedProvider = _resolveWorkbenchProvider(modelProvider, '')
@@ -1632,7 +1620,7 @@ async def _callAnthropicWorkbench(
     body['messages'] = anthropicMessages
     if tools:
         body['tools'] = tools
-    thinkingBudget = effortToThinkingBudget(effort)
+    thinkingBudget = effort_to_thinking_budget(effort)
     if thinkingBudget > 0 and _supportsThinking(provider, model):
         body['thinking'] = {'type': 'enabled', 'budget_tokens': thinkingBudget}
     contentBlocks: list[dict[str, object]] = []
@@ -1756,7 +1744,7 @@ async def _callOpenaiWorkbench(
     body['max_tokens'] = 8192
     if tools:
         body['tools'] = tools
-    reasoning = effortToOpenaiReasoningEffort(effort)
+    reasoning = effort_to_openai_reasoning_effort(effort)
     if reasoning:
         body['reasoning_effort'] = reasoning
         contentText = ''
