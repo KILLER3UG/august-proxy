@@ -136,15 +136,15 @@ Confirm baseline in Progress Log / live tracker before starting — **do not ass
 
 ## Phase 4 — Modernization Pass
 
-**Backend / Frontend** — same modernization menu as before. **B18:** nanostores → Zustand is confirmed and still **open** (Zustand not installed).
+**Backend / Frontend** — same modernization menu as before. **B18:** nanostores → Zustand — **CLOSED** (Zustand in use; zero nanostores).
 
 **Database**
 - Keep raw `sqlite3` + `db_writer` design — no ORM reintroduction unless asked.
-- **`db_writer` role — CORRECTED after P0 (B2 amended 2026-07-14):** `_conn()` = WAL/busy_timeout for most writers; `enqueue_write` = **FIFO** single-worker queue for `consolidation_daemon` only. **Not** a priority scheduler (high does not jump the line). Low drop = age > 2s at **dequeue**. Unbounded queue → `QueueFull` path dead (**B26**). See `docs/ARCHITECTURE.md`. Product decision: accept as-is for current sole caller; do not build “high means fast” on it.
+- **`db_writer` role — CORRECTED after P0 (B2 amended 2026-07-14):** `_conn()` = WAL/busy_timeout for most writers; `enqueue_write` = **FIFO** single-worker queue for `consolidation_daemon` only. **Not** a priority scheduler (high does not jump the line). Low drop = age > 2s at **dequeue**. Unbounded queue; dead `QueueFull` path **removed (B26 closed)**. See `docs/ARCHITECTURE.md`. Product decision: accept as-is for current sole caller; do not build “high means fast” on it.
 - `lib/storage_key_migration.py` busy_timeout inconsistency — still low priority / verify current state (B22 fixed a related table-name bug).
-- **Missing indexes — CLOSED** (`5b21a50`): `messages(sessionId)`, `usageEvents(sessionId/createdAt)`, `sessions(isArchived)`, `blackboard(sessionId)`, `examAttempts(examId)`.
+- **Missing indexes — CLOSED:** all six present + EXPLAIN-used (see live tracker).
 - **B1a non-atomic JSON writes — CLOSED.** `write_json_atomic` lives in `app/atomic_write.py`. Former sites fixed; curator uses temp + `Path.replace`. Re-verify with grep before assuming closed if time has passed.
-- SQLite table/column camelCase→snake_case: **needs explicit sign-off** (high risk) — not bundled with naming work.
+- SQLite table/column camelCase→snake_case: **CLOSED** on live DB (snake-only + camel wire via `_row_as_wire`).
 
 ## Phase 5 — Dependency, Tooling & Documentation
 
