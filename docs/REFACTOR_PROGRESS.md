@@ -9,17 +9,17 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 (Ground Rule 1 correction: Phase 3/4 scope narrowed; Phase P = **P0 only**)
+**Last updated:** 2026-07-14 (**test isolation is the headline**; schema merge pass 1 held)
 **Current branch state:** `master` — verify with `git rev-parse HEAD`.
 **Verification baseline:**
-`pytest 679 passed` · `mypy app/ → 0 errors / 195 files` · `ruff check app/ → clean` · CI Type check green at `dcce2bb` wave
-**CI note:** Prefer `backend-py/.venv` (3.12).
+`pytest 680 passed` · live DB fingerprint **identical** before/after full suite · FTS sync PASS · mypy/ruff clean on touched paths
+**CI note:** Prefer `backend-py/.venv` (3.12). **Never run bare pytest against live brain** — isolation is autouse.
 
 ### Phase 0 — SIGNED OFF (2026-07-13)
 ### Phase 2 — SIGNED OFF (2026-07-14) — includes B1a + B16 (see residual ledger)
 ### Phase 3 — **DONE against modularization exit criteria** (not “all large files gone”)
-### Phase 4 — **DONE against modernization exit criteria** (indexes, busy_timeout, schema rename hybrid, Zustand)
-### Phase P — **P0 ONLY approved** (baselines); P1–P5 not approved
+### Phase 4 — indexes/busy_timeout/Zustand met; schema **pass 1** (data merge) + isolation proof; **pass 2 drop NOT done**
+### Phase P — **blocked** until pass 2; P0 not started
 
 ---
 
@@ -42,10 +42,35 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 
 ## Where to pick up (next session)
 
-1. **Phase P0 only** (user-approved): baselines — product overhead vs provider RTT; include gateway/multi-agent surfaces in measurement; no P1–P5 until numbers justify scope.
-2. Do **not** treat Phase P as fully greenlit; doc exists for design, execution gated.
-3. Phase 5 docs / Phase 7 feature E2E remain open on the long roadmap.
-4. Optional Phase 3 polish only if it unblocks measured work later.
+1. **Pass 2 schema drop** only after re-confirm isolation + coverage (user go).
+2. Then P0 baselines (still gated on pass 2 stability).
+3. Do **not** remove `isolatedData` autouse without safety review.
+4. Phase 5 / Phase 7 remain open on the long roadmap.
+
+---
+
+## HEADLINE: Test suite was mutating live production data
+
+### What was wrong
+
+| Issue | Detail |
+|---|---|
+| `test_memory.py` autouse | `DELETE FROM memory_store/sessions/usage_events/...` on the **live** brain after every test |
+| Many `v2*`/`v3*`/`v11*` tests | Called `memory_store.init()` / `_conn()` without redirecting `AUGUST_BRAIN_SQLITE_FILE` |
+| Consequence | Full pytest was **not** a safe verification step — it could destroy merge recovery mid-run |
+| Historical note | Prior “N tests passed” this session were not proof of side-effect-free checks |
+
+### Fix (blocking, done)
+
+| Change | Detail |
+|---|---|
+| `tests/conftest.py` | **`isolatedData` is `autouse=True`** for every test: temp `AUGUST_DATA_DIR` + `AUGUST_BRAIN_SQLITE_FILE` + minimal `providers.json`/`config.json` |
+| Proof | `_live_db_fingerprint.py` before full suite + after → **`FINGERPRINT_IDENTICAL True`** (row counts + content hashes + FTS counts + blob hashes) |
+| Suite | **680 passed** with isolation on |
+
+Scripts: `backend-py/scripts/_live_db_fingerprint.py`
+
+**Pass 2 must not run until this stays true.** Pass 2 step “full pytest” is only safe because isolation is now suite-wide.
 
 ---
 
@@ -197,7 +222,8 @@ If P0 shows DB is not the bottleneck, P2 may never be worth opening.
 | Phase 4 modernization exit criteria | indexes/busy_timeout/Zustand met; schema **pass 1 verified**, pass 2 drop pending |
 | “100% of entire handoff checklist” | **false** — use residual ledger |
 | Schema rename | **pass 1 done** (snake has full coverage); camel tables retained until pass 2 |
-| Phase P | **P0 only after** schema merge verified — pass 1 is verified; recommend pass 2 drop first or accept dual-name leftover |
+| Phase P / P0 | **Blocked** until pass 2 drop confirmed stable |
+| Live test isolation | **Required** — `isolatedData` autouse proven fingerprint-identical |
 
 ---
 

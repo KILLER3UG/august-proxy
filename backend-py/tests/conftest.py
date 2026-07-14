@@ -1,29 +1,81 @@
-"""Shared pytest fixtures for the new self-configuration / browser tests.
+"""Shared pytest fixtures.
 
-The ``isolated_data`` fixture redirects the data directory and brain SQLite
-file to a temp path so tests that mutate aliases / fallback / agents never
-touch the user's real ``config.json`` or ``august_brain.sqlite``. It is
-opt-in — existing tests are unaffected.
+**Live production data isolation is mandatory and autouse.**
+
+Every test runs with:
+  * ``AUGUST_DATA_DIR`` → a throwaway temp directory
+  * ``AUGUST_BRAIN_SQLITE_FILE`` → temp ``test_brain.sqlite`` under that dir
+  * ``settings.dataDir`` pointed at the same temp dir
+
+This prevents the suite from reading/writing the user's real
+``data/august_brain.sqlite``, ``config.json``, workbench session files, etc.
+
+Tests that need the temp path can still request ``isolatedData`` (yields the
+``Path``). Tests that do not request it still get isolation.
+
+Do **not** remove ``autouse=True`` without an explicit safety review.
 """
 
 from __future__ import annotations
+
 import pytest
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def isolatedData(tmp_path, monkeypatch):
+    """Redirect data dir + brain SQLite to a per-test temp path (autouse)."""
+    import json
+
     from app.config import settings
     from app.services import memory_store
 
+    brain = tmp_path / 'test_brain.sqlite'
     monkeypatch.setenv('AUGUST_DATA_DIR', str(tmp_path))
-    monkeypatch.setenv('AUGUST_BRAIN_SQLITE_FILE', str(tmp_path / 'test_brain.sqlite'))
+    monkeypatch.setenv('AUGUST_BRAIN_SQLITE_FILE', str(brain))
     monkeypatch.setattr(settings, 'dataDir', tmp_path)
-    settings.reload()
+
+    # Minimal providers.json so route tests don't depend on the live store.
+    providers_path = tmp_path / 'providers.json'
+    if not providers_path.exists():
+        providers_path.write_text(
+            json.dumps(
+                {
+                    'providers': [
+                        {
+                            'id': 'test-openai',
+                            'name': 'Test OpenAI',
+                            'apiFormat': 'openaiChat',
+                            'baseUrl': 'https://api.openai.com/v1',
+                            'enabled': True,
+                            'models': [
+                                {
+                                    'id': 'gpt-4o-mini',
+                                    'name': 'gpt-4o-mini',
+                                    'contextWindow': 128000,
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ),
+            encoding='utf-8',
+        )
+    config_path = tmp_path / 'config.json'
+    if not config_path.exists():
+        config_path.write_text('{}', encoding='utf-8')
+
+    try:
+        settings.reload()
+    except Exception:
+        pass
     memory_store.close()
     memory_store.init()
     yield tmp_path
     memory_store.close()
-    settings.reload()
+    try:
+        settings.reload()
+    except Exception:
+        pass
 
 
 @pytest.fixture
