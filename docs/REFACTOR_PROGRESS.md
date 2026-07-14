@@ -9,11 +9,11 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-13 (session handoff — CamelModel usage merged; pause)
-**Current branch state:** `master` tip (= `origin/master`, expect clean). Verify with `git rev-parse HEAD` — handoff docs land in/after `ab05148`.
-**Verification baseline on master (2026-07-13 handoff):**
-`pytest 538 collected / 538 passed` · `mypy app/ → 0 errors / 176 source files` ·
-`ruff check app/ → All checks passed` · CI `type-check.yml` (Python 3.12)
+**Last updated:** 2026-07-14 (CamelModel git router merged)
+**Current branch state:** `master` tip (= `origin/master`, expect clean). Verify with `git rev-parse HEAD` — git CamelModel on/after `00904fe`.
+**Verification baseline on master (2026-07-14):**
+`pytest 543 collected` · `mypy app/ → 0 errors / 176 source files` ·
+`ruff check app/ → All checks passed` · CI `type-check.yml` (Python 3.12) green on `refactor/camelmodel-git`
 **CI note:** Prefer `backend-py/.venv` (3.12). System Python 3.11 can fail collection.
 
 ### Phase 0 sign-off
@@ -31,10 +31,10 @@ scale-up (`usage`).
 
 ## Where to pick up (next session)
 
-1. Verify clean `master` matching `origin/master` (`git rev-parse HEAD`); handoff docs are on/after `ab05148`.
+1. Verify clean `master` matching `origin/master` (`git rev-parse HEAD`); git CamelModel is on/after `00904fe`.
 2. Optional cleanup: delete leftover `refactor/b21-app-file-renames` (local + origin) if still present — content already on master.
 3. **Next code chunk:** CamelModel scale-up — **one router** on a feature branch.
-   - Suggested: `git.py` (`repoPath` → `repo_path`), or `sessions` / `mcp` / `cron` (mostly single-word fields).
+   - Suggested: `sessions` / `mcp` / `cron` (mostly single-word fields), or `memory` / `terminal` for multi-field value.
    - Pattern: inherit `CamelModel`, snake_case fields, characterization tests, push, CI green, FF-merge, update this tracker.
 4. Do **not** restart Phase 0 or re-merge closed historical branches.
 5. Do **not** treat B21 as closing PEP 8 for callables/TypedDict fields inside renamed modules.
@@ -43,11 +43,12 @@ scale-up (`usage`).
 
 ## Meta-review evidence (required before Phase 0 sign-off)
 
-### 1. Test count 520 → 534 (+14) — accounted for; now 538
+### 1. Test count 520 → 534 (+14) — accounted for; now 543
 
 Baseline cited in earlier audits: **520**. At Phase 0 evidence pack:
-**534** (= 520 + 14). **Current handoff: 538** (= 534 + 4 from
-`tests/test_camel_model_usage.py` in `40606d5`).
+**534** (= 520 + 14). **Usage handoff: 538** (= 534 + 4 from
+`tests/test_camel_model_usage.py`). **Current: 543** (= 538 + 5 from
+`tests/test_camel_model_git.py` in `00904fe`).
 
 | Added tests | Count | Commit | Why |
 |---|---|---|---|
@@ -56,7 +57,8 @@ Baseline cited in earlier audits: **520**. At Phase 0 evidence pack:
 | `tests/test_db_writer_coverage.py` | **+1** | `3bc390e` (B2) | Consolidation routes writes through `db_writer` |
 | `tests/test_sqlite_safety.py` | **+3** | `3bc390e` (B2) | WAL + `busy_timeout` + direct-write safety |
 | `tests/test_camel_model_usage.py` | **+4** | `40606d5` (CamelModel usage) | Usage router boundary + HTTP POST |
-| **Net vs original 520** | **+18** | | **520 + 18 = 538** |
+| `tests/test_camel_model_git.py` | **+5** | `00904fe` (CamelModel git) | Git router boundary + HTTP POST |
+| **Net vs original 520** | **+23** | | **520 + 23 = 543** |
 
 ### 2. B2 status — **CLOSED on master**
 
@@ -94,7 +96,7 @@ write sites; curator uses temp + `Path.replace`. Re-verify if time passed.
 | 6 | B18 nanostores → Zustand relaunched (Phase 4 workstream) | open workstream |
 | 7 | SQLite schema camelCase→snake_case needs **explicit** sign-off | Ground Rule 5 |
 | 8 | Phase 0 signed off; G5–G7 dropped; Phase 2+ unblocked | user 2026-07-13 |
-| 9 | B21 app filenames first, then CamelModel one router at a time | B21 app done; CamelModel **usage** merged (`40606d5`) |
+| 9 | B21 app filenames first, then CamelModel one router at a time | B21 app done; CamelModel **usage** + **git** merged (`40606d5`, `00904fe`) |
 | 10 | B21 = **filename rename only** — callables/TypedDict fields separate | explicit scope note |
 | 11 | Merge CamelModel routers via FF after CI green; one router per branch | practice established |
 
@@ -128,14 +130,14 @@ write sites; curator uses temp + `Path.replace`. Re-verify if time passed.
 ## Recent commits (tip)
 
 ```
+00904fe refactor(git): convert GitCommand to CamelModel with snake_case fields
+aa78589 docs(refactor): finalize handoff tip references for next session
 ab05148 docs(refactor): publish session handoff prompt and refresh tracker
 c15e064 docs(refactor): record CamelModel usage router merge
 40606d5 refactor(usage): convert UsageRecord to CamelModel with snake_case fields
 aa8930a docs(refactor): record B21 app-filename merge on master
 4f94269 docs(naming): fix stale B21 path refs and record filename-only scope
 af9fce9 refactor(naming): rename three remaining app camelCase modules to snake_case
-320079e docs(refactor): record Phase 0 sign-off and open Phase 2+
-635b2cc docs(refactor): publish meta-review evidence and fix ARCHITECTURE drift
 ```
 
 ---
@@ -165,18 +167,22 @@ safe to delete locally and on origin.
 |---|---|---|---|
 | `models.py` | `ModelInfo`, `ModelList` | `c030ff6` / `b1d1217` | ✅ Pilot |
 | `usage.py` | `UsageRecord` | `40606d5` | ✅ First scale-up |
-| Others | ~37 `BaseModel` subclasses remain | — | ❌ Next |
+| `git.py` | `GitCommand` | `00904fe` | ✅ Second scale-up |
+| Others | ~36 `BaseModel` subclasses remain | — | ❌ Next |
 
 `CamelModel` base: `app/models/camel_base.py` (`alias_generator=to_camel`,
 `populate_by_name=True`). Add `extra="allow"` per model when needed (see
 `ModelInfo`). Characterization: `tests/test_camel_model.py`,
-`tests/test_camel_model_usage.py`.
+`tests/test_camel_model_usage.py`, `tests/test_camel_model_git.py`.
+
+Note: GET query params on `git.py` (`repoPath`) were left unchanged — only the
+`GitCommand` request body is in CamelModel scope for this chunk.
 
 ---
 
 ## What's next
 
-1. ✅ Phase 0 signed off; B1/B2/B15/B16 APIs/B21 app filenames closed; CamelModel **usage** on master.
+1. ✅ Phase 0 signed off; B1/B2/B15/B16 APIs/B21 app filenames closed; CamelModel **usage** + **git** on master.
 2. **Next session:** convert next router to `CamelModel` (one commit/branch; CI before merge).
 3. Later separate chunks: remaining camelCase callables/TypedDict fields; 62 test renames; B18 Zustand; B20 Dockerfile; Phase 3 large-file splits; SQLite index gaps; schema rename (sign-off required).
 4. Out of scope for this refactor: AUG.md proxy injection; Feature Flow Visualization UI.
@@ -185,6 +191,6 @@ safe to delete locally and on origin.
 
 ## Open questions for the user
 
-- Which next CamelModel router? (`git` / `sessions` / `mcp` / `cron` / other)
+- Which next CamelModel router? (`sessions` / `mcp` / `cron` / `memory` / other)
 - Delete leftover `refactor/b21-app-file-renames` refs?
 - Manual CI loop (default) vs automation
