@@ -164,14 +164,14 @@ async def brainLearning() -> dict[str, object]:
     except Exception:
         pass
     sleepCycle: dict[str, object] = {'lastRunAt': None, 'lastMerged': 0, 'lastPromoted': 0, 'lastDeleted': 0}
-    last = getattr(_cd, '_last_run', None)
+    last = getattr(_cd, '_lastRun', None) or getattr(_cd, '_last_run', None)
     if last:
         sleepCycle.update(
             {
                 'lastRunAt': as_str(last.get('at')),
                 'lastMerged': as_int(last.get('merged'), 0),
                 'lastPromoted': as_int(last.get('promoted'), 0),
-                'lastDeleted': as_int(last.get('deletedStale'), 0),
+                'lastDeleted': as_int(last.get('deleted_stale') if last.get('deleted_stale') is not None else last.get('deletedStale'), 0),
             }
         )
     pendingSkills: list[dict[str, object]] = []

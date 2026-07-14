@@ -34,7 +34,7 @@ async def createAlias(alias: str, target_model: str, target_provider: str, displ
             display_alias=display_alias,
             actor='agent',
         )
-        return _ok(alias=entry)
+        return _ok(alias=alias_service.alias_to_wire(entry))
     except (ValueError, KeyError) as exc:
         return _err(str(exc))
     except Exception as exc:
@@ -48,7 +48,7 @@ async def updateAlias(alias: str, target_model: str | None = None, target_provid
         entry = alias_service.update_alias(
             alias=alias, target_model=target_model, target_provider=target_provider, actor='agent'
         )
-        return _ok(alias=entry)
+        return _ok(alias=alias_service.alias_to_wire(entry))
     except (ValueError, KeyError) as exc:
         return _err(str(exc))
     except Exception as exc:
@@ -70,7 +70,7 @@ async def deleteAlias(alias: str) -> str:
 async def listAliases() -> str:
     from app.services import alias_service
 
-    return _ok(aliases=alias_service.listAliases())
+    return _ok(aliases=alias_service.listAliasesWire())
 
 
 async def configureFallback(

@@ -20,6 +20,13 @@ the dropdown refreshes, and records every change to the config audit log.
     display one model name (the alias) while routing to a completely
     different provider + model combination upstream. See
     ``app.models.aliases`` for the conceptual model.
+
+    **Case convention**
+
+    In-memory :class:`AliasDict` uses snake_case (``target_model``, …).
+    On-disk ``config.json`` and HTTP JSON to the UI keep camelCase
+    (``targetModel``, …). Use :func:`alias_from_wire` / :func:`alias_to_wire`
+    at those boundaries.
 """
 
 from __future__ import annotations
@@ -33,8 +40,36 @@ from app.json_narrowing import as_dict, as_list, as_str
 from app.atomic_write import write_json_atomic
 
 
+def alias_from_wire(raw: object) -> AliasDict:
+    """Normalize a config/API alias entry (camelCase or snake_case) to AliasDict."""
+    entry = as_dict(raw)
+    out: AliasDict = {
+        'alias': as_str(entry.get('alias')).strip(),
+        'target_model': as_str(entry.get('target_model')) or as_str(entry.get('targetModel')) or '',
+        'target_provider': as_str(entry.get('target_provider')) or as_str(entry.get('targetProvider')) or '',
+    }
+    display = as_str(entry.get('display_alias')) or as_str(entry.get('displayAlias')) or ''
+    if display:
+        out['display_alias'] = display
+    return out
+
+
+def alias_to_wire(entry: AliasDict | dict[str, object]) -> dict[str, object]:
+    """Serialize an AliasDict to camelCase keys for config.json / HTTP responses."""
+    d = cast(dict[str, object], entry)
+    out: dict[str, object] = {
+        'alias': as_str(d.get('alias')),
+        'targetModel': as_str(d.get('target_model')) or as_str(d.get('targetModel')) or '',
+        'targetProvider': as_str(d.get('target_provider')) or as_str(d.get('targetProvider')) or '',
+    }
+    display = as_str(d.get('display_alias')) or as_str(d.get('displayAlias')) or ''
+    if display:
+        out['displayAlias'] = display
+    return out
+
+
 def listAliases() -> list[AliasDict]:
-    """Return all model-alias entries (full records, not just names)."""
+    """Return all model-alias entries as snake_case AliasDict records."""
     import json
 
     p = dataPath('config.json')
@@ -45,16 +80,23 @@ def listAliases() -> list[AliasDict]:
     except (OSError, json.JSONDecodeError):
         return []
     aliases = as_list(cfg.get('modelAliases'), [])
-    return cast('list[AliasDict]', aliases) if isinstance(aliases, list) else []
+    if not isinstance(aliases, list):
+        return []
+    return [alias_from_wire(a) for a in aliases if isinstance(a, dict)]
+
+
+def listAliasesWire() -> list[dict[str, object]]:
+    """Return aliases in camelCase wire form for HTTP / agent JSON responses."""
+    return [alias_to_wire(a) for a in listAliases()]
 
 
 def _writeAliases(aliases: list[AliasDict]) -> None:
-    """Write the full aliases list to ``config.json`` atomically."""
+    """Write the full aliases list to ``config.json`` atomically (camelCase keys)."""
     import json
 
     p = dataPath('config.json')
     cfg = json.loads(p.read_text('utf-8')) if p.exists() else {}
-    cfg['modelAliases'] = aliases
+    cfg['modelAliases'] = [alias_to_wire(a) for a in aliases]
     write_json_atomic(p, cfg, indent=2)
     settings.reload()
     try:
@@ -111,7 +153,7 @@ def validateTarget(target_provider: str, target_model: str) -> tuple[bool, str]:
 def createAlias(
     alias: str, target_model: str, target_provider: str, actor: str = 'system', display_alias: str = ''
 ) -> AliasDict:
-    """Create or upsert a model alias. Returns the stored entry."""
+    """Create or upsert a model alias. Returns the stored entry (snake_case)."""
     alias = (alias or '').strip()
     if not alias:
         raise ValueError('alias is required')
@@ -119,14 +161,19 @@ def createAlias(
     if not ok:
         raise ValueError(msg)
     aliases = listAliases()
-    entry: AliasDict = {'alias': alias, 'targetModel': target_model, 'targetProvider': target_provider}
+    entry: AliasDict = {'alias': alias, 'target_model': target_model, 'target_provider': target_provider}
     if display_alias:
-        entry['displayAlias'] = display_alias
+        entry['display_alias'] = display_alias
     before = _find(alias)
     if before is not None:
         beforeCopy = dict(before)
-        before.update(entry)
-        entry = before
+        # Update in-place within the loaded list
+        for i, a in enumerate(aliases):
+            if as_str(a.get('alias')) == alias:
+                merged = {**a, **entry}
+                aliases[i] = cast(AliasDict, merged)
+                entry = aliases[i]
+                break
     else:
         beforeCopy = None
         aliases.append(entry)
@@ -135,8 +182,8 @@ def createAlias(
         'alias',
         'create' if beforeCopy is None else 'upsert',
         actor,
-        before=cast('JsonValue', beforeCopy),
-        after=cast('JsonValue', entry),
+        before=cast('JsonValue', alias_to_wire(beforeCopy) if beforeCopy else None),
+        after=cast('JsonValue', alias_to_wire(entry)),
     )
     return entry
 
@@ -144,23 +191,29 @@ def createAlias(
 def update_alias(
     alias: str, target_model: str | None = None, target_provider: str | None = None, actor: str = 'system'
 ) -> AliasDict:
-    """Update an existing alias. Returns the updated alias or None if not found."""
+    """Update an existing alias. Returns the updated alias or raises if not found."""
     aliases = listAliases()
     existing = next((a for a in aliases if as_str(a.get('alias')) == alias), None)
     if existing is None:
         raise KeyError(f"Alias '{alias}' not found")
     before = dict(existing)
-    newModel = target_model if target_model is not None else as_str(existing.get('targetModel'), '')
-    newProvider = target_provider if target_provider is not None else as_str(existing.get('targetProvider'), '')
+    newModel = target_model if target_model is not None else as_str(existing.get('target_model'), '')
+    newProvider = target_provider if target_provider is not None else as_str(existing.get('target_provider'), '')
     ok, msg = validateTarget(newProvider, newModel)
     if not ok:
         raise ValueError(msg)
     if target_model is not None:
-        existing['targetModel'] = target_model
+        existing['target_model'] = target_model
     if target_provider is not None:
-        existing['targetProvider'] = target_provider
+        existing['target_provider'] = target_provider
     _writeAliases(aliases)
-    record_config_audit('alias', 'update', actor, before=cast('JsonValue', before), after=cast('JsonValue', existing))
+    record_config_audit(
+        'alias',
+        'update',
+        actor,
+        before=cast('JsonValue', alias_to_wire(before)),
+        after=cast('JsonValue', alias_to_wire(existing)),
+    )
     return existing
 
 
@@ -172,31 +225,41 @@ def delete_alias(alias: str, actor: str = 'system') -> bool:
     if len(newAliases) == len(aliases):
         return False
     _writeAliases(newAliases)
-    record_config_audit('alias', 'delete', actor, before=cast('JsonValue', before), after=None)
+    record_config_audit(
+        'alias',
+        'delete',
+        actor,
+        before=cast('JsonValue', alias_to_wire(before) if before else None),
+        after=None,
+    )
     return True
 
 
-def replaceAliases(aliases: list[AliasDict], actor: str = 'system') -> list[AliasDict]:
-    """Replace the entire alias list. Validates each entry's provider first."""
+def replaceAliases(aliases: list[AliasDict] | list[dict[str, object]], actor: str = 'system') -> list[AliasDict]:
+    """Replace the entire alias list. Validates each entry's provider first.
+
+    Accepts wire (camelCase) or internal (snake_case) entry dicts.
+    """
     normalised: list[AliasDict] = []
-    for entry in aliases:
+    for raw in aliases:
+        entry = alias_from_wire(raw)
         alias = as_str(entry.get('alias')).strip()
         if not alias:
             raise ValueError("alias entry missing 'alias' field")
-        target_model = as_str(entry.get('targetModel')) or as_str(entry.get('target_model')) or ''
-        target_provider = as_str(entry.get('targetProvider')) or as_str(entry.get('target_provider')) or ''
+        target_model = as_str(entry.get('target_model')) or ''
+        target_provider = as_str(entry.get('target_provider')) or ''
         ok, msg = validateTarget(target_provider, target_model)
         if not ok:
             raise ValueError(f"Alias '{alias}': {msg}")
-        normalised.append(
-            AliasDict(
-                alias=alias,
-                targetModel=target_model,
-                targetProvider=target_provider,
-                **{'displayAlias': entry['displayAlias']} if as_str(entry.get('displayAlias')) else {},
-            )
-        )
+        entry['alias'] = alias
+        normalised.append(entry)
     before = listAliases()
     _writeAliases(normalised)
-    record_config_audit('alias', 'replace', actor, before=cast('JsonValue', before), after=cast('JsonValue', normalised))
+    record_config_audit(
+        'alias',
+        'replace',
+        actor,
+        before=cast('JsonValue', [alias_to_wire(a) for a in before]),
+        after=cast('JsonValue', [alias_to_wire(a) for a in normalised]),
+    )
     return normalised

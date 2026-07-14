@@ -172,7 +172,7 @@ async def getModelAliases():
     """Return all model-alias entries for the UI's Aliases tab."""
     from app.services import alias_service
 
-    return {'aliases': alias_service.listAliases()}
+    return {'aliases': alias_service.listAliasesWire()}
 
 
 class ModelAliasesBulk(CamelModel):
@@ -185,7 +185,8 @@ async def putModelAliases(body: ModelAliasesBulk):
     from app.services import alias_service
 
     try:
-        return {'aliases': alias_service.replaceAliases(cast(list[AliasDict], body.aliases), actor='ui')}
+        replaced = alias_service.replaceAliases(cast(list[AliasDict], body.aliases), actor='ui')
+        return {'aliases': [alias_service.alias_to_wire(a) for a in replaced]}
     except ValueError as exc:
         from fastapi import HTTPException
 
