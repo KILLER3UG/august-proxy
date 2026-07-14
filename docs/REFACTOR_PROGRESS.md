@@ -9,17 +9,17 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 — **P0 closed** (ARCHITECTURE/db_writer truth + product decision + B26 filed)
+**Last updated:** 2026-07-14 — **P0 closed**; **P1.1/P1.2 landed** (prompt/tool caches, isolated before/after)
 **Current branch state:** `master` — verify with `git rev-parse HEAD`.
 **Verification baseline:**
-P0 suite green · stream-perf vitest green · schema closed · isolation autouse
+P0 + P1 cache tests green · schema closed · isolation autouse · db_writer FIFO documented
 **CI note:** Prefer `backend-py/.venv` (3.12). Isolation is **autouse** — do not remove.
 
 ### Phase 0 — SIGNED OFF (2026-07-13)
 ### Phase 2 — SIGNED OFF (2026-07-14) — includes B1a + B16 (see residual ledger)
 ### Phase 3 — **DONE against modularization exit criteria** (not “all large files gone”)
 ### Phase 4 — **DONE** (all **six** indexes present + EXPLAIN-used; busy_timeout; Zustand; schema closed)
-### Phase P — **P0 CLOSED**; P1–P5 **not approved** (hold optimisations until explicit go)
+### Phase P — **P0 CLOSED**; **P1.1 + P1.2 DONE** (caches); P1 rest / P2–P5 **not approved**
 
 ---
 
@@ -42,9 +42,50 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 
 ## Where to pick up (next session)
 
-1. Review P0 baseline numbers (below). **Separate go/no-go** for any P1 work.
-2. Do **not** remove `isolatedData` autouse without safety review.
-3. Phase 5 / Phase 7 remain open on the long roadmap.
+1. Optional further Phase P only with explicit go (P1 remaining / P2+).
+2. **Contention gate** before relying on: `daemon_manager` (backoff / 3-daemon cap), `subagent_orchestrator` (peer-help window) — same shape as db_writer was.
+3. Do **not** remove `isolatedData` autouse without safety review.
+4. Phase 5 / Phase 7 remain open on the long roadmap.
+
+---
+
+## Standing principle — described-but-not-load-tested gate
+
+Anything whose behaviour was **described in docs/audit** but never forced under
+contention gets a **load/contention check before further work builds on it** —
+not only after a surprise finding.
+
+| Candidate (next) | Stated contract (unverified under load) |
+|---|---|
+| `daemon_manager` | Exponential backoff + 3-daemon cap |
+| `subagent_orchestrator` | Peer-help recovery window |
+| `db_writer` | ~~Priority jump~~ — **checked P0**; FIFO + age-drop; B26 open |
+
+---
+
+## P1.1 / P1.2 — prompt segments + tool defs (isolated)
+
+**Scope (this pass only):** caching near workbench chat loop. **No** schema or
+`db_writer` changes. Tests live in `test_perf_p1_prompt_tool_cache.py` only.
+
+| Change | Detail |
+|---|---|
+| P1.1 | `prompt_segments_cache` — skills catalogue (30s TTL), static clarify block; single catalogue build; `buildSystemPrompt(..., tools=)` avoids double `toolDefinitions` |
+| P1.2 | `tool_defs_cache` — registry→Anthropic/OpenAI base lists keyed by `tool_registry.generation()` + MCP sig; progressive disclosure still per-session |
+| Disable flags | `AUGUST_P1_TOOL_CACHE=0` / `AUGUST_P1_PROMPT_CACHE=0` for A/B |
+
+### Before / after (this machine, mock LLM, 8 text turns)
+
+| Metric | BEFORE (caches off) | AFTER (caches on) |
+|---|---|---|
+| **prompt_build p50** | **~13.0 ms** | **~1.5 ms** (~8.6×) |
+| prompt_build p95 | ~19.4 ms | ~8.3 ms |
+| **total_ms p50** | **~25.0 ms** | **~17.6 ms** (~1.4×) |
+| ttft_ms p50 | ~16.9 ms | ~5.5 ms |
+| tool cache | — | 14 hits / 2 misses |
+| skills cache | — | 7 hits / 1 miss |
+
+Invalidate on `tool_registry.register` verified (generation bump).
 
 ---
 

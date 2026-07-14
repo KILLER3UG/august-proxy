@@ -172,7 +172,10 @@ def isPlanModeBlocked(toolName: str, args: dict[str, object] | None = None) -> b
     return any((marker in name for marker in destructiveMarkers))
 
 
-def buildSystemPrompt(session: WorkbenchSession) -> str:
+def buildSystemPrompt(
+    session: WorkbenchSession,
+    tools: list[dict[str, object]] | None = None,
+) -> str:
     """Assemble the 3-tier XML system prompt for a workbench session (Phase 1).
 
     Uses the Phase 1 context_builder which emits the 3-tier structure:
@@ -182,9 +185,13 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
 
     Wires brain_orchestrator classification, workspace, VCS, memory stats,
     whats-new, and guard mode rules — achieving Node.js parity.
+
+    ``tools``: optional pre-built Anthropic tool defs (P1.1 — avoids a second
+    ``toolDefinitions`` call inside the prompt_build span).
     """
     from app.services.memory.context_builder import buildSystemPrompt as ctxBuild
     from app.services.memory_store import get_memory
+    from app.services.workbench import prompt_segments_cache as _seg_cache
 
     memory = {}
     profile = get_memory('userProfile')
@@ -290,23 +297,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
                 whatsNew = 'Recent git activity:\n' + '\n'.join((f'  - {line}' for line in lines))
         except Exception:
             pass
-    skillsManifest = ''
-    try:
-        from app.services import skill_service
-
-        cat = skill_service.catalogue()
-        if cat:
-            lines = []
-            for s in cat:
-                desc = s.get('description', '')
-                trigger = s.get('trigger', '')
-                entry = f'{s["name"]}: {desc}' if desc else f'{s["name"]}'
-                if trigger:
-                    entry += f' (trigger: {trigger})'
-                lines.append(entry)
-            skillsManifest = '\n'.join(lines)
-    except Exception:
-        pass
+    skillsManifest, skillsExtra = _seg_cache.get_skills_segments()
     cognitiveBudget = None
     try:
         from app.services.workbench.token_budget import computeBudget
@@ -337,7 +328,8 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
     for k in ('coreMemory', 'learnedHeuristics', 'autoMemories'):
         if k in memory:
             sessionDict[k] = memory[k]
-    tools = toolDefinitions(session)
+    if tools is None:
+        tools = toolDefinitions(session)
     # Load workspace AUG.md into Tier 2 as soft context (Claude CLAUDE.md parity).
     augMdBody = ''
     if workspacePath:
@@ -379,34 +371,9 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
         except Exception:
             pass
     extraParts: list[str] = []
-    try:
-        from app.services import skill_service
-
-        cat = skill_service.catalogue()
-        if cat:
-            intro = "Skills are on-demand capability extensions. Each entry below lists a skill's name, description, and optional trigger. To use a skill, call the `load_skill` tool with its name to load the full instructions, then follow them."
-            lines = [intro, '']
-            for s in cat:
-                desc = s.get('description', '')
-                trigger = s.get('trigger', '')
-                entry = f'- {s["name"]}: {desc}' if desc else f'- {s["name"]}'
-                if trigger:
-                    entry += f' (trigger: {trigger})'
-                lines.append(entry)
-            extraParts.append('## Available Skills\n' + '\n'.join(lines))
-    except Exception:
-        pass
-    extraParts.append(
-        '## Clarifying questions when uncertain\n'
-        "When you are genuinely uncertain about the user's intent, requirements, or a decision "
-        'that would change your approach, DO NOT guess or invent requirements. Instead, call the '
-        '`submit_clarify` tool with a concise `question` (1-2 sentences) and up to 5 short `choices` '
-        '(options the user can pick from). You may also pass a `questions` array to ask several '
-        'related questions at once. The UI presents your choices as numbered options and adds its own '
-        "free-text input for anything not covered, so do NOT include a 'something else' option yourself. "
-        "Ask at most one round of clarifying questions unless the user's answer reveals new ambiguity. "
-        'This applies in every guard mode, including plan mode.'
-    )
+    if skillsExtra:
+        extraParts.append(skillsExtra)
+    extraParts.append(_seg_cache.CLARIFY_BLOCK)
     if extraParts:
         return base + '\n\n' + '\n\n'.join(extraParts)
     return base
@@ -499,21 +466,30 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
 
     Phase 3: If progressive disclosure is active and the tool set exceeds
     the threshold, BM25 pre-loads the most relevant tools and defers the rest.
-    """
-    from app.adapters.proxy_tools import sanitize_anthropic_tool_definition
-    from app.services.tool_registry import listTools
 
-    tools: list[dict[str, object]] = []
-    seen: set[str] = set()
-    for raw in listTools():
-        t = sanitize_anthropic_tool_definition(raw)
-        if not t:
-            continue
-        if t['name'] in seen:
-            continue
-        seen.add(as_str(t['name']))
-        tools.append(t)
-    tools.extend(_mcpToolDefinitionsAnthropic(seen))
+    P1.2: base registry→Anthropic conversion (+ MCP) is cached; progressive
+    disclosure still runs per session messages.
+    """
+    from app.services.workbench import tool_defs_cache
+
+    def _build_base() -> list[dict[str, object]]:
+        from app.adapters.proxy_tools import sanitize_anthropic_tool_definition
+        from app.services.tool_registry import listTools
+
+        tools: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for raw in listTools():
+            t = sanitize_anthropic_tool_definition(raw)
+            if not t:
+                continue
+            if t['name'] in seen:
+                continue
+            seen.add(as_str(t['name']))
+            tools.append(t)
+        tools.extend(_mcpToolDefinitionsAnthropic(seen))
+        return tools
+
+    tools = tool_defs_cache.get_or_build('anthropic', _build_base)
     try:
         from app.services.tools.model_tools import assembleToolDefs
 
@@ -534,26 +510,33 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
     Mirrors ``tool_definitions``: registry tools (which may be in mixed
     OpenAI/Anthropic format) are normalized to OpenAI format and deduped
     by name, then real MCP server tools are appended.
-    """
-    from app.adapters.proxy_tools import anthropic_to_openai_tool_definition
-    from app.services.tool_registry import listTools
 
-    tools: list[dict[str, object]] = []
-    seen: set[str] = set()
-    for raw in listTools():
-        if as_str(raw.get('type')) == 'function' and isinstance(raw.get('function'), dict):
-            name = as_str(as_dict(raw.get('function')).get('name', ''))
+    P1.2: base conversion is cached by registry generation + MCP signature.
+    """
+    from app.services.workbench import tool_defs_cache
+
+    def _build_base() -> list[dict[str, object]]:
+        from app.adapters.proxy_tools import anthropic_to_openai_tool_definition
+        from app.services.tool_registry import listTools
+
+        tools: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for raw in listTools():
+            if as_str(raw.get('type')) == 'function' and isinstance(raw.get('function'), dict):
+                name = as_str(as_dict(raw.get('function')).get('name', ''))
+                if name and name not in seen:
+                    seen.add(name)
+                    tools.append(raw)
+                continue
+            t = anthropic_to_openai_tool_definition(raw)
+            name = as_str(as_dict(t.get('function', {})).get('name', ''))
             if name and name not in seen:
                 seen.add(name)
-                tools.append(raw)
-            continue
-        t = anthropic_to_openai_tool_definition(raw)
-        name = as_str(as_dict(t.get('function', {})).get('name', ''))
-        if name and name not in seen:
-            seen.add(name)
-            tools.append(t)
-    tools.extend(_mcpToolDefinitionsOpenai(seen))
-    return tools
+                tools.append(t)
+        tools.extend(_mcpToolDefinitionsOpenai(seen))
+        return tools
+
+    return tool_defs_cache.get_or_build('openai', _build_base)
 
 
 def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, object]]:
@@ -856,9 +839,10 @@ async def _sendWorkbenchMessageStreamImpl(
             session._failure_feedback = None
             session._failure_feedback_age = None
     with _trace.span('prompt_build'):
-        systemText = buildSystemPrompt(session)
+        # P1: build tool defs once, pass into system prompt (no double conversion)
         tools = toolDefinitions(session)
         openaiTools = openaiToolDefinitions(session)
+        systemText = buildSystemPrompt(session, tools=tools)
     isAnthropic = _isAnthropicProvider(resolvedProvider)
     isOpenai = _isOpenaiProvider(resolvedProvider)
 

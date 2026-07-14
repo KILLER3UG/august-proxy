@@ -83,7 +83,7 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setattr(asyncio, 'create_task', lambda coro, **kw: asyncio.ensure_future(coro))
     monkeypatch.setattr(wb, '_resolveWorkbenchProvider', lambda *a, **kw: STUB_PROVIDER)
     monkeypatch.setattr(wb, '_resolveModel', lambda p, hint='': 'stub-claude')
-    monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session: 'stub system prompt')
+    monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session, tools=None: 'stub system prompt')
     import app.providers.clients as clientsMod
     from app.services import provider_credentials as providerCredsMod
 

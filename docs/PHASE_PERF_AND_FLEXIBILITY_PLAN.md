@@ -1,8 +1,9 @@
 # Phase P — True Performance + Feature Flexibility Plan
 
-> **Status (2026-07-14):** **P0 CLOSED** after review-gap closure (frontend
-> stream marks, db_writer contention, all six indexes EXPLAIN-proven).
-> Numbers in `docs/REFACTOR_PROGRESS.md`. **P1–P5 not approved.**
+> **Status (2026-07-14):** **P0 CLOSED**. **P1.1 + P1.2 DONE** (prompt/tool
+> caches with isolated before/after). Further P1 items / P2–P5 need new go.
+> Standing gate: load-test described contracts before building on them
+> (`daemon_manager`, `subagent_orchestrator` next).
 >
 > **Why a plan exists:** Phases 3–4 improved structure and naming. They did
 > **not** prove end-to-end speed. *If* baselines show product-side waste,

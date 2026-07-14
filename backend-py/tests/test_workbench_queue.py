@@ -163,7 +163,7 @@ class TestChatLoopInjection:
             },
         )
         monkeypatch.setattr(wb, '_resolveModel', lambda p, hint='': 'stub-claude')
-        monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session: 'stub system prompt')
+        monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session, tools=None: 'stub system prompt')
         monkeypatch.setattr(providerCredsMod, 'resolve', lambda name: {'api_key': 'stub-key'})
 
     @pytest.fixture
@@ -173,7 +173,7 @@ class TestChatLoopInjection:
         from app.services import provider_credentials as providerCredsMod
 
         monkeypatch.setattr(providerCredsMod, 'resolve', lambda name: {'api_key': 'stub-key'})
-        monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session: 'stub system prompt')
+        monkeypatch.setattr(wb, 'buildSystemPrompt', lambda session, tools=None: 'stub system prompt')
 
         async def fakeAnthropic(messages, systemText, model, tools, effort, provider=None, emit=None):
             calls.append({'provider': 'anthropic', 'messages': [dict(m) for m in messages]})

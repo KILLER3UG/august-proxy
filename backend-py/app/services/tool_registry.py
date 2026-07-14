@@ -12,6 +12,8 @@ _registry: dict[str, dict[str, object]] = {}
 ToolHandler = Callable[..., Coroutine[object, object, str]]
 _RESERVEDNames: frozenset[str] = frozenset({'tool_search', 'tool_describe', 'tool_call'})
 _daemonContext: contextvars.ContextVar[bool] = contextvars.ContextVar('daemon_context', default=False)
+# Monotonic generation for P1 tool-def caches (increments on register/clear).
+_generation: int = 0
 _DAEMONBlockedCommandPatterns = [
     'rm ',
     ' rm',
@@ -72,6 +74,7 @@ def register(
 
     ``keywords`` is an optional list of search terms for BM25 retrieval (Phase 3).
     """
+    global _generation
     if name in _RESERVEDNames:
         raise ValueError(f"Cannot register reserved bridge name: '{name}'")
     _registry[name] = {
@@ -81,6 +84,12 @@ def register(
         'parameters': parameters or {},
         'keywords': keywords or [],
     }
+    _generation += 1
+
+
+def generation() -> int:
+    """Generation counter for tool-def caches (P1.2). Bumps on each register."""
+    return _generation
 
 
 def get(name: str) -> dict[str, object] | None:
