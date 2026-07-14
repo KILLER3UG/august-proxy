@@ -348,55 +348,41 @@ export function SkillsSection() {
 
   return (
     <div className="px-8 py-6 space-y-6 h-full flex flex-col overflow-hidden">
-      {/* ── Header ──────────────────────────────────────────────── */}
-      <header className="shrink-0 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            {mode === 'list' ? 'Skills'
-              : isFormMode ? (mode === 'create' ? 'Create skill' : 'Edit skill')
-              : selected?.name ?? 'Skill'}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {mode === 'list'
-              ? 'Create, edit, and manage your agent skills and their lifecycle.'
-              : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {(isFormMode || mode === 'detail') && (
-            <button
-              onClick={() => { setMode('list'); setSelected(null); }}
-              className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card px-3 py-1.5 text-sm text-foreground hover:bg-muted/40"
-            >
-              <ArrowLeft className="size-4" /> Back
-            </button>
-          )}
-          {mode === 'list' && (
-            <button
-              onClick={startCreate}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              <Plus className="size-4" /> New
-            </button>
-          )}
-          {mode === 'detail' && (
-            <>
+      {/* List / form header only — detail uses a left action rail */}
+      {mode !== 'detail' && (
+        <header className="shrink-0 flex items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              {mode === 'list' ? 'Skills'
+                : isFormMode ? (mode === 'create' ? 'Create skill' : 'Edit skill')
+                : 'Skill'}
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {mode === 'list'
+                ? 'Create, edit, and manage your agent skills and their lifecycle.'
+                : ''}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isFormMode && (
               <button
-                onClick={startEdit}
-                className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                onClick={() => { setMode('list'); setSelected(null); }}
+                className="inline-flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 py-1.5 text-sm text-foreground hover:bg-white/[0.1]"
               >
-                <Pencil className="size-4" /> Edit
+                <ArrowLeft className="size-4" /> Back
               </button>
+            )}
+            {mode === 'list' && (
               <button
-                onClick={() => setConfirmDelete(selected!.name)}
-                className="inline-flex items-center gap-1 rounded-lg border border-destructive/50 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+                onClick={startCreate}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
               >
-                <Trash2 className="size-4" /> Delete
+                <Plus className="size-4" /> New
               </button>
-            </>
-          )}
-        </div>
-      </header>
+            )}
+          </div>
+        </header>
+      )}
 
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
@@ -433,7 +419,7 @@ export function SkillsSection() {
               placeholder="Search skills…"
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
-              className="w-full rounded-lg border border-border/60 bg-muted/40 pl-10 pr-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
+              className="w-full rounded-lg border border-white/[0.08] bg-white/[0.06] pl-10 pr-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30 shadow-none"
             />
           </div>
 
@@ -494,30 +480,72 @@ export function SkillsSection() {
         </div>
       )}
 
-      {/* ── Detail view ────────────────────────────────────────── */}
+      {/* ── Detail: actions left · content center ───────────────── */}
       {mode === 'detail' && selected && (
-        <div className="space-y-4 max-w-3xl">
-          <div className="rounded-xl border border-white/[0.06] bg-card/60 p-5 space-y-3">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div><span className="text-muted-foreground">Name:</span> <span className="font-medium">{selected.name}</span></div>
-              <div><span className="text-muted-foreground">Category:</span> <span>{selected.category}</span></div>
-              <div><span className="text-muted-foreground">Trigger:</span> <span>{selected.trigger || '—'}</span></div>
-              <div><span className="text-muted-foreground">Source:</span> <span>{selected.createdBy || 'builtin'}</span></div>
-            </div>
-            <div className="text-sm">
-              <span className="text-muted-foreground">Description:</span>
-              <p className="mt-1">{selected.description}</p>
-            </div>
-          </div>
+        <div className="min-h-0 flex-1 flex gap-6 overflow-hidden">
+          {/* Left rail — Back / Edit / Delete */}
+          <aside className="w-44 shrink-0 flex flex-col gap-2 pt-1">
+            <button
+              onClick={() => { setMode('list'); setSelected(null); }}
+              className="inline-flex w-full items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 py-2 text-sm text-foreground hover:bg-white/[0.1]"
+            >
+              <ArrowLeft className="size-4" /> Back
+            </button>
+            <button
+              onClick={startEdit}
+              className="inline-flex w-full items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              <Pencil className="size-4" /> Edit
+            </button>
+            <button
+              onClick={() => setConfirmDelete(selected.name)}
+              className="inline-flex w-full items-center gap-2 rounded-lg border border-destructive/40 px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
+            >
+              <Trash2 className="size-4" /> Delete
+            </button>
+          </aside>
 
-          <div className="rounded-xl border border-border/60 bg-card p-5">
-            <h3 className="text-sm font-semibold mb-3 text-foreground">Instructions (SKILL.md)</h3>
-            <div className="max-h-[28rem] overflow-auto rounded-lg border border-border/40 bg-muted/20 px-4 py-3 markdown-content">
-              {selected.instructions?.trim() ? (
-                <Markdown content={selected.instructions} />
-              ) : (
-                <p className="text-sm text-muted-foreground">No instructions body.</p>
-              )}
+          {/* Center column — description + SKILL.md */}
+          <div className="min-w-0 flex-1 overflow-auto">
+            <div className="mx-auto max-w-2xl space-y-4 pb-8">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                  {selected.name}
+                </h1>
+                {selected.description && (
+                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                    {selected.description}
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-5 space-y-3">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Category</span>
+                    <p className="font-medium text-foreground">{selected.category || '—'}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Source</span>
+                    <p className="font-medium text-foreground">{selected.createdBy || 'builtin'}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground">Trigger</span>
+                    <p className="font-medium text-foreground">{selected.trigger || '—'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-5">
+                <h3 className="text-sm font-semibold mb-3 text-foreground">Instructions (SKILL.md)</h3>
+                <div className="max-h-[min(32rem,55vh)] overflow-auto rounded-lg border border-white/[0.06] bg-black/20 px-4 py-3 markdown-content">
+                  {selected.instructions?.trim() ? (
+                    <Markdown content={selected.instructions} />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No instructions body.</p>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -536,7 +564,7 @@ export function SkillsSection() {
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   placeholder="my-skill-name"
                   disabled={mode !== 'create'}
-                  className="w-full rounded-lg border border-white/[0.06] bg-background px-3 py-2 text-sm disabled:opacity-50"
+                  className="w-full rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground disabled:opacity-50 shadow-none"
                 />
                 <p className="text-xs text-muted-foreground mt-1">Lowercase, dotted/hyphenated. Max 64 chars.</p>
               </div>
@@ -548,7 +576,7 @@ export function SkillsSection() {
                 value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                 placeholder="One-sentence description, ≤ 60 chars"
-                className="w-full rounded-lg border border-white/[0.06] bg-background px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground shadow-none"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -559,7 +587,7 @@ export function SkillsSection() {
                   value={form.trigger}
                   onChange={(e) => setForm((f) => ({ ...f, trigger: e.target.value }))}
                   placeholder="e.g. fix performance issue"
-                  className="w-full rounded-lg border border-white/[0.06] bg-background px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground shadow-none"
                 />
               </div>
               <div>
@@ -567,7 +595,7 @@ export function SkillsSection() {
                 <select
                   value={form.category}
                   onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                  className="w-full rounded-lg border border-white/[0.06] bg-background px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 py-2 text-sm text-foreground shadow-none"
                 >
                   <option value="uncategorized">Uncategorized</option>
                   <option value="development">Development</option>
@@ -586,7 +614,7 @@ export function SkillsSection() {
                 onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
                 placeholder="## When to Use&#10;&#10;...&#10;&#10;## Procedure&#10;&#10;1. ..."
                 rows={16}
-                className="w-full rounded-lg border border-white/[0.06] bg-background px-3 py-2 text-sm font-mono resize-y"
+                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.06] px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground resize-y shadow-none"
               />
             </div>
           </div>

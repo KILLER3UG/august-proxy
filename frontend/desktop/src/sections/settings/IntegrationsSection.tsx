@@ -19,10 +19,10 @@ import { cn } from '@/lib/utils';
 
 type Mode = 'catalog' | 'detail';
 
-/** Shared theme-aware field styles (search, selects, connect tokens). */
+/** Shared theme-aware field styles — blend into dark settings chrome (no pure white). */
 export const INTEGRATION_FIELD_CLASS =
-  'rounded-lg border border-border/60 bg-muted/40 text-foreground placeholder:text-muted-foreground ' +
-  'focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30';
+  'rounded-lg border border-white/[0.08] bg-white/[0.06] text-foreground placeholder:text-muted-foreground ' +
+  'focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30 shadow-none';
 
 export function IntegrationsSection() {
   const [mode, setMode] = useState<Mode>('catalog');
