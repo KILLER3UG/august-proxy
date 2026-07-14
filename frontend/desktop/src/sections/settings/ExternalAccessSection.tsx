@@ -198,6 +198,7 @@ export function ExternalAccessSection() {
                   : 'Off by default. Enable to inject workspace AUG.md into external proxy requests.'
               }
               disabled={augMutation.isPending || augQuery.isLoading}
+              data-testid="inject-aug-on-proxy-toggle"
             />
           </div>
           {mutation.isError && (

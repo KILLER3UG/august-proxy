@@ -16,6 +16,7 @@ interface SettingsToggleProps {
   /** Beginner-friendly explanation shown via a ? icon next to the label. */
   tooltip?: ReactNode;
   className?: string;
+  'data-testid'?: string;
 }
 
 export function SettingsToggle({
@@ -26,6 +27,7 @@ export function SettingsToggle({
   disabled,
   tooltip,
   className,
+  'data-testid': testId,
 }: SettingsToggleProps) {
   return (
     <div
@@ -34,6 +36,7 @@ export function SettingsToggle({
         disabled ? 'opacity-60' : 'hover:bg-muted/40',
         className,
       )}
+      data-testid={testId ? `${testId}-row` : undefined}
     >
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
@@ -49,6 +52,7 @@ export function SettingsToggle({
         role="switch"
         aria-checked={checked}
         disabled={disabled}
+        data-testid={testId}
         onClick={() => !disabled && onCheckedChange(!checked)}
         className={cn(
           'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed',
