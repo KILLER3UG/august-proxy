@@ -37,8 +37,29 @@ export const $rightDrawer = {
   },
 };
 
+/**
+ * Subscribe with a selector so components re-render only for the fields they need.
+ * Prefer field hooks below for hot paths (open / activeSection).
+ */
 export function useRightDrawer(): RightDrawerState {
-  return useRightDrawerStore();
+  const open = useRightDrawerStore((s) => s.open);
+  const sections = useRightDrawerStore((s) => s.sections);
+  const activeSection = useRightDrawerStore((s) => s.activeSection);
+  const diff = useRightDrawerStore((s) => s.diff);
+  const selectedDiffPath = useRightDrawerStore((s) => s.selectedDiffPath);
+  return { open, sections, activeSection, diff, selectedDiffPath };
+}
+
+export function useRightDrawerOpen(): boolean {
+  return useRightDrawerStore((s) => s.open);
+}
+
+export function useRightDrawerActiveSection(): RightDrawerSectionId | undefined {
+  return useRightDrawerStore((s) => s.activeSection);
+}
+
+export function useRightDrawerSections(): RightDrawerSectionId[] {
+  return useRightDrawerStore((s) => s.sections);
 }
 
 export function openRightDrawer(section?: RightDrawerSectionId, options: Partial<Pick<RightDrawerState, 'diff' | 'selectedDiffPath'>> = {}) {

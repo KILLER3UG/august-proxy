@@ -6,7 +6,7 @@ import { X, Columns, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   closeRightDrawerSection,
-  useRightDrawer,
+  useRightDrawerSections,
   type RightDrawerSectionId,
 } from './RightDrawerState';
 import { RightDrawerDiffSection } from './RightDrawerDiffSection';
@@ -56,8 +56,7 @@ export function RightDrawer({
   onRevisePlan?: (feedback: string) => void | Promise<void>;
   onClose: () => void;
 }) {
-  const state = useRightDrawer();
-  const sections = state.sections;
+  const sections = useRightDrawerSections();
   const isWide = sections.length >= 3;
   const [baseWidth, setBaseWidth] = useState<number>(() => loadStoredWidth(BASE_WIDTH_KEY, DEFAULT_BASE_WIDTH));
   const [wideWidth, setWideWidth] = useState<number>(() => loadStoredWidth(WIDE_WIDTH_KEY, DEFAULT_WIDE_WIDTH));

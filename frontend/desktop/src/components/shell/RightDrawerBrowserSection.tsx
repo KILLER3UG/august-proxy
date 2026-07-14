@@ -45,7 +45,10 @@ function clock(ts: number): string {
 }
 
 export function RightDrawerBrowserSection() {
-  const { latest, log, title, url } = useBrowserDrawerStore();
+  const latest = useBrowserDrawerStore((s) => s.latest);
+  const log = useBrowserDrawerStore((s) => s.log);
+  const title = useBrowserDrawerStore((s) => s.title);
+  const url = useBrowserDrawerStore((s) => s.url);
 
   const imgWrapRef = useRef<HTMLDivElement | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);

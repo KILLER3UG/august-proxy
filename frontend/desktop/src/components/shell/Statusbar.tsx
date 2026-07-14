@@ -32,8 +32,21 @@ interface LearningStatus {
 
 export function Statusbar() {
   const g = useGatewayStore((s) => s.gateway);
-  const sessions = useSessionsStore((s) => s.sessions);
+  // Select only the active session row so list renames elsewhere do not thrash the statusbar.
   const { sessionId } = useParams<{ sessionId?: string }>();
+  const activeSession = useSessionsStore((s) => {
+    const byId = sessionId
+      ? s.sessions.find((x) => x.id === sessionId && !x.isArchived)
+      : undefined;
+    return byId ?? s.sessions.find((x) => !x.isArchived) ?? null;
+  });
+  const sessionTitleById = useSessionsStore((s) => {
+    const map: Record<string, string> = {};
+    for (const sess of s.sessions) {
+      if (!sess.isArchived) map[sess.id] = sess.title;
+    }
+    return map;
+  });
   const [now, setNow] = useState(Date.now());
   const [activeSessionIds, setActiveSessionIds] = useState<string[]>([]);
 
@@ -46,15 +59,11 @@ export function Statusbar() {
     return () => clearInterval(id);
   }, []);
 
-  const activeSession = useMemo(() => {
-    return sessions.find((s) => s.id === sessionId && !s.isArchived) ?? sessions.find((s) => !s.isArchived) ?? null;
-  }, [sessions, sessionId]);
-
   const activeSessionLabels = useMemo(() => {
     return activeSessionIds
-      .map((id) => sessions.find((s) => s.id === id && !s.isArchived)?.title || id.slice(0, 12))
+      .map((id) => sessionTitleById[id] || id.slice(0, 12))
       .filter((label, index, labels) => label && labels.indexOf(label) === index);
-  }, [activeSessionIds, sessions]);
+  }, [activeSessionIds, sessionTitleById]);
 
   const { data: learning, error: _error } = useQuery<LearningStatus>({
     queryKey: ['memory-learning-status'],
