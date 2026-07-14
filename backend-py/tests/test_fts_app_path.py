@@ -51,9 +51,12 @@ def test_search_memory_hits_fts_not_like(isolatedData):
     memory_store.init()
     memory_store.save_memory('project_alpha', 'alpha rocket launch notes for mission')
     memory_store.save_memory('unrelated_zeta', 'completely different topic')
+    from app.services.memory_store import kv as kv_mod
+
     real = memory_store._conn()
     spy = _ConnSpy(real)
-    with patch.object(memory_store, '_conn', return_value=spy):
+    # Patch where search_memory binds _conn (domain module), not the facade.
+    with patch.object(kv_mod, '_conn', return_value=spy):
         hits = memory_store.search_memory('alpha rocket')
     keys = {h['key'] for h in hits}
     assert 'project_alpha' in keys
@@ -77,6 +80,7 @@ def test_auto_memory_uses_join_and_table_match(isolatedData):
     spy = _ConnSpy(real)
     with patch.object(auto_memory, '_conn', return_value=spy):
         hits = auto_memory.getRelevantMemories('alpha rockets', limit=5)
+    # note: auto_memory._conn is its own wrapper around memory_store._conn
     assert hits
     join_sql = [s for s in spy.sql if 'auto_memories_fts' in s and 'JOIN' in s.upper()]
     assert join_sql
