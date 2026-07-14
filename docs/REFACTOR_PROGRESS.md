@@ -9,10 +9,10 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 — **Phase 4 re-verified 100%** · **Phase 5 in progress** (docs/tooling audit)
-**Current branch state:** `master` (merged phase5 residual + Phase P follow-ups) · active work on `refactor/phase5-docs-tooling`. Verify with `git rev-parse HEAD`.
+**Last updated:** 2026-07-14 — **Phase 5 closed** · **Phase 6 bug ledger closed** · **Phase 7 matrix operationalized**
+**Current branch state:** `master` (verify `git rev-parse HEAD`). Phase 6/7 work merges via `refactor/phase6-7-inventory`.
 **Verification baseline:**
-Phase 4 pack re-run green · Phase P exit gate · isolation autouse · B26 closed
+pytest **723 passed** · vitest **543 passed** · Phase 4 indexes · isolation autouse
 **CI note:** Prefer `backend-py/.venv` (3.12). Isolation is **autouse** — do not remove.
 
 ### Phase 0 — SIGNED OFF (2026-07-13)
@@ -20,7 +20,9 @@ Phase 4 pack re-run green · Phase P exit gate · isolation autouse · B26 close
 ### Phase 3 — **DONE against modularization exit criteria** (not “all large files gone”)
 ### Phase 4 — **100% vs exit checklist** (re-verified 2026-07-14 — see evidence pack below)
 ### Phase P — **DONE** (P0–P5 + exit gate)
-### Phase 5 — **IN PROGRESS** (dependency/tooling/docs)
+### Phase 5 — **DONE** (deps/tooling audit; B12 deleted; B20 closed)
+### Phase 6 — **DONE** (bug ledger re-verified; only B27 partial by product design)
+### Phase 7 — **OPERATIONALIZED** (matrix + suite baselines; gaps listed, not all E2E closed)
 
 ---
 
@@ -43,13 +45,13 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 
 ## Where to pick up (next session)
 
-1. Phase 4 is **100%** against its exit checklist (re-verified — evidence pack below).
-2. Phase P is **closed** — only re-open for measured regressions or new budgets.
-3. **Phase 5 in progress** — dependency audit done; remaining: optional ruff expansion PR, B12 `.bak` delete (user go), Phase 7 later.
-4. **Contention gate** still applies before *raising* daemon/subagent caps.
-5. Do **not** remove `isolatedData` autouse without safety review.
-6. **Optional Phase 3 polish** only with explicit go-ahead.
-7. **Phase 7** feature-level testing still open on the long roadmap.
+1. Phases **0–7** are complete or operationalized (see status lines above).
+2. **Phase 8** final deliverables remain if overall refactor sign-off is desired.
+3. **B27** stays PARTIAL until product asks for peer-help re-spawn.
+4. Phase 7 **gaps** (Slack/Discord live, mobile, SSRF deep suite) are backlog — not silent omissions.
+5. **Contention gate** still applies before *raising* daemon/subagent caps.
+6. Do **not** remove `isolatedData` autouse without safety review.
+7. Optional: ruff rule expansion; optional Phase 3 residual large-file polish.
 
 ---
 
@@ -504,24 +506,59 @@ If P0 shows DB is not the bottleneck, P2 may never be worth opening.
 
 ## What's next
 
-1. ~~Phase 4~~ — **100% exit checklist** (re-verified).
-2. ~~P0 / Phase P~~ — **COMPLETE**.
-3. **Finish Phase 5:** optional ruff expansion PR; optional B12 delete; keep docs in sync as structure moves.
-4. Optional Phase 3 large-file slices only with explicit go-ahead.
-5. Phase 7 feature inventory testing when ready for overall refactor sign-off.
+1. ~~Phases 0–5 / P~~ — complete.
+2. ~~Phase 6~~ — bug ledger closed (B27 partial by design).
+3. ~~Phase 7~~ — matrix operationalized; suite baselines recorded.
+4. **Phase 8** final deliverables / overall sign-off when requested.
+5. Optional backlog: Phase 7 gaps, ruff expansion, residual large-file polish.
 
 ---
 
 ## Open questions
 
 - Expand ruff select rules beyond E4/E7/E9/F in a dedicated PR?
-- Delete optional `data/*.bak` (B12)? (`august_brain.sqlite.bak`, `providers.json.bak`)
-- Approve further optional Phase 3 polish?
+- Close Phase 7 gaps (Slack/Discord live, mobile, SSRF suite) now or defer to product?
+- Run Phase 8 final deliverable pack?
 
 
 ---
 
-## Phase 5 — Dependency, Tooling & Documentation (2026-07-14 — in progress)
+## Phase 6 — Bug ledger re-verification (2026-07-14 — CLOSED)
+
+| ID | Prior | Verified | Verdict |
+|---|---|---|---|
+| B1a | CLOSED | atomic writes at aug_artifact + session_bridge; curator tmp+replace | **CLOSED** |
+| B2 | AMENDED | FIFO + age-drop docs match code | **CLOSED** (amended truth) |
+| B11 | absent | no `backend-py/backend-py/` | **CLOSED** |
+| B12 | open optional | deleted `data/august_brain.sqlite.bak`, `data/providers.json.bak` | **CLOSED** |
+| B13–B25 | mostly closed | spot-check; B20 Dockerfile 3.12; B18 no nanostores; B26 no QueueFull | **CLOSED** |
+| B26 | closed | no `QueueFull` in `db_writer.py` | **CLOSED** |
+| B27 | PARTIAL | correctness fixed; no re-spawn by product decision | **PARTIAL (accepted)** |
+| UsageRecord collision | closed | `SkillUsageRecord` vs API `UsageRecord` | **CLOSED** |
+| storage_key conn helper | open | WAL + busy_timeout=10000; prefers `memory_store` table | **CLOSED** (parity verified) |
+| B28 (new) | — | stream-translate extract dropped anthropic re-exports → collection fail | **CLOSED** — re-export restored |
+
+**Open only:** B27 remainder (re-spawn feature) — product gated.
+
+---
+
+## Phase 7 — Feature inventory testing (2026-07-14 — OPERATIONALIZED)
+
+Authoritative matrix: [`docs/FEATURE_INVENTORY_TEST_MATRIX.md`](./FEATURE_INVENTORY_TEST_MATRIX.md)
+
+| Baseline | Result |
+|---|---|
+| Backend pytest | **723 passed** |
+| Frontend vitest | **543 passed** (58 files) |
+| Inventory map | 8 areas → Covered / Partial / Gap |
+| Explicit gaps | Slack/Discord live, mobile, SSRF deep suite, per-skill E2E, real-provider soak |
+
+Phase 7 **exit for operationalization:** matrix exists, suites green, gaps listed.  
+Phase 7 **exit for zero-gap E2E:** not claimed — see matrix Gaps section.
+
+---
+
+## Phase 5 — Dependency, Tooling & Documentation (2026-07-14 — DONE)
 
 ### Dependency audit (verified)
 
@@ -554,8 +591,8 @@ If P0 shows DB is not the bottleneck, P2 may never be worth opening.
 | ARCHITECTURE memory_store paths | ✅ this commit | package + `memory_conn` links |
 | DEVELOPER_GUIDE Python version | ✅ this commit | was wrongly 3.13+ → **3.12+** |
 | B20 Dockerfile | ✅ CLOSED | `FROM python:3.12-slim`; `uv sync`; uvicorn :8085 — matches project pin |
-| B12 `data/*.bak` | Open optional | `august_brain.sqlite.bak`, `providers.json.bak` — **not** auto-deleted |
-| Dependency audit write-up | ✅ this section | |
+| B12 `data/*.bak` | ✅ CLOSED | deleted with user go |
+| Dependency audit write-up | ✅ | |
 
 ---
 

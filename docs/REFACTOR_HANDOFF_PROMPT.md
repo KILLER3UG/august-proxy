@@ -146,20 +146,21 @@ Confirm baseline in Progress Log / live tracker before starting — **do not ass
 - **B1a non-atomic JSON writes — CLOSED.** `write_json_atomic` lives in `app/atomic_write.py`. Former sites fixed; curator uses temp + `Path.replace`. Re-verify with grep before assuming closed if time has passed.
 - SQLite table/column camelCase→snake_case: **CLOSED** on live DB (snake-only + camel wire via `_row_as_wire`).
 
-## Phase 5 — Dependency, Tooling & Documentation (**IN PROGRESS**)
+## Phase 5 — Dependency, Tooling & Documentation (**DONE**)
 
-- Update `docs/ARCHITECTURE.md` / guides as structure changes. Tracker is `docs/REFACTOR_PROGRESS.md`.
-- Pre-commit present (`B23`). CI type-check workflow present.
-- **Done:** dependency audit (dev lists in sync; Python 3.12 pin consistent Dockerfile/CI/pyproject); B20 Dockerfile closed; DEVELOPER_GUIDE 3.12+; ARCHITECTURE memory_store package paths; B26 + SkillUsageRecord.
-- **Open optional:** ruff select expansion (dedicated PR); B12 `data/*.bak` delete with user go; Phase 7 testing.
+- Tracker: `docs/REFACTOR_PROGRESS.md`. Pre-commit + CI type-check present.
+- **Done:** dependency audit; B12 bak deleted; B20 Dockerfile closed; DEVELOPER_GUIDE 3.12+; ARCHITECTURE memory_store package paths; B26 + SkillUsageRecord.
+- **Optional residual:** ruff select expansion (dedicated PR only).
 
-## Phase 6 — Bug, Error & Logic Reporting (mandatory, ongoing)
+## Phase 6 — Bug, Error & Logic Reporting (**DONE** for ledger)
 
-Report bugs with what / where / why / suggested fix. **Add to the Bug Tracker numbering below — do not renumber.**
+Report new bugs with what / where / why / suggested fix. **Add to the Bug Tracker — do not renumber.**  
+Ledger re-verified 2026-07-14: only **B27 PARTIAL** remains (product-gated re-spawn). B28 stream re-export fixed.
 
-## Phase 7 — Feature-Level Testing & Documentation
+## Phase 7 — Feature-Level Testing & Documentation (**OPERATIONALIZED**)
 
-Still required before overall refactor sign-off. Feature Inventory Summary is the checklist. Not yet operationalized end-to-end.
+Matrix: [`docs/FEATURE_INVENTORY_TEST_MATRIX.md`](./FEATURE_INVENTORY_TEST_MATRIX.md).  
+Baselines: backend **723** pytest · frontend **543** vitest. Explicit gaps listed (Slack/Discord live, mobile, SSRF deep suite). Zero-gap E2E not claimed.
 
 ## Phase 8 — Final Deliverables
 
@@ -174,8 +175,8 @@ Same deliverables as before when the full refactor completes.
 - [x] B21 app + test filenames snake_case; resolver callables snake_case; INTERNAL TypedDicts converted
 - [x] Phase 2 signed off (2026-07-14) — full verification evidence pack in Progress Log
 - [ ] Naming 100% consistent language-wide (WIRE TypedDicts + residual service **params** deferred)
-- [ ] No remaining dead code (or explicitly listed as pending removal) — B12 `.bak` optional; B26 closed
-- [ ] All flagged bugs documented with suggested fixes
+- [x] No remaining dead code (or explicitly listed as pending removal) — B12 deleted; B26 closed
+- [x] All flagged bugs documented with suggested fixes — B27 partial by design
 - [x] `db_writer` role documented in `ARCHITECTURE.md` (B2); B26 dead path removed
 - [x] B1a non-atomic JSON writes closed
 - [x] B15 `jsonUtils` split landed
@@ -183,9 +184,10 @@ Same deliverables as before when the full refactor completes.
 - [x] B18 Zustand migration closed
 - [x] Schema rename closed on live DB
 - [x] Phase P complete (P0–P5)
-- [x] Dependencies audited (Phase 5) — ruff expansion + B12 optional remain
+- [x] Dependencies audited (Phase 5) — ruff expansion optional remain
 - [x] Phase 4 exit checklist re-verified 100% (indexes, schema, WAL/busy_timeout, Zustand)
-- [ ] Every Feature Inventory item tested end-to-end and documented (Phase 7)
+- [x] Phase 7 matrix operationalized + suite baselines (zero-gap E2E not claimed; see matrix gaps)
+- [ ] Phase 8 final deliverables / overall refactor sign-off
 - [ ] Progress Log claims independently verified each session (Ground Rule 1)
 
 ---
@@ -194,7 +196,7 @@ Same deliverables as before when the full refactor completes.
 
 Because this is a large codebase, work iteratively.
 
-**Current step:** **Phase 5 residual** (docs/tooling polish, open low bugs). Optional Phase 3 large-file slices only with explicit go-ahead. Phase 7 feature testing still ahead of full sign-off. Do **not** re-open Phase P optimizations without new budgets/regressions.
+**Current step:** **Phase 8** final deliverables / overall sign-off when requested. Optional: close Phase 7 gaps, ruff expansion, residual large-file polish. Do **not** re-open Phase P optimizations without new budgets/regressions.
 
 **On session start:**
 1. Acknowledge these instructions and the Codebase Reference.
@@ -254,7 +256,7 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 
 ### Priority decision (current)
 
-1. **Phase 5 residual** — tooling/docs polish, closed-bug ledger accuracy, optional low bugs (B12, B20).
+1. **Phase 8** overall sign-off pack when requested — or close Phase 7 explicit gaps.
 2. Do **not** re-open Phase P optimizations without measured regressions or new budgets.
 3. Optional Phase 3 large-file slices only with **explicit** user go-ahead (separate commits).
 4. B1/B2 data-safety + schema rename closed — do not re-open unless verification finds regressions.
@@ -268,7 +270,7 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 | B26 | Med | `db_writer.enqueue_write` | Dead `QueueFull` low-pri drop (unbounded queue) | **CLOSED** — dead path removed; age-drop at dequeue remains |
 | B27 | **High** | `subagent_orchestrator` | Peer-help does not recover. Silent success on failed/empty worker results **fixed** (status + non-empty payload). Production multi-agent uses orchestrator. Recovery/re-spawn still not implemented | **PARTIAL** — correctness fixed; no re-spawn until product asks |
 | B11 | Med | nested `backend-py/backend-py/tests/` | Claimed nest | **Absent / closed** |
-| B12 | Low | `data/*.bak` | Leftover backups | Open — optional delete |
+| B12 | Low | `data/*.bak` | Leftover backups | **CLOSED** — deleted 2026-07-14 |
 | B13–B14 | Low | docs scratch / `server.log` | Stray artifacts | **CLOSED** |
 | B15 | Med | `jsonUtils.py` | Mixed responsibilities | **CLOSED** → `json_narrowing.py` + `atomic_write.py` |
 | B16 | Low | memory_store / db_writer / proxy_tools | camelCase function APIs | **CLOSED** (SQL names deferred) |
@@ -282,7 +284,8 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 | B24 | Low | mcp `_saveConfig` | Dead writer | **CLOSED** |
 | B25 | Low | ARCHITECTURE drift | enqueue_write / atomic_write docs | **CLOSED** |
 | — | Low | `UsageRecord` name collision | usage router vs skills curator | **CLOSED** — curator type is `SkillUsageRecord` |
-| — | Low | `storage_key_migration` connection helper | Consistency with `_conn()` | **Open** — low priority |
+| — | Low | `storage_key_migration` connection helper | Consistency with `_conn()` | **CLOSED** — WAL + busy_timeout=10000 verified |
+| B28 | Med | `adapters/anthropic` re-exports | Stream translate extract dropped facade imports (test collection fail) | **CLOSED** — re-export from `anthropic_stream_translate` |
 
 ### New features — tracked, but out of this refactor's scope
 
@@ -301,9 +304,9 @@ Same as before — do **not** fold into behavior-preserving phases:
 
 Scheduled/known: `workbench.py`, `anthropic.py`, `tool_definitions.py`, plus `adapters/openai.py`, `adapters/proxy_tools.py`, `adapters/stream_state.py`, `services/memory_store.py`. Naming-before-split rule still applies when both apply. **B16 naming for memory_store/proxy_tools APIs is done** — structural split can proceed later as its own commits.
 
-### Feature-level testing (Phase 7) — not yet operationalized
+### Feature-level testing (Phase 7) — operationalized
 
-Still required before Phase 8 sign-off.
+Matrix + suite baselines recorded. Gaps explicit. Phase 8 overall sign-off still optional.
 
 ### CamelModel progress (complete)
 
@@ -390,6 +393,6 @@ Still required before Phase 8 sign-off.
 
 ## Session close note (for the next model)
 
-Stop state: Phases 0–4 + Phase P complete. Phase 5 residual started (B26 closed, `SkillUsageRecord` rename). Next: remaining Phase 5 polish, optional large-file modularization with go-ahead, or Phase 7. Keep Ground Rule 1.
+Stop state: Phases 0–7 complete/operationalized. Master pushed through Phase 5 docs; Phase 6/7 branch includes B28 re-export fix + matrix. Next: Phase 8 sign-off pack or Phase 7 gap closure. Keep Ground Rule 1.
 
-Are you ready to begin? If so, verify the Progress Log and Codebase Reference against the real repository first, report anything that doesn't match, then continue from **Phase 5 residual** (or the user’s redirect) rather than restarting from scratch.
+Are you ready to begin? If so, verify the Progress Log and Codebase Reference against the real repository first, report anything that doesn't match, then continue from **Phase 8** (or the user’s redirect) rather than restarting from scratch.

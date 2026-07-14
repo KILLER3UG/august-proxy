@@ -93,6 +93,9 @@ buildOpenaiSystemPrompt = build_openai_system_prompt
 buildAnthropicSystemBlocks = build_anthropic_system_blocks
 appendTextToSystemBlocks = append_text_to_system_blocks
 
+# Stream translate helpers are imported above so
+# ``from app.adapters.anthropic import streamOpenaiDeltaAsAnthropic`` keeps working.
+
 MAX_MANAGED_TOOL_ROUNDS = 10
 
 
