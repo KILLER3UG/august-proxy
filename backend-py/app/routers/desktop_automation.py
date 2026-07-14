@@ -14,7 +14,8 @@ Endpoints:
 
 from __future__ import annotations
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import Field
+from app.models.camel_base import CamelModel
 from app.services.desktop_automation import (
     getScreenSize,
 )
@@ -111,8 +112,16 @@ async def config() -> dict[str, object]:
     }
 
 
-class ActionRequest(BaseModel):
-    action: str = Field(..., description='screenshot|mouse_position|screen_size|click|type|press|navigate|list_windows')
+class ActionRequest(CamelModel):
+    """Desktop action body. Internals stay snake_case; JSON stays camelCase.
+
+    Field names are single-word (action, params) so aliases match Python attrs.
+    """
+
+    action: str = Field(
+        ...,
+        description='screenshot|mouse_position|screen_size|click|type|press|navigate|list_windows',
+    )
     params: dict[str, object] = Field(default_factory=dict)
 
 
