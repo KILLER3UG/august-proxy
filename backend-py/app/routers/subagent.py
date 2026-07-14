@@ -8,6 +8,9 @@ Endpoints
 - ``POST /api/subagents/{taskId}/terminate`` — terminate a sub-agent
 - ``GET /api/subagents/stream?sessionId=X`` — SSE stream of subagent events
 - ``POST /api/subagents/propose-breakdown`` — approve a proposed breakdown
+
+Request bodies inherit :class:`CamelModel` so internals are snake_case while
+JSON from the frontend stays camelCase.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ import logging
 from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from app.models.camel_base import CamelModel
 from app.services.subagent_orchestrator import SubagentOrchestrator
 from app.services.tools.spawn_subagents_tool import executeSpawnSubagents, approveProposal
 
@@ -25,20 +28,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/subagents')
 
 
-class WorkItem(BaseModel):
+class WorkItem(CamelModel):
+    """Single spawn work item. Internals snake_case; JSON camelCase."""
+
     goal: str
-    agentId: str = 'general'
-    restrictedTools: list[str] | None = None
+    agent_id: str = 'general'
+    restricted_tools: list[str] | None = None
     context: str = ''
 
 
-class SpawnRequest(BaseModel):
-    workItems: list[WorkItem]
+class SpawnRequest(CamelModel):
+    """Spawn request body. Internals snake_case; JSON camelCase."""
+
+    work_items: list[WorkItem]
     mode: str = 'auto'
 
 
-class ProposeBreakdownRequest(BaseModel):
-    proposalId: str
+class ProposeBreakdownRequest(CamelModel):
+    """Propose-breakdown approval body. Internals snake_case; JSON camelCase."""
+
+    proposal_id: str
     approved: bool = True
 
 
@@ -67,20 +76,18 @@ async def spawnSubagents(body: SpawnRequest, request: Request):
     """Spawn one or more sub-agents for parallel execution."""
     orch = _getOrchestrator(request)
     session = _getSession(request)
-    if body.mode == 'auto':
-        workItems = [
-            {'goal': w.goal, 'agentId': w.agentId, 'restrictedTools': w.restrictedTools, 'context': w.context}
-            for w in body.workItems
-        ]
-        result = await executeSpawnSubagents(orch, session, workItems, mode=body.mode)
-        return result
-    else:
-        workItems = [
-            {'goal': w.goal, 'agentId': w.agentId, 'restrictedTools': w.restrictedTools, 'context': w.context}
-            for w in body.workItems
-        ]
-        result = await executeSpawnSubagents(orch, session, workItems, mode=body.mode)
-        return result
+    # Service layer expects camelCase keys on work-item dicts.
+    workItems = [
+        {
+            'goal': w.goal,
+            'agentId': w.agent_id,
+            'restrictedTools': w.restricted_tools,
+            'context': w.context,
+        }
+        for w in body.work_items
+    ]
+    result = await executeSpawnSubagents(orch, session, workItems, mode=body.mode)
+    return result
 
 
 @router.get('/active')
@@ -104,9 +111,9 @@ async def terminateSubagent(taskId: str, request: Request):
 async def proposeBreakdown(body: ProposeBreakdownRequest, request: Request):
     """Approve or reject a proposed sub-agent breakdown."""
     if not body.approved:
-        return {'status': 'rejected', 'proposalId': body.proposalId}
+        return {'status': 'rejected', 'proposalId': body.proposal_id}
     orch = _getOrchestrator(request)
-    result = await approveProposal(orch, body.proposalId)
+    result = await approveProposal(orch, body.proposal_id)
     return result
 
 
