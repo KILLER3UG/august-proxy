@@ -1,12 +1,12 @@
 # Full Codebase Refactor & Modernization Prompt
 ### (Production Refactor Edition — August Proxy)
 
-> **Handoff snapshot:** 2026-07-14 · live tracker: `docs/REFACTOR_PROGRESS.md` · tip: verify with `git rev-parse master` (B21 test renames on/after `1265716`)  
+> **Handoff snapshot:** 2026-07-14 · live tracker: `docs/REFACTOR_PROGRESS.md` · tip: verify with `git rev-parse master` (**Phase 2 signed off**; Phase 3 started)  
 > Paste this entire document into a new session. Then **verify it against the repo** (Ground Rule 1) before coding.
 
 Act as a Senior Principal Software Architect and Lead Developer. Your task is a comprehensive, end-to-end refactor of **August Proxy** — a large, working AI-agent proxy system: a Tauri + React 19 + TypeScript desktop app (plus an Expo React Native mobile companion) on the frontend, and a FastAPI Python backend spanning ~176 `app/` Python files across **32 routers** (200+ endpoints) and ~95 service files. This is a multi-phase migration of a live system, not a quick cleanup pass — treat the scale below as the default assumption for how you plan your work, not an edge case.
 
-**This is a handoff, not a fresh start — and it's already mid-flight.** Phase 0 is signed off. The old multi-branch merge sequence is **finished** (only `master` / `origin/master` remain for active work; a redundant `refactor/b21-app-file-renames` ref may still exist and is safe to delete). Phase 2 **CamelModel router scale-up is COMPLETE**. B21 **app + test filenames**, **resolver callables**, and **INTERNAL TypedDict fields** are closed. Residual **WIRE** TypedDict camelCase keys (SQLite/JSON) intentionally deferred to Phase 4 schema work. **Pick up from the Progress Log's current step** — do not restart Phase 0 or re-merge closed branches. Before doing anything else, read the Progress Log, then scan the actual repository yourself to confirm what it says is still accurate. Do not take the Progress Log, or any prior audit report it references, at face value — see Ground Rule 1.
+**This is a handoff, not a fresh start — and it's already mid-flight.** Phase 0 is signed off. The old multi-branch merge sequence is **finished** (only `master` / `origin/master` remain for active work; a redundant `refactor/b21-app-file-renames` ref may still exist and is safe to delete). **Phase 2 is SIGNED OFF (2026-07-14)** after full verification (605 pytest, mypy 0/176, ruff clean, CI green). Phase 3 modularization is **in progress** (first extract: `adapters/sse_format.py` from `stream_state`). Residual WIRE TypedDict camelCase and broad adapter camelCase remain deferred tech debt, not Phase 2 blockers. **Pick up from the Progress Log's current step** — do not restart Phase 0 or re-merge closed branches. Before doing anything else, read the Progress Log, then scan the actual repository yourself to confirm what it says is still accurate. Do not take the Progress Log, or any prior audit report it references, at face value — see Ground Rule 1.
 
 **Authoritative live tracker:** `docs/REFACTOR_PROGRESS.md` (not repo root). Prefer it over any older chat paste if they disagree — but still verify both against the repo.
 
@@ -82,7 +82,7 @@ Refs: Phase 2 CamelModel scale-up
 - If tests **don't** exist for a module you're about to restructure, write minimal characterization tests first. Especially for `services/db_writer.py`, `services/daemon_manager.py`, `services/subagent_orchestrator.py`.
 - Ensure type-checking passes (`tsc`/eslint for frontend, `mypy` for backend) after every module refactor. Capture baseline (pytest/mypy/ruff/tsc/eslint) before each change and diff against it after. **CI:** `.github/workflows/type-check.yml` pins Python **3.12** and runs ruff + mypy + pytest + frontend tsc/eslint. Push feature branches and wait for CI before merging — do not merge on local-venv alone. Local system Python 3.11 can fail collection; use `backend-py/.venv` (3.12).
 
-## Phase 2 — Naming & Formatting Standardization (IN PROGRESS)
+## Phase 2 — Naming & Formatting Standardization (SIGNED OFF 2026-07-14)
 
 Confirm baseline in Progress Log / live tracker before starting — **do not assume older prompt text.**
 
@@ -121,7 +121,7 @@ Confirm baseline in Progress Log / live tracker before starting — **do not ass
 **Enforcement**
 - Set up/keep automated enforcement: ESLint naming-convention (frontend); Ruff (+ naming lint if added) on Python backend.
 
-## Phase 3 — Structural Refactor (MOSTLY NOT STARTED; B15 DONE)
+## Phase 3 — Structural Refactor (IN PROGRESS; B15 DONE; SSE extract done)
 
 **Modularization**
 - Break up Known Large Files — still open for most targets.
@@ -170,7 +170,8 @@ Same deliverables as before when the full refactor completes.
 - [x] Boundary translation pattern proven (`CamelModel`) — **router scale-up complete** (0 BaseModel in `app/routers/`)
 - [x] B16 function APIs snake_case for memory_store / db_writer / proxy_tools (SQL names deferred)
 - [x] B21 app + test filenames snake_case; resolver callables snake_case; INTERNAL TypedDicts converted
-- [ ] Naming fully consistent per language (remaining: WIRE TypedDict keys / Phase 4; optional curator methods)
+- [x] Phase 2 signed off (2026-07-14) — full verification evidence pack in Progress Log
+- [ ] Naming 100% consistent language-wide (WIRE TypedDicts + remaining adapter/service camelCase deferred)
 - [ ] No remaining dead code (or explicitly listed as pending removal) — B12 `.bak` optional
 - [ ] All flagged bugs documented with suggested fixes
 - [x] `db_writer` role documented in `ARCHITECTURE.md` (B2)
@@ -187,7 +188,7 @@ Same deliverables as before when the full refactor completes.
 
 Because this is a large codebase, work iteratively.
 
-**Current step:** Phase 2 naming rails largely complete. Next: optional residual cleanup, or **Phase 3** large-file modularization with explicit go-ahead (do not start without approval).
+**Current step:** **Phase 3 modularization** — extract cohesive pieces from Known Large Files (one branch/CI each). SSE helpers extracted to `adapters/sse_format.py`. Next targets: tool_definitions / openai SSE helpers / proxy_tools / memory_store / workbench (re-count lines first).
 
 **On session start:**
 1. Acknowledge these instructions and the Codebase Reference.
@@ -200,7 +201,7 @@ Because this is a large codebase, work iteratively.
 
 ## Progress Log (verify this, don't just read it — see Ground Rule 1)
 
-*Last updated 2026-07-14 (B21 test renames closed). Tip: `master` / `origin/master` (verify `git rev-parse HEAD`; on/after `1265716`).*
+*Last updated 2026-07-14 (Phase 2 signed off; Phase 3 started). Tip: `master` / `origin/master` (verify `git rev-parse HEAD`).*
 
 ### Merge Status (historical queue — CLOSED)
 
@@ -236,6 +237,8 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 | INTERNAL **TypedDict** fields | **Closed** (`0bc3e40`) — AliasDict + boundary helpers |
 | WIRE **TypedDict** fields (SQLite/JSON) | **Deferred** to Phase 4 schema |
 | CamelModel router scale-up | **✅ Complete** — 0 BaseModel in `app/routers/` |
+| Phase 2 overall | **✅ Signed off 2026-07-14** (evidence pack in Progress Log) |
+| Phase 3 modularization | **In progress** — `sse_format` extract done |
 | SQLite schema/table camelCase | **Deferred** — needs explicit sign-off |
 
 ### Priority decision (current)
@@ -374,6 +377,6 @@ Still required before Phase 8 sign-off.
 
 ## Session close note (for the next model)
 
-Stop state: B21 callables + INTERNAL TypedDicts merged. Phase 2 naming rails largely complete. Next: Phase 3 with explicit go-ahead, or residual cleanup. Update `docs/REFACTOR_PROGRESS.md` after each merge. Keep Ground Rule 1 — verify this prompt against HEAD before trusting SHAs.
+Stop state: Phase 2 **signed off**; Phase 3 started (`sse_format` extract). Continue Phase 3 large-file modularization. Update `docs/REFACTOR_PROGRESS.md` after each merge. Keep Ground Rule 1 — verify this prompt against HEAD before trusting SHAs.
 
 Are you ready to begin? If so, verify the Progress Log and Codebase Reference against the real repository first, report anything that doesn't match, then continue CamelModel scale-up from the current step rather than restarting from scratch.
