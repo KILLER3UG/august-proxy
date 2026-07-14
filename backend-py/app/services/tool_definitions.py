@@ -18,6 +18,11 @@ from pathlib import Path
 from typing import cast
 from app.services import tool_registry
 from app.json_narrowing import as_bool, as_dict, as_int, as_list, as_str
+from app.services.tool_html import html_to_markdown, unescape_html
+
+# Private aliases for minimal churn inside this module
+_htmlToMarkdown = html_to_markdown
+_unescapeHtml = unescape_html
 
 _MAXFileSize = 10 * 1024 * 1024
 _MAXSearchResults = 100
@@ -239,28 +244,6 @@ async def _fetchUrlContent(url: str, maxLength: int = 50000) -> str:
 async def _webFetch(url: str) -> str:
     """Fetch a URL and return its content as Markdown."""
     return await _fetchUrlContent(url, maxLength=50000)
-
-
-def _htmlToMarkdown(html: str) -> str:
-    """Convert HTML to clean Markdown using html2text."""
-    import html2text  # type: ignore[import-not-found]
-
-    converter = html2text.HTML2Text()
-    converter.body_width = 0
-    converter.ignore_links = False
-    converter.ignore_images = False
-    converter.ignore_emphasis = False
-    converter.protect_links = True
-    converter.unicode_snob = True
-    converter.skip_internal_links = True
-    return converter.handle(html)[:50000]
-
-
-def _unescapeHtml(text: str) -> str:
-    """Unescape HTML entities like &amp; &lt; &gt; &quot; &#39; etc."""
-    import html as _html
-
-    return _html.unescape(text)
 
 
 async def _webSearch(query: str, maxResults: int = 10) -> str:
