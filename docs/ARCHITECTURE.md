@@ -343,7 +343,9 @@ instead of reinventing spot-checks (do **not** treat as disposable one-offs):
 | Script | Purpose |
 |---|---|
 | [`backend-py/scripts/_live_db_fingerprint.py`](../backend-py/scripts/_live_db_fingerprint.py) | Stable fingerprint: table row counts + content hashes + FTS counts + key blob hashes. Compare before/after any suite or migration. |
-| [`backend-py/scripts/_verify_fts_sync.py`](../backend-py/scripts/_verify_fts_sync.py) | Assert FTS5 virtual tables cover base rows (rowid + sample MATCH). |
+| [`backend-py/scripts/_verify_fts_sync.py`](../backend-py/scripts/_verify_fts_sync.py) | Assert FTS5 virtual tables cover base rows (rowid + sample MATCH with **correct** table-level SQL). **Does not** call `search_memory` / `getRelevantMemories` — app-path regressions need pytest (`tests/test_fts_app_path.py`). |
+| [`backend-py/scripts/_check_fts_query_hygiene.py`](../backend-py/scripts/_check_fts_query_hygiene.py) | **Permanent.** Static scan of `app/**/*.py` for FTS anti-patterns (`WHERE content MATCH`, `WHERE <alias> MATCH`) + live probes (bad column MATCH fails; table-level MATCH + JOIN works). Complements sync check; catch the class that sync alone missed. |
+| [`backend-py/scripts/_prove_fts_column_bug.py`](../backend-py/scripts/_prove_fts_column_bug.py) | Thin wrapper → `_check_fts_query_hygiene.py` (kept so old docs/links still work). |
 | [`backend-py/scripts/_spotcheck_schema.py`](../backend-py/scripts/_spotcheck_schema.py) | Dual camel/snake inventory + data-coverage checks during rename work. |
 | [`backend-py/scripts/_diff_memory_store_conflicts.py`](../backend-py/scripts/_diff_memory_store_conflicts.py) | Content-diff dual blob keys (`agent_jobs`, `self_evolution_log`) — not timestamp-only. |
 | [`backend-py/scripts/_check_phase4_indexes.py`](../backend-py/scripts/_check_phase4_indexes.py) | Assert all six Phase-4 indexes exist + EXPLAIN sample queries. |

@@ -11,63 +11,26 @@ format stays unchanged.
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
-import os
 import sqlite3
-import threading
-from pathlib import Path
 from typing import cast
+
 from app.adapters.case_converters import snakeToCamel, camelToSnake
-from app.lib.paths import dataPath
+from app.json_narrowing import as_int, as_list, as_str
+from app.services.memory_conn import conn as _conn, db_path as _db_path
 from app.services.memory_schema import ensure_schema
 from app.type_aliases import (
+    FactDict,
     JsonValue,
     MemoryEntryDict,
-    FactDict,
+    MessageDict,
     ProposalDict,
     SessionRecord,
-    MessageDict,
 )
-from app.json_narrowing import as_str, as_list, as_int
 
-_BRAINFileEnv = 'AUGUST_BRAIN_SQLITE_FILE'
-_DEFAULTBrainFile = 'august_brain.sqlite'
-_TIMEOUTMs = 10000
 _BUSYRetries = 2
-_local = threading.local()
-
-
-def _db_path() -> Path:
-    """Resolve the brain SQLite database path."""
-    envPath = os.environ.get(_BRAINFileEnv)
-    if envPath:
-        return Path(envPath)
-    return dataPath(_DEFAULTBrainFile)
-
-
-def _conn() -> sqlite3.Connection:
-    """Get a thread-local connection to the brain database."""
-    if not hasattr(_local, 'conn') or _local.conn is None:
-        dbPath = _db_path()
-        dbPath.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(dbPath), timeout=_TIMEOUTMs / 1000)
-        conn.row_factory = sqlite3.Row
-        conn.execute('PRAGMA journal_mode=WAL')
-        conn.execute('PRAGMA busy_timeout=10000')
-        conn.execute('PRAGMA foreign_keys=ON')
-        _local.conn = conn
-    return _local.conn
-
-
-def close() -> None:
-    """Close the thread-local connection."""
-    if hasattr(_local, 'conn') and _local.conn is not None:
-        try:
-            _local.conn.close()
-        except Exception:
-            pass
-        _local.conn = None
 
 
 def _q(value: object) -> str:
@@ -156,18 +119,36 @@ def list_memory(pattern: str = '%') -> list[MemoryEntryDict]:
     return results
 
 
-def search_memory(query: str) -> list[MemoryEntryDict]:
-    """Full-text search across memory keys and values."""
+def _fts_match_query(query: str) -> str:
+    """Build a safe FTS5 MATCH expression from free text (prefix OR tokens)."""
+    tokens = [w for w in query.strip().split() if w]
+    if not tokens:
+        return ''
+    # Quote tokens so punctuation does not break MATCH parsing.
+    return ' OR '.join(f'"{t.replace(chr(34), "")}"*' for t in tokens if t.replace('"', ''))
+
+
+def search_memory(query: str, *, limit: int = 20, value_max_chars: int | None = 4000) -> list[MemoryEntryDict]:
+    """Full-text search across memory keys and values.
+
+    Uses the FTS5 table (columns ``key``, ``value``) via table-level MATCH —
+    not a nonexistent ``content`` column. Falls back to LIKE only if FTS fails.
+    Large ``value`` blobs are truncated for search results when ``value_max_chars``
+    is set (pass ``None`` for full values).
+    """
     if not query or not query.strip():
         return []
     conn = _conn()
+    lim = max(1, min(int(limit), 100))
     try:
-        ftsQuery = ' OR '.join((f'"{w}"*' for w in query.strip().split() if w))
+        ftsQuery = _fts_match_query(query)
         if not ftsQuery:
             return []
+        # Table-level MATCH (correct for fts5 key,value content=memory_store).
         rows = conn.execute(
-            'SELECT key, value FROM memory_store_fts WHERE content MATCH ?\n               ORDER BY rank LIMIT 20',
-            (ftsQuery,),
+            'SELECT key, value FROM memory_store_fts WHERE memory_store_fts MATCH ? '
+            'ORDER BY rank LIMIT ?',
+            (ftsQuery, lim),
         ).fetchall()
         results: list[MemoryEntryDict] = []
         for r in rows:
@@ -175,13 +156,15 @@ def search_memory(query: str) -> list[MemoryEntryDict]:
                 val = json.loads(r['value'])
             except (json.JSONDecodeError, TypeError):
                 val = r['value']
+            if value_max_chars is not None and isinstance(val, str) and len(val) > value_max_chars:
+                val = val[:value_max_chars] + '…'
             results.append(cast(MemoryEntryDict, {'key': r['key'], 'value': val}))
         return results
     except sqlite3.OperationalError:
         likeQuery = f'%{query.strip()}%'
         rows = conn.execute(
-            'SELECT key, value FROM memory_store WHERE key LIKE ? OR value LIKE ? LIMIT 20',
-            (likeQuery, likeQuery),
+            'SELECT key, value FROM memory_store WHERE key LIKE ? OR value LIKE ? LIMIT ?',
+            (likeQuery, likeQuery, lim),
         ).fetchall()
         results = []
         for r in rows:
@@ -873,10 +856,16 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
         if query:
             fts = info.get('fts')
             if fts:
-                ftsQ = ' OR '.join((f'"{w}"*' for w in query.strip().split() if w))
+                ftsQ = _fts_match_query(query)
                 if ftsQ:
                     qualifiedCols = ', '.join((f't.{c.strip()}' for c in cols.split(',')))
-                    sql = f'SELECT {qualifiedCols} FROM {fts} fts JOIN {info["table"]} t ON fts.rowid = t.rowid WHERE fts.content MATCH ? ORDER BY rank'
+                    # Table-level MATCH must use the FTS table name (not alias alone).
+                    # Column-level fts.content is wrong for memory_store_fts (key,value).
+                    sql = (
+                        f'SELECT {qualifiedCols} FROM {fts} AS fts '
+                        f'JOIN {info["table"]} AS t ON fts.rowid = t.rowid '
+                        f'WHERE {fts} MATCH ? ORDER BY rank'
+                    )
                     params = [ftsQ]
                 else:
                     whereClauses.append('1=0')

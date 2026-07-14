@@ -67,33 +67,49 @@ def saveAutoMemory(key: str, content: object, category: str = 'auto', importance
 def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
     """Find memories relevant to a query using FTS5 ranking.
 
-    Falls back to LIKE-based search if FTS returns nothing.
+    FTS virtual table only has ``key``/``content``; metadata comes from a
+    JOIN to ``auto_memories``. Falls back to a **bounded** LIKE scan if FTS
+    returns nothing (never loads the whole table unbounded).
     Returned keys keep camelCase ``createdAt`` for wire/API consumers.
     """
     conn = _conn()
-    try:
-        rows = conn.execute(
-            'SELECT key, content, category, importance, created_at FROM auto_memories_fts WHERE content MATCH ? ORDER BY rank LIMIT ?',
-            (query, limit),
-        ).fetchall()
-        if rows:
-            from app.services.memory_store import _row_as_wire
+    lim = max(1, min(int(limit), 50))
+    from app.services.memory_store import _row_as_wire, _fts_match_query
 
-            result = []
-            for r in rows:
-                item = _row_as_wire(r)
-                try:
-                    item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
-                except (json.JSONDecodeError, TypeError):
-                    pass
-                result.append(item)
-            return result
+    try:
+        ftsQ = _fts_match_query(query) if query and query.strip() else ''
+        if ftsQ:
+            # Table-level MATCH must name the FTS table (alias MATCH can fail as
+            # "no such column" on some SQLite builds).
+            rows = conn.execute(
+                'SELECT t.key, t.content, t.category, t.importance, t.created_at '
+                'FROM auto_memories_fts AS fts '
+                'JOIN auto_memories AS t ON fts.rowid = t.rowid '
+                'WHERE auto_memories_fts MATCH ? ORDER BY rank LIMIT ?',
+                (ftsQ, lim),
+            ).fetchall()
+            if rows:
+                result = []
+                for r in rows:
+                    item = _row_as_wire(r)
+                    try:
+                        item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                    result.append(item)
+                return result
     except Exception:
         pass
-    from app.services.memory_store import _row_as_wire
 
+    # Bounded fallback — never SELECT entire auto_memories without LIMIT.
+    like = f'%{(query or "").strip()}%'
+    if like == '%%':
+        return []
     allRows = conn.execute(
-        'SELECT key, content, category, importance, created_at FROM auto_memories'
+        'SELECT key, content, category, importance, created_at FROM auto_memories '
+        'WHERE key LIKE ? OR content LIKE ? '
+        'ORDER BY importance DESC LIMIT ?',
+        (like, like, max(lim * 4, 20)),
     ).fetchall()
     scored = []
     q = query.lower()
