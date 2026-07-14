@@ -15,6 +15,7 @@ import threading
 from pathlib import Path
 from typing import cast
 from app.lib.paths import dataPath
+from app.services.memory_schema import ensure_schema
 from app.type_aliases import (
     JsonValue,
     MemoryEntryDict,
@@ -78,56 +79,7 @@ def _json(value: object) -> str:
 
 def init() -> None:
     """Create all tables on first use."""
-    conn = _conn()
-    conn.executescript(
-        "\n        CREATE TABLE IF NOT EXISTS memoryStore (\n            key TEXT PRIMARY KEY,\n            value TEXT,\n            updatedAt TEXT DEFAULT (datetime('now'))\n        );\n\n        -- FTS5 on memoryStore (content-sync table — triggers added below)\n        CREATE VIRTUAL TABLE IF NOT EXISTS memoryStore_fts USING fts5(\n            key, value, content='memoryStore', content_rowid='rowid'\n        );\n\n        CREATE TABLE IF NOT EXISTS facts (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            factKey TEXT UNIQUE NOT NULL,\n            factValue TEXT NOT NULL,\n            category TEXT DEFAULT 'general',\n            source TEXT DEFAULT '',\n            confidence REAL DEFAULT 1.0,\n            createdAt TEXT DEFAULT (datetime('now')),\n            updatedAt TEXT DEFAULT (datetime('now'))\n        );\n\n        CREATE TABLE IF NOT EXISTS proposals (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            sessionId TEXT NOT NULL,\n            proposalType TEXT NOT NULL,\n            content TEXT,\n            status TEXT DEFAULT 'pending',\n            createdAt TEXT DEFAULT (datetime('now')),\n            decidedAt TEXT,\n            decidedBy TEXT\n        );\n\n        CREATE TABLE IF NOT EXISTS lifecycle (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            sessionId TEXT,\n            eventType TEXT NOT NULL,\n            detail TEXT,\n            createdAt TEXT DEFAULT (datetime('now'))\n        );\n\n        CREATE TABLE IF NOT EXISTS sessionTopics (\n            sessionId TEXT PRIMARY KEY,\n            topic TEXT NOT NULL,\n            parentTopic TEXT,\n            confidence REAL DEFAULT 0.75,\n            classifiedAt TEXT DEFAULT (datetime('now'))\n        );\n\n        CREATE TABLE IF NOT EXISTS sessions (\n            id TEXT PRIMARY KEY,\n            title TEXT,\n            startedAt TEXT,\n            messageCount INTEGER DEFAULT 0,\n            provider TEXT DEFAULT '',\n            model TEXT DEFAULT '',\n            folderId TEXT,\n            isArchived INTEGER DEFAULT 0,\n            workspacePath TEXT\n        );\n\n        CREATE TABLE IF NOT EXISTS messages (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            sessionId TEXT NOT NULL,\n            role TEXT NOT NULL,\n            content TEXT,\n            createdAt TEXT DEFAULT (datetime('now')),\n            FOREIGN KEY (sessionId) REFERENCES sessions(id)\n        );\n\n        CREATE TABLE IF NOT EXISTS usageEvents (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            sessionId TEXT,\n            model TEXT,\n            inputTokens INTEGER DEFAULT 0,\n            outputTokens INTEGER DEFAULT 0,\n            contextTokens INTEGER DEFAULT 0,\n            createdAt TEXT DEFAULT (datetime('now'))\n        );\n\n        CREATE TABLE IF NOT EXISTS configAudit (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            category TEXT NOT NULL,\n            action TEXT NOT NULL,\n            actor TEXT DEFAULT '',\n            beforeJson TEXT,\n            afterJson TEXT,\n            createdAt TEXT DEFAULT (datetime('now'))\n        );\n\n        CREATE TABLE IF NOT EXISTS learnedHeuristics (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            rule TEXT NOT NULL,\n            source TEXT DEFAULT '',\n            category TEXT DEFAULT 'general',\n            createdAt TEXT DEFAULT (datetime('now')),\n            updatedAt TEXT DEFAULT (datetime('now'))\n        );\n\n        CREATE TABLE IF NOT EXISTS autoMemories (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            key TEXT,\n            content TEXT,\n            category TEXT DEFAULT 'auto',\n            importance REAL DEFAULT 0.5,\n            source TEXT DEFAULT '',\n            createdAt TEXT DEFAULT (datetime('now')),\n            updatedAt TEXT DEFAULT (datetime('now'))\n        );\n\n        CREATE VIRTUAL TABLE IF NOT EXISTS autoMemories_fts USING fts5(\n            key, content, content='autoMemories', content_rowid='rowid'\n        );\n\n        -- FTS5 triggers — CRITICAL — without these FTS indexes stay empty\n        -- memoryStore_fts triggers\n        CREATE TRIGGER IF NOT EXISTS memoryStore_fts_ai AFTER INSERT ON memoryStore BEGIN\n            INSERT INTO memoryStore_fts(rowid, key, value)\n            VALUES (new.rowid, new.key, new.value);\n        END;\n        CREATE TRIGGER IF NOT EXISTS memoryStore_fts_ad AFTER DELETE ON memoryStore BEGIN\n            INSERT INTO memoryStore_fts(memoryStore_fts, rowid, key, value)\n            VALUES('delete', old.rowid, old.key, old.value);\n        END;\n        CREATE TRIGGER IF NOT EXISTS memoryStore_fts_au AFTER UPDATE ON memoryStore BEGIN\n            INSERT INTO memoryStore_fts(memoryStore_fts, rowid, key, value)\n            VALUES('delete', old.rowid, old.key, old.value);\n            INSERT INTO memoryStore_fts(rowid, key, value)\n            VALUES (new.rowid, new.key, new.value);\n        END;\n\n        -- autoMemories_fts triggers\n        CREATE TRIGGER IF NOT EXISTS autoMemories_ai AFTER INSERT ON autoMemories BEGIN\n            INSERT INTO autoMemories_fts(rowid, key, content)\n            VALUES (new.id, new.key, new.content);\n        END;\n        CREATE TRIGGER IF NOT EXISTS autoMemories_ad AFTER DELETE ON autoMemories BEGIN\n            INSERT INTO autoMemories_fts(autoMemories_fts, rowid, key, content)\n            VALUES('delete', old.id, old.key, old.content);\n        END;\n        CREATE TRIGGER IF NOT EXISTS autoMemories_au AFTER UPDATE ON autoMemories BEGIN\n            INSERT INTO autoMemories_fts(autoMemories_fts, rowid, key, content)\n            VALUES('delete', old.id, old.key, old.content);\n            INSERT INTO autoMemories_fts(rowid, key, content)\n            VALUES (new.id, new.key, new.content);\n        END;\n\n        CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category);\n        CREATE INDEX IF NOT EXISTS idx_facts_updated ON facts(updatedAt);\n        CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals(sessionId);\n        CREATE INDEX IF NOT EXISTS idx_lifecycle_session ON lifecycle(sessionId);\n        CREATE INDEX IF NOT EXISTS idx_lifecycle_event ON lifecycle(eventType);\n        CREATE INDEX IF NOT EXISTS idx_configAudit_category ON configAudit(category);\n        CREATE INDEX IF NOT EXISTS idx_configAudit_created ON configAudit(createdAt);\n        CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(sessionId);\n        CREATE INDEX IF NOT EXISTS idx_usageEvents_session ON usageEvents(sessionId);\n        CREATE INDEX IF NOT EXISTS idx_usageEvents_created ON usageEvents(createdAt);\n        CREATE INDEX IF NOT EXISTS idx_sessions_archived ON sessions(isArchived);\n    "
-    )
-    conn.commit()
-    rowCount = conn.execute('SELECT count(*) FROM memoryStore_fts').fetchone()[0]
-    if rowCount == 0:
-        conn.execute(
-            '\n            INSERT INTO memoryStore_fts(rowid, key, value)\n            SELECT rowid, key, value FROM memoryStore\n        '
-        )
-    conn.commit()
-    try:
-        cols = [r['name'] for r in conn.execute('PRAGMA table_info(autoMemories)').fetchall()]
-        if 'updatedAt' not in cols:
-            conn.execute('ALTER TABLE autoMemories ADD COLUMN updatedAt TEXT')
-    except Exception as exc:
-        import logging
-
-        logging.warning('autoMemories updatedAt migration failed: %s', exc)
-    conn.execute(
-        "\n        CREATE TABLE IF NOT EXISTS episodicTimeline (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            timestamp TEXT,\n            sessionId TEXT,\n            eventSummary TEXT,\n            category TEXT DEFAULT 'general'\n        )\n    "
-    )
-    conn.execute(
-        "\n        CREATE TABLE IF NOT EXISTS blackboard (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            sessionId TEXT NOT NULL,\n            agent TEXT NOT NULL DEFAULT 'main',\n            key TEXT NOT NULL,\n            value TEXT NOT NULL,\n            priority INTEGER DEFAULT 0,\n            createdAt TEXT DEFAULT (datetime('now')),\n            expiresAt TEXT\n        )\n    "
-    )
-    conn.execute(
-        "\n        CREATE TABLE IF NOT EXISTS exams (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            title TEXT NOT NULL,\n            topic TEXT DEFAULT '',\n            createdAt TEXT DEFAULT (datetime('now')),\n            source TEXT DEFAULT 'model',\n            sourceFiles TEXT DEFAULT ''\n        )\n    "
-    )
-    conn.execute(
-        "\n        CREATE TABLE IF NOT EXISTS examQuestions (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            examId INTEGER NOT NULL,\n            position INTEGER NOT NULL,\n            stem TEXT NOT NULL,\n            options TEXT NOT NULL,\n            correctIndex INTEGER NOT NULL,\n            rationale TEXT DEFAULT '',\n            sourceSnippet TEXT DEFAULT '',\n            origin TEXT DEFAULT 'generated',\n            FOREIGN KEY (examId) REFERENCES exams(id)\n        )\n    "
-    )
-    conn.execute(
-        "\n        CREATE TABLE IF NOT EXISTS examAttempts (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            examId INTEGER NOT NULL,\n            questionId INTEGER NOT NULL,\n            selectedIndex INTEGER,\n            isCorrect INTEGER DEFAULT 0,\n            askedForHelp INTEGER DEFAULT 0,\n            answeredAt TEXT DEFAULT (datetime('now'))\n        )\n    "
-    )
-    conn.execute(
-        "\n        CREATE TABLE IF NOT EXISTS pendingSkills (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            name TEXT UNIQUE NOT NULL,\n            description TEXT,\n            triggerText TEXT,\n            draftPath TEXT NOT NULL,\n            sourceSessionId TEXT,\n            sourceWorkflow TEXT,\n            createdBy TEXT DEFAULT 'auto-gen',\n            createdAt TEXT DEFAULT (datetime('now')),\n            status TEXT DEFAULT 'pending',\n            useCount INTEGER DEFAULT 0,\n            lastSurfacedAt TEXT\n        )\n    "
-    )
-    # Indexes for tables created after the main executescript (must run after CREATE TABLE).
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_blackboard_session ON blackboard(sessionId)')
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_examAttempts_exam ON examAttempts(examId)')
-    conn.commit()
-    _ensure_column(conn, 'usageEvents', 'contextTokens', 'INTEGER DEFAULT 0')
-
-
-def _ensure_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
-    """Add a column to a table if it does not already exist (idempotent)."""
-    cols = {row['name'] for row in conn.execute(f'PRAGMA table_info({table})').fetchall()}
-    if column not in cols:
-        conn.execute(f'ALTER TABLE {table} ADD COLUMN {column} {decl}')
-        conn.commit()
+    ensure_schema(_conn())
 
 
 def save_memory(key: str, value: JsonValue) -> None:
