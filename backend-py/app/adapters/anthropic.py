@@ -47,9 +47,19 @@ from app.models import (
     ToolResultBlock,
 )
 from app.adapters.case_converters import snakeToCamel, camelToSnake
+from app.adapters.anthropic_sse import (
+    write_anthropic_sse_data,
+    write_anthropic_sse_data_only,
+    send_simulated_anthropic_stream,
+)
 from app.providers import resolver as providerResolver
 from app.providers.model_resolver import resolve
 from app.providers.clients import getClient
+
+# Back-compat aliases (previous camelCase names on this module).
+writeAnthropicSseData = write_anthropic_sse_data
+writeAnthropicSseDataOnly = write_anthropic_sse_data_only
+sendSimulatedAnthropicStream = send_simulated_anthropic_stream
 
 CLAUDE_PUBLIC_MODEL_ALIAS = 'claude-opus-4-6'
 KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES = {
@@ -446,98 +456,6 @@ def buildAnthropicUpstreamRequest(
     return anthropicBody
 
 
-def writeAnthropicSseData(event: str, data: dict[str, object]) -> str:
-    """Serialize an Anthropic SSE event."""
-    return f'event: {event}\ndata: {json.dumps(data)}\n\n'
-
-
-def writeAnthropicSseDataOnly(data: dict[str, object]) -> str:
-    """Serialize data with just the data: line (event omitted)."""
-    return f'data: {json.dumps(data)}\n\n'
-
-
-def sendSimulatedAnthropicStream(response: dict[str, object]) -> list[str]:
-    """Create Anthropic SSE events from a full JSON response.
-
-    Used when the proxy forced non-streaming upstream to do tool resolution,
-    then needs to simulate a stream back to the client.
-    """
-    events: list[str] = []
-    responseId = as_str(response.get('id'), f'msg_{uuid.uuid4().hex[:16]}')
-    model = as_str(response.get('model'), 'unknown')
-    role = as_str(response.get('role'), 'assistant')
-    content = as_list(response.get('content'), [])
-    usage = as_dict(response.get('usage'), {})
-    events.append(
-        writeAnthropicSseData(
-            'message_start',
-            {
-                'type': 'message_start',
-                'message': {
-                    'id': responseId,
-                    'type': 'message',
-                    'role': role,
-                    'content': [],
-                    'model': model,
-                    'stop_reason': None,
-                    'stop_sequence': None,
-                    'usage': {'input_tokens': as_int(usage.get('input_tokens'), 0), 'output_tokens': 0},
-                },
-            },
-        )
-    )
-    for i, block in enumerate(content):
-        if not isinstance(block, dict):
-            continue
-        events.append(
-            writeAnthropicSseData(
-                'content_block_start', {'type': 'content_block_start', 'index': i, 'content_block': block}
-            )
-        )
-        blockType = as_str(block.get('type'), '')
-        if blockType == 'text':
-            events.append(
-                writeAnthropicSseData(
-                    'content_block_delta',
-                    {
-                        'type': 'content_block_delta',
-                        'index': i,
-                        'delta': {'type': 'text_delta', 'text': as_str(block.get('text'), '')},
-                    },
-                )
-            )
-        elif blockType == 'tool_use':
-            events.append(
-                writeAnthropicSseData(
-                    'content_block_delta',
-                    {
-                        'type': 'content_block_delta',
-                        'index': i,
-                        'delta': {
-                            'type': 'input_json_delta',
-                            'partial_json': json.dumps(as_dict(block.get('input'), {})),
-                        },
-                    },
-                )
-            )
-        events.append(writeAnthropicSseData('content_block_stop', {'type': 'content_block_stop', 'index': i}))
-    stopReason = as_str(response.get('stop_reason'), '') or 'end_turn'
-    if content and isinstance(content[-1], dict) and as_str(content[-1].get('type'), '') == 'tool_use':
-        stopReason = 'tool_use'
-    events.append(
-        writeAnthropicSseData(
-            'message_delta',
-            {
-                'type': 'message_delta',
-                'delta': {'stop_reason': stopReason, 'stop_sequence': None},
-                'usage': {'output_tokens': as_int(usage.get('output_tokens'), 0)},
-            },
-        )
-    )
-    events.append(writeAnthropicSseData('message_stop', {'type': 'message_stop'}))
-    return events
-
-
 def createAnthropicNativeStreamState() -> dict[str, object]:
     """Create state for tracking an Anthropic native stream.
 
@@ -594,7 +512,7 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, object], state: dict[str, obje
     if not state.get('_started'):
         state['_started'] = True
         events.append(
-            writeAnthropicSseData(
+            write_anthropic_sse_data(
                 'message_start',
                 {
                     'type': 'message_start',
@@ -619,13 +537,13 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, object], state: dict[str, obje
             idx = as_int(state.get('current_index'), -1) + 1
             state['current_index'] = idx
             events.append(
-                writeAnthropicSseData(
+                write_anthropic_sse_data(
                     'content_block_start',
                     {'type': 'content_block_start', 'index': idx, 'content_block': {'type': 'text', 'text': ''}},
                 )
             )
         events.append(
-            writeAnthropicSseData(
+            write_anthropic_sse_data(
                 'content_block_delta',
                 {
                     'type': 'content_block_delta',
@@ -641,13 +559,13 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, object], state: dict[str, obje
             idx = as_int(state.get('current_index'), -1) + 1
             state['current_index'] = idx
             events.append(
-                writeAnthropicSseData(
+                write_anthropic_sse_data(
                     'content_block_start',
                     {'type': 'content_block_start', 'index': idx, 'content_block': {'type': 'thinking', 'text': ''}},
                 )
             )
         events.append(
-            writeAnthropicSseData(
+            write_anthropic_sse_data(
                 'content_block_delta',
                 {
                     'type': 'content_block_delta',
@@ -692,14 +610,14 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, object], state: dict[str, obje
     if finishReason and finishReason != 'null':
         if state.get('_text_block_started'):
             events.append(
-                writeAnthropicSseData(
+                write_anthropic_sse_data(
                     'content_block_stop',
                     {'type': 'content_block_stop', 'index': as_int(state.get('current_index'), -1)},
                 )
             )
         if state.get('_reasoning_block_started'):
             events.append(
-                writeAnthropicSseData(
+                write_anthropic_sse_data(
                     'content_block_stop',
                     {'type': 'content_block_stop', 'index': as_int(state.get('current_index'), -1)},
                 )
@@ -718,7 +636,7 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, object], state: dict[str, obje
             except (json.JSONDecodeError, TypeError):
                 toolInput = {}
             events.append(
-                writeAnthropicSseData(
+                write_anthropic_sse_data(
                     'content_block_start',
                     {
                         'type': 'content_block_start',
@@ -733,7 +651,7 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, object], state: dict[str, obje
                 )
             )
             events.append(
-                writeAnthropicSseData(
+                write_anthropic_sse_data(
                     'content_block_delta',
                     {
                         'type': 'content_block_delta',
@@ -742,7 +660,7 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, object], state: dict[str, obje
                     },
                 )
             )
-            events.append(writeAnthropicSseData('content_block_stop', {'type': 'content_block_stop', 'index': idx}))
+            events.append(write_anthropic_sse_data('content_block_stop', {'type': 'content_block_stop', 'index': idx}))
             contentBlocks = as_list(state.get('content_blocks'), [])
             contentBlocks.append(
                 {'type': 'tool_use', 'id': as_str(tc.get('id'), ''), 'name': toolName, 'input': toolInput}
@@ -754,7 +672,7 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, object], state: dict[str, obje
         elif finishReason == 'length':
             anthropicStopReason = 'max_tokens'
         events.append(
-            writeAnthropicSseData(
+            write_anthropic_sse_data(
                 'message_delta',
                 {
                     'type': 'message_delta',
@@ -766,7 +684,7 @@ def streamOpenaiDeltaAsAnthropic(chunk: dict[str, object], state: dict[str, obje
                 },
             )
         )
-        events.append(writeAnthropicSseData('message_stop', {'type': 'message_stop'}))
+        events.append(write_anthropic_sse_data('message_stop', {'type': 'message_stop'}))
     usage = as_dict(chunk.get('usage'), {})
     if usage:
         state['input_tokens'] = as_int(usage.get('prompt_tokens'), 0)
@@ -1106,11 +1024,11 @@ async def _streamAnthropicNative(
         async for rawEvent in client.streamSse(upstreamUrl, upstreamHeaders, roundBodyJson):
             event = cast('dict[str, object]', rawEvent)
             if as_str(event.get('type'), '') == 'error':
-                yield writeAnthropicSseData(
+                yield write_anthropic_sse_data(
                     'error', {'error': {'message': as_str(event.get('body'), as_str(event.get('error'), ''))}}
                 )
                 return
-            yield writeAnthropicSseDataOnly(event)
+            yield write_anthropic_sse_data_only(event)
             eventTypePayload = as_str(event.get('type'), '')
             if eventTypePayload == 'message_start':
                 st.process_message_start(event)
@@ -1154,7 +1072,7 @@ async def _streamAnthropicNative(
                 tr = ToolResultBlock(tool_use_id=toolUseId, content=f'Error: {exc}', is_error=True)
                 currentMessages.append(tr.model_dump())  # type: ignore[misc]
         continue
-    yield writeAnthropicSseData('message_stop', {'type': 'message_stop'})
+    yield write_anthropic_sse_data('message_stop', {'type': 'message_stop'})
 
 
 async def _streamOpenaiAsAnthropic(
@@ -1183,7 +1101,7 @@ async def _streamOpenaiAsAnthropic(
         async for rawChunk in client.streamSse(upstreamUrl, upstreamHeaders, roundBodyJson):
             chunk = cast('dict[str, object]', rawChunk)
             if as_str(chunk.get('type'), '') == 'error':
-                yield writeAnthropicSseData(
+                yield write_anthropic_sse_data(
                     'error', {'error': {'message': as_str(chunk.get('body'), as_str(chunk.get('error'), ''))}}
                 )
                 return
@@ -1221,7 +1139,7 @@ async def _streamOpenaiAsAnthropic(
                         currentMessages.append(tr.model_dump())  # type: ignore[misc]
                 continue
         break
-    yield writeAnthropicSseData('message_stop', {'type': 'message_stop'})
+    yield write_anthropic_sse_data('message_stop', {'type': 'message_stop'})
 
 
 def _translateOpenaiToAnthropicResponse(openaiResponse: dict[str, object], model: str) -> dict[str, object]:
