@@ -1,21 +1,29 @@
 """
-DB Writer — single-writer async queue for august_brain.sqlite.
+DB Writer — single-writer **FIFO** async queue for selected brain writes.
 
 SQLite permits only one writer at a time (even in WAL mode). This module
-serializes all writes through a single asyncio.Queue to prevent "database
-is locked" errors when multiple phases (workbench, daemons, background
-review) write concurrently.
+serializes enqueued callables through one asyncio worker.
 
 Usage:
-    await enqueue_write(lambda: save_heuristic(...), priority="high")
-    await enqueue_write(lambda: save_blackboard(...), priority="low")
+    await enqueue_write(lambda: ..., priority="high")
+    await enqueue_write(lambda: ..., priority="low")
 
-High-priority writes (main-loop state) are processed immediately.
-Low-priority writes (daemon notes, background review) are dropped after
-2 seconds if the queue is backed up — daemons are best-effort by nature.
+**Actual behaviour (verified P0 2026-07-14 — see docs/ARCHITECTURE.md):**
 
-Reads bypass the queue and use direct thread-local connections (WAL
-permits concurrent readers alongside a single writer).
+* Shared **FIFO** queue — ``priority`` does **not** reorder items. A "high"
+  write still runs after every item already ahead of it.
+* Queue is **unbounded** (``asyncio.Queue()`` default). Low-pri
+  ``QueueFull`` handling in ``enqueue_write`` is therefore **dead code**.
+* Low-pri **drop** is **age-based at dequeue**: if a low item has waited
+  more than ``_LOW_DROP_AFTER`` (2.0s) before the worker picks it up, it is
+  skipped. High items are never age-dropped.
+* High ``put`` is wrapped in ``wait_for(..., _HIGH_DRAIN_TIMEOUT=5s)`` but
+  with an unbounded queue that timeout effectively never fires on put.
+
+Sole production caller today: ``consolidation_daemon`` (best-effort). Do not
+use this for user-facing "must be fast" paths unless you accept FIFO wait.
+
+Reads bypass the queue (WAL concurrent readers + ``memory_store._conn()``).
 """
 
 from __future__ import annotations
@@ -63,10 +71,12 @@ async def shutdown():
 
 
 async def enqueue_write(fn: Callable[[], object], priority: str = 'low') -> bool:
-    """Enqueue a write operation.
+    """Enqueue a write operation (FIFO — priority does not reorder).
 
-    Returns True if the write was enqueued, False if it was dropped
-    (low-priority only, when the queue is too full).
+    Returns True if the write was enqueued, False if it was dropped at
+    enqueue time. With the current unbounded queue, enqueue-time drop only
+    theoretically applies to low-pri ``QueueFull`` (unreachable today; see
+    Phase 6 B26). Age-based low-pri drops happen later in ``_drain_loop``.
     """
     ensure_queue()
     queue = _write_queue
@@ -76,6 +86,7 @@ async def enqueue_write(fn: Callable[[], object], priority: str = 'low') -> bool
     item = QueueItem(fn, priority)
     try:
         if priority == 'high':
+            # Put-timeout only matters if the queue is bounded/full; today it is not.
             await asyncio.wait_for(queue.put(item), timeout=_HIGH_DRAIN_TIMEOUT)
             return True
         else:
@@ -83,6 +94,8 @@ async def enqueue_write(fn: Callable[[], object], priority: str = 'low') -> bool
                 queue.put_nowait(item)
                 return True
             except asyncio.QueueFull:
+                # B26: dead while Queue is unbounded (no maxsize). Kept for if/when
+                # a bounded queue is intentionally reintroduced.
                 logger.warning('Write queue full, dropping low-priority write')
                 return False
     except asyncio.TimeoutError:

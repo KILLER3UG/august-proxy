@@ -9,7 +9,7 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 — **P0 closed** after frontend marks + db_writer contention + full index EXPLAIN
+**Last updated:** 2026-07-14 — **P0 closed** (ARCHITECTURE/db_writer truth + product decision + B26 filed)
 **Current branch state:** `master` — verify with `git rev-parse HEAD`.
 **Verification baseline:**
 P0 suite green · stream-perf vitest green · schema closed · isolation autouse
@@ -84,20 +84,37 @@ Enable backend logs: `AUGUST_PERF_TIMING=1`. Frontend: `localStorage.august_stre
 | Blackboard 8×5 write+read | ~309–316 ms wall | 40 notes |
 | **`db_writer` contention** (not idle) | see below | |
 
-### `db_writer` contention (real load)
+### `db_writer` contention (real load) — B2 mental model falsified
 
-Implementation facts measured:
+Earlier B2/ARCHITECTURE text claimed “priority + drop-policy / high processed immediately.”
+**P0 measured the opposite of priority jump:**
 
-- Queue is **unbounded** → `QueueFull` low-pri drop path is **dead** in current config.
-- Real drop policy is **age-based**: low-pri skipped if age > `_LOW_DROP_AFTER` (2.0s) at dequeue.
-- High/low share **FIFO** — high does not jump the queue.
+| Fact | Measured |
+|---|---|
+| Queue shape | **FIFO** shared; high does **not** jump the line |
+| Boundedness | **Unbounded** `asyncio.Queue()` |
+| Live drop policy | **Age-based at dequeue** (low > 2.0s skipped) |
+| Dead code | **`QueueFull` low-pri drop at enqueue** — unreachable → **Phase 6 B26** |
+| Sole caller | `consolidation_daemon` only |
 
 | Result (12 slow low-pri @ 0.35s each + 1 high) | Value |
 |---|---|
 | low executed / dropped (est.) | **6 / 6** |
 | high enqueue_ms | ~0.02 ms |
 | high completion_ms (FIFO wait) | **~2100 ms** |
-| high within 5s put-timeout budget | **yes** (put itself is instant; completion is FIFO wait) |
+| high put-timeout (5s) | put succeeds immediately; completion is FIFO wait |
+
+#### Product decision (2026-07-14) — explicit
+
+| Option | Choice |
+|---|---|
+| **Accept as-is** for current sole caller (`consolidation_daemon`, best-effort) | **YES — accepted** |
+| Treat ~2.1s high completion under backlog as a user-facing defect today | **No** — no interactive path uses this queue |
+| Open a real priority-queue fix now | **No** — not without a caller that needs “high = fast” |
+| Document truth; ban “high means fast” for new callers | **YES** — ARCHITECTURE + module docstring corrected |
+| Track dead `QueueFull` path | **YES — B26 OPEN** (cleanup or wire a bounded queue intentionally) |
+
+**P0 may only be called closed with the above decision + ARCHITECTURE correction landed.**
 
 ### Phase-4 indexes — all six present + EXPLAIN-used
 

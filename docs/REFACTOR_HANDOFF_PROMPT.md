@@ -140,7 +140,7 @@ Confirm baseline in Progress Log / live tracker before starting — **do not ass
 
 **Database**
 - Keep raw `sqlite3` + `db_writer` design — no ORM reintroduction unless asked.
-- **`db_writer` role — DOCUMENTED (B2 closed):** `_conn()` = WAL/busy_timeout write serialization; `enqueue_write` = priority/drop-policy queue on top (caller: `consolidation_daemon`). See `docs/ARCHITECTURE.md`. Do not "simplify away."
+- **`db_writer` role — CORRECTED after P0 (B2 amended 2026-07-14):** `_conn()` = WAL/busy_timeout for most writers; `enqueue_write` = **FIFO** single-worker queue for `consolidation_daemon` only. **Not** a priority scheduler (high does not jump the line). Low drop = age > 2s at **dequeue**. Unbounded queue → `QueueFull` path dead (**B26**). See `docs/ARCHITECTURE.md`. Product decision: accept as-is for current sole caller; do not build “high means fast” on it.
 - `lib/storage_key_migration.py` busy_timeout inconsistency — still low priority / verify current state (B22 fixed a related table-name bug).
 - **Missing indexes — CLOSED** (`5b21a50`): `messages(sessionId)`, `usageEvents(sessionId/createdAt)`, `sessions(isArchived)`, `blackboard(sessionId)`, `examAttempts(examId)`.
 - **B1a non-atomic JSON writes — CLOSED.** `write_json_atomic` lives in `app/atomic_write.py`. Former sites fixed; curator uses temp + `Path.replace`. Re-verify with grep before assuming closed if time has passed.
@@ -257,7 +257,8 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 | ID | Severity | Location | Issue | Status |
 |---|---|---|---|---|
 | B1a | High | former JSON write sites | Non-atomic JSON writes | **CLOSED** |
-| B2 | Med | `db_writer` / ARCHITECTURE | Queue role clarification | **CLOSED** (document only) |
+| B2 | Med | `db_writer` / ARCHITECTURE | Queue role (was wrong “priority”) | **AMENDED 2026-07-14** — FIFO + age-drop; see ARCHITECTURE |
+| B26 | Med | `db_writer.enqueue_write` | Dead `QueueFull` low-pri drop (unbounded queue) | **OPEN** — leftover/wrong wiring; age-drop is the live policy |
 | B11 | Med | nested `backend-py/backend-py/tests/` | Claimed nest | **Absent / closed** |
 | B12 | Low | `data/*.bak` | Leftover backups | Open — optional delete |
 | B13–B14 | Low | docs scratch / `server.log` | Stray artifacts | **CLOSED** |

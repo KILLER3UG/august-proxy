@@ -365,32 +365,45 @@ persist via thin `_conn()` wrappers (`blackboard_service`, `heuristics_service`,
 `auto_memory`, etc.), so they inherit WAL + `busy_timeout` automatically.
 
 [`services/db_writer.py`](../backend-py/app/services/db_writer.py) is a
-**separate** async write queue that runs one worker and provides:
+**separate** async write queue with **one worker**. Measured behaviour (P0
+contention, 2026-07-14) — **not** the earlier “priority jump” mental model:
 
-- **Per-source ordering** — writes from one caller are serialized.
-- **Priority + drop policy** — high-priority writes (workbench state) wait at
-  most 5 s on enqueue; low-priority writes (daemon notes) drop after 2 s if
-  the queue is backed up. Daemons are best-effort by nature.
-- **Bounded user-facing latency** — keeps a stalled SQLite write from blocking
-  the asyncio event loop indefinitely.
+| What the code actually does | What it does **not** do |
+|---|---|
+| **FIFO** shared queue for high and low | High does **not** jump ahead of already-queued low items |
+| One worker runs `fn()` serially | Parallel write execution |
+| **Age-based low drop** at **dequeue**: if `priority=='low'` and age > `_LOW_DROP_AFTER` (2.0s), the item is skipped | Enqueue-time “queue full” drops in practice |
+| High `put` uses `wait_for(..., 5s)` | That timeout almost never matters: the queue is **unbounded** (`asyncio.Queue()` with no `maxsize`), so `put`/`put_nowait` succeed immediately |
+| Serializes daemon-style async writes off the caller's await of the *enqueue* | “High priority means fast under backlog” — **false**; high completion still waits FIFO (P0: ~2.1s behind slow lows) |
 
-`db_writer` is **complementary, not redundant** with `memory_store._conn()`:
+**Dead path (Phase 6 B26):** low-priority `except asyncio.QueueFull` in
+`enqueue_write` is unreachable while the queue stays unbounded. Either leftover
+from a bounded-queue design or incomplete wiring — not a second live drop policy.
+
+**Product decision (2026-07-14):** **Accept as-is for current callers.** Sole
+caller is `consolidation_daemon` (best-effort background work). ~2s high
+completion under artificial backlog is **not** treated as a user-facing bug
+today. **Do not** assume “high” means low latency for any **new** caller —
+if the main chat path ever needs true priority, open a real fix (priority
+heap / dual queues / bounded queue with intentional drops), do not rely on
+the current `priority=` flag.
+
+`db_writer` is still **complementary** to `memory_store._conn()`:
 
 | Concern | `memory_store._conn()` (WAL + busy_timeout) | `db_writer.enqueue_write` (queue) |
 |---|---|---|
-| Writer serialization across all callers | ✅ yes | ✅ yes (one worker) |
-| Bounded SQLite-level wait | ✅ via `busy_timeout=10000` | ⚠️ no (worker runs the closure) |
-| Bounded user-facing wait | ❌ no | ✅ 5 s high / 2 s low |
-| Per-source ordering | ❌ no | ✅ yes |
-| Drop semantics for low priority | ❌ no | ✅ yes |
-| Sync callers (most daemons) | ✅ direct | ❌ async-only |
+| Writer serialization across queue clients | N/A (direct conn) | ✅ one worker, FIFO |
+| SQLite-level wait | ✅ `busy_timeout=10000` | Worker runs `fn` on the event-loop thread |
+| Enqueue latency | N/A | ~immediate (unbounded queue) |
+| Completion under backlog | N/A | FIFO wait (can be seconds) |
+| Low-pri drop | ❌ | ✅ age > 2s at **dequeue** only |
+| Priority jump | N/A | ❌ **not implemented** |
+| Sync callers (most services) | ✅ direct | ❌ async enqueue API |
 
 Reads bypass both layers (WAL allows concurrent readers). `consolidation_daemon`
-is currently the **only** caller of `enqueue_write` (4 sites); it does reads via
-`_conn()` and writes via the queue because the daemon's writes share a closure
-that captures `conn` from the daemon's event-loop thread, and the queue worker
-runs on the same thread. **Do not remove the queue** — it provides priority
-semantics and bounded user-facing wait that WAL alone does not.
+is currently the **only** caller of `enqueue_write` (4 sites). **Do not remove
+the queue** without a replacement serialization story for that daemon — but
+do not document or design new features as if it were a priority scheduler.
 
 ### JSON stores — atomic writes
 
