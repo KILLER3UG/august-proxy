@@ -512,27 +512,22 @@ If P0 shows DB is not the bottleneck, P2 may never be worth opening.
 
 ---
 
-## Phase P COMPLETE (2026-07-14)
+## Phase P COMPLETE — plan scope 100% (2026-07-14, exit gate)
 
 | Stream | Deliverables |
 |---|---|
 | **P0** | `perf_timing`, mock-LLM baselines, EXPLAIN pack, stream marks, `GET /api/perf/recent` |
-| **P1.1/1.2** | `prompt_segments_cache`, `tool_defs_cache`, kill switches, before/after numbers |
-| **P1.3** | `get_messages_async` + sessions route offload |
-| **P1.4** | `parallel_tools` allowlist + `chat_stages.run_regular_tools_stage` |
-| **P1.5** | `BatchedEmit` TTFT-safe SSE coalesce (**char + ~12 ms time budget**) |
-| **P1.6** | post-turn auto-memory/reflection via `to_thread` + `schedule_post_turn_side_effects` |
-| **P1.7** | provider `getClient` connection pool |
-| **P2.1–2.2** | EXPLAIN pack; **FTS MATCH fixed** (table-level; auto_memory JOIN; no full-table fallback) |
-| **P2.3** | `get_messages(limit/offset/before_id)`, `count_messages` |
-| **P2.4–2.6** | `db_writer.get_stats` + `/api/perf/db-writer`; schema `user_version` warm path; PRAGMA cache/mmap/sync |
-| **P3** | stream throttle, virtualize, lazy routes, drawer/browser selectors, deferred KaTeX/voice |
-| **P4** | DEVELOPER_GUIDE tool/provider/panel/daemon checklists + exercised notes |
-| **P5** | `chat_stages`, `stream_translate` (workbench), `anthropic_stream_translate`, `memory_conn` |
-| **Gateway** | accept `finalOutput` (not only `final_output`); optional turn spans |
+| **P1** | caches, parallel RO tools, BatchedEmit char+time, client pool, side-effects off path, async messages |
+| **P2** | FTS app-path + hygiene tool; pagination; db_writer stats; schema warm path; PRAGMA **opt-in** (default FULL) |
+| **P3** | stream throttle, virtualize, lazy routes, selectors, deferred FE, **Tauri wait-for-health** |
+| **P4** | DEVELOPER_GUIDE checklists |
+| **P5** | `chat_stages`, stream extracts, `memory_conn`, **`memory_store/` domain package** |
+| **Gateway** | `emit_types` + SessionBridge assistant-text accumulation |
 
-**Tests:** `tests/test_phase_p_remaining.py`, `test_phase_p_followups.py`, `test_perf_p0_baselines.py`, `test_perf_p1_prompt_tool_cache.py`.
+**Exit gate:** `tests/test_phase_p_exit_gate.py` + `scripts/_check_fts_query_hygiene.py`.
 
-**Decisions retained:** db_writer FIFO (B26); peer-help failure semantics (B27); daemon cap holds.
+**Evidence:** Phase P related pytest green (60+); FTS hygiene PASS.
 
-**Code audit note (2026-07-14):** Doc status alone is not proof — FTS MATCH on a nonexistent `content` column and gateway emit snake_case mismatch were still broken until the follow-up pass.
+**Out of Phase P scope (next plans):** B16 camelCase params, Phase 5 residual tooling, Phase 6–8, raising caps.
+
+**Decisions retained:** db_writer FIFO (B26); peer-help non-recovery (B27); daemon cap holds.
