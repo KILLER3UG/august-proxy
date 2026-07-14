@@ -154,3 +154,98 @@ async def test_p1_tool_defs_cache_invalidates_on_register(stub_wb, monkeypatch):
     a3 = wb.toolDefinitions(type('S', (), {'messages': []})())
     names = {t.get('name') for t in a3}
     assert 'p1_test_only_tool' in names
+
+
+@pytest.mark.asyncio
+async def test_p1_tool_defs_cache_invalidates_on_unregister(stub_wb, monkeypatch):
+    """Withdrawn tools must not remain in the cached Anthropic list."""
+    monkeypatch.setenv('AUGUST_P1_TOOL_CACHE', '1')
+    tool_defs_cache.clear()
+    from app.services import tool_registry
+
+    async def _noop(**kwargs: object) -> str:
+        return 'ok'
+
+    tool_registry.register(
+        'p1_withdraw_me', 'will remove', _noop, parameters={'type': 'object', 'properties': {}}
+    )
+    defs = wb.toolDefinitions(type('S', (), {'messages': []})())
+    assert 'p1_withdraw_me' in {t.get('name') for t in defs}
+
+    assert tool_registry.unregister('p1_withdraw_me') is True
+    defs2 = wb.toolDefinitions(type('S', (), {'messages': []})())
+    names2 = {t.get('name') for t in defs2}
+    assert 'p1_withdraw_me' not in names2, 'stale cache served withdrawn tool definition'
+
+
+@pytest.mark.asyncio
+async def test_p1_tool_defs_cache_invalidates_on_mcp_signature_change(stub_wb, monkeypatch):
+    """MCP tool list change must miss cache even if registry generation is stable."""
+    monkeypatch.setenv('AUGUST_P1_TOOL_CACHE', '1')
+    tool_defs_cache.clear()
+
+    mcp_state: dict[str, list] = {
+        'defs': [
+            {
+                'type': 'function',
+                'function': {
+                    'name': 'mcp__a__tool',
+                    'description': 'a',
+                    'parameters': {'type': 'object', 'properties': {}},
+                },
+            }
+        ]
+    }
+
+    def fake_mcp():
+        return list(mcp_state['defs'])
+
+    monkeypatch.setattr(
+        'app.services.tools.mcp_client.getMcpToolDefinitionsSync',
+        fake_mcp,
+    )
+    # Also patch the import path used inside tool_defs_cache / workbench helpers
+    monkeypatch.setattr(
+        'app.services.workbench.tool_defs_cache._mcp_signature',
+        lambda: ','.join(
+            sorted(
+                str((d.get('function') or {}).get('name', ''))
+                for d in mcp_state['defs']
+                if d.get('type') == 'function'
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        'app.services.workbench.workbench._mcpToolDefinitionsAnthropic',
+        lambda seen: [
+            {
+                'name': str((d.get('function') or {}).get('name', '')),
+                'description': 'a',
+                'input_schema': {'type': 'object', 'properties': {}},
+            }
+            for d in mcp_state['defs']
+            if str((d.get('function') or {}).get('name', '')) not in seen
+        ],
+    )
+
+    d1 = wb.toolDefinitions(type('S', (), {'messages': []})())
+    names1 = {t.get('name') for t in d1}
+    assert 'mcp__a__tool' in names1
+
+    # Same registry gen, different MCP set
+    mcp_state['defs'] = [
+        {
+            'type': 'function',
+            'function': {
+                'name': 'mcp__b__tool',
+                'description': 'b',
+                'parameters': {'type': 'object', 'properties': {}},
+            },
+        }
+    ]
+    d2 = wb.toolDefinitions(type('S', (), {'messages': []})())
+    names2 = {t.get('name') for t in d2}
+    assert 'mcp__b__tool' in names2
+    assert 'mcp__a__tool' not in names2, 'stale MCP tool still served after signature change'
+    # Should have been a miss (new entry), not only hits on old entry
+    assert tool_defs_cache.stats()['misses'] >= 2

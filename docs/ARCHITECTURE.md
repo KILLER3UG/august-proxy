@@ -350,6 +350,15 @@ instead of reinventing spot-checks (do **not** treat as disposable one-offs):
 | [`backend-py/scripts/p0_explain_plans.py`](../backend-py/scripts/p0_explain_plans.py) | P0 EXPLAIN QUERY PLAN pack for hot paths. |
 | [`frontend/desktop/src/lib/stream-perf.ts`](../frontend/desktop/src/lib/stream-perf.ts) | P0.4 stream TTFT/flush marks (`localStorage.august_stream_perf=1`). |
 
+### Runtime kill switches / measurement flags (incident use)
+
+| Env / flag | Effect |
+|---|---|
+| `AUGUST_PERF_TIMING=1` | Backend workbench span/TTFT logging + ring buffer |
+| `AUGUST_P1_TOOL_CACHE=0` | Disable P1.2 tool-definition cache (force rebuild every call) |
+| `AUGUST_P1_PROMPT_CACHE=0` | Disable P1.1 skills-segment cache |
+| `localStorage.august_stream_perf=1` | Frontend stream TTFT/flush marks |
+
 **Tests must not touch the live brain.** `tests/conftest.py` makes `isolatedData`
 **autouse** (temp `AUGUST_DATA_DIR` + `AUGUST_BRAIN_SQLITE_FILE`). Do not remove
 that without a safety review.

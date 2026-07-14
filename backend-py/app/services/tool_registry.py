@@ -88,8 +88,22 @@ def register(
 
 
 def generation() -> int:
-    """Generation counter for tool-def caches (P1.2). Bumps on each register."""
+    """Generation counter for tool-def caches (P1.2). Bumps on each register/unregister."""
     return _generation
+
+
+def unregister(name: str) -> bool:
+    """Remove a registered tool. Returns True if it was present.
+
+    Bumps ``generation()`` so P1 tool-def caches invalidate (withdrawn tools
+    must not keep serving).
+    """
+    global _generation
+    if name not in _registry:
+        return False
+    del _registry[name]
+    _generation += 1
+    return True
 
 
 def get(name: str) -> dict[str, object] | None:

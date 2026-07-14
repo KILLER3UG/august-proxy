@@ -55,11 +55,26 @@ Anything whose behaviour was **described in docs/audit** but never forced under
 contention gets a **load/contention check before further work builds on it** —
 not only after a surprise finding.
 
-| Candidate (next) | Stated contract (unverified under load) |
+| Candidate | Status |
 |---|---|
-| `daemon_manager` | Exponential backoff + 3-daemon cap |
-| `subagent_orchestrator` | Peer-help recovery window |
-| `db_writer` | ~~Priority jump~~ — **checked P0**; FIFO + age-drop; B26 open |
+| `db_writer` | **Checked P0** — FIFO + age-drop; B26 open |
+| `subagent_orchestrator` peer-help | **Checked** (below) — window exists; “recovery/escalation” overstated |
+| `daemon_manager` | Still unchecked — backoff + 3-daemon cap |
+
+### Subagent peer-help contention check (2026-07-14)
+
+Stated (module docstring): failure → 5s peer-help claim window → if no claim, **escalate**.
+
+| Measured | Result |
+|---|---|
+| No claim | Waits **~5s** (`PEER_HELP_WINDOW_SECONDS`), then **log only** (`No peer claimed…`) — **no re-spawn, no escalated status** |
+| Peer publishes `task:{id}:peerHelp` within window | Wait ends early (~0.4s) — **claim does not re-run the task** or change result |
+| Worker returns empty/falsy result | Status `failed` **without** opening peer-help (only `Exception` path calls `_handleFailure`) |
+| 4 concurrent failures | Windows run in parallel; no deadlock |
+
+**Product decision:** document truth; treat “peer-help recovery” as **wait/claim-signal only**, not automatic recovery. **B27 OPEN** — docstring/contract vs code (missing escalation + empty-result skip).
+
+Tests: `tests/test_subagent_peer_help_contention.py`
 
 ---
 
@@ -85,7 +100,16 @@ not only after a surprise finding.
 | tool cache | — | 14 hits / 2 misses |
 | skills cache | — | 7 hits / 1 miss |
 
-Invalidate on `tool_registry.register` verified (generation bump).
+**Cache correctness (added after review):**
+
+| Case | Covered |
+|---|---|
+| `register` bumps gen → cache miss | yes |
+| **`unregister` removes tool → cache must not serve withdrawn name** | yes (`test_p1_tool_defs_cache_invalidates_on_unregister`) |
+| **MCP signature change with stable registry gen** | yes (`test_p1_tool_defs_cache_invalidates_on_mcp_signature_change`) |
+| 30s skills TTL under real churn | **not** load-tested — kill switch `AUGUST_P1_PROMPT_CACHE=0`; synthetic hit rates (7/1, 14/2) are 8-turn static mocks only |
+
+Kill switches documented in `docs/ARCHITECTURE.md` § Runtime kill switches.
 
 ---
 
