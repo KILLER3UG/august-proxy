@@ -1,23 +1,27 @@
 """Terminal session API routes (legacy /api/terminal/* endpoints).
 
 Delegates to the same terminal_service as /ui/terminal/* routes.
+
+Request bodies inherit :class:`CamelModel` so internals are snake_case while
+JSON from the frontend stays camelCase. (All current fields are single-word,
+so JSON keys match attribute names.)
 """
 
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from app.models.camel_base import CamelModel
 from app.services.workbench import terminal_service
 
 router = APIRouter(prefix='/api/terminal')
 
 
-class TerminalCreate(BaseModel):
+class TerminalCreate(CamelModel):
     name: str = 'default'
     cwd: str = ''
     shell: str = ''
 
 
-class TerminalWrite(BaseModel):
+class TerminalWrite(CamelModel):
     data: str
 
 
