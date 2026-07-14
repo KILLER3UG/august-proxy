@@ -52,6 +52,22 @@ from app.adapters.anthropic_sse import (
     write_anthropic_sse_data_only,
     send_simulated_anthropic_stream,
 )
+from app.adapters.anthropic_system import (
+    AUGUST_REMINDER,
+    CLAUDE_PUBLIC_MODEL_ALIAS,
+    KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES,
+    RULE_REMINDER_MESSAGE,
+    append_text_to_system_blocks,
+    build_anthropic_system_blocks,
+    build_openai_system_prompt,
+    is_claude_family_model,
+    normalize_system_blocks,
+    resolve_claude_client_facing_model,
+    resolve_claude_public_model_alias,
+    should_inject_august_reminder,
+    should_inject_reminder_message,
+    system_blocks_to_text,
+)
 from app.providers import resolver as providerResolver
 from app.providers.model_resolver import resolve
 from app.providers.clients import getClient
@@ -61,165 +77,24 @@ writeAnthropicSseData = write_anthropic_sse_data
 writeAnthropicSseDataOnly = write_anthropic_sse_data_only
 sendSimulatedAnthropicStream = send_simulated_anthropic_stream
 
-CLAUDE_PUBLIC_MODEL_ALIAS = 'claude-opus-4-6'
-KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES = {
-    'claude-3-7-sonnet-20250219',
-    'claude-3-5-sonnet-20241022',
-    'claude-opus-4-7',
-    'claude-opus-4-6',
-    'claude-sonnet-4-6',
-}
+# Re-export constants for back-compat (assignment keeps ruff from stripping imports).
+CLAUDE_PUBLIC_MODEL_ALIAS = CLAUDE_PUBLIC_MODEL_ALIAS
+KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES = KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES
+AUGUST_REMINDER = AUGUST_REMINDER
+RULE_REMINDER_MESSAGE = RULE_REMINDER_MESSAGE
+
+isClaudeFamilyModel = is_claude_family_model
+resolveClaudePublicModelAlias = resolve_claude_public_model_alias
+resolveClaudeClientFacingModel = resolve_claude_client_facing_model
+shouldInjectReminderMessage = should_inject_reminder_message
+shouldInjectAugustReminder = should_inject_august_reminder
+normalizeSystemBlocks = normalize_system_blocks
+systemBlocksToText = system_blocks_to_text
+buildOpenaiSystemPrompt = build_openai_system_prompt
+buildAnthropicSystemBlocks = build_anthropic_system_blocks
+appendTextToSystemBlocks = append_text_to_system_blocks
+
 MAX_MANAGED_TOOL_ROUNDS = 10
-AUGUST_REMINDER = 'This proxy environment is August Proxy — a multi-model AI gateway. You have access to the August tool suite for file operations, web access, bash commands, and memory.'
-RULE_REMINDER_MESSAGE: dict[str, object] = {
-    'type': 'text',
-    'text': '## Operational Rules\n\n1. When browsing the web, prioritize fetching text content directly.\n2. When executing commands, prefer safe, non-destructive operations.\n3. Always verify file paths before writing.\n4. Respect user privacy and data boundaries.\n5. If a tool fails, retry with corrected parameters before reporting failure.',
-}
-
-
-# ── JsonValue narrowing helpers ───────────────────────────────────────────────
-# The proxy treats provider payloads as `JsonValue` (a broad recursive union).
-# Before operating on a value as a specific type we narrow it at runtime; these
-# helpers keep the dynamic boundary small and give mypy a concrete type.
-def isClaudeFamilyModel(model: str | None) -> bool:
-    """True for Claude family model IDs or public alias names."""
-    if not isinstance(model, str):
-        return False
-    lower = model.strip().lower()
-    if not lower:
-        return False
-    if lower.startswith('claude-'):
-        return True
-    if model in KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES:
-        return True
-    return lower in ('sonnet', 'opus', 'best', 'opusplan')
-
-
-def resolveClaudePublicModelAlias(requestedModel: str | None) -> str:
-    """Map public aliases (sonnet, opus, best) to concrete model IDs."""
-    if not isinstance(requestedModel, str):
-        return CLAUDE_PUBLIC_MODEL_ALIAS
-    normalized = requestedModel.strip()
-    if not normalized:
-        return CLAUDE_PUBLIC_MODEL_ALIAS
-    lowered = normalized.lower()
-    if lowered in ('sonnet',):
-        return 'claude-sonnet-4-6'
-    if lowered in ('opus', 'best', 'opusplan'):
-        return 'claude-opus-4-6'
-    if normalized in KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES:
-        return normalized
-    if lowered.startswith('claude-'):
-        return normalized
-    return CLAUDE_PUBLIC_MODEL_ALIAS
-
-
-def resolveClaudeClientFacingModel(requestedModel: str | None) -> str:
-    """Resolve what model name to present to the client."""
-    if not isinstance(requestedModel, str):
-        return CLAUDE_PUBLIC_MODEL_ALIAS
-    normalized = requestedModel.strip()
-    if not normalized:
-        return CLAUDE_PUBLIC_MODEL_ALIAS
-    if normalized in KNOWN_CLAUDE_PUBLIC_MODEL_ALIASES:
-        return normalized
-    lowered = normalized.lower()
-    if lowered == 'sonnet':
-        return 'claude-sonnet-4-6'
-    if lowered in ('opus', 'best', 'opusplan'):
-        return 'claude-opus-4-6'
-    if lowered.startswith('claude-'):
-        return normalized
-    return CLAUDE_PUBLIC_MODEL_ALIAS
-
-
-def shouldInjectReminderMessage(
-    messages: list[dict[str, object]] | None, existingSystem: list[dict[str, object]] | None = None
-) -> bool:
-    """Check if the AUGUST_REMINDER should be injected."""
-    if not messages:
-        return True
-    for msg in messages:
-        content = msg.get('content', '')
-        if isinstance(content, str) and ('August Proxy' in content or 'August tool suite' in content):
-            return False
-        if isinstance(content, list):
-            for block in content:
-                if isinstance(block, dict) and block.get('type') == 'text':
-                    text = as_str(block.get('text', ''))
-                    if 'August Proxy' in text or 'August tool suite' in text:
-                        return False
-    if existingSystem:
-        for block in existingSystem:
-            text = as_str(block.get('text', '')) if isinstance(block, dict) else str(block)
-            if 'August Proxy' in text or 'August tool suite' in text:
-                return False
-    return True
-
-
-def shouldInjectAugustReminder(systemText: str | None) -> bool:
-    """Check if the August reminder should be added to system text."""
-    if not systemText:
-        return True
-    return 'August' not in systemText
-
-
-def normalizeSystemBlocks(system: JsonValue) -> list[dict[str, object]]:
-    """Normalize system prompt to list of Anthropic content blocks."""
-    if not system:
-        return []
-    if isinstance(system, str):
-        return [{'type': 'text', 'text': system}]
-    if isinstance(system, list):
-        return [
-            {'type': 'text', 'text': block} if isinstance(block, str) else {'type': 'text', 'text': str(block)}
-            for block in system
-        ]
-    return [{'type': 'text', 'text': str(system)}]
-
-
-def systemBlocksToText(blocks: list[dict[str, object]] | None) -> str:
-    """Flatten system blocks into a single text string."""
-    if not blocks:
-        return ''
-    parts: list[str] = []
-    for block in blocks:
-        if isinstance(block, dict):
-            if block.get('type') == 'text':
-                parts.append(as_str(block.get('text', '')))
-            elif block.get('type') == 'tool_use':
-                parts.append(json.dumps(as_dict(block.get('input', {}))))
-        elif isinstance(block, str):
-            parts.append(block)
-    return '\n'.join(parts)
-
-
-def buildOpenaiSystemPrompt(system: JsonValue) -> str:
-    """Convert Anthropic system blocks to an OpenAI-style system string."""
-    blocks = normalizeSystemBlocks(system)
-    return systemBlocksToText(blocks)
-
-
-def buildAnthropicSystemBlocks(system: JsonValue) -> list[dict[str, object]]:
-    """Build Anthropic-format system blocks with reminders injected."""
-    blocks = normalizeSystemBlocks(system)
-    text = systemBlocksToText(blocks)
-    if shouldInjectAugustReminder(text):
-        blocks.append({'type': 'text', 'text': AUGUST_REMINDER})
-    return blocks
-
-
-def appendTextToSystemBlocks(blocks: list[dict[str, object]] | None, text: str) -> list[dict[str, object]]:
-    """Append text to the last text block or add a new one."""
-    if not blocks:
-        return [{'type': 'text', 'text': text}]
-    blocks = list(blocks)
-    if blocks and blocks[-1].get('type') == 'text':
-        existing_text = as_str(blocks[-1].get('text', ''))
-        blocks[-1] = {'type': 'text', 'text': existing_text + ('\n\n' if not text.startswith('\n') else '') + text}
-    else:
-        blocks.append({'type': 'text', 'text': text})
-    return blocks
 
 
 def deriveSessionIdFromAnthropic(
@@ -267,7 +142,7 @@ def translateMessages(
     """
     openaiMessages: list[dict[str, object]] = []
     if system:
-        systemText = systemBlocksToText(system)
+        systemText = system_blocks_to_text(system)
         if systemText:
             openaiMessages.append({'role': 'system', 'content': systemText})
     for msg in messages:
@@ -838,7 +713,7 @@ async def handleMessages(
     else:
         model = as_str(body.get('model'), 'claude-sonnet-4-7')
         raw_body = body
-    resolvedModel = resolveClaudePublicModelAlias(model)
+    resolvedModel = resolve_claude_public_model_alias(model)
     try:
         resolved = resolve(resolvedModel, default_alias='claude-sonnet-4-7')
         providerName = as_str(resolved.get('provider'), '')
@@ -862,7 +737,7 @@ async def handleMessages(
     else:
         upstreamUrl = f'{baseUrl}/chat/completions'
     clientWantsStream = body.stream if isinstance(body, AnthropicRequest) else body.get('stream', False)
-    systemBlocks = buildAnthropicSystemBlocks(cast(JsonValue, as_list(raw_body.get('system'), [])))
+    systemBlocks = build_anthropic_system_blocks(cast(JsonValue, as_list(raw_body.get('system'), [])))
     clientToolsRaw = as_list(raw_body.get('tools'), [])
     managedWebTools = get_managed_anthropic_web_tool_definitions()
     clientTools = cast('list[dict[str, object]]', clientToolsRaw)
