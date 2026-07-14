@@ -9,11 +9,11 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 (CamelModel **router scale-up complete** — 0 BaseModel left in `app/routers/`)
-**Current branch state:** `master` tip (= `origin/master`, expect clean). Verify with `git rev-parse HEAD` — final batch on/after `1d66d4d`.
+**Last updated:** 2026-07-14 (B21 **test filenames** closed — 62 renames + flake fix)
+**Current branch state:** `master` tip (= `origin/master`, expect clean). Verify with `git rev-parse HEAD` — B21 tests on/after `1265716`.
 **Verification baseline on master (2026-07-14):**
 `pytest 604 collected` · `mypy app/ → 0 errors / 176 source files` ·
-`ruff check app/ → All checks passed` · local CamelModel suite 50+ passed; CI on master after push
+`ruff check app/ → All checks passed` · CI green on `refactor/b21-test-filename-renames`
 **CI note:** Prefer `backend-py/.venv` (3.12). System Python 3.11 can fail collection.
 
 ### Phase 0 sign-off
@@ -31,14 +31,13 @@ scale-up (`usage`).
 
 ## Where to pick up (next session)
 
-1. Verify clean `master` matching `origin/master` (`git rev-parse HEAD`); CamelModel routers complete on/after `1d66d4d`.
+1. Verify clean `master` matching `origin/master` (`git rev-parse HEAD`); B21 tests on/after `1265716`.
 2. Optional cleanup: delete leftover `refactor/b21-app-file-renames` (local + origin) if still present — content already on master.
-3. **Next code chunk (Phase 2 remainder — not CamelModel routers):**
+3. **Next code chunk (Phase 2 remainder):**
    - camelCase **callables** in `model_resolver` / `route_resolver`
    - camelCase **TypedDict fields** in `type_aliases` (JSON contract — careful)
-   - 62 camelCase **test** filenames
 4. Do **not** restart Phase 0 or re-merge closed historical branches.
-5. Do **not** treat B21 as closing PEP 8 for callables/TypedDict fields inside renamed modules.
+5. Do **not** treat B21 filename renames as closing callables/TypedDict fields.
 
 ---
 
@@ -73,7 +72,7 @@ write sites; curator uses temp + `Path.replace`. Re-verify if time passed.
 | `app/` | **176** | Matches mypy |
 | `tests/` | **~86** | + usage CamelModel tests |
 | camelCase **app** filenames | **0** | B21 closed |
-| camelCase **test** filenames | **~62** | B21 remainder |
+| camelCase **test** filenames | **0** | B21 closed (`380ad2f`) |
 
 ---
 
@@ -89,8 +88,8 @@ write sites; curator uses temp + `Path.replace`. Re-verify if time passed.
 | 6 | B18 nanostores → Zustand relaunched (Phase 4 workstream) | open workstream |
 | 7 | SQLite schema camelCase→snake_case needs **explicit** sign-off | Ground Rule 5 |
 | 8 | Phase 0 signed off; G5–G7 dropped; Phase 2+ unblocked | user 2026-07-13 |
-| 9 | B21 app filenames first, then CamelModel one router at a time | B21 app done; **all router bodies are CamelModel** (0 BaseModel in `app/routers/`) |
-| 10 | B21 = **filename rename only** — callables/TypedDict fields separate | explicit scope note |
+| 9 | B21 app filenames first, then CamelModel one router at a time | B21 app + test filenames done; **all router bodies are CamelModel** |
+| 10 | B21 = **filename rename only** — callables/TypedDict fields separate | still open for callables/TypedDict |
 | 11 | Merge CamelModel routers via FF after CI green; one router per branch | practice established |
 
 ---
@@ -110,7 +109,7 @@ write sites; curator uses temp + `Path.replace`. Re-verify if time passed.
 | **B18** | Med | **Open** — nanostores in use; Zustand not installed |
 | **B19** | Med | Stale mypy doc marked superseded (+ B21 path notes) |
 | **B20** | Low | Dockerfile not re-verified |
-| **B21** | Med | **PARTIAL** — 3 app filenames done; 62 test renames + callables/TypedDict fields open |
+| **B21** | Med | **PARTIAL** — app + test filenames done; callables/TypedDict fields still open |
 | **B22** | Med | **CLOSED** |
 | **B23** | Low | **CLOSED** |
 | **B24** | Low | **CLOSED** |
@@ -123,31 +122,30 @@ write sites; curator uses temp + `Path.replace`. Re-verify if time passed.
 ## Recent commits (tip)
 
 ```
+1265716 fix(tests): harden parallel subagent blackboard coordination test
+380ad2f refactor(tests): rename 62 camelCase test modules to snake_case
+ef20d67 docs(refactor): mark CamelModel router scale-up complete
 1d66d4d refactor(terminal): convert legacy terminal bodies to CamelModel
 dbc9469 refactor(desktop-automation): convert ActionRequest to CamelModel
 e900f10 refactor(skills): convert skills router bodies to CamelModel
 be14f92 refactor(manage): convert manage router bodies to CamelModel
 d2f5d10 refactor(august): convert alias manage bodies to CamelModel
-15774e1 refactor(agents): convert agent router bodies to CamelModel
-90fdc3f docs(refactor): refresh CamelModel remaining-router list in handoff
-95e6b0e refactor(config): convert config router bodies to CamelModel
 ```
 
 ---
 
 ## B21 scope note (explicit)
 
-B21 app **filenames** are closed on master (`af9fce9` + `4f94269`). B21 was a
-**filename rename only**. Public callables and TypedDict fields inside the
-renamed modules remain camelCase by design for that chunk:
+B21 **filenames** are closed on master:
+- App modules: `af9fce9` + `4f94269`
+- Test modules: `380ad2f` (62 renames; flake harden `1265716`)
+
+B21 remains **filename rename only**. Public callables and TypedDict fields
+inside the renamed app modules stay camelCase until their own chunks:
 
 - `model_resolver.py`: `resolveOrFallback`, `getAliasForModel`, `listAliases`, `getDefaultAlias`
 - `route_resolver.py`: `resolveForModel`
 - `type_aliases.py`: TypedDict keys such as `targetModel`, `apiFormat`, `baseUrl`, …
-
-Those identifiers are **not** closed by B21. Function/API snake_case conversion
-and CamelModel scale-up are separate follow-ups. Do not treat the B21 merge as
-closing the PEP 8 / naming-convention gap for this surface.
 
 Leftover branch ref `refactor/b21-app-file-renames` (if present) is redundant —
 safe to delete locally and on origin.
@@ -172,8 +170,8 @@ Query params and SQLite column names remain camelCase where applicable (Phase 4)
 
 ## What's next
 
-1. ✅ Phase 0 signed off; **CamelModel router scale-up complete**.
-2. **Next Phase 2 chunks:** resolver callables; TypedDict fields; 62 test renames.
+1. ✅ Phase 0 signed off; CamelModel routers complete; B21 app + test **filenames** complete.
+2. **Next Phase 2 chunks:** resolver callables; TypedDict fields (JSON contract).
 3. Later: B18 Zustand; B20 Dockerfile; Phase 3 large-file splits; SQLite index gaps; schema rename (sign-off required).
 4. Out of scope for this refactor: AUG.md proxy injection; Feature Flow Visualization UI.
 
@@ -181,6 +179,6 @@ Query params and SQLite column names remain camelCase where applicable (Phase 4)
 
 ## Open questions for the user
 
-- Next Phase 2 chunk: callables vs TypedDict fields vs test renames?
+- Next Phase 2 chunk: callables vs TypedDict fields?
 - Delete leftover `refactor/b21-app-file-renames` refs?
 - Manual CI loop (default) vs automation

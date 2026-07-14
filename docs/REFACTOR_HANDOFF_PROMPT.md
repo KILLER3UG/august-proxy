@@ -1,12 +1,12 @@
 # Full Codebase Refactor & Modernization Prompt
 ### (Production Refactor Edition — August Proxy)
 
-> **Handoff snapshot:** 2026-07-14 · live tracker: `docs/REFACTOR_PROGRESS.md` · tip: verify with `git rev-parse master` (CamelModel routers complete on/after `1d66d4d`)  
+> **Handoff snapshot:** 2026-07-14 · live tracker: `docs/REFACTOR_PROGRESS.md` · tip: verify with `git rev-parse master` (B21 test renames on/after `1265716`)  
 > Paste this entire document into a new session. Then **verify it against the repo** (Ground Rule 1) before coding.
 
 Act as a Senior Principal Software Architect and Lead Developer. Your task is a comprehensive, end-to-end refactor of **August Proxy** — a large, working AI-agent proxy system: a Tauri + React 19 + TypeScript desktop app (plus an Expo React Native mobile companion) on the frontend, and a FastAPI Python backend spanning ~176 `app/` Python files across **32 routers** (200+ endpoints) and ~95 service files. This is a multi-phase migration of a live system, not a quick cleanup pass — treat the scale below as the default assumption for how you plan your work, not an edge case.
 
-**This is a handoff, not a fresh start — and it's already mid-flight.** Phase 0 is signed off. The old multi-branch merge sequence is **finished** (only `master` / `origin/master` remain for active work; a redundant `refactor/b21-app-file-renames` ref may still exist and is safe to delete). Phase 2 **CamelModel router scale-up is COMPLETE** (0 `BaseModel` left in `app/routers/`; ~40 CamelModel classes). Remaining Phase 2 work: resolver callables, TypedDict fields, test filename renames. **Pick up from the Progress Log's current step** — do not restart Phase 0 or re-merge closed branches. Before doing anything else, read the Progress Log, then scan the actual repository yourself to confirm what it says is still accurate. Do not take the Progress Log, or any prior audit report it references, at face value — see Ground Rule 1.
+**This is a handoff, not a fresh start — and it's already mid-flight.** Phase 0 is signed off. The old multi-branch merge sequence is **finished** (only `master` / `origin/master` remain for active work; a redundant `refactor/b21-app-file-renames` ref may still exist and is safe to delete). Phase 2 **CamelModel router scale-up is COMPLETE** (0 `BaseModel` left in `app/routers/`; ~40 CamelModel classes). B21 **app + test filenames** are closed. Remaining Phase 2 work: resolver callables, TypedDict fields. **Pick up from the Progress Log's current step** — do not restart Phase 0 or re-merge closed branches. Before doing anything else, read the Progress Log, then scan the actual repository yourself to confirm what it says is still accurate. Do not take the Progress Log, or any prior audit report it references, at face value — see Ground Rule 1.
 
 **Authoritative live tracker:** `docs/REFACTOR_PROGRESS.md` (not repo root). Prefer it over any older chat paste if they disagree — but still verify both against the repo.
 
@@ -89,7 +89,7 @@ Confirm baseline in Progress Log / live tracker before starting — **do not ass
 **Verified baseline (2026-07-13 handoff — re-verify):**
 - Most backend modules/files are `snake_case`.
 - **B16 function APIs closed** for `memory_store.py`, `db_writer.py`, `adapters/proxy_tools.py` (there is **no** `services/proxy_tools.py`). SQL table/column names remain camelCase until Phase 4 explicit sign-off.
-- **B21 app filenames closed:** `type_aliases.py`, `providers/model_resolver.py`, `providers/route_resolver.py`. **Filename-only** — camelCase callables/TypedDict fields inside those modules remain (see Progress Log B21 scope note). **62 camelCase test filenames** still open.
+- **B21 filenames closed:** app modules + **62 test modules** renamed to snake_case (`380ad2f`). **Filename-only** — camelCase callables/TypedDict fields inside renamed modules remain (see Progress Log B21 scope note).
 - **CamelModel router scale-up COMPLETE:**
   - All request bodies under `app/routers/` use `CamelModel` (0 remaining `BaseModel` subclasses there).
   - Characterization tests: `tests/test_camel_model*.py`.
@@ -169,8 +169,8 @@ Same deliverables as before when the full refactor completes.
 - [ ] No unapproved behavior changes
 - [x] Boundary translation pattern proven (`CamelModel`) — **router scale-up complete** (0 BaseModel in `app/routers/`)
 - [x] B16 function APIs snake_case for memory_store / db_writer / proxy_tools (SQL names deferred)
-- [x] B21 app filenames snake_case (callables/TypedDict fields + 62 test renames remain)
-- [ ] Naming fully consistent per language (remaining: router CamelModel scale-up, resolver callables, TypedDict fields, test filenames, curator camelCase methods)
+- [x] B21 app + test filenames snake_case (callables/TypedDict fields remain)
+- [ ] Naming fully consistent per language (remaining: resolver callables, TypedDict fields, curator camelCase methods)
 - [ ] No remaining dead code (or explicitly listed as pending removal) — B12 `.bak` optional
 - [ ] All flagged bugs documented with suggested fixes
 - [x] `db_writer` role documented in `ARCHITECTURE.md` (B2)
@@ -187,7 +187,7 @@ Same deliverables as before when the full refactor completes.
 
 Because this is a large codebase, work iteratively.
 
-**Current step:** CamelModel routers are done. Next Phase 2 chunks: **resolver callables** / **TypedDict fields** / **test filename renames** (one logical chunk per branch; CI before merge).
+**Current step:** CamelModel routers + B21 filenames are done. Next Phase 2 chunks: **resolver callables** / **TypedDict fields** (one logical chunk per branch; CI before merge).
 
 **On session start:**
 1. Acknowledge these instructions and the Codebase Reference.
@@ -200,7 +200,7 @@ Because this is a large codebase, work iteratively.
 
 ## Progress Log (verify this, don't just read it — see Ground Rule 1)
 
-*Last updated 2026-07-14 (CamelModel routers complete). Tip: `master` / `origin/master` (verify `git rev-parse HEAD`; final batch on/after `1d66d4d`).*
+*Last updated 2026-07-14 (B21 test renames closed). Tip: `master` / `origin/master` (verify `git rev-parse HEAD`; on/after `1265716`).*
 
 ### Merge Status (historical queue — CLOSED)
 
@@ -231,9 +231,9 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 | Bulk backend snake_case (lib/memory/adapters/routers/services) | **Done** (prior rounds) |
 | B16 `memory_store` / `db_writer` / `proxy_tools` **function** APIs | **Closed** |
 | B21 app **filenames** (`type_aliases`, `model_resolver`, `route_resolver`) | **Closed** (filename-only) |
+| B21 **test** filenames (62 modules) | **Closed** (`380ad2f`) |
 | camelCase **callables** in `model_resolver` / `route_resolver` | **Open** (separate chunk) |
 | camelCase **TypedDict fields** in `type_aliases` | **Open** (JSON contract — careful) |
-| 62 camelCase **test** filenames | **Open** |
 | CamelModel router scale-up | **✅ Complete** — 0 BaseModel in `app/routers/` |
 | SQLite schema/table camelCase | **Deferred** — needs explicit sign-off |
 
@@ -294,9 +294,9 @@ Still required before Phase 8 sign-off.
 |---|---|
 | All `app/routers/` request bodies → `CamelModel` | ✅ Complete (`1d66d4d`) |
 | Characterization tests `test_camel_model*.py` | ✅ Present |
-| Remaining Phase 2 naming | resolver callables · TypedDict fields · 62 test renames |
+| Remaining Phase 2 naming | resolver callables · TypedDict fields |
 
-**Suggested next:** B21 follow-ups (callables / TypedDict) or 62 test filename renames — not more CamelModel routers.
+**Suggested next:** resolver callables or TypedDict fields — not more CamelModel routers or test renames.
 
 ---
 
@@ -373,6 +373,6 @@ Still required before Phase 8 sign-off.
 
 ## Session close note (for the next model)
 
-Stop state: CamelModel **router scale-up complete** (`1d66d4d`). Next action is a different Phase 2 chunk (callables / TypedDict / test renames) or Phase 3 with explicit go-ahead. Update `docs/REFACTOR_PROGRESS.md` after each merge. Keep Ground Rule 1 — verify this prompt against HEAD before trusting SHAs.
+Stop state: B21 **test filenames closed** (`380ad2f` / `1265716`). Next action is Phase 2 callables or TypedDict fields, or Phase 3 with explicit go-ahead. Update `docs/REFACTOR_PROGRESS.md` after each merge. Keep Ground Rule 1 — verify this prompt against HEAD before trusting SHAs.
 
 Are you ready to begin? If so, verify the Progress Log and Codebase Reference against the real repository first, report anything that doesn't match, then continue CamelModel scale-up from the current step rather than restarting from scratch.
