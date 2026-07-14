@@ -9,11 +9,11 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 (CamelModel memory router merged)
-**Current branch state:** `master` tip (= `origin/master`, expect clean). Verify with `git rev-parse HEAD` — memory CamelModel on/after `5cc6255`.
+**Last updated:** 2026-07-14 (CamelModel batch: sessions/mcp/cron + terminal_routes/subagent/config)
+**Current branch state:** `master` tip (= `origin/master`, expect clean). Verify with `git rev-parse HEAD` — config CamelModel on/after `95e6b0e`.
 **Verification baseline on master (2026-07-14):**
-`pytest 550 collected` · `mypy app/ → 0 errors / 176 source files` ·
-`ruff check app/ → All checks passed` · CI `type-check.yml` (Python 3.12) green on `refactor/camelmodel-memory`
+`pytest 570 collected` · `mypy app/ → 0 errors / 176 source files` ·
+`ruff check app/ → All checks passed` · CI green per feature branch before each FF-merge
 **CI note:** Prefer `backend-py/.venv` (3.12). System Python 3.11 can fail collection.
 
 ### Phase 0 sign-off
@@ -31,10 +31,10 @@ scale-up (`usage`).
 
 ## Where to pick up (next session)
 
-1. Verify clean `master` matching `origin/master` (`git rev-parse HEAD`); memory CamelModel is on/after `5cc6255`.
+1. Verify clean `master` matching `origin/master` (`git rev-parse HEAD`); config CamelModel is on/after `95e6b0e`.
 2. Optional cleanup: delete leftover `refactor/b21-app-file-renames` (local + origin) if still present — content already on master.
 3. **Next code chunk:** CamelModel scale-up — **one router** on a feature branch.
-   - Suggested: `sessions` / `mcp` / `cron` (mostly single-word fields), or `terminal` / `subagent` / `config` for multi-field value.
+   - Remaining: `agents`, `august`, `desktop_automation`, `manage`, `skills`, legacy `terminal.py` (~14 BaseModel classes).
    - Pattern: inherit `CamelModel`, snake_case fields, characterization tests, push, CI green, FF-merge, update this tracker.
 4. Do **not** restart Phase 0 or re-merge closed historical branches.
 5. Do **not** treat B21 as closing PEP 8 for callables/TypedDict fields inside renamed modules.
@@ -43,10 +43,10 @@ scale-up (`usage`).
 
 ## Meta-review evidence (required before Phase 0 sign-off)
 
-### 1. Test count 520 → 534 (+14) — accounted for; now 550
+### 1. Test count 520 → 534 (+14) — accounted for; now 570
 
 Baseline cited in earlier audits: **520**. At Phase 0 evidence pack:
-**534** (= 520 + 14). **Current: 550** (= 534 + 4 usage + 5 git + 7 memory).
+**534** (= 520 + 14). **Current: 570** (CamelModel characterization suite expanded).
 
 | Added tests | Count | Commit | Why |
 |---|---|---|---|
@@ -54,10 +54,16 @@ Baseline cited in earlier audits: **520**. At Phase 0 evidence pack:
 | `tests/test_camel_model.py` | **+4** | `c030ff6` (CamelModel pilot) | Boundary-translation characterization |
 | `tests/test_db_writer_coverage.py` | **+1** | `3bc390e` (B2) | Consolidation routes writes through `db_writer` |
 | `tests/test_sqlite_safety.py` | **+3** | `3bc390e` (B2) | WAL + `busy_timeout` + direct-write safety |
-| `tests/test_camel_model_usage.py` | **+4** | `40606d5` (CamelModel usage) | Usage router boundary + HTTP POST |
-| `tests/test_camel_model_git.py` | **+5** | `00904fe` (CamelModel git) | Git router boundary + HTTP POST |
-| `tests/test_camel_model_memory.py` | **+7** | `5cc6255` (CamelModel memory) | Memory multi-field bodies + HTTP POSTs |
-| **Net vs original 520** | **+30** | | **520 + 30 = 550** |
+| `tests/test_camel_model_usage.py` | **+4** | `40606d5` | Usage router |
+| `tests/test_camel_model_git.py` | **+5** | `00904fe` | Git router |
+| `tests/test_camel_model_memory.py` | **+7** | `5cc6255` | Memory multi-field |
+| `tests/test_camel_model_sessions.py` | **+3** | `d4da6ec` | Sessions |
+| `tests/test_camel_model_mcp.py` | **+3** | `ab8807b` | MCP |
+| `tests/test_camel_model_cron.py` | **+3** | `93ab8b6` | Cron |
+| `tests/test_camel_model_terminal_routes.py` | **+4** | `a26509e` | Terminal UI bodies |
+| `tests/test_camel_model_subagent.py` | **+3** | `ec4d289` | Subagent |
+| `tests/test_camel_model_config.py` | **+4** | `95e6b0e` | Config |
+| **Net vs original 520** | **+50** | | **520 + 50 = 570** |
 
 ### 2. B2 status — **CLOSED on master**
 
@@ -95,7 +101,7 @@ write sites; curator uses temp + `Path.replace`. Re-verify if time passed.
 | 6 | B18 nanostores → Zustand relaunched (Phase 4 workstream) | open workstream |
 | 7 | SQLite schema camelCase→snake_case needs **explicit** sign-off | Ground Rule 5 |
 | 8 | Phase 0 signed off; G5–G7 dropped; Phase 2+ unblocked | user 2026-07-13 |
-| 9 | B21 app filenames first, then CamelModel one router at a time | B21 app done; CamelModel **usage** + **git** + **memory** merged |
+| 9 | B21 app filenames first, then CamelModel one router at a time | B21 app done; CamelModel scaled to **26** classes / **14** BaseModel remain |
 | 10 | B21 = **filename rename only** — callables/TypedDict fields separate | explicit scope note |
 | 11 | Merge CamelModel routers via FF after CI green; one router per branch | practice established |
 
@@ -129,14 +135,14 @@ write sites; curator uses temp + `Path.replace`. Re-verify if time passed.
 ## Recent commits (tip)
 
 ```
+95e6b0e refactor(config): convert config router bodies to CamelModel
+ec4d289 refactor(subagent): convert subagent router bodies to CamelModel
+a26509e refactor(terminal): convert terminal_routes bodies to CamelModel
+93ab8b6 refactor(cron): convert CronJobCreate to CamelModel
+ab8807b refactor(mcp): convert MCPServerCreate to CamelModel
+d4da6ec refactor(sessions): convert MessageCreate to CamelModel
+2e6eb01 docs(refactor): record CamelModel memory router merge on master
 5cc6255 refactor(memory): convert memory router bodies to CamelModel
-a824848 docs(refactor): record CamelModel git router merge on master
-00904fe refactor(git): convert GitCommand to CamelModel with snake_case fields
-aa78589 docs(refactor): finalize handoff tip references for next session
-ab05148 docs(refactor): publish session handoff prompt and refresh tracker
-c15e064 docs(refactor): record CamelModel usage router merge
-40606d5 refactor(usage): convert UsageRecord to CamelModel with snake_case fields
-aa8930a docs(refactor): record B21 app-filename merge on master
 ```
 
 ---
@@ -164,28 +170,33 @@ safe to delete locally and on origin.
 
 | Router | Classes | Commit | Status |
 |---|---|---|---|
-| `models.py` | `ModelInfo`, `ModelList` | `c030ff6` / `b1d1217` | ✅ Pilot |
-| `usage.py` | `UsageRecord` | `40606d5` | ✅ First scale-up |
-| `git.py` | `GitCommand` | `00904fe` | ✅ Second scale-up |
-| `memory.py` | `MemorySave`, `FactSave`, `FactSearch`, `ProposalCreate`, `ProposalDecide` | `5cc6255` | ✅ Third scale-up |
-| Others | ~31 `BaseModel` subclasses remain | — | ❌ Next |
+| `models.py` | `ModelInfo`, `ModelList` | pilot | ✅ |
+| `usage.py` | `UsageRecord` | `40606d5` | ✅ |
+| `git.py` | `GitCommand` | `00904fe` | ✅ |
+| `memory.py` | 5 bodies | `5cc6255` | ✅ |
+| `sessions.py` | `MessageCreate` | `d4da6ec` | ✅ |
+| `mcp.py` | `MCPServerCreate` | `ab8807b` | ✅ |
+| `cron.py` | `CronJobCreate` | `93ab8b6` | ✅ |
+| `terminal_routes.py` | 5 bodies | `a26509e` | ✅ |
+| `subagent.py` | 3 bodies | `ec4d289` | ✅ |
+| `config.py` | 6 bodies | `95e6b0e` | ✅ |
+| Remaining | **~14** `BaseModel` | — | ❌ Next |
+
+**Remaining routers:** `agents`, `august`, `desktop_automation`, `manage`, `skills`, legacy `terminal.py`.
 
 `CamelModel` base: `app/models/camel_base.py` (`alias_generator=to_camel`,
-`populate_by_name=True`). Add `extra="allow"` per model when needed (see
-`ModelInfo`). Characterization: `tests/test_camel_model.py`,
-`tests/test_camel_model_usage.py`, `tests/test_camel_model_git.py`,
-`tests/test_camel_model_memory.py`.
+`populate_by_name=True`). Counts: **26** CamelModel / **14** BaseModel in `app/routers/`.
 
-Note: GET/query params on converted routers (e.g. git `repoPath`, memory
-lifecycle query params) stay unchanged — only request **bodies** are in
-CamelModel scope per chunk. SQLite column names remain camelCase (Phase 4).
+Note: GET/query params stay unchanged — only request **bodies**. When dumping
+to service dicts that expect camelCase keys, use `model_dump(by_alias=True)`
+(see `terminal_routes`). SQLite column names remain camelCase (Phase 4).
 
 ---
 
 ## What's next
 
-1. ✅ Phase 0 signed off; B1/B2/B15/B16 APIs/B21 app filenames closed; CamelModel **usage** + **git** + **memory** on master.
-2. **Next session:** convert next router to `CamelModel` (one commit/branch; CI before merge).
+1. ✅ Phase 0 signed off; major CamelModel batch on master (simple + multi-field).
+2. **Next session:** convert remaining routers (`agents` / `skills` / `manage` / …) one at a time.
 3. Later separate chunks: remaining camelCase callables/TypedDict fields; 62 test renames; B18 Zustand; B20 Dockerfile; Phase 3 large-file splits; SQLite index gaps; schema rename (sign-off required).
 4. Out of scope for this refactor: AUG.md proxy injection; Feature Flow Visualization UI.
 
@@ -193,6 +204,6 @@ CamelModel scope per chunk. SQLite column names remain camelCase (Phase 4).
 
 ## Open questions for the user
 
-- Which next CamelModel router? (`sessions` / `mcp` / `cron` / `terminal` / `subagent` / other)
+- Which next CamelModel router? (`agents` / `skills` / `manage` / `august` / `desktop_automation` / legacy `terminal`)
 - Delete leftover `refactor/b21-app-file-renames` refs?
 - Manual CI loop (default) vs automation
