@@ -4,8 +4,7 @@
 /* Gated by `import.meta.env.DEV` in routes.ts — never included in    */
 /* production builds.                                                  */
 
-import { useStore } from '@nanostores/react';
-import { $themeMode, $textSize, setThemeMode, setTextSize } from '@/lib/theme';
+import { useThemeStore, setThemeMode, setTextSize } from '@/lib/theme';
 import type { ThemeMode, TextSize } from '@/lib/theme';
 
 interface ColorToken {
@@ -207,8 +206,8 @@ function TrackingTokens() {
 }
 
 function ThemeSwitcher() {
-  const mode = useStore($themeMode);
-  const size = useStore($textSize);
+  const mode = useThemeStore((s) => s.mode);
+  const size = useThemeStore((s) => s.textSize);
   const modes: { id: ThemeMode; label: string }[] = [
     { id: 'light', label: 'Light' },
     { id: 'dark', label: 'Dark' },

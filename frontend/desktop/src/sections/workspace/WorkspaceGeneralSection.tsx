@@ -7,8 +7,7 @@
 
 import * as React from 'react';
 import { Sun, Moon, Monitor, Keyboard, Sparkles, GraduationCap, Check } from 'lucide-react';
-import { useStore } from '@nanostores/react';
-import { $themeMode, $textSize, setThemeMode, setTextSize } from '@/lib/theme';
+import { useThemeStore, setThemeMode, setTextSize } from '@/lib/theme';
 import type { ThemeMode, TextSize } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
@@ -38,8 +37,8 @@ const TEXT_SIZE_OPTIONS: { id: TextSize; label: string; scale: string }[] = [
 ];
 
 export function WorkspaceGeneralSection() {
-  const themeMode = useStore($themeMode);
-  const textSize = useStore($textSize);
+  const themeMode = useThemeStore((s) => s.mode);
+  const textSize = useThemeStore((s) => s.textSize);
   const activePreset = 'default'; // local-only until a settings store exists
 
   const themeModeIcon =

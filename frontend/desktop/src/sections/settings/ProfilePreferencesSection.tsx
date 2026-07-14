@@ -5,7 +5,7 @@
  * shared primitives so it reads like the rest of the redesigned settings. */
 
 import { useState } from 'react';
-import { useStore } from '@nanostores/react';
+
 import {
   Sun,
   Moon,
@@ -15,7 +15,7 @@ import {
   GraduationCap,
   Check,
 } from 'lucide-react';
-import { $themeMode, $textSize, setThemeMode, setTextSize } from '@/lib/theme';
+import { useThemeStore, setThemeMode, setTextSize } from '@/lib/theme';
 import type { ThemeMode, TextSize } from '@/lib/theme';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
@@ -49,8 +49,8 @@ const TEXT_SIZE_OPTIONS: { id: TextSize; label: string; scale: string }[] = [
 ];
 
 export function ProfilePreferencesSection() {
-  const themeMode = useStore($themeMode);
-  const textSize = useStore($textSize);
+  const themeMode = useThemeStore((s) => s.mode);
+  const textSize = useThemeStore((s) => s.textSize);
   const [activePreset, setActivePreset] = useState<string>('default');
   const [tour, setTour] = useState(true);
 

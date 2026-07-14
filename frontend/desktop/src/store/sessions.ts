@@ -1,4 +1,4 @@
-import { atom } from 'nanostores';
+import { create } from 'zustand';
 import { listManageSessions } from '@/api/api-client';
 
 export interface Session {
@@ -19,19 +19,6 @@ export interface Session {
 
 export type SessionStatus = 'idle' | 'working' | 'awaiting' | 'error' | 'done' | 'streaming';
 
-export const $sessionStates = atom<Record<string, SessionStatus>>({});
-
-export function setSessionStatus(id: string, status: SessionStatus) {
-  const prev = $sessionStates.get();
-  $sessionStates.set({ ...prev, [id]: status });
-}
-
-export function clearSessionStatus(id: string) {
-  const prev = { ...$sessionStates.get() };
-  delete prev[id];
-  $sessionStates.set(prev);
-}
-
 export interface Folder {
   id: string;
   name: string;
@@ -46,6 +33,7 @@ const LOCAL_SESSIONS_KEY = 'august-sessions-list-v1';
 const LOCAL_FOLDERS_KEY = 'august-folders-list-v1';
 
 const loadSessions = (): Session[] => {
+  if (typeof localStorage === 'undefined') return [];
   const saved = localStorage.getItem(LOCAL_SESSIONS_KEY);
   if (saved) {
     try {
@@ -56,6 +44,7 @@ const loadSessions = (): Session[] => {
 };
 
 const loadFolders = (): Folder[] => {
+  if (typeof localStorage === 'undefined') return [];
   const saved = localStorage.getItem(LOCAL_FOLDERS_KEY);
   if (saved) {
     try {
@@ -65,8 +54,62 @@ const loadFolders = (): Folder[] => {
   return [];
 };
 
-export const $sessions = atom<Session[]>(loadSessions());
-export const $folders = atom<Folder[]>(loadFolders());
+interface SessionsState {
+  sessions: Session[];
+  folders: Folder[];
+  sessionStates: Record<string, SessionStatus>;
+}
+
+export const useSessionsStore = create<SessionsState>(() => ({
+  sessions: loadSessions(),
+  folders: loadFolders(),
+  sessionStates: {},
+}));
+
+/** Nanostores-shaped shims for imperative get/set callers and tests. */
+export const $sessions = {
+  get: (): Session[] => useSessionsStore.getState().sessions,
+  set: (sessions: Session[]): void => {
+    useSessionsStore.setState({ sessions });
+  },
+  subscribe: (listener: (sessions: Session[]) => void): (() => void) => {
+    listener(useSessionsStore.getState().sessions);
+    return useSessionsStore.subscribe((s) => listener(s.sessions));
+  },
+};
+
+export const $folders = {
+  get: (): Folder[] => useSessionsStore.getState().folders,
+  set: (folders: Folder[]): void => {
+    useSessionsStore.setState({ folders });
+  },
+  subscribe: (listener: (folders: Folder[]) => void): (() => void) => {
+    listener(useSessionsStore.getState().folders);
+    return useSessionsStore.subscribe((s) => listener(s.folders));
+  },
+};
+
+export const $sessionStates = {
+  get: (): Record<string, SessionStatus> => useSessionsStore.getState().sessionStates,
+  set: (sessionStates: Record<string, SessionStatus>): void => {
+    useSessionsStore.setState({ sessionStates });
+  },
+  subscribe: (listener: (states: Record<string, SessionStatus>) => void): (() => void) => {
+    listener(useSessionsStore.getState().sessionStates);
+    return useSessionsStore.subscribe((s) => listener(s.sessionStates));
+  },
+};
+
+export function setSessionStatus(id: string, status: SessionStatus) {
+  const prev = useSessionsStore.getState().sessionStates;
+  useSessionsStore.setState({ sessionStates: { ...prev, [id]: status } });
+}
+
+export function clearSessionStatus(id: string) {
+  const prev = { ...useSessionsStore.getState().sessionStates };
+  delete prev[id];
+  useSessionsStore.setState({ sessionStates: prev });
+}
 
 export const saveSessionsToStorage = (sessions: Session[]) => {
   localStorage.setItem(LOCAL_SESSIONS_KEY, JSON.stringify(sessions));
@@ -89,21 +132,21 @@ export function createSession(folderId: string | null = null, title: string = 'N
     isArchived: false,
     workspacePath: workspacePath ?? null,
   };
-  const updated = [newSess, ...$sessions.get()];
-  $sessions.set(updated);
+  const updated = [newSess, ...useSessionsStore.getState().sessions];
+  useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
   return newSess;
 }
 
 export function renameSession(id: string, newTitle: string) {
-  const updated = $sessions.get().map(s => s.id === id ? { ...s, title: newTitle } : s);
-  $sessions.set(updated);
+  const updated = useSessionsStore.getState().sessions.map(s => s.id === id ? { ...s, title: newTitle } : s);
+  useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
 }
 
 export function updateSessionModel(id: string, model: string, provider: string) {
-  const updated = $sessions.get().map(s => s.id === id ? { ...s, model, provider } : s);
-  $sessions.set(updated);
+  const updated = useSessionsStore.getState().sessions.map(s => s.id === id ? { ...s, model, provider } : s);
+  useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
 }
 
@@ -111,51 +154,52 @@ export function updateSessionWorkbenchMetadata(
   id: string,
   metadata: Pick<Session, 'workbenchSessionId' | 'workbenchAgentId' | 'workbenchProvider'>
 ) {
-  const updated = $sessions.get().map(s => s.id === id ? { ...s, ...metadata } : s);
-  $sessions.set(updated);
+  const updated = useSessionsStore.getState().sessions.map(s => s.id === id ? { ...s, ...metadata } : s);
+  useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
 }
 
 export function deleteSession(id: string) {
-  const updated = $sessions.get().filter(s => s.id !== id);
-  $sessions.set(updated);
+  const updated = useSessionsStore.getState().sessions.filter(s => s.id !== id);
+  useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
   localStorage.removeItem(`chat_messages_${id}`);
   localStorage.removeItem(`august_composer_draft_${id}`);
 }
 
 export function archiveSession(id: string) {
-  const updated = $sessions.get().map(s => s.id === id ? { ...s, isArchived: true } : s);
-  $sessions.set(updated);
+  const updated = useSessionsStore.getState().sessions.map(s => s.id === id ? { ...s, isArchived: true } : s);
+  useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
 }
 
 export function restoreSession(id: string) {
-  const sess = $sessions.get().find(s => s.id === id);
+  const { sessions, folders } = useSessionsStore.getState();
+  const sess = sessions.find(s => s.id === id);
   if (sess && sess.folderId) {
     // If the folder it originally belonged to was deleted, recreate it
-    const folderExists = $folders.get().some(f => f.id === sess.folderId);
+    const folderExists = folders.some(f => f.id === sess.folderId);
     if (!folderExists) {
-      const newFolders = [...$folders.get(), { id: sess.folderId, name: 'Restored', isCollapsed: false }];
-      $folders.set(newFolders);
+      const newFolders = [...folders, { id: sess.folderId, name: 'Restored', isCollapsed: false }];
+      useSessionsStore.setState({ folders: newFolders });
       saveFoldersToStorage(newFolders);
     }
   }
 
-  const updated = $sessions.get().map(s => s.id === id ? { ...s, isArchived: false } : s);
-  $sessions.set(updated);
+  const updated = useSessionsStore.getState().sessions.map(s => s.id === id ? { ...s, isArchived: false } : s);
+  useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
 }
 
 export function moveSessionToFolder(id: string, folderId: string | null) {
-  const updated = $sessions.get().map(s => s.id === id ? { ...s, folderId } : s);
-  $sessions.set(updated);
+  const updated = useSessionsStore.getState().sessions.map(s => s.id === id ? { ...s, folderId } : s);
+  useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
 }
 
 export function clearAllSessions(includeArchived: boolean = true) {
-  const sessions = $sessions.get();
-  
+  const sessions = useSessionsStore.getState().sessions;
+
   // Clear all localStorage chat histories
   sessions.forEach(s => {
     if (includeArchived || !s.isArchived) {
@@ -164,8 +208,8 @@ export function clearAllSessions(includeArchived: boolean = true) {
     }
   });
 
-  const nextSessions = includeArchived 
-    ? [] 
+  const nextSessions = includeArchived
+    ? []
     : sessions.filter(s => s.isArchived);
 
   // Keep or create a single fresh empty session
@@ -182,7 +226,7 @@ export function clearAllSessions(includeArchived: boolean = true) {
   };
 
   const finalSessions = [newSess, ...nextSessions];
-  $sessions.set(finalSessions);
+  useSessionsStore.setState({ sessions: finalSessions });
   saveSessionsToStorage(finalSessions);
   return newSess;
 }
@@ -202,7 +246,7 @@ export async function reconcileSessionsFromBackend(): Promise<void> {
     const backendSessions = await listManageSessions();
     const backendMap = new Map(backendSessions.map(s => [s.id, s]));
 
-    const current = $sessions.get();
+    const current = useSessionsStore.getState().sessions;
     const merged: Session[] = [];
     const now = new Date().toISOString();
 
@@ -242,7 +286,7 @@ export async function reconcileSessionsFromBackend(): Promise<void> {
       });
     }
 
-    $sessions.set(merged);
+    useSessionsStore.setState({ sessions: merged });
     saveSessionsToStorage(merged);
   } catch {
     // Backend unreachable — keep local state intact.
@@ -256,38 +300,38 @@ export function createFolder(name: string, workspacePath?: string | null): Folde
     isCollapsed: false,
     workspacePath: workspacePath ?? null,
   };
-  const updated = [...$folders.get(), newFolder];
-  $folders.set(updated);
+  const updated = [...useSessionsStore.getState().folders, newFolder];
+  useSessionsStore.setState({ folders: updated });
   saveFoldersToStorage(updated);
   return newFolder;
 }
 
 export function renameFolder(id: string, newName: string) {
-  const updated = $folders.get().map(f => f.id === id ? { ...f, name: newName } : f);
-  $folders.set(updated);
+  const updated = useSessionsStore.getState().folders.map(f => f.id === id ? { ...f, name: newName } : f);
+  useSessionsStore.setState({ folders: updated });
   saveFoldersToStorage(updated);
 }
 
 export function deleteFolder(id: string) {
-  const updatedFolders = $folders.get().filter(f => f.id !== id);
-  $folders.set(updatedFolders);
+  const updatedFolders = useSessionsStore.getState().folders.filter(f => f.id !== id);
+  useSessionsStore.setState({ folders: updatedFolders });
   saveFoldersToStorage(updatedFolders);
 
   // Sessions in deleted folder move to root (null)
-  const updatedSessions = $sessions.get().map(s => s.folderId === id ? { ...s, folderId: null } : s);
-  $sessions.set(updatedSessions);
+  const updatedSessions = useSessionsStore.getState().sessions.map(s => s.folderId === id ? { ...s, folderId: null } : s);
+  useSessionsStore.setState({ sessions: updatedSessions });
   saveSessionsToStorage(updatedSessions);
 }
 
 export function toggleFolderCollapse(id: string) {
-  const updated = $folders.get().map(f => f.id === id ? { ...f, isCollapsed: !f.isCollapsed } : f);
-  $folders.set(updated);
+  const updated = useSessionsStore.getState().folders.map(f => f.id === id ? { ...f, isCollapsed: !f.isCollapsed } : f);
+  useSessionsStore.setState({ folders: updated });
   saveFoldersToStorage(updated);
 }
 
 export function updateSessionWorkspace(id: string, path: string | null) {
-  const updated = $sessions.get().map(s => s.id === id ? { ...s, workspacePath: path } : s);
-  $sessions.set(updated);
+  const updated = useSessionsStore.getState().sessions.map(s => s.id === id ? { ...s, workspacePath: path } : s);
+  useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
 }
 
@@ -325,7 +369,7 @@ export function findOrCreateSessionForPath(
   // Find an existing folder representing this filesystem path. Manual folders
   // (created via the sidebar "New folder" button) have `workspacePath == null`
   // and are intentionally never matched here.
-  let folder = $folders.get().find(f => f.workspacePath === normalized);
+  let folder = useSessionsStore.getState().folders.find(f => f.workspacePath === normalized);
   if (!folder) {
     folder = createFolder(name, normalized);
   }
@@ -333,14 +377,14 @@ export function findOrCreateSessionForPath(
   // Re-parent any pre-existing sessions that share this workspace path into
   // the folder so they appear grouped (satisfies the "group existing sessions"
   // requirement). moveSessionToFolder persists the change.
-  for (const s of $sessions.get()) {
+  for (const s of useSessionsStore.getState().sessions) {
     if (s.workspacePath === normalized && s.folderId !== folder.id) {
       moveSessionToFolder(s.id, folder.id);
     }
   }
 
   // Check if a session already exists for this folder path.
-  const existing = $sessions.get().find(s => s.workspacePath === normalized);
+  const existing = useSessionsStore.getState().sessions.find(s => s.workspacePath === normalized);
   if (existing) {
     // Ensure the existing session is associated with the folder.
     if (existing.folderId !== folder.id) {

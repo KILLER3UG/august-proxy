@@ -1,10 +1,7 @@
-/* ── Browser automation store (Zustand pilot — Phase 4 B18) ─────── */
+/* ── Browser automation store (Zustand — Phase 4 B18) ───────────── */
 /* Holds the live state for the headless browser drawer section: the   */
 /* latest screenshot + cursor overlay + an action log. Fed by the      */
 /* `browserAction` SSE event emitted from workbench._execute_tool.    */
-/*                                                                    */
-/* B18 pilot: first nanostores → Zustand migration. Other stores still */
-/* use nanostores; see docs/REFACTOR_PROGRESS.md for remaining list.  */
 
 import { create } from 'zustand';
 

@@ -1,13 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useStore } from '@nanostores/react';
-import { 
-  $sessions, 
-  $folders, 
-  restoreSession, 
-  deleteSession, 
+import {
+  useSessionsStore,
+  restoreSession,
+  deleteSession,
   clearAllSessions,
-  type Session 
+  type Session
 } from '@/store/sessions';
 import { Button } from '@/components/ui/button';
 import { Search, RotateCcw, Trash2, Folder as FolderIcon, MessageSquare } from 'lucide-react';
@@ -15,8 +13,8 @@ import { formatTimeAgo } from '@/lib/utils';
 
 export function Archive() {
   const navigate = useNavigate();
-  const sessions = useStore($sessions);
-  const folders = useStore($folders);
+  const sessions = useSessionsStore((s) => s.sessions);
+  const folders = useSessionsStore((s) => s.folders);
 
   const [filter, setFilter] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'alpha'>('newest');

@@ -25,11 +25,8 @@ import {
 import { cn } from "@/lib/utils";
 import { isTauri } from "@/lib/tauri-detect";
 import { fadeUp, hoverScale } from "@/lib/motion";
-import { useStore } from "@nanostores/react";
 import {
-  $sessions,
-  $folders,
-  $sessionStates,
+  useSessionsStore,
   clearSessionStatus,
   renameSession,
   deleteSession,
@@ -44,8 +41,8 @@ import {
   type Folder,
   type SessionStatus,
 } from "@/store/sessions";
-import { $currentWorkspaceId, $workspaces } from "@/store/workspaces";
-import { $activeChatSessions, startChatActiveStreamsPoller } from "@/store/chat-active-streams";
+import { useWorkspacesStore } from "@/store/workspaces";
+import { useActiveChatStreamsStore, startChatActiveStreamsPoller } from "@/store/chat-active-streams";
 import { toast } from "sonner";
 import { modelDisplayParts } from "@/sections/chat/ChatThread";
 import { api } from "@/api/client";
@@ -84,12 +81,12 @@ export function SessionList({
     () => localStorage.getItem("august-uncategorized-collapsed") === "1",
   );
 
-  const sessions = useStore($sessions);
-  const folders = useStore($folders);
-  const sessionStates = useStore($sessionStates);
-  const activeChatSessions = useStore($activeChatSessions);
-  const currentWorkspaceId = useStore($currentWorkspaceId);
-  const workspaces = useStore($workspaces);
+  const sessions = useSessionsStore((s) => s.sessions);
+  const folders = useSessionsStore((s) => s.folders);
+  const sessionStates = useSessionsStore((s) => s.sessionStates);
+  const activeChatSessions = useActiveChatStreamsStore((s) => s.active);
+  const currentWorkspaceId = useWorkspacesStore((s) => s.currentWorkspaceId);
+  const workspaces = useWorkspacesStore((s) => s.workspaces);
 
   useEffect(() => {
     startChatActiveStreamsPoller();

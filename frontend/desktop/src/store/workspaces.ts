@@ -1,4 +1,4 @@
-import { atom } from 'nanostores';
+import { create } from 'zustand';
 
 export interface Workspace {
   id: string;
@@ -11,6 +11,7 @@ const LOCAL_WORKSPACES_KEY = 'august-workspaces-v1';
 const LOCAL_CURRENT_WORKSPACE_KEY = 'august-current-workspace';
 
 const loadWorkspaces = (): Workspace[] => {
+  if (typeof localStorage === 'undefined') return [];
   const saved = localStorage.getItem(LOCAL_WORKSPACES_KEY);
   if (saved) {
     try {
@@ -21,11 +22,42 @@ const loadWorkspaces = (): Workspace[] => {
 };
 
 const loadCurrentWorkspaceId = (): string | null => {
+  if (typeof localStorage === 'undefined') return null;
   return localStorage.getItem(LOCAL_CURRENT_WORKSPACE_KEY);
 };
 
-export const $workspaces = atom<Workspace[]>(loadWorkspaces());
-export const $currentWorkspaceId = atom<string | null>(loadCurrentWorkspaceId());
+interface WorkspacesState {
+  workspaces: Workspace[];
+  currentWorkspaceId: string | null;
+}
+
+export const useWorkspacesStore = create<WorkspacesState>(() => ({
+  workspaces: loadWorkspaces(),
+  currentWorkspaceId: loadCurrentWorkspaceId(),
+}));
+
+/** Nanostores-shaped shims for imperative get/set callers and tests. */
+export const $workspaces = {
+  get: (): Workspace[] => useWorkspacesStore.getState().workspaces,
+  set: (workspaces: Workspace[]): void => {
+    useWorkspacesStore.setState({ workspaces });
+  },
+  subscribe: (listener: (workspaces: Workspace[]) => void): (() => void) => {
+    listener(useWorkspacesStore.getState().workspaces);
+    return useWorkspacesStore.subscribe((s) => listener(s.workspaces));
+  },
+};
+
+export const $currentWorkspaceId = {
+  get: (): string | null => useWorkspacesStore.getState().currentWorkspaceId,
+  set: (currentWorkspaceId: string | null): void => {
+    useWorkspacesStore.setState({ currentWorkspaceId });
+  },
+  subscribe: (listener: (id: string | null) => void): (() => void) => {
+    listener(useWorkspacesStore.getState().currentWorkspaceId);
+    return useWorkspacesStore.subscribe((s) => listener(s.currentWorkspaceId));
+  },
+};
 
 const saveWorkspacesToStorage = (workspaces: Workspace[]) => {
   localStorage.setItem(LOCAL_WORKSPACES_KEY, JSON.stringify(workspaces));
@@ -54,7 +86,7 @@ function workspaceNameFromPath(path: string): string {
  * If a workspace with the same path already exists, it is updated and selected.
  */
 export function addWorkspace(path: string): Workspace {
-  const existing = $workspaces.get().find(w => w.path === path);
+  const existing = useWorkspacesStore.getState().workspaces.find(w => w.path === path);
   if (existing) {
     setCurrentWorkspace(existing.id);
     return existing;
@@ -67,8 +99,8 @@ export function addWorkspace(path: string): Workspace {
     lastUsedAt: new Date().toISOString(),
   };
 
-  const updated = [newWorkspace, ...$workspaces.get()];
-  $workspaces.set(updated);
+  const updated = [newWorkspace, ...useWorkspacesStore.getState().workspaces];
+  useWorkspacesStore.setState({ workspaces: updated });
   saveWorkspacesToStorage(updated);
   setCurrentWorkspace(newWorkspace.id);
   return newWorkspace;
@@ -78,11 +110,11 @@ export function addWorkspace(path: string): Workspace {
  * Remove a workspace by id.
  */
 export function removeWorkspace(id: string) {
-  const updated = $workspaces.get().filter(w => w.id !== id);
-  $workspaces.set(updated);
+  const updated = useWorkspacesStore.getState().workspaces.filter(w => w.id !== id);
+  useWorkspacesStore.setState({ workspaces: updated });
   saveWorkspacesToStorage(updated);
 
-  if ($currentWorkspaceId.get() === id) {
+  if (useWorkspacesStore.getState().currentWorkspaceId === id) {
     setCurrentWorkspace(updated.length > 0 ? updated[0].id : null);
   }
 }
@@ -91,16 +123,16 @@ export function removeWorkspace(id: string) {
  * Set the active workspace by id. Pass null to clear the selection.
  */
 export function setCurrentWorkspace(id: string | null) {
-  $currentWorkspaceId.set(id);
+  useWorkspacesStore.setState({ currentWorkspaceId: id });
   saveCurrentWorkspaceToStorage(id);
 
   // Update lastUsedAt on the selected workspace
   if (id) {
     const now = new Date().toISOString();
-    const updated = $workspaces.get().map(w =>
+    const updated = useWorkspacesStore.getState().workspaces.map(w =>
       w.id === id ? { ...w, lastUsedAt: now } : w
     );
-    $workspaces.set(updated);
+    useWorkspacesStore.setState({ workspaces: updated });
     saveWorkspacesToStorage(updated);
   }
 }
@@ -109,7 +141,7 @@ export function setCurrentWorkspace(id: string | null) {
  * Get the current workspace object (or null).
  */
 export function getCurrentWorkspace(): Workspace | null {
-  const id = $currentWorkspaceId.get();
-  if (!id) return null;
-  return $workspaces.get().find(w => w.id === id) ?? null;
+  const { currentWorkspaceId, workspaces } = useWorkspacesStore.getState();
+  if (!currentWorkspaceId) return null;
+  return workspaces.find(w => w.id === currentWorkspaceId) ?? null;
 }

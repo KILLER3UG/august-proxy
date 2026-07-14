@@ -4,8 +4,7 @@
  * Reconnects with exponential backoff (1s → 30s). Capped at MAX_EVENTS. */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { atom, onMount } from 'nanostores';
-import { useStore } from '@nanostores/react';
+import { create } from 'zustand';
 import { getRecentLogs, type LogEvent } from '@/api/api-client';
 import { whenReady } from '@/api/client';
 
@@ -27,14 +26,22 @@ interface StreamState {
     retryInMs: number | null;
 }
 
-const streamAtom = atom<StreamState>({
+interface LogStreamStoreState {
+    stream: StreamState;
+    paused: boolean;
+}
+
+const initialStream: StreamState = {
     events: [],
     status: 'connecting',
     lastError: null,
     retryInMs: null,
-});
+};
 
-const pausedAtom = atom<boolean>(false);
+export const useLogStreamStore = create<LogStreamStoreState>(() => ({
+    stream: { ...initialStream },
+    paused: false,
+}));
 
 let _socket: WebSocket | null = null;
 let _retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -42,7 +49,7 @@ let _retryDelay = 1000;
 let _mountedSubscribers = 0;
 
 function pushEvents(newEvents: LogEvent[]) {
-    const prev = streamAtom.get().events;
+    const prev = useLogStreamStore.getState().stream.events;
     const seen = new Set(prev.map((e) => e.id));
     const merged: LogEvent[] = [];
     for (let i = newEvents.length - 1; i >= 0; i--) {
@@ -54,28 +61,35 @@ function pushEvents(newEvents: LogEvent[]) {
     }
     if (merged.length === 0) return;
     const next = [...merged.reverse(), ...prev].slice(0, MAX_EVENTS);
-    streamAtom.set({ ...streamAtom.get(), events: next });
+    const stream = useLogStreamStore.getState().stream;
+    useLogStreamStore.setState({ stream: { ...stream, events: next } });
 }
 
 function pushEvent(event: LogEvent) {
-    const prev = streamAtom.get().events;
+    const prev = useLogStreamStore.getState().stream.events;
     if (prev.some((e) => e.id === event.id)) return;
-    streamAtom.set({ ...streamAtom.get(), events: [event, ...prev].slice(0, MAX_EVENTS) });
+    const stream = useLogStreamStore.getState().stream;
+    useLogStreamStore.setState({
+        stream: { ...stream, events: [event, ...prev].slice(0, MAX_EVENTS) },
+    });
 }
 
 function scheduleRetry() {
     if (_retryTimer) return;
     const delay = _retryDelay;
-    streamAtom.set({ ...streamAtom.get(), status: 'disconnected', retryInMs: delay });
+    const stream = useLogStreamStore.getState().stream;
+    useLogStreamStore.setState({
+        stream: { ...stream, status: 'disconnected', retryInMs: delay },
+    });
     _retryTimer = setTimeout(() => {
         _retryTimer = null;
         _retryDelay = Math.min(_retryDelay * 2, 30_000);
         void connect();
-	    }, delay);
-	}
+    }, delay);
+}
 
-	async function connect() {
-	    if (_socket && (_socket.readyState === WebSocket.OPEN || _socket.readyState === WebSocket.CONNECTING)) return;
+async function connect() {
+    if (_socket && (_socket.readyState === WebSocket.OPEN || _socket.readyState === WebSocket.CONNECTING)) return;
     // Tauri desktop: connect directly to the backend (loopback HTTP → ws).
     // Browser dev: same-origin; Vite proxy handles the WS upgrade.
     let wsUrl: string;
@@ -91,16 +105,27 @@ function scheduleRetry() {
     try {
         ws = new WebSocket(wsUrl);
     } catch (err) {
-        streamAtom.set({ ...streamAtom.get(), lastError: String(err), status: 'disconnected' });
+        const stream = useLogStreamStore.getState().stream;
+        useLogStreamStore.setState({
+            stream: { ...stream, lastError: String(err), status: 'disconnected' },
+        });
         scheduleRetry();
         return;
     }
     _socket = ws;
-    streamAtom.set({ ...streamAtom.get(), status: 'connecting', lastError: null });
+    {
+        const stream = useLogStreamStore.getState().stream;
+        useLogStreamStore.setState({
+            stream: { ...stream, status: 'connecting', lastError: null },
+        });
+    }
 
     ws.onopen = async () => {
         _retryDelay = 1000;
-        streamAtom.set({ ...streamAtom.get(), status: 'live', retryInMs: null });
+        const stream = useLogStreamStore.getState().stream;
+        useLogStreamStore.setState({
+            stream: { ...stream, status: 'live', retryInMs: null },
+        });
         try {
             const backfill = await getRecentLogs(BACKFILL_LIMIT);
             pushEvents(backfill.events || []);
@@ -109,7 +134,7 @@ function scheduleRetry() {
         }
     };
     ws.onmessage = (msg) => {
-        if (pausedAtom.get()) return;
+        if (useLogStreamStore.getState().paused) return;
         let frame: WSFrame;
         try { frame = JSON.parse(msg.data); } catch { return; }
         if (frame.type === 'snapshot' && Array.isArray(frame.events)) {
@@ -119,12 +144,20 @@ function scheduleRetry() {
         }
     };
     ws.onerror = () => {
-        streamAtom.set({ ...streamAtom.get(), lastError: 'WebSocket error' });
+        const stream = useLogStreamStore.getState().stream;
+        useLogStreamStore.setState({
+            stream: { ...stream, lastError: 'WebSocket error' },
+        });
     };
     ws.onclose = () => {
         _socket = null;
         if (_mountedSubscribers > 0) scheduleRetry();
-        else streamAtom.set({ ...streamAtom.get(), status: 'disconnected', retryInMs: null });
+        else {
+            const stream = useLogStreamStore.getState().stream;
+            useLogStreamStore.setState({
+                stream: { ...stream, status: 'disconnected', retryInMs: null },
+            });
+        }
     };
 }
 
@@ -138,8 +171,8 @@ function disconnect() {
 }
 
 export function useLogStream() {
-    const state = useStore(streamAtom);
-    const paused = useStore(pausedAtom);
+    const stream = useLogStreamStore((s) => s.stream);
+    const paused = useLogStreamStore((s) => s.paused);
     const isMounted = useRef(false);
 
     useEffect(() => {
@@ -156,20 +189,17 @@ export function useLogStream() {
         };
     }, []);
 
-    const pause = useCallback(() => pausedAtom.set(true), []);
-    const resume = useCallback(() => pausedAtom.set(false), []);
+    const pause = useCallback(() => useLogStreamStore.setState({ paused: true }), []);
+    const resume = useCallback(() => useLogStreamStore.setState({ paused: false }), []);
     const clear = useCallback(() => {
-        streamAtom.set({ ...streamAtom.get(), events: [] });
+        const current = useLogStreamStore.getState().stream;
+        useLogStreamStore.setState({ stream: { ...current, events: [] } });
     }, []);
 
-    const status: StreamStatus = paused ? 'paused' : state.status;
+    const status: StreamStatus = paused ? 'paused' : stream.status;
 
     return useMemo(
-        () => ({ events: state.events, status, lastError: state.lastError, retryInMs: state.retryInMs, pause, resume, clear }),
-        [state.events, status, state.lastError, state.retryInMs, pause, resume, clear],
+        () => ({ events: stream.events, status, lastError: stream.lastError, retryInMs: stream.retryInMs, pause, resume, clear }),
+        [stream.events, status, stream.lastError, stream.retryInMs, pause, resume, clear],
     );
 }
-
-// Mount-once: ensure the atom is hot so first consumer gets a fast render.
-// Not required but useful for tests.
-onMount(streamAtom, () => () => { /* nothing to clean on unmount */ });

@@ -6,10 +6,9 @@
 import { useState, useEffect, useRef } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { useStore } from "@nanostores/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { $sessions, createSession, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend } from "@/store/sessions";
-import { $currentWorkspaceId, $workspaces } from "@/store/workspaces";
+import { useSessionsStore, createSession, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend } from "@/store/sessions";
+import { useWorkspacesStore } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
@@ -33,11 +32,11 @@ export function ChatLayout() {
   const [showRightSidebar, setShowRightSidebar] = useState<boolean>(
     () => localStorage.getItem(WORKBENCH_SIDEBAR_OPEN_KEY) === "1",
   );
-  const sessions = useStore($sessions);
+  const sessions = useSessionsStore((s) => s.sessions);
   const rightDrawer = useRightDrawer();
   const queryClient = useQueryClient();
-  const currentWorkspaceId = useStore($currentWorkspaceId);
-  const workspaces = useStore($workspaces);
+  const currentWorkspaceId = useWorkspacesStore((s) => s.currentWorkspaceId);
+  const workspaces = useWorkspacesStore((s) => s.workspaces);
   const active =
     sessions.find((s) => s.id === sessionId && !s.isArchived) ?? null;
 

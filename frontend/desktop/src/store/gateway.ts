@@ -1,4 +1,4 @@
-import { atom } from 'nanostores';
+import { create } from 'zustand';
 import { api } from '@/api/client';
 
 export type GatewayState =
@@ -7,7 +7,25 @@ export type GatewayState =
   | { status: 'closed'; reason?: string }
   | { status: 'error'; message: string };
 
-export const $gateway = atom<GatewayState>({ status: 'connecting' });
+interface GatewayStoreState {
+  gateway: GatewayState;
+}
+
+export const useGatewayStore = create<GatewayStoreState>(() => ({
+  gateway: { status: 'connecting' },
+}));
+
+/** Nanostores-shaped shim for imperative get/set callers. */
+export const $gateway = {
+  get: (): GatewayState => useGatewayStore.getState().gateway,
+  set: (gateway: GatewayState): void => {
+    useGatewayStore.setState({ gateway });
+  },
+  subscribe: (listener: (gateway: GatewayState) => void): (() => void) => {
+    listener(useGatewayStore.getState().gateway);
+    return useGatewayStore.subscribe((s) => listener(s.gateway));
+  },
+};
 
 export interface GatewayHealth {
   port?: number;
@@ -17,9 +35,13 @@ export interface GatewayHealth {
 async function poll() {
   try {
     const data = await api.get<GatewayHealth>('/api/health');
-    $gateway.set({ status: 'open', port: data.port ?? 0, uptime: data.uptime ?? 0 });
+    useGatewayStore.setState({
+      gateway: { status: 'open', port: data.port ?? 0, uptime: data.uptime ?? 0 },
+    });
   } catch (e) {
-    $gateway.set({ status: 'closed', reason: e instanceof Error ? e.message : String(e) });
+    useGatewayStore.setState({
+      gateway: { status: 'closed', reason: e instanceof Error ? e.message : String(e) },
+    });
   }
 }
 

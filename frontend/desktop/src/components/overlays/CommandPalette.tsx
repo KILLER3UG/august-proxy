@@ -1,4 +1,3 @@
-import { useStore } from "@nanostores/react";
 import { useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Command } from "cmdk";
@@ -11,17 +10,17 @@ import {
   Copy,
 } from "lucide-react";
 import {
-  $commandPaletteOpen,
+  useCommandPaletteStore,
   closeCommandPalette,
 } from "@/store/command-palette";
-import { $theme, toggleTheme } from "@/store/theme";
+import { useResolvedThemeStore, toggleTheme } from "@/store/theme";
 import { SECTION_NAV_ITEMS, SETTINGS_TABS } from '@/routes';
 import { Backdrop } from "./Backdrop";
 import { useQueryClient } from "@tanstack/react-query";
 
 export function CommandPalette() {
-  const open = useStore($commandPaletteOpen);
-  const theme = useStore($theme);
+  const open = useCommandPaletteStore((s) => s.open);
+  const theme = useResolvedThemeStore((s) => s.theme);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const location = useLocation();

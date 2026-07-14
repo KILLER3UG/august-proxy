@@ -8,7 +8,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { useStore } from '@nanostores/react';
 import {
   Heart,
   Server,
@@ -26,7 +25,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { api } from '@/api/client';
-import { $gateway } from '@/store/gateway';
+import { useGatewayStore } from '@/store/gateway';
 import { getHostAgentStatus } from '@/api/api-client';
 import { Badge } from '@/components/ui/badge';
 import { PageLoader } from '@/components/PageLoader';
@@ -128,7 +127,7 @@ function EndpointRow({
 }
 
 export function SystemHealthSection() {
-  const g = useStore($gateway);
+  const g = useGatewayStore((s) => s.gateway);
   const { data, isLoading } = useQuery({
     queryKey: ['health', 'detailed'],
     queryFn: () => api.get<HealthData>('/api/health/detailed'),

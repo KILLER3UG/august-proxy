@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { FolderOpen, ChevronDown, Check, Plus, X } from 'lucide-react';
-import { useStore } from '@nanostores/react';
 import { cn } from '@/lib/utils';
 import {
-  $workspaces,
-  $currentWorkspaceId,
+  useWorkspacesStore,
   addWorkspace,
   removeWorkspace,
   setCurrentWorkspace,
@@ -19,8 +17,8 @@ interface WorkspaceSelectorProps {
 
 export function WorkspaceSelector({ sessionId: _sessionId, onWorkspaceChange }: WorkspaceSelectorProps) {
   const [open, setOpen] = useState(false);
-  const workspaces = useStore($workspaces);
-  const currentWorkspaceId = useStore($currentWorkspaceId);
+  const workspaces = useWorkspacesStore((s) => s.workspaces);
+  const currentWorkspaceId = useWorkspacesStore((s) => s.currentWorkspaceId);
   const rootRef = useRef<HTMLDivElement>(null);
   const dirInputRef = useRef<HTMLInputElement>(null);
 
