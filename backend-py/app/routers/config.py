@@ -1,11 +1,14 @@
 """
 Configuration API routes.
+
+Request bodies inherit :class:`CamelModel` so internals are snake_case while
+JSON from the frontend stays camelCase.
 """
 
 from __future__ import annotations
 from typing import cast
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from app.models.camel_base import CamelModel
 from app.config import settings
 from app.providers import resolver as providerResolver
 from app.lib import secrets
@@ -64,7 +67,7 @@ async def activeProvider():
     return {'activeProvider': active, 'providers': providers}
 
 
-class ProviderDetailsUpdate(BaseModel):
+class ProviderDetailsUpdate(CamelModel):
     provider: str
     config: dict[str, str] = {}
 
@@ -172,7 +175,7 @@ async def getModelAliases():
     return {'aliases': alias_service.listAliases()}
 
 
-class ModelAliasesBulk(BaseModel):
+class ModelAliasesBulk(CamelModel):
     aliases: list[dict[str, object]]
 
 
@@ -197,7 +200,7 @@ async def getSubagentFallback():
     return fallback_service.getFallback()
 
 
-class FallbackUpdate(BaseModel):
+class FallbackUpdate(CamelModel):
     enabled: bool | None = None
     mode: str | None = None
     provider: str | None = None
@@ -219,7 +222,7 @@ async def putSubagentFallback(body: FallbackUpdate):
         raise HTTPException(400, detail={'code': 'validation', 'message': str(exc)})
 
 
-class FallbackTest(BaseModel):
+class FallbackTest(CamelModel):
     model: str
 
 
@@ -231,7 +234,9 @@ async def testSubagentFallback(body: FallbackTest):
     return fallback_service.testFallback(body.model)
 
 
-class BackgroundReviewUpdate(BaseModel):
+class BackgroundReviewUpdate(CamelModel):
+    """Background review config. Internals snake_case; JSON camelCase."""
+
     enabled: bool | None = None
     review_model: str | None = None
     reflection_model: str | None = None
@@ -348,7 +353,7 @@ async def getExternalAccess():
     }
 
 
-class ExternalAccessUpdate(BaseModel):
+class ExternalAccessUpdate(CamelModel):
     enabled: bool
 
 
