@@ -6,47 +6,61 @@ Port of the inline terminal routes in backend/index.js.
 Supports:
 - REST: sessions CRUD, buffer, input, resize, command, approve
 - WebSocket: /ui/terminal/connect for live PTY I/O
+
+Request bodies inherit :class:`CamelModel` so internals are snake_case while
+JSON from the frontend stays camelCase. Service layer still expects camelCase
+keys on dumped dicts — use ``model_dump(by_alias=True)`` at that boundary.
 """
 
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
+from app.models.camel_base import CamelModel
 from app.services.workbench import terminal_service
 
 router = APIRouter(prefix='/api/terminal')
 
 
-class CreateSessionBody(BaseModel):
+class CreateSessionBody(CamelModel):
+    """Terminal session create body. Internals snake_case; JSON camelCase."""
+
     title: str = 'Terminal'
     cwd: str = ''
     command: str = ''
-    approvedInteractive: bool = False
+    approved_interactive: bool = False
     cols: int = 80
     rows: int = 24
 
 
-class InputBody(BaseModel):
+class InputBody(CamelModel):
+    """Terminal input body."""
+
     id: str
     input: str
     approved: bool = False
 
 
-class ResizeBody(BaseModel):
-    sessionId: str
+class ResizeBody(CamelModel):
+    """Terminal resize body."""
+
+    session_id: str
     cols: int = 80
     rows: int = 24
 
 
-class CommandBody(BaseModel):
+class CommandBody(CamelModel):
+    """One-shot command body."""
+
     command: str
     cwd: str = ''
     approved: bool = False
     reason: str = ''
-    timeoutMs: int = 30000
+    timeout_ms: int = 30000
 
 
-class ApproveBody(BaseModel):
-    requestId: str
+class ApproveBody(CamelModel):
+    """Approval body."""
+
+    request_id: str
     approve: bool = True
 
 
@@ -61,7 +75,8 @@ async def createSession(body: CreateSessionBody | None = None):
     """Create a new terminal session."""
     params = {}
     if body:
-        params = body.model_dump(exclude_none=True)
+        # Service expects camelCase keys (approvedInteractive, etc.)
+        params = body.model_dump(by_alias=True, exclude_none=True)
     return await terminal_service.createTerminalSession(params)
 
 
@@ -86,13 +101,14 @@ async def writeInput(body: InputBody):
 @router.post('/resize')
 async def resizeTerminal(body: ResizeBody):
     """Resize a terminal session."""
-    return await terminal_service.resizeTerminalSession(body.sessionId, body.cols, body.rows)
+    return await terminal_service.resizeTerminalSession(body.session_id, body.cols, body.rows)
 
 
 @router.post('/command')
 async def runCommand(body: CommandBody):
     """Submit a one-shot command for execution."""
-    result = await terminal_service.submitTerminalCommand(body.model_dump())
+    # Service reads timeoutMs / camelCase keys from the dumped dict.
+    result = await terminal_service.submitTerminalCommand(body.model_dump(by_alias=True))
     if 'error' in result:
         raise HTTPException(status_code=400, detail=result['error'])
     return result
@@ -101,7 +117,7 @@ async def runCommand(body: CommandBody):
 @router.post('/approve')
 async def approveRequest(body: ApproveBody):
     """Approve or reject a pending terminal request."""
-    result = await terminal_service.approveTerminalRequest(body.requestId, body.approve)
+    result = await terminal_service.approveTerminalRequest(body.request_id, body.approve)
     if 'error' in result:
         raise HTTPException(status_code=404, detail=result['error'])
     return result
