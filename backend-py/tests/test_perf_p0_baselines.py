@@ -202,7 +202,7 @@ async def test_p0_db_writer_contention_age_drops_and_high_pri(isolatedData):
     """Real db_writer contention — age-drop + high-pri under backlog.
 
     Notes on actual implementation (measured, not assumed):
-      * ``asyncio.Queue()`` is **unbounded** — ``QueueFull`` low-pri drop path
+      * ``asyncio.Queue()`` is **unbounded** — no enqueue-time capacity drop
         never fires in production config.
       * Real drop policy is **age-based**: low-pri items older than
         ``_LOW_DROP_AFTER`` (2.0s) are skipped when dequeued.
@@ -278,7 +278,7 @@ async def test_p0_db_writer_contention_age_drops_and_high_pri(isolatedData):
         'high_within_5s_budget': (
             high_completion_ms is not None and high_completion_ms < dbw._HIGH_DRAIN_TIMEOUT * 1000
         ),
-        'note': 'Queue unbounded: drops are age-based at dequeue, not QueueFull',
+        'note': 'Queue unbounded: drops are age-based at dequeue only',
     }
     print('P0_BASELINE_DB_WRITER_CONTENTION', report)
 

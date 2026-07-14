@@ -385,9 +385,10 @@ contention, 2026-07-14) — **not** the earlier “priority jump” mental model
 | High `put` uses `wait_for(..., 5s)` | That timeout almost never matters: the queue is **unbounded** (`asyncio.Queue()` with no `maxsize`), so `put`/`put_nowait` succeed immediately |
 | Serializes daemon-style async writes off the caller's await of the *enqueue* | “High priority means fast under backlog” — **false**; high completion still waits FIFO (P0: ~2.1s behind slow lows) |
 
-**Dead path (Phase 6 B26):** low-priority `except asyncio.QueueFull` in
-`enqueue_write` is unreachable while the queue stays unbounded. Either leftover
-from a bounded-queue design or incomplete wiring — not a second live drop policy.
+**B26 (closed):** the unreachable low-priority `except asyncio.QueueFull`
+branch was removed. Live drop policy remains **age-based at dequeue only**.
+If a bounded queue is ever reintroduced intentionally, wire capacity drops
+explicitly rather than relying on dead exception paths.
 
 **Product decision (2026-07-14):** **Accept as-is for current callers.** Sole
 caller is `consolidation_daemon` (best-effort background work). ~2s high
