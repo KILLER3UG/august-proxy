@@ -1,15 +1,18 @@
 # Phase P — True Performance + Feature Flexibility Plan
 
-> **Status:** Design / execution plan only. **Do not implement** until you
-> pick a workstream and we establish baselines (P0).
+> **Status (2026-07-14):** **Design doc only for P1–P5.**  
+> **Approved for execution: P0 baselines only.**  
+> P1–P5 are **not** approved. After P0 numbers land, a **separate** go/no-go
+> decides whether Phase P continues at all. Writing this doc was not a
+> substitute for that scope decision (process correction: do not expand
+> initiatives mid-flight without explicit approval).
 >
-> **Why this exists:** Phases 3–4 improved structure and naming. They did
-> **not** prove end-to-end speed. This plan targets **measured latency,
-> throughput, and extension points** so the product feels fast *and* stays
-> easy to extend.
+> **Why a plan exists:** Phases 3–4 improved structure and naming. They did
+> **not** prove end-to-end speed. *If* baselines show product-side waste,
+> later workstreams would target measured latency and extension points.
 >
-> **Refs:** `docs/REFACTOR_PROGRESS.md` · workbench chat loop · `db_writer` ·
-> tool registry · SQLite brain · desktop streaming UI.
+> **Refs:** `docs/REFACTOR_PROGRESS.md` · workbench · gateway · subagents ·
+> `db_writer` · tool registry · SQLite brain · desktop streaming UI.
 
 ---
 
@@ -45,59 +48,22 @@ so features plug in without rewriting the hot path.
 
 ---
 
-## 2. Are Phase 3 & 4 “100%”?
+## 2. Phase 3 / 4 vs full handoff checklist (Ground Rule 1)
 
-### Short answer
+**Do not wave “100%” through.** Status is checklist-relative.
 
 | Claim | Verdict |
 |---|---|
-| Phase 3 exit criteria (declared modularization) | **Yes — complete** |
-| Phase 4 exit criteria (indexes, busy_timeout, schema hybrid, B18 Zustand) | **Yes — complete** |
-| Every large file fully split | **No** (optional leftovers) |
-| Entire multi-phase refactor finished (5–8) | **No** |
-| Proven maximum runtime performance | **No** — that is **this** plan |
+| Phase 3 **modularization exit criteria** | Met (extracts + re-exports + tests) |
+| Phase 4 **modernization exit criteria** | Met (indexes, busy_timeout, schema hybrid, Zustand) |
+| Full handoff residual ledger (B16 params, optional large files, Phase 5–8) | **Not** “100% closed” |
+| B16 **function** APIs (`memory_store` / `db_writer` / `proxy_tools`) | **Closed** (Phase 2) — params often still camelCase |
+| B1a atomic JSON stores | **Closed** (Phase 0/1) — listed sites use atomic helper / temp+replace |
+| Known large files `openai` / `proxy_tools` / `stream_state` | **Deferred optional**, not forgotten — partial extracts only |
+| Schema “hybrid” | Full snake **tables/columns** + camel **wire** via `_row_as_wire` — **not** dual columns |
+| Proven runtime performance | **Not done** — P0 will measure whether Phase P is even warranted |
 
-### Phase 3 — complete against exit criteria, not infinite modularization
-
-**Done:**
-
-- SSE / OpenAI / Anthropic helpers extracted
-- Proxy tool defs, tool HTML extracted
-- Workbench: sessions, effort, providers extracted
-- Memory schema extracted
-- Tool registration: `tool_registrations/*` + `register_all()`; `tool_definitions.py` is a thin facade (~49 lines)
-
-**Not 100% of all possible splits (explicitly optional):**
-
-| Residual large surface | ~Lines | Why not “incomplete Phase 3” |
-|---|---|---|
-| `workbench/workbench.py` | ~1460 | Chat loop still there; optional polish |
-| `adapters/anthropic.py` | ~1094 | Stream translate remains; optional |
-| `memory_store.py` | ~828 | CRUD still dense; schema/migration out |
-| `adapters/openai.py` | ~493 | Acceptable after SSE extract |
-
-Phase 3 was signed off as **“major monoliths modularized + public APIs preserved + tests green”**, not “no file over N lines forever.”
-
-### Phase 4 — complete against exit criteria
-
-**Done:**
-
-- Missing indexes (`idx_messages_session`, usage, sessions, blackboard, exams, …)
-- `busy_timeout` + WAL on brain paths / storage_key_migration
-- Schema rename **implemented** (hybrid: snake SQL + camel wire via `_row_as_wire`)
-- Zustand B18 complete (`nanostores` gone from frontend)
-
-**Not claimed / not required for Phase 4 “done”:**
-
-- Zero residual camelCase in every SQL string outside the brain inventory (worth a residual audit)
-- WIRE TypedDict keys still camelCase **by design** (API contract)
-- Absolute best DB engine or best frontend state library for micro-bundle size
-
-### Verification already on record
-
-- pytest **679** passed · mypy **195** files clean · ruff clean · CI Type check green at sign-off tip
-
-**Bottom line:** Phase 3 & 4 are **100% of what those phases promised**. They are **not** 100% of “perfect structure forever” or “fastest possible product.” This Phase P plan is the performance/flexibility track.
+Authoritative residual table: `docs/REFACTOR_PROGRESS.md` § Ground Rule 1 correction.
 
 ---
 
@@ -164,18 +130,23 @@ Focus: `sendWorkbenchMessageStream` and tool execution.
 
 ---
 
-### P2 — Data layer performance
+### P2 — Data layer performance (**not approved**; only if P0 blames DB)
 
-| Task | Notes |
-|---|---|
-| P2.1 Residual index audit | Verify all hot queries use indexes; add covering indexes only if EXPLAIN says so |
-| P2.2 FTS quality/latency | `memory_store_fts` / `auto_memories_fts` query shapes; avoid `SELECT *` on large rows |
-| P2.3 Message pagination | Session open must not load entire history unbounded |
-| P2.4 Write path | Ensure high-churn writes go through `db_writer`; measure queue lag |
-| P2.5 Migration cost | Schema rename migration is one-time; ensure startup path skips fast when already snake |
-| P2.6 Vacuum / PRAGMA tune | Only after measurement (`mmap`, `cache_size`, `synchronous`) — document chosen values |
+**Phase 4 already closed (do not re-claim as Phase P wins):** additive indexes,
+`busy_timeout`, WAL, schema rename hybrid.
 
-**Exit:** Documented query plans + no full-table scans on hot paths for typical DB size.
+**P2 is only new work if baselines prove need:**
+
+| Task | Notes | Overlap with Phase 4? |
+|---|---|---|
+| P2.1 EXPLAIN pack on hot queries | Confirm indexes are *used* | Audit only; not re-adding the same indexes |
+| P2.2 FTS query-shape tuning | Avoid bad MATCH / `SELECT *` on large payloads | **New** |
+| P2.3 Message pagination | Unbounded `get_messages` risk | **New** |
+| P2.4 `db_writer` queue lag | Measure under load | Instrumentation / possible tuning — **new** if lag real |
+| P2.5 Startup migration no-op cost | Already snake path should be fast | Micro; only if P0 shows startup pain |
+| P2.6 PRAGMA tune | `mmap` / `cache_size` only after measure | **New**, gated |
+
+**Exit (if opened):** Documented query plans + fixes only where EXPLAIN/baselines demand.
 
 ---
 
@@ -230,22 +201,29 @@ These are **not** performance by default; do them when they unblock speed or fea
 
 ---
 
-## 6. Execution order (recommended)
+## 6. Execution order (gated)
 
 ```text
-P0 baselines  ──►  P1 hot path  ──►  P2 data  ──►  P3 frontend
-                      │
-                      └── parallel early: P4.1 docs + “add a tool” checklist
+[APPROVED] P0 baselines (desktop + gateway/multi-agent measure)
+                │
+                ▼
+        report numbers → explicit go/no-go
+                │
+                ├── stop (no Phase P) if overhead is fine / LLM-bound only
+                └── [NOT APPROVED YET] P1 → optional P2/P3/P4…
+                      parallel tools: only after dedicated safety pass (Wave 2+)
 ```
 
-Do **not** start P5 file splits until P0 numbers exist.
+**P0 measurement surfaces (required):**
 
-Suggested chunking (same discipline as earlier phases):
+| Surface | What to time |
+|---|---|
+| Desktop workbench chat | prompt_build, tool_def build, local tool, sse emit, persist (mock LLM) |
+| Gateway path | session bridge / platform ingress → same core loop if shared |
+| Multi-agent | subagent spawn + blackboard/db_writer contention under N parallel agents |
+| Daemons | sample daemon tick cost (not full soak unless easy) |
 
-1. One workstream slice per branch
-2. Behavior-preserving unless a measured bug
-3. Perf claim only with before/after numbers in the PR/commit body
-4. Full pytest + mypy + ruff + CI green before merge
+Do **not** start P1+ without a new approval.
 
 ---
 
@@ -274,19 +252,19 @@ Suggested chunking (same discipline as earlier phases):
 
 ---
 
-## 9. What to implement first (if you say go)
+## 9. What is approved to implement
 
-**Wave 1 (smallest high value):**
+**Only P0** (when user says start):
 
-1. P0.1 + P0.2 — timing instrumentation + mock-LLM smoke  
-2. P1.1 + P1.2 — cache system prompt segments + tool defs  
-3. P4 checklist — document extension points while code is fresh  
+1. P0.1 Instrumented timings on desktop chat critical path  
+2. P0.2 Mock-LLM smoke for product overhead (exclude provider RTT)  
+3. P0.3 EXPLAIN pack for hot SQL (read-only measurement)  
+4. P0.4 Light frontend stream marks (optional if cheap)  
+5. P0.5 Gateway + multi-agent/subagent baseline harness (measure contention)  
 
-**Wave 2:**
+**Explicitly not approved yet:** P1 caching, P2 tuning, P3 UI optimizes, P4 flexibility program expansion, parallel tools, P5 splits.
 
-4. P1.3 / P1.6 — event-loop safety + move side effects off hot path  
-5. P2.3 — message pagination if open-session is slow  
-6. P3.1 / P3.3 — stream flush + Zustand selectors  
+**After P0:** deliver a short findings report → user decides stop vs open P1+.
 
 ---
 
@@ -294,15 +272,15 @@ Suggested chunking (same discipline as earlier phases):
 
 | Phase | Role relative to this plan |
 |---|---|
-| Phase 5 (docs/tooling) | Absorb P4 checklists into developer docs |
+| Phase 5 (docs/tooling) | Only if still on roadmap; not implied by P0 |
 | Phase 6 (bug reporting) | Ongoing |
-| Phase 7 (feature E2E) | Validates flexibility + no perf regressions on real features |
-| Phase 3/4 | **Foundation done** — structure/naming; not a substitute for Phase P |
+| Phase 7 (feature E2E) | Separate |
+| Phase 3/4 | Structure/naming foundation; residual ledger in Progress Log |
 
 ---
 
-## Open decisions for the user
+## Locked decisions (user 2026-07-14)
 
-1. Approve **P0 baselines first**, or jump to a suspected hot spot? (**Recommend P0 first.**)
-2. Target environment for budgets: local desktop only, or also multi-agent / gateway load?
-3. Is **parallel tool execution** in scope for Wave 1, or Wave 2 after safety review?
+1. **P0 only** — do not commit to full Phase P until baselines justify it.  
+2. **Measure gateway/multi-agent in P0**; optimize desktop first only if numbers say so.  
+3. **Parallel tools deferred** past any first optimization wave; needs safety pass (`db_writer`, daemon/subagent shared state).

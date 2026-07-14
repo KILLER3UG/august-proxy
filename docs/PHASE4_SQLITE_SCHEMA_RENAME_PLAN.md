@@ -1,12 +1,16 @@
 # Phase 4 — SQLite schema rename plan
 
-> **Status:** **IMPLEMENTED** (2026-07-14). User approved hybrid strategy;
-> shipped on `master` via `schema_rename_migration.py` + snake_case DDL in
-> `memory_schema.py` + `_row_as_wire` (snake→camel) for HTTP/JSON.
+> **Status:** **IMPLEMENTED** (2026-07-14).
 >
-> **Direction:** camelCase SQLite identifiers → snake_case, to
-> align the brain DB with Python naming conventions after Phase 2 callables /
-> INTERNAL TypedDict work. **Wire/API stays camelCase.**
+> **What “hybrid” means:** SQLite **tables and columns were fully renamed**
+> camel→snake (idempotent migration + snake DDL). There are **not** dual
+> columns or dual live schemas. **HTTP/JSON wire stays camelCase** by
+> converting row dicts at the boundary (`memory_store._row_as_wire` /
+> `snakeToCamel`). Python function names remain snake_case; WIRE TypedDict
+> **keys** stay camelCase for the API contract.
+>
+> **Shipped via:** `schema_rename_migration.py` + `memory_schema.ensure_schema`
+> + `_row_as_wire` on read paths.
 >
 > **Refs:** Phase 4 schema rename (design only); Ground Rule 5 (explicit
 > sign-off for schema renames); prior reverse migration in
