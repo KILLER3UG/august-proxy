@@ -56,7 +56,7 @@ TypedDict keys stay camelCase until Phase 4 schema work.
 - WIRE TypedDict keys (SQLite/JSON column parity) → Phase 4 schema
 - Broad camelCase still present in adapters/workbench (~hundreds of identifiers)
 - UsageRecord curator field names (wire JSON)
-- B18 Zustand; B20 Dockerfile
+- B18 Zustand (**pilot done** — full migration open); B20 Dockerfile
 
 ---
 
@@ -65,7 +65,7 @@ TypedDict keys stay camelCase until Phase 4 schema work.
 1. Verify clean `master` matching `origin/master`.
 2. **Continue Phase 3** — remaining large files still open:
    - `workbench.py` (~2011), `anthropic.py` (~1277), `tool_definitions.py` (~1302 after HTML extract), `memory_store.py` (~804)
-3. **Phase 4** — missing indexes **done**; still open: B18 Zustand, busy_timeout consistency, schema rename (**needs sign-off**).
+3. **Phase 4** — missing indexes **done**; B18 Zustand **pilot** (`browser-store`) done; still open: remaining nanostores stores, busy_timeout consistency, schema rename (**needs sign-off**).
 4. Prefer cohesive helper extracts; characterization tests before risky splits.
 5. Do **not** rename SQLite schema without explicit user sign-off.
 
@@ -104,7 +104,7 @@ Unchanged closures from Phase 0 evidence pack (B1a atomic writes, B2 db_writer d
 | **B1 / B1a** | High | **CLOSED** |
 | **B2** | Med | **CLOSED** |
 | **B11–B16, B19, B21–B25** | various | See prior log; B21 **MOSTLY CLOSED** (WIRE TypedDict deferred) |
-| **B18** | Med | **Open** — Zustand |
+| **B18** | Med | **Pilot done** — `browser-store` → Zustand; other stores still nanostores |
 | **B20** | Low | Dockerfile not re-verified |
 | **—** | Low | `UsageRecord` name collision (usage CamelModel vs curator dataclass) — open |
 
@@ -163,8 +163,32 @@ Approx sizes after extracts:
 |---|---|
 | Missing indexes (`messages.sessionId`, `usageEvents.*`, `sessions.isArchived`, `blackboard.sessionId`, `examAttempts.examId`) | ✅ `5b21a50` |
 | Schema camelCase→snake_case | **Deferred** — needs explicit sign-off |
-| B18 nanostores → Zustand | Open |
+| B18 nanostores → Zustand | **Pilot done** — `browser-store` on Zustand; remaining stores still nanostores |
 | storage_key_migration busy_timeout consistency | Open / low priority |
+
+
+### B18 Zustand pilot (2026-07-14)
+
+- **Migrated:** `frontend/desktop/src/lib/browser-store.ts` (nanostores atom → Zustand)
+- **Dependency:** `zustand` added to `frontend/desktop/package.json`
+- **Consumer updated:** `RightDrawerBrowserSection.tsx` (`useBrowserDrawerStore`)
+- **Imperative API kept:** `pushBrowserAction` / `clearBrowserDrawer` for SSE handlers
+
+**Remaining nanostores modules (do not migrate in this pilot):**
+
+| File | Notes |
+|---|---|
+| `src/lib/theme.ts` | `$themeMode`, `$textSize` + DOM/localStorage |
+| `src/store/theme.ts` | re-export + `$theme` compat shim |
+| `src/store/sessions.ts` | session list atom |
+| `src/store/workspaces.ts` | workspace atom |
+| `src/store/gateway.ts` | gateway status atom |
+| `src/store/command-palette.ts` | palette open state |
+| `src/store/chat-active-streams.ts` | active stream map |
+| `src/sections/chat/queue-store.ts` | message queue |
+| `src/sections/chat/chat-stream-manager.ts` | stream atoms |
+| `src/components/shell/RightDrawerState.ts` | drawer open/section atoms |
+| `src/hooks/useLogStream.ts` | log stream atom + `onMount` |
 
 ---
 
@@ -173,7 +197,7 @@ Approx sizes after extracts:
 1. ✅ Phase 0 + Phase 2 signed off.
 2. ✅ Phase 3 first wave of extracts landed; continue with `anthropic` / `workbench` / `memory_store`.
 3. ✅ Phase 4 missing indexes landed.
-4. Later: B18 Zustand; schema rename (sign-off); Phase 7 feature testing.
+4. Later: finish B18 Zustand migration (remaining nanostores); schema rename (sign-off); Phase 7 feature testing.
 
 ---
 
