@@ -348,6 +348,12 @@ lazy-loaded in `routes.ts`.
 | `AUGUST_P1_TOOL_CACHE=0` | Disable tool definition list cache |
 | `AUGUST_P1_PROMPT_CACHE=0` | Disable prompt segment / skills catalogue cache |
 | `AUGUST_P1_PARALLEL_TOOLS=0` | Force serial tool execution (no read-only gather) |
+| `AUGUST_SQLITE_CACHE_KB` | **Opt-in** page cache KiB (unset = SQLite default; no silent NORMAL/sync change) |
+| `AUGUST_SQLITE_MMAP_MB` | **Opt-in** mmap MiB |
+| `AUGUST_SQLITE_SYNC` | **Opt-in** only: `NORMAL` / `FULL` / `OFF`. Default leaves SQLite **FULL**. `NORMAL` under WAL can lose the last uncheckpointed txn on hard power loss — measure before enabling |
+| `AUGUST_DB_WRITER_LOW_DROP_S` | Age (seconds) before low-pri queue items are dropped |
 
 Stage boundaries: `app/services/workbench/chat_stages.py` (tool batch + post-turn).
-SSE coalesce: `app/lib/batched_emit.py` (first token flushes immediately; later text chunks coalesce).
+SSE coalesce: `app/lib/batched_emit.py` (first token immediate; later chunks by size **or** ~12 ms).
+DB writer lag: `GET /api/perf/db-writer`.
+FTS: use table-level `MATCH` (see `search_memory` / auto_memory JOIN).
