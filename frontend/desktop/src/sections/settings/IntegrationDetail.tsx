@@ -177,16 +177,20 @@ function AccountAction({ item }: { item: IntegrationItem }) {
     setPending(true);
     try {
       const res = await connect.mutateAsync({ kind: 'google' });
-      if (!res.authUrl) {
+      const authUrl = (res as { authUrl?: string }).authUrl || '';
+      const message = (res as { message?: string }).message || '';
+      if (!authUrl) {
         setError(
-          res.message ||
-            'Google OAuth is not configured yet. Add GOOGLE_OAUTH_CLIENT_ID / SECRET.',
+          message ||
+            'Google sign-in is not configured. Set GOOGLE_OAUTH_CLIENT_ID / SECRET, or install a workspace-mcp server that provides start_google_auth.',
         );
         return;
       }
-      const opened = await openExternal(res.authUrl);
+      const opened = await openExternal(authUrl);
       if (!opened) {
-        setError('Could not open the browser. Allow popups and try again.');
+        setError(
+          `Could not open the browser automatically. Open this URL manually:\n${authUrl}`,
+        );
         return;
       }
       setWaiting(true);
@@ -213,7 +217,13 @@ function AccountAction({ item }: { item: IntegrationItem }) {
         }
       }, 3000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to start Google sign-in');
+      const msg = e instanceof Error ? e.message : 'Failed to start Google sign-in';
+      // Strip the old confusing "MCP server 'mcp' not running" by rephrasing.
+      setError(
+        msg.includes("MCP server 'mcp'")
+          ? 'Google sign-in could not reach a workspace MCP server. Configure GOOGLE_OAUTH_CLIENT_ID or install workspace-mcp under Integrations.'
+          : msg,
+      );
     } finally {
       setPending(false);
     }

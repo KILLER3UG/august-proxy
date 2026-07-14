@@ -512,7 +512,14 @@ async def discoverTools(serverId: str) -> list[dict[str, object]]:
 async def executeTool(serverId: str, toolName: str, args: dict[str, object]) -> str:
     """Call a tool on an MCP server via JSON-RPC (stdio or remote SSE/HTTP)."""
     server = _servers.get(serverId)
-    transport = as_str(server.get('transport'), 'stdio') if server else 'stdio'
+    if not server:
+        # Helpful hint when callers use a stale/wrong id (e.g. bare "mcp")
+        known = ', '.join(sorted(_servers.keys())[:12]) or '(none registered)'
+        return (
+            f"Error: MCP server '{serverId}' is not registered. "
+            f"Registered servers: {known}. Add it under Settings → Integrations."
+        )
+    transport = as_str(server.get('transport'), 'stdio')
     if transport in ('sse', 'http'):
         try:
             data = await _remote_rpc(
@@ -540,7 +547,12 @@ async def executeTool(serverId: str, toolName: str, args: dict[str, object]) -> 
 
     proc = await _startServerProcess(serverId)
     if not proc or not proc.stdin or (not proc.stdout):
-        return f"Error: MCP server '{serverId}' not running"
+        err = as_str(server.get('error')) if isinstance(server, dict) else ''
+        detail = f' ({err})' if err else ''
+        return (
+            f"Error: MCP server '{serverId}' is not running{detail}. "
+            'Open Settings → Integrations and Start the server (Node/npx must be on PATH for npx-based installs).'
+        )
     request = {
         'jsonrpc': '2.0',
         'id': str(uuid.uuid4()),
@@ -687,16 +699,61 @@ async def stop_all_servers() -> None:
 
 def isMcpToolName(name: str) -> bool:
     """Check if a tool name belongs to an MCP server."""
-    return isinstance(name, str) and name.startswith('mcp__')
+    if not isinstance(name, str):
+        return False
+    n = name[len('august__') :] if name.startswith('august__') else name
+    return n.startswith('mcp__')
+
+
+def parse_mcp_tool_name(name: str) -> tuple[str, str] | None:
+    """Parse ``mcp__{serverId}__{toolName}`` (optional ``august__`` prefix).
+
+    Server ids may contain hyphens (e.g. ``workspace-mcp``). Tool names may
+    contain single underscores (e.g. ``start_google_auth``). We split on the
+    first ``__`` after the ``mcp__`` prefix so serverId is never truncated to
+    just ``mcp``.
+    """
+    if not isinstance(name, str):
+        return None
+    n = name[len('august__') :] if name.startswith('august__') else name
+    if not n.startswith('mcp__'):
+        return None
+    rest = n[len('mcp__') :]
+    sep = rest.find('__')
+    if sep <= 0:
+        return None
+    server_id = rest[:sep]
+    tool_name = rest[sep + 2 :]
+    if not server_id or not tool_name:
+        return None
+    return server_id, tool_name
 
 
 async def executeMcpToolCall(name: str, args: dict[str, object]) -> str:
     """Execute an MCP tool call by routing to the correct server."""
-    parts = name.split('__', 2)
-    if len(parts) < 3:
+    parsed = parse_mcp_tool_name(name)
+    if not parsed:
         return f'Error: Invalid MCP tool name: {name}'
-    __, serverId, toolName = parts
-    return await executeTool(serverId, toolName, args)
+    server_id, tool_name = parsed
+    return await executeTool(server_id, tool_name, args)
+
+
+def find_server_for_tool(tool_name: str) -> str | None:
+    """Return a registered server id that has ``tool_name`` in its tools cache."""
+    for sid, tools in _toolsCache.items():
+        for t in tools:
+            if isinstance(t, dict) and as_str(t.get('name')) == tool_name:
+                return sid
+    # Fallback: name/id heuristic (workspace-mcp package)
+    for sid, srv in _servers.items():
+        if not isinstance(srv, dict):
+            continue
+        blob = f"{srv.get('id', '')} {srv.get('name', '')} {srv.get('command', '')} {' '.join(as_list(srv.get('args')))}".lower()
+        if tool_name.replace('_', '-') in blob or 'workspace' in blob and 'google' in tool_name:
+            return sid
+        if 'workspace-mcp' in blob or 'workspace_mcp' in blob:
+            return sid
+    return None
 
 
 def sanitize_tool_schema(schema: object) -> dict[str, object]:

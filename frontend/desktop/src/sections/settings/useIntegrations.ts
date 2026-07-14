@@ -285,14 +285,24 @@ export function useIntegrations() {
         transport: entry.mcp.transport ?? 'stdio',
         catalogId: entry.id,
       });
-      // Best-effort start
+      const sid = created.id;
+      if (!sid) {
+        throw new Error('Server registered but no id returned — check /api/mcp/servers response');
+      }
+      // Start + discover tools; surface real errors (npx missing, bad package, …)
       try {
-        await api.post(`/api/mcp/servers/${encodeURIComponent(created.id)}/start`, {});
-      } catch {
-        /* user can start later */
+        await api.post(`/api/mcp/servers/${encodeURIComponent(sid)}/start`, {});
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // Still keep the registration so user can fix env / Start later
+        enableIntegrationId(entry.id);
+        throw new Error(
+          `Installed ${entry.name}, but start failed: ${msg}. ` +
+            'Open the card and click Start after Node/npx is available, or check the command/args.',
+        );
       }
       enableIntegrationId(entry.id);
-      return { kind: 'mcp' as const, id: created.id };
+      return { kind: 'mcp' as const, id: sid };
     },
     onSuccess: () => {
       refreshEnabled();

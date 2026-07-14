@@ -193,36 +193,119 @@ def connect_google(email: str = '') -> dict[str, Any]:
 
 
 async def google_auth_url(email: str = '') -> dict[str, Any]:
-    """Start Google OAuth via MCP workspace tool when available."""
+    """Start Google OAuth.
+
+    Prefer a registered workspace-mcp server's ``start_google_auth`` tool.
+    Fall back to a native OAuth URL built from ``GOOGLE_OAUTH_*`` env vars.
+    Never invent a fake success when neither path works.
+    """
     sc = _sc()
     stored_email = as_str(as_dict(sc.get('google')).get('email')) if sc.get('google') else ''
     user_email = email.strip() or stored_email or ''
+
+    # 1) MCP workspace-mcp tool (if that server is registered and running)
     try:
         from app.services.tools import mcp_client
 
-        result = await mcp_client.executeMcpToolCall(
-            'august__mcp__workspace-mcp__start_google_auth',
-            {
-                'service_name': 'gmail,calendar,drive,docs,sheets,slides,tasks,contacts',
-                'user_google_email': user_email or 'me',
-            },
-        )
-        text = str(result)
-        import re
+        # Ensure tools are discovered so we can resolve the correct server id.
+        for srv in list(mcp_client.listRegisteredServers()):
+            sid = as_str(srv.get('id'))
+            if not sid:
+                continue
+            try:
+                await mcp_client.discoverTools(sid)
+            except Exception:
+                pass
 
-        match = re.search(r'https://[^\s]+', text)
-        if match:
-            return {'authUrl': match.group(0), 'message': text}
-        return {'message': text, 'authUrl': ''}
-    except Exception as exc:
-        # Honest fallback — frontend can open account console manually.
-        return {
-            'authUrl': '',
-            'message': (
-                'Google OAuth MCP tool unavailable. Configure GOOGLE_OAUTH_CLIENT_ID / '
-                f'SECRET in MCP env, then retry. ({exc})'
-            ),
+        server_id = mcp_client.find_server_for_tool('start_google_auth')
+        if not server_id:
+            # Common package name / catalog id heuristics
+            for srv in mcp_client.listRegisteredServers():
+                if not isinstance(srv, dict):
+                    continue
+                blob = f"{srv.get('id', '')} {srv.get('name', '')} {srv.get('command', '')}".lower()
+                if 'workspace' in blob or 'google' in blob:
+                    server_id = as_str(srv.get('id'))
+                    break
+
+        if server_id:
+            tool_name = f'mcp__{server_id}__start_google_auth'
+            result = await mcp_client.executeMcpToolCall(
+                tool_name,
+                {
+                    'service_name': 'gmail,calendar,drive,docs,sheets,slides,tasks,contacts',
+                    'user_google_email': user_email or 'me',
+                },
+            )
+            text = str(result)
+            # If the server truly isn't running, fall through to native OAuth
+            if text.startswith("Error: MCP server") and 'not running' in text:
+                pass
+            else:
+                import re
+
+                match = re.search(r'https://[^\s"\'<>]+', text)
+                if match:
+                    return {'authUrl': match.group(0), 'message': text}
+                if text and not text.startswith('Error:'):
+                    return {'message': text, 'authUrl': ''}
+    except Exception:
+        pass
+
+    # 2) Native Google OAuth URL from process env / MCP global env
+    client_id = (
+        os.environ.get('GOOGLE_OAUTH_CLIENT_ID')
+        or os.environ.get('GOOGLE_CLIENT_ID')
+        or ''
+    ).strip()
+    if not client_id:
+        # Also check durable mcpGlobalEnv in config
+        try:
+            cfg = getConfig()
+            env_map = as_dict(cfg.get('mcpGlobalEnv')) if cfg.get('mcpGlobalEnv') is not None else {}
+            client_id = as_str(env_map.get('GOOGLE_OAUTH_CLIENT_ID') or env_map.get('GOOGLE_CLIENT_ID'))
+        except Exception:
+            client_id = ''
+
+    if client_id:
+        import urllib.parse
+
+        redirect = (
+            os.environ.get('GOOGLE_OAUTH_REDIRECT_URI')
+            or 'http://127.0.0.1:8085/api/service-connections/google/callback'
+        ).strip()
+        scopes = [
+            'openid',
+            'email',
+            'profile',
+            'https://www.googleapis.com/auth/gmail.modify',
+            'https://www.googleapis.com/auth/calendar',
+            'https://www.googleapis.com/auth/drive.readonly',
+        ]
+        params = {
+            'client_id': client_id,
+            'redirect_uri': redirect,
+            'response_type': 'code',
+            'scope': ' '.join(scopes),
+            'access_type': 'offline',
+            'prompt': 'consent',
         }
+        if user_email and user_email != 'me':
+            params['login_hint'] = user_email
+        auth_url = 'https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode(params)
+        return {
+            'authUrl': auth_url,
+            'message': 'Open Google sign-in in your browser to connect Gmail / Calendar / Drive.',
+        }
+
+    return {
+        'authUrl': '',
+        'message': (
+            'Google sign-in is not configured. Either install and start a workspace-mcp '
+            'server that provides start_google_auth, or set GOOGLE_OAUTH_CLIENT_ID (and '
+            'GOOGLE_OAUTH_CLIENT_SECRET) in Settings → Integrations MCP env / process env.'
+        ),
+    }
 
 
 def disconnect(name: str) -> dict[str, Any]:

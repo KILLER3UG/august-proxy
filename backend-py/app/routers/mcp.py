@@ -106,26 +106,49 @@ async def deleteServer(serverId: str):
     return {'status': 'ok'}
 
 
+def _resolve_server(server_id: str) -> dict[str, object] | None:
+    """Match by id first, then by name (frontend sometimes has only display name)."""
+    servers = mcp_client.listRegisteredServers()
+    for s in servers:
+        if s.get('id') == server_id:
+            return s
+    for s in servers:
+        if str(s.get('name', '')).lower() == server_id.lower():
+            return s
+    return None
+
+
 @router.post('/servers/{server_id}/start')
 async def startServer(serverId: str):
     """Start an MCP server subprocess and discover its tools."""
-    server = next((s for s in mcp_client.listRegisteredServers() if s.get('id') == serverId), None)
+    server = _resolve_server(serverId)
     if not server:
-        raise HTTPException(status_code=404, detail='Server not found')
-    tools = await mcp_client.discoverTools(serverId)
+        raise HTTPException(
+            status_code=404,
+            detail=f"Server not found: {serverId!r}. Register it under Settings → Integrations first.",
+        )
+    sid = str(server.get('id') or serverId)
+    tools = await mcp_client.discoverTools(sid)
     # Re-read status after start attempt
-    server = next((s for s in mcp_client.listRegisteredServers() if s.get('id') == serverId), server)
+    server = _resolve_server(sid) or server
     status = server.get('status', 'error')
     if status == 'error':
         raise HTTPException(
             status_code=500,
             detail=str(server.get('error') or 'Failed to start MCP server'),
         )
+    # registered with no process is still a soft failure for stdio
+    if status not in ('running',) and not tools:
+        err = server.get('error') or status
+        raise HTTPException(
+            status_code=500,
+            detail=f'Failed to start MCP server {sid}: {err}',
+        )
     return {
-        'status': status,
+        'status': status if status == 'running' else ('running' if tools else status),
         'tools': tools,
         'toolCount': len(tools),
-        'id': serverId,
+        'id': sid,
     }
 
 

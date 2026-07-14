@@ -7,6 +7,22 @@ import json
 import pytest
 
 
+def test_parse_mcp_tool_name_workspace_style():
+    """Legacy august__mcp__workspace-mcp__tool must not resolve serverId to bare 'mcp'."""
+    from app.services.tools.mcp_client import parse_mcp_tool_name
+
+    assert parse_mcp_tool_name('mcp__workspace-mcp__start_google_auth') == (
+        'workspace-mcp',
+        'start_google_auth',
+    )
+    assert parse_mcp_tool_name('august__mcp__workspace-mcp__start_google_auth') == (
+        'workspace-mcp',
+        'start_google_auth',
+    )
+    assert parse_mcp_tool_name('mcp__mcp_abc123__read_file') == ('mcp_abc123', 'read_file')
+    assert parse_mcp_tool_name('not_an_mcp_tool') is None
+
+
 def test_parse_sse_events_and_json_rpc():
     from app.services.tools.mcp_client import _iter_sse_events, _json_from_sse_body
 
