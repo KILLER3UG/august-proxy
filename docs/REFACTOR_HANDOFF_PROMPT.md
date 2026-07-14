@@ -6,7 +6,7 @@
 
 Act as a Senior Principal Software Architect and Lead Developer. Your task is a comprehensive, end-to-end refactor of **August Proxy** — a large, working AI-agent proxy system: a Tauri + React 19 + TypeScript desktop app (plus an Expo React Native mobile companion) on the frontend, and a FastAPI Python backend spanning ~176 `app/` Python files across **32 routers** (200+ endpoints) and ~95 service files. This is a multi-phase migration of a live system, not a quick cleanup pass — treat the scale below as the default assumption for how you plan your work, not an edge case.
 
-**This is a handoff, not a fresh start — and it's already mid-flight.** Phase 0 is signed off. The old multi-branch merge sequence is **finished** (only `master` / `origin/master` remain for active work; a redundant `refactor/b21-app-file-renames` ref may still exist and is safe to delete). **Phase 2 is SIGNED OFF (2026-07-14).** Phase 3 modularization is **in progress** (sse_format, openai_sse, proxy_tool_defs, tool_html). Phase 4 **missing indexes done** (`5b21a50`); schema rename still needs sign-off. Residual WIRE TypedDict camelCase deferred. **Pick up from the Progress Log's current step** — do not restart Phase 0 or re-merge closed branches. Before doing anything else, read the Progress Log, then scan the actual repository yourself to confirm what it says is still accurate. Do not take the Progress Log, or any prior audit report it references, at face value — see Ground Rule 1.
+**This is a handoff, not a fresh start — and it's already mid-flight.** Phase 0 is signed off. The old multi-branch merge sequence is **finished** (only `master` / `origin/master` remain for active work; a redundant `refactor/b21-app-file-renames` ref may still exist and is safe to delete). **Phase 2 is SIGNED OFF.** Phase 3 is **substantially complete** (9 modular extracts: SSE, openai/anthropic helpers, proxy_tool_defs, tool_html, workbench sessions/effort, memory_schema). Phase 4 is **almost done**: indexes, busy_timeout, schema **design** doc, Zustand pilot (browser-store). Schema rename **implementation** still needs explicit sign-off (`docs/PHASE4_SQLITE_SCHEMA_RENAME_PLAN.md`). **Pick up from the Progress Log's current step** — do not restart Phase 0 or re-merge closed branches. Before doing anything else, read the Progress Log, then scan the actual repository yourself to confirm what it says is still accurate. Do not take the Progress Log, or any prior audit report it references, at face value — see Ground Rule 1.
 
 **Authoritative live tracker:** `docs/REFACTOR_PROGRESS.md` (not repo root). Prefer it over any older chat paste if they disagree — but still verify both against the repo.
 
@@ -121,7 +121,7 @@ Confirm baseline in Progress Log / live tracker before starting — **do not ass
 **Enforcement**
 - Set up/keep automated enforcement: ESLint naming-convention (frontend); Ruff (+ naming lint if added) on Python backend.
 
-## Phase 3 — Structural Refactor (IN PROGRESS; B15 DONE; multiple extracts done)
+## Phase 3 — Structural Refactor (SUBSTANTIALLY COMPLETE; further slices optional)
 
 **Modularization**
 - Break up Known Large Files — still open for most targets.
@@ -188,7 +188,7 @@ Same deliverables as before when the full refactor completes.
 
 Because this is a large codebase, work iteratively.
 
-**Current step:** Continue **Phase 3** on remaining large files (`workbench`, `anthropic`, further `tool_definitions`/`memory_store` slices). Phase 4 indexes done; do not start schema rename without sign-off.
+**Current step:** Optional further Phase 3 slices (workbench chat loop / registerAll / anthropic stream). Phase 4: finish remaining Zustand stores or wait for schema rename sign-off.
 
 **On session start:**
 1. Acknowledge these instructions and the Codebase Reference.
@@ -238,8 +238,11 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 | WIRE **TypedDict** fields (SQLite/JSON) | **Deferred** to Phase 4 schema |
 | CamelModel router scale-up | **✅ Complete** — 0 BaseModel in `app/routers/` |
 | Phase 2 overall | **✅ Signed off 2026-07-14** (evidence pack in Progress Log) |
-| Phase 3 modularization | **In progress** — sse_format, openai_sse, proxy_tool_defs, tool_html |
-| Phase 4 missing indexes | **✅ Done** (`5b21a50`) |
+| Phase 3 modularization | **Substantially complete** (9 extracts; residual large chat/registerAll cores) |
+| Phase 4 missing indexes | **✅ Done** |
+| Phase 4 busy_timeout | **✅ Done** |
+| Phase 4 schema rename | **Design only** — needs sign-off |
+| Phase 4 B18 Zustand | **Pilot done** (browser-store); remaining nanostores open |
 | SQLite schema/table camelCase | **Deferred** — needs explicit sign-off |
 
 ### Priority decision (current)
@@ -378,6 +381,6 @@ Still required before Phase 8 sign-off.
 
 ## Session close note (for the next model)
 
-Stop state: Phase 2 signed off; Phase 3 wave landed (4 extracts); Phase 4 missing indexes done. Continue Phase 3 on workbench/anthropic/memory_store. Update `docs/REFACTOR_PROGRESS.md` after each merge. Keep Ground Rule 1.
+Stop state: Phase 2 signed off; Phase 3 substantially complete; Phase 4 almost done (indexes, busy_timeout, schema plan, Zustand pilot). Next: optional further modularization, remaining Zustand stores, or schema rename after sign-off. Keep Ground Rule 1.
 
 Are you ready to begin? If so, verify the Progress Log and Codebase Reference against the real repository first, report anything that doesn't match, then continue CamelModel scale-up from the current step rather than restarting from scratch.
