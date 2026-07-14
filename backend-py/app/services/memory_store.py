@@ -19,7 +19,7 @@ from typing import cast
 
 from app.adapters.case_converters import snakeToCamel, camelToSnake
 from app.json_narrowing import as_int, as_list, as_str
-from app.services.memory_conn import conn as _conn, db_path as _db_path
+from app.services import memory_conn as _memory_conn
 from app.services.memory_schema import ensure_schema
 from app.type_aliases import (
     FactDict,
@@ -29,6 +29,11 @@ from app.type_aliases import (
     ProposalDict,
     SessionRecord,
 )
+
+_conn = _memory_conn.conn
+_db_path = _memory_conn.db_path
+# Public re-export: conftest and callers use memory_store.close().
+close = _memory_conn.close
 
 _BUSYRetries = 2
 
