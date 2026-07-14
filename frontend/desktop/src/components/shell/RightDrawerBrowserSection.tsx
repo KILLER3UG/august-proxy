@@ -2,14 +2,13 @@
 /* Renders the most recent screenshot captured during a headless browser  */
 /* tool run, with a cursor overlay on the element the action targeted and  */
 /* a rolling action log. Fed by the browserAction SSE event →            */
-/* lib/browser-store atom.                                                */
+/* lib/browser-store (Zustand).                                                */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useStore } from '@nanostores/react';
 import { MousePointerClick, Globe, Loader2, Inbox, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { $browserDrawer, clearBrowserDrawer, screenshotUrl } from '@/lib/browser-store';
+import { useBrowserDrawerStore, clearBrowserDrawer, screenshotUrl } from '@/lib/browser-store';
 
 /** Human label + icon hint for each browser tool name. */
 function actionLabel(name: string): { verb: string; detail?: string } {
@@ -46,8 +45,7 @@ function clock(ts: number): string {
 }
 
 export function RightDrawerBrowserSection() {
-  const state = useStore($browserDrawer);
-  const { latest, log, title, url } = state;
+  const { latest, log, title, url } = useBrowserDrawerStore();
 
   const imgWrapRef = useRef<HTMLDivElement | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);

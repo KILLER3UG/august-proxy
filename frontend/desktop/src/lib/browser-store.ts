@@ -1,9 +1,12 @@
-/* ── Browser automation store (nanostores atom) ─────────────────── */
+/* ── Browser automation store (Zustand pilot — Phase 4 B18) ─────── */
 /* Holds the live state for the headless browser drawer section: the   */
 /* latest screenshot + cursor overlay + an action log. Fed by the      */
 /* `browserAction` SSE event emitted from workbench._execute_tool.    */
+/*                                                                    */
+/* B18 pilot: first nanostores → Zustand migration. Other stores still */
+/* use nanostores; see docs/REFACTOR_PROGRESS.md for remaining list.  */
 
-import { atom } from 'nanostores';
+import { create } from 'zustand';
 
 /** A single browser action received from the backend SSE stream. */
 export interface BrowserAction {
@@ -37,17 +40,22 @@ export interface BrowserDrawerState {
 
 const MAX_LOG = 50;
 
-export const $browserDrawer = atom<BrowserDrawerState>({
+const initialState: BrowserDrawerState = {
   latest: null,
   log: [],
   title: null,
   url: null,
-});
+};
+
+/** Zustand store for the browser drawer. Prefer the hook in React components. */
+export const useBrowserDrawerStore = create<BrowserDrawerState>(() => ({
+  ...initialState,
+}));
 
 /** Append a browser action from the SSE stream and update live state. */
 export function pushBrowserAction(action: BrowserAction): void {
-  const prev = $browserDrawer.get();
-  $browserDrawer.set({
+  const prev = useBrowserDrawerStore.getState();
+  useBrowserDrawerStore.setState({
     latest: action,
     log: [action, ...prev.log].slice(0, MAX_LOG),
     title: action.title ?? prev.title,
@@ -57,12 +65,7 @@ export function pushBrowserAction(action: BrowserAction): void {
 
 /** Reset the store (e.g. when the workbench session changes). */
 export function clearBrowserDrawer(): void {
-  $browserDrawer.set({
-    latest: null,
-    log: [],
-    title: null,
-    url: null,
-  });
+  useBrowserDrawerStore.setState({ ...initialState });
 }
 
 /** Build the screenshot URL for an <img src> given an absolute path. */
