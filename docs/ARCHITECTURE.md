@@ -331,6 +331,26 @@ plus **six JSON-file stores** (`config.json`, `providers.json`, `request-log.jso
 `august_graph_memory.json`). All paths resolve through `app/lib/paths.py::dataPath`
 and are overridable via environment variables.
 
+Brain schema identifiers are **snake_case** (tables/columns); HTTP/JSON wire stays
+camelCase via `memory_store._row_as_wire`. Idempotent camel→snake migration lives
+in [`services/schema_rename_migration.py`](../backend-py/app/services/schema_rename_migration.py).
+
+### Brain DB verification tooling (keep permanently)
+
+When schema or bulk-data work touches `august_brain.sqlite`, use these scripts
+instead of reinventing spot-checks (do **not** treat as disposable one-offs):
+
+| Script | Purpose |
+|---|---|
+| [`backend-py/scripts/_live_db_fingerprint.py`](../backend-py/scripts/_live_db_fingerprint.py) | Stable fingerprint: table row counts + content hashes + FTS counts + key blob hashes. Compare before/after any suite or migration. |
+| [`backend-py/scripts/_verify_fts_sync.py`](../backend-py/scripts/_verify_fts_sync.py) | Assert FTS5 virtual tables cover base rows (rowid + sample MATCH). |
+| [`backend-py/scripts/_spotcheck_schema.py`](../backend-py/scripts/_spotcheck_schema.py) | Dual camel/snake inventory + data-coverage checks during rename work. |
+| [`backend-py/scripts/_diff_memory_store_conflicts.py`](../backend-py/scripts/_diff_memory_store_conflicts.py) | Content-diff dual blob keys (`agent_jobs`, `self_evolution_log`) — not timestamp-only. |
+
+**Tests must not touch the live brain.** `tests/conftest.py` makes `isolatedData`
+**autouse** (temp `AUGUST_DATA_DIR` + `AUGUST_BRAIN_SQLITE_FILE`). Do not remove
+that without a safety review.
+
 ### SQLite — single-writer async queue
 
 [`services/memory_store.py`](../backend-py/app/services/memory_store.py) owns the

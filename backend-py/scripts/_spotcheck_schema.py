@@ -149,9 +149,12 @@ def main() -> int:
     }
     left = [c for c, _ in PAIRS if c in tables_after]
     print("camel tables still present after migrate:", left or "NONE")
-    print(
-        "NOTE: camel tables intentionally retained until drop_legacy_camel_tables(confirm=True)"
-    )
+    if left:
+        print(
+            "NOTE: camel tables still present — drop only via drop_legacy_camel_tables(confirm=True)"
+        )
+    else:
+        print("NOTE: no camel content tables remain (pass 2 complete or fresh snake DB)")
     conn.close()
     return 0 if all_covered else 3
 

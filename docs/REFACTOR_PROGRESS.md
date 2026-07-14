@@ -9,17 +9,17 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 (**test isolation is the headline**; schema merge pass 1 held)
+**Last updated:** 2026-07-14 — schema rename **CLOSED** (pass 2); test isolation proven; **P0 unblocked**
 **Current branch state:** `master` — verify with `git rev-parse HEAD`.
 **Verification baseline:**
-`pytest 680 passed` · live DB fingerprint **identical** before/after full suite · FTS sync PASS · mypy/ruff clean on touched paths
-**CI note:** Prefer `backend-py/.venv` (3.12). **Never run bare pytest against live brain** — isolation is autouse.
+`pytest 680 passed` · live fingerprint snake-side identical through isolation + pass 2 drop · FTS PASS · `needs_migration=False`
+**CI note:** Prefer `backend-py/.venv` (3.12). Isolation is **autouse** — do not remove.
 
 ### Phase 0 — SIGNED OFF (2026-07-13)
 ### Phase 2 — SIGNED OFF (2026-07-14) — includes B1a + B16 (see residual ledger)
 ### Phase 3 — **DONE against modularization exit criteria** (not “all large files gone”)
-### Phase 4 — indexes/busy_timeout/Zustand met; schema **pass 1** (data merge) + isolation proof; **pass 2 drop NOT done**
-### Phase P — **blocked** until pass 2; P0 not started
+### Phase 4 — **DONE** (indexes, busy_timeout, Zustand, schema rename hybrid **closed on live DB**)
+### Phase P — **P0 unblocked** (baselines only until further approval)
 
 ---
 
@@ -34,7 +34,7 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 | **B16** function APIs on `memory_store` / `db_writer` / `proxy_tools` | **CLOSED** — `def` names are snake_case (`save_memory`, `enqueue_write`, `execute_managed_proxy_tool`, …). **Residual naming debt:** many **parameters** still camelCase (`sessionId`, `factKey`). WIRE TypedDict keys still camelCase **by design**. | Phase 2 (not Phase 3/4) |
 | **B1a** non-atomic JSON writes | **CLOSED** for listed sites: `aug_artifact_service` + `gateway/session_bridge` use `write_json_atomic`; `skills/curator` uses temp + `Path.replace`; `mcp_client` stdin JSON-RPC is not a durable JSON store write. **Residual (low, different class):** `consolidation_daemon` skill-draft `.md` uses plain `open(..., 'w')` (markdown staging, not the B1a JSON-store bug). | Phase 0/1 safety (gated Phase 2; closed before scale-up) |
 | **Known large files** beyond workbench/anthropic | **Deferred, not forgotten** — see modularization residual table | Phase 3 optional polish |
-| **Schema rename** | **PARTIAL / NOT CLOSED on live DB** (see schema spot-check below). Code path + snake DDL exist; real `data/august_brain.sqlite` still has dual camel+snake tables | Phase 4 |
+| **Schema rename** | **CLOSED** on live DB — snake tables only; pass 1 merge + pass 2 drop verified | Phase 4 |
 
 **Correct phrasing:** Phase 3/4 exit criteria for **modularization + Phase 4 modernization menu** are met. That is **not** the same as “100% of every historical audit bullet including residual param naming and optional file splits.”
 
@@ -42,10 +42,9 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 
 ## Where to pick up (next session)
 
-1. **Pass 2 schema drop** only after re-confirm isolation + coverage (user go).
-2. Then P0 baselines (still gated on pass 2 stability).
-3. Do **not** remove `isolatedData` autouse without safety review.
-4. Phase 5 / Phase 7 remain open on the long roadmap.
+1. **P0 baselines** (user-approved scope): measure product overhead vs provider RTT; include gateway/multi-agent; **no optimisations** until numbers justify further Phase P.
+2. Do **not** remove `isolatedData` autouse without safety review.
+3. Phase 5 / Phase 7 remain open on the long roadmap.
 
 ---
 
@@ -60,6 +59,14 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 | Consequence | Full pytest was **not** a safe verification step — it could destroy merge recovery mid-run |
 | Historical note | Prior “N tests passed” this session were not proof of side-effect-free checks |
 
+### Root cause (why the gap existed)
+
+`isolatedData` in `conftest.py` was **opt-in** (tests had to request the fixture).
+`test_memory.py` (and older `v2*`/`v3*`/`v11*` files) never requested it and used
+their own `init()` + teardown against the default live path. Opt-in isolation
+fails open: new tests that forget the fixture hit production. **Fix:** make
+isolation **default-on** (`autouse=True`), not something each file must remember.
+
 ### Fix (blocking, done)
 
 | Change | Detail |
@@ -68,9 +75,7 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 | Proof | `_live_db_fingerprint.py` before full suite + after → **`FINGERPRINT_IDENTICAL True`** (row counts + content hashes + FTS counts + blob hashes) |
 | Suite | **680 passed** with isolation on |
 
-Scripts: `backend-py/scripts/_live_db_fingerprint.py`
-
-**Pass 2 must not run until this stays true.** Pass 2 step “full pytest” is only safe because isolation is now suite-wide.
+Permanent tooling (also listed in `docs/ARCHITECTURE.md`): `_live_db_fingerprint.py`, `_verify_fts_sync.py`, `_spotcheck_schema.py`.
 
 ---
 
@@ -184,9 +189,19 @@ Phase 3 “done” = major targets modularized enough for safer change, **not** 
 
 **FTS5:** `memory_store` 2/2, `auto_memories` 101/101, 0 missing by rowid — `_verify_fts_sync.py` PASS.
 
-**Still open for pass 2 (user go):** drop all 10 camel content tables + re-fingerprint + pytest (safe under autouse isolation).
+### Pass 2 (camel drop) — CLOSED 2026-07-14
 
-**Phase 4 schema status:** **Pass 1 closed** (coverage + content union + FTS + isolation proof). **Not fully closed** until camel drop pass 2.
+| Step | Result |
+|---|---|
+| Backup | `data/august_brain.sqlite.pre-drop-*` |
+| `drop_legacy_camel_tables(confirm=True)` | **10 dropped**; camel list **NONE** |
+| `needs_migration` | **False** |
+| Spot-check | camel tables missing; columns snake; migrate no-op |
+| Full pytest | **680 passed** (autouse isolation) |
+| Snake-side fingerprint vs pre-drop | **identical** (tables + FTS + `memory_store` blobs); camel fingerprint keys gone as expected |
+| FTS | PASS |
+
+**Phase 4 schema status:** **CLOSED** — snake-only live schema + camel wire.
 
 **Wire hybrid:** `_row_as_wire` on snake reads unchanged.
 
@@ -199,7 +214,7 @@ Plan doc: [`docs/PHASE_PERF_AND_FLEXIBILITY_PLAN.md`](./PHASE_PERF_AND_FLEXIBILI
 | Decision | Status |
 |---|---|
 | Full Phase P (P0–P5) as committed initiative | **Not approved** |
-| **P0 baselines only** | Approved in principle; **blocked until pass 2** |
+| **P0 baselines only** | **Unblocked** — start when user says go; no optimisations without new approval |
 | P1–P5 optimization/extension work | **Gated** on P0 numbers + explicit go |
 | Baseline surfaces | Desktop **and** gateway/multi-agent (measure both) |
 | Parallel tool execution | **Deferred** to post-safety Wave 2 if ever approved |
@@ -222,11 +237,11 @@ If P0 shows DB is not the bottleneck, P2 may never be worth opening.
 |---|---|
 | Phase 0/2 signed off | yes (B1a + B16 function APIs included) |
 | Phase 3 modularization exit criteria | met; residual large files optional |
-| Phase 4 modernization exit criteria | indexes/busy_timeout/Zustand met; schema **pass 1 verified**, pass 2 drop pending |
-| “100% of entire handoff checklist” | **false** — use residual ledger |
-| Schema rename | **pass 1 done** (snake has full coverage); camel tables retained until pass 2 |
-| Phase P / P0 | **Blocked** until pass 2 drop confirmed stable |
-| Live test isolation | **Required** — `isolatedData` autouse proven fingerprint-identical |
+| Phase 4 modernization exit criteria | **met** including schema rename closed on live DB |
+| “100% of entire handoff checklist” | **false** for residual naming params / optional large files |
+| Schema rename | **CLOSED** (pass 1 + pass 2) |
+| Phase P / P0 | **P0 unblocked** |
+| Live test isolation | **Required** — `isolatedData` autouse; opt-in was the root failure mode |
 
 ---
 
