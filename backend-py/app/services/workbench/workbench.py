@@ -22,6 +22,7 @@ import uuid
 from typing import Callable, cast
 from app.json_narrowing import as_str, as_dict, as_list, as_int, as_bool
 from app.type_aliases import JsonValue
+from app.services.workbench import sessions as _sessions_mod
 from app.services.workbench.sessions import (
     WorkbenchSession,
     _sessions,
@@ -36,6 +37,29 @@ from app.models import AnthropicRequest, ChatCompletionRequest
 logger = logging.getLogger('workbench')
 MAX_MANAGED_TOOL_ROUNDS = 10
 WORKBENCH_TOKEN_BUDGET = 2000000
+
+# Session API re-exports (explicit bindings so external importers keep working;
+# ruff F401 would strip pure unused imports from the import list above).
+_statusSubscribers = _sessions_mod._statusSubscribers
+_sessionsPath = _sessions_mod._sessionsPath
+_loadSessions = _sessions_mod._loadSessions
+setWorkbenchSessionAgent = _sessions_mod.setWorkbenchSessionAgent
+listWorkbenchSessions = _sessions_mod.listWorkbenchSessions
+deleteWorkbenchSession = _sessions_mod.deleteWorkbenchSession
+resetWorkbenchSession = _sessions_mod.resetWorkbenchSession
+summarizeSession = _sessions_mod.summarizeSession
+getWorkbenchSessionStatus = _sessions_mod.getWorkbenchSessionStatus
+subscribeSessionStatus = _sessions_mod.subscribeSessionStatus
+save_sessions = _sessions_mod.save_sessions
+create_workbench_session = _sessions_mod.create_workbench_session
+get_workbench_session = _sessions_mod.get_workbench_session
+list_workbench_sessions = _sessions_mod.list_workbench_sessions
+delete_workbench_session = _sessions_mod.delete_workbench_session
+reset_workbench_session = _sessions_mod.reset_workbench_session
+summarize_session = _sessions_mod.summarize_session
+get_workbench_session_status = _sessions_mod.get_workbench_session_status
+subscribe_session_status = _sessions_mod.subscribe_session_status
+set_workbench_session_agent = _sessions_mod.set_workbench_session_agent
 
 
 def normalizeGuardMode(mode: str) -> str:
