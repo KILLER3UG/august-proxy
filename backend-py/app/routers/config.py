@@ -313,6 +313,44 @@ async def putCognitiveConfig(body: dict[str, object]):
     return update_cognitive(body)
 
 
+@router.get('/session-export')
+async def getSessionExportConfig():
+    """Admin: whether continuous JSON session backup export is enabled.
+
+    SQLite remains the session SoT. JSON is optional backup only.
+    """
+    from app.services.workbench.sessions import get_session_json_export_status
+
+    return get_session_json_export_status()
+
+
+@router.put('/session-export')
+async def putSessionExportConfig(body: dict[str, object]):
+    """Admin: set continuous JSON session export on/off (config-backed).
+
+    Body: ``{ "enabled": true|false }``. Env ``AUGUST_SESSION_JSON_EXPORT``
+    still overrides when set. Optional ``exportNow: true`` writes one snapshot.
+    """
+    from fastapi import HTTPException
+    from app.services.workbench.sessions import (
+        set_session_json_export_enabled,
+        export_sessions_json,
+        get_session_json_export_status,
+    )
+
+    if 'enabled' not in body or not isinstance(body.get('enabled'), bool):
+        raise HTTPException(
+            status_code=400,
+            detail={'code': 'validation', 'message': 'enabled must be a boolean'},
+        )
+    status = set_session_json_export_enabled(bool(body['enabled']))
+    if body.get('exportNow') is True:
+        path = export_sessions_json()
+        status = get_session_json_export_status()
+        status['exportedPath'] = str(path)
+    return status
+
+
 @router.get('/live')
 async def getLiveConfig():
     """v4.2: Return the Live config (defaults + user overrides) — see §14.

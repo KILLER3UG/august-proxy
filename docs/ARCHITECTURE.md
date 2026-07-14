@@ -249,7 +249,7 @@ every turn but is pure regex — no LLM call.
 
 | Concern | Source of truth | Notes |
 |---------|-----------------|--------|
-| Chat sessions | SQLite `sessions.workbench_blob` + `messages` | JSON export optional; chat UI reconciles via `/api/workbench/sessions` only |
+| Chat sessions | SQLite `sessions.workbench_blob` + `messages` | JSON backup optional (`/api/config/session-export` or env); chat UI reconciles via `/api/workbench/sessions` only |
 | Model fleet | `model_fleet_service` → `auxiliary.cognitive.fleet` | Single module; Settings save visible without restart |
 | Cognitive config | `auxiliary.cognitive.{boot,features,fleet,orchestrator}` | Boot, health, Settings share one tree (`cognitive_config.py`) |
 | Brain orchestrator settings | `auxiliary.cognitive.orchestrator` | Settings API + runtime `getBrainConfig()`; legacy top-level key migrates once |
@@ -257,8 +257,20 @@ every turn but is pure regex — no LLM call.
 | Consolidation | One mutex path on cognitive `Scheduler` | Last run persisted under memory kv |
 | Proxy managed tools | `tool_registry` via `proxy_tools` | No stub success strings |
 | Live speech | Browser Web Speech / speechSynthesis (product default); optional server STT/TTS via OpenAI-compatible provider | Unconfigured server endpoints return honest 501 |
-| MCP | `mcp-servers.json` loaded at boot | stdio handshake + HTTP tools/list; auto-start enabled servers |
+| MCP | `mcp-servers.json` loaded at boot | stdio + SSE (endpoint event) + streamable HTTP; tools/list + tools/call |
 | Host agent | `AUGUST_HOST_AGENT_URL` or local desktop automation | `computerUseEnabled` false when disconnected |
+| Tool parallel policy | `parallel_tools` allowlist → `managed_tool_policy` patterns | One stack for workbench + proxy |
+
+### Brain write classes
+
+| Class | Path | When |
+|-------|------|------|
+| **Hot path / SoT** | Direct `memory_store` txn (e.g. `save_workbench_session_sot`) | User-facing session/history must land immediately |
+| **Must-succeed queue** | `db_writer.enqueue_write(..., must_succeed=True)` or `priority="high"` | Never age-dropped; still FIFO behind prior items |
+| **Best-effort queue** | `db_writer` low priority | May age-drop after `AUGUST_DB_WRITER_LOW_DROP_S` |
+| **Facade multi-table** | `brain_write_facade` | Transactional multi-table brain updates |
+
+Reads always bypass the writer queue (WAL).
 
 See also [`docs/design/UNIFIED_CONNECTIVITY_IMPLEMENTATION_PLAN.md`](design/UNIFIED_CONNECTIVITY_IMPLEMENTATION_PLAN.md).
 

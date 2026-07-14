@@ -37,9 +37,26 @@ def enabled() -> bool:
     return v not in ('0', 'false', 'no', 'off')
 
 
-def is_parallel_safe(tool_name: str, allowlist: AbstractSet[str] | None = None) -> bool:
-    """True if this tool may run concurrently with other read-only tools."""
+def is_parallel_safe(
+    tool_name: str,
+    allowlist: AbstractSet[str] | None = None,
+    args: dict[str, object] | None = None,
+) -> bool:
+    """True if this tool may run concurrently with other read-only tools.
+
+    Enforcement path (single policy stack):
+      1. Feature flag off → never parallel
+      2. Explicit workbench allowlist hit → safe
+      3. Else managed name-pattern policy (proxy/MCP tools)
+    """
     if not enabled():
         return False
     names = allowlist if allowlist is not None else PARALLEL_SAFE_TOOLS
-    return tool_name in names
+    if tool_name in names:
+        return True
+    # When caller passed a custom allowlist, do not fall through (strict mode).
+    if allowlist is not None:
+        return False
+    from app.services.workbench.managed_tool_policy import isManagedToolParallelSafe
+
+    return isManagedToolParallelSafe(tool_name, args)

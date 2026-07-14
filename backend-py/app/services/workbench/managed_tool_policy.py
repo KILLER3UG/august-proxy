@@ -1,10 +1,9 @@
 """
-Managed tool policy — parallel safety checks for tool execution.
+Managed tool policy — single parallel-safety enforcement for proxy + workbench.
 
-Port of backend/services/workbench/managed-tool-policy.js (63 lines).
-
-Determines which tools are safe to run in parallel vs. mutating
-(read-only vs. write).
+Name-pattern rules for managed/proxy/MCP tools. The workbench allowlist in
+``parallel_tools`` is the fast path for known built-ins; both modules share
+``is_parallel_safe`` as the public API (allowlist first, then these patterns).
 """
 
 from __future__ import annotations
@@ -33,6 +32,12 @@ def isManagedToolParallelSafe(toolName: str, args: dict[str, object] | None = No
     """
     if not toolName:
         return False
+    # Strip mcp__server__ prefix for pattern matching on the leaf name
+    leaf = toolName
+    if toolName.startswith('mcp__'):
+        parts = toolName.split('__', 2)
+        if len(parts) == 3:
+            leaf = parts[2]
     if toolName in (
         'WebSearch',
         'WebFetch',
@@ -42,11 +47,16 @@ def isManagedToolParallelSafe(toolName: str, args: dict[str, object] | None = No
         'mcp__workspace__web_fetch',
     ):
         return True
-    if MUTATING_NAME_PATTERN.match(toolName):
+    if MUTATING_NAME_PATTERN.match(toolName) or MUTATING_NAME_PATTERN.match(leaf):
         return False
-    if SAFE_NAME_PATTERN.match(toolName):
+    if SAFE_NAME_PATTERN.match(toolName) or SAFE_NAME_PATTERN.match(leaf):
         return True
     return False
+
+
+def is_parallel_safe(toolName: str, args: dict[str, object] | None = None) -> bool:
+    """Public alias used by proxy adapters (same rules as :func:`isManagedToolParallelSafe`)."""
+    return isManagedToolParallelSafe(toolName, args)
 
 
 def isOpenaiToolCallParallelSafe(toolCall: dict[str, object]) -> bool:

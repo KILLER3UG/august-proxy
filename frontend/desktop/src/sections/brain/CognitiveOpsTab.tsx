@@ -21,6 +21,16 @@ interface SyncStatus {
   };
 }
 
+interface SessionExportStatus {
+  enabled?: boolean;
+  envOverrides?: boolean;
+  source?: string;
+  path?: string;
+  fileExists?: boolean;
+  note?: string;
+  exportedPath?: string;
+}
+
 export function CognitiveOpsTab() {
   const qc = useQueryClient();
 
@@ -34,6 +44,12 @@ export function CognitiveOpsTab() {
     queryKey: ['brain-sync-status'],
     queryFn: () => api.get<SyncStatus>('/api/brain/sync-status'),
     refetchInterval: 15_000,
+  });
+
+  const sessionExportQ = useQuery({
+    queryKey: ['session-export-config'],
+    queryFn: () => api.get<SessionExportStatus>('/api/config/session-export'),
+    staleTime: 5_000,
   });
 
   const consolidate = useMutation({
@@ -66,6 +82,29 @@ export function CognitiveOpsTab() {
       toast.success('Cognitive boot flags saved (restart to fully apply)');
     },
     onError: (e: Error) => toast.error(e.message || 'Save failed'),
+  });
+
+  const toggleSessionExport = useMutation({
+    mutationFn: (enabled: boolean) =>
+      api.put<SessionExportStatus>('/api/config/session-export', { enabled }),
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: ['session-export-config'] });
+      toast.success(data.enabled ? 'JSON session export enabled' : 'JSON session export disabled');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Export toggle failed'),
+  });
+
+  const exportNow = useMutation({
+    mutationFn: () =>
+      api.put<SessionExportStatus>('/api/config/session-export', {
+        enabled: sessionExportQ.data?.enabled ?? false,
+        exportNow: true,
+      }),
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: ['session-export-config'] });
+      toast.success(`Exported snapshot to ${data.exportedPath || data.path || 'disk'}`);
+    },
+    onError: (e: Error) => toast.error(e.message || 'One-shot export failed'),
   });
 
   if (cognitiveQ.isLoading) {
@@ -163,6 +202,49 @@ export function CognitiveOpsTab() {
             </span>
           ))}
         </div>
+      </Card>
+
+      <Card className="p-4 space-y-3 md:col-span-2">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h3 className="font-medium text-sm">Session JSON export (admin backup)</h3>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              SQLite is always the session source of truth. This only writes an optional
+              workbench-sessions.json backup.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button
+              type="button"
+              className={`text-xs px-2 py-1 rounded ${sessionExportQ.data?.enabled ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground'}`}
+              disabled={toggleSessionExport.isPending || sessionExportQ.data?.envOverrides}
+              onClick={() =>
+                toggleSessionExport.mutate(!(sessionExportQ.data?.enabled ?? false))
+              }
+              data-testid="ops-session-export-toggle"
+            >
+              {sessionExportQ.data?.enabled ? 'export on' : 'export off'}
+            </button>
+            <button
+              type="button"
+              className="text-xs px-2 py-1 rounded border border-border"
+              disabled={exportNow.isPending}
+              onClick={() => exportNow.mutate()}
+              data-testid="ops-session-export-now"
+            >
+              Export now
+            </button>
+          </div>
+        </div>
+        {sessionExportQ.data?.envOverrides && (
+          <p className="text-[10px] text-warning">
+            Env AUGUST_SESSION_JSON_EXPORT overrides the config toggle.
+          </p>
+        )}
+        <p className="text-[10px] font-mono text-muted-foreground break-all">
+          {sessionExportQ.data?.path || '…'}
+          {sessionExportQ.data?.fileExists ? ' (file present)' : ' (no file yet)'}
+        </p>
       </Card>
     </div>
   );

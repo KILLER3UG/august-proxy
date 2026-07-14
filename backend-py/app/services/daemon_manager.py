@@ -237,27 +237,36 @@ class DaemonManager:
         return result
 
     async def _callCerebellum(self, model: str, prompt: str) -> str:
-        """Call the cerebellum model with a prompt.
+        """Call the cerebellum fleet model with a real provider generate path.
 
-        In production, this would use the provider client. For now,
-        returns a placeholder that simulates the daemon running.
+        Uses ``model_fleet`` / provider resolver + client ``generate``.
+        Returns an honest error string when model/provider/key is missing —
+        never a fake success placeholder that pretends analysis ran.
         """
+        if not model:
+            return '[daemon: no cerebellum model configured in fleet]'
         try:
             from app.providers import resolver as providerResolver
             from app.providers.clients import getClient
 
-            if not model:
-                return '[daemon: no model configured]'
             provider = providerResolver.resolve(model)
             if not provider:
-                return f'[daemon: no provider for {model}]'
+                return f'[daemon: no provider resolved for model {model!r}]'
             client = getClient(provider)
-            if client and hasattr(client, 'generate'):
-                response = await client.generate(prompt)
-                return response
-        except Exception:
-            pass
-        return f'[daemon analysis: {prompt[:100]}...]'
+            if client is None:
+                return f'[daemon: no client for provider of {model!r}]'
+            system = (
+                'You are a short-lived background daemon for August Proxy. '
+                'Answer concisely. Do not invent tool results.'
+            )
+            response = await client.generate(prompt, system=system)
+            text = str(response or '').strip()
+            if not text:
+                return '[daemon: empty model response]'
+            return text
+        except Exception as exc:
+            logger.warning('Daemon cerebellum call failed for %s: %s', model, exc)
+            return f'[daemon error: {exc}]'
 
     def _evaluateWatch(self, info: dict) -> bool:
         """Evaluate the watch condition against the daemon's current output."""

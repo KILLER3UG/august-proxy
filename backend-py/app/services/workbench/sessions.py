@@ -191,14 +191,74 @@ def _load_sessions() -> None:
         pass
 
 
-def save_sessions() -> None:
-    """Persist sessions to SQLite (full blob + messages). Keeps last 50.
+def is_session_json_export_enabled() -> bool:
+    """Whether continuous JSON backup export is on (env overrides config).
 
-    JSON export is **off by default**. Set ``AUGUST_SESSION_JSON_EXPORT=1``
-    to write ``workbench-sessions.json`` as an admin backup only — never the SoT.
+    SoT remains SQLite either way. Enable via:
+      * env ``AUGUST_SESSION_JSON_EXPORT=1`` (highest priority when set)
+      * config ``auxiliary.session_json_export.enabled``
     """
     import os
 
+    env = os.environ.get('AUGUST_SESSION_JSON_EXPORT')
+    if env is not None and str(env).strip() != '':
+        return str(env).strip().lower() in ('1', 'true', 'yes', 'on')
+    try:
+        from app.services import config_service
+
+        cfg = config_service.getConfig()
+        aux = cfg.get('auxiliary') if isinstance(cfg.get('auxiliary'), dict) else {}
+        assert isinstance(aux, dict)
+        block = aux.get('session_json_export') if isinstance(aux.get('session_json_export'), dict) else {}
+        assert isinstance(block, dict)
+        return bool(block.get('enabled', False))
+    except Exception:
+        return False
+
+
+def set_session_json_export_enabled(enabled: bool) -> dict[str, object]:
+    """Persist admin toggle under ``auxiliary.session_json_export.enabled``."""
+    from app.services import config_service
+
+    cfg = config_service.getConfig()
+    aux = cfg.get('auxiliary')
+    if not isinstance(aux, dict):
+        aux = {}
+        cfg['auxiliary'] = aux
+    block = aux.get('session_json_export')
+    if not isinstance(block, dict):
+        block = {}
+        aux['session_json_export'] = block
+    block['enabled'] = bool(enabled)
+    config_service.saveConfig(cfg)
+    return get_session_json_export_status()
+
+
+def get_session_json_export_status() -> dict[str, object]:
+    """Public status for admin UI / API."""
+    import os
+
+    env_raw = os.environ.get('AUGUST_SESSION_JSON_EXPORT')
+    env_overrides = env_raw is not None and str(env_raw).strip() != ''
+    enabled = is_session_json_export_enabled()
+    path = _sessions_path()
+    return {
+        'enabled': enabled,
+        'envOverrides': env_overrides,
+        'source': 'env' if env_overrides else 'config',
+        'path': str(path),
+        'fileExists': path.exists(),
+        'note': 'SQLite remains the session source of truth; JSON is backup export only.',
+    }
+
+
+def save_sessions() -> None:
+    """Persist sessions to SQLite (full blob + messages). Keeps last 50.
+
+    JSON export is **off by default**. Enable via admin config
+    ``auxiliary.session_json_export.enabled`` or env ``AUGUST_SESSION_JSON_EXPORT=1``.
+    JSON is never the SoT.
+    """
     with _sessions_lock:
         sorted_sessions = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
         keep_ids = {s.id for s in sorted_sessions}
@@ -216,13 +276,7 @@ def save_sessions() -> None:
         except Exception:
             logger.exception('SQLite session write failed')
 
-        export = os.environ.get('AUGUST_SESSION_JSON_EXPORT', '').strip().lower() in (
-            '1',
-            'true',
-            'yes',
-            'on',
-        )
-        if export:
+        if is_session_json_export_enabled():
             try:
                 path = _sessions_path()
                 path.parent.mkdir(parents=True, exist_ok=True)

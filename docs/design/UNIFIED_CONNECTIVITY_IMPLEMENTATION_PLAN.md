@@ -86,8 +86,7 @@ A change is **in scope** only if it meets **all** of:
 
 | Area | Plain description | Plan IDs (internal) |
 |------|-------------------|---------------------|
-| Full SSE MCP streaming | HTTP tools/list works; full SSE stream depth optional | G1 |
-| Optional JSON export toggle | Admin-only switch for session JSON backup | B4 polish |
+| — | None for this program | — |
 
 ### Closed this pass
 
@@ -97,6 +96,11 @@ A change is **in scope** only if it meets **all** of:
 | Vector/graph SQLite SoT | `vector_entries` + graph tables; JSON one-shot import |
 | Config alias sunset | Legacy keys migrate then drop; orchestrator under cognitive tree |
 | ARCHITECTURE.md | Unified connectivity section refreshed |
+| Full MCP SSE / streamable HTTP | Endpoint event + SSE body parse + tools/call remote |
+| Session JSON export toggle | `/api/config/session-export` + Cognitive Ops UI |
+| Tool parallel policy stack | allowlist → managed patterns |
+| Daemon real generate | Fleet cerebellum via provider client |
+| Write class docs | Hot / must-succeed / best-effort / facade |
 
 ### Shipped this implementation pass (2026-07-14)
 
@@ -172,7 +176,7 @@ Status column: **Done** | **Partial** | **Open**
 | **M1** | P2 | Vector JSON, no writers | SQLite + ingest **or** remove UI | **Done** — SQLite `vector_entries` |
 | **M2** | P2 | Graph JSON, no writers | SQLite + pipeline **or** remove | **Done** — SQLite graph tables |
 | **M3** | P1 | Multi-plane chaos | One brain write facade | **Done** — `brain_write_facade` |
-| **M4** | P1 | Hot path vs db_writer | Documented write classes | **Partial** |
+| **M4** | P1 | Hot path vs db_writer | Documented write classes | **Done** |
 | **M5** | P1 | Fake priority / age-drop | Never drop must-succeed work | **Done** |
 | **M6** | P2 | LIKE-only messages | messages_fts on write | **Partial** (FTS work elsewhere; keep verifying) |
 
@@ -183,7 +187,7 @@ Status column: **Done** | **Partial** | **Open**
 | **C1** | P1 | Two schedulers | One CognitiveScheduler | **Done** |
 | **C2** | P1 | Consolidation weak | Durable last run + real work | **Done** |
 | **C3** | P1 | Env watcher disconnected | Session-scoped + SQLite log | **Done** |
-| **C4** | P2 | Daemon placeholder | Real generate + fleet | **Partial** |
+| **C4** | P2 | Daemon placeholder | Real generate + fleet | **Done** |
 | **C5** | P0 | Flag inconsistency | Single cognitive tree | **Done** |
 | **C6** | P1 | Selfcheck vs schema | Probes match storage | **Partial** |
 | **C7** | P2 | Cron shell-only | Job types enum | **Partial** (automations durable shell) |
@@ -192,7 +196,7 @@ Status column: **Done** | **Partial** | **Open**
 
 | ID | Sev | Gap | Long-term end state | Status |
 |----|-----|-----|---------------------|--------|
-| **G1** | P0 | Incomplete MCP protocol | Spec client + boot load + auto-start | **Partial** — boot/list/stdio/HTTP; full SSE stream optional |
+| **G1** | P0 | Incomplete MCP protocol | Spec client + boot load + auto-start | **Done** — stdio + SSE + streamable HTTP |
 | **G2** | P2 | Gateway session map | Same SoT as workbench | **Done** — workbench blob + gatewayKey |
 | **G3** | P0 | Live stubs | Real workbench turn; STT/TTS real or off | **Done** — browser default; server optional/honest |
 | **X1** | P0 | Proxy tool stubs | tool_registry only | **Done** |
@@ -205,7 +209,7 @@ Status column: **Done** | **Partial** | **Open**
 |----|-----|-----|---------------------|--------|
 | **F1** | P0 | Dual fleet + sticky cache | One module + invalidate | **Done** |
 | **F2** | P1 | Orchestrator vs layers | Nested under cognitive | **Done** |
-| **F3** | P2 | Policy weak | One enforcement path | **Partial** |
+| **F3** | P2 | Policy weak | One enforcement path | **Done** |
 
 ### 2.6 Frontend
 
@@ -321,18 +325,19 @@ Status column: **Done** | **Partial** | **Open**
 - [x] JSON export still written as backup; SQLite is primary
 - [x] Dual-write no longer primary architecture for chat turns
 
-**DoD remaining:** optional admin-only JSON export toggle.
+**DoD remaining:** none for session SoT (admin JSON export toggle shipped).
 
 ---
 
 ### Phase C — Cognitive runtime  
-**Status:** **Core done**
+**Status:** **Done**
 
 - [x] One scheduler path for consolidation (mutex + interval/idle)
 - [x] Consolidation durable last run (SQLite kv)
 - [x] Env watcher session-scoped + SQLite log
 - [x] Health probes match features/boot + real storage
 - [x] Operator cognitive UI + learning mutations
+- [x] Daemon real generate via fleet cerebellum model
 
 ---
 
@@ -343,16 +348,17 @@ Status column: **Done** | **Partial** | **Open**
 - [x] Vector: wired from auto-memory
 - [x] Graph: wired from auto-memory
 - [x] Vector/graph SoT is SQLite; JSON one-shot import when tables empty
+- [x] Write classes documented (hot / must-succeed / best-effort / facade)
 
 ---
 
 ### Phase E — MCP, Live, Proxy  
-**Status:** **Core done**
+**Status:** **Done**
 
 #### E1. MCP
 - [x] stdio initialize handshake + tools/list; HTTP/SSE tools/list; boot load + auto-start
 - [x] HTTP list/register/start/stop registry exists
-- [ ] Optional: full SSE event-stream streaming client depth
+- [x] Full SSE client depth (endpoint event + SSE JSON-RPC parse + tools/call)
 
 #### E2. Live
 - [x] Session/turn use real workbench sessions (no hash fake ids)
@@ -362,11 +368,12 @@ Status column: **Done** | **Partial** | **Open**
 
 #### E3. Proxy tools
 - [x] No stub success strings; tool_registry only
+- [x] One parallel-policy stack (allowlist + managed patterns)
 
 ---
 
 ### Phase F — Hardening & debt removal  
-**Status:** **Core done** (optional SSE depth remains)
+**Status:** **Done**
 
 - [x] Remove config alias readers after migration window (migrate + drop on ensure_defaults)
 - [x] Gateway sessions stamp workbench `metadata.gatewayKey` (map file cache/export)
@@ -374,6 +381,7 @@ Status column: **Done** | **Partial** | **Open**
 - [x] This plan updated
 - [x] ARCHITECTURE.md refresh
 - [x] `scripts/smoke_live.py` asserts SoT + health + MCP + fleet
+- [x] Admin session JSON export toggle (`/api/config/session-export` + Cognitive Ops)
 
 ---
 
@@ -418,16 +426,14 @@ Must all be true before calling the program done:
 - [x] Program smoke + ARCHITECTURE refresh  
 
 ### Still open (optional / polish)
-- [ ] Full MCP SSE stream depth  
-- [ ] Optional admin JSON export toggle for sessions  
+- (none for this program)
 
 ---
 
 ## 7. Immediate next actions (plain language)
 
-1. **Optional:** deepen MCP SSE streaming client if product needs remote SSE servers beyond tools/list.  
-2. **Optional:** admin-only toggle for session JSON export backup.  
-3. Keep running `scripts/smoke_live.py` on release branches.
+1. Keep running `scripts/smoke_live.py` on release branches.  
+2. Treat new dual-SoT or stub surfaces as regression bugs against this plan.
 
 ---
 
