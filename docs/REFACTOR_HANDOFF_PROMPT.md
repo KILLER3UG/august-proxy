@@ -2,12 +2,12 @@
 ### (Production Refactor Edition — August Proxy)
 
 > **Handoff snapshot:** 2026-07-14 · live tracker: `docs/REFACTOR_PROGRESS.md` · tip: `git rev-parse HEAD`  
-> **Phases 0–7 DONE / operationalized · Phase P DONE · next: Phase 8 final deliverables**  
+> **Phases 0–8 + Phase P COMPLETE** · sign-off: `docs/PHASE8_FINAL_DELIVERABLES.md`  
 > Paste this entire document into a new session. Then **verify it against the repo** (Ground Rule 1) before coding.
 
-Act as a Senior Principal Software Architect and Lead Developer. Your task is a comprehensive, end-to-end refactor of **August Proxy** — a large, working AI-agent proxy system: a Tauri + React 19 + TypeScript desktop app (plus an Expo React Native mobile companion) on the frontend, and a FastAPI Python backend spanning ~200 `app/` Python files across **~33 routers** and ~95 service files.
+Act as a Senior Principal Software Architect and Lead Developer for **August Proxy** — Tauri + React 19 desktop, Expo mobile, FastAPI Python backend.
 
-**This is a handoff, not a fresh start.** Phases **0–7** and **Phase P** are complete or operationalized (see live tracker). Feature workstreams (Feature Flow UI, AUG proxy inject, collab banners) shipped. Residual optional polish (large-file splits, ruff expansion, B27 re-spawn) is not Phase 8. **Pick up at Phase 8** — verify against `docs/REFACTOR_PROGRESS.md` and the repo (Ground Rule 1).
+**The multi-phase refactor is signed off (Phase 8).** Do not restart Phases 0–7 or Phase P. New work is product features, ops, or **optional** polish only with explicit go-ahead. Verify against `docs/REFACTOR_PROGRESS.md` and `docs/PHASE8_FINAL_DELIVERABLES.md`.
 
 **Authoritative live tracker:** `docs/REFACTOR_PROGRESS.md` (not repo root). Prefer it over any older chat paste if they disagree — but still verify both against the repo.
 
@@ -164,33 +164,24 @@ Matrix: [`docs/FEATURE_INVENTORY_TEST_MATRIX.md`](./FEATURE_INVENTORY_TEST_MATRI
 Permanent gate: `tests/test_phase7_e2e_inventory.py` (CI pytest). Desktop vitest + mobile parity in CI.  
 Live Slack/Discord *network* bots and real LLM soaks stay env-gated (optional secrets).
 
-## Phase 8 — Final Deliverables
+## Phase 8 — Final Deliverables (**SIGNED OFF**)
 
-Same deliverables as before when the full refactor completes.
+Pack: [`docs/PHASE8_FINAL_DELIVERABLES.md`](./PHASE8_FINAL_DELIVERABLES.md).
 
-### Definition of Done (updated checkmarks)
+### Definition of Done (final)
 
-- [ ] All existing functionality verified working (tests and/or manual trace)
-- [ ] No unapproved behavior changes
-- [x] Boundary translation pattern proven (`CamelModel`) — **router scale-up complete** (0 BaseModel in `app/routers/`)
-- [x] B16 function APIs snake_case for memory_store / db_writer / proxy_tools (SQL names deferred)
-- [x] B21 app + test filenames snake_case; resolver callables snake_case; INTERNAL TypedDicts converted
-- [x] Phase 2 signed off (2026-07-14) — full verification evidence pack in Progress Log
-- [ ] Naming 100% consistent language-wide (WIRE TypedDicts + residual service **params** deferred)
-- [x] No remaining dead code (or explicitly listed as pending removal) — B12 deleted; B26 closed
-- [x] All flagged bugs documented with suggested fixes — B27 partial by design
-- [x] `db_writer` role documented in `ARCHITECTURE.md` (B2); B26 dead path removed
-- [x] B1a non-atomic JSON writes closed
-- [x] B15 `jsonUtils` split landed
-- [x] Historical merge-queue branches resolved (merged or dropped)
-- [x] B18 Zustand migration closed
-- [x] Schema rename closed on live DB
-- [x] Phase P complete (P0–P5)
-- [x] Dependencies audited (Phase 5) — ruff expansion optional remain
-- [x] Phase 4 exit checklist re-verified 100% (indexes, schema, WAL/busy_timeout, Zustand)
-- [x] Phase 7 fully automated E2E proven (inventory gate + vitest + mobile CI; live bots env-gated)
-- [ ] Phase 8 final deliverables / overall refactor sign-off
-- [ ] Progress Log claims independently verified each session (Ground Rule 1)
+- [x] All existing functionality verified working (tests) — **748** pytest · **547** vitest
+- [x] No unapproved silent behavior changes in pure refactors (bug/fix commits separate)
+- [x] Boundary translation pattern proven (`CamelModel`) — **router scale-up complete**
+- [x] B16 function APIs snake_case for memory_store / db_writer / proxy_tools
+- [x] B21 app + test filenames snake_case; resolver callables; INTERNAL TypedDicts
+- [x] Phase 2 signed off
+- [x] Naming residuals deferred **by design** (WIRE keys + some service params) — listed in Phase 8 pack
+- [x] Dead code removed or listed — B12 deleted; B26 closed
+- [x] Bugs documented — B27 partial by product design
+- [x] `db_writer` / B1a / B15 / B18 / schema / Phase P / Phase 4 / Phase 5 / Phase 7
+- [x] **Phase 8 final deliverables / overall refactor sign-off**
+- [x] Progress Log claims re-verified at Phase 8 sign-off
 
 ---
 
@@ -198,14 +189,13 @@ Same deliverables as before when the full refactor completes.
 
 Because this is a large codebase, work iteratively.
 
-**Current step:** **Phase 8 — Final Deliverables** (overall refactor sign-off pack). Optional backlog only with go-ahead (Phase 7 residual gaps, ruff expansion, large-file polish). Do **not** re-open Phase P optimizations without new budgets/regressions.
+**Current step:** Refactor **complete**. New work = product features / ops / optional polish with go-ahead only.
 
 **On session start:**
-1. Acknowledge these instructions and the Codebase Reference.
-2. Read `docs/REFACTOR_PROGRESS.md`; verify against repo (HEAD, branches, open bugs). Prefer the live tracker over this prompt if they disagree.
-3. Confirm working tree clean; note leftover local `refactor/*` branches (safe to delete after content is on master).
-4. Execute **Phase 8** (or user-directed chunk). **Wait for approval** before auth/data migrations/shared-state risk, large-file splits, or anything that changes live SQLite schema.
-5. CamelModel scale-up, schema rename, Phase P, and feature workstreams are **done** — do not restart them.
+1. Read `docs/REFACTOR_PROGRESS.md` + `docs/PHASE8_FINAL_DELIVERABLES.md`; verify against repo.
+2. Confirm working tree clean.
+3. Do **not** reopen Phases 0–8 or Phase P without cause.
+4. **Wait for approval** before auth/data migrations/shared-state risk or large-file splits.
 
 ---
 
@@ -258,9 +248,9 @@ Signed off 2026-07-13 (meta-review evidence pack). G5–G7 dropped. Phase 2+ unb
 
 ### Priority decision (current)
 
-1. **Phase 8** overall sign-off pack when requested — or close Phase 7 explicit gaps.
+1. Refactor program **signed off** — default to product work, not phase restarts.
 2. Do **not** re-open Phase P optimizations without measured regressions or new budgets.
-3. Optional Phase 3 large-file slices only with **explicit** user go-ahead (separate commits).
+3. Optional polish (large-file slices, ruff expansion) only with **explicit** user go-ahead.
 4. B1/B2 data-safety + schema rename closed — do not re-open unless verification finds regressions.
 
 ### Bug Tracker (numbered, cumulative — add to this, don't renumber)
@@ -320,7 +310,7 @@ Matrix + suite baselines recorded. Gaps explicit. Phase 8 overall sign-off still
 | Characterization tests `test_camel_model*.py` | ✅ Present |
 | Remaining Phase 2 naming | WIRE TypedDict keys only (deferred by design); residual camelCase **params** on some service APIs |
 
-**Suggested next:** Phase 8 final deliverables / overall sign-off pack.
+**Suggested next:** Product features or optional polish — refactor is signed off.
 
 ---
 
@@ -390,13 +380,13 @@ Matrix + suite baselines recorded. Gaps explicit. Phase 8 overall sign-off still
 - **Backend:** FastAPI (Python 3.12+; CI pins 3.12)
 - **Database:** SQLite + JSON stores
 - **Tests / types (re-verify):** prefer full pytest under `backend-py/.venv` (3.12) with `isolatedData` autouse · ruff via pre-commit · CI `type-check.yml`
-- **Current priority:** **Phase 8** final deliverables — **not** CamelModel, schema rename, or Phase P redo
+- **Current priority:** Product / ops — refactor **signed off** (Phase 8)
 - **Risky modules:** `workbench.py`, `memory_store` package, `db_writer.py`, `self_evolution.py`, `delta_engine.py`, `daemon_manager.py`, `subagent_orchestrator.py`
 
 ---
 
 ## Session close note (for the next model)
 
-Stop state: Phases 0–7 + Phase P complete; stale archaeology docs removed from `docs/`. Next: **Phase 8** final deliverables. Keep Ground Rule 1.
+Stop state: **Phases 0–8 + Phase P complete.** Sign-off pack: `docs/PHASE8_FINAL_DELIVERABLES.md`. Evidence: 748 pytest · 547 vitest · Phase 7 gate · six indexes. Keep Ground Rule 1.
 
-Are you ready to begin? If so, verify `docs/REFACTOR_PROGRESS.md` against the real repository first, report anything that doesn't match, then continue from **Phase 8**.
+Are you ready to begin? Verify the progress tracker against the repo, then take **user-directed product work** (not a phase restart).

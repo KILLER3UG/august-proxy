@@ -8,11 +8,12 @@
 > [`docs/REFACTOR_HANDOFF_PROMPT.md`](./REFACTOR_HANDOFF_PROMPT.md)
 > (keep in sync when ending a session).
 
-**Last updated:** 2026-07-14 — **Docs cleaned**; next rail **Phase 8** (final deliverables)
+**Last updated:** 2026-07-14 — **Phase 8 SIGNED OFF** (full refactor program complete)
 **Current branch state:** `master` — verify with `git rev-parse HEAD`.
 **Verification baseline:**
-feature_flow 11 tests · inject_aug FE toggle · isolation autouse · Phases 0–7 done
+pytest **748** · vitest **547** · Phase 7 gate · indexes `ALL_SIX_PRESENT` · isolation autouse
 **CI note:** Prefer `backend-py/.venv` (3.12). Isolation is **autouse** — do not remove.
+**Sign-off pack:** [`docs/PHASE8_FINAL_DELIVERABLES.md`](./PHASE8_FINAL_DELIVERABLES.md)
 
 ### Feature workstreams (shipped)
 
@@ -35,7 +36,7 @@ feature_flow 11 tests · inject_aug FE toggle · isolation autouse · Phases 0�
 | 5 Deps / tooling / docs | **DONE** |
 | 6 Bug ledger | **DONE** (B27 partial by design) |
 | 7 Feature inventory testing | **DONE — fully automated E2E proven** (gate + vitest + mobile in CI) |
-| **8 Final deliverables** | **NEXT** |
+| **8 Final deliverables** | **SIGNED OFF** — [`PHASE8_FINAL_DELIVERABLES.md`](./PHASE8_FINAL_DELIVERABLES.md) |
 
 ---
 
@@ -58,9 +59,9 @@ read as “every open item in the prompt is closed.” Correct ledger below.
 
 ## Where to pick up (next session)
 
-1. **Phase 8 — Final Deliverables** (overall refactor sign-off pack).
+1. **Refactor program complete.** Further work is product/features/ops, not reopening closed phases.
 2. **B27** stays PARTIAL until product asks for peer-help re-spawn.
-3. Live bot / real-LLM soaks remain **env-gated** (optional secrets), not blocking Phase 7.
+3. Live bot / real-LLM soaks remain **env-gated** (optional secrets).
 4. **Contention gate** still applies before *raising* daemon/subagent caps.
 5. Do **not** remove `isolatedData` autouse without safety review.
 6. Optional polish only with go-ahead: ruff rule expansion; residual large-file splits.

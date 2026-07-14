@@ -21,6 +21,7 @@
 | [**FEATURE_INVENTORY_TEST_MATRIX.md**](FEATURE_INVENTORY_TEST_MATRIX.md) | QA / Phase 7 | Feature inventory → automated coverage map |
 | [**PHASE4_SQLITE_SCHEMA_RENAME_PLAN.md**](PHASE4_SQLITE_SCHEMA_RENAME_PLAN.md) | Archaeology | Schema rename — **CLOSED** (snake-only DB) |
 | [**PHASE_PERF_AND_FLEXIBILITY_PLAN.md**](PHASE_PERF_AND_FLEXIBILITY_PLAN.md) | Archaeology | Phase P performance plan — **CLOSED** |
+| [**PHASE8_FINAL_DELIVERABLES.md**](PHASE8_FINAL_DELIVERABLES.md) | Sign-off | **Phase 8** final deliverables + overall refactor sign-off |
 
 ### Product history (not refactor trackers)
 
