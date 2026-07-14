@@ -84,13 +84,8 @@ async def lifespan(app: FastAPI):
 
     _dbPathVal = dataPath('august_brain.sqlite')
     if _dbPathVal.exists():
-        try:
-            from scripts.migrateDbColumns import migrateDatabase
-
-            migrateDatabase(_dbPathVal)
-            logger.info('Database columns migrated: snake_case → camelCase')
-        except Exception as exc:
-            logger.warning('DB migration skipped: %s', exc)
+        # Table/column camel→snake runs inside memory_store.init() → ensure_schema.
+        # Historical scripts.migrateDbColumns (snake→camel) must NOT re-run.
         try:
             from app.lib.storage_key_migration import migrate_storage_keys
 

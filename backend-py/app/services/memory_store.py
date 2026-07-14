@@ -4,6 +4,10 @@ and index data. The core persistence layer for the August "brain".
 
 Port of backend/services/memory/sqlite-memory-store.js (1,431 lines).
 Uses aiosqlite for async access and a sync sqlite3 fallback.
+
+DB schema/SQL uses **snake_case**. Rows returned to TypedDicts/API are
+converted to camelCase via ``_row_as_wire`` (snakeToCamel) so the HTTP wire
+format stays unchanged.
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ import sqlite3
 import threading
 from pathlib import Path
 from typing import cast
+from app.adapters.case_converters import snakeToCamel, camelToSnake
 from app.lib.paths import dataPath
 from app.services.memory_schema import ensure_schema
 from app.type_aliases import (
@@ -77,8 +82,28 @@ def _json(value: object) -> str:
     return json.dumps(value)
 
 
+def _row_as_wire(row: sqlite3.Row | dict[str, object] | None) -> dict[str, object]:
+    """Convert a SQLite row (snake_case columns) to a camelCase wire dict."""
+    if row is None:
+        return {}
+    raw = dict(row)
+    converted = snakeToCamel(cast(JsonValue, raw))
+    return cast(dict[str, object], converted) if isinstance(converted, dict) else raw
+
+
+def _session_field(session: SessionRecord | dict[str, object], camel: str, default: object = None) -> object:
+    """Read a session field accepting camelCase wire keys or snake_case."""
+    snake = ''.join((('_' + c.lower()) if c.isupper() else c) for c in camel)
+    # Prefer explicit dual-get for common keys without full dict convert
+    if camel in session and session.get(camel) is not None:
+        return session.get(camel)
+    if snake in session and session.get(snake) is not None:  # type: ignore[arg-type]
+        return session.get(snake)  # type: ignore[arg-type]
+    return default
+
+
 def init() -> None:
-    """Create all tables on first use."""
+    """Create all tables on first use (migrates camel→snake if needed)."""
     ensure_schema(_conn())
 
 
@@ -86,7 +111,8 @@ def save_memory(key: str, value: JsonValue) -> None:
     """Save a key-value pair to memory."""
     conn = _conn()
     conn.execute(
-        "INSERT OR REPLACE INTO memoryStore (key, value, updatedAt) VALUES (?, ?, datetime('now'))", (key, _json(value))
+        "INSERT OR REPLACE INTO memory_store (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+        (key, _json(value)),
     )
     conn.commit()
 
@@ -94,7 +120,7 @@ def save_memory(key: str, value: JsonValue) -> None:
 def get_memory(key: str) -> JsonValue | None:
     """Get a value from memory by key."""
     conn = _conn()
-    row = conn.execute('SELECT value FROM memoryStore WHERE key = ?', (key,)).fetchone()
+    row = conn.execute('SELECT value FROM memory_store WHERE key = ?', (key,)).fetchone()
     if row:
         try:
             return json.loads(row['value'])
@@ -106,7 +132,7 @@ def get_memory(key: str) -> JsonValue | None:
 def delete_memory(key: str) -> bool:
     """Delete a memory key. Returns True if it existed."""
     conn = _conn()
-    cursor = conn.execute('DELETE FROM memoryStore WHERE key = ?', (key,))
+    cursor = conn.execute('DELETE FROM memory_store WHERE key = ?', (key,))
     conn.commit()
     return cursor.rowcount > 0
 
@@ -115,7 +141,8 @@ def list_memory(pattern: str = '%') -> list[MemoryEntryDict]:
     """List memory entries with optional key pattern matching."""
     conn = _conn()
     rows = conn.execute(
-        'SELECT key, value, updatedAt FROM memoryStore WHERE key LIKE ? ORDER BY updatedAt DESC', (pattern,)
+        'SELECT key, value, updated_at FROM memory_store WHERE key LIKE ? ORDER BY updated_at DESC',
+        (pattern,),
     ).fetchall()
     results: list[MemoryEntryDict] = []
     for r in rows:
@@ -123,7 +150,9 @@ def list_memory(pattern: str = '%') -> list[MemoryEntryDict]:
             val = json.loads(r['value'])
         except (json.JSONDecodeError, TypeError):
             val = r['value']
-        results.append({'key': r['key'], 'value': val, 'updatedAt': r['updatedAt']})
+        wire = _row_as_wire(r)
+        wire['value'] = val
+        results.append(cast(MemoryEntryDict, wire))
     return results
 
 
@@ -137,7 +166,7 @@ def search_memory(query: str) -> list[MemoryEntryDict]:
         if not ftsQuery:
             return []
         rows = conn.execute(
-            'SELECT key, value FROM memoryStore_fts WHERE content MATCH ?\n               ORDER BY rank LIMIT 20',
+            'SELECT key, value FROM memory_store_fts WHERE content MATCH ?\n               ORDER BY rank LIMIT 20',
             (ftsQuery,),
         ).fetchall()
         results: list[MemoryEntryDict] = []
@@ -146,12 +175,13 @@ def search_memory(query: str) -> list[MemoryEntryDict]:
                 val = json.loads(r['value'])
             except (json.JSONDecodeError, TypeError):
                 val = r['value']
-            results.append({'key': r['key'], 'value': val})
+            results.append(cast(MemoryEntryDict, {'key': r['key'], 'value': val}))
         return results
     except sqlite3.OperationalError:
         likeQuery = f'%{query.strip()}%'
         rows = conn.execute(
-            'SELECT key, value FROM memoryStore WHERE key LIKE ? OR value LIKE ? LIMIT 20', (likeQuery, likeQuery)
+            'SELECT key, value FROM memory_store WHERE key LIKE ? OR value LIKE ? LIMIT 20',
+            (likeQuery, likeQuery),
         ).fetchall()
         results = []
         for r in rows:
@@ -159,7 +189,7 @@ def search_memory(query: str) -> list[MemoryEntryDict]:
                 val = json.loads(r['value'])
             except (json.JSONDecodeError, TypeError):
                 val = r['value']
-            results.append({'key': r['key'], 'value': val})
+            results.append(cast(MemoryEntryDict, {'key': r['key'], 'value': val}))
         return results
 
 
@@ -169,7 +199,7 @@ def save_fact(
     """Save a structured fact."""
     conn = _conn()
     conn.execute(
-        "INSERT OR REPLACE INTO facts (factKey, factValue, category, source, confidence, updatedAt)\n           VALUES (?, ?, ?, ?, ?, datetime('now'))",
+        "INSERT OR REPLACE INTO facts (fact_key, fact_value, category, source, confidence, updated_at)\n           VALUES (?, ?, ?, ?, ?, datetime('now'))",
         (factKey, _json(factValue), category, source, confidence),
     )
     conn.commit()
@@ -178,10 +208,10 @@ def save_fact(
 def get_fact(factKey: str) -> FactDict | None:
     """Get a fact by key."""
     conn = _conn()
-    row = conn.execute('SELECT * FROM facts WHERE factKey = ?', (factKey,)).fetchone()
+    row = conn.execute('SELECT * FROM facts WHERE fact_key = ?', (factKey,)).fetchone()
     if not row:
         return None
-    return cast(FactDict, dict(row))
+    return cast(FactDict, _row_as_wire(row))
 
 
 def search_facts(query: str, category: str = '') -> list[FactDict]:
@@ -190,31 +220,33 @@ def search_facts(query: str, category: str = '') -> list[FactDict]:
     like = f'%{query}%'
     if category:
         rows = conn.execute(
-            'SELECT * FROM facts WHERE (factKey LIKE ? OR factValue LIKE ?) AND category = ? ORDER BY updatedAt DESC LIMIT 20',
+            'SELECT * FROM facts WHERE (fact_key LIKE ? OR fact_value LIKE ?) AND category = ? ORDER BY updated_at DESC LIMIT 20',
             (like, like, category),
         ).fetchall()
     else:
         rows = conn.execute(
-            'SELECT * FROM facts WHERE factKey LIKE ? OR factValue LIKE ? ORDER BY updatedAt DESC LIMIT 20',
+            'SELECT * FROM facts WHERE fact_key LIKE ? OR fact_value LIKE ? ORDER BY updated_at DESC LIMIT 20',
             (like, like),
         ).fetchall()
-    return [cast(FactDict, dict(r)) for r in rows]
+    return [cast(FactDict, _row_as_wire(r)) for r in rows]
 
 
 def list_facts(category: str = '') -> list[FactDict]:
     """List facts, optionally filtered by category."""
     conn = _conn()
     if category:
-        rows = conn.execute('SELECT * FROM facts WHERE category = ? ORDER BY updatedAt DESC', (category,)).fetchall()
+        rows = conn.execute(
+            'SELECT * FROM facts WHERE category = ? ORDER BY updated_at DESC', (category,)
+        ).fetchall()
     else:
-        rows = conn.execute('SELECT * FROM facts ORDER BY updatedAt DESC').fetchall()
-    return [cast(FactDict, dict(r)) for r in rows]
+        rows = conn.execute('SELECT * FROM facts ORDER BY updated_at DESC').fetchall()
+    return [cast(FactDict, _row_as_wire(r)) for r in rows]
 
 
 def delete_fact(factKey: str) -> bool:
     """Delete a fact by key."""
     conn = _conn()
-    cursor = conn.execute('DELETE FROM facts WHERE factKey = ?', (factKey,))
+    cursor = conn.execute('DELETE FROM facts WHERE fact_key = ?', (factKey,))
     conn.commit()
     return cursor.rowcount > 0
 
@@ -223,7 +255,7 @@ def save_proposal(sessionId: str, proposalType: str, content: JsonValue) -> int:
     """Save a proposal (plan, mutation, etc.)."""
     conn = _conn()
     cursor = conn.execute(
-        'INSERT INTO proposals (sessionId, proposalType, content) VALUES (?, ?, ?)',
+        'INSERT INTO proposals (session_id, proposal_type, content) VALUES (?, ?, ?)',
         (sessionId, proposalType, _json(content)),
     )
     conn.commit()
@@ -234,7 +266,7 @@ def get_proposal(proposalId: int) -> ProposalDict | None:
     """Get a proposal by ID."""
     conn = _conn()
     row = conn.execute('SELECT * FROM proposals WHERE id = ?', (proposalId,)).fetchone()
-    return cast(ProposalDict, dict(row)) if row else None
+    return cast(ProposalDict, _row_as_wire(row)) if row else None
 
 
 def list_proposals(sessionId: str, status: str = '') -> list[ProposalDict]:
@@ -242,20 +274,21 @@ def list_proposals(sessionId: str, status: str = '') -> list[ProposalDict]:
     conn = _conn()
     if status:
         rows = conn.execute(
-            'SELECT * FROM proposals WHERE sessionId = ? AND status = ? ORDER BY createdAt DESC', (sessionId, status)
+            'SELECT * FROM proposals WHERE session_id = ? AND status = ? ORDER BY created_at DESC',
+            (sessionId, status),
         ).fetchall()
     else:
         rows = conn.execute(
-            'SELECT * FROM proposals WHERE sessionId = ? ORDER BY createdAt DESC', (sessionId,)
+            'SELECT * FROM proposals WHERE session_id = ? ORDER BY created_at DESC', (sessionId,)
         ).fetchall()
-    return [cast(ProposalDict, dict(r)) for r in rows]
+    return [cast(ProposalDict, _row_as_wire(r)) for r in rows]
 
 
 def decide_proposal(proposalId: int, status: str, decidedBy: str = '') -> bool:
     """Decide (approve/reject) a proposal."""
     conn = _conn()
     cursor = conn.execute(
-        "UPDATE proposals SET status = ?, decidedAt = datetime('now'), decidedBy = ? WHERE id = ?",
+        "UPDATE proposals SET status = ?, decided_at = datetime('now'), decided_by = ? WHERE id = ?",
         (status, decidedBy, proposalId),
     )
     conn.commit()
@@ -266,7 +299,7 @@ def record_lifecycle(sessionId: str, eventType: str, detail: JsonValue = None) -
     """Record a lifecycle event."""
     conn = _conn()
     cursor = conn.execute(
-        'INSERT INTO lifecycle (sessionId, eventType, detail) VALUES (?, ?, ?)',
+        'INSERT INTO lifecycle (session_id, event_type, detail) VALUES (?, ?, ?)',
         (sessionId, eventType, _json(detail) if detail else None),
     )
     conn.commit()
@@ -278,14 +311,15 @@ def list_lifecycle(sessionId: str, eventType: str = '', limit: int = 100) -> lis
     conn = _conn()
     if eventType:
         rows = conn.execute(
-            'SELECT * FROM lifecycle WHERE sessionId = ? AND eventType = ? ORDER BY createdAt DESC LIMIT ?',
+            'SELECT * FROM lifecycle WHERE session_id = ? AND event_type = ? ORDER BY created_at DESC LIMIT ?',
             (sessionId, eventType, limit),
         ).fetchall()
     else:
         rows = conn.execute(
-            'SELECT * FROM lifecycle WHERE sessionId = ? ORDER BY createdAt DESC LIMIT ?', (sessionId, limit)
+            'SELECT * FROM lifecycle WHERE session_id = ? ORDER BY created_at DESC LIMIT ?',
+            (sessionId, limit),
         ).fetchall()
-    return [dict(r) for r in rows]
+    return [_row_as_wire(r) for r in rows]
 
 
 def record_config_audit(
@@ -298,7 +332,7 @@ def record_config_audit(
     """
     conn = _conn()
     cursor = conn.execute(
-        'INSERT INTO configAudit (category, action, actor, beforeJson, afterJson) VALUES (?, ?, ?, ?, ?)',
+        'INSERT INTO config_audit (category, action, actor, before_json, after_json) VALUES (?, ?, ?, ?, ?)',
         (
             category,
             action,
@@ -316,20 +350,23 @@ def list_config_audit(category: str = '', limit: int = 200) -> list[dict[str, ob
     conn = _conn()
     if category:
         rows = conn.execute(
-            'SELECT * FROM configAudit WHERE category = ? ORDER BY createdAt DESC LIMIT ?', (category, limit)
+            'SELECT * FROM config_audit WHERE category = ? ORDER BY created_at DESC LIMIT ?',
+            (category, limit),
         ).fetchall()
     else:
-        rows = conn.execute('SELECT * FROM configAudit ORDER BY createdAt DESC LIMIT ?', (limit,)).fetchall()
+        rows = conn.execute(
+            'SELECT * FROM config_audit ORDER BY created_at DESC LIMIT ?', (limit,)
+        ).fetchall()
     results = []
     for r in rows:
-        entry = {
+        entry: dict[str, object] = {
             'id': r['id'],
             'category': r['category'],
             'action': r['action'],
             'actor': r['actor'] or '',
-            'createdAt': r['createdAt'],
+            'createdAt': r['created_at'],
         }
-        for rawKey, outKey in (('beforeJson', 'before'), ('afterJson', 'after')):
+        for rawKey, outKey in (('before_json', 'before'), ('after_json', 'after')):
             raw = r[rawKey]
             if isinstance(raw, str):
                 try:
@@ -342,12 +379,14 @@ def list_config_audit(category: str = '', limit: int = 200) -> list[dict[str, ob
     return results
 
 
-def index_session_topic(sessionId: str, topic: str, parentTopic: str | None = None, confidence: float = 0.75) -> bool:
+def index_session_topic(
+    sessionId: str, topic: str, parentTopic: str | None = None, confidence: float = 0.75
+) -> bool:
     """Record or update the topic for a session."""
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO sessionTopics (sessionId, topic, parentTopic, confidence, classifiedAt)\n               VALUES (?, ?, ?, ?, datetime('now'))\n               ON CONFLICT(sessionId) DO UPDATE SET\n                   topic=excluded.topic,\n                   parentTopic=excluded.parentTopic,\n                   confidence=excluded.confidence,\n                   classifiedAt=excluded.classifiedAt",
+            "INSERT INTO session_topics (session_id, topic, parent_topic, confidence, classified_at)\n               VALUES (?, ?, ?, ?, datetime('now'))\n               ON CONFLICT(session_id) DO UPDATE SET\n                   topic=excluded.topic,\n                   parent_topic=excluded.parent_topic,\n                   confidence=excluded.confidence,\n                   classified_at=excluded.classified_at",
             (sessionId, topic, parentTopic, confidence),
         )
         conn.commit()
@@ -359,39 +398,53 @@ def index_session_topic(sessionId: str, topic: str, parentTopic: str | None = No
 def get_session_topic(sessionId: str) -> dict[str, object] | None:
     """Get the classified topic for a session."""
     conn = _conn()
-    row = conn.execute('SELECT * FROM sessionTopics WHERE sessionId = ?', (sessionId,)).fetchone()
-    return dict(row) if row else None
+    row = conn.execute('SELECT * FROM session_topics WHERE session_id = ?', (sessionId,)).fetchone()
+    return _row_as_wire(row) if row else None
 
 
 def list_topics(limit: int = 50) -> list[dict[str, object]]:
     """List all classified session topics, most recent first."""
     conn = _conn()
-    rows = conn.execute('SELECT * FROM sessionTopics ORDER BY classifiedAt DESC LIMIT ?', (limit,)).fetchall()
-    return [dict(r) for r in rows]
+    rows = conn.execute(
+        'SELECT * FROM session_topics ORDER BY classified_at DESC LIMIT ?', (limit,)
+    ).fetchall()
+    return [_row_as_wire(r) for r in rows]
 
 
 def search_sessions_by_topic(topic: str) -> list[dict[str, object]]:
     """Find sessions with a given topic classification."""
     conn = _conn()
-    rows = conn.execute('SELECT * FROM sessionTopics WHERE topic = ? ORDER BY classifiedAt DESC', (topic,)).fetchall()
-    return [dict(r) for r in rows]
+    rows = conn.execute(
+        'SELECT * FROM session_topics WHERE topic = ? ORDER BY classified_at DESC', (topic,)
+    ).fetchall()
+    return [_row_as_wire(r) for r in rows]
 
 
 def save_session(session: SessionRecord) -> None:
-    """Persist a session record."""
+    """Persist a session record. Accepts camelCase wire keys (or snake_case)."""
     conn = _conn()
+    # Dual-read: wire camelCase or snake_case
+    sid = as_str(session.get('id'), '')
+    title = _session_field(session, 'title', '')
+    started_at = _session_field(session, 'startedAt')
+    message_count = _session_field(session, 'messageCount', 0)
+    provider = _session_field(session, 'provider', '')
+    model = _session_field(session, 'model', '')
+    folder_id = _session_field(session, 'folderId')
+    is_archived = _session_field(session, 'isArchived')
+    workspace_path = _session_field(session, 'workspacePath')
     conn.execute(
-        'INSERT OR REPLACE INTO sessions (id, title, startedAt, messageCount, provider, model, folderId, isArchived, workspacePath)\n           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT OR REPLACE INTO sessions (id, title, started_at, message_count, provider, model, folder_id, is_archived, workspace_path)\n           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         (
-            session['id'],
-            session.get('title', ''),
-            session.get('startedAt'),
-            session.get('messageCount', 0),
-            session.get('provider', ''),
-            session.get('model', ''),
-            session.get('folderId'),
-            1 if session.get('isArchived') else 0,
-            session.get('workspacePath'),
+            sid,
+            title or '',
+            started_at,
+            message_count if message_count is not None else 0,
+            provider or '',
+            model or '',
+            folder_id,
+            1 if is_archived else 0,
+            workspace_path,
         ),
     )
     conn.commit()
@@ -400,15 +453,15 @@ def save_session(session: SessionRecord) -> None:
 def list_sessions() -> list[SessionRecord]:
     """List all sessions, most recent first."""
     conn = _conn()
-    rows = conn.execute('SELECT * FROM sessions ORDER BY startedAt DESC').fetchall()
-    return [cast(SessionRecord, dict(r)) for r in rows]
+    rows = conn.execute('SELECT * FROM sessions ORDER BY started_at DESC').fetchall()
+    return [cast(SessionRecord, _row_as_wire(r)) for r in rows]
 
 
 def get_session(sessionId: str) -> SessionRecord | None:
     """Get a single session by ID."""
     conn = _conn()
     row = conn.execute('SELECT * FROM sessions WHERE id = ?', (sessionId,)).fetchone()
-    return cast(SessionRecord, dict(row)) if row else None
+    return cast(SessionRecord, _row_as_wire(row)) if row else None
 
 
 def delete_session_record(sessionId: str) -> bool:
@@ -423,7 +476,8 @@ def save_message(sessionId: str, role: str, content: JsonValue) -> int:
     """Save a message to a session."""
     conn = _conn()
     cursor = conn.execute(
-        'INSERT INTO messages (sessionId, role, content) VALUES (?, ?, ?)', (sessionId, role, _json(content))
+        'INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)',
+        (sessionId, role, _json(content)),
     )
     conn.commit()
     return as_int(cursor.lastrowid)
@@ -432,10 +486,12 @@ def save_message(sessionId: str, role: str, content: JsonValue) -> int:
 def get_messages(sessionId: str) -> list[MessageDict]:
     """Get all messages for a session."""
     conn = _conn()
-    rows = conn.execute('SELECT * FROM messages WHERE sessionId = ? ORDER BY createdAt', (sessionId,)).fetchall()
+    rows = conn.execute(
+        'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at', (sessionId,)
+    ).fetchall()
     results: list[MessageDict] = []
     for r in rows:
-        msg: MessageDict = cast(MessageDict, dict(r))
+        msg = cast(MessageDict, _row_as_wire(r))
         try:
             msg['content'] = json.loads(msg['content']) if isinstance(msg['content'], str) else msg['content']
         except (json.JSONDecodeError, TypeError):
@@ -447,7 +503,7 @@ def get_messages(sessionId: str) -> list[MessageDict]:
 def delete_session_messages(sessionId: str) -> int:
     """Delete all messages for a session."""
     conn = _conn()
-    cursor = conn.execute('DELETE FROM messages WHERE sessionId = ?', (sessionId,))
+    cursor = conn.execute('DELETE FROM messages WHERE session_id = ?', (sessionId,))
     conn.commit()
     return cursor.rowcount
 
@@ -464,7 +520,7 @@ def record_usage(
     """
     conn = _conn()
     cursor = conn.execute(
-        'INSERT INTO usageEvents (sessionId, model, inputTokens, outputTokens, contextTokens) VALUES (?, ?, ?, ?, ?)',
+        'INSERT INTO usage_events (session_id, model, input_tokens, output_tokens, context_tokens) VALUES (?, ?, ?, ?, ?)',
         (sessionId, model, inputTokens, outputTokens, contextTokens),
     )
     conn.commit()
@@ -482,39 +538,39 @@ def get_usage(sessionId: str) -> dict[str, object]:
     """
     conn = _conn()
     row = conn.execute(
-        'SELECT SUM(inputTokens) as totalInput, SUM(outputTokens) as totalOutput, COUNT(*) as requestCount FROM usageEvents WHERE sessionId = ?',
+        'SELECT SUM(input_tokens) as total_input, SUM(output_tokens) as total_output, COUNT(*) as request_count FROM usage_events WHERE session_id = ?',
         (sessionId,),
     ).fetchone()
-    totals = dict(row) if row else {'totalInput': 0, 'totalOutput': 0, 'requestCount': 0}
+    totals = dict(row) if row else {'total_input': 0, 'total_output': 0, 'request_count': 0}
     latest = conn.execute(
-        'SELECT contextTokens, inputTokens FROM usageEvents WHERE sessionId = ? ORDER BY createdAt DESC, id DESC LIMIT 1',
+        'SELECT context_tokens, input_tokens FROM usage_events WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT 1',
         (sessionId,),
     ).fetchone()
     if latest:
-        latestCtx = latest['contextTokens'] or latest['inputTokens']
+        latestCtx = latest['context_tokens'] or latest['input_tokens']
     else:
         latestCtx = 0
     events = [
         {
             'id': e['id'],
             'model': e['model'],
-            'inputTokens': e['inputTokens'],
-            'outputTokens': e['outputTokens'],
-            'contextTokens': e['contextTokens'] or e['inputTokens'],
-            'totalTokens': (e['inputTokens'] or 0) + (e['outputTokens'] or 0),
-            'createdAt': e['createdAt'],
+            'inputTokens': e['input_tokens'],
+            'outputTokens': e['output_tokens'],
+            'contextTokens': e['context_tokens'] or e['input_tokens'],
+            'totalTokens': (e['input_tokens'] or 0) + (e['output_tokens'] or 0),
+            'createdAt': e['created_at'],
         }
         for e in conn.execute(
-            'SELECT id, model, inputTokens, outputTokens, contextTokens, createdAt FROM usageEvents WHERE sessionId = ? ORDER BY createdAt DESC, id DESC',
+            'SELECT id, model, input_tokens, output_tokens, context_tokens, created_at FROM usage_events WHERE session_id = ? ORDER BY created_at DESC, id DESC',
             (sessionId,),
         ).fetchall()
     ]
     return {
         'sessionId': sessionId,
-        'totalEvents': totals.get('requestCount', 0) or 0,
-        'totalInputTokens': totals.get('totalInput', 0) or 0,
-        'totalOutputTokens': totals.get('totalOutput', 0) or 0,
-        'totalTokens': (totals.get('totalInput', 0) or 0) + (totals.get('totalOutput', 0) or 0),
+        'totalEvents': totals.get('request_count', 0) or 0,
+        'totalInputTokens': totals.get('total_input', 0) or 0,
+        'totalOutputTokens': totals.get('total_output', 0) or 0,
+        'totalTokens': (totals.get('total_input', 0) or 0) + (totals.get('total_output', 0) or 0),
         'totalCost': 0.0,
         'model': events[0]['model'] if events else None,
         'provider': None,
@@ -532,88 +588,101 @@ def vacuum() -> None:
 
 
 def get_stats() -> dict[str, object]:
-    """Get database statistics."""
+    """Get database statistics.
+
+    Keys are camelCase table aliases for wire compatibility (e.g. memoryStore).
+    """
     conn = _conn()
-    stats = {}
-    for table in ['memoryStore', 'facts', 'proposals', 'sessions', 'messages', 'usageEvents', 'sessionTopics']:
+    # SQL table → wire key
+    tables = [
+        ('memory_store', 'memoryStore'),
+        ('facts', 'facts'),
+        ('proposals', 'proposals'),
+        ('sessions', 'sessions'),
+        ('messages', 'messages'),
+        ('usage_events', 'usageEvents'),
+        ('session_topics', 'sessionTopics'),
+    ]
+    stats: dict[str, object] = {}
+    for table, wire_key in tables:
         try:
             row = conn.execute(f'SELECT COUNT(*) as count FROM {table}').fetchone()
-            stats[table] = row['count'] if row else 0
+            stats[wire_key] = row['count'] if row else 0
         except Exception:
-            stats[table] = 0
+            stats[wire_key] = 0
     stats['db_size_bytes'] = _db_path().stat().st_size if _db_path().exists() else 0
     return stats
 
 
 _BRAINStores: dict[str, dict[str, object]] = {
     'memory': {
-        'table': 'memoryStore',
-        'fts': 'memoryStore_fts',
-        'columns': 'key, value, updatedAt',
+        'table': 'memory_store',
+        'fts': 'memory_store_fts',
+        'columns': 'key, value, updated_at',
         'search_cols': ['key', 'value'],
         'label': 'key-value memory store',
     },
     'autoMemories': {
-        'table': 'autoMemories',
-        'fts': 'autoMemories_fts',
-        'columns': 'id, key, content, category, importance, createdAt',
+        'table': 'auto_memories',
+        'fts': 'auto_memories_fts',
+        'columns': 'id, key, content, category, importance, created_at',
         'search_cols': ['key', 'content'],
         'label': 'auto-captured memories',
     },
     'heuristics': {
-        'table': 'learnedHeuristics',
+        'table': 'learned_heuristics',
         'fts': None,
-        'columns': 'id, rule, source, category, createdAt, updatedAt',
+        'columns': 'id, rule, source, category, created_at, updated_at',
         'search_cols': ['rule', 'source'],
         'label': 'learned behavioral rules',
     },
     'facts': {
         'table': 'facts',
         'fts': None,
-        'columns': 'id, factKey, factValue, category, source, confidence, createdAt, updatedAt',
-        'search_cols': ['factKey', 'factValue'],
+        'columns': 'id, fact_key, fact_value, category, source, confidence, created_at, updated_at',
+        'search_cols': ['fact_key', 'fact_value'],
         'label': 'structured semantic facts',
     },
     'sessions': {
         'table': 'sessions',
         'fts': None,
-        'columns': 'id, title, startedAt, messageCount, provider, model, workspacePath',
+        'columns': 'id, title, started_at, message_count, provider, model, workspace_path',
         'search_cols': ['title', 'id'],
         'label': 'conversation sessions',
     },
     'messages': {
         'table': 'messages',
         'fts': None,
-        'columns': 'id, sessionId, role, content, createdAt',
+        'columns': 'id, session_id, role, content, created_at',
         'search_cols': ['content'],
         'label': 'chat messages',
     },
     'timeline': {
-        'table': 'episodicTimeline',
+        'table': 'episodic_timeline',
         'fts': None,
-        'columns': 'id, timestamp, sessionId, eventSummary, category',
-        'search_cols': ['eventSummary', 'category', 'sessionId'],
+        'columns': 'id, timestamp, session_id, event_summary, category',
+        'search_cols': ['event_summary', 'category', 'session_id'],
         'label': 'episodic timeline entries',
     },
     'blackboard': {
         'table': 'blackboard',
         'fts': None,
-        'columns': 'id, sessionId, agent, key, value, priority, createdAt, expiresAt',
+        'columns': 'id, session_id, agent, key, value, priority, created_at, expires_at',
         'search_cols': ['agent', 'key', 'value'],
         'label': 'inter-agent blackboard notes',
     },
     'exams': {
         'table': 'exams',
         'fts': None,
-        'columns': 'id, title, topic, createdAt, source, sourceFiles',
+        'columns': 'id, title, topic, created_at, source, source_files',
         'search_cols': ['title', 'topic'],
         'label': 'exam sessions',
     },
     'examAttempts': {
-        'table': 'examAttempts',
+        'table': 'exam_attempts',
         'fts': None,
-        'columns': 'id, examId, questionId, selectedIndex, isCorrect, askedForHelp, answeredAt',
-        'search_cols': ['examId'],
+        'columns': 'id, exam_id, question_id, selected_index, is_correct, asked_for_help, answered_at',
+        'search_cols': ['exam_id'],
         'label': 'exam attempt history',
     },
 }
@@ -762,11 +831,17 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
                     params.append(f'%{query}%')
                 whereClauses.append(f'({" OR ".join(searchParts)})')
         if filters:
+            # Accept camelCase filter keys (wire) by converting to snake for columns
+            colInfo = conn.execute(f'PRAGMA table_info({info["table"]})').fetchall()
+            colNames = {c['name'] for c in colInfo}
             for key, val in filters.items():
-                colInfo = conn.execute(f'PRAGMA table_info({info["table"]})').fetchall()
-                colNames = {c['name'] for c in colInfo}
-                if key in colNames:
-                    whereClauses.append(f'{key} = ?')
+                snake_key = key
+                if key not in colNames:
+                    converted = camelToSnake({key: val})
+                    if isinstance(converted, dict) and converted:
+                        snake_key = next(iter(converted.keys()))
+                if snake_key in colNames:
+                    whereClauses.append(f'{snake_key} = ?')
                     params.append(val)
         if whereClauses:
             if 'WHERE' not in sql and 'MATCH' not in sql:
@@ -777,7 +852,7 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
                 sql += ' WHERE ' + ' AND '.join(whereClauses)
         sql += f' LIMIT {min(limit, 100)}'
         rows = conn.execute(sql, params).fetchall()
-        results = [dict(r) for r in rows]
+        results = [_row_as_wire(r) for r in rows]
         resultJson = json.dumps(results, default=str, ensure_ascii=False)
         if len(resultJson) > _TOKENCeiling * 4:
             truncated: list[dict[str, object]] = []
@@ -798,10 +873,10 @@ def brain_query(store: str, query: str = '', filters: dict | None = None, limit:
 
 
 def write_timeline_event(sessionId: str, eventSummary: str, category: str = 'general') -> int:
-    """v2: Append an entry to episodicTimeline. Returns the new row's id."""
+    """v2: Append an entry to episodic_timeline. Returns the new row's id."""
     conn = _conn()
     cur = conn.execute(
-        "INSERT INTO episodicTimeline (timestamp, sessionId, eventSummary, category) VALUES (datetime('now'), ?, ?, ?)",
+        "INSERT INTO episodic_timeline (timestamp, session_id, event_summary, category) VALUES (datetime('now'), ?, ?, ?)",
         (sessionId, eventSummary, category),
     )
     conn.commit()
@@ -815,7 +890,7 @@ def timeline_sweep() -> int:
     """
     conn = _conn()
     rows = conn.execute(
-        '\n        SELECT s.id FROM sessions s\n        LEFT JOIN episodicTimeline t ON t.sessionId = s.id\n        WHERE t.id IS NULL\n        LIMIT 20\n    '
+        '\n        SELECT s.id FROM sessions s\n        LEFT JOIN episodic_timeline t ON t.session_id = s.id\n        WHERE t.id IS NULL\n        LIMIT 20\n    '
     ).fetchall()
     if not rows:
         return 0
@@ -823,7 +898,7 @@ def timeline_sweep() -> int:
     for r in rows:
         sid = r['id']
         msgs = conn.execute(
-            'SELECT role, content FROM messages WHERE sessionId = ? ORDER BY id DESC LIMIT 10', (sid,)
+            'SELECT role, content FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 10', (sid,)
         ).fetchall()
         if not msgs:
             continue

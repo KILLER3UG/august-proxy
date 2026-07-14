@@ -32,19 +32,19 @@ def saveAutoMemory(key: str, content: object, category: str = 'auto', importance
     conn = _conn()
     now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     contentJson = content if isinstance(content, str) else json.dumps(content)
-    existing = conn.execute('SELECT id FROM autoMemories WHERE key = ?', (key,)).fetchone()
+    existing = conn.execute('SELECT id FROM auto_memories WHERE key = ?', (key,)).fetchone()
     if existing:
         conn.execute(
-            'UPDATE autoMemories SET content = ?, importance = ?, updatedAt = ? WHERE id = ?',
+            'UPDATE auto_memories SET content = ?, importance = ?, updated_at = ? WHERE id = ?',
             (contentJson, importance, now, existing['id']),
         )
     else:
         conn.execute(
-            'INSERT INTO autoMemories (key, content, category, importance, createdAt) VALUES (?, ?, ?, ?, ?)',
+            'INSERT INTO auto_memories (key, content, category, importance, created_at) VALUES (?, ?, ?, ?, ?)',
             (key, contentJson, category, importance, now),
         )
     conn.execute(
-        '\n        DELETE FROM autoMemories WHERE id NOT IN (\n            SELECT id FROM autoMemories ORDER BY importance DESC, id DESC LIMIT ?\n        )\n    ',
+        '\n        DELETE FROM auto_memories WHERE id NOT IN (\n            SELECT id FROM auto_memories ORDER BY importance DESC, id DESC LIMIT ?\n        )\n    ',
         (_MAXMemories,),
     )
     conn.commit()
@@ -72,22 +72,28 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
     conn = _conn()
     try:
         rows = conn.execute(
-            'SELECT key, content, category, importance, createdAt FROM autoMemories_fts WHERE content MATCH ? ORDER BY rank LIMIT ?',
+            'SELECT key, content, category, importance, created_at FROM auto_memories_fts WHERE content MATCH ? ORDER BY rank LIMIT ?',
             (query, limit),
         ).fetchall()
         if rows:
+            from app.services.memory_store import _row_as_wire
+
             result = []
             for r in rows:
-                item = dict(r)
+                item = _row_as_wire(r)
                 try:
-                    item['content'] = json.loads(item['content'])
+                    item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
                 except (json.JSONDecodeError, TypeError):
                     pass
                 result.append(item)
             return result
     except Exception:
         pass
-    allRows = conn.execute('SELECT key, content, category, importance, createdAt FROM autoMemories').fetchall()
+    from app.services.memory_store import _row_as_wire
+
+    allRows = conn.execute(
+        'SELECT key, content, category, importance, created_at FROM auto_memories'
+    ).fetchall()
     scored = []
     q = query.lower()
     for r in allRows:
@@ -100,9 +106,9 @@ def getRelevantMemories(query: str, limit: int = 5) -> list[dict[str, object]]:
             score += 0.3
         score += r['importance'] * 0.2
         if score > 0:
-            item = dict(r)
+            item = _row_as_wire(r)
             try:
-                item['content'] = json.loads(item['content'])
+                item['content'] = json.loads(item['content'])  # type: ignore[arg-type]
             except (json.JSONDecodeError, TypeError):
                 pass
             scored.append((score, item))

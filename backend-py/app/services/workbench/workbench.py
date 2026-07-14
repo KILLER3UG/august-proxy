@@ -195,7 +195,7 @@ def buildSystemPrompt(session: WorkbenchSession) -> str:
 
         conn = brainConn()
         heuristicsRows = conn.execute(
-            'SELECT rule, source, category FROM learnedHeuristics ORDER BY updatedAt DESC'
+            'SELECT rule, source, category FROM learned_heuristics ORDER BY updated_at DESC'
         ).fetchall()
         if heuristicsRows:
             memory['learnedHeuristics'] = [dict(r) for r in heuristicsRows]
