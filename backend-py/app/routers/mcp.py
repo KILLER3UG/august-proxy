@@ -2,17 +2,22 @@
 
 Port of backend/services/tools/mcp-client.js + mcp-registry.js + mcp-config.js + mcp-oauth.js.
 Manages MCP server connections, tool discovery, and OAuth flows.
+
+Request body ``MCPServerCreate`` inherits :class:`CamelModel` so internals are
+snake_case while JSON from the frontend stays camelCase.
 """
 
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from app.models.camel_base import CamelModel
 
 router = APIRouter(prefix='/api/mcp')
 _servers: dict[str, dict[str, object]] = {}
 
 
-class MCPServerCreate(BaseModel):
+class MCPServerCreate(CamelModel):
+    """MCP server create body. Internals are snake_case; JSON stays camelCase."""
+
     name: str
     command: str = ''
     args: list[str] = []
