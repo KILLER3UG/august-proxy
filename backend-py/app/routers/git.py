@@ -2,19 +2,24 @@
 
 Port of backend/services/git/git-service.js + git-routes.js.
 Provides git status, log, and basic operations via the git CLI.
+
+Request body ``GitCommand`` inherits :class:`CamelModel` so internals are
+snake_case while JSON from the frontend stays camelCase.
 """
 
 from __future__ import annotations
 import asyncio
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from app.models.camel_base import CamelModel
 
 router = APIRouter(prefix='/api/git')
 
 
-class GitCommand(BaseModel):
-    repoPath: str = ''
+class GitCommand(CamelModel):
+    """Git CLI body. Internals are snake_case; JSON stays camelCase."""
+
+    repo_path: str = ''
     args: list[str] = []
 
 
@@ -70,5 +75,5 @@ async def gitCommand(body: GitCommand):
     """Execute an arbitrary git command."""
     if not body.args:
         raise HTTPException(status_code=400, detail='No git args provided')
-    output = await _runGit(body.repoPath, *body.args)
+    output = await _runGit(body.repo_path, *body.args)
     return {'output': output}
