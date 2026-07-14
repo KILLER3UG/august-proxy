@@ -58,8 +58,8 @@ not only after a surprise finding.
 | Candidate | Status |
 |---|---|
 | `db_writer` | **Checked P0** — FIFO + age-drop; B26 open |
-| `subagent_orchestrator` peer-help | **Checked** (below) — window exists; “recovery/escalation” overstated |
-| `daemon_manager` | Still unchecked — backoff + 3-daemon cap |
+| `subagent_orchestrator` peer-help | **Checked** — no recovery; silent success **fixed** (status + empty payload) |
+| `daemon_manager` | **Checked** — cap enforced; backoff schedule used; BACKOFF_CAP dead vs schedule |
 
 ### Subagent peer-help + result handling (2026-07-14) — **higher severity than B26**
 
@@ -83,7 +83,7 @@ not recover work; and until fixed, worker `{status: failed}` dicts were marked
 | Exception in worker slot | `_handleFailure`: 5s wait for `peerHelp` signal; claim ends wait only; **no re-run** |
 | Worker returns `{status: 'failed', ...}` | **Pre-fix:** handle.status=`completed`, `subagentCompleted` fired (**silent success**). **Post-fix:** handle.status=`failed`, `subagentFailed` |
 | Worker returns `''` / falsy | `failed`, no peer-help window |
-| Result content validation | Worker checks `subResult.status` string only; orchestrator previously ignored it. No validation that `result` text is non-empty when status is completed |
+| Result content validation | Worker checks `subResult.status` only; orchestrator now requires non-empty stripped `result`/`output` when status is completed/success/ok |
 
 #### Decision table (explicit — not pattern-matched to B26)
 
