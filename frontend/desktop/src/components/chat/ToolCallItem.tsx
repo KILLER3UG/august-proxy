@@ -17,7 +17,7 @@ import { useLiveBackendAction } from '@/hooks/useLiveBackendAction';
  * Extract a filename hint from a tool's JSON context (best-effort).
  * Returns null if the context isn't JSON or no filename-shaped key is present.
  */
-function extractFilename(context?: string): string | null {
+export function extractFilename(context?: string): string | null {
   if (!context) return null;
   try {
     const parsed = JSON.parse(context);
@@ -37,7 +37,7 @@ function extractFilename(context?: string): string | null {
  * The workbench stores tool input as a JSON-encoded `context` string, so
  * we look for an obvious `command` (or `cmd` / `shell_command`) field.
  */
-function extractCommand(context?: string): string | null {
+export function extractCommand(context?: string): string | null {
   if (!context) return null;
   try {
     const parsed = JSON.parse(context);
@@ -57,7 +57,7 @@ function extractCommand(context?: string): string | null {
 /**
  * Best-effort extraction of the agentId parameter from a tool's context.
  */
-function extractAgentId(context?: string): string | null {
+export function extractAgentId(context?: string): string | null {
   if (!context) return null;
   try {
     const parsed = JSON.parse(context);
@@ -242,7 +242,6 @@ export function ToolCallItem({
   const hasBody = !!(
     tool.context || tool.preview || tool.summary || tool.error || tool.inlineDiff || tool.searchHits || tool.providerSetup || tool.pendingApproval
   );
-  const [approvalStatus, setApprovalStatus] = useState<'idle' | 'confirming' | 'confirmed'>('idle');
 
   const isRunning = tool.status === 'running';
   // Live backend stage while this tool action is executing on the server.
@@ -380,178 +379,198 @@ export function ToolCallItem({
       )}
 
       {open && hasBody && (
-        <div className="mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1">
-          {/* For read-type tools (context_read, memory_search, read_file etc.)
-              the raw JSON input is noise — skip it so the user sees what was
-              actually read (the result/summary) when they expand the card. */}
-          {tool.context && !tool.name.match(/context_read|memory_search|read_file|search/) && (
-            <FormattedSection toolName={tool.name} label="context" raw={tool.context} format={formatToolContext} />
-          )}
+        <ToolCallItemBody tool={tool} progress={progress} />
+      )}
+    </div>
+  );
+}
 
-          {(() => {
-            const visible = progress ? visibleProgress(progress) : [];
-            const total = progress?.length ?? 0;
-            const overflow = Math.max(0, total - visible.length);
-            if (visible.length === 0) return null;
-            return (
-              <div className="my-1.5 space-y-0.5" aria-label="Tool progress" data-tool-progress>
-                <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">
-                  <FileSearch size={10} />
-                  <span>
-                    {tool.status === 'running' ? 'Exploring' : 'Files'}
-                  </span>
-                </div>
-                {visible.map((entry) => (
-                  <div
-                    key={entry.path}
-                    className="flex items-center gap-1.5 text-[11px] truncate"
-                    title={entry.path}
-                  >
-                    <span className="w-2.5 shrink-0 inline-flex justify-center">
-                      {entry.status === 'reading' ? (
-                        <Loader2 size={10} className="animate-spin text-info" />
-                      ) : (
-                        <Check size={10} className="text-muted-foreground/50" />
-                      )}
-                    </span>
-                    <span
-                      className={cn(
-                        'truncate font-mono',
-                        entry.status === 'reading' ? 'text-info italic' : 'text-muted-foreground/60 line-through'
-                      )}
-                    >
-                      {entry.status === 'reading' ? 'Reading ' : 'Read '}
-                      {entry.path}
-                    </span>
-                  </div>
-                ))}
-                {overflow > 0 && (
-                  <div className="text-[10px] text-muted-foreground/50 italic pl-4">
-                    + {overflow} more
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+/**
+ * Expanded tool-call body — context, progress, diffs, search hits, errors,
+ * approval. Shared by ToolCallItem (legacy path) and ToolSummary drill-down.
+ */
+export function ToolCallItemBody({
+  tool,
+  progress,
+}: {
+  tool: ToolEntry;
+  progress?: ReadonlyArray<ProgressEntry>;
+  /** Reserved for callers that need subagent labeling in nested chrome. */
+  agentIdOverride?: string;
+}) {
+  const [approvalStatus, setApprovalStatus] = useState<'idle' | 'confirming' | 'confirmed'>('idle');
 
-          {tool.preview && tool.status === 'running' && (
-            <Section label="streaming">
-              {tool.preview}
-              <span className="inline-block w-1.5 h-3 align-middle bg-foreground/40 ml-0.5 animate-pulse" />
-            </Section>
-          )}
+  return (
+    <div className="mt-0.5 w-full min-w-0 max-w-full overflow-hidden wrap-anywhere pb-1">
+      {/* For read-type tools (context_read, memory_search, read_file etc.)
+          the raw JSON input is noise — skip it so the user sees what was
+          actually read (the result/summary) when they expand the card. */}
+      {tool.context && !tool.name.match(/context_read|memory_search|read_file|search/) && (
+        <FormattedSection toolName={tool.name} label="context" raw={tool.context} format={formatToolContext} />
+      )}
 
-          {(() => {
-            const diffData = extractDiffData(tool);
-            return diffData ? (
-              <Section label="diff">
-                <DiffView
-                  diff={diffData.diff}
-                  oldContent={diffData.oldContent}
-                  newContent={diffData.newContent}
-                />
-              </Section>
-            ) : null;
-          })()}
-
-          {tool.searchHits && tool.searchHits.length > 0 && (
-            <Section label="results">
-              <ol className="m-0 grid list-none gap-3 p-0">
-                {tool.searchHits.map((hit, i) => (
-                  <li key={i} className="grid min-w-0 gap-1">
-                    <div className="flex items-start gap-2">
-                      {hit.url && (
-                        <img
-                          src={`https://www.google.com/s2/favicons?domain=${new URL(hit.url).hostname}&sz=16`}
-                          alt=""
-                          className="size-4 shrink-0 mt-0.5 rounded"
-                          width={16}
-                          height={16}
-                          loading="lazy"
-                        />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        {hit.url ? (
-                          <a
-                            href={hit.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs font-medium text-primary hover:underline truncate block"
-                          >
-                            {hit.title || new URL(hit.url).hostname}
-                          </a>
-                        ) : (
-                          <span className="text-xs font-medium text-foreground/90">{hit.title}</span>
-                        )}
-                        {hit.url && (
-                          <p className="text-[10px] text-muted-foreground/60 truncate mt-0.5">
-                            {hit.url}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    {hit.snippet && (
-                      <p className="text-[10px] text-muted-foreground line-clamp-3 m-0 pl-6">{hit.snippet}</p>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            </Section>
-          )}
-
-          {tool.summary && !tool.searchHits && !tool.providerSetup && (
-            <FormattedResultSection toolName={tool.name} raw={tool.summary} />
-          )}
-
-          {tool.providerSetup && (
-            <ProviderSetupWidget setup={tool.providerSetup} />
-          )}
-
-          {tool.error && (
-            <FormattedErrorSection toolName={tool.name} raw={tool.error} />
-          )}
-
-          {tool.pendingApproval && (
-            <div className="mt-2 flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/10 p-2">
-              <div className="text-xs text-foreground/90">
-                {tool.pendingApproval.message || 'This change needs approval before it can run.'}
-              </div>
-              {tool.pendingApproval.detail && (
-                <div className="text-[11px] font-mono text-muted-foreground wrap-anywhere">
-                  {tool.pendingApproval.detail}
-                </div>
-              )}
-              <button
-                type="button"
-                disabled={approvalStatus !== 'idle'}
-                className="h-7 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-60"
-                onClick={() => {
-                  const token = tool.pendingApproval?.confirmationToken;
-                  if (!token) return;
-                  setApprovalStatus('confirming');
-                  void confirmWorkbenchMutation(token, {
-                    onText: ({ content }) => {
-                      tool.summary = `${tool.summary || ''}\n${typeof content === 'string' ? content : JSON.stringify(content ?? '')}`.trim();
-                    },
-                    onToolUse: ({ id: _id, name, input }) => {
-                      tool.summary = `${tool.summary || ''}\nStarted ${name}: ${JSON.stringify(input || {})}`.trim();
-                    },
-                    onToolResult: ({ content }) => {
-                      tool.summary = `${tool.summary || ''}\n${typeof content === 'string' ? content : JSON.stringify(content ?? '')}`.trim();
-                    },
-                    onError: ({ message }) => {
-                      tool.error = message;
-                    },
-                    onDone: () => {
-                      setApprovalStatus('confirmed');
-                    },
-                  });
-                }}
+      {(() => {
+        const visible = progress ? visibleProgress(progress) : [];
+        const total = progress?.length ?? 0;
+        const overflow = Math.max(0, total - visible.length);
+        if (visible.length === 0) return null;
+        return (
+          <div className="my-1.5 space-y-0.5" aria-label="Tool progress" data-tool-progress>
+            <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">
+              <FileSearch size={10} />
+              <span>
+                {tool.status === 'running' ? 'Exploring' : 'Files'}
+              </span>
+            </div>
+            {visible.map((entry) => (
+              <div
+                key={entry.path}
+                className="flex items-center gap-1.5 text-[11px] truncate"
+                title={entry.path}
               >
-                {approvalStatus === 'confirming' ? 'Approving…' : 'Approve'}
-              </button>
+                <span className="w-2.5 shrink-0 inline-flex justify-center">
+                  {entry.status === 'reading' ? (
+                    <Loader2 size={10} className="animate-spin text-info" />
+                  ) : (
+                    <Check size={10} className="text-muted-foreground/50" />
+                  )}
+                </span>
+                <span
+                  className={cn(
+                    'truncate font-mono',
+                    entry.status === 'reading' ? 'text-info italic' : 'text-muted-foreground/60 line-through'
+                  )}
+                >
+                  {entry.status === 'reading' ? 'Reading ' : 'Read '}
+                  {entry.path}
+                </span>
+              </div>
+            ))}
+            {overflow > 0 && (
+              <div className="text-[10px] text-muted-foreground/50 italic pl-4">
+                + {overflow} more
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {tool.preview && tool.status === 'running' && (
+        <Section label="streaming">
+          {tool.preview}
+          <span className="inline-block w-1.5 h-3 align-middle bg-foreground/40 ml-0.5 animate-pulse" />
+        </Section>
+      )}
+
+      {(() => {
+        const diffData = extractDiffData(tool);
+        return diffData ? (
+          <Section label="diff">
+            <DiffView
+              diff={diffData.diff}
+              oldContent={diffData.oldContent}
+              newContent={diffData.newContent}
+            />
+          </Section>
+        ) : null;
+      })()}
+
+      {tool.searchHits && tool.searchHits.length > 0 && (
+        <Section label="results">
+          <ol className="m-0 grid list-none gap-3 p-0">
+            {tool.searchHits.map((hit, i) => (
+              <li key={i} className="grid min-w-0 gap-1">
+                <div className="flex items-start gap-2">
+                  {hit.url && (
+                    <img
+                      src={`https://www.google.com/s2/favicons?domain=${new URL(hit.url).hostname}&sz=16`}
+                      alt=""
+                      className="size-4 shrink-0 mt-0.5 rounded"
+                      width={16}
+                      height={16}
+                      loading="lazy"
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    {hit.url ? (
+                      <a
+                        href={hit.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-medium text-primary hover:underline truncate block"
+                      >
+                        {hit.title || new URL(hit.url).hostname}
+                      </a>
+                    ) : (
+                      <span className="text-xs font-medium text-foreground/90">{hit.title}</span>
+                    )}
+                    {hit.url && (
+                      <p className="text-[10px] text-muted-foreground/60 truncate mt-0.5">
+                        {hit.url}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {hit.snippet && (
+                  <p className="text-[10px] text-muted-foreground line-clamp-3 m-0 pl-6">{hit.snippet}</p>
+                )}
+              </li>
+            ))}
+          </ol>
+        </Section>
+      )}
+
+      {tool.summary && !tool.searchHits && !tool.providerSetup && (
+        <FormattedResultSection toolName={tool.name} raw={tool.summary} />
+      )}
+
+      {tool.providerSetup && (
+        <ProviderSetupWidget setup={tool.providerSetup} />
+      )}
+
+      {tool.error && (
+        <FormattedErrorSection toolName={tool.name} raw={tool.error} />
+      )}
+
+      {tool.pendingApproval && (
+        <div className="mt-2 flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/10 p-2">
+          <div className="text-xs text-foreground/90">
+            {tool.pendingApproval.message || 'This change needs approval before it can run.'}
+          </div>
+          {tool.pendingApproval.detail && (
+            <div className="text-[11px] font-mono text-muted-foreground wrap-anywhere">
+              {tool.pendingApproval.detail}
             </div>
           )}
+          <button
+            type="button"
+            disabled={approvalStatus !== 'idle'}
+            className="h-7 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-60"
+            onClick={() => {
+              const token = tool.pendingApproval?.confirmationToken;
+              if (!token) return;
+              setApprovalStatus('confirming');
+              void confirmWorkbenchMutation(token, {
+                onText: ({ content }) => {
+                  tool.summary = `${tool.summary || ''}\n${typeof content === 'string' ? content : JSON.stringify(content ?? '')}`.trim();
+                },
+                onToolUse: ({ id: _id, name, input }) => {
+                  tool.summary = `${tool.summary || ''}\nStarted ${name}: ${JSON.stringify(input || {})}`.trim();
+                },
+                onToolResult: ({ content }) => {
+                  tool.summary = `${tool.summary || ''}\n${typeof content === 'string' ? content : JSON.stringify(content ?? '')}`.trim();
+                },
+                onError: ({ message }) => {
+                  tool.error = message;
+                },
+                onDone: () => {
+                  setApprovalStatus('confirmed');
+                },
+              });
+            }}
+          >
+            {approvalStatus === 'confirming' ? 'Approving…' : 'Approve'}
+          </button>
         </div>
       )}
     </div>

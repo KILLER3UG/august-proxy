@@ -1,12 +1,7 @@
-/* ── ClarifyTool ─ floating question/answer popup ────────────────── */
-/* Lifted from an inline panel into a centered floating card matching   */
-/* the ZCode reference:                                                   */
-/*   • fixed-position overlay with dark backdrop                        */
-/*   • top: synthesized-context breadcrumb + pagination arrows + X      */
-/*   • question in larger text                                          */
-/*   • numbered choice badges (1, 2, 3, 4) in 22×22 rounded-md          */
-/*   • "Something else" input + Skip button (bottom row)                 */
-/*   • footer hint: "A. tap a number · Enter to send · Esc to close"    */
+/* ── ClarifyTool ─ plan-banner-style question panel (larger) ───────── */
+/* Visual language mirrors PlanProposalBanner: rounded-xl, bg-card,     */
+/* border-border, dropdown-family action buttons — but scaled up so the */
+/* question is the focus when the model asks the user for input.        */
 /*                                                                       */
 /* Supports two data shapes (additive, backward compatible):             */
 /*   1. legacy single-question:  { question, choices? }                  */
@@ -20,7 +15,7 @@
 /*   • Esc    → close (sends a "User skipped" stub to the model)         */
 
 import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react';
-import { ChevronLeft, ChevronRight, X, Paperclip, SkipForward } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Send, SkipForward } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface ClarifyQuestion {
@@ -56,7 +51,7 @@ export interface ClarifyToolProps {
   /** Esc / X close — submits a "User skipped" stub so the model knows to proceed. */
   onDismiss?: () => void;
   submitting?: boolean;
-  /** Optional title override; defaults to "What would you like to do next?" */
+  /** Optional title override; defaults to context breadcrumb. */
   title?: string;
 }
 
@@ -81,10 +76,16 @@ export function ClarifyTool({
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [draft, setDraft] = useState('');
   const [selectedChoice, setSelectedChoice] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const current = questions[currentIndex];
   const isLast = currentIndex === totalQuestions - 1;
+
+  useEffect(() => {
+    // Focus freeform field when the card mounts / question changes
+    const id = window.setTimeout(() => inputRef.current?.focus(), 80);
+    return () => window.clearTimeout(id);
+  }, [currentIndex]);
 
   // Keyboard: Esc / ← / → / 1-9
   useEffect(() => {
@@ -95,23 +96,18 @@ export function ClarifyTool({
         handleDismiss();
         return;
       }
-      // Don't hijack typing in the input
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') {
-        if (e.key === 'Enter' && (e.target as HTMLElement) === inputRef.current) {
-          e.preventDefault();
-          submitFreeform();
-        }
         return;
       }
       if (e.key === 'ArrowLeft' && currentIndex > 0) {
         e.preventDefault();
-        setCurrentIndex(i => i - 1);
+        setCurrentIndex((i) => i - 1);
         setSelectedChoice(null);
         setDraft('');
       } else if (e.key === 'ArrowRight' && currentIndex < totalQuestions - 1) {
         e.preventDefault();
-        setCurrentIndex(i => i + 1);
+        setCurrentIndex((i) => i + 1);
         setSelectedChoice(null);
         setDraft('');
       } else if (/^[1-9]$/.test(e.key)) {
@@ -134,14 +130,10 @@ export function ClarifyTool({
       const next = { ...answers, [currentIndex]: choice };
       setAnswers(next);
       if (isLast) {
-        // Submit a structured record for multi-question (so the model can
-        // see the answers indexed), or the plain string for single-question.
         onSubmit(totalQuestions === 1 ? choice : JSON.stringify(next));
       } else {
-        // Advance to the next question after a brief delay so the user
-        // can see the selection highlight first.
         window.setTimeout(() => {
-          setCurrentIndex(i => Math.min(totalQuestions - 1, i + 1));
+          setCurrentIndex((i) => Math.min(totalQuestions - 1, i + 1));
           setSelectedChoice(null);
           setDraft('');
         }, 200);
@@ -166,147 +158,227 @@ export function ClarifyTool({
   const handleDismiss = useCallback(() => {
     if (onDismiss) onDismiss();
     else {
-      // Default behaviour: tell the model to proceed
       onSubmit('User skipped');
     }
   }, [onDismiss, onSubmit]);
 
   if (!current || !current.question) return null;
 
+  const headerLabel =
+    contextSummary?.trim() ||
+    title?.trim() ||
+    'A quick question before continuing';
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+      className="mx-auto my-3 w-full max-w-3xl px-2"
       role="dialog"
-      aria-modal="true"
+      aria-modal="false"
       aria-label="Clarification"
+      data-slot="clarify-banner"
+      data-testid="clarify-banner"
     >
-      <div
-        className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200"
-        style={{ backgroundColor: '#1c1c1c', border: '0.5px solid rgba(255,255,255,0.07)' }}
-      >
-        {/* Top row: context breadcrumb + pagination + X close */}
-        <div className="flex items-center justify-between px-4 pt-3 pb-1 text-[11.5px]">
-          <button
-            type="button"
-            onClick={() => {/* TODO: open the full context summary */}}
-            className="text-muted-foreground hover:text-foreground truncate text-left flex-1 min-w-0"
-          >
-            {contextSummary ?? title ?? 'Synthesized user context to craft a personalized response'} <span aria-hidden>›</span>
-          </button>
-          <div className="flex items-center gap-1.5 ml-2 shrink-0 text-muted-foreground">
+      {/* Same surface language as PlanProposalBanner — scaled up for questions */}
+      <div className="rounded-2xl border border-border bg-card p-5 shadow-2xl sm:p-6">
+        {/* Top row: title + pagination + close — mirrors plan banner header */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/80">
+              Clarification needed
+            </div>
+            <div className="mt-1 truncate text-sm text-muted-foreground" title={headerLabel}>
+              {headerLabel}
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
             {totalQuestions > 1 && (
               <>
-                <button
-                  type="button"
-                  onClick={() => { setCurrentIndex(i => Math.max(0, i - 1)); setSelectedChoice(null); setDraft(''); }}
-                  disabled={currentIndex === 0}
-                  className="p-0.5 rounded hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                <BannerButton
+                  onClick={() => {
+                    setCurrentIndex((i) => Math.max(0, i - 1));
+                    setSelectedChoice(null);
+                    setDraft('');
+                  }}
+                  disabled={currentIndex === 0 || submitting}
                   aria-label="Previous question"
                 >
-                  <ChevronLeft size={14} />
-                </button>
-                <span className="font-mono tabular-nums text-[11px]">
-                  {currentIndex + 1} of {totalQuestions}
+                  <ChevronLeft className="size-4" />
+                </BannerButton>
+                <span className="min-w-[3.5rem] text-center font-mono text-sm tabular-nums text-foreground/80">
+                  {currentIndex + 1} / {totalQuestions}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => { setCurrentIndex(i => Math.min(totalQuestions - 1, i + 1)); setSelectedChoice(null); setDraft(''); }}
-                  disabled={isLast}
-                  className="p-0.5 rounded hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                <BannerButton
+                  onClick={() => {
+                    setCurrentIndex((i) => Math.min(totalQuestions - 1, i + 1));
+                    setSelectedChoice(null);
+                    setDraft('');
+                  }}
+                  disabled={isLast || submitting}
                   aria-label="Next question"
                 >
-                  <ChevronRight size={14} />
-                </button>
+                  <ChevronRight className="size-4" />
+                </BannerButton>
               </>
             )}
-            <button
-              type="button"
+            <BannerButton
               onClick={handleDismiss}
-              className="p-0.5 rounded hover:bg-white/10 ml-1"
+              disabled={submitting}
               aria-label="Close"
+              className="ml-1"
             >
-              <X size={14} />
-            </button>
+              <X className="size-4" />
+            </BannerButton>
           </div>
         </div>
 
-        {/* Question */}
-        <div className="px-4 pt-2 pb-3">
-          <h2 className="text-[15px] font-medium leading-snug text-foreground">
-            {current.question}
-          </h2>
-        </div>
+        {/* Question — larger than plan banner title so it owns the card */}
+        <h2 className="mt-4 text-xl font-semibold leading-snug tracking-tight text-foreground sm:text-2xl">
+          {current.question}
+        </h2>
 
-        {/* Numbered choice list */}
+        {/* Numbered choice list — big hit targets */}
         {current.choices && current.choices.length > 0 && (
-          <div className="px-3 pb-1">
+          <div className="mt-5 flex flex-col gap-2" data-clarify-choices>
             {current.choices.slice(0, 5).map((choice, i) => (
               <button
                 type="button"
                 key={`${currentIndex}-${i}-${choice}`}
                 onClick={() => pickChoice(choice)}
                 disabled={submitting}
+                data-choice
                 className={cn(
-                  'w-full flex items-center gap-3 px-1 py-2 text-left text-[13.5px] text-foreground/90',
-                  'hover:bg-white/[0.04] rounded-md transition-colors',
-                  'border-b border-white/[0.04] last:border-b-0',
-                  'disabled:opacity-50 disabled:cursor-not-allowed',
-                  selectedChoice === choice && 'bg-white/[0.06]'
+                  'flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors',
+                  'border-border/70 bg-muted/20 hover:bg-muted/50 hover:border-border',
+                  'text-[15px] leading-snug text-foreground/90',
+                  'disabled:cursor-not-allowed disabled:opacity-50',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  selectedChoice === choice &&
+                    'border-primary/50 bg-primary/10 text-foreground',
                 )}
-                data-clarify-choice
               >
                 <span
                   aria-hidden
-                  className="grid size-[22px] shrink-0 place-items-center rounded-md text-[11px] font-medium tabular-nums"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}
+                  className={cn(
+                    'grid size-8 shrink-0 place-items-center rounded-lg text-sm font-semibold tabular-nums',
+                    selectedChoice === choice
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground',
+                  )}
                 >
                   {i + 1}
                 </span>
-                <span className="flex-1 wrap-anywhere">{choice}</span>
+                <span className="min-w-0 flex-1 wrap-anywhere">{choice}</span>
               </button>
             ))}
           </div>
         )}
 
-        {/* Bottom: "Something else" input + Skip */}
-        <form onSubmit={handleSubmit} className="flex items-center gap-2 px-3 py-3 border-t border-white/[0.06]">
-          <Paperclip aria-hidden size={12} className="text-muted-foreground/60 shrink-0" />
-          <span className="text-[12px] text-muted-foreground/80 shrink-0">Something else</span>
-          <input
+        {/* Freeform answer — plan-banner revise textarea language, larger */}
+        <form onSubmit={handleSubmit} className="mt-5">
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground/80">
+            Something else
+          </label>
+          <textarea
             ref={inputRef}
-            type="text"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Type your answer…"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submitFreeform();
+              }
+            }}
+            placeholder="Type your answer… (Enter to send, Shift+Enter for newline)"
             disabled={submitting}
-            className="flex-1 min-w-0 bg-transparent text-[12.5px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
+            rows={3}
+            className={cn(
+              'w-full resize-none rounded-xl border border-border bg-muted/40',
+              'px-3.5 py-3 text-[15px] text-foreground placeholder:text-muted-foreground/55',
+              'outline-none transition focus:border-primary/60',
+              'disabled:opacity-50',
+            )}
           />
-          <button
-            type="button"
-            onClick={handleDismiss}
-            disabled={submitting}
-            className="text-[12px] text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded disabled:opacity-50"
-          >
-            <SkipForward aria-hidden size={12} className="inline mr-0.5" />
-            Skip
-          </button>
+
+          {/* Action row — same control family as PlanProposalBanner, larger padding */}
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <BannerButton onClick={handleDismiss} disabled={submitting}>
+              <SkipForward className="size-3.5" />
+              Skip
+            </BannerButton>
+            <BannerButton
+              primary
+              type="submit"
+              disabled={submitting || !draft.trim()}
+              className="ml-auto"
+            >
+              <Send className="size-3.5" />
+              {submitting ? 'Sending…' : 'Send answer'}
+              <kbd className="ml-1 rounded bg-primary-foreground/10 px-1 text-[10px] font-mono">
+                ↵
+              </kbd>
+            </BannerButton>
+          </div>
         </form>
 
-        {/* Footer hint */}
-        <div className="px-4 pb-3 text-[10px] text-muted-foreground/50 select-none">
-          tap a number · Enter to send · Esc to close
+        <div className="mt-3 select-none text-[11px] text-muted-foreground/55">
+          {current.choices && current.choices.length > 0
+            ? 'Tap a number key · Enter to send · Esc to skip'
+            : 'Enter to send · Esc to skip'}
         </div>
       </div>
     </div>
   );
 }
 
+/* ── BannerButton — plan-banner action chrome, slightly larger ─────── */
+
+function BannerButton({
+  children,
+  onClick,
+  disabled,
+  active,
+  primary,
+  className,
+  type = 'button',
+  'aria-label': ariaLabel,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  primary?: boolean;
+  className?: string;
+  type?: 'button' | 'submit';
+  'aria-label'?: string;
+}) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      className={cn(
+        'inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-medium',
+        'px-3 py-2 transition-colors',
+        primary
+          ? 'bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50'
+          : active
+            ? 'bg-accent text-foreground'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+        'disabled:cursor-not-allowed disabled:opacity-50',
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 /**
  * Thin wrapper for inline use (kept for backward compatibility).
- * Mounts the popup but skips the dark backdrop so it looks embedded.
+ * ClarifyTool is already an in-flow banner (not a fixed modal).
  */
 export function ClarifyToolInline(props: ClarifyToolProps) {
-  // Strip the fixed-position overlay; render the card only.
   return (
     <div className="my-2">
       <ClarifyTool {...props} />

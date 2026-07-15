@@ -5,7 +5,7 @@
 /* Tool calls render as inline cards. Right rail optional.                  */
 
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type Dispatch, type KeyboardEvent, type SetStateAction } from 'react';
-import { Send, Paperclip, Mic, AtSign, Plus, ChevronDown, Check, StopCircle, X, Loader2, Bug, Play, Pause, RefreshCw, Eye, type LucideIcon } from 'lucide-react';
+import { Send, Paperclip, Mic, AtSign, Plus, ChevronDown, Check, StopCircle, X, Loader2, Bug, Play, Pause, RefreshCw, type LucideIcon } from 'lucide-react';
 import { cn, formatClockTime, workspaceBaseName } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,10 @@ import { useSessionsStore, setSessionStatus, clearSessionStatus, renameSession, 
 import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
-import { ToolCallItem as ToolCallItemComp } from '@/components/chat/ToolCallItem';
+import { ToolCallItem as ToolCallItemComp, ToolCallItemBody, extractAgentId } from '@/components/chat/ToolCallItem';
+import { ToolSummary, buildToolSummaryEntry } from '@/components/chat/ToolSummary';
+import { ActivitySummary } from '@/components/chat/ActivitySummary';
+import { ScrollToTopButton, SCROLL_TO_TOP_THRESHOLD } from '@/components/chat/ScrollToTopButton';
 import { ToolIcon as NewToolIcon } from '@/components/ui/ToolIcon';
 import { FileIcon as NewFileIcon } from '@/components/ui/FileIcon';
 import { DisclosureRow } from '@/components/chat/DisclosureRow';
@@ -24,6 +27,7 @@ import { ClarifyTool } from '@/components/chat/ClarifyTool';
 import { PromptDisclosure } from '@/components/chat/PromptDisclosure';
 import { visibleProgress } from '@/lib/tool-progress';
 import { getToolLabel } from '@/lib/tool-labels';
+import { classifyTool } from '@/lib/tool-classify';
 import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import { SubagentBlock } from '@/components/chat/SubagentBlock';
 import { ModelVisibilityModal, loadHiddenModels, saveHiddenModels } from '@/components/overlays/ModelVisibilityModal';
@@ -543,7 +547,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // users want a plain textarea while typing, and the rendered preview
   // visually reads like a second input box. Toggle via the "Preview"
   // button in the composer toolbar.
+  // TODO: re-enable markdown preview via keyboard shortcut (e.g. Ctrl/Cmd+Shift+P)
   const [showPreview, setShowPreview] = useState(false);
+  void setShowPreview; // retained for future shortcut; Preview toolbar toggle removed
   // Mid-response queued messages live in the queue-store (per-session).
   // ChatThread mirrors a local copy for quick synchronous access; the
   // SSE subscriber writes back into the store when messages are added /
@@ -669,6 +675,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [scrolledFromBottom, setScrolledFromBottom] = useState(false);
+  const [scrolledFromTop, setScrolledFromTop] = useState(false);
 
   const scrollToBottomSmooth = useCallback(() => {
     const el = scrollRef.current;
@@ -678,7 +685,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     target.scrollTo({ top: target.scrollHeight, behavior: "smooth" });
   }, []);
 
-  // Track whether the user has scrolled up from the bottom.
+  // Track whether the user has scrolled up from the bottom / down from the top.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -686,6 +693,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const check = () => {
       const atBottom = scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight < 1;
       setScrolledFromBottom(!atBottom);
+      setScrolledFromTop(scrollable.scrollTop > SCROLL_TO_TOP_THRESHOLD);
     };
     check();
     scrollable.addEventListener("scroll", check, { passive: true });
@@ -2159,17 +2167,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   e.target.style.height = Math.min(e.target.scrollHeight, 360) + 'px';
                 }}
                 onKeyDown={onKey}
-                placeholder={streaming ? 'Type to queue your next message…' : (currentModel ? `Message ${modelDisplayParts(currentModel.id).name}…` : 'Type a message…')}
+                placeholder={streaming ? 'Type to queue your next message…' : 'Enter message… (use / for commands)'}
                 rows={1}
                 className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-xs outline-none placeholder:text-muted-foreground"
                 style={{ minHeight: '64px', maxHeight: '360px' }}
               />
 
-              {/* Live markdown preview — mirrors the chat-area render pipeline so
-                  tables, code blocks, lists, etc. look the same as they
-                  will in the bubble. Opt-in via the Preview toggle in
-                  the composer toolbar (default off, because the rendered
-                  view visually reads like a second input box). */}
+              {/* Preview surface retained as dead code for a future keyboard shortcut.
+                  Toolbar toggle removed — showPreview stays false until re-wired. */}
               {showPreview && input.trim() && (
                 <div
                   className="border-t border-border bg-muted/5 max-h-[240px] overflow-y-auto px-4 py-2 text-foreground/90"
@@ -2305,23 +2310,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 value={effort}
                 onChange={setEffort}
               />
-
-              {/* Preview toggle — when on, shows the live <Markdown>
-                  rendering of the textarea below it. Off by default
-                  since the rendered preview visually reads like a
-                  second input. */}
-              <Button
-                type="button"
-                size="sm"
-                variant={showPreview ? 'default' : 'outline'}
-                onClick={() => setShowPreview((v) => !v)}
-                aria-pressed={showPreview}
-                title={showPreview ? 'Hide preview' : 'Show preview'}
-                data-testid="composer-preview-toggle"
-              >
-                <Eye className="size-3" />
-                Preview
-              </Button>
 
               {streaming ? (
                 <Button onClick={stop} size="sm" variant="outline">
@@ -2573,11 +2561,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     }
                   />
 
-                  {/* Scroll-to-bottom chevron at the right edge */}
-                  <div className="sticky bottom-4 z-30 flex justify-end pointer-events-none">
+                  {/* Scroll-to-top / scroll-to-bottom stack at the right edge */}
+                  <div className="sticky bottom-4 z-30 flex flex-col gap-2 items-end pointer-events-none">
+                    <ScrollToTopButton
+                      scrollParentRef={scrollRef}
+                      visible={scrolledFromTop}
+                    />
                     <AnimatePresence>
                       {scrolledFromBottom && (
                         <motion.button
+                          type="button"
                           initial={{ opacity: 0, scale: 0.9 }}
                           animate={{ opacity: 1, scale: 1 }}
                           exit={{ opacity: 0, scale: 0.9 }}
@@ -2723,7 +2716,31 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 // ----------------------------------------------------
 // ThinkingDisclosure — auto-open while streaming
 // ----------------------------------------------------
-function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGenerating?: boolean; duration?: number }) {
+function ReasoningBlock({
+  text,
+  segments,
+  isGenerating,
+  duration,
+  omitDurationLabel,
+  thoughtCount,
+}: {
+  /** Single thinking body (used when `segments` is not provided). */
+  text?: string;
+  /**
+   * Multiple thinking segments collapsed under one header. When expanded,
+   * each segment renders the normal thought style (border-l + markdown).
+   */
+  segments?: string[];
+  isGenerating?: boolean;
+  duration?: number;
+  /** Suppress "Thought for Xs" when a following ToolSummary already badges thought count. */
+  omitDurationLabel?: boolean;
+  /**
+   * When multiple thinking segments were merged into one disclosure, show
+   * e.g. "Thinking (3)" / "Thought (3)". Single thoughts use the normal label.
+   */
+  thoughtCount?: number;
+}) {
   // Live-tick the elapsed time in the Thinking label while the model is
   // thinking. The interval stops as soon as this thinking section is done.
   const [elapsed, setElapsed] = useState<number>(0);
@@ -2736,16 +2753,43 @@ function ReasoningBlock({ text, isGenerating, duration }: { text: string; isGene
     return () => window.clearInterval(id);
   }, [isGenerating]);
 
+  const parts = (segments && segments.length > 0
+    ? segments
+    : text
+      ? [text]
+      : []
+  ).map((s) => s.trim()).filter(Boolean);
+
+  const n = thoughtCount ?? parts.length;
+  // Only badge the count when we actually collapsed multiple segments.
+  const multi = n > 1;
+  const countLabel = multi
+    ? isGenerating
+      ? `Thinking (${n})`
+      : `Thought (${n})`
+    : undefined;
+
   return (
     <div className="my-1" style={{ overflowAnchor: 'none' }}>
       <ThinkingDisclosure
         pending={isGenerating}
         duration={duration}
         elapsed={isGenerating ? elapsed : undefined}
+        omitDurationLabel={omitDurationLabel || multi}
+        label={countLabel}
       >
-        <div className="pl-3 border-l border-foreground/15 py-1 thought-content chat-thought-text">
-          <Markdown content={text} />
-        </div>
+        {parts.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {parts.map((part, i) => (
+              <div
+                key={i}
+                className="pl-3 border-l border-foreground/15 py-1 thought-content chat-thought-text"
+              >
+                <Markdown content={part} />
+              </div>
+            ))}
+          </div>
+        ) : null}
       </ThinkingDisclosure>
     </div>
   );
@@ -3142,13 +3186,18 @@ function MessageBubble({
                   </motion.div>
                 )}
                 {(() => {
-                  // Pre-process blocks: group consecutive toolCall/command
-                  // entries into a single "tool_group" so they share one
-                  // parent timeline rail instead of each rendering their own.
+                  // Pre-process blocks:
+                  //  - consecutive toolCall/command → tool_group (one ToolSummary)
+                  //  - consecutive thinking → thinking_group (one "Thinking (N)" disclosure)
+                  // After final output exists, ALL pre-final activity collapses into
+                  // one ActivitySummary (Thought N · Tools N · …); expand shows the
+                  // normal timeline of thoughts + tools.
                   type ToolEntry = typeof displayBlocks[number] & { tool: NonNullable<typeof displayBlocks[number]['tool']> };
+                  type ThinkingEntry = { block: typeof displayBlocks[number]; index: number };
                   type RenderUnit =
                     | { kind: 'single'; block: typeof displayBlocks[number]; index: number }
-                    | { kind: 'tool_group'; entries: Array<{ block: ToolEntry; index: number }> };
+                    | { kind: 'tool_group'; entries: Array<{ block: ToolEntry; index: number }> }
+                    | { kind: 'thinking_group'; entries: ThinkingEntry[] };
 
                   const units: RenderUnit[] = [];
                   let i = 0;
@@ -3165,121 +3214,334 @@ function MessageBubble({
                         i++;
                       }
                       units.push({ kind: 'tool_group', entries });
+                    } else if (block.type === 'thinking') {
+                      const entries: ThinkingEntry[] = [];
+                      while (i < displayBlocks.length && displayBlocks[i].type === 'thinking') {
+                        entries.push({ block: displayBlocks[i], index: i });
+                        i++;
+                      }
+                      units.push({ kind: 'thinking_group', entries });
                     } else {
                       units.push({ kind: 'single', block, index: i });
                       i++;
                     }
                   }
 
-                  return units.map((unit) => {
-                    if (unit.kind === 'tool_group') {
-                      const renderToolEntry = ({ block, index }: { block: ToolEntry; index: number }) => {
-                        const isSubagentCall =
-                          block.tool.name === 'august__spawn_subagent' ||
-                          block.tool.name === 'workbench_spawn_subagent' ||
-                          block.tool.name === 'august__run_team' ||
-                          block.tool.name === 'workbench_run_team';
-                        const promptEntries = isSubagentCall && block.tool.id && subagentPrompts
-                          ? Array.from(subagentPrompts.entries())
-                              .filter(([k]) => k === block.tool.id)
-                              .map(([, v]) => v)
-                          : [];
-                        const subagentContainers = isSubagentCall && block.tool.id && subagentBlocks
-                          ? Array.from(subagentBlocks.values())
-                              .filter((s) => s.parentToolId === block.tool.id)
-                              .sort((a, b) => a.startedAt - b.startedAt)
-                          : [];
-                        return (
-                          <div key={block.tool.id || `tool_${index}`}>
-                            <ToolCallItemComp
-                              tool={block.tool}
-                              progress={block.tool.id ? toolProgress?.get(block.tool.id) : undefined}
-                              agentIdOverride={promptEntries[0]?.subagentId}
-                            />
-                            {promptEntries.length > 0 && (
-                              <div className="ml-3 mt-1 flex flex-col gap-1">
-                                {promptEntries.map((p, pi) => (
-                                  <PromptDisclosure
-                                    key={`${block.tool.id}-prompt-${pi}`}
-                                    content={p.content}
-                                    tokens={p.tokens}
-                                    label={p.subagentId
-                                      ? `SUB-AGENT PROMPT · ${p.subagentId}`
-                                      : 'SUB-AGENT PROMPT'}
-                                  />
-                                ))}
-                              </div>
-                            )}
-                            {subagentContainers.length > 0 && (
-                              <div className="ml-3 mt-1 flex flex-col gap-1">
-                                {subagentContainers.map((s) => (
-                                  <SubagentBlock
-                                    key={s.jobId}
-                                    state={s}
-                                    subBlocks={subagentBlocks}
-                                    subPrompts={subagentPrompts}
-                                  />
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      };
+                  const firstFinalUnitIdx = units.findIndex(
+                    (u) =>
+                      u.kind === 'single' &&
+                      u.block.type === 'finalOutput' &&
+                      !!(u.block.content && String(u.block.content).trim()),
+                  );
+                  const hasFinalOutput = firstFinalUnitIdx >= 0;
+                  const activityUnits = hasFinalOutput
+                    ? units.slice(0, firstFinalUnitIdx)
+                    : units;
+                  const afterUnits = hasFinalOutput
+                    ? units.slice(firstFinalUnitIdx)
+                    : [];
 
-                      return (
-                        <motion.div
-                          key={`tool_group_${unit.entries[0]?.index ?? 0}`}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.12, ease: 'easeOut' }}
-                          className="chat-streaming-block ml-3 pl-3 border-l-2 border-foreground/15 space-y-1.5"
-                        >
-                          {unit.entries.map(renderToolEntry)}
-                        </motion.div>
-                      );
-                    }
-
-                    // Single block (thinking, finalOutput)
-                    const block = unit.block;
-                    const index = unit.index;
-                    const key = block.id || `${block.type}_${index}`;
-                    const renderBlock = () => {
-                      if (block.type === 'thinking') {
-                        return (
-                          <ReasoningBlock
-                            text={block.content || ''}
-                            isGenerating={isLast && streaming && index === displayBlocks.length - 1}
-                            duration={message.thinkingDuration}
-                          />
-                        );
-                      } else if (block.type === 'finalOutput') {
-                        if (!block.content) return null;
-                        const isFinalStreaming = !!(isLast && streaming);
-                        return (
-                          <div className={cn(
-                            "chat-message-text text-foreground/90 space-y-3 max-w-none",
-                            isFinalStreaming && "streaming-markdown-content"
-                          )}>
-                            <Markdown content={block.content} />
-                          </div>
-                        );
+                  // Aggregate counts across the whole pre-final activity for the
+                  // single collapsed header.
+                  let totalThoughts = 0;
+                  let totalViewed = 0;
+                  let totalEdited = 0;
+                  let totalRan = 0;
+                  let totalUsed = 0;
+                  let totalTools = 0;
+                  for (const u of activityUnits) {
+                    if (u.kind === 'thinking_group') {
+                      totalThoughts += u.entries.length;
+                    } else if (u.kind === 'tool_group') {
+                      for (const { block } of u.entries) {
+                        totalTools++;
+                        const bucket = classifyTool(block.tool.name);
+                        if (bucket === 'view') totalViewed++;
+                        else if (bucket === 'edit') totalEdited++;
+                        else if (bucket === 'run') totalRan++;
+                        else totalUsed++;
                       }
-                      return null;
-                    };
+                    }
+                  }
+
+                  const renderThinkingGroup = (
+                    unit: Extract<RenderUnit, { kind: 'thinking_group' }>,
+                    unitIdx: number,
+                    unitList: RenderUnit[],
+                    opts?: { forceIdle?: boolean },
+                  ) => {
+                    const lastIndex = unit.entries[unit.entries.length - 1]?.index ?? 0;
+                    const isGenerating =
+                      !opts?.forceIdle &&
+                      !!(isLast && streaming && lastIndex === displayBlocks.length - 1);
+                    const n = unit.entries.length;
+                    const segments = unit.entries.map((e) => e.block.content || '');
+                    const isTrailingThought = !unitList
+                      .slice(unitIdx + 1)
+                      .some((u) => u.kind === 'thinking_group');
+
                     return (
                       <motion.div
-                        key={key}
+                        key={`thinking_group_${unit.entries[0]?.index ?? 0}`}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.12, ease: 'easeOut' }}
                         className="chat-streaming-block"
                       >
-                        {renderBlock()}
+                        <ReasoningBlock
+                          segments={segments}
+                          isGenerating={isGenerating}
+                          duration={
+                            !isGenerating && isTrailingThought
+                              ? message.thinkingDuration
+                              : undefined
+                          }
+                          thoughtCount={n}
+                        />
                       </motion.div>
                     );
-                  });
+                  };
+
+                  const renderToolGroup = (
+                    unit: Extract<RenderUnit, { kind: 'tool_group' }>,
+                    unitIdx: number,
+                    unitList: RenderUnit[],
+                    opts?: { forceIdle?: boolean },
+                  ) => {
+                    let thoughtCount = 0;
+                    {
+                      const prev = unitIdx > 0 ? unitList[unitIdx - 1] : null;
+                      if (prev?.kind === 'thinking_group') {
+                        thoughtCount = prev.entries.length;
+                      }
+                    }
+
+                    let viewedCount = 0;
+                    let editedCount = 0;
+                    let ranCount = 0;
+                    let usedCount = 0;
+
+                    const summaryEntries = unit.entries.map(({ block, index }) => {
+                      const isSubagentCall =
+                        block.tool.name === 'august__spawn_subagent' ||
+                        block.tool.name === 'workbench_spawn_subagent' ||
+                        block.tool.name === 'august__run_team' ||
+                        block.tool.name === 'workbench_run_team';
+                      const promptEntries = isSubagentCall && block.tool.id && subagentPrompts
+                        ? Array.from(subagentPrompts.entries())
+                            .filter(([k]) => k === block.tool.id)
+                            .map(([, v]) => v)
+                        : [];
+                      const agentId =
+                        promptEntries[0]?.subagentId ??
+                        extractAgentId(block.tool.context) ??
+                        undefined;
+
+                      const bucket = classifyTool(block.tool.name);
+                      if (bucket === 'view') viewedCount++;
+                      else if (bucket === 'edit') editedCount++;
+                      else if (bucket === 'run') ranCount++;
+                      else usedCount++;
+
+                      const entry = buildToolSummaryEntry(block.tool, { agentIdOverride: agentId });
+                      if (!entry.id) entry.id = `tool_${index}`;
+                      return { entry, block, index, promptEntries, isSubagentCall };
+                    });
+
+                    const isLive =
+                      !opts?.forceIdle &&
+                      (summaryEntries.some(
+                        ({ entry }) =>
+                          entry.status === 'running' || entry.awaitingApproval,
+                      ) ||
+                        !!(
+                          isLast &&
+                          streaming &&
+                          unit.entries.some(
+                            (e) =>
+                              e.index === displayBlocks.length - 1 ||
+                              displayBlocks[displayBlocks.length - 1]?.type === 'toolCall' ||
+                              displayBlocks[displayBlocks.length - 1]?.type === 'command',
+                          ) &&
+                          !unitList.slice(unitIdx + 1).some((u) => u.kind === 'tool_group')
+                        ));
+
+                    // Inside the settled activity pack, don't re-badge thoughts
+                    // on every tool group — the outer ActivitySummary already
+                    // shows Thought (N). Keep per-group tool buckets only.
+                    const showThoughtOnTools = !opts?.forceIdle;
+
+                    return (
+                      <motion.div
+                        key={`tool_group_${unit.entries[0]?.index ?? 0}`}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.12, ease: 'easeOut' }}
+                        className="chat-streaming-block ml-3 pl-3 border-l-2 border-foreground/15 space-y-1.5"
+                      >
+                        <ToolSummary
+                          thoughtCount={showThoughtOnTools ? thoughtCount : 0}
+                          viewedCount={viewedCount}
+                          editedCount={editedCount}
+                          ranCount={ranCount}
+                          usedCount={usedCount}
+                          entries={summaryEntries.map((s) => s.entry)}
+                          isLive={isLive}
+                          renderToolBody={(tool) => (
+                            <ToolCallItemBody
+                              tool={tool}
+                              progress={tool.id ? toolProgress?.get(tool.id) : undefined}
+                            />
+                          )}
+                          renderAfterRow={(summaryEntry) => {
+                            const meta = summaryEntries.find((s) => s.entry.id === summaryEntry.id);
+                            if (!meta) return null;
+                            const { block, promptEntries, isSubagentCall } = meta;
+                            if (!isSubagentCall) return null;
+                            const subagentContainers = block.tool.id && subagentBlocks
+                              ? Array.from(subagentBlocks.values())
+                                  .filter((s) => s.parentToolId === block.tool.id)
+                                  .sort((a, b) => a.startedAt - b.startedAt)
+                              : [];
+                            if (promptEntries.length === 0 && subagentContainers.length === 0) {
+                              return null;
+                            }
+                            return (
+                              <>
+                                {promptEntries.length > 0 && (
+                                  <div className="ml-1 mt-1 flex flex-col gap-1">
+                                    {promptEntries.map((p, pi) => (
+                                      <PromptDisclosure
+                                        key={`${block.tool.id}-prompt-${pi}`}
+                                        content={p.content}
+                                        tokens={p.tokens}
+                                        label={p.subagentId
+                                          ? `SUB-AGENT PROMPT · ${p.subagentId}`
+                                          : 'SUB-AGENT PROMPT'}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                                {subagentContainers.length > 0 && (
+                                  <div className="ml-1 mt-1 flex flex-col gap-1">
+                                    {subagentContainers.map((s) => (
+                                      <SubagentBlock
+                                        key={s.jobId}
+                                        state={s}
+                                        subBlocks={subagentBlocks}
+                                        subPrompts={subagentPrompts}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                              </>
+                            );
+                          }}
+                        />
+                      </motion.div>
+                    );
+                  };
+
+                  const renderSingle = (
+                    unit: Extract<RenderUnit, { kind: 'single' }>,
+                  ) => {
+                    const block = unit.block;
+                    const index = unit.index;
+                    const key = block.id || `${block.type}_${index}`;
+                    if (block.type === 'thinking') {
+                      return (
+                        <motion.div
+                          key={key}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.12, ease: 'easeOut' }}
+                          className="chat-streaming-block"
+                        >
+                          <ReasoningBlock
+                            text={block.content || ''}
+                            isGenerating={isLast && streaming && index === displayBlocks.length - 1}
+                            duration={message.thinkingDuration}
+                          />
+                        </motion.div>
+                      );
+                    }
+                    if (block.type === 'finalOutput') {
+                      if (!block.content) return null;
+                      const isFinalStreaming = !!(isLast && streaming);
+                      return (
+                        <motion.div
+                          key={key}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.12, ease: 'easeOut' }}
+                          className="chat-streaming-block"
+                        >
+                          <div className={cn(
+                            'chat-message-text text-foreground/90 space-y-3 max-w-none',
+                            isFinalStreaming && 'streaming-markdown-content',
+                          )}>
+                            <Markdown content={block.content} />
+                          </div>
+                        </motion.div>
+                      );
+                    }
+                    return null;
+                  };
+
+                  const renderUnitList = (
+                    list: RenderUnit[],
+                    opts?: { forceIdle?: boolean },
+                  ) =>
+                    list.map((unit, unitIdx) => {
+                      if (unit.kind === 'thinking_group') {
+                        return renderThinkingGroup(unit, unitIdx, list, opts);
+                      }
+                      if (unit.kind === 'tool_group') {
+                        return renderToolGroup(unit, unitIdx, list, opts);
+                      }
+                      return renderSingle(unit);
+                    });
+
+                  // Settled turn with final answer: one ActivitySummary for all
+                  // prior work, then the final prose outside.
+                  if (hasFinalOutput) {
+                    const hasActivity =
+                      totalThoughts + totalTools > 0 ||
+                      activityUnits.some((u) => u.kind !== 'single');
+                    return (
+                      <>
+                        {hasActivity && (
+                          <motion.div
+                            key="activity-pack"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.12, ease: 'easeOut' }}
+                            className="chat-streaming-block"
+                          >
+                            <ActivitySummary
+                              thoughtCount={totalThoughts}
+                              toolsCount={totalTools}
+                              viewedCount={totalViewed}
+                              editedCount={totalEdited}
+                              ranCount={totalRan}
+                              usedCount={totalUsed}
+                            >
+                              {renderUnitList(activityUnits, { forceIdle: true })}
+                            </ActivitySummary>
+                          </motion.div>
+                        )}
+                        {renderUnitList(afterUnits)}
+                      </>
+                    );
+                  }
+
+                  // Live / no final yet: stream normal multi-section timeline.
+                  return renderUnitList(units);
                 })()}
               </AnimatePresence>
             )}

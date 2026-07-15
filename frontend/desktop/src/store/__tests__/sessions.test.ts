@@ -1,6 +1,6 @@
 /* ── sessions.test.ts ─ folder-creation & session-grouping regression tests ─ */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   $sessions,
   $folders,
@@ -10,7 +10,19 @@ import {
   getOrCreateEmptySession,
   saveSessionsToStorage,
   saveFoldersToStorage,
+  dedupeSessions,
+  preferSessionRow,
+  updateSessionWorkbenchMetadata,
+  reconcileSessionsFromBackend,
+  type Session,
 } from '../sessions';
+
+vi.mock('@/api/workbench', () => ({
+  getWorkbenchSessions: vi.fn(async () => []),
+  deleteWorkbenchSession: vi.fn(async () => {}),
+}));
+
+import { getWorkbenchSessions } from '@/api/workbench';
 
 beforeEach(() => {
   // Reset both stores to a clean slate before each test.
@@ -18,6 +30,8 @@ beforeEach(() => {
   $folders.set([]);
   saveSessionsToStorage([]);
   saveFoldersToStorage([]);
+  vi.mocked(getWorkbenchSessions).mockReset();
+  vi.mocked(getWorkbenchSessions).mockResolvedValue([]);
 });
 
 describe('findOrCreateSessionForPath — new folder path', () => {
@@ -134,5 +148,133 @@ describe('getOrCreateEmptySession — no blank stacking', () => {
     const second = getOrCreateEmptySession(null, 'Fresh');
     expect(second.id).not.toBe(first.id);
     expect($sessions.get()).toHaveLength(2);
+  });
+});
+
+describe('dedupeSessions — sess_* + wb_* pairs', () => {
+  const base = (partial: Partial<Session> & Pick<Session, 'id' | 'title'>): Session => ({
+    startedAt: new Date().toISOString(),
+    messageCount: 0,
+    lastMessage: '',
+    provider: '',
+    model: '',
+    isArchived: false,
+    ...partial,
+  });
+
+  it('merges local sess row with standalone workbench row', () => {
+    const local = base({
+      id: 'sess_20260715_120000_abcd',
+      title: 'My chat',
+      workbenchSessionId: 'wb_abc',
+      messageCount: 2,
+    });
+    const remote = base({
+      id: 'wb_abc',
+      title: 'New Session',
+      workbenchSessionId: 'wb_abc',
+      messageCount: 0,
+    });
+    const out = dedupeSessions([local, remote]);
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe(local.id);
+    expect(out[0].workbenchSessionId).toBe('wb_abc');
+    expect(out[0].title).toBe('My chat');
+    expect(out[0].messageCount).toBe(2);
+  });
+
+  it('preferSessionRow keeps sess_* id', () => {
+    const a = base({ id: 'wb_x', title: 'New Session', workbenchSessionId: 'wb_x' });
+    const b = base({ id: 'sess_y', title: 'Hello world', workbenchSessionId: 'wb_x' });
+    const m = preferSessionRow(a, b);
+    expect(m.id).toBe('sess_y');
+    expect(m.workbenchSessionId).toBe('wb_x');
+    expect(m.title).toBe('Hello world');
+  });
+
+  it('updateSessionWorkbenchMetadata collapses a pre-existing wb row', () => {
+    const local = createSession(null, 'Draft');
+    // Simulate SSE inserting workbench row first
+    $sessions.set([
+      base({ id: 'wb_race', title: 'New Session', workbenchSessionId: 'wb_race' }),
+      ...$sessions.get(),
+    ]);
+    expect($sessions.get()).toHaveLength(2);
+
+    updateSessionWorkbenchMetadata(local.id, { workbenchSessionId: 'wb_race' });
+
+    const all = $sessions.get();
+    expect(all).toHaveLength(1);
+    expect(all[0].id).toBe(local.id);
+    expect(all[0].workbenchSessionId).toBe('wb_race');
+  });
+});
+
+describe('reconcileSessionsFromBackend — keep drafts, stable ids', () => {
+  it('keeps local-only empty sessions when backend list is empty', async () => {
+    const draft = createSession(null, 'Chat 2026-07-15 12:00');
+    vi.mocked(getWorkbenchSessions).mockResolvedValue([]);
+
+    await reconcileSessionsFromBackend();
+
+    const all = $sessions.get();
+    expect(all).toHaveLength(1);
+    expect(all[0].id).toBe(draft.id);
+  });
+
+  it('does not rewrite local id to workbench id on match', async () => {
+    const local = createSession(null, 'Important title');
+    $sessions.set([{ ...local, workbenchSessionId: 'wb_keep', messageCount: 1 }]);
+    saveSessionsToStorage($sessions.get());
+
+    vi.mocked(getWorkbenchSessions).mockResolvedValue([
+      {
+        id: 'wb_keep',
+        title: 'New Session',
+        provider: 'openai',
+        model: 'gpt',
+        messageCount: 1,
+        updatedAt: new Date().toISOString(),
+      } as never,
+    ]);
+
+    await reconcileSessionsFromBackend();
+
+    const all = $sessions.get();
+    expect(all).toHaveLength(1);
+    expect(all[0].id).toBe(local.id); // still sess_*
+    expect(all[0].workbenchSessionId).toBe('wb_keep');
+    expect(all[0].title).toBe('Important title');
+  });
+
+  it('drops local rows whose workbench id was deleted server-side', async () => {
+    const local = createSession(null, 'Gone');
+    $sessions.set([{ ...local, workbenchSessionId: 'wb_deleted', messageCount: 3 }]);
+    saveSessionsToStorage($sessions.get());
+    vi.mocked(getWorkbenchSessions).mockResolvedValue([]);
+
+    await reconcileSessionsFromBackend();
+
+    expect($sessions.get()).toHaveLength(0);
+  });
+
+  it('attaches backend-only session to a pending empty local draft', async () => {
+    const draft = createSession(null, 'Chat 2026-07-15 12:00');
+    vi.mocked(getWorkbenchSessions).mockResolvedValue([
+      {
+        id: 'wb_new',
+        title: 'New Session',
+        provider: 'x',
+        messageCount: 0,
+        updatedAt: new Date().toISOString(),
+      } as never,
+    ]);
+
+    await reconcileSessionsFromBackend();
+
+    const all = $sessions.get();
+    expect(all).toHaveLength(1);
+    expect(all[0].id).toBe(draft.id);
+    expect(all[0].workbenchSessionId).toBe('wb_new');
   });
 });

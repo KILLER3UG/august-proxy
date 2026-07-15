@@ -19,6 +19,8 @@ interface ThinkingDisclosureProps {
   elapsed?: number;
   icon?: ReactNode;
   label?: string;
+  /** When true, skip the "Thought for Xs" suffix (ToolSummary already counts thoughts). */
+  omitDurationLabel?: boolean;
 }
 
 export function ThinkingDisclosure({
@@ -27,7 +29,8 @@ export function ThinkingDisclosure({
   duration,
   elapsed,
   icon,
-  label = 'Thinking',
+  label,
+  omitDurationLabel = false,
 }: ThinkingDisclosureProps) {
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -61,11 +64,22 @@ export function ThinkingDisclosure({
   }, [isPreview, open, children]);
 
   const liveElapsed = pending && elapsed !== undefined ? fmtElapsed(elapsed) : null;
-  const displayLabel = pending
-    ? liveElapsed ? `Thinking ${liveElapsed}` : 'Thinking'
-    : duration !== undefined
-      ? `Thought for ${fmtElapsed(duration)}`
-      : label;
+  // Explicit multi-count label (e.g. "Thinking (3)") wins when provided.
+  // Otherwise keep the classic single-thought labels.
+  const displayLabel =
+    label != null && label !== ''
+      ? pending && liveElapsed
+        ? `${label} ${liveElapsed}`
+        : label
+      : pending
+        ? liveElapsed
+          ? `Thinking ${liveElapsed}`
+          : 'Thinking'
+        : duration !== undefined && !omitDurationLabel
+          ? `Thought for ${fmtElapsed(duration)}`
+          : omitDurationLabel && !pending
+            ? 'Thought'
+            : 'Thought';
 
   return (
     <div

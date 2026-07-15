@@ -7,7 +7,7 @@ import { useState, useEffect, useRef } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSessionsStore, createSession, getOrCreateEmptySession, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend } from "@/store/sessions";
+import { useSessionsStore, createSession, getOrCreateEmptySession, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend, healDuplicateSessions } from "@/store/sessions";
 import { startRealtimeBridge } from "@/realtime/bridge";
 import { useWorkspacesStore } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
@@ -71,6 +71,8 @@ export function ChatLayout() {
   // Ensure global realtime bridge is up (idempotent). Reconcile is only a
   // safety net — live creates/deletes/status arrive via /api/realtime/stream.
   useEffect(() => {
+    // Collapse any sess_* + wb_* duplicate pairs left by older builds / races.
+    healDuplicateSessions();
     startRealtimeBridge();
     void reconcileSessionsFromBackend();
     const t = setInterval(() => { void reconcileSessionsFromBackend(); }, 60_000);

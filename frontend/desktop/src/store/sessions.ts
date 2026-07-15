@@ -38,7 +38,9 @@ const loadSessions = (): Session[] => {
   const saved = localStorage.getItem(LOCAL_SESSIONS_KEY);
   if (saved) {
     try {
-      return JSON.parse(saved);
+      const parsed = JSON.parse(saved) as Session[];
+      if (!Array.isArray(parsed)) return [];
+      return parsed;
     } catch { /* silent */ }
   }
   return [];
@@ -179,6 +181,112 @@ export function preferSessionTitle(
   return (preferred || fallback || defaultSessionTitle()).trim();
 }
 
+/**
+ * Prefer the better of two session rows that share the same workbench id
+ * (or are otherwise duplicates). Keeps a stable local `sess_*` UI id when
+ * present so the URL / ChatThread mount does not thrash.
+ */
+export function preferSessionRow(a: Session, b: Session): Session {
+  // Prefer stable frontend id over raw workbench id as the row key.
+  const aIsLocal = a.id.startsWith('sess_');
+  const bIsLocal = b.id.startsWith('sess_');
+  const primary = aIsLocal && !bIsLocal ? a : bIsLocal && !aIsLocal ? b : a;
+  const secondary = primary === a ? b : a;
+  const stableId = aIsLocal
+    ? a.id
+    : bIsLocal
+      ? b.id
+      : primary.id;
+  return {
+    ...secondary,
+    ...primary,
+    id: stableId,
+    workbenchSessionId:
+      primary.workbenchSessionId ||
+      secondary.workbenchSessionId ||
+      (primary.id.startsWith('wb_') ? primary.id : undefined) ||
+      (secondary.id.startsWith('wb_') ? secondary.id : undefined),
+    title: preferSessionTitle(primary.title, secondary.title),
+    messageCount: Math.max(primary.messageCount ?? 0, secondary.messageCount ?? 0),
+    lastMessage: primary.lastMessage || secondary.lastMessage,
+    provider: primary.provider || secondary.provider,
+    model: primary.model || secondary.model,
+    folderId: primary.folderId ?? secondary.folderId,
+    workspacePath: primary.workspacePath ?? secondary.workspacePath,
+    workbenchAgentId: primary.workbenchAgentId || secondary.workbenchAgentId,
+    workbenchProvider: primary.workbenchProvider || secondary.workbenchProvider,
+    startedAt: primary.startedAt || secondary.startedAt,
+    isArchived: !!(primary.isArchived || secondary.isArchived),
+  };
+}
+
+/**
+ * Collapse duplicate sidebar rows that share a workbenchSessionId (or where
+ * one row's id is another's workbenchSessionId). Fixes races where SSE
+ * `session.created` inserts a `wb_*` row while ChatThread still holds `sess_*`.
+ */
+export function dedupeSessions(sessions: Session[]): Session[] {
+  if (sessions.length <= 1) return sessions;
+
+  const byKey = new Map<string, Session>();
+  const order: string[] = [];
+
+  const keyFor = (s: Session): string => {
+    if (s.workbenchSessionId) return `wb:${s.workbenchSessionId}`;
+    if (s.id.startsWith('wb_')) return `wb:${s.id}`;
+    return `id:${s.id}`;
+  };
+
+  for (const s of sessions) {
+    const key = keyFor(s);
+    const existing = byKey.get(key);
+    if (existing) {
+      byKey.set(key, preferSessionRow(existing, s));
+      continue;
+    }
+
+    // Cross-link: e.g. existing id:sess_* later gains same workbench as wb:X row
+    let mergedInto: string | null = null;
+    for (const [ek, es] of byKey) {
+      const same =
+        es.id === s.id ||
+        es.workbenchSessionId === s.id ||
+        s.workbenchSessionId === es.id ||
+        (!!es.workbenchSessionId &&
+          !!s.workbenchSessionId &&
+          es.workbenchSessionId === s.workbenchSessionId) ||
+        (es.id.startsWith('wb_') && s.workbenchSessionId === es.id) ||
+        (s.id.startsWith('wb_') && es.workbenchSessionId === s.id);
+      if (same) {
+        byKey.set(ek, preferSessionRow(es, s));
+        mergedInto = ek;
+        break;
+      }
+    }
+    if (mergedInto) continue;
+
+    byKey.set(key, s);
+    order.push(key);
+  }
+
+  return order.map((k) => byKey.get(k)!).filter(Boolean);
+}
+
+/** One-shot heal for corrupt localStorage pairs (sess_* + wb_* duplicates). */
+export function healDuplicateSessions(): void {
+  const current = useSessionsStore.getState().sessions;
+  const healed = dedupeSessions(current);
+  if (healed.length === current.length) {
+    // Still rewrite storage if content changed (same length, different ids)
+    const same =
+      healed.length === current.length &&
+      healed.every((s, i) => s.id === current[i]?.id && s.workbenchSessionId === current[i]?.workbenchSessionId);
+    if (same) return;
+  }
+  useSessionsStore.setState({ sessions: healed });
+  saveSessionsToStorage(healed);
+}
+
 /** True when the session has no real conversation content yet. */
 export function sessionIsEmpty(s: Session): boolean {
   if (s.isArchived) return false;
@@ -314,8 +422,11 @@ export function updateSessionWorkbenchMetadata(
     if (s.id !== id && s.workbenchSessionId !== id) return s;
     return { ...s, ...metadata };
   });
-  useSessionsStore.setState({ sessions: updated });
-  saveSessionsToStorage(updated);
+  // SSE may have already inserted a standalone wb_* row for the same
+  // workbench session — collapse so the sidebar never shows two entries.
+  const deduped = dedupeSessions(updated);
+  useSessionsStore.setState({ sessions: deduped });
+  saveSessionsToStorage(deduped);
 }
 
 /** IDs removed optimistically / via tool event — reconcile must not re-add them. */
@@ -505,6 +616,16 @@ export function clearAllSessions(includeArchived: boolean = true) {
  *
  * Match order: local.workbenchSessionId → local.id → backend id.
  * Frontend-only fields (lastMessage, folderId, …) are preserved on merge.
+ *
+ * Important:
+ * - UI session `id` stays stable (`sess_*`). Never rewrite to the workbench id
+ *   mid-flight — that invalidated the open `/c/sess_…` route and spawned a
+ *   second session (or looked like the new chat was deleted).
+ * - Local-only drafts (no workbenchSessionId yet) are kept even when the
+ *   backend list is empty.
+ * - Locals whose workbenchSessionId is gone from the backend are dropped
+ *   (true server-side delete), unless tombstoned already.
+ *
  * Silently falls back to local state if the backend is unavailable.
  */
 export async function reconcileSessionsFromBackend(): Promise<void> {
@@ -529,29 +650,70 @@ export async function reconcileSessionsFromBackend(): Promise<void> {
       const backend = backendMap.get(key) ?? backendMap.get(local.id);
       if (backend) {
         claimed.add(backend.id);
-        // Single ID scheme: sidebar id is always the workbench SoT id.
+        // Keep stable UI id — only attach / refresh workbench metadata.
         merged.push({
           ...local,
-          id: backend.id,
+          id: local.id,
           workbenchSessionId: backend.id,
           // Never clobber a real local title with a backend placeholder
           // ("Chat 2026-…", "New Session") — that was wiping auto-titles.
           title: preferSessionTitle(
-            backend.title as string | undefined,
             local.title,
+            backend.title as string | undefined,
           ),
           startedAt: local.startedAt,
-          messageCount: backend.messageCount ?? local.messageCount,
+          messageCount: Math.max(
+            backend.messageCount ?? 0,
+            local.messageCount ?? 0,
+          ),
           provider: backend.provider || local.provider,
           model: (backend.model as string | undefined) || local.model,
           workbenchProvider: backend.provider || local.workbenchProvider,
         });
+        continue;
       }
-      // Not in workbench SoT → dropped from sidebar (deleted server-side).
+
+      // No backend match.
+      if (!local.workbenchSessionId) {
+        // Pure local draft (new empty chat before first message) — keep.
+        merged.push(local);
+        continue;
+      }
+      // Linked to a workbench row that no longer exists → server deleted it.
+      // Drop from sidebar (delete_session tool / purge / expired).
     }
 
     for (const bs of liveBackend) {
       if (claimed.has(bs.id) || _isTombstoned(bs.id)) continue;
+      // Prefer attaching to a local empty draft that is waiting for a workbench
+      // link (avoids a second row when SSE/reconcile race with first message).
+      const pendingIdx = merged.findIndex(
+        (s) =>
+          !s.workbenchSessionId &&
+          !s.isArchived &&
+          sessionIsEmpty(s) &&
+          !_isTombstoned(s.id),
+      );
+      if (pendingIdx >= 0) {
+        const pending = merged[pendingIdx];
+        claimed.add(bs.id);
+        merged[pendingIdx] = {
+          ...pending,
+          workbenchSessionId: bs.id,
+          title: preferSessionTitle(
+            pending.title,
+            bs.title as string | undefined,
+          ),
+          messageCount: Math.max(
+            bs.messageCount ?? 0,
+            pending.messageCount ?? 0,
+          ),
+          provider: bs.provider || pending.provider,
+          model: (bs.model as string | undefined) || pending.model,
+          workbenchProvider: bs.provider || pending.workbenchProvider,
+        };
+        continue;
+      }
       merged.push({
         id: bs.id,
         title: (bs.title as string | undefined) || 'New Session',
@@ -565,8 +727,9 @@ export async function reconcileSessionsFromBackend(): Promise<void> {
       });
     }
 
-    useSessionsStore.setState({ sessions: merged });
-    saveSessionsToStorage(merged);
+    const finalSessions = dedupeSessions(merged);
+    useSessionsStore.setState({ sessions: finalSessions });
+    saveSessionsToStorage(finalSessions);
   } catch {
     // Backend unreachable — keep local state intact.
   }

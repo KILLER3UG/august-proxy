@@ -15,6 +15,8 @@ import {
   clearSessionStatus,
   preferSessionTitle,
   isPlaceholderTitle,
+  sessionIsEmpty,
+  dedupeSessions,
   type Session,
   type SessionStatus,
 } from '@/store/sessions';
@@ -51,9 +53,35 @@ function upsertSessionFromEvent(ev: RealtimeEvent): void {
   const sid = String(ev.sessionId || '');
   if (!sid) return;
   const sessions = useSessionsStore.getState().sessions;
-  const idx = sessions.findIndex(
+  let idx = sessions.findIndex(
     (s) => s.id === sid || s.workbenchSessionId === sid,
   );
+
+  // Race: workbench `session.created` often arrives before ChatThread has
+  // written workbenchSessionId onto the open local `sess_*` row. Prefer
+  // linking a single empty local draft instead of inserting a duplicate.
+  if (idx < 0) {
+    const pendingIndexes = sessions
+      .map((s, i) => ({ s, i }))
+      .filter(
+        ({ s }) =>
+          !s.isArchived &&
+          !s.workbenchSessionId &&
+          sessionIsEmpty(s) &&
+          s.id.startsWith('sess_'),
+      );
+    if (pendingIndexes.length === 1) {
+      idx = pendingIndexes[0].i;
+    } else if (pendingIndexes.length > 1) {
+      // Most recently started empty draft
+      pendingIndexes.sort(
+        (a, b) =>
+          new Date(b.s.startedAt).getTime() - new Date(a.s.startedAt).getTime(),
+      );
+      idx = pendingIndexes[0].i;
+    }
+  }
+
   if (idx >= 0) {
     const prev = sessions[idx];
     const incomingTitle = ev.title as string | undefined;
@@ -64,6 +92,8 @@ function upsertSessionFromEvent(ev: RealtimeEvent): void {
         : preferSessionTitle(prev.title, incomingTitle);
     const next: Session = {
       ...prev,
+      // Keep stable UI id — never rewrite sess_* → wb_* here.
+      id: prev.id,
       title: nextTitle,
       provider: (ev.provider as string | undefined) || prev.provider,
       model: (ev.model as string | undefined) || prev.model,
@@ -75,11 +105,12 @@ function upsertSessionFromEvent(ev: RealtimeEvent): void {
     };
     const updated = sessions.slice();
     updated[idx] = next;
-    useSessionsStore.setState({ sessions: updated });
-    saveSessionsToStorage(updated);
+    const deduped = dedupeSessions(updated);
+    useSessionsStore.setState({ sessions: deduped });
+    saveSessionsToStorage(deduped);
     return;
   }
-  // New session from tool / other tab
+  // New session from tool / other tab (no local draft to attach)
   const created: Session = {
     id: sid,
     title: (ev.title as string | undefined) || 'New Session',
@@ -94,7 +125,7 @@ function upsertSessionFromEvent(ev: RealtimeEvent): void {
     workspacePath: (ev.workspacePath as string | undefined) || null,
     isArchived: false,
   };
-  const updated = [created, ...sessions];
+  const updated = dedupeSessions([created, ...sessions]);
   useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
 }
