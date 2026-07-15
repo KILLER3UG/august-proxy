@@ -184,7 +184,17 @@ export function ChatLayout() {
       }
       void navigate(`/c/${activeSess.id}`, { replace: true });
     } else if (location.pathname.startsWith("/c/")) {
-      const match = sessions.find((s) => s.id === sessionId);
+      // Match by UI id OR legacy workbench id (older builds rewrote session.id).
+      const match = sessions.find(
+        (s) => s.id === sessionId || s.workbenchSessionId === sessionId,
+      );
+      if (match && !match.isArchived) {
+        // URL still has a legacy workbench id — normalize to stable UI id.
+        if (match.id !== sessionId) {
+          void navigate(`/c/${match.id}`, { replace: true });
+        }
+        return;
+      }
       if (!match || match.isArchived) {
         const fallback = activeSessions[0] || createSession(null, 'New Chat', currentWorkspacePath);
         void navigate(`/c/${fallback.id}`, { replace: true });

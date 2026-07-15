@@ -154,31 +154,14 @@ export function updateSessionWorkbenchMetadata(
   id: string,
   metadata: Pick<Session, 'workbenchSessionId' | 'workbenchAgentId' | 'workbenchProvider'>
 ) {
-  // Promote sidebar id to the workbench SoT id when linked (one chat ID scheme).
-  const wbId = metadata.workbenchSessionId;
-  const updated = useSessionsStore.getState().sessions.map(s => {
+  // Keep the sidebar/route session id STABLE. Rewriting `s.id` to the
+  // workbench id mid-turn caused ChatLayout to treat the URL as invalid,
+  // navigate away, remount ChatThread, and drop the in-flight stream —
+  // so free-model replies (which work fine on the API) never appeared.
+  // workbenchSessionId is the backend handle; UI keys stay on `s.id`.
+  const updated = useSessionsStore.getState().sessions.map((s) => {
     if (s.id !== id && s.workbenchSessionId !== id) return s;
-    const next: Session = { ...s, ...metadata };
-    if (wbId && wbId !== s.id) {
-      next.id = wbId;
-      next.workbenchSessionId = wbId;
-      // Migrate local draft/history keys from provisional id → SoT id
-      try {
-        const msg = localStorage.getItem(`chat_messages_${s.id}`);
-        if (msg && !localStorage.getItem(`chat_messages_${wbId}`)) {
-          localStorage.setItem(`chat_messages_${wbId}`, msg);
-        }
-        const draft = localStorage.getItem(`august_composer_draft_${s.id}`);
-        if (draft && !localStorage.getItem(`august_composer_draft_${wbId}`)) {
-          localStorage.setItem(`august_composer_draft_${wbId}`, draft);
-        }
-        if (s.id !== wbId) {
-          localStorage.removeItem(`chat_messages_${s.id}`);
-          localStorage.removeItem(`august_composer_draft_${s.id}`);
-        }
-      } catch { /* localStorage may be unavailable in tests */ }
-    }
-    return next;
+    return { ...s, ...metadata };
   });
   useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);

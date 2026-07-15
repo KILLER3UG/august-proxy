@@ -349,7 +349,12 @@ function persistMessages(sessionId: string | null, value: ChatMessage[]) {
 
 export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const sessions = useSessionsStore((s) => s.sessions);
-  const activeSession = useMemo(() => sessions.find(s => s.id === sessionId), [sessions, sessionId]);
+  const activeSession = useMemo(
+    () =>
+      sessions.find((s) => s.id === sessionId || s.workbenchSessionId === sessionId) ??
+      null,
+    [sessions, sessionId],
+  );
   const [streamState, setStreamState] = useState(() => getOrInitSessionStreamState(sessionId));
 
   useEffect(() => {
@@ -1391,14 +1396,25 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       return;
     }
 
+    if (!modelForRequest?.id) {
+      toast.error('Select a model first (e.g. a free OpenCode model)');
+      return;
+    }
+    if (!modelForRequest.provider) {
+      toast.error('Selected model has no provider — pick it again from the model list');
+      return;
+    }
+
     const result = await startChatStream(turnSessionId, {
       message: applyWorkbenchGuardMode(workbenchMode, latestText),
       chatHistory,
       workbenchMode,
       effort,
-      model: modelForRequest?.id,
-      modelProvider: modelForRequest?.provider,
-      provider: modelForRequest?.provider,
+      model: modelForRequest.id,
+      // Always pass the provider that owns this model (name or id). Without
+      // it, free claude-like ids can resolve to bare Anthropic with no key.
+      modelProvider: modelForRequest.provider,
+      provider: modelForRequest.provider,
       agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
       guardMode: workbenchMode,
       ensureWorkbenchSession,
