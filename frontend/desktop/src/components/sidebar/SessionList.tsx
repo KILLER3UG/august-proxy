@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isTauri } from "@/lib/tauri-detect";
-import { fadeUp, hoverScale } from "@/lib/motion";
+import { sessionRow, hoverScale } from "@/lib/motion";
 import { MarqueeTitle } from "@/components/ui/MarqueeTitle";
 import {
   useSessionsStore,
@@ -92,6 +92,29 @@ export function SessionList({
   useEffect(() => {
     startChatActiveStreamsPoller();
   }, []);
+
+  /** Confirm + delete with exit animation (store remove drives AnimatePresence). */
+  const confirmDeleteSession = (s: Session) => {
+    if (
+      !confirm("Are you sure you want to permanently delete this chat?")
+    ) {
+      return;
+    }
+    // Drop pin entry so localStorage does not accumulate dead ids
+    if (pinnedIds.has(s.id)) {
+      const next = new Set(pinnedIds);
+      next.delete(s.id);
+      setPinnedIds(next);
+      localStorage.setItem(SESSIONS_KEY, JSON.stringify([...next]));
+    }
+    deleteSession(s.id);
+    if (activeId === s.id || activeId === s.workbenchSessionId) {
+      const fallback = useSessionsStore
+        .getState()
+        .sessions.find((x) => x.id !== s.id && !x.isArchived);
+      if (fallback) onSelect(fallback);
+    }
+  };
 
   // Merge the local per-session status with the live poller output so a
   // session that has a backend generation in progress shows the pulse
@@ -302,7 +325,7 @@ export function SessionList({
             empty="Shift-click a chat to pin"
           >
             <LayoutGroup id="pinned-sessions">
-              <AnimatePresence initial={false}>
+              <AnimatePresence initial={false} mode="popLayout">
                 {pinned.map((s) => (
                   <SessionRow
                     key={s.id}
@@ -324,21 +347,7 @@ export function SessionList({
                       }
                     }}
                     onMoveToFolder={(fId) => moveSessionToFolder(s.id, fId)}
-                    onDelete={() => {
-                      if (
-                        confirm(
-                          "Are you sure you want to permanently delete this chat?",
-                        )
-                      ) {
-                        deleteSession(s.id);
-                        if (activeId === s.id) {
-                          const fallback = sessions.find(
-                            (x) => x.id !== s.id && !x.isArchived,
-                          );
-                          if (fallback) onSelect(fallback);
-                        }
-                      }
-                    }}
+                    onDelete={() => confirmDeleteSession(s)}
                   />
                 ))}
               </AnimatePresence>
@@ -377,48 +386,36 @@ export function SessionList({
 
                     {!isCollapsed && (
                       <div className="pl-2.5 ml-3.5 space-y-0.5">
-                        {folderSessions.map((s) => (
-                          <SessionRow
-                            key={s.id}
-                            session={s}
-                            active={activeId === s.id}
-                            pinned={false}
-                            status={mergedSessionStates[s.id]}
-                            folders={folders}
-                            onClick={() => onSelect(s)}
-                            onTogglePin={() => togglePin(s.id)}
-                            onRename={(newTitle) =>
-                              renameSession(s.id, newTitle)
-                            }
-                            onArchive={() => {
-                              archiveSession(s.id);
-                              if (activeId === s.id) {
-                                const fallback = sessions.find(
-                                  (x) => x.id !== s.id && !x.isArchived,
-                                );
-                                if (fallback) onSelect(fallback);
+                        <AnimatePresence initial={false} mode="popLayout">
+                          {folderSessions.map((s) => (
+                            <SessionRow
+                              key={s.id}
+                              session={s}
+                              active={activeId === s.id}
+                              pinned={false}
+                              status={mergedSessionStates[s.id]}
+                              folders={folders}
+                              onClick={() => onSelect(s)}
+                              onTogglePin={() => togglePin(s.id)}
+                              onRename={(newTitle) =>
+                                renameSession(s.id, newTitle)
                               }
-                            }}
-                            onMoveToFolder={(fId) =>
-                              moveSessionToFolder(s.id, fId)
-                            }
-                            onDelete={() => {
-                              if (
-                                confirm(
-                                  "Are you sure you want to permanently delete this chat?",
-                                )
-                              ) {
-                                deleteSession(s.id);
+                              onArchive={() => {
+                                archiveSession(s.id);
                                 if (activeId === s.id) {
                                   const fallback = sessions.find(
                                     (x) => x.id !== s.id && !x.isArchived,
                                   );
                                   if (fallback) onSelect(fallback);
                                 }
+                              }}
+                              onMoveToFolder={(fId) =>
+                                moveSessionToFolder(s.id, fId)
                               }
-                            }}
-                          />
-                        ))}
+                              onDelete={() => confirmDeleteSession(s)}
+                            />
+                          ))}
+                        </AnimatePresence>
                         {folderSessions.length === 0 && (
                           <p className="py-1 text-xs text-muted-foreground/30 italic pl-1.5">
                             Empty folder
@@ -444,48 +441,36 @@ export function SessionList({
 
                     {!uncategorizedCollapsed && (
                       <div className="pl-2.5 ml-3.5 space-y-0.5">
-                        {uncategorizedSessions.map((s) => (
-                          <SessionRow
-                            key={s.id}
-                            session={s}
-                            active={activeId === s.id}
-                            pinned={false}
-                            status={mergedSessionStates[s.id]}
-                            folders={folders}
-                            onClick={() => onSelect(s)}
-                            onTogglePin={() => togglePin(s.id)}
-                            onRename={(newTitle) =>
-                              renameSession(s.id, newTitle)
-                            }
-                            onArchive={() => {
-                              archiveSession(s.id);
-                              if (activeId === s.id) {
-                                const fallback = sessions.find(
-                                  (x) => x.id !== s.id && !x.isArchived,
-                                );
-                                if (fallback) onSelect(fallback);
+                        <AnimatePresence initial={false} mode="popLayout">
+                          {uncategorizedSessions.map((s) => (
+                            <SessionRow
+                              key={s.id}
+                              session={s}
+                              active={activeId === s.id}
+                              pinned={false}
+                              status={mergedSessionStates[s.id]}
+                              folders={folders}
+                              onClick={() => onSelect(s)}
+                              onTogglePin={() => togglePin(s.id)}
+                              onRename={(newTitle) =>
+                                renameSession(s.id, newTitle)
                               }
-                            }}
-                            onMoveToFolder={(fId) =>
-                              moveSessionToFolder(s.id, fId)
-                            }
-                            onDelete={() => {
-                              if (
-                                confirm(
-                                  "Are you sure you want to permanently delete this chat?",
-                                )
-                              ) {
-                                deleteSession(s.id);
+                              onArchive={() => {
+                                archiveSession(s.id);
                                 if (activeId === s.id) {
                                   const fallback = sessions.find(
                                     (x) => x.id !== s.id && !x.isArchived,
                                   );
                                   if (fallback) onSelect(fallback);
                                 }
+                              }}
+                              onMoveToFolder={(fId) =>
+                                moveSessionToFolder(s.id, fId)
                               }
-                            }}
-                          />
-                        ))}
+                              onDelete={() => confirmDeleteSession(s)}
+                            />
+                          ))}
+                        </AnimatePresence>
                         {uncategorizedSessions.length === 0 && (
                           <p className="py-1 text-xs text-muted-foreground/30 italic pl-1.5">
                             No other chats
@@ -753,7 +738,14 @@ function SessionRow({
 
   if (isEditing) {
     return (
-      <div className="w-full px-2 py-1 flex items-center gap-1.5 bg-white/5 rounded-md">
+      <motion.div
+        layout
+        variants={sessionRow}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        className="w-full px-2 py-1 flex items-center gap-1.5 bg-white/5 rounded-md overflow-hidden"
+      >
         <input
           autoFocus
           value={editTitle}
@@ -769,21 +761,19 @@ function SessionRow({
           onClick={(e) => e.stopPropagation()}
           className="bg-muted border border-border/80 px-1.5 py-0.5 rounded text-xs w-full outline-none text-foreground"
         />
-      </div>
+      </motion.div>
     );
   }
 
   return (
     <motion.div
-      layout="position"
-      variants={fadeUp}
-      exit={{
-        opacity: 0,
-        x: -4,
-        transition: { duration: 0.12, ease: [0.16, 1, 0.3, 1] },
-      }}
+      layout
+      variants={sessionRow}
+      initial="initial"
+      animate="animate"
+      exit="exit"
       className={cn(
-        "group relative rounded-md",
+        "group relative rounded-md overflow-hidden",
         active ? "bg-white/5" : "hover:bg-white/5",
       )}
     >

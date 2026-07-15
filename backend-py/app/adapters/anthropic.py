@@ -102,7 +102,8 @@ buildOpenaiAggregatedForAnthropicFromStream = (
     _anthropic_stream_translate.buildOpenaiAggregatedForAnthropicFromStream
 )
 
-MAX_MANAGED_TOOL_ROUNDS = 10
+# 0 = unlimited managed tool rounds (default). Positive values cap the loop.
+MAX_MANAGED_TOOL_ROUNDS = 0
 
 
 def deriveSessionIdFromAnthropic(
@@ -364,7 +365,12 @@ async def resolveManagedAnthropicToolUses(
     finalUsage: dict[str, object] | None = None
     if not client:
         return (currentMessages, {'error': 'No client available for tool resolution'})
-    for _round in range(MAX_MANAGED_TOOL_ROUNDS):
+    # 0 = unlimited; positive values cap managed tool rounds.
+    _round = 0
+    while True:
+        _round += 1
+        if MAX_MANAGED_TOOL_ROUNDS > 0 and _round > MAX_MANAGED_TOOL_ROUNDS:
+            break
         reqBody: dict[str, object] = {
             'model': model,
             'messages': cast(JsonValue, currentMessages),
@@ -640,7 +646,10 @@ async def _streamAnthropicNative(
     reqBody['stream'] = True
     toolRound = 0
     currentMessages: list[dict[str, object]] = cast('list[dict[str, object]]', as_list(body.get('messages'), []))
-    while toolRound < MAX_MANAGED_TOOL_ROUNDS:
+    # 0 = unlimited managed tool rounds
+    while True:
+        if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound >= MAX_MANAGED_TOOL_ROUNDS:
+            break
         st = AnthropicNativeStreamState()
         roundBody = dict(reqBody)
         roundBody['messages'] = cast(JsonValue, currentMessages)
@@ -717,7 +726,10 @@ async def _streamOpenaiAsAnthropic(
     openaiBody['stream'] = True
     toolRound = 0
     currentMessages: list[dict[str, object]] = cast('list[dict[str, object]]', as_list(body.get('messages'), []))
-    while toolRound < MAX_MANAGED_TOOL_ROUNDS:
+    # 0 = unlimited managed tool rounds
+    while True:
+        if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound >= MAX_MANAGED_TOOL_ROUNDS:
+            break
         st = OpenaiToAnthropicStreamState()
         roundBody = dict(openaiBody)
         roundBody['messages'] = cast(JsonValue, currentMessages)

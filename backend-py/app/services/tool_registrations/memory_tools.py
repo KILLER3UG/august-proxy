@@ -72,22 +72,51 @@ async def _brainQuery(store: str, query: str = '', filters: str = '', limit: int
     except Exception as exc:
         return f'{{"error": "brain_query: {exc}"}}'
 
-async def _deleteSession(sessionId: str) -> str:
-    """Delete a chat session and its messages from the brain database."""
+def _purge_session_everywhere(sessionId: str) -> dict[str, object]:
+    """Remove a session from workbench memory + brain SQLite (cascade children)."""
     from app.services import memory_store
 
+    wb_ok = False
     try:
-        i = memory_store.delete_session_record(sessionId)
-        msgCount = memory_store.delete_session_messages(sessionId)
-        if i:
-            return f'Deleted session {sessionId} (+ {msgCount} message(s)).'
+        from app.services.workbench.sessions import delete_workbench_session
+
+        wb_ok = bool(delete_workbench_session(sessionId))
+    except Exception:
+        # Fall through to brain cascade even if workbench module is unavailable.
+        pass
+    # Workbench delete already cascades when the session exists in SQLite; run
+    # cascade again for orphan brain rows (id present only in messages/timeline).
+    result = memory_store.delete_session_cascade(sessionId)
+    return {
+        'ok': wb_ok or bool(result.get('ok')),
+        'messages': int(result.get('messages') or 0),
+        'children': result.get('children') or {},
+        'workbench': wb_ok,
+    }
+
+
+async def _deleteSession(sessionId: str) -> str:
+    """Delete a chat session and all dependent rows from workbench + brain DB."""
+    try:
+        result = _purge_session_everywhere(sessionId)
+        if result.get('ok'):
+            children = result.get('children') or {}
+            msgCount = int(result.get('messages') or 0)
+            extra = (
+                sum(int(v) for k, v in children.items() if k != 'messages')
+                if isinstance(children, dict)
+                else 0
+            )
+            extra_note = f', {extra} other related row(s)' if extra else ''
+            plane = 'workbench+brain' if result.get('workbench') else 'brain'
+            return f'Deleted session {sessionId} via {plane} (+ {msgCount} message(s){extra_note}).'
         return f'Session {sessionId} not found — it may have already been deleted.'
     except Exception as exc:
         return f'Error deleting session {sessionId}: {exc}'
 
 
 async def _deleteFolder(folderId: str) -> str:
-    """Delete all sessions in a folder and their messages from the brain database."""
+    """Delete all sessions in a folder and their dependent rows from workbench + brain."""
     from app.services import memory_store
 
     try:
@@ -99,9 +128,10 @@ async def _deleteFolder(folderId: str) -> str:
         msgCount = 0
         for s in folderSessions:
             sid = s['id']
-            if memory_store.delete_session_record(sid):
+            result = _purge_session_everywhere(sid)
+            if result.get('ok'):
                 count += 1
-                msgCount += memory_store.delete_session_messages(sid)
+                msgCount += int(result.get('messages') or 0)
         return f"Deleted {count} session(s) from folder '{folderId}' (+ {msgCount} message(s))."
     except Exception as exc:
         return f"Error deleting folder '{folderId}': {exc}"
@@ -172,7 +202,7 @@ def register() -> None:
     )
     tool_registry.register(
         'delete_session',
-        'Delete a chat session by its session ID (e.g. sess_abc123). Messages are also deleted. Use brain_query(store=sessions) to list sessions first. IMPORTANT: Before calling this tool, list the sessions, present to the user exactly which session(s) you intend to delete, and wait for explicit user confirmation ("yes", "go ahead", "delete it") before proceeding. Never delete without confirmation.',
+        'Delete a chat session by its session ID (e.g. wb_20260715_143052_a1b2c3). Cascades: messages, timeline entries, usage, topics, and other dependent rows are deleted first so foreign keys cannot block the delete. Use brain_query(store=sessions) to list sessions first. IMPORTANT: Before calling this tool, list the sessions, present to the user exactly which session(s) you intend to delete, and wait for explicit user confirmation ("yes", "go ahead", "delete it") before proceeding. Never delete without confirmation.',
         _deleteSession,
         {
             'type': 'object',

@@ -158,6 +158,23 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
+def _new_session_id(prefix: str = 'wb') -> str:
+    """Build a human-readable session id with UTC date/time + short suffix.
+
+    Example: ``wb_20260715_143052_a1b2c3`` — easy for models and humans to
+    tell sessions apart when comparing memory, logs, or conv summaries.
+    """
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+    suffix = uuid.uuid4().hex[:6]
+    return f'{prefix}_{stamp}_{suffix}'
+
+
+def _default_session_title() -> str:
+    """Default title stamped with UTC date/time until the first user message."""
+    stamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')
+    return f'Chat {stamp} UTC'
+
+
 def migrate_json_sessions_to_sqlite(*, force: bool = False) -> dict[str, object]:
     """One-shot JSON → SQLite import. Idempotent; renames source after success.
 
@@ -401,10 +418,11 @@ def create_workbench_session(
     from app.services.workbench.workbench import normalizeGuardMode
 
     _ = task  # accepted for signature parity with prior API
-    session_id = f'wb_{uuid.uuid4().hex[:12]}'
+    session_id = _new_session_id('wb')
     now = _now()
     session = WorkbenchSession(
         id=session_id,
+        title=_default_session_title(),
         provider=provider,
         agentId=agentId,
         guardMode=normalizeGuardMode(guardMode or 'full'),
@@ -459,33 +477,45 @@ def list_workbench_sessions() -> list[dict[str, object]]:
 
 
 def delete_workbench_session(session_id: str) -> bool:
-    """Delete a session from memory, SQLite, and the JSON export file."""
+    """Delete a session from memory, SQLite, and the JSON export file.
+
+    Always attempts brain SQLite cascade (messages, timeline, …) even when the
+    session is not currently loaded in memory — otherwise orphan child rows
+    (and FK failures on partial deletes) linger after tool/UI cleanup.
+    """
+    if not session_id:
+        return False
     if not _sessions:
         _load_sessions()
-    if session_id not in _sessions:
-        return False
-    session = _sessions[session_id]
+    session = _sessions.get(session_id)
+    found_in_memory = session is not None
+    workspace = session.workspacePath if session else ''
     try:
         from app.services import aug_artifact_service
 
-        aug_artifact_service.deleteForSession(session.workspacePath or None, session_id)
+        aug_artifact_service.deleteForSession(workspace or None, session_id)
     except Exception:
         pass
+    cascade_ok = False
     try:
-        from app.services.memory_store import delete_session_record, delete_session_messages
+        from app.services.memory_store import delete_session_cascade
 
-        delete_session_messages(session_id)
-        delete_session_record(session_id)
+        # Cascade deletes messages / timeline / usage / … before the session row
+        # (messages.session_id FK is NO ACTION — children must go first).
+        result = delete_session_cascade(session_id)
+        cascade_ok = bool(result.get('ok'))
     except Exception:
         logger.exception('SQLite session delete failed for %s', session_id)
-    del _sessions[session_id]
+    if session_id in _sessions:
+        del _sessions[session_id]
+        found_in_memory = True
     try:
         path = _sessions_path()
         remaining = sorted(_sessions.values(), key=lambda s: s.updatedAt, reverse=True)[:50]
         write_json_atomic(path, [s.toDict() for s in remaining], indent=2)
     except Exception:
         pass
-    return True
+    return found_in_memory or cascade_ok
 
 
 def reset_workbench_session(

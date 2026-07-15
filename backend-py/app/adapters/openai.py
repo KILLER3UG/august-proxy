@@ -50,7 +50,8 @@ writeOpenaiSseError = write_openai_sse_error
 writeOpenaiSseDone = write_openai_sse_done
 sendSimulatedOpenaiStream = send_simulated_openai_stream
 
-MAX_MANAGED_TOOL_ROUNDS = 10
+# 0 = unlimited managed tool rounds (default). Positive values cap the loop.
+MAX_MANAGED_TOOL_ROUNDS = 0
 
 
 def deriveSessionIdFromOpenai(
@@ -263,7 +264,12 @@ async def resolveManagedOpenaiToolCalls(
     """
     currentMessages = cast('list[dict[str, object]]', list(messages))
     finalUsage: dict[str, object] | None = None
-    for _round in range(MAX_MANAGED_TOOL_ROUNDS):
+    # 0 = unlimited; positive values cap managed tool rounds.
+    _round = 0
+    while True:
+        _round += 1
+        if MAX_MANAGED_TOOL_ROUNDS > 0 and _round > MAX_MANAGED_TOOL_ROUNDS:
+            break
         reqBody = cast(
             dict[str, object],
             camelToSnake({'model': model, 'messages': currentMessages, 'tools': knownTools, 'stream': False}),
@@ -361,7 +367,8 @@ async def streamUpstreamAndResolveToolsOpenai(
         ):
             if acc.tool_calls:
                 toolRound += 1
-                if toolRound > MAX_MANAGED_TOOL_ROUNDS:
+                # 0 = unlimited managed tool rounds
+                if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound > MAX_MANAGED_TOOL_ROUNDS:
                     break
                 toolCallDicts = [tc.to_openai_dict() for tc in acc.tool_calls]
                 assistantMsg: dict[str, object] = {'role': 'assistant', 'content': acc.content}
@@ -371,8 +378,9 @@ async def streamUpstreamAndResolveToolsOpenai(
                     assistantMsg['tool_calls'] = toolCallDicts
                 currentMessages.append(assistantMsg)
                 classification = classifyOpenaiToolCalls(toolCallDicts, managedLocalToolNames, clientToolNames)
+                under_cap = MAX_MANAGED_TOOL_ROUNDS <= 0 or toolRound < MAX_MANAGED_TOOL_ROUNDS
                 if classification['has_managed'] and (
-                    classification['can_execute_managed'] or toolRound < MAX_MANAGED_TOOL_ROUNDS
+                    classification['can_execute_managed'] or under_cap
                 ):
                     toolResults = await execute_managed_openai_tool_calls(
                         classification['managed_tool_calls'], knownTools, currentMessages, workspacePath, onToolEvent

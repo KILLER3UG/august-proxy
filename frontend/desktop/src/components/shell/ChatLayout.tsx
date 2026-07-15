@@ -7,7 +7,7 @@ import { useState, useEffect, useRef } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSessionsStore, createSession, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend } from "@/store/sessions";
+import { useSessionsStore, createSession, defaultSessionTitle, updateSessionWorkbenchMetadata, reconcileSessionsFromBackend } from "@/store/sessions";
 import { useWorkspacesStore } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
 import { SessionSidebar } from "./SessionSidebar";
@@ -180,7 +180,7 @@ export function ChatLayout() {
     if (location.pathname === "/" || location.pathname === "") {
       let activeSess = activeSessions[0];
       if (!activeSess) {
-        activeSess = createSession(null, 'New Chat', currentWorkspacePath);
+        activeSess = createSession(null, defaultSessionTitle(), currentWorkspacePath);
       }
       void navigate(`/c/${activeSess.id}`, { replace: true });
     } else if (location.pathname.startsWith("/c/")) {
@@ -196,14 +196,14 @@ export function ChatLayout() {
         return;
       }
       if (!match || match.isArchived) {
-        const fallback = activeSessions[0] || createSession(null, 'New Chat', currentWorkspacePath);
+        const fallback = activeSessions[0] || createSession(null, defaultSessionTitle(), currentWorkspacePath);
         void navigate(`/c/${fallback.id}`, { replace: true });
       }
     }
   }, [location.pathname, sessionId, sessions, navigate, currentWorkspacePath]);
 
   const handleNewSession = (folderId?: string | null) => {
-    const newSess = createSession(folderId ?? null, 'New Chat', currentWorkspacePath);
+    const newSess = createSession(folderId ?? null, defaultSessionTitle(), currentWorkspacePath);
     void navigate(`/c/${newSess.id}`);
   };
 

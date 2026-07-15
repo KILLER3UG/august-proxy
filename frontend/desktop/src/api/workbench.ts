@@ -801,6 +801,17 @@ export async function resetWorkbenchSession(
   return res.json() as Promise<WorkbenchSession>;
 }
 
+/** Delete a workbench session (cascades messages / timeline / usage in SQLite). */
+export async function deleteWorkbenchSession(sessionId: string): Promise<void> {
+  const res = await fetch(`/api/workbench/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+  });
+  // 404 = already gone (local-only session or prior purge) — treat as success
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`deleteWorkbenchSession failed: ${res.status}`);
+  }
+}
+
 export async function listWorkbenchAgents(activeAgentId = 'build'): Promise<WorkbenchAgentRegistry> {
   const res = await fetch(`/api/workbench/agents?active=${encodeURIComponent(activeAgentId)}`);
   if (!res.ok) throw new Error(`listWorkbenchAgents failed: ${res.status}`);

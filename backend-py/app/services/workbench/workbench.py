@@ -42,7 +42,9 @@ from app.services.workbench.effort import (
 from app.services.workbench import providers as _providers_mod
 
 logger = logging.getLogger('workbench')
-MAX_MANAGED_TOOL_ROUNDS = 10
+# 0 = unlimited tool rounds by default. Safety nets: cancel signal, empty
+# model responses, and brain-orchestrator maxWorkbenchToolLoops when set.
+MAX_MANAGED_TOOL_ROUNDS = 0
 WORKBENCH_TOKEN_BUDGET = 2000000
 
 # Session API re-exports (explicit bindings so external importers keep working;
@@ -966,7 +968,7 @@ async def _sendWorkbenchMessageStreamImpl(
     toolRound = 0
     while True:
         toolRound += 1
-        if toolRound > MAX_MANAGED_TOOL_ROUNDS:
+        if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound > MAX_MANAGED_TOOL_ROUNDS:
             msg = (
                 f'Tool loop exceeded MAX_MANAGED_TOOL_ROUNDS ({MAX_MANAGED_TOOL_ROUNDS}); '
                 'stopping to avoid unbounded cost.'
@@ -1380,8 +1382,16 @@ def _syncAutoMemory(session: WorkbenchSession, messages: list[dict[str, object]]
     try:
         lastUserMsg = _lastUserMessageText(session)
         if lastUserMsg:
-            summary = f'User asked: {lastUserMsg[:300]}'
-            saveAutoMemory(f'conv_summary_{session.id[:8]}', summary, category='conversation', importance=0.3)
+            # Full session id (includes date/time) so the model can tell which
+            # conversation a memory came from; stamp for human-readable ordering.
+            stamp = session.updatedAt or session.createdAt or ''
+            summary = f'Session {session.id}' + (f' @ {stamp}' if stamp else '') + f': User asked: {lastUserMsg[:300]}'
+            saveAutoMemory(
+                f'conv_summary_{session.id}',
+                summary,
+                category='conversation',
+                importance=0.3,
+            )
     except Exception:
         pass
 

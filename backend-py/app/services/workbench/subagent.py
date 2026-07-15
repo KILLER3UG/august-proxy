@@ -175,7 +175,12 @@ async def executeSubAgent(
     finalText = ''
     token = currentSessionId.set(getattr(session, 'id', 'default'))
     try:
-        for __ in range(MAX_MANAGED_TOOL_ROUNDS):
+        toolRound = 0
+        while True:
+            toolRound += 1
+            # 0 = unlimited (same default as main workbench loop)
+            if MAX_MANAGED_TOOL_ROUNDS > 0 and toolRound > MAX_MANAGED_TOOL_ROUNDS:
+                break
             if isAnthropic:
                 response = await _callAnthropicWorkbench(
                     messages, systemText, resolvedModel, tools, 'medium', provider=provider, emit=_subEmit

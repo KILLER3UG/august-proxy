@@ -56,6 +56,7 @@ from app.services.memory_store.rest import (
     write_timeline_event,
 )
 from app.services.memory_store.sessions import (
+    delete_session_cascade,
     delete_session_record,
     get_session,
     list_sessions,
@@ -95,6 +96,7 @@ __all__ = [
     'list_workbench_blobs',
     'list_sessions',
     'get_session',
+    'delete_session_cascade',
     'delete_session_record',
     'save_message',
     'get_messages',

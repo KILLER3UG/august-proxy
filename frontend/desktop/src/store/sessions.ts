@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { getWorkbenchSessions } from '@/api/workbench';
+import { deleteWorkbenchSession, getWorkbenchSessions } from '@/api/workbench';
+import { deleteManageSession } from '@/api/api-client';
 
 export interface Session {
   id: string;
@@ -119,10 +120,30 @@ export const saveFoldersToStorage = (folders: Folder[]) => {
   localStorage.setItem(LOCAL_FOLDERS_KEY, JSON.stringify(folders));
 };
 
-export function createSession(folderId: string | null = null, title: string = 'New Chat', workspacePath?: string | null): Session {
+/** Human-readable session id with local date/time, e.g. sess_20260715_143052_a1b2 */
+function makeSessionId(prefix = 'sess'): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const stamp =
+    `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_` +
+    `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  const rand = Math.random().toString(36).slice(2, 6);
+  return `${prefix}_${stamp}_${rand}`;
+}
+
+/** Default title stamped with local date/time until the first user message. */
+export function defaultSessionTitle(when: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const stamp =
+    `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())} ` +
+    `${pad(when.getHours())}:${pad(when.getMinutes())}`;
+  return `Chat ${stamp}`;
+}
+
+export function createSession(folderId: string | null = null, title?: string, workspacePath?: string | null): Session {
   const newSess: Session = {
-    id: 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5),
-    title,
+    id: makeSessionId('sess'),
+    title: title ?? defaultSessionTitle(),
     startedAt: new Date().toISOString(),
     messageCount: 0,
     lastMessage: 'Conversation started.',
@@ -167,12 +188,52 @@ export function updateSessionWorkbenchMetadata(
   saveSessionsToStorage(updated);
 }
 
+/**
+ * Purge a session from the backend (workbench SoT + brain SQLite cascade).
+ * Best-effort: local UI delete still succeeds if the network is down.
+ */
+async function purgeBackendSession(ids: string[]): Promise<void> {
+  const seen = new Set<string>();
+  for (const raw of ids) {
+    const id = (raw || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    try {
+      await deleteWorkbenchSession(id);
+    } catch {
+      // Workbench may not know this id (local-only UI session) — try manage plane.
+      try {
+        await deleteManageSession(id);
+      } catch {
+        /* ignore — local delete already applied */
+      }
+    }
+  }
+}
+
+/**
+ * Remove a session from the sidebar and permanently delete backend data.
+ * Optimistic: UI updates immediately (AnimatePresence exit runs); backend
+ * purge runs in the background so a network blip doesn't block the animation.
+ */
 export function deleteSession(id: string) {
-  const updated = useSessionsStore.getState().sessions.filter(s => s.id !== id);
+  const sessions = useSessionsStore.getState().sessions;
+  const sess = sessions.find((s) => s.id === id || s.workbenchSessionId === id);
+  const updated = sessions.filter(
+    (s) => s.id !== id && s.workbenchSessionId !== id && s.id !== sess?.id,
+  );
   useSessionsStore.setState({ sessions: updated });
   saveSessionsToStorage(updated);
-  localStorage.removeItem(`chat_messages_${id}`);
-  localStorage.removeItem(`august_composer_draft_${id}`);
+
+  const localIds = [id, sess?.id, sess?.workbenchSessionId].filter(
+    (x): x is string => typeof x === 'string' && x.length > 0,
+  );
+  for (const lid of localIds) {
+    localStorage.removeItem(`chat_messages_${lid}`);
+    localStorage.removeItem(`august_composer_draft_${lid}`);
+  }
+
+  void purgeBackendSession(localIds);
 }
 
 export function archiveSession(id: string) {
@@ -207,23 +268,26 @@ export function moveSessionToFolder(id: string, folderId: string | null) {
 
 export function clearAllSessions(includeArchived: boolean = true) {
   const sessions = useSessionsStore.getState().sessions;
+  const toDelete = sessions.filter((s) => includeArchived || !s.isArchived);
 
   // Clear all localStorage chat histories
-  sessions.forEach(s => {
-    if (includeArchived || !s.isArchived) {
-      localStorage.removeItem(`chat_messages_${s.id}`);
-      localStorage.removeItem(`august_composer_draft_${s.id}`);
+  toDelete.forEach((s) => {
+    localStorage.removeItem(`chat_messages_${s.id}`);
+    localStorage.removeItem(`august_composer_draft_${s.id}`);
+    if (s.workbenchSessionId) {
+      localStorage.removeItem(`chat_messages_${s.workbenchSessionId}`);
+      localStorage.removeItem(`august_composer_draft_${s.workbenchSessionId}`);
     }
   });
 
   const nextSessions = includeArchived
     ? []
-    : sessions.filter(s => s.isArchived);
+    : sessions.filter((s) => s.isArchived);
 
   // Keep or create a single fresh empty session
   const newSess: Session = {
-    id: 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5),
-    title: 'New Chat',
+    id: makeSessionId('sess'),
+    title: defaultSessionTitle(),
     startedAt: new Date().toISOString(),
     messageCount: 0,
     lastMessage: 'Conversation started.',
@@ -236,6 +300,13 @@ export function clearAllSessions(includeArchived: boolean = true) {
   const finalSessions = [newSess, ...nextSessions];
   useSessionsStore.setState({ sessions: finalSessions });
   saveSessionsToStorage(finalSessions);
+
+  // Purge backend rows so reconcile can't resurrect wiped chats
+  const backendIds = toDelete.flatMap((s) =>
+    [s.id, s.workbenchSessionId].filter((x): x is string => !!x),
+  );
+  void purgeBackendSession(backendIds);
+
   return newSess;
 }
 

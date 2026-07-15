@@ -26,6 +26,27 @@ export const fadeUp: Variants = {
   exit:    { opacity: 0, y: -2, transition: t.fast },
 };
 
+/* Session row leave — slide out + collapse so the list reflows smoothly. */
+export const sessionRow: Variants = {
+  initial: { opacity: 0, x: -8, height: 0 },
+  animate: {
+    opacity: 1,
+    x: 0,
+    height: 'auto',
+    transition: t.smooth,
+  },
+  exit: {
+    opacity: 0,
+    x: -28,
+    height: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    scale: 0.97,
+    filter: 'blur(2px)',
+    transition: { duration: 0.22, ease: easeOut },
+  },
+};
+
 /* Pure fade. */
 export const fade: Variants = {
   initial: { opacity: 0 },

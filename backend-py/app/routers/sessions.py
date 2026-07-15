@@ -59,11 +59,15 @@ async def get_session(sessionId: str):
 
 @router.delete('/{sessionId}')
 async def deleteSession(sessionId: str):
-    """Delete a session and its messages."""
-    if not memory_store.delete_session_record(sessionId):
+    """Delete a session and all dependent rows (messages, timeline, …)."""
+    result = memory_store.delete_session_cascade(sessionId)
+    if not result.get('ok'):
         raise HTTPException(status_code=404, detail='Session not found')
-    memory_store.delete_session_messages(sessionId)
-    return {'status': 'ok'}
+    return {
+        'status': 'ok',
+        'messages': result.get('messages', 0),
+        'children': result.get('children', {}),
+    }
 
 
 @router.get('/{sessionId}/messages')

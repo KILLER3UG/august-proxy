@@ -26,6 +26,7 @@ from app.services.memory_store import (
     save_session,
     get_session,
     list_sessions,
+    delete_session_cascade,
     delete_session_record,
     save_message,
     get_messages,
@@ -33,6 +34,7 @@ from app.services.memory_store import (
     get_usage,
     get_stats,
     vacuum,
+    write_timeline_event,
 )
 from app.services.memory.brain_orchestrator import getBrainConfig, classifyTask, riskForTask, extractTextFromMessages
 from app.adapters.anthropic import normalizeSystemBlocks, systemBlocksToText
@@ -172,6 +174,20 @@ class TestSessionPersistence:
     def testDeleteSession(self):
         save_session({'id': 'del-me', 'title': 'Delete', 'startedAt': 'now', 'messageCount': 0})
         assert delete_session_record('del-me') is True
+
+    def testDeleteSessionCascadesChildren(self):
+        """messages.session_id FK is NO ACTION — children must be deleted first."""
+        sid = 'del-cascade-with-msgs'
+        save_session({'id': sid, 'title': 'Cascade', 'startedAt': 'now', 'messageCount': 0})
+        save_message(sid, 'user', 'Hello')
+        save_message(sid, 'assistant', 'Hi!')
+        write_timeline_event(sid, 'user said hello', category='test')
+        record_usage(sid, 'test-model', 10, 5)
+        result = delete_session_cascade(sid)
+        assert result['ok'] is True
+        assert result['messages'] == 2
+        assert get_session(sid) is None
+        assert get_messages(sid) == []
 
     def testMessages(self):
         save_session({'id': 'msg-test', 'title': 'T', 'startedAt': 'now', 'messageCount': 0})

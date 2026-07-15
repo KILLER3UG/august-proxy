@@ -35,11 +35,24 @@ def save_session(session: SessionRecord) -> None:
                 blob = row['workbench_blob']
             except (KeyError, IndexError, TypeError):
                 blob = row[0] if row else None
+    # UPSERT (not INSERT OR REPLACE): REPLACE is DELETE+INSERT and trips the
+    # messages.session_id foreign key when child rows already exist.
     conn.execute(
-        '''INSERT OR REPLACE INTO sessions
+        '''INSERT INTO sessions
            (id, title, started_at, message_count, provider, model, folder_id,
             is_archived, workspace_path, workbench_blob, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             title=excluded.title,
+             started_at=excluded.started_at,
+             message_count=excluded.message_count,
+             provider=excluded.provider,
+             model=excluded.model,
+             folder_id=excluded.folder_id,
+             is_archived=excluded.is_archived,
+             workspace_path=excluded.workspace_path,
+             workbench_blob=excluded.workbench_blob,
+             updated_at=excluded.updated_at''',
         (
             sid,
             title or '',
@@ -82,11 +95,24 @@ def save_workbench_session_sot(
     blob = json.dumps(session_dict, ensure_ascii=False, default=str)
     try:
         conn.execute('BEGIN')
+        # UPSERT (not INSERT OR REPLACE): REPLACE is DELETE+INSERT and trips the
+        # messages.session_id foreign key when child rows already exist.
         conn.execute(
-            '''INSERT OR REPLACE INTO sessions
+            '''INSERT INTO sessions
                (id, title, started_at, message_count, provider, model, folder_id,
                 is_archived, workspace_path, workbench_blob, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                 title=excluded.title,
+                 started_at=excluded.started_at,
+                 message_count=excluded.message_count,
+                 provider=excluded.provider,
+                 model=excluded.model,
+                 folder_id=excluded.folder_id,
+                 is_archived=excluded.is_archived,
+                 workspace_path=excluded.workspace_path,
+                 workbench_blob=excluded.workbench_blob,
+                 updated_at=excluded.updated_at''',
             (
                 sid,
                 title,
@@ -166,11 +192,92 @@ def get_session(sessionId: str) -> SessionRecord | None:
     return cast(SessionRecord, _row_as_wire(row)) if row else None
 
 
-def delete_session_record(sessionId: str) -> bool:
-    """Delete a session record."""
+# Child tables that store per-session rows. ``messages`` has a real FK to
+# ``sessions(id)`` (NO ACTION), so parent delete fails unless children go first.
+# Other tables lack formal FKs but still hold orphan-prone session data.
+_SESSION_CHILD_TABLES: tuple[str, ...] = (
+    'messages',
+    'episodic_timeline',
+    'session_topics',
+    'proposals',
+    'lifecycle',
+    'usage_events',
+    'execution_state',
+    'scratchpad',
+    'tool_guardrail_log',
+    'verifier_gate_log',
+    'blackboard',
+)
+
+
+def delete_session_cascade(sessionId: str) -> dict[str, object]:
+    """Delete a session and all dependent rows in one transaction.
+
+    Always sweeps child tables even when the parent ``sessions`` row is
+    already gone (orphans from prior partial deletes). Returns:
+      ``{ok, sessionId, messages, children: {table: n}}``
+    ``ok`` is True when a parent row or any child row was removed.
+    """
+    import sqlite3
+
     conn = _conn()
-    cursor = conn.execute('DELETE FROM sessions WHERE id = ?', (sessionId,))
-    conn.commit()
-    return cursor.rowcount > 0
+    sid = as_str(sessionId, '')
+    if not sid:
+        return {'ok': False, 'sessionId': sid, 'messages': 0, 'children': {}}
+
+    children: dict[str, int] = {}
+    try:
+        conn.execute('BEGIN')
+        for table in _SESSION_CHILD_TABLES:
+            try:
+                cur = conn.execute(f'DELETE FROM {table} WHERE session_id = ?', (sid,))
+                if cur.rowcount:
+                    children[table] = int(cur.rowcount)
+            except sqlite3.OperationalError:
+                # Table may not exist on older / partial brains.
+                pass
+        # Conversation auto-memories keyed by full session id.
+        try:
+            cur = conn.execute(
+                "DELETE FROM auto_memories WHERE key = ? OR key LIKE ?",
+                (f'conv_summary_{sid}', f'conv_summary_{sid}%'),
+            )
+            if cur.rowcount:
+                children['auto_memories'] = int(cur.rowcount)
+        except sqlite3.OperationalError:
+            pass
+        # Pending skill drafts attributed to this session.
+        try:
+            cur = conn.execute(
+                'DELETE FROM pending_skills WHERE source_session_id = ?', (sid,)
+            )
+            if cur.rowcount:
+                children['pending_skills'] = int(cur.rowcount)
+        except sqlite3.OperationalError:
+            pass
+        cur = conn.execute('DELETE FROM sessions WHERE id = ?', (sid,))
+        parent_deleted = cur.rowcount > 0
+        conn.commit()
+        any_child = bool(children)
+        return {
+            'ok': parent_deleted or any_child,
+            'sessionId': sid,
+            'messages': children.get('messages', 0),
+            'children': children,
+        }
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def delete_session_record(sessionId: str) -> bool:
+    """Delete a session and all dependent rows (messages, timeline, …).
+
+    Cascades child deletes first so the ``messages.session_id`` FK cannot block
+    the parent delete. Prefer this over calling ``delete_session_messages``
+    then this function separately — order bugs caused FK failures historically.
+    """
+    result = delete_session_cascade(sessionId)
+    return bool(result.get('ok'))
 
 

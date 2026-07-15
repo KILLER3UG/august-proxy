@@ -140,7 +140,7 @@ sessions, runs a multi-round tool loop, and emits SSE events.
 2. Resolve effort (low/medium/high/max) and provider/model (frontend
    `modelProvider` → model hint → session provider).
 3. Optionally compress context if estimated tokens exceed half the budget.
-4. Enter the **tool loop** (up to `MAX_MANAGED_TOOL_ROUNDS = 10`):
+4. Enter the **tool loop** (`MAX_MANAGED_TOOL_ROUNDS = 0` means unlimited by default; a positive value caps rounds):
    - Call the model via `_call_anthropic_workbench` or `_call_openai_workbench`,
      which stream `thinking` / `final_output` / `tool_use` events as tokens arrive.
    - If no tool calls → append the assistant message and finish.

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   useSessionsStore,
   restoreSession,
@@ -10,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Search, RotateCcw, Trash2, Folder as FolderIcon, MessageSquare } from 'lucide-react';
 import { formatTimeAgo } from '@/lib/utils';
+import { sessionRow } from '@/lib/motion';
 
 export function Archive() {
   const navigate = useNavigate();
@@ -105,14 +107,16 @@ export function Archive() {
                     <span className="text-[10px] text-muted-foreground/50 font-normal">({folderSessions.length})</span>
                   </div>
                   <div className="grid grid-cols-1 gap-1.5">
-                    {folderSessions.map(s => (
-                      <ArchiveRow
-                        key={s.id}
-                        session={s}
-                        onRestore={() => handleRestore(s.id)}
-                        onDelete={() => handleDeletePermanently(s.id)}
-                      />
-                    ))}
+                    <AnimatePresence initial={false} mode="popLayout">
+                      {folderSessions.map(s => (
+                        <ArchiveRow
+                          key={s.id}
+                          session={s}
+                          onRestore={() => handleRestore(s.id)}
+                          onDelete={() => handleDeletePermanently(s.id)}
+                        />
+                      ))}
+                    </AnimatePresence>
                   </div>
                 </div>
               );
@@ -131,14 +135,16 @@ export function Archive() {
                     <span className="text-[10px] text-muted-foreground/50 font-normal">({uncategorizedSessions.length})</span>
                   </div>
                   <div className="grid grid-cols-1 gap-1.5">
-                    {uncategorizedSessions.map(s => (
-                      <ArchiveRow
-                        key={s.id}
-                        session={s}
-                        onRestore={() => handleRestore(s.id)}
-                        onDelete={() => handleDeletePermanently(s.id)}
-                      />
-                    ))}
+                    <AnimatePresence initial={false} mode="popLayout">
+                      {uncategorizedSessions.map(s => (
+                        <ArchiveRow
+                          key={s.id}
+                          session={s}
+                          onRestore={() => handleRestore(s.id)}
+                          onDelete={() => handleDeletePermanently(s.id)}
+                        />
+                      ))}
+                    </AnimatePresence>
                   </div>
                 </div>
               );
@@ -158,7 +164,14 @@ function ArchiveRow({
   onDelete: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between p-3 rounded-md bg-[#111113]/40 border border-border/20 hover:border-border/40 hover:bg-[#111113]/80 transition group">
+    <motion.div
+      layout
+      variants={sessionRow}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      className="flex items-center justify-between p-3 rounded-md bg-[#111113]/40 border border-border/20 hover:border-border/40 hover:bg-[#111113]/80 transition group overflow-hidden"
+    >
       <div className="min-w-0 flex-1 pr-4">
         <h4 className="text-xs font-semibold text-foreground/90 truncate">{session.title}</h4>
         <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground font-mono">
@@ -189,6 +202,6 @@ function ArchiveRow({
           <Trash2 className="size-3" />
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }

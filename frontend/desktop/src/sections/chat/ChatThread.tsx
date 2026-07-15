@@ -1588,7 +1588,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const isDefaultTitle =
       !activeSess?.title ||
       /^new chat$/i.test(activeSess.title.trim()) ||
-      /^untitled/i.test(activeSess.title.trim());
+      /^new session$/i.test(activeSess.title.trim()) ||
+      /^untitled/i.test(activeSess.title.trim()) ||
+      // Date-stamped placeholder titles (backend + frontend)
+      /^chat \d{4}-\d{2}-\d{2}/i.test(activeSess.title.trim());
     const userTurns = currentMessages.filter((m) => m.role === 'user').length;
     if (sessionId && (userTurns === 0 || isDefaultTitle)) {
       const isCommand = /^\s*\/[a-zA-Z][\w-]*\b/.test(text);
