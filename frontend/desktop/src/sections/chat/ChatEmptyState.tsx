@@ -30,37 +30,6 @@ export function ChatEmptyState({
           ?
         </h1>
 
-        <div className="w-full max-w-lg rounded-xl border border-border/60 bg-muted/20 px-4 py-3 text-left text-xs text-muted-foreground space-y-2">
-          <p className="font-semibold text-foreground/80 text-[11px] uppercase tracking-wide">
-            How August works
-          </p>
-          <ol className="list-decimal list-inside space-y-1.5 leading-relaxed">
-            <li>
-              Pick a mode next to the box:{' '}
-              <span className="text-foreground/80">Plan only</span>,{' '}
-              <span className="text-foreground/80">Ask before changes</span>, or{' '}
-              <span className="text-foreground/80">Make changes</span>.
-            </li>
-            <li>
-              In Plan only, August proposes a plan — Accept or revise before it
-              edits files.
-            </li>
-            <li>
-              Open the right panel for{' '}
-              <span className="text-foreground/80">Plan</span>,{' '}
-              <span className="text-foreground/80">Tasks</span>, and{' '}
-              <span className="text-foreground/80">Diffs</span>.
-            </li>
-            <li>
-              Press{' '}
-              <kbd className="rounded border border-border bg-background px-1 font-mono text-[10px]">
-                Ctrl+K
-              </kbd>{' '}
-              for undo, branch chat, free memory, and more.
-            </li>
-          </ol>
-        </div>
-
         <div className="w-full">{children}</div>
       </div>
     </motion.div>

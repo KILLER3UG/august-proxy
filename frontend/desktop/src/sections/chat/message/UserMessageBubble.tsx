@@ -81,10 +81,26 @@ export function UserMessageBubble({
                 {message.attachments.map((a, i) => {
                   const fi = getFileIcon(a.name);
                   const IconComp = fi.Icon;
+                  const thumb = a.dataUrl || a.previewUrl;
+                  const isImage = a.type === 'image' && !!thumb;
                   return (
-                    <div key={i} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/60 border border-border/40 text-[10px] font-mono">
-                      <IconComp size={11} color={fi.color} />
-                      <span className="truncate max-w-[130px]">{a.name}</span>
+                    <div
+                      key={a.id ?? `${a.name}-${i}`}
+                      className="inline-flex items-center gap-1.5 pl-0.5 pr-2 py-0.5 rounded-md bg-muted/60 border border-border/40 text-[10px] max-w-[180px]"
+                    >
+                      {isImage ? (
+                        <img
+                          src={thumb}
+                          alt=""
+                          className="size-7 rounded object-cover shrink-0"
+                          draggable={false}
+                        />
+                      ) : (
+                        <span className="flex size-7 items-center justify-center rounded bg-muted shrink-0">
+                          <IconComp size={14} color={fi.color} />
+                        </span>
+                      )}
+                      <span className="font-mono truncate">{a.name}</span>
                     </div>
                   );
                 })}

@@ -17,6 +17,7 @@ import {
 import { queueWorkbenchMessage } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
 import type { ChatMessage, FileAttachment } from '@/types/chat';
+import { ChatAttachmentService } from '../services/ChatAttachmentService';
 import {
   useSessionsStore,
   renameSession,
@@ -46,6 +47,21 @@ import type { ModelItem } from '../model-display';
 import { ChatSendService } from '../services/ChatSendService';
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
+
+/** Strip ephemeral upload UI fields before persisting on a sent message. */
+function persistAttachment(a: FileAttachment): FileAttachment {
+  return {
+    id: a.id,
+    name: a.name,
+    size: a.size,
+    path: a.path,
+    content: a.content,
+    dataUrl: a.dataUrl,
+    type: a.type,
+    truncated: a.truncated,
+    status: 'ready',
+  };
+}
 
 export interface UseChatSendOptions {
   sessionId: string | null;
@@ -238,8 +254,16 @@ export function useChatSend(opts: UseChatSendOptions) {
         return;
       }
 
+      if (ChatAttachmentService.isReading(attachments)) {
+        toast.message('Still attaching files…', {
+          description: 'Wait for uploads to finish before sending.',
+        });
+        return;
+      }
+
+      const readyAttachments = ChatAttachmentService.readyOnly(attachments);
       const text = composeText(textOverride ?? input);
-      if (!text && attachments.length === 0) return;
+      if (!text && readyAttachments.length === 0) return;
 
       // Local slash command dispatch — handle purely client-side commands
       // before sending to the backend. The workbench backend intercepts
@@ -293,7 +317,9 @@ export function useChatSend(opts: UseChatSendOptions) {
       if (streaming && sessionId) {
         try {
           const savedAttachments =
-            attachments.length > 0 ? [...attachments] : undefined;
+            readyAttachments.length > 0
+              ? readyAttachments.map(persistAttachment)
+              : undefined;
           const wbId = ChatSendService.resolveWorkbenchQueueId(
             workbenchSessionId,
             activeWorkbenchSessionId,
@@ -357,7 +383,9 @@ export function useChatSend(opts: UseChatSendOptions) {
       setInput('');
       clearComposerDraft(sessionId);
       const savedAttachments =
-        attachments.length > 0 ? [...attachments] : undefined;
+        readyAttachments.length > 0
+          ? readyAttachments.map(persistAttachment)
+          : undefined;
       clearAttachments();
       setShowToolsDropdown(false);
       setShowCommandsDropdown(false);

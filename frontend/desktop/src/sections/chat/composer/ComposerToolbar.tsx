@@ -25,6 +25,7 @@ export function ComposerToolbar({
   loadedSessionId,
   input,
   attachmentsCount,
+  attachmentsReading = false,
   streaming,
   send,
   stop,
@@ -61,6 +62,8 @@ export function ComposerToolbar({
   loadedSessionId: string | null;
   input: string;
   attachmentsCount: number;
+  /** Disable send while files are still being read. */
+  attachmentsReading?: boolean;
   streaming: boolean;
   send: (textOverride?: string) => Promise<void>;
   stop: () => void;
@@ -101,6 +104,7 @@ export function ComposerToolbar({
   const canSend =
     !!sessionId &&
     loadedSessionId === sessionId &&
+    !attachmentsReading &&
     (input.trim().length > 0 || attachmentsCount > 0);
 
   return (

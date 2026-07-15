@@ -1,7 +1,7 @@
 /* ── ChatAttachmentService ────────────────────────────────────────────── */
 /* Reads files and clipboard images into FileAttachment[] for the composer. */
 
-import { readFileContent, type FileReadResult } from '@/lib/file-reader';
+import { isImageFile, readFileContent, type FileReadResult } from '@/lib/file-reader';
 import type { FileAttachment } from '@/types/chat';
 
 const CODE_LANG_MAP: Record<string, string> = {
@@ -53,6 +53,8 @@ const CODE_LANG_MAP: Record<string, string> = {
   gql: 'graphql',
 };
 
+export type AttachmentProgressHandler = (id: string, progress: number) => void;
+
 export class ChatAttachmentService {
   /** Highlight language for fenced blocks in the user prompt. */
   static codeLangFor(filename: string): string {
@@ -66,28 +68,70 @@ export class ChatAttachmentService {
       : `${Math.round(bytes / 1024)} KB`;
   }
 
-  /** Read browser File objects into chat attachments. */
+  static newId(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return `att-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  }
+
+  /** Build a pending attachment row shown immediately while content is read. */
+  static createPending(file: File): FileAttachment {
+    const image = isImageFile(file);
+    return {
+      id: this.newId(),
+      name: file.name || (image ? 'pasted-image.png' : 'attachment'),
+      size: this.formatSize(file.size),
+      type: image ? 'image' : 'text',
+      status: 'reading',
+      progress: 0,
+      // Instant local preview for images while FileReader runs.
+      previewUrl: image ? URL.createObjectURL(file) : undefined,
+    };
+  }
+
+  /** Read a single file and merge into a completed FileAttachment. */
+  static async readInto(
+    file: File,
+    pending: FileAttachment,
+    onProgress?: (progress: number) => void,
+  ): Promise<FileAttachment> {
+    try {
+      const result: FileReadResult = await readFileContent(file, onProgress);
+      return {
+        ...pending,
+        name: file.name || (result.type === 'image' ? 'pasted-image.png' : pending.name),
+        content: result.content,
+        dataUrl: result.dataUrl,
+        type: result.type,
+        truncated: result.truncated,
+        status: 'ready',
+        progress: 100,
+        error: undefined,
+      };
+    } catch (err) {
+      return {
+        ...pending,
+        type: 'unsupported',
+        status: 'error',
+        progress: 0,
+        error: err instanceof Error ? err.message : 'Failed to read file',
+      };
+    }
+  }
+
+  /** Read browser File objects into chat attachments (blocking, no live progress). */
   static async fromFiles(files: Iterable<File>): Promise<FileAttachment[]> {
     const out: FileAttachment[] = [];
     for (const f of files) {
-      const sizeStr = this.formatSize(f.size);
-      try {
-        const result: FileReadResult = await readFileContent(f);
-        out.push({
-          name: f.name || (result.type === 'image' ? 'pasted-image.png' : 'attachment'),
-          size: sizeStr,
-          content: result.content,
-          dataUrl: result.dataUrl,
-          type: result.type,
-          truncated: result.truncated,
-        });
-      } catch {
-        out.push({
-          name: f.name || 'attachment',
-          size: sizeStr,
-          type: 'unsupported',
-        });
+      const pending = this.createPending(f);
+      const done = await this.readInto(f, pending);
+      // Drop ephemeral blob preview once we have a stable data URL (or on error).
+      if (done.previewUrl && (done.dataUrl || done.status === 'error')) {
+        URL.revokeObjectURL(done.previewUrl);
+        done.previewUrl = undefined;
       }
+      out.push(done);
     }
     return out;
   }
@@ -106,10 +150,21 @@ export class ChatAttachmentService {
     return files;
   }
 
+  /** Only ready attachments participate in the model prompt. */
+  static readyOnly(attachments: FileAttachment[]): FileAttachment[] {
+    return attachments.filter((a) => (a.status ?? 'ready') === 'ready');
+  }
+
+  /** True while any attachment is still being read. */
+  static isReading(attachments: FileAttachment[]): boolean {
+    return attachments.some((a) => a.status === 'reading');
+  }
+
   /** Serialize attachments into markdown sections for the model prompt. */
   static formatForPrompt(attachments: FileAttachment[]): string {
-    if (attachments.length === 0) return '';
-    const sections = attachments.map((a) => {
+    const ready = this.readyOnly(attachments);
+    if (ready.length === 0) return '';
+    const sections = ready.map((a) => {
       const header = `📄 **${a.name}**`;
       if (a.type === 'text' && a.content) {
         const lang = this.codeLangFor(a.name);
@@ -129,5 +184,18 @@ export class ChatAttachmentService {
     const attach = this.formatForPrompt(attachments);
     if (!attach) return body;
     return body ? `${body}${attach}` : attach.trim();
+  }
+
+  /** Revoke any blob: preview URLs held by attachments. */
+  static revokePreviews(attachments: FileAttachment[]): void {
+    for (const a of attachments) {
+      if (a.previewUrl) {
+        try {
+          URL.revokeObjectURL(a.previewUrl);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
   }
 }

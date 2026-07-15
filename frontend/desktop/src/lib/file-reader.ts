@@ -58,29 +58,57 @@ function getExtension(filename: string): string {
   return filename.slice(dot + 1).toLowerCase();
 }
 
+// ── Progress ────────────────────────────────────────────────────────────────
+export type FileReadProgress = (pct: number) => void;
+
+/** Map FileReader load progress (0–1 of file bytes) into a sub-range. */
+function scaleProgress(loaded: number, total: number, from: number, to: number): number {
+  if (!total || total <= 0) return from;
+  const t = Math.min(1, Math.max(0, loaded / total));
+  return Math.round(from + t * (to - from));
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
-function readFileAsText(file: File): Promise<string> {
+function readFileAsText(file: File, onProgress?: FileReadProgress): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
+    reader.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(scaleProgress(e.loaded, e.total, 0, 90));
+    };
+    reader.onload = () => {
+      onProgress?.(100);
+      resolve(reader.result as string);
+    };
     reader.onerror = () => reject(new Error(String(reader.error ?? 'FileReader error')));
     reader.readAsText(file);
   });
 }
 
-function readFileAsDataUrl(file: File): Promise<string> {
+function readFileAsDataUrl(file: File, onProgress?: FileReadProgress): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
+    reader.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(scaleProgress(e.loaded, e.total, 0, 95));
+    };
+    reader.onload = () => {
+      onProgress?.(100);
+      resolve(reader.result as string);
+    };
     reader.onerror = () => reject(new Error(String(reader.error ?? 'FileReader error')));
     reader.readAsDataURL(file);
   });
 }
 
-function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+function readFileAsArrayBuffer(file: File, onProgress?: FileReadProgress): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(scaleProgress(e.loaded, e.total, 0, 70));
+    };
+    reader.onload = () => {
+      onProgress?.(70);
+      resolve(reader.result as ArrayBuffer);
+    };
     reader.onerror = () => reject(new Error(String(reader.error ?? 'FileReader error')));
     reader.readAsArrayBuffer(file);
   });
@@ -92,14 +120,18 @@ function truncate(text: string, maxChars: number): { content: string; truncated:
 }
 
 // ── PDF extraction ──────────────────────────────────────────────────────────
-async function extractPdfText(file: File): Promise<{ content: string; truncated: boolean }> {
+async function extractPdfText(
+  file: File,
+  onProgress?: FileReadProgress,
+): Promise<{ content: string; truncated: boolean }> {
   // Dynamic import so the heavy pdf.js library is only loaded when needed
   const pdfjsLib = await import('pdfjs-dist');
 
   // Set the worker source to a CDN to avoid bundling issues
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
-  const arrayBuffer = await readFileAsArrayBuffer(file);
+  const arrayBuffer = await readFileAsArrayBuffer(file, onProgress);
+  onProgress?.(75);
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const maxPages = Math.min(pdf.numPages, 50);
   const textParts: string[] = [];
@@ -112,22 +144,33 @@ async function extractPdfText(file: File): Promise<{ content: string; truncated:
       return typeof str === 'string' ? str : '';
     }).join(' ');
     textParts.push(`--- Page ${i} ---\n${pageText}`);
+    onProgress?.(scaleProgress(i, maxPages, 75, 98));
   }
 
   const fullText = textParts.join('\n\n');
+  onProgress?.(100);
   return truncate(fullText, TEXT_MAX_CHARS);
 }
 
 // ── DOCX extraction ─────────────────────────────────────────────────────────
-async function extractDocxText(file: File): Promise<{ content: string; truncated: boolean }> {
-  const arrayBuffer = await readFileAsArrayBuffer(file);
+async function extractDocxText(
+  file: File,
+  onProgress?: FileReadProgress,
+): Promise<{ content: string; truncated: boolean }> {
+  const arrayBuffer = await readFileAsArrayBuffer(file, onProgress);
+  onProgress?.(85);
   const result = await mammoth.extractRawText({ arrayBuffer });
+  onProgress?.(100);
   return truncate(result.value, TEXT_MAX_CHARS);
 }
 
 // ── XLSX extraction ─────────────────────────────────────────────────────────
-async function extractSpreadsheetText(file: File): Promise<{ content: string; truncated: boolean }> {
-  const arrayBuffer = await readFileAsArrayBuffer(file);
+async function extractSpreadsheetText(
+  file: File,
+  onProgress?: FileReadProgress,
+): Promise<{ content: string; truncated: boolean }> {
+  const arrayBuffer = await readFileAsArrayBuffer(file, onProgress);
+  onProgress?.(85);
   const workbook = XLSX.read(arrayBuffer, { type: 'array' });
   const parts: string[] = [];
 
@@ -137,6 +180,7 @@ async function extractSpreadsheetText(file: File): Promise<{ content: string; tr
     parts.push(`--- Sheet: ${sheetName} ---\n${csv}`);
   }
 
+  onProgress?.(100);
   return truncate(parts.join('\n\n'), TEXT_MAX_CHARS);
 }
 
@@ -151,22 +195,34 @@ async function extractSpreadsheetText(file: File): Promise<{ content: string; tr
  * - **Images**: returns a base64 data URL for vision analysis
  * - **Other**: returns `{ type: 'unsupported' }`
  */
-export async function readFileContent(file: File): Promise<FileReadResult> {
+export async function readFileContent(
+  file: File,
+  onProgress?: FileReadProgress,
+): Promise<FileReadResult> {
   const ext = getExtension(file.name);
   const mimeType = file.type || '';
 
   // ── Images ──────────────────────────────────────────────────────────
   if (IMAGE_EXTENSIONS.has(ext) || IMAGE_MIMES.has(mimeType)) {
     if (file.size > IMAGE_MAX_SIZE) {
-      return { type: 'image', dataUrl: await readFileAsDataUrl(file), mimeType, truncated: true };
+      return {
+        type: 'image',
+        dataUrl: await readFileAsDataUrl(file, onProgress),
+        mimeType,
+        truncated: true,
+      };
     }
-    return { type: 'image', dataUrl: await readFileAsDataUrl(file), mimeType };
+    return {
+      type: 'image',
+      dataUrl: await readFileAsDataUrl(file, onProgress),
+      mimeType,
+    };
   }
 
   // ── PDF ─────────────────────────────────────────────────────────────
   if (ext === 'pdf' || mimeType === 'application/pdf') {
     try {
-      const { content, truncated } = await extractPdfText(file);
+      const { content, truncated } = await extractPdfText(file, onProgress);
       return { type: 'text', content, mimeType, truncated };
     } catch (err) {
       console.warn('[file-reader] PDF extraction failed:', err);
@@ -177,7 +233,7 @@ export async function readFileContent(file: File): Promise<FileReadResult> {
   // ── DOCX ────────────────────────────────────────────────────────────
   if (ext === 'docx' || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
     try {
-      const { content, truncated } = await extractDocxText(file);
+      const { content, truncated } = await extractDocxText(file, onProgress);
       return { type: 'text', content, mimeType, truncated };
     } catch (err) {
       console.warn('[file-reader] DOCX extraction failed:', err);
@@ -190,7 +246,7 @@ export async function readFileContent(file: File): Promise<FileReadResult> {
       mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
       mimeType === 'application/vnd.ms-excel') {
     try {
-      const { content, truncated } = await extractSpreadsheetText(file);
+      const { content, truncated } = await extractSpreadsheetText(file, onProgress);
       return { type: 'text', content, mimeType, truncated };
     } catch (err) {
       console.warn('[file-reader] Spreadsheet extraction failed:', err);
@@ -201,7 +257,7 @@ export async function readFileContent(file: File): Promise<FileReadResult> {
   // ── Plain text / code ───────────────────────────────────────────────
   if (TEXT_EXTENSIONS.has(ext) || mimeType.startsWith('text/')) {
     try {
-      const raw = await readFileAsText(file);
+      const raw = await readFileAsText(file, onProgress);
       const { content, truncated } = truncate(raw, TEXT_MAX_CHARS);
       return { type: 'text', content, mimeType, truncated };
     } catch (err) {
@@ -213,7 +269,7 @@ export async function readFileContent(file: File): Promise<FileReadResult> {
   // ── Try reading as text as a fallback ───────────────────────────────
   if (file.size < 500 * 1024) {
     try {
-      const raw = await readFileAsText(file);
+      const raw = await readFileAsText(file, onProgress);
       // Check if it looks like text (no null bytes in the first 512 bytes)
       const sample = raw.slice(0, 512);
       if (!sample.includes('\0')) {
@@ -223,5 +279,12 @@ export async function readFileContent(file: File): Promise<FileReadResult> {
     } catch { /* silent */ }
   }
 
+  onProgress?.(100);
   return { type: 'unsupported', mimeType };
+}
+
+/** True when a File is likely an image (for immediate preview while reading). */
+export function isImageFile(file: File): boolean {
+  const ext = getExtension(file.name);
+  return IMAGE_EXTENSIONS.has(ext) || IMAGE_MIMES.has(file.type);
 }

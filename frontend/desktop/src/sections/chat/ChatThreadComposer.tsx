@@ -33,6 +33,10 @@ export interface ChatThreadComposerProps {
   input: string;
   setInput: Dispatch<SetStateAction<string>>;
   attachments: FileAttachment[];
+  /** True while any attachment is still being read/extracted. */
+  attachmentsReading?: boolean;
+  /** Count of ready attachments (excludes in-progress / failed). */
+  readyAttachmentsCount?: number;
   removeAttachment: (index: number) => void;
   handleComposerPaste: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
   handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void | Promise<void>;
@@ -85,6 +89,8 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
     input,
     setInput,
     attachments,
+    attachmentsReading = false,
+    readyAttachmentsCount,
     removeAttachment,
     handleComposerPaste,
     handleFileUpload,
@@ -263,7 +269,8 @@ export function ChatThreadComposer(props: ChatThreadComposerProps) {
           sessionId={sessionId}
           loadedSessionId={loadedSessionId}
           input={input}
-          attachmentsCount={attachments.length}
+          attachmentsCount={readyAttachmentsCount ?? attachments.length}
+          attachmentsReading={attachmentsReading}
           streaming={streaming}
           send={send}
           stop={stop}

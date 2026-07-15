@@ -58,7 +58,11 @@ export interface MessageBlockToolCall {
   };
 }
 
+export type FileAttachmentStatus = 'reading' | 'ready' | 'error';
+
 export interface FileAttachment {
+  /** Stable client id for progressive upload UI (list keys, progress updates). */
+  id?: string;
   name: string;
   size: string;
   /** Full filesystem path when running under Tauri with a directory
@@ -66,12 +70,20 @@ export interface FileAttachment {
   path?: string;
   /** Extracted text content for text-type files (PDF, DOCX, code, etc.) */
   content?: string;
-  /** Base64 data URL for images. */
+  /** Base64 data URL for images (sent to the model). */
   dataUrl?: string;
+  /** Local object-URL preview shown while reading (revoked when done/removed). */
+  previewUrl?: string;
   /** Whether the file content was successfully extracted. */
   type: 'text' | 'image' | 'unsupported';
   /** True if content was truncated due to size limits. */
   truncated?: boolean;
+  /** Progressive attach lifecycle: reading → ready | error. */
+  status?: FileAttachmentStatus;
+  /** 0–100 progress while status is `reading`. */
+  progress?: number;
+  /** Human-readable error when status is `error`. */
+  error?: string;
 }
 
 export interface ChatMessageTodo {

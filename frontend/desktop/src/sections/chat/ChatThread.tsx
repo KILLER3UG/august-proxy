@@ -174,6 +174,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     removeAttachment,
     clearAttachments,
     composeText,
+    isReading: attachmentsReading,
+    readyAttachments,
   } = useChatAttachments();
 
   const queryClient = useQueryClient();
@@ -660,6 +662,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       input={input}
       setInput={setInput}
       attachments={attachments}
+      attachmentsReading={attachmentsReading}
+      readyAttachmentsCount={readyAttachments.length}
       removeAttachment={removeAttachment}
       handleComposerPaste={handleComposerPaste}
       handleFileUpload={handleFileUpload}
