@@ -17,14 +17,14 @@ import {
   KeyRound,
   Gauge,
   LayoutGrid,
-  Brain,
   Sparkles,
   Server,
   CircleDot,
+  Brain,
   type LucideIcon,
 } from 'lucide-react';
 import { SettingsCard } from '@/components/settings/SettingsCard';
-import { SettingsTabs } from '@/components/settings/SettingsTabs';
+import { SettingsSelect } from '@/components/settings/SettingsSelect';
 import { SettingsTooltip } from '@/components/settings/SettingsTooltip';
 import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState';
 import { Badge } from '@/components/ui/badge';
@@ -33,13 +33,13 @@ import { Providers } from '@/sections/providers/Providers';
 import { useModelProviders } from './useModelProviders';
 import { QuotasPanel } from './QuotasPanel';
 
-/* ── Subtab definitions ─────────────────────────────────────────────── */
+/* ── View switcher (single dropdown — not a horizontal tab strip) ──── */
 
-const TABS: { key: 'overview' | 'models' | 'providers' | 'quotas'; label: string; icon: LucideIcon }[] = [
-  { key: 'overview',  label: 'Overview',  icon: LayoutGrid },
-  { key: 'models',    label: 'Models',    icon: Boxes },
+const VIEWS: { key: 'overview' | 'models' | 'providers' | 'quotas'; label: string; icon: LucideIcon }[] = [
+  { key: 'overview', label: 'Overview', icon: LayoutGrid },
+  { key: 'models', label: 'All models', icon: Boxes },
   { key: 'providers', label: 'Providers', icon: KeyRound },
-  { key: 'quotas',    label: 'Quotas',    icon: Gauge },
+  { key: 'quotas', label: 'Quotas', icon: Gauge },
 ];
 
 /* ── Top-level section ──────────────────────────────────────────────── */
@@ -47,24 +47,41 @@ const TABS: { key: 'overview' | 'models' | 'providers' | 'quotas'; label: string
 export function ModelProvidersSection() {
   const [tab, setTab] = useState<string>('overview');
   const data = useModelProviders();
+  const activeView = VIEWS.find((v) => v.key === tab) ?? VIEWS[0];
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-col gap-3 px-6 pt-5 pb-3 shrink-0">
+      <header className="mx-auto w-full max-w-5xl px-6 pt-5 pb-3 shrink-0 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight text-foreground">Model Providers</h2>
           <p className="mt-1 text-sm leading-5 text-muted-foreground">
             Browse available models, manage aliases, configure provider API keys, and watch your quotas.
           </p>
         </div>
-        <SettingsTabs value={tab} onChange={setTab} items={TABS} label="Model provider views" />
+        <div className="w-full sm:w-56 shrink-0">
+          <label className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+            View
+          </label>
+          <SettingsSelect
+            aria-label="Model provider view"
+            value={tab}
+            onChange={setTab}
+            options={VIEWS.map((v) => ({ value: v.key, label: v.label }))}
+          />
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-auto px-6 pb-6">
-        {tab === 'overview'  && <OverviewTab data={data} onJump={setTab} />}
-        {tab === 'models'    && <Models />}
-        {tab === 'providers' && <Providers />}
-        {tab === 'quotas'    && <QuotasPanel />}
+        <div className="mx-auto w-full max-w-5xl">
+          <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
+            {activeView.icon && <activeView.icon className="size-3.5 text-primary" />}
+            <span className="font-medium text-foreground/80">{activeView.label}</span>
+          </div>
+          {tab === 'overview' && <OverviewTab data={data} onJump={setTab} />}
+          {tab === 'models' && <Models />}
+          {tab === 'providers' && <Providers />}
+          {tab === 'quotas' && <QuotasPanel />}
+        </div>
       </div>
     </div>
   );

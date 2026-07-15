@@ -36,14 +36,8 @@ const SUBTABS: SubtabDef[] = [
 export function ObservabilitySection() {
     const [subtab, setSubtab] = useState<SubtabId>('overview');
 
-    const tabItems = SUBTABS.map(t => ({
-        key: t.id,
-        label: t.label,
-        icon: t.icon
-    }));
-
     return (
-        <div className="px-8 py-10 max-w-6xl space-y-8">
+        <div className="px-8 py-10 max-w-6xl space-y-6">
             <header>
                 <h1 className="text-2xl font-semibold tracking-tight">Observability</h1>
                 <p className="mt-2 text-sm text-muted-foreground">
@@ -51,19 +45,33 @@ export function ObservabilitySection() {
                 </p>
             </header>
 
-            <SettingsTabs
-                items={tabItems}
-                value={subtab}
-                onChange={(id) => setSubtab(id as SubtabId)}
-            />
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+                <SettingsTabs
+                    className="lg:sticky lg:top-4 shrink-0"
+                    orientation="vertical"
+                    items={SUBTABS.map((t) => ({
+                        key: t.id,
+                        label: t.label,
+                        icon: t.icon,
+                        description: t.description,
+                    }))}
+                    value={subtab}
+                    onChange={(id) => setSubtab(id as SubtabId)}
+                    label="Observability views"
+                />
 
-            <div role="tabpanel" aria-label={SUBTABS.find(t => t.id === subtab)?.description}>
-                {subtab === 'overview' && <ObservabilityOverview onNavigate={setSubtab} />}
-                {subtab === 'audit' && <AuditTimeline />}
-                {subtab === 'rollback' && <RollbackHistory />}
-                {subtab === 'observations' && <ObservationGallery />}
-                {subtab === 'traffic' && <TrafficSubtab />}
-                {subtab === 'logs' && <LogsSubtab />}
+                <div
+                    className="min-w-0 flex-1"
+                    role="tabpanel"
+                    aria-label={SUBTABS.find((t) => t.id === subtab)?.description}
+                >
+                    {subtab === 'overview' && <ObservabilityOverview onNavigate={setSubtab} />}
+                    {subtab === 'audit' && <AuditTimeline />}
+                    {subtab === 'rollback' && <RollbackHistory />}
+                    {subtab === 'observations' && <ObservationGallery />}
+                    {subtab === 'traffic' && <TrafficSubtab />}
+                    {subtab === 'logs' && <LogsSubtab />}
+                </div>
             </div>
         </div>
     );

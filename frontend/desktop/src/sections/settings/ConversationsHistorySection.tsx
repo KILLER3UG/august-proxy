@@ -4,13 +4,13 @@
 
 import { useState } from 'react';
 import { Archive as ArchiveIcon, MessagesSquare } from 'lucide-react';
-import { WorkspaceTabs } from '@/components/workspace/WorkspaceTabs';
+import { SettingsTabs } from '@/components/settings/SettingsTabs';
 import { Archive } from '@/sections/archive/Archive';
 import { Conversations } from '@/sections/conversations/Conversations';
 
 const TABS = [
-  { key: 'archive',       label: 'Archived Sessions', icon: ArchiveIcon },
-  { key: 'conversations', label: 'Conversations', icon: MessagesSquare },
+  { key: 'archive', label: 'Archived', icon: ArchiveIcon, description: 'Restorable sessions' },
+  { key: 'conversations', label: 'Conversations', icon: MessagesSquare, description: 'Recent history' },
 ] as const;
 
 export function ConversationsHistorySection() {
@@ -24,12 +24,21 @@ export function ConversationsHistorySection() {
           Browse, restore, and review your past conversations and archived sessions.
         </p>
       </header>
-      <div className="shrink-0">
-        <WorkspaceTabs value={tab} onChange={setTab} items={TABS} label="History views" />
-      </div>
-      <div className="flex-1 overflow-auto">
-        {tab === 'archive' && <Archive />}
-        {tab === 'conversations' && <Conversations />}
+      <div className="flex-1 min-h-0 overflow-auto">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+          <SettingsTabs
+            className="lg:sticky lg:top-2 shrink-0"
+            orientation="vertical"
+            value={tab}
+            onChange={setTab}
+            items={[...TABS]}
+            label="History views"
+          />
+          <div className="min-w-0 flex-1">
+            {tab === 'archive' && <Archive />}
+            {tab === 'conversations' && <Conversations />}
+          </div>
+        </div>
       </div>
     </div>
   );

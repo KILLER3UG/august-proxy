@@ -7,8 +7,8 @@
  * - Toggle OFF                → /v1/* returns 403 (closed)
  * - Toggle ON but no key      → 400 from the server, banner shown below
  *
- * The GATEWAY_API_KEY itself lives in the user's .env file and is never
- * written from the UI — only its masked preview is displayed here.
+ * Gateway keys can be generated in-app (saved to config + .env). The full
+ * key is shown once after generation; later only a masked preview is shown.
  */
 import { useState } from 'react';
 import {
@@ -21,18 +21,22 @@ import {
   AlertTriangle,
   Code2,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getExternalAccessConfig,
   updateExternalAccessConfig,
+  generateGatewayApiKey,
   getInjectAugOnProxy,
   updateInjectAugOnProxy,
   type ExternalAccessConfig,
 } from '@/api/api-client';
 import { SettingsToggle } from '@/components/settings/SettingsToggle';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { PageLoader } from '@/components/PageLoader';
+import { toast } from 'sonner';
 
 /* ── Small reusable bits ─────────────────────────────────────────────── */
 
@@ -107,6 +111,17 @@ export function ExternalAccessSection() {
       void qc.invalidateQueries({ queryKey: ['inject-aug-on-proxy'] });
     },
   });
+  const [revealedKey, setRevealedKey] = useState<string | null>(null);
+  const generateMutation = useMutation({
+    mutationFn: () => generateGatewayApiKey(),
+    onSuccess: (res) => {
+      setRevealedKey(res.apiKey);
+      void qc.invalidateQueries({ queryKey: ['external-access'] });
+      void qc.invalidateQueries({ queryKey: ['health', 'detailed'] });
+      toast.success(res.message || 'Gateway API key generated');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Could not generate key'),
+  });
 
   if (query.isLoading || !query.data) {
     return <PageLoader label="Loading API access…" />;
@@ -114,11 +129,11 @@ export function ExternalAccessSection() {
   const cfg: ExternalAccessConfig = query.data;
 
   const enabled = cfg.enabled;
-  const hasKey = cfg.hasKey;
+  const hasKey = cfg.hasKey || !!revealedKey;
   const healthy = enabled && hasKey;
 
   const baseUrl = cfg.endpoints.openai.replace(/\/v1\/.*$/, '');
-  const keyForDisplay = cfg.keyPreview ?? 'AUG••••••••••••';
+  const keyForDisplay = revealedKey ?? cfg.keyPreview ?? 'AUG••••••••••••';
   const bearerLine = `Authorization: Bearer ${keyForDisplay}`;
 
   const curlExample =
@@ -157,7 +172,7 @@ export function ExternalAccessSection() {
   -d '{"model":"claude-sonnet-4-5","max_tokens":256,"messages":[{"role":"user","content":"Hello"}]}'`;
 
   return (
-    <div className="px-8 py-12 max-w-3xl space-y-10">
+    <div className="mx-auto w-full max-w-3xl px-8 py-12 space-y-10">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">API Access</h1>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -220,26 +235,49 @@ export function ExternalAccessSection() {
         </div>
         <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 space-y-3">
           {hasKey ? (
-            <div className="flex items-center justify-between gap-3 rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2">
-              <code className="text-sm font-mono">{cfg.keyPreview}</code>
-              <CopyButton value={cfg.keyPreview ?? ''} label="copy" />
-            </div>
+            <>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2.5">
+                <code className="text-sm font-mono break-all">
+                  {revealedKey ?? cfg.keyPreview}
+                </code>
+                <CopyButton value={revealedKey ?? cfg.keyPreview ?? ''} label="copy" />
+              </div>
+              {revealedKey && (
+                <p className="text-xs text-warning flex items-start gap-1.5">
+                  <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                  Copy this key now — after you leave this page only a masked preview is shown.
+                </p>
+              )}
+            </>
           ) : (
-            <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
-              <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+            <div className="flex items-start gap-2 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-3 text-xs text-muted-foreground">
+              <KeyRound className="size-3.5 mt-0.5 shrink-0 text-primary" />
               <div>
-                No API key configured. Add{' '}
-                <code className="font-mono">GATEWAY_API_KEY=&lt;your-key&gt;</code>{' '}
-                to your <code className="font-mono">.env</code> file and restart
-                the proxy. Without a key, external access cannot be enabled.
+                No gateway key yet. Generate one to open external API access for Claude Code,
+                Cursor, SDKs, and other clients.
               </div>
             </div>
           )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => generateMutation.mutate()}
+              disabled={generateMutation.isPending}
+              data-testid="generate-gateway-key"
+            >
+              <RefreshCw className={`size-3.5 mr-1.5 ${generateMutation.isPending ? 'animate-spin' : ''}`} />
+              {hasKey ? 'Regenerate key' : 'Generate key'}
+            </Button>
+            {cfg.source && (
+              <span className="text-[10px] font-mono text-muted-foreground">
+                source: {cfg.source}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
-            Set <code className="font-mono">GATEWAY_API_KEY</code> in{' '}
-            <code className="font-mono">.env</code> at the project root (or
-            export it as an environment variable). The key is loaded at
-            startup and never displayed in full here.
+            Keys are saved to your project config and <code className="font-mono">.env</code>{' '}
+            automatically. Clients send{' '}
+            <code className="font-mono">Authorization: Bearer &lt;key&gt;</code>.
           </p>
         </div>
       </section>

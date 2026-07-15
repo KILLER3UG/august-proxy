@@ -331,7 +331,12 @@ async def healthDetailed():
     gw = cfg.get('gateway') or {}
     ea = gw.get('externalAccess') or {}
     enabled = bool(ea.get('enabled', False))
-    hasKey = bool(settings.gatewayApiKey)
+    try:
+        from app.lib.gateway_auth import resolve_gateway_api_key
+
+        hasKey = bool(resolve_gateway_api_key())
+    except Exception:
+        hasKey = bool(settings.gatewayApiKey)
     brain_sync = {}
     cognitive = {}
     try:

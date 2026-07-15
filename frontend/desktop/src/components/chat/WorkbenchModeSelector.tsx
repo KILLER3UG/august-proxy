@@ -28,19 +28,19 @@ export const WORKBENCH_GUARD_MODES = {
   plan: {
     id: 'plan',
     label: 'Plan Mode',
-    description: 'Backend blocks edits, deletes, installs, updates, and commands.',
+    description: 'System barrier: investigate first, then submit a plan for approval.',
     agentId: 'plan' as const,
   },
   full: {
     id: 'full',
     label: 'Full Access',
-    description: 'Backend allows mutations without confirmation and audits them.',
+    description: 'System barrier: execute tools directly. No plan approval UI.',
     agentId: 'build' as const,
   },
   ask: {
     id: 'ask',
     label: 'Ask Before Changes',
-    description: 'Backend requires approval before every mutation.',
+    description: 'System barrier: every mutation needs your confirmation.',
     agentId: 'build' as const,
   },
 } as const satisfies Record<WorkbenchGuardMode, WorkbenchGuardModeConfig>;

@@ -366,9 +366,14 @@ async def confirmMutationAlias(request: Request):
 
 @router.post('/guard-mode')
 async def setGuardMode(request: Request):
-    """Update guard mode on a workbench session."""
+    """Update guard mode on a workbench session (system barrier).
+
+    Also maps agentId (plan vs build) and clears a pending plan when entering
+    Full Access so the chat is not stuck on plan approval.
+    """
     from datetime import datetime, timezone
     from app.services.workbench.sessions import save_sessions
+    from app.services.workbench.prompt_cache import getCache
 
     body = await request.json()
     sessionId = body.get('sessionId', '')
@@ -376,8 +381,28 @@ async def setGuardMode(request: Request):
     session = wb.getWorkbenchSession(sessionId)
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
-    session.guardMode = wb.normalizeGuardMode(str(guardMode or 'full'))
+    mode = wb.normalizeGuardMode(str(guardMode or 'full'))
+    session.guardMode = mode
+    # Keep agent role aligned with the barrier the UI selected.
+    if mode == 'plan':
+        session.agentId = 'plan'
+    else:
+        session.agentId = 'build'
+    if mode == 'full':
+        # Drop pending plan gate — Full Access must not present a plan.
+        session.plan = None
+        session.planApproved = False
+        if hasattr(session, 'approved'):
+            try:
+                session.approved = False  # type: ignore[attr-defined]
+            except Exception:
+                pass
     session.updatedAt = datetime.now(timezone.utc).isoformat()
+    # Invalidate cached Tier1/Tier2 so guard-mode barrier text refreshes.
+    try:
+        getCache().invalidate(sessionId)
+    except Exception:
+        pass
     save_sessions()
     return session.toDict()
 

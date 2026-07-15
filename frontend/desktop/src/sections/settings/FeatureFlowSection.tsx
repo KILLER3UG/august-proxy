@@ -153,19 +153,20 @@ export function FeatureFlowSection() {
   }
 
   return (
-    <div className="px-8 py-10 max-w-5xl space-y-8" data-testid="feature-flow-section">
+    <div className="mx-auto w-full max-w-6xl px-8 py-10 space-y-8" data-testid="feature-flow-section">
       <header className="space-y-2">
         <div className="flex items-center gap-2">
           <GitBranch className="size-5 text-primary" />
           <h1 className="text-2xl font-semibold tracking-tight">Feature Flow</h1>
         </div>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Live 2D visualization of backend feature execution — proxy hops, tools, memory, and more.
-          Events stream over SSE from <code className="font-mono text-xs">/api/monitor/events</code>.
+          Live office-floor view of backend departments — tools workshop, gateway lobby, proxy floor,
+          and more. Workers move with their jobs as events stream from{' '}
+          <code className="font-mono text-xs">/api/monitor/events</code>.
         </p>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
         <aside
           className="space-y-2 rounded-xl border border-white/[0.06] bg-card/40 p-3"
           data-testid="feature-inventory-directory"
@@ -257,6 +258,9 @@ export function FeatureFlowSection() {
                 stages={activeFeature.stages}
                 stageStatus={stageStatus}
                 pulseKey={pulseKey}
+                lastSummary={filtered[0]?.summary}
+                featureId={activeFeature.id}
+                featureName={activeFeature.name}
               />
             </div>
           )}

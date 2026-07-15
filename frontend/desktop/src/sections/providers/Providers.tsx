@@ -9,6 +9,7 @@ import { PageLoader } from '@/components/PageLoader';
 import { Eye, EyeOff, ChevronDown, ChevronRight, Save, Check, Key, ArrowUpRight, PlugZap, ShieldCheck, Globe, Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { refreshProviderCatalog } from '@/lib/provider-catalog';
 
 interface Provider {
   id: string;
@@ -112,7 +113,7 @@ export function Providers() {
     setSaveMsg(null);
     try {
       await api.put('/api/config/activeProvider', { provider: providerId });
-      void queryClient.invalidateQueries({ queryKey: ['providers'] });
+      void refreshProviderCatalog(queryClient);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setSaveMsg({ id: providerId, type: 'err', text: message || 'Failed to activate' });
@@ -130,8 +131,7 @@ export function Providers() {
       if (baseUrls[providerId]) config.baseUrl = baseUrls[providerId];
       await api.post('/api/config/provider-details', { provider: providerId, config });
       setSaveMsg({ id: providerId, type: 'ok', text: 'Saved' });
-      void queryClient.invalidateQueries({ queryKey: ['providers'] });
-      void queryClient.invalidateQueries({ queryKey: ['model-options'] });
+      void refreshProviderCatalog(queryClient);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setSaveMsg({ id: providerId, type: 'err', text: message || 'Failed to activate' });
@@ -159,8 +159,7 @@ export function Providers() {
       setSelectedTemplate('');
       setNewProviderName('');
       setNewProviderKey('');
-      void queryClient.invalidateQueries({ queryKey: ['providers'] });
-      void queryClient.invalidateQueries({ queryKey: ['aggregated-models'] });
+      void refreshProviderCatalog(queryClient);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setSaveMsg({ id: 'add', type: 'err', text: message || 'Failed to add provider' });

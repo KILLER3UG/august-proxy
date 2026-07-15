@@ -5,15 +5,15 @@
 
 import { useState } from 'react';
 import { Bot, CalendarClock, TerminalSquare } from 'lucide-react';
-import { WorkspaceTabs } from '@/components/workspace/WorkspaceTabs';
+import { SettingsTabs } from '@/components/settings/SettingsTabs';
 import { Agents } from '@/sections/agents/Agents';
 import { Automations } from '@/sections/automations/Automations';
 import { Terminal } from '@/sections/terminal/Terminal';
 
 const TABS = [
-  { key: 'agents',      label: 'Agents', icon: Bot },
-  { key: 'automations', label: 'Automations', icon: CalendarClock },
-  { key: 'terminal',    label: 'Terminal & Approvals', icon: TerminalSquare },
+  { key: 'agents', label: 'Agents', icon: Bot, description: 'Registry and permissions' },
+  { key: 'automations', label: 'Automations', icon: CalendarClock, description: 'Scheduled jobs' },
+  { key: 'terminal', label: 'Terminal', icon: TerminalSquare, description: 'Approvals and shell' },
 ] as const;
 
 export function AgentsAutomationSection() {
@@ -27,13 +27,22 @@ export function AgentsAutomationSection() {
           Manage agents and their permissions, schedule automations, and review terminal approvals.
         </p>
       </header>
-      <div className="shrink-0">
-        <WorkspaceTabs value={tab} onChange={setTab} items={TABS} label="Agents & automation views" />
-      </div>
-      <div className="flex-1 overflow-auto">
-        {tab === 'agents' && <Agents />}
-        {tab === 'automations' && <Automations />}
-        {tab === 'terminal' && <Terminal />}
+      <div className="flex-1 min-h-0 overflow-auto">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+          <SettingsTabs
+            className="lg:sticky lg:top-2 shrink-0"
+            orientation="vertical"
+            value={tab}
+            onChange={setTab}
+            items={[...TABS]}
+            label="Agents & automation views"
+          />
+          <div className="min-w-0 flex-1">
+            {tab === 'agents' && <Agents />}
+            {tab === 'automations' && <Automations />}
+            {tab === 'terminal' && <Terminal />}
+          </div>
+        </div>
       </div>
     </div>
   );

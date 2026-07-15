@@ -961,9 +961,8 @@ export interface ExternalAccessConfig {
   hasKey: boolean;
   /** Masked preview of GATEWAY_API_KEY, or null when not configured. */
   keyPreview: string | null;
-  /** Where the key is loaded from. Today always 'env', kept as a free
-   * string to allow future sources (e.g., config.json, OS keychain). */
-  source: 'env' | null;
+  /** Where the key is loaded from (env or generated config). */
+  source: 'env' | 'config' | null;
   endpoints: {
     anthropic: string;
     openai: string;
@@ -979,6 +978,16 @@ export function updateExternalAccessConfig(body: {
   enabled: boolean;
 }): Promise<{ enabled: boolean; hasKey: boolean; keyPreview: string | null; source: string | null }> {
   return api.put('/api/config/external-access', body);
+}
+
+export function generateGatewayApiKey(): Promise<{
+  apiKey: string;
+  hasKey: boolean;
+  keyPreview: string | null;
+  source: string | null;
+  message?: string;
+}> {
+  return api.post('/api/config/external-access/generate-key', {});
 }
 
 /* ── Feature Flow (live backend pipeline visualization) ─────────────── */

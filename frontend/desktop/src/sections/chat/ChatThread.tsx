@@ -33,6 +33,7 @@ import { useModels } from '@/hooks/useModels';
 import { useProviderAvailability } from '@/hooks/useProviderAvailability';
 import { useQueryClient } from '@tanstack/react-query';
 import { getAggregatedModels } from '@/api/api-client';
+import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import { chatRuntime, type ChatTurnRecord } from './chat-runtime';
 import { CommandHelpCard } from './CommandHelpCard';
 import {
@@ -456,10 +457,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }
   };
 
-  // Whether a plan is awaiting the user's decision. When true, the composer
-  // is replaced by the PlanProposalBanner so the user can only act on the
-  // plan (reject / revise / accept) — no new chat message can be sent.
-  const planPending = !!workbenchSession?.plan && !workbenchSession?.approved && !workbenchSession?.approvedAt;
   const [workbenchToolCount, setWorkbenchToolCount] = useState<number | null>(null);
   const [workbenchToolTokens, setWorkbenchToolTokens] = useState<number | null>(null);
   const [sessionUsage, setSessionUsage] = useState<{ total: number; input: number; output: number; contextTokens: number } | null>(null);
@@ -467,6 +464,15 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const saved = localStorage.getItem('august_last_workbench_guard_mode') as WorkbenchGuardMode | null;
     return saved && WORKBENCH_GUARD_MODES[saved] ? saved : 'full';
   });
+  // Whether a plan is awaiting the user's decision. When true, the composer
+  // is replaced by the PlanProposalBanner so the user can only act on the
+  // plan (reject / revise / accept) — no new chat message can be sent.
+  // Plan gate UI only when agent mode requires it — Full Access is a hard barrier.
+  const planPending =
+    workbenchMode !== 'full' &&
+    !!workbenchSession?.plan &&
+    !workbenchSession?.approved &&
+    !workbenchSession?.approvedAt;
   const workbenchBtw = streamState.workbenchBtw;
   const setWorkbenchBtw = (btw: WorkbenchBtwState | null) => {
     if (!sessionId) return;
@@ -1059,13 +1065,10 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // aggregated-models and provider-availability react-query caches so every
   // subscriber refetches, then refetch this component's own models list.
   const handleRefreshModels = useCallback(async () => {
-    await Promise.all([
-      getAggregatedModels({ refresh: true }),
-      queryClient.invalidateQueries({ queryKey: ['aggregated-models'] }),
-      queryClient.invalidateQueries({ queryKey: ['provider-availability'] }),
-    ]);
-	    void refetchModels();
-	  }, [queryClient, refetchModels]);
+    await refreshProviderCatalog(queryClient);
+    void queryClient.invalidateQueries({ queryKey: ['provider-availability'] });
+    void refetchModels();
+  }, [queryClient, refetchModels]);
 
   // Reconcile selectedModel when the filtered model list changes (models were
   // refetched or provider availability changed). Preserve user's manual choice.
@@ -2137,10 +2140,25 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                 onChange={(mode) => {
                   setWorkbenchMode(mode);
                   localStorage.setItem('august_last_workbench_guard_mode', mode);
-                  if (workbenchSession?.id) {
-                    void setWorkbenchGuardMode(workbenchSession.id, mode).catch((error) => {
-                      console.warn('[ChatThread] Failed to persist guard mode:', error);
+                  // Full Access: clear local plan so approval chrome never blocks the composer.
+                  if (mode === 'full' && workbenchSession) {
+                    setWorkbenchSession({
+                      ...workbenchSession,
+                      plan: null,
+                      approved: false,
+                      approvedAt: null,
+                      guardMode: 'full',
+                      agentId: 'build',
                     });
+                  }
+                  if (workbenchSession?.id) {
+                    void setWorkbenchGuardMode(workbenchSession.id, mode)
+                      .then((updated) => {
+                        if (updated) setWorkbenchSession(updated as typeof workbenchSession);
+                      })
+                      .catch((error) => {
+                        console.warn('[ChatThread] Failed to persist guard mode:', error);
+                      });
                   }
                 }}
               />

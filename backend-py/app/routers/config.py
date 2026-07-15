@@ -380,13 +380,27 @@ async def putLiveConfig(body: dict[str, object]):
     return cfg
 
 
+def _resolve_gateway_key() -> tuple[str | None, str | None]:
+    """Return (key, source) where source is env|config|None."""
+    from app.lib.gateway_auth import resolve_gateway_api_key
+    import os
+
+    env_key = (settings.gatewayApiKey or os.environ.get('GATEWAY_API_KEY') or '').strip()
+    if env_key:
+        return env_key, 'env'
+    key = resolve_gateway_api_key()
+    if key:
+        return key, 'config'
+    return None, None
+
+
 @router.get('/external-access')
 async def getExternalAccess():
     """Return current external-access config.
 
     Includes:
       - enabled:        whether the gateway is open for external clients
-      - hasKey:         whether GATEWAY_API_KEY is configured server-side
+      - hasKey:         whether a gateway key is configured server-side
       - keyPreview:     masked preview of the key (or null)
       - endpoints:      the URLs to give to external clients
       - source:         where the key is loaded from ('env'|'config'|null)
@@ -395,12 +409,12 @@ async def getExternalAccess():
     gw = as_dict(cfg.get('gateway'), {})
     ea = as_dict(gw.get('externalAccess'), {})
     enabled = bool(ea.get('enabled', False))
-    apiKey = settings.gatewayApiKey
+    apiKey, source = _resolve_gateway_key()
     return {
         'enabled': enabled,
         'hasKey': bool(apiKey),
         'keyPreview': secrets.mask(apiKey) if apiKey else None,
-        'source': 'env' if apiKey else None,
+        'source': source,
         'endpoints': {
             'anthropic': f'http://localhost:{settings.port}/v1/messages',
             'openai': f'http://localhost:{settings.port}/v1/chat/completions',
@@ -444,17 +458,14 @@ async def put_inject_aug_on_proxy(body: InjectAugOnProxyUpdate):
 
 @router.put('/external-access')
 async def putExternalAccess(body: ExternalAccessUpdate):
-    """Toggle external API gateway access on/off.
-
-    The ``GATEWAY_API_KEY`` itself is not part of this payload — it lives
-    in ``.env`` (or system environment) and is managed outside the app.
-    """
-    if body.enabled and (not settings.gatewayApiKey):
+    """Toggle external API gateway access on/off."""
+    apiKey, source = _resolve_gateway_key()
+    if body.enabled and (not apiKey):
         raise HTTPException(
             status_code=400,
             detail={
                 'code': 'no_api_key',
-                'message': 'Cannot enable external access: GATEWAY_API_KEY is not configured. Set it in your .env file and restart the proxy.',
+                'message': 'Cannot enable external access: no gateway key. Generate one in Settings → API Access.',
             },
         )
     cfg = config_service.getConfig()
@@ -463,9 +474,72 @@ async def putExternalAccess(body: ExternalAccessUpdate):
     ea['enabled'] = bool(body.enabled)
     config_service.saveConfig(cfg)
     settings.reload()
+    apiKey, source = _resolve_gateway_key()
     return {
         'enabled': ea['enabled'],
-        'hasKey': bool(settings.gatewayApiKey),
-        'keyPreview': secrets.mask(settings.gatewayApiKey) if settings.gatewayApiKey else None,
-        'source': 'env' if settings.gatewayApiKey else None,
+        'hasKey': bool(apiKey),
+        'keyPreview': secrets.mask(apiKey) if apiKey else None,
+        'source': source,
+    }
+
+
+@router.post('/external-access/generate-key')
+async def generateGatewayApiKey():
+    """Generate a new gateway API key and persist it (config + .env best-effort).
+
+    Returns the full key **once** so the UI can show/copy it. Subsequent GETs
+    only return a masked preview.
+    """
+    import os
+    import secrets as py_secrets
+    from pathlib import Path
+
+    # url-safe token; prefix for easy identification in logs
+    raw = 'aug_' + py_secrets.token_urlsafe(32)
+    cfg = config_service.getConfig()
+    gw = as_dict(cfg.setdefault('gateway', {}), {})
+    gw['apiKey'] = raw
+    config_service.saveConfig(cfg)
+
+    # Live process
+    settings.gatewayApiKey = raw
+    os.environ['GATEWAY_API_KEY'] = raw
+
+    # Best-effort write/update project .env so restarts keep the key
+    try:
+        root = Path(settings.projectRoot)
+        env_path = root / '.env'
+        lines: list[str] = []
+        if env_path.is_file():
+            lines = env_path.read_text('utf-8').splitlines()
+        out: list[str] = []
+        found = False
+        for line in lines:
+            if line.strip().startswith('GATEWAY_API_KEY='):
+                out.append(f'GATEWAY_API_KEY={raw}')
+                found = True
+            else:
+                out.append(line)
+        if not found:
+            if out and out[-1].strip():
+                out.append('')
+            out.append(f'GATEWAY_API_KEY={raw}')
+        env_path.write_text('\n'.join(out) + '\n', encoding='utf-8')
+    except Exception:
+        pass
+
+    try:
+        settings.reload()
+        # Keep the generated key after reload (reload re-reads .env)
+        if not settings.gatewayApiKey:
+            settings.gatewayApiKey = raw
+    except Exception:
+        settings.gatewayApiKey = raw
+
+    return {
+        'apiKey': raw,
+        'hasKey': True,
+        'keyPreview': secrets.mask(raw),
+        'source': 'config',
+        'message': 'Key generated. Copy it now — it will not be shown in full again.',
     }

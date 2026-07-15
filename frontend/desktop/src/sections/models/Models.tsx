@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { SectionHeader } from '@/components/SectionHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -37,26 +36,29 @@ export function Models() {
   const [tab, setTab] = useState<Tab>('catalog');
 
   return (
-    <div className="p-6 space-y-4 flex flex-col h-full">
-      <SectionHeader
-        title="Models"
-        subtitle="All models from every configured provider. Models are listed under the provider that serves them — e.g. deepseek/kimi models appear under opencode-zen when served through it."
-        actions={
-          <div className="flex items-center gap-1 text-[10px]">
+    <div className="space-y-5 flex flex-col h-full max-w-5xl mx-auto w-full">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold tracking-tight text-foreground">Models</h3>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Catalog of models from every configured provider.
+          </p>
+        </div>
+        <div className="w-full sm:w-52">
+          <select
+            value={tab}
+            onChange={(e) => setTab(e.target.value as Tab)}
+            aria-label="Models view"
+            className="h-9 w-full appearance-none rounded-lg border border-white/[0.08] bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/30 [color-scheme:dark]"
+          >
             {TABS.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={`rounded-md px-2 py-1 font-mono transition inline-flex items-center gap-1 ${
-                  tab === t.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
-                }`}
-              >
-                <t.Icon className="size-3" /> {t.label}
-              </button>
+              <option key={t.key} value={t.key} className="bg-card text-foreground">
+                {t.label}
+              </option>
             ))}
-          </div>
-        }
-      />
+          </select>
+        </div>
+      </div>
       <div className="flex-1 min-h-0">
         {tab === 'catalog' && <CatalogTab />}
         {tab === 'capabilities' && <CapabilitiesTab />}
@@ -124,41 +126,43 @@ function CatalogTab() {
   );
 
   return (
-    <div className="space-y-3 h-full flex flex-col">
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-          <Input
+    <div className="space-y-5 h-full flex flex-col">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search models across all providers…"
-            className="pl-7"
+            placeholder="Search models…"
+            className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/30"
           />
         </div>
-        <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+        <span className="text-[11px] text-muted-foreground font-mono shrink-0">
           {total} models · {freeCount} free
         </span>
       </div>
       {total === 0 ? (
         <EmptyState label="No models available — configure a provider API key to populate the list" />
       ) : (
-        <Card className="flex-1 overflow-auto">
-          <div className="divide-y divide-border/40">
-            {grouped.map(([provider, list]) => (
-              <div key={provider}>
-                <div className="sticky top-0 z-10 bg-popover/95 backdrop-blur px-3 py-1.5 text-[10px] uppercase tracking-widest text-muted-foreground font-semibold border-b border-border/40">
+        <div className="space-y-6 flex-1 overflow-auto">
+          {grouped.map(([provider, list]) => (
+            <section key={provider} className="space-y-3">
+              <div className="flex items-center gap-2 px-0.5">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   {provider}
-                  <span className="ml-2 text-[9px] lowercase font-mono text-muted-foreground/60">
-                    {list.filter((m) => m.isFree).length}/{list.length} free
-                  </span>
-                </div>
+                </h4>
+                <span className="text-[10px] font-mono text-muted-foreground/70">
+                  {list.filter((m) => m.isFree).length}/{list.length} free
+                </span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {list.map((m) => (
-                  <CatalogRow key={`${provider}-${m.id}`} m={m} />
+                  <CatalogCard key={`${provider}-${m.id}`} m={m} />
                 ))}
               </div>
-            ))}
-          </div>
-        </Card>
+            </section>
+          ))}
+        </div>
       )}
       {data?.hasMore && (
         <div className="flex justify-center pt-2">
@@ -176,26 +180,32 @@ function CatalogTab() {
   );
 }
 
-function CatalogRow({ m }: { m: AggregatedModel }) {
+function CatalogCard({ m }: { m: AggregatedModel }) {
   return (
-    <div className="px-3 py-2.5 flex items-start gap-3 hover:bg-accent/20">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-medium font-mono">{m.id}</span>
-          {m.isFree && (
-            <Badge variant="outline" className="text-[9px] border-success/50 text-success">free</Badge>
-          )}
-          {m.supportsReasoning && (
-            <Badge variant="outline" className="text-[9px]">reasoning</Badge>
-          )}
-          {m.supportsThinking && (
-            <Badge variant="outline" className="text-[9px]">thinking</Badge>
-          )}
-        </div>
+    <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 transition hover:border-white/[0.12] hover:bg-card">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-sm font-medium font-mono text-foreground break-all leading-snug">{m.id}</p>
+        {m.isFree && (
+          <Badge variant="outline" className="shrink-0 text-[9px] border-success/40 text-success">
+            free
+          </Badge>
+        )}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {m.supportsReasoning && (
+          <span className="rounded-md bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            reasoning
+          </span>
+        )}
+        {m.supportsThinking && (
+          <span className="rounded-md bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            thinking
+          </span>
+        )}
         {m.contextWindow ? (
-          <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
-            {(m.contextWindow / 1000).toFixed(0)}k context
-          </p>
+          <span className="rounded-md bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+            {(m.contextWindow / 1000).toFixed(0)}k ctx
+          </span>
         ) : null}
       </div>
     </div>

@@ -100,19 +100,59 @@ def _fmt_jsonish(val: object) -> str:
     return str(val) if val is not None else ''
 
 
+def _active_guard_mode(session: dict[str, object] | None) -> str:
+    """Resolve active guard mode for this session (system barrier)."""
+    raw = as_str(_get(session, 'guardMode', 'guard_mode'), 'full').strip().lower()
+    if raw in ('plan', 'full', 'ask'):
+        return raw
+    return 'full'
+
+
+def _guard_mode_barrier_lines(mode: str) -> list[str]:
+    """Hard system-barrier instructions for the active agent mode only."""
+    lines = [
+        '=== AGENT MODE (SYSTEM BARRIER) ===',
+        f'- ACTIVE MODE: {mode.upper()} — this is a hard system constraint, not a suggestion.',
+        '- You must not invent another mode. Follow ONLY the rules for the active mode.',
+    ]
+    if mode == 'full':
+        lines.extend(
+            [
+                '- Full Access: you may execute tools (including writes, edits, deletes, shell)',
+                '  immediately when needed. Do NOT call submit_plan. Do NOT pause for plan',
+                '  approval. Do NOT present multi-step plans as gated workflows — just do the work.',
+                '- You may briefly outline intent in prose if helpful, then act with tools.',
+                '- Plan-approval UI must not be used in this mode.',
+            ]
+        )
+    elif mode == 'plan':
+        lines.extend(
+            [
+                '- Plan Mode: investigate with non-destructive tools only.',
+                '- Destructive tools (write/edit/delete/shell/install) are blocked until the user',
+                '  approves a plan. When ready, call submit_plan with concrete steps, then wait.',
+                '- After approval, execute only approved steps.',
+            ]
+        )
+    else:  # ask
+        lines.extend(
+            [
+                '- Ask Before Changes: mutating tools require user confirmation before execution.',
+                '- Propose the mutation clearly; do not bypass the approval gate.',
+                '- Prefer submit_plan only when a multi-step mutation sequence needs review.',
+            ]
+        )
+    return lines
+
+
 def buildTier1(session: dict[str, object] | None = None) -> str:
     """Build Tier 1 — static identity and constraints."""
     blocks: list[str] = []
+    mode = _active_guard_mode(session)
     constraints = [AUGUST_PLATFORM]
+    constraints.extend(_guard_mode_barrier_lines(mode))
     constraints.extend(
         [
-            '=== GUARD MODE RULES ===',
-            '- This session enforces a guard mode. You operate in one of three modes:',
-            '  * ask: All mutating actions (write, edit, delete, run_command with mutations)',
-            '         require user confirmation. Propose the action and wait for approval.',
-            '  * plan: Destructive tools are blocked until a plan is submitted and approved.',
-            '          Submit a plan via submit_plan(), then execute only approved steps.',
-            '  * full: All tools available. Use responsibly.',
             '- Cognitive Budget: Monitor <cognitive_budget>.',
             "  At 'high' pressure, proactively compact context.",
             "  At 'critical' pressure, save state and ask user to start fresh.",

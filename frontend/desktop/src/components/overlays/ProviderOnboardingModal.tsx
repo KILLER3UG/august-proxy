@@ -11,6 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Cloud, Upload, X } from 'lucide-react';
 import { useProviderOnboardingState } from '@/hooks/useProviderOnboardingState';
 import { providersApi } from '@/api/providers';
+import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import { Backdrop } from '@/components/overlays/Backdrop';
 
 export function ProviderOnboardingModal() {
@@ -34,8 +35,7 @@ export function ProviderOnboardingModal() {
     try {
       const config = JSON.parse(importJson);
       await providersApi.importConfig(config);
-      void qc.invalidateQueries({ queryKey: ['providers'] });
-      void qc.invalidateQueries({ queryKey: ['aggregated-models'] });
+      void refreshProviderCatalog(qc);
       setShowImport(false);
       setImportJson('');
     } catch (e: unknown) {

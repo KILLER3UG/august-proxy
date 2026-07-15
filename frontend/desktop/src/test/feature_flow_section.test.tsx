@@ -67,6 +67,6 @@ describe('FeatureFlowSection', () => {
     await waitFor(() => {
       expect(screen.getByTestId('feature-flow-feed')).toBeTruthy();
     });
-    expect(screen.getByText(/Proxy hop started/i)).toBeTruthy();
+    expect(screen.getAllByText(/Proxy hop started/i).length).toBeGreaterThan(0);
   });
 });

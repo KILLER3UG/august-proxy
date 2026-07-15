@@ -56,13 +56,31 @@ def _external_access_enabled() -> bool:
     return bool(ea.get('enabled', False))
 
 
+def resolve_gateway_api_key() -> str | None:
+    """Resolve the gateway key from env, in-memory settings, or config.json.
+
+    Priority: ``settings.gatewayApiKey`` (env) → ``gateway.apiKey`` in config.
+    """
+    import os
+
+    key = (settings.gatewayApiKey or os.environ.get('GATEWAY_API_KEY') or '').strip()
+    if key:
+        return key
+    try:
+        cfg = settings.config or {}
+        gw = as_dict(cfg.get('gateway'))
+        stored = str(gw.get('apiKey') or gw.get('api_key') or '').strip()
+        return stored or None
+    except Exception:
+        return None
+
+
 async def require_gateway_key(authorization: str | None = Header(default=None)) -> bool:
     """FastAPI dependency that protects ``/v1/*`` proxy endpoints.
 
     When external access is disabled the gateway is closed and we reject the
     request with ``403``. When enabled we require a Bearer token matching
-    ``settings.gatewayApiKey`` (which is bound to the ``GATEWAY_API_KEY``
-    env var by ``pydantic-settings``).
+    the gateway API key (env or generated config key).
     """
     if not _external_access_enabled():
         _emit_security('external_access_disabled', 'External API access is disabled.')
@@ -73,7 +91,7 @@ async def require_gateway_key(authorization: str | None = Header(default=None)) 
                 'message': 'External API access is disabled. Enable it in Settings → API Access.',
             },
         )
-    key = settings.gatewayApiKey
+    key = resolve_gateway_api_key()
     if not key:
         log.warning('gateway: external access enabled but GATEWAY_API_KEY is not set')
         _emit_security('gateway_key_unconfigured', 'GATEWAY_API_KEY is not configured.')

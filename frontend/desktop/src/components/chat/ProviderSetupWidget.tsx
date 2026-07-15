@@ -13,6 +13,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Eye, EyeOff, Key, Check, Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { providersApi } from '@/api/providers';
+import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import type { ProviderSetupResult } from '@/types/chat';
 
 function formatLabel(value?: string): string {
@@ -38,9 +39,7 @@ export function ProviderSetupWidget({ setup }: { setup: ProviderSetupResult }) {
     setMessage('');
     try {
       await providersApi.applyKey(providerId, key.trim());
-      void queryClient.invalidateQueries({ queryKey: ['providers'] });
-      void queryClient.invalidateQueries({ queryKey: ['model-options'] });
-      void queryClient.invalidateQueries({ queryKey: ['aggregated-models'] });
+      void refreshProviderCatalog(queryClient);
       setStatus('ok');
       setMessage('API key saved. This provider is ready to use.');
       setKey('');

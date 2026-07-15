@@ -317,6 +317,8 @@ def buildSystemPrompt(
         'goal': session.goal,
         'plan': session.plan,
         'planApproved': session.planApproved,
+        'guardMode': normalizeGuardMode(getattr(session, 'guardMode', None) or 'full'),
+        'agentId': getattr(session, 'agentId', None) or '',
         'workspacePath': workspacePath,
         'vcs': vcsInfo,
         'brainPolicy': brainPolicy,
@@ -503,9 +505,14 @@ def toolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         result = assembleToolDefs(all_tool_defs=tools, context_messages=contextMsgs)
         if result.activated:
             session._tool_assembly = result
-            return result.tool_defs
+            tools = result.tool_defs
     except Exception:
         pass
+    # System barrier: Full Access must not expose plan-gating tools.
+    mode = normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
+    if mode == 'full':
+        blocked = {'submit_plan', 'submitPlan', 'approve_plan', 'reject_plan'}
+        tools = [t for t in tools if as_str(t.get('name')) not in blocked]
     return tools
 
 
@@ -541,7 +548,17 @@ def openaiToolDefinitions(session: WorkbenchSession) -> list[dict[str, object]]:
         tools.extend(_mcpToolDefinitionsOpenai(seen))
         return tools
 
-    return tool_defs_cache.get_or_build('openai', _build_base)
+    tools = tool_defs_cache.get_or_build('openai', _build_base)
+    mode = normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
+    if mode == 'full':
+        blocked = {'submit_plan', 'submitPlan', 'approve_plan', 'reject_plan'}
+
+        def _tool_name(t: dict[str, object]) -> str:
+            fn = as_dict(t.get('function'))
+            return as_str(fn.get('name') or t.get('name'))
+
+        tools = [t for t in tools if _tool_name(t) not in blocked]
+    return tools
 
 
 def _mcpToolDefinitionsAnthropic(seen: set[str]) -> list[dict[str, object]]:
@@ -1028,6 +1045,25 @@ async def _sendWorkbenchMessageStreamImpl(
             toolInput = as_dict(tu.get('input', {}))
             toolUseId = as_str(tu.get('id', f'toolu_{uuid.uuid4().hex[:16]}'))
             if toolName in ('submit_plan', 'submitPlan'):
+                mode_now = normalizeGuardMode(getattr(session, 'guardMode', None) or 'full')
+                # Full Access is a hard barrier: never open plan-approval UI.
+                if mode_now == 'full':
+                    msg = (
+                        'submit_plan is disabled in Full Access mode. '
+                        'Execute the work with tools directly — do not wait for plan approval.'
+                    )
+                    if emit:
+                        emit(
+                            {
+                                'type': 'toolResult',
+                                'id': toolUseId,
+                                'name': toolName,
+                                'content': msg,
+                                'status': 'done',
+                            }
+                        )
+                    toolResults.append({'tool_use_id': toolUseId, 'role': 'tool', 'content': msg})
+                    continue
                 planPayload = toolInput.get('plan') or toolInput.get('steps') or toolInput
                 submitPlan(session, planPayload if isinstance(planPayload, dict) else {'plan': planPayload})
                 if emit:

@@ -69,12 +69,13 @@ import { WorkspaceField } from '@/components/workspace/WorkspaceField';
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect';
 import { WorkspaceToggle } from '@/components/workspace/WorkspaceToggle';
 import { WorkspaceEmptyState } from '@/components/workspace/WorkspaceEmptyState';
-import { WorkspaceTabs } from '@/components/workspace/WorkspaceTabs';
+import { SettingsSelect } from '@/components/settings/SettingsSelect';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { QuotasPanel } from '@/sections/settings/QuotasPanel';
 import { cn } from '@/lib/utils';
+import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import { ModelPickerDropdown } from '@/components/overlays/ModelPickerDropdown';
 import { ModelFleetTab } from '@/sections/workspace/ModelFleetTab';
 import { LiveSettingsTab } from '@/sections/workspace/LiveSettingsTab';
@@ -108,37 +109,69 @@ function fmtContextWindow(n?: number) {
 
 export function WorkspaceModelsSection() {
   const [subtab, setSubtab] = useState<'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection' | 'fleet' | 'live'>('providers');
+  const activeView = SUBTABS.find((t) => t.key === subtab) ?? SUBTABS[0];
 
   return (
-    <div className="px-8 py-6 space-y-4 h-full flex flex-col">
-      {/* Page header */}
-      <div className="flex items-start justify-between gap-4 shrink-0">
+    <div className="h-full flex flex-col">
+      <header className="mx-auto w-full max-w-5xl px-8 pt-6 pb-3 shrink-0 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Model settings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manage custom model providers. Once configured, they can be selected during chat.
+          <p className="mt-1 text-sm text-muted-foreground max-w-xl">
+            Providers are the source of truth for every model dropdown. Add a provider here and chat picks it up without restarting.
           </p>
         </div>
-      </div>
+        <div className="w-full sm:w-64 shrink-0">
+          <label className="mb-1 block text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+            View
+          </label>
+          <SettingsSelect
+            aria-label="Model settings view"
+            value={subtab}
+            onChange={(k) =>
+              setSubtab(
+                k as
+                  | 'providers'
+                  | 'aliases'
+                  | 'quotas'
+                  | 'all-models'
+                  | 'fallback'
+                  | 'reflection'
+                  | 'fleet'
+                  | 'live',
+              )
+            }
+            options={SUBTABS.map((t) => ({ value: t.key, label: t.label }))}
+          />
+        </div>
+      </header>
 
-      <div className="shrink-0">
-        <WorkspaceTabs
-          value={subtab}
-          onChange={(k) => setSubtab(k as 'providers' | 'aliases' | 'quotas' | 'all-models' | 'fallback' | 'reflection' | 'fleet')}
-          items={SUBTABS}
-          label="Model settings subtabs"
-        />
-      </div>
-
-      <div className="flex-1 min-h-0 overflow-auto">
-        {subtab === 'providers' && <ProvidersTab />}
-        {subtab === 'all-models' && <AllModelsTab />}
-        {subtab === 'aliases'   && <AliasesTab />}
-        {subtab === 'fallback'  && <FallbackTab />}
-        {subtab === 'reflection' && <BackgroundReflectionTab />}
-        {subtab === 'fleet'     && <ModelFleetTab />}
-        {subtab === 'live'      && <LiveSettingsTab />}
-        {subtab === 'quotas'    && <QuotasTab />}
+      {/* Providers needs overflow-hidden so its two panes scroll independently.
+          Other views scroll the page body as usual. */}
+      <div
+        className={cn(
+          'flex-1 min-h-0 px-8 pb-8',
+          subtab === 'providers' ? 'overflow-hidden flex flex-col' : 'overflow-auto',
+        )}
+      >
+        <div
+          className={cn(
+            'mx-auto w-full max-w-5xl',
+            subtab === 'providers' && 'flex-1 min-h-0 flex flex-col',
+          )}
+        >
+          <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+            {activeView.icon && <activeView.icon className="size-3.5 text-primary" />}
+            <span className="font-medium text-foreground/85">{activeView.label}</span>
+          </div>
+          {subtab === 'providers' && <ProvidersTab />}
+          {subtab === 'all-models' && <AllModelsTab />}
+          {subtab === 'aliases' && <AliasesTab />}
+          {subtab === 'fallback' && <FallbackTab />}
+          {subtab === 'reflection' && <BackgroundReflectionTab />}
+          {subtab === 'fleet' && <ModelFleetTab />}
+          {subtab === 'live' && <LiveSettingsTab />}
+          {subtab === 'quotas' && <QuotasTab />}
+        </div>
       </div>
     </div>
   );
@@ -179,11 +212,10 @@ function ProvidersTab() {
 
   const selected = providers.find((p) => p.id === selectedId) ?? null;
 
+  /** Providers catalog is SoT — push updates to every model dropdown. */
   const invalidate = () => {
-	    void qc.invalidateQueries({ queryKey: ['ws-providers'] });
-	    void qc.invalidateQueries({ queryKey: ['aggregated-models'] });
-	    void qc.invalidateQueries({ queryKey: ['mp-aggregated-models'] });
-	  };
+    void refreshProviderCatalog(qc);
+  };
 
   function selectProvider(id: string) {
     setSelectedId(id);
@@ -198,12 +230,18 @@ function ProvidersTab() {
   }
 
   return (
-    <div className="space-y-3 h-full flex flex-col">
-      <div className="grid grid-cols-[260px_1fr] gap-4 flex-1 min-h-0">
-        {/* LEFT: provider list */}
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 flex flex-col overflow-hidden">
-          <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
-            <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">Providers</p>
+    <div className="flex-1 min-h-0 flex flex-col" data-testid="providers-split">
+      {/*
+        Two independent panes: list grows with items (capped), details always
+        scroll in their own column — neither is forced to stretch empty space.
+      */}
+      <div className="grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] gap-4 flex-1 min-h-0 items-stretch">
+        {/* LEFT: provider list — height follows content, scrolls when long */}
+        <div className="rounded-xl border border-white/[0.06] bg-card/60 flex flex-col overflow-hidden min-h-0 max-h-full md:max-h-none md:h-full">
+          <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between shrink-0">
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold">
+              Providers
+            </p>
             <button
               onClick={() => void listQ.refetch()}
               aria-label="Refresh providers"
@@ -212,11 +250,14 @@ function ProvidersTab() {
               <RefreshCw className={cn('size-3', listQ.isFetching && 'animate-spin')} />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-1 space-y-0.5">
-            {providers.length === 0 ? null : (
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1 space-y-0.5">
+            {providers.length === 0 ? (
+              <p className="px-3 py-4 text-xs text-muted-foreground text-center">No providers yet</p>
+            ) : (
               providers.map((p) => (
                 <button
                   key={p.id}
+                  type="button"
                   onClick={() => selectProvider(p.id)}
                   className={cn(
                     'w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm text-left transition',
@@ -227,13 +268,14 @@ function ProvidersTab() {
                 >
                   <Server className="size-3.5 shrink-0" />
                   <span className="flex-1 truncate">{p.name}</span>
-                  {p.enabled && <span className="size-2 rounded-full bg-success" title="enabled" />}
+                  {p.enabled && <span className="size-2 rounded-full bg-success shrink-0" title="enabled" />}
                 </button>
               ))
             )}
           </div>
-          <div className="border-t border-white/[0.06] p-2">
+          <div className="border-t border-white/[0.06] p-2 shrink-0">
             <button
+              type="button"
               onClick={openAddProvider}
               className="w-full flex items-center justify-center gap-1.5 rounded-md border border-white/[0.08] px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition"
             >
@@ -243,8 +285,8 @@ function ProvidersTab() {
           </div>
         </div>
 
-        {/* RIGHT: editor / add form / empty state */}
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 flex flex-col overflow-hidden">
+        {/* RIGHT: details — always independently scrollable */}
+        <div className="rounded-xl border border-white/[0.06] bg-card/60 flex flex-col overflow-hidden min-h-0 h-full max-h-full">
           {mode === 'add' ? (
             <AddProviderForm
               onCancel={() => {
@@ -267,7 +309,11 @@ function ProvidersTab() {
               showAddModel={showAddModel}
               setShowAddModel={setShowAddModel}
             />
-          ) : null}
+          ) : (
+            <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
+              Select a provider or add a new one.
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -393,9 +439,7 @@ function AllModelsTab() {
       if (fail.length) {
         toast.error(`Failed for ${fail.length} provider${fail.length === 1 ? '' : 's'}: ${fail.map((f) => f.provider).join(', ')}`);
       }
-	      void qc.invalidateQueries({ queryKey: ['ws-providers'] });
-	      void qc.invalidateQueries({ queryKey: ['aggregated-models'] });
-	      setDiscovering(false);
+      void refreshProviderCatalog(qc).finally(() => setDiscovering(false));
     },
     onError: () => {
       setDiscovering(false);
@@ -460,7 +504,7 @@ function AllModelsTab() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Card grid (skills / integrations style — no heavy white rules) */}
       {totalModels === 0 ? (
         <WorkspaceEmptyState
           icon={Boxes}
@@ -468,7 +512,7 @@ function AllModelsTab() {
           description={
             providersDiscoverable(listQ.data ?? [])
               ? 'Click Discover all to fetch /v1/models from every configured provider. Manual models can also be added per provider.'
-              : 'No providers configured yet. Add a provider on the Providers tab first, then come back here to discover models.'
+              : 'No providers configured yet. Add a provider first, then discover models.'
           }
           action={
             providersDiscoverable(listQ.data ?? []) ? (
@@ -479,87 +523,82 @@ function AllModelsTab() {
           }
           className="py-8"
         />
+      ) : grouped.length === 0 ? (
+        <div className="rounded-xl border border-white/[0.06] bg-card/40 p-8 text-center text-sm text-muted-foreground">
+          No models match &quot;{query}&quot;.
+        </div>
       ) : (
-        <div className="rounded-xl border border-white/[0.06] bg-card/60 flex-1 overflow-auto">
-          {grouped.length === 0 ? (
-            <div className="p-8 text-center text-sm text-muted-foreground">
-              No models match "{query}".
-            </div>
-          ) : (
-            <div className="divide-y divide-white/[0.06]">
-              {grouped.map(([providerId, providerRows]) => {
-                const first = providerRows[0];
-                return (
-                  <div key={providerId}>
-                    <div className="sticky top-0 z-10 bg-card/95 backdrop-blur px-4 py-2 border-b border-white/[0.06] flex items-center gap-3">
-                      <Server className="size-3.5 text-muted-foreground" />
-                      <span className="text-sm font-semibold">{first.providerName}</span>
-                      <span className="text-[10px] font-mono text-muted-foreground/70">{providerId}</span>
-                      {!first.enabled && (
-                        <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                          disabled
-                        </span>
-                      )}
-                      <span className="ml-auto text-[10px] text-muted-foreground/70 font-mono">
-                        {providerRows.length} model{providerRows.length === 1 ? '' : 's'}
-                      </span>
-                    </div>
-                    <div className="divide-y divide-white/[0.06]/50">
-                      {providerRows.map((r) => (
-                        <AllModelRow key={`${r.providerId}::${r.id}`} row={r} />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+        <div className="space-y-6 flex-1 overflow-auto">
+          {grouped.map(([providerId, providerRows]) => {
+            const first = providerRows[0];
+            return (
+              <section key={providerId} className="space-y-3">
+                <div className="flex items-center gap-2 px-0.5">
+                  <Server className="size-3.5 text-muted-foreground" />
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {first.providerName}
+                  </h4>
+                  <span className="text-[10px] font-mono text-muted-foreground/60">{providerId}</span>
+                  {!first.enabled && (
+                    <span className="rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      disabled
+                    </span>
+                  )}
+                  <span className="ml-auto text-[10px] font-mono text-muted-foreground/70">
+                    {providerRows.length} model{providerRows.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {providerRows.map((r) => (
+                    <AllModelCard key={`${r.providerId}::${r.id}`} row={r} />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-function AllModelRow({ row }: { row: AllModelRow }) {
+function AllModelCard({ row }: { row: AllModelRow }) {
   const ctx = fmtContextWindow(row.contextWindow);
   return (
-    <div className="grid grid-cols-[1fr_80px_90px_90px_70px] gap-3 items-center px-4 py-2 text-sm">
-      <div className="min-w-0">
-        <span className="font-mono truncate block">{row.name || row.id}</span>
-        {row.name && row.name !== row.id && (
-          <span className="font-mono text-[10px] text-muted-foreground/70 truncate block">{row.id}</span>
-        )}
-      </div>
-      {ctx ? (
-        <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground text-center">
-          {ctx}
-        </span>
-      ) : (
-        <span className="text-[10px] text-muted-foreground/40 text-center">—</span>
+    <div className="rounded-xl border border-white/[0.06] bg-card/60 p-4 transition hover:border-white/[0.12] hover:bg-card">
+      <p className="text-sm font-medium font-mono text-foreground break-all leading-snug">
+        {row.name || row.id}
+      </p>
+      {row.name && row.name !== row.id && (
+        <p className="mt-0.5 text-[10px] font-mono text-muted-foreground/70 truncate">{row.id}</p>
       )}
-      <span
-        className={cn(
-          'rounded px-1.5 py-0.5 text-[10px] font-mono text-center',
-          row.source === 'fetched'
-            ? 'bg-blue-500/15 text-blue-400'
-            : 'bg-white/[0.06] text-muted-foreground',
+      <div className="mt-2.5 flex flex-wrap gap-1.5">
+        {ctx && (
+          <span className="rounded-md bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+            {ctx} ctx
+          </span>
         )}
-        title={`source: ${row.source}`}
-      >
-        {row.source}
-      </span>
-      <span className="text-[10px] text-muted-foreground text-center font-mono">
-        {row.providerId}
-      </span>
-      <span className="text-center">
-        {row.reasoning ? (
-          <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-mono text-warning">
+        <span
+          className={cn(
+            'rounded-md px-1.5 py-0.5 text-[10px] font-mono',
+            row.source === 'fetched'
+              ? 'bg-sky-500/15 text-sky-300'
+              : 'bg-white/[0.04] text-muted-foreground',
+          )}
+        >
+          {row.source}
+        </span>
+        {row.reasoning && (
+          <span className="rounded-md bg-warning/15 px-1.5 py-0.5 text-[10px] font-mono text-warning">
             reasoning
           </span>
-        ) : (
-          <span className="text-[10px] text-muted-foreground/40">—</span>
         )}
-      </span>
+        {row.free && (
+          <span className="rounded-md border border-success/30 px-1.5 py-0.5 text-[10px] text-success">
+            free
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -631,9 +670,8 @@ function AliasesTab() {
       await updateUserModelAliases(payload);
       setAliases(payload);
       setEdits(null);
-	      void qc.invalidateQueries({ queryKey: ['user-model-aliases'] });
-	      void qc.invalidateQueries({ queryKey: ['aggregated-models'] });
-	      toast.success(`Saved ${payload.length} alias${payload.length === 1 ? '' : 'es'}`);
+      void refreshProviderCatalog(qc);
+      toast.success(`Saved ${payload.length} alias${payload.length === 1 ? '' : 'es'}`);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -1129,9 +1167,9 @@ function AddProviderForm({
   const valid = name.trim() && baseUrl.trim();
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex flex-col min-h-0 h-full max-h-full">
       {/* Header — matches screenshot */}
-      <div className="px-5 pt-4 pb-3 border-b border-white/[0.06] flex items-center justify-between gap-3">
+      <div className="px-5 pt-4 pb-3 border-b border-white/[0.06] flex items-center justify-between gap-3 shrink-0">
         <div>
           <h3 className="text-base font-semibold">Add model provider</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -1143,7 +1181,7 @@ function AddProviderForm({
         </Button>
       </div>
 
-      <div className="p-5 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-5 space-y-4">
         <WorkspaceField label="Name">
           <Input
             value={name}
@@ -1287,10 +1325,10 @@ function ProviderEditor({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      {/* Provider header */}
-      <div className="px-5 pt-4 pb-3 border-b border-white/[0.06] flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+    <div className="flex flex-col min-h-0 h-full max-h-full">
+      {/* Provider header — sticky within the details pane */}
+      <div className="px-5 pt-4 pb-3 border-b border-white/[0.06] flex items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
           {editingName ? (
             <Input
               value={name}
@@ -1332,7 +1370,8 @@ function ProviderEditor({
         </div>
       </div>
 
-      <div className="p-5 space-y-4">
+      {/* Independently scrollable details body */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-5 space-y-4">
         <WorkspaceField label="Base URL">
           <Input
             value={baseUrl}
