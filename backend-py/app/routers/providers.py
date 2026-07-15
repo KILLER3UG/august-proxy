@@ -381,4 +381,131 @@ async def deleteModel(providerId: str, modelId: str):
 
 @router.post('/{providerId}/models/{modelId}/test')
 async def testModel(providerId: str, modelId: str):
-    return {'success': True, 'latencyMs': 0, 'content': 'WORKING'}
+    """Probe a model with a real chat request.
+
+    Sends a short "hello" message. Returns ``success: true`` only when the
+    model returns non-empty text. Any upstream/auth/billing failure is
+    returned as ``success: false`` with the exact error message.
+    """
+    import time
+
+    from app.services.workbench.providers import (
+        call_anthropic_workbench,
+        call_openai_workbench,
+        is_anthropic_provider,
+        is_openai_provider,
+        resolve_chat_llm,
+    )
+
+    # Prefer explicit provider id/name, then model id ownership.
+    provider, resolved_model = resolve_chat_llm(
+        model=modelId,
+        model_provider=providerId,
+        session_provider=providerId,
+        session_model=modelId,
+    )
+    if not provider:
+        return {
+            'success': False,
+            'latencyMs': 0,
+            'error': f'Provider "{providerId}" not found or has no API key configured.',
+            'content': None,
+        }
+
+    # Ensure the resolved provider matches the one the user clicked when possible.
+    pid = as_str(provider.get('id'))
+    pname = as_str(provider.get('name'))
+    if providerId and providerId not in (pid, pname) and providerId.lower() not in (
+        pid.lower(),
+        pname.lower(),
+    ):
+        # Still try the named provider first for a clearer error
+        from app.providers import resolver as providerResolver
+
+        explicit = providerResolver.resolve(providerId)
+        if explicit:
+            provider = explicit
+            resolved_model = modelId
+
+    t0 = time.perf_counter()
+    messages: list[dict[str, object]] = [
+        {'role': 'user', 'content': 'Say hello in one short word only. Do not use tools.'}
+    ]
+    system = 'You are a connectivity probe. Reply with a single short greeting word and nothing else.'
+
+    try:
+        if is_anthropic_provider(provider):
+            resp = await call_anthropic_workbench(
+                messages,
+                system,
+                resolved_model or modelId,
+                [],
+                'low',
+                provider=provider,
+                emit=None,
+            )
+        elif is_openai_provider(provider):
+            resp = await call_openai_workbench(
+                messages,
+                system,
+                resolved_model or modelId,
+                [],
+                'low',
+                provider=provider,
+                emit=None,
+            )
+        else:
+            return {
+                'success': False,
+                'latencyMs': 0,
+                'error': f'Unsupported API format for provider "{pname or providerId}".',
+                'content': None,
+            }
+    except Exception as exc:
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+        return {
+            'success': False,
+            'latencyMs': latency_ms,
+            'error': str(exc) or 'Model test failed',
+            'content': None,
+        }
+
+    latency_ms = int((time.perf_counter() - t0) * 1000)
+    err = as_str(resp.get('error')) if isinstance(resp, dict) else ''
+    if err:
+        return {
+            'success': False,
+            'latencyMs': latency_ms,
+            'error': err,
+            'content': None,
+        }
+
+    text = as_str(resp.get('text') if isinstance(resp, dict) else '').strip()
+    if not text:
+        # Anthropic path may put text only in content blocks
+        if isinstance(resp, dict) and not text:
+            blocks = as_list(resp.get('content'), [])
+            parts: list[str] = []
+            for b in blocks:
+                bd = as_dict(b)
+                if as_str(bd.get('type')) == 'text':
+                    parts.append(as_str(bd.get('text')))
+            text = ' '.join(parts).strip()
+
+    if not text:
+        return {
+            'success': False,
+            'latencyMs': latency_ms,
+            'error': (
+                f'Model "{modelId}" returned an empty response. '
+                'Check the model id, API key, and provider billing/credits.'
+            ),
+            'content': None,
+        }
+
+    return {
+        'success': True,
+        'latencyMs': latency_ms,
+        'content': text[:200],
+        'error': None,
+    }

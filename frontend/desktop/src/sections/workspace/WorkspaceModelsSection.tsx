@@ -1531,7 +1531,12 @@ function ModelRow({
   const [name, setName] = useState(model.name ?? model.id);
   const [contextWindow, setContextWindow] = useState(model.contextWindow?.toString() ?? '');
   const [reasoning, setReasoning] = useState(!!model.reasoning);
-  const [testResult, setTestResult] = useState<null | { ok: boolean; error?: string; latencyMs: number }>(null);
+  const [testResult, setTestResult] = useState<null | {
+    ok: boolean;
+    error?: string;
+    latencyMs: number;
+    content?: string;
+  }>(null);
 
   const update = useMutation({
     mutationFn: () => providersApi.updateModel(providerId, model.id, {
@@ -1555,11 +1560,24 @@ function ModelRow({
   const connect = useMutation({
     mutationFn: () => providersApi.connectModel(providerId, model.id),
     onSuccess: (res) => {
-      setTestResult({ ok: res.success, error: res.error, latencyMs: res.latencyMs });
-      if (res.success) toast.success(`${model.id} responded in ${res.latencyMs}ms`);
+      // Strict: only Connected when backend says success AND returned non-empty content
+      const reallyOk = Boolean(res.success && res.content && res.content.trim().length > 0 && !res.error);
+      setTestResult({
+        ok: reallyOk,
+        error: reallyOk ? undefined : (res.error || 'Model returned no text'),
+        latencyMs: res.latencyMs ?? 0,
+        content: res.content,
+      });
+      if (reallyOk) {
+        toast.success(`${model.id} connected · ${res.latencyMs}ms`);
+      } else {
+        toast.error(res.error || `${model.id} test failed`);
+      }
     },
     onError: (e: unknown) => {
-      setTestResult({ ok: false, error: e instanceof Error ? e.message : 'Connection failed', latencyMs: 0 });
+      const msg = e instanceof Error ? e.message : 'Connection failed';
+      setTestResult({ ok: false, error: msg, latencyMs: 0 });
+      toast.error(msg);
     },
   });
 
@@ -1673,22 +1691,35 @@ function ModelRow({
       {testResult && (
         <div
           className={cn(
-            'flex items-center gap-1.5 text-[11px] mt-1.5 pl-0.5',
+            'flex items-start gap-1.5 text-[11px] mt-1.5 pl-0.5',
             testResult.ok ? 'text-success' : 'text-danger',
           )}
           role={testResult.ok ? 'status' : 'alert'}
           aria-live="polite"
+          data-testid={testResult.ok ? 'model-test-ok' : 'model-test-error'}
         >
           {testResult.ok ? (
             <>
-              <CheckCircle2 className="size-3" />
-              <span>Working · {testResult.latencyMs}ms</span>
+              <CheckCircle2 className="size-3 mt-0.5 shrink-0" />
+              <span className="min-w-0">
+                <span className="font-medium">Connected</span>
+                <span className="text-muted-foreground"> · {testResult.latencyMs}ms</span>
+                {testResult.content && (
+                  <span className="block text-muted-foreground/80 truncate max-w-[28rem]" title={testResult.content}>
+                    reply: {testResult.content}
+                  </span>
+                )}
+              </span>
             </>
           ) : (
             <>
-              <AlertCircle className="size-3" />
-              <span className="truncate" title={testResult.error}>
-                {testResult.error || 'Connection failed'}
+              <AlertCircle className="size-3 mt-0.5 shrink-0" />
+              <span className="min-w-0 break-words" title={testResult.error}>
+                <span className="font-medium">Failed</span>
+                {testResult.latencyMs > 0 && (
+                  <span className="text-muted-foreground"> · {testResult.latencyMs}ms</span>
+                )}
+                <span className="block opacity-90">{testResult.error || 'Connection failed'}</span>
               </span>
             </>
           )}
