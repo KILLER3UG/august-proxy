@@ -12,8 +12,6 @@ import {
   useMemo,
   useCallback,
 } from 'react';
-import { ChevronDown } from 'lucide-react';
-import { cn, workspaceBaseName } from '@/lib/utils';
 import { mockChatThread } from '@/lib/mock';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
@@ -24,8 +22,8 @@ import {
   updateSessionWorkbenchMetadata,
 } from '@/store/sessions';
 import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ScrollToTopButton, SCROLL_TO_TOP_THRESHOLD } from '@/components/chat/ScrollToTopButton';
+import { AnimatePresence } from 'framer-motion';
+import { SCROLL_TO_TOP_THRESHOLD } from '@/components/chat/ScrollToTopButton';
 import { ModelVisibilityModal } from '@/components/overlays/ModelVisibilityModal';
 import { ApprovalBanner } from '@/components/overlays/ApprovalBanner';
 import { CollaborationInsights } from '@/components/chat/CollaborationInsights';
@@ -45,7 +43,6 @@ import {
 } from './queue-store';
 import { SavePointBanner } from '@/components/chat/SavePointChip';
 import { ChatCheckpoints } from './ChatCheckpoints';
-import { MessageBubble } from './MessageBubble';
 import { useSessionStream } from './hooks/useSessionStream';
 import { useChatModels } from './hooks/useChatModels';
 import { useChatUsage } from './hooks/useChatUsage';
@@ -54,6 +51,7 @@ import { useChatSend } from './hooks/useChatSend';
 import { useChatVoiceCommands } from './hooks/useChatVoiceCommands';
 import { usePlanTurn } from './hooks/usePlanTurn';
 import { useChatUiActions } from './hooks/useChatUiActions';
+import { useChatMessageActions } from './hooks/useChatMessageActions';
 import {
   ChatThreadComposer,
   type ComposerDropdownApi,
@@ -63,7 +61,6 @@ import {
   answerWorkbenchBtw,
   getWorkbenchSession,
   listWorkbenchCapabilities,
-  queueWorkbenchMessage,
   getQueuedWorkbenchMessages,
 } from '@/api/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
@@ -75,9 +72,6 @@ import { estimateContextBreakdown, type ContextBreakdown } from './ChatComposer'
 import { PlanProposalBanner } from '@/components/shell/PlanProposalBanner';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
 import { InitAugCard } from './InitAugCard';
-import { ModelPickerCard } from './ModelPickerCard';
-import { VirtualizedMessageList } from './VirtualizedMessageList';
-import { WorkingIndicator } from '@/components/chat/WorkingIndicator';
 import type { ChatMessage } from '@/types/chat';
 export type {
   ChatMessage,
@@ -108,6 +102,8 @@ import {
   getDisplayBlocks,
   parseThinkingAndContent,
 } from './message-blocks';
+import { ChatEmptyState } from './ChatEmptyState';
+import { ChatThreadMessagePane } from './ChatThreadMessagePane';
 
 export {
   modelFromSession,
@@ -224,7 +220,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }
     return 'medium';
   });
-  const [revertingIndex, setRevertingIndex] = useState<number | null>(null);
 
   const queuedMessages = useQueuedMessagesStore(
     (s) => s.bySession[sessionId ?? ''] ?? EMPTY_QUEUED_MESSAGES,
@@ -458,6 +453,22 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     activeSession,
   });
 
+  const {
+    revertingIndex,
+    handleRevert,
+    handleEdit,
+    handleRegenerate,
+    handleClarifyAnswer,
+  } = useChatMessageActions({
+    sessionId,
+    messages,
+    setMessages,
+    input,
+    setInput,
+    streaming,
+    generateAIResponse,
+  });
+
   useLayoutEffect(() => {
     if (!sessionId || loadedSessionId !== sessionId) return;
     scrollToBottomImmediate();
@@ -601,104 +612,6 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const stop = () => {
     if (sessionId) void stopChatStream(sessionId);
   };
-
-  const handleRevert = (index: number) => {
-    if (streaming) return;
-
-    let userMsgIndex = -1;
-    if (messages[index].role === 'user') {
-      userMsgIndex = index;
-    } else if (index > 0 && messages[index - 1].role === 'user') {
-      userMsgIndex = index - 1;
-    }
-
-    if (userMsgIndex === -1) return;
-
-    const userMsg = messages[userMsgIndex];
-    const deleted = messages.length - userMsgIndex;
-
-    const originalMessages = [...messages];
-    const originalInput = input;
-    setRevertingIndex(userMsgIndex);
-
-    setTimeout(() => {
-      setInput(userMsg.content);
-      setMessages((prev) => {
-        const next = prev.slice(0, userMsgIndex);
-        persistMessages(sessionId, next);
-        return next;
-      });
-      setRevertingIndex(null);
-
-      toast.success('Conversation reverted', {
-        description: `Put prompt back into composer and removed ${deleted} message${deleted > 1 ? 's' : ''}`,
-        duration: 5000,
-        action: {
-          label: 'Undo',
-          onClick: () => {
-            setMessages((_prev) => {
-              persistMessages(sessionId, originalMessages);
-              return originalMessages;
-            });
-            setInput(originalInput);
-          },
-        },
-      });
-    }, 300);
-  };
-
-  const handleEdit = (index: number, newText: string) => {
-    if (streaming) return;
-    if (!newText.trim()) return;
-    const msg = messages[index];
-    if (!msg || msg.role !== 'user') return;
-    const nextCount = messages.length - index - 1;
-    if (
-      nextCount > 0 &&
-      !confirm(
-        `Editing this message will remove ${nextCount} follow-up message${nextCount > 1 ? 's' : ''}. Continue?`,
-      )
-    )
-      return;
-    setMessages((prev) => {
-      const current = prev[index];
-      if (!current || current.role !== 'user') return prev;
-      const next = prev.slice(0, index).concat({ ...current, content: newText.trim() });
-      persistMessages(sessionId, next);
-      return next;
-    });
-  };
-
-  const handleRegenerate = async (index: number) => {
-    if (streaming) return;
-    let userIndex = index;
-    for (let i = index; i >= 0; i--) {
-      if (messages[i].role === 'user') {
-        userIndex = i;
-        break;
-      }
-    }
-    const msg = messages[userIndex];
-    if (!msg || msg.role !== 'user') return;
-    const trimmed = messages.slice(0, userIndex + 1);
-    setMessages(trimmed);
-    persistMessages(sessionId, trimmed);
-    await generateAIResponse([msg]);
-  };
-
-  const handleClarifyAnswer = useCallback(
-    (msgId: string, answer: string) => {
-      if (sessionId) {
-        void queueWorkbenchMessage(sessionId, answer);
-      }
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === msgId ? { ...msg, clarify: { ...(msg.clarify ?? {}), answer } } : msg,
-        ),
-      );
-    },
-    [sessionId, setMessages],
-  );
 
   const maxContext = modelForRequest?.contextWindow || 128000;
   const toolCountForBreakdown = workbenchToolCount ?? 30;
@@ -875,168 +788,37 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         <div className="flex-grow flex flex-col min-h-0 relative">
           <AnimatePresence initial={false} mode="wait">
             {messages.length === 0 ? (
-              <motion.div
-                key="centered-layout"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0, y: 20 }}
-                transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-                className="flex-1 flex flex-col items-center justify-center px-6"
-              >
-                <div className="w-full max-w-3xl px-4 flex flex-col items-center gap-8">
-                  <h1 className="text-2xl font-semibold tracking-tight text-center text-foreground/90 mb-2">
-                    What should we build in{' '}
-                    <span className="text-muted-foreground font-mono">
-                      {activeSession?.workspacePath
-                        ? workspaceBaseName(activeSession.workspacePath)
-                        : 'august-proxy'}
-                    </span>
-                    ?
-                  </h1>
-
-                  <div className="w-full max-w-lg rounded-xl border border-border/60 bg-muted/20 px-4 py-3 text-left text-xs text-muted-foreground space-y-2">
-                    <p className="font-semibold text-foreground/80 text-[11px] uppercase tracking-wide">
-                      How August works
-                    </p>
-                    <ol className="list-decimal list-inside space-y-1.5 leading-relaxed">
-                      <li>
-                        Pick a mode next to the box:{' '}
-                        <span className="text-foreground/80">Plan only</span>,{' '}
-                        <span className="text-foreground/80">Ask before changes</span>, or{' '}
-                        <span className="text-foreground/80">Make changes</span>.
-                      </li>
-                      <li>
-                        In Plan only, August proposes a plan — Accept or revise before it
-                        edits files.
-                      </li>
-                      <li>
-                        Open the right panel for{' '}
-                        <span className="text-foreground/80">Plan</span>,{' '}
-                        <span className="text-foreground/80">Tasks</span>, and{' '}
-                        <span className="text-foreground/80">Diffs</span>.
-                      </li>
-                      <li>
-                        Press{' '}
-                        <kbd className="rounded border border-border bg-background px-1 font-mono text-[10px]">
-                          Ctrl+K
-                        </kbd>{' '}
-                        for undo, branch chat, free memory, and more.
-                      </li>
-                    </ol>
-                  </div>
-
-                  <div className="w-full">{planPending ? planBanner : composer}</div>
-                </div>
-              </motion.div>
+              <ChatEmptyState workspacePath={activeSession?.workspacePath}>
+                {planPending ? planBanner : composer}
+              </ChatEmptyState>
             ) : (
-              <motion.div
-                key="thread-scroll-view"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="flex-1 flex flex-col min-h-0 relative"
-              >
-                <div
-                  ref={scrollRef}
-                  className="flex-1 overflow-y-auto chat-scroll"
-                  style={{ overflowAnchor: 'none' }}
-                >
-                  <VirtualizedMessageList
-                    messages={messages}
-                    scrollParentRef={scrollRef}
-                    renderMessage={(m, realIndex) => {
-                      const isReverting =
-                        revertingIndex !== null && realIndex > revertingIndex;
-                      return (
-                        <div
-                          className={cn(
-                            'transition-all duration-300 transform',
-                            isReverting
-                              ? 'opacity-0 -translate-y-4 pointer-events-none'
-                              : 'opacity-100 translate-y-0',
-                          )}
-                        >
-                          <MessageBubble
-                            message={m}
-                            isLast={realIndex === messages.length - 1}
-                            streaming={streaming}
-                            sessionId={sessionId ?? undefined}
-                            modelId={selectedModel?.id}
-                            onRevert={() => handleRevert(realIndex)}
-                            onEdit={(text) => handleEdit(realIndex, text)}
-                            onRegenerate={() => {
-                              void handleRegenerate(realIndex);
-                            }}
-                            onClarifyAnswer={(ans) => handleClarifyAnswer(m.id, ans)}
-                            toolProgress={toolProgress}
-                            subagentPrompts={subagentPrompts}
-                            subagentBlocks={subagentBlocks}
-                          />
-                        </div>
-                      );
-                    }}
-                    footer={
-                      <>
-                        {streaming && (
-                          <WorkingIndicator key={`aug-${sessionId ?? 'none'}`} />
-                        )}
-                        {modelPickerActive && (
-                          <ModelPickerCard
-                            sessionId={sessionId ?? ''}
-                            onDismiss={() => setModelPickerActive(false)}
-                            context={{ currentModelId: selectedModel?.id }}
-                          />
-                        )}
-                      </>
-                    }
-                  />
-
-                  <div className="sticky bottom-4 z-30 flex flex-col gap-2 items-end pointer-events-none">
-                    <ScrollToTopButton
-                      scrollParentRef={scrollRef}
-                      visible={scrolledFromTop}
-                    />
-                    <AnimatePresence>
-                      {scrolledFromBottom && (
-                        <motion.button
-                          type="button"
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.9 }}
-                          transition={{ duration: 0.2 }}
-                          onClick={scrollToBottomSmooth}
-                          className="pointer-events-auto mr-3 w-9 h-9 flex items-center justify-center rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-sm text-muted-foreground hover:text-foreground hover:bg-background/95 transition-colors cursor-pointer"
-                          aria-label="Scroll to bottom"
-                        >
-                          <ChevronDown className="size-4" />
-                        </motion.button>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-
-                {/* Plan banner replaces the composer while a plan awaits a decision. */}
-                {planPending ? (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                    className="shrink-0 z-10 w-full bg-background py-3"
-                  >
-                    {planBanner}
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                    className="shrink-0 z-10 w-full bg-background py-3"
-                  >
+              <ChatThreadMessagePane
+                sessionId={sessionId}
+                messages={messages}
+                streaming={streaming}
+                selectedModelId={selectedModel?.id}
+                toolProgress={toolProgress}
+                subagentPrompts={subagentPrompts}
+                subagentBlocks={subagentBlocks}
+                revertingIndex={revertingIndex}
+                modelPickerActive={modelPickerActive}
+                onDismissModelPicker={() => setModelPickerActive(false)}
+                scrolledFromTop={scrolledFromTop}
+                scrolledFromBottom={scrolledFromBottom}
+                scrollRef={scrollRef}
+                onScrollToBottom={scrollToBottomSmooth}
+                onRevert={handleRevert}
+                onEdit={handleEdit}
+                onRegenerate={handleRegenerate}
+                onClarifyAnswer={handleClarifyAnswer}
+                footerSlot={
+                  planPending ? (
+                    planBanner
+                  ) : (
                     <div className="mx-auto w-full max-w-3xl px-4">{composer}</div>
-                  </motion.div>
-                )}
-              </motion.div>
+                  )
+                }
+              />
             )}
           </AnimatePresence>
         </div>
