@@ -19,6 +19,7 @@ import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
 import { ToolCallItem as ToolCallItemComp, ToolCallItemBody, extractAgentId } from '@/components/chat/ToolCallItem';
 import { ToolSummary, buildToolSummaryEntry } from '@/components/chat/ToolSummary';
 import { ActivitySummary } from '@/components/chat/ActivitySummary';
+import { RecapCard } from '@/components/chat/RecapCard';
 import { ScrollToTopButton, SCROLL_TO_TOP_THRESHOLD } from '@/components/chat/ScrollToTopButton';
 import { ToolIcon as NewToolIcon } from '@/components/ui/ToolIcon';
 import { FileIcon as NewFileIcon } from '@/components/ui/FileIcon';
@@ -2534,6 +2535,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                             isLast={realIndex === messages.length - 1}
                             streaming={streaming}
                             sessionId={sessionId ?? undefined}
+                            modelId={selectedModel?.id}
                             onRevert={() => handleRevert(realIndex)}
                             onEdit={(text) => handleEdit(realIndex, text)}
                             onRegenerate={() => {
@@ -2824,6 +2826,7 @@ function MessageBubble({
   isLast,
   streaming,
   sessionId,
+  modelId,
   onRevert,
   onEdit,
   onRegenerate,
@@ -2836,6 +2839,8 @@ function MessageBubble({
   isLast?: boolean;
   streaming?: boolean;
   sessionId?: string;
+  /** Selected model id — used for optional Recap "Rewrite with AI". */
+  modelId?: string | null;
   onRevert?: () => void;
   onEdit?: (text: string) => void;
   onRegenerate?: () => void;
@@ -3551,6 +3556,27 @@ function MessageBubble({
                 ? <ChangedFilesCard changes={message.changedFiles as GitDiffResult} />
                 : null;
             })()}
+            {/* End-of-turn recap: instant template from tools/files; AI rewrite optional.
+                Hide while this message is still streaming so it appears with the settled answer. */}
+            {!isUser && !(isLast && streaming) && (
+              <RecapCard
+                modelId={modelId}
+                input={{
+                  blocks: message.blocks,
+                  tools: message.tools,
+                  changedFiles: message.changedFiles as {
+                    files?: Array<{ path: string; added?: number; removed?: number; status?: string }>;
+                  } | undefined,
+                  finalText:
+                    message.blocks
+                      ?.filter((b) => b.type === 'finalOutput' && b.content)
+                      .map((b) => b.content || '')
+                      .join('\n') ||
+                    message.content ||
+                    '',
+                }}
+              />
+            )}
           </div>
           {/* Action buttons below assistant message */}
           <div className={cn(
