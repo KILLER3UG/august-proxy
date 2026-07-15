@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
 import { createPortal } from 'react-dom';
-import { useSessionsStore, setSessionStatus, clearSessionStatus, renameSession, deriveSessionTitleFromMessage, isPlaceholderTitle, updateSessionModel, updateSessionWorkbenchMetadata, createSession, type Session } from '@/store/sessions';
+import { useSessionsStore, setSessionStatus, clearSessionStatus, isPlaceholderTitle, updateSessionModel, updateSessionWorkbenchMetadata, createSession, type Session } from '@/store/sessions';
 import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
@@ -53,7 +53,6 @@ import {
   $sessionStreamStates,
   getOrInitSessionStreamState,
   updateSessionStreamState,
-  startChatStream,
   stopChatStream,
   syncActiveStreams,
   appendBlockEvent,
@@ -61,7 +60,6 @@ import {
 } from './chat-stream-manager';
 import {
   useQueuedMessagesStore,
-  $queuedMessagesBySession,
   setQueuedMessages,
   clearQueuedMessages,
   type QueuedUserMessage,
@@ -76,7 +74,7 @@ import { useSessionStream } from './hooks/useSessionStream';
 import { useChatModels } from './hooks/useChatModels';
 import { useChatUsage } from './hooks/useChatUsage';
 import { useChatAttachments } from './hooks/useChatAttachments';
-import { ChatAttachmentService } from './services/ChatAttachmentService';
+import { useChatSend } from './hooks/useChatSend';
 
 const EMPTY_QUEUED_MESSAGES: QueuedUserMessage[] = [];
 import { Markdown } from './ChatMarkdown';
@@ -105,7 +103,7 @@ import {
 } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
-import { WorkbenchModeSelector, WORKBENCH_GUARD_MODES, applyWorkbenchGuardMode, type WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
+import { WorkbenchModeSelector, WORKBENCH_GUARD_MODES, type WorkbenchGuardMode } from '@/components/chat/WorkbenchModeSelector';
 import { ContextRing, estimateContextBreakdown, type ContextBreakdown } from './ChatComposer';
 import { PlanProposalBanner } from '@/components/shell/PlanProposalBanner';
 import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
@@ -575,6 +573,9 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   // effect wires them to local state mutations.
   const messagesRef = useRef<ChatMessage[]>(messages);
   messagesRef.current = messages;
+  // send() is owned by useChatSend (declared later); keep a stable ref so
+  // voice-command events can fire a turn without re-subscribing the bus.
+  const sendRef = useRef<(textOverride?: string) => Promise<void>>(async () => {});
 
   useEffect(() => {
     const unsubscribe = voiceCommandEvents.subscribe((event: VoiceCommandEvent) => {
@@ -619,8 +620,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           setInput(prev => prev + event.text);
           break;
         }
-	      case 'send-message': {
-	          void send(event.text);
+        case 'send-message': {
+          void sendRef.current(event.text);
           break;
         }
         case 'toast': {
@@ -758,13 +759,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         }
         case 'reset-session': {
           setInput('/reset');
-          setTimeout(() => { void send(); }, 0);
+          setTimeout(() => { void sendRef.current(); }, 0);
           break;
         }
       }
     });
     return unsubscribe;
-  }, [sessionId, attachments, send, activeSession?.workspacePath, setMessages]);
+  }, [sessionId, attachments, activeSession?.workspacePath, setMessages, clearAttachments]);
 
   useLayoutEffect(() => {
     if (!sessionId || loadedSessionId !== sessionId) return;
@@ -1153,257 +1154,29 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     }
   };
 
-  const generateAIResponse = async (chatHistory: ChatMessage[]) => {
-    const turnSessionId = sessionId;
-    if (!turnSessionId) return;
-    if (!chatRuntime.canStartTurn(turnSessionId)) {
-      // Stale runtime turn with no live controller — clear and proceed.
-      if (!activeStreamControllers.has(turnSessionId)) {
-        chatRuntime.abortSession(turnSessionId);
-      } else {
-        // Real in-flight stream: queue on backend instead of dropping.
-        const lastUser = [...chatHistory].reverse().find((m) => m.role === 'user');
-        const text = lastUser?.content?.trim() || '';
-        if (text) {
-          try {
-            const wbId =
-              workbenchSession?.id ||
-              activeSession?.workbenchSessionId ||
-              turnSessionId;
-            const entry = await queueWorkbenchMessage(wbId, text);
-            setQueuedMessages(turnSessionId, [
-              ...($queuedMessagesBySession.get()[turnSessionId] ?? []),
-              entry,
-            ]);
-            toast.message('Queued — will send when the current response finishes');
-          } catch {
-            toast.error('Could not start a new response — one is already running');
-          }
-        }
-        return;
-      }
-    }
-
-    // Backend session already holds history — only send the new user turn.
-    // Sending the full transcript as one blob every time bloated context and
-    // could make the model/provider look "stuck" or fail silently on large chats.
-    const lastUser = [...chatHistory].reverse().find((m) => m.role === 'user');
-    const latestText = (lastUser?.content ?? '').trim();
-    if (!latestText) {
-      toast.error('Nothing to send');
-      return;
-    }
-
-    if (!modelForRequest?.id) {
-      toast.error('Select a model first (e.g. a free OpenCode model)');
-      return;
-    }
-    if (!modelForRequest.provider) {
-      toast.error('Selected model has no provider — pick it again from the model list');
-      return;
-    }
-
-    const result = await startChatStream(turnSessionId, {
-      message: applyWorkbenchGuardMode(workbenchMode, latestText),
-      chatHistory,
-      workbenchMode,
-      effort,
-      model: modelForRequest.id,
-      // Always pass the provider that owns this model (name or id). Without
-      // it, free claude-like ids can resolve to bare Anthropic with no key.
-      modelProvider: modelForRequest.provider,
-      provider: modelForRequest.provider,
-      agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
-      guardMode: workbenchMode,
-      ensureWorkbenchSession,
-    });
-    if (result === 'error') {
-      toast.error('Chat failed — check backend and model provider');
-    }
-  };
-
-  // Fallback drain: if the model never picked up the queued messages
-  // (e.g. the user cancelled the response mid-stream), the queue still
-  // holds entries when streaming ends. In that case we synthesize a
-  // fresh user message from the queued text and start a new turn. The
-  // backend already removes the entries when it drains them in-loop, so
-  // the queue store should be empty in the normal flow.
-  useEffect(() => {
-    if (!sessionId || streaming) return;
-    const leftover = queuedMessages;
-    if (leftover.length === 0) return;
-    // Defer so we don't race with the finalize() of the just-ended turn.
-    const timer = setTimeout(() => {
-      const stillQueued = ($queuedMessagesBySession.get()[sessionId] ?? []);
-      if (stillQueued.length === 0) return;
-      const first = stillQueued[0];
-      const rest = stillQueued.slice(1);
-      const userMsg: ChatMessage = {
-        id: `m${Date.now()}`,
-        role: 'user',
-        content: first.text,
-        timestamp: new Date().toISOString(),
-        attachments: first.attachments,
-        queued: true,
-      };
-      const remaining = rest.length > 0
-        ? [...(messagesRef.current), userMsg]
-        : [...(messagesRef.current), userMsg];
-      setMessages(remaining);
-      persistMessages(sessionId, remaining);
-      // Drop the entry we just consumed locally; the backend will see an
-      // empty queue when we POST the next /chat call.
-      setQueuedMessages(sessionId, rest);
-      setTimeout(() => { void generateAIResponse(remaining); }, 0);
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [streaming, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  async function send(textOverride?: string) {
-    if (!sessionId) {
-      toast.error('No active session');
-      return;
-    }
-    if (loadedSessionId !== sessionId) {
-      toast.error('Session is still loading — try again in a moment');
-      return;
-    }
-
-    let text = composeText(textOverride ?? input);
-    if (!text && attachments.length === 0) return;
-
-    // Local slash command dispatch — handle purely client-side commands
-    // before sending to the backend. The workbench backend intercepts
-    // /btw and /goal at workbench.js:2334-2347 and answers them without
-    // pushing a user message into the session, so we let those fall
-    // through to the normal send path.
-    //
-    // Phase 1A: registry-driven dispatch. The handler is responsible for
-    // mutating state (via the registry event bus) and for clearing the
-    // composer / draft. Handlers that need data from the backend (e.g.
-    // /load, /skills fetching /api/skills) emit a 'load-skill' / 'fetch-skills'
-    // event that this component subscribes to.
-    const slashMatch = text.match(/^\/([a-zA-Z][\w-]*)(?:\s+([\s\S]*))?$/);
-    if (slashMatch) {
-      const cmd = slashMatch[1].toLowerCase();
-      const arg = String(slashMatch[2] || '').trim();
-
-      const voiceCmd = voiceCommandRegistry.getBySlashCommand('/' + cmd);
-      if (voiceCmd) {
-        try {
-          // Voice command handlers accept the lite `ChatMessageLite[]` view;
-          // cast across the boundary since the full `ChatMessage[]` carries
-          // every lite field plus extras (timestamp, attachments, blocks, …).
-          const handlerResult = voiceCmd.handler({
-            sessionId: sessionId ?? '',
-            transcript: text,
-            args: arg,
-            messages: messages as unknown as ChatMessageLite[],
-            setMessages: setMessages as unknown as Dispatch<SetStateAction<ChatMessageLite[]>>,
-          });
-          void Promise.resolve(handlerResult).catch(err => {
-             
-            console.error('[slash] handler threw', err);
-            toast.error('Command failed');
-          });
-          setShowCommandsDropdown(false);
-          setShowToolsDropdown(false);
-          // Most handlers clear the composer themselves; the registry
-          // contract is that they do so for client-only commands.
-          // For commands that should fall through to the backend (e.g.
-          // /btw with an arg), the handler should NOT clear the composer.
-          return;
-        } catch (err) {
-           
-          console.error('[slash] handler threw synchronously', err);
-          toast.error('Command failed');
-          return;
-        }
-      }
-      // Unrecognized slash command — let the backend handle it (or no-op).
-    }
-
-    // While streaming: mid-run STEER (course correction) — applies at the
-    // next tool/LLM boundary without cancelling the turn (Hermes-style /steer).
-    if (streaming && sessionId) {
-      try {
-        const savedAttachments = attachments.length > 0 ? [...attachments] : undefined;
-        // Backend queue is keyed by workbench session id, not the sidebar id.
-        const wbId =
-          workbenchSession?.id ||
-          activeSession?.workbenchSessionId ||
-          sessionId;
-        const entry = await queueWorkbenchMessage(wbId, text, savedAttachments, 'steer');
-        // Optimistic local update: the SSE event will also arrive and
-        // upsert the same entry (idempotent), but write immediately so
-        // the pill is visible without a round-trip.
-        setQueuedMessages(sessionId, [...(queuedMessages), entry]);
-        setInput('');
-        clearAttachments();
-        setShowToolsDropdown(false);
-        setShowCommandsDropdown(false);
-        clearComposerDraft(sessionId);
-        toast.message('Direction queued', {
-          description: 'August will apply this after the current tool step.',
-        });
-      } catch (err) {
-         
-        console.error('[send] steer failed', err);
-        toast.error('Could not add direction');
-      }
-      return;
-    }
-
-    const currentMessages = sessionId === loadedSessionId ? messages : loadMessagesForSession(sessionId);
-
-    // Auto-title when the sidebar still has a placeholder title (first real
-    // user message, or after a failed earlier attempt). Backend also auto-titles
-    // on stream start; this keeps local UI instant.
-    const activeSess = useSessionsStore.getState().sessions.find(
-      (s) => s.id === sessionId || s.workbenchSessionId === sessionId,
-    );
-    const needsTitle =
-      !activeSess?.title ||
-      /^(new chat|new session|untitled)$/i.test(activeSess.title.trim()) ||
-      /^chat\s+\d{4}-\d{2}-\d{2}/i.test(activeSess.title.trim());
-    if (sessionId && needsTitle) {
-      const isCommand = /^\s*\/[a-zA-Z][\w-]*\b/.test(text);
-      if (!isCommand) {
-        const title = deriveSessionTitleFromMessage(text);
-        if (title) renameSession(sessionId, title);
-      }
-    }
-
-    // Save the selected model on this session only; do not change global defaults.
-    if (sessionId && modelForRequest) {
-      updateSessionModel(sessionId, modelForRequest.id, modelForRequest.provider);
-    }
-
-    setInput('');
-    clearComposerDraft(sessionId);
-    const savedAttachments = attachments.length > 0 ? [...attachments] : undefined;
-    clearAttachments();
-    setShowToolsDropdown(false);
-    setShowCommandsDropdown(false);
-
-    const userMsg: ChatMessage = {
-      id: `m${Date.now()}`,
-      role: 'user',
-      content: text,
-      timestamp: new Date().toISOString(),
-      attachments: savedAttachments,
-    };
-
-    const nextMessages = [...currentMessages, userMsg];
-    setMessages(nextMessages);
-    persistMessages(sessionId, nextMessages);
-    // Pass the FULL message history — `generateAIResponse` builds the new
-    // messages state from this argument, so passing only `[userMsg]` would
-    // overwrite the existing list with just two entries and wipe the prior
-    // conversation from view and from localStorage.
-    await generateAIResponse(nextMessages);
-  };
+  const { send, generateAIResponse } = useChatSend({
+    sessionId,
+    loadedSessionId,
+    input,
+    setInput,
+    attachments,
+    clearAttachments,
+    composeText,
+    messages,
+    setMessages,
+    streaming,
+    workbenchSessionId: workbenchSession?.id,
+    activeWorkbenchSessionId: activeSession?.workbenchSessionId,
+    queuedMessages,
+    modelForRequest,
+    workbenchMode,
+    effort,
+    ensureWorkbenchSession,
+    setShowToolsDropdown,
+    setShowCommandsDropdown,
+    loadMessagesForSession,
+  });
+  sendRef.current = send;
 
   const stop = () => {
 	    if (sessionId) void stopChatStream(sessionId);
