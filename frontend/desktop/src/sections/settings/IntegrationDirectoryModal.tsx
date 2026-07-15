@@ -354,6 +354,8 @@ function CatalogDetail({
     return init;
   });
   const [formError, setFormError] = useState<string | null>(null);
+  const [smoke, setSmoke] = useState<string | null>(null);
+  const [smokeBusy, setSmokeBusy] = useState(false);
 
   const missingRequired = envFields.filter(
     (f) => f.required !== false && !(envValues[f.key] ?? '').trim(),
@@ -372,6 +374,47 @@ function CatalogDetail({
       if (v.trim()) cleaned[k] = v.trim();
     }
     onAdd(Object.keys(cleaned).length ? cleaned : undefined);
+  };
+
+  /** Post-install smoke: list MCP servers and confirm this recipe is registered / running. */
+  const runSmoke = async () => {
+    setSmokeBusy(true);
+    setSmoke(null);
+    try {
+      const res = await fetch('/api/mcp/servers');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as {
+        servers?: Array<{ name?: string; id?: string; status?: string; running?: boolean }>;
+      };
+      const servers = data.servers ?? [];
+      const needle = (entry.packageName || entry.name || '').toLowerCase();
+      const hit = servers.find((s) => {
+        const n = `${s.name || ''} ${s.id || ''}`.toLowerCase();
+        return needle && n.includes(needle.split('/').pop() || needle);
+      });
+      if (!hit) {
+        setSmoke(
+          installed
+            ? 'Installed, but not listed in MCP registry yet — try Start from Integrations detail.'
+            : 'Not installed yet. Install first, then re-run smoke test.',
+        );
+      } else {
+        const running =
+          hit.running ||
+          ['running', 'connected', 'ok', 'ready'].includes(
+            String(hit.status || '').toLowerCase(),
+          );
+        setSmoke(
+          running
+            ? `Works: ${hit.name || hit.id} is running`
+            : `Registered: ${hit.name || hit.id} (status: ${hit.status || 'stopped'}) — Start it from Integrations`,
+        );
+      }
+    } catch (e) {
+      setSmoke(`Smoke test failed: ${(e as Error).message}`);
+    } finally {
+      setSmokeBusy(false);
+    }
   };
 
   return (
@@ -518,7 +561,7 @@ function CatalogDetail({
         <p className="text-xs text-destructive">{formError}</p>
       )}
 
-      <div className="pt-1">
+      <div className="flex flex-wrap items-center gap-2 pt-1">
         <Button
           onClick={handleInstall}
           disabled={installed || busy}
@@ -533,7 +576,26 @@ function CatalogDetail({
           )}
           {installed ? 'Already added' : entry.kind === 'mcp-extension' ? 'Install' : 'Add'}
         </Button>
+        {entry.kind === 'mcp-extension' && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={smokeBusy}
+            onClick={() => {
+              void runSmoke();
+            }}
+            title="Check that this MCP server is registered / running"
+          >
+            {smokeBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+            Smoke test
+          </Button>
+        )}
       </div>
+      {smoke && (
+        <p className="text-xs text-muted-foreground" data-testid="mcp-smoke-result">
+          {smoke}
+        </p>
+      )}
     </div>
   );
 }

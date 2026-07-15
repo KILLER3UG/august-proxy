@@ -471,6 +471,51 @@ export async function dequeueWorkbenchMessage(
   if (!res.ok) throw new Error(`dequeueWorkbenchMessage failed: ${res.status}`);
 }
 
+/** Clear the entire mid-response queue for a session. */
+export async function clearQueuedWorkbenchMessages(
+  sessionId: string,
+): Promise<{ cleared: number }> {
+  const res = await fetch(
+    `/api/workbench/chat/queue?sessionId=${encodeURIComponent(sessionId)}`,
+    { method: 'DELETE' },
+  );
+  if (!res.ok) throw new Error(`clearQueuedWorkbenchMessages failed: ${res.status}`);
+  return res.json() as Promise<{ cleared: number }>;
+}
+
+/** Reorder queued messages (drag reorder). `order` is message ids in desired order. */
+export async function reorderQueuedWorkbenchMessages(
+  sessionId: string,
+  order: string[],
+): Promise<QueuedUserMessage[]> {
+  const res = await fetch('/api/workbench/chat/queue', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, order }),
+  });
+  if (!res.ok) throw new Error(`reorderQueuedWorkbenchMessages failed: ${res.status}`);
+  const data = (await res.json()) as { messages?: QueuedUserMessage[] };
+  return Array.isArray(data?.messages) ? data.messages : [];
+}
+
+/** Edit the text of a queued message before the model receives it. */
+export async function updateQueuedWorkbenchMessage(
+  sessionId: string,
+  messageId: string,
+  text: string,
+): Promise<QueuedUserMessage> {
+  const res = await fetch(
+    `/api/workbench/chat/queue/${encodeURIComponent(messageId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, text }),
+    },
+  );
+  if (!res.ok) throw new Error(`updateQueuedWorkbenchMessage failed: ${res.status}`);
+  return res.json() as Promise<QueuedUserMessage>;
+}
+
 /** Hydrate the local queue state from the server (used on mount and
  *  after session switch). */
 export async function getQueuedWorkbenchMessages(
@@ -482,6 +527,27 @@ export async function getQueuedWorkbenchMessages(
   if (!res.ok) throw new Error(`getQueuedWorkbenchMessages failed: ${res.status}`);
   const data = (await res.json()) as { messages?: QueuedUserMessage[] };
   return Array.isArray(data?.messages) ? data.messages : [];
+}
+
+export type DoctorCheck = {
+  id: string;
+  label: string;
+  ok: boolean;
+  detail: string;
+  optional?: boolean;
+};
+
+export type DoctorReport = {
+  ok: boolean;
+  checks: DoctorCheck[];
+  summary: string;
+};
+
+/** Setup doctor: backend, disk, MCP, OAuth readiness. */
+export async function getWorkbenchDoctor(): Promise<DoctorReport> {
+  const res = await fetch('/api/workbench/doctor');
+  if (!res.ok) throw new Error(`getWorkbenchDoctor failed: ${res.status}`);
+  return res.json() as Promise<DoctorReport>;
 }
 
 /** Validate an incoming SSE frame against the WorkbenchEvent Zod schema.
@@ -1003,6 +1069,28 @@ export async function setIsolateSubagents(
   return res.json() as Promise<{ ok: boolean; isolateSubagents: boolean }>;
 }
 
+export async function cancelAllSessionAgents(
+  sessionId: string,
+): Promise<{ ok: boolean; count: number; cancelled: string[] }> {
+  const res = await fetch(
+    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/agents/cancel-all`,
+    { method: 'POST' },
+  );
+  if (!res.ok) throw new Error(`cancel-all agents failed: ${res.status}`);
+  return res.json() as Promise<{ ok: boolean; count: number; cancelled: string[] }>;
+}
+
+export async function terminateSessionAgent(
+  taskId: string,
+): Promise<{ status: string; taskId: string }> {
+  const res = await fetch(
+    `/api/subagents/${encodeURIComponent(taskId)}/terminate`,
+    { method: 'POST' },
+  );
+  if (!res.ok) throw new Error(`terminate agent failed: ${res.status}`);
+  return res.json() as Promise<{ status: string; taskId: string }>;
+}
+
 export async function listWorkbenchAgents(activeAgentId = 'build'): Promise<WorkbenchAgentRegistry> {
   const res = await fetch(`/api/workbench/agents?active=${encodeURIComponent(activeAgentId)}`);
   if (!res.ok) throw new Error(`listWorkbenchAgents failed: ${res.status}`);
@@ -1098,3 +1186,8 @@ export async function getBrainConfigFromSession(sessionId: string): Promise<Brai
   if (!res.ok) throw new Error(`getBrainConfigFromSession failed: ${res.status}`);
   return res.json() as Promise<BrainConfigResponse>;
 }
+
+/* ── OOP client re-export ─────────────────────────────────────────────── */
+/* Prefer `workbenchClient` in new code; free functions above stay for BC. */
+export { WorkbenchClient, workbenchClient } from './workbench/WorkbenchClient';
+export { WorkbenchHttpError } from './workbench/http';

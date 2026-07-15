@@ -79,6 +79,30 @@ class TestEnqueueDequeueList:
         assert len(session.queuedUserMessages) == 2
 
 
+class TestReorderUpdateClear:
+    def testReorderByIds(self, session):
+        a = wb.enqueueUserMessage(session.id, 'first')
+        b = wb.enqueueUserMessage(session.id, 'second')
+        c = wb.enqueueUserMessage(session.id, 'third')
+        reordered = wb.reorderQueuedMessages(session.id, [c['id'], a['id'], b['id']])
+        assert [e['id'] for e in reordered] == [c['id'], a['id'], b['id']]
+        assert [e['id'] for e in session.queuedUserMessages] == [c['id'], a['id'], b['id']]
+
+    def testUpdateText(self, session):
+        entry = wb.enqueueUserMessage(session.id, 'old')
+        updated = wb.updateQueuedMessage(session.id, entry['id'], text='new text')
+        assert updated is not None
+        assert updated['text'] == 'new text'
+        assert session.queuedUserMessages[0]['text'] == 'new text'
+
+    def testClearAll(self, session):
+        wb.enqueueUserMessage(session.id, 'first')
+        wb.enqueueUserMessage(session.id, 'second')
+        n = wb.clearQueuedMessages(session.id)
+        assert n == 2
+        assert session.queuedUserMessages == []
+
+
 class TestDrain:
     def testDrainReturnsAndClears(self, session):
         wb.enqueueUserMessage(session.id, 'first')

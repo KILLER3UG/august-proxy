@@ -32,6 +32,7 @@ import { SettingsSelect } from '@/components/settings/SettingsSelect';
 import { api } from '@/api/client';
 import { Markdown } from '@/sections/chat/ChatMarkdown';
 import { cn } from '@/lib/utils';
+import { SkillsHubPanel } from './SkillsHubPanel';
 
 const SKILL_CATEGORIES = [
   { value: 'uncategorized', label: 'Uncategorized' },
@@ -435,6 +436,13 @@ export function SkillsSection() {
             <StatTile icon={<Archive className="size-4" />} label="Archived" value={archivedCount} />
             <StatTile icon={<BookOpen className="size-4" />} label="Tracked" value={trackedCount} />
           </div>
+
+          <SkillsHubPanel
+            installedNames={new Set(skills.map((s) => s.name))}
+            onInstalled={() => {
+              void reload(search);
+            }}
+          />
 
           <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />

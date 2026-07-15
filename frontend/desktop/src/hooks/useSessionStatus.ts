@@ -4,6 +4,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
 
+export type PendingMutationItem = {
+    token?: string;
+    toolName?: string;
+    args?: Record<string, unknown>;
+    preview?: string;
+    createdAt?: string;
+    path?: string;
+    grantKey?: string;
+};
+
 export type SessionStatus = {
     sessionId: string;
     status: 'idle' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled' | string;
@@ -11,17 +21,14 @@ export type SessionStatus = {
     pendingToken: string | null;
     pendingArgs: Record<string, unknown> | null;
     pendingPreview?: string | null;
+    pendingPath?: string | null;
     pendingCreatedAt: number | string | null;
     updatedAt: string | null;
     guardMode: 'plan' | 'ask' | 'full' | string;
     approved: boolean;
-    pendingMutation?: {
-        token?: string;
-        toolName?: string;
-        args?: Record<string, unknown>;
-        preview?: string;
-        createdAt?: string;
-    } | null;
+    pendingMutation?: PendingMutationItem | null;
+    /** Full batch for multi-file pre-apply cards */
+    pendingMutations?: PendingMutationItem[];
 };
 
 export function useSessionStatus(sessionId: string | null, pollIntervalMs: number = 12_000) {
@@ -45,13 +52,20 @@ export function useSessionStatus(sessionId: string | null, pollIntervalMs: numbe
                 if (!raw) return null;
                 // Normalize nested pendingMutation → flat fields the banner expects
                 const pm = raw.pendingMutation;
+                const batch = Array.isArray(raw.pendingMutations)
+                    ? raw.pendingMutations
+                    : pm
+                      ? [pm]
+                      : [];
                 return {
                     ...raw,
                     pendingToken: raw.pendingToken ?? pm?.token ?? null,
                     pendingTool: raw.pendingTool ?? pm?.toolName ?? null,
                     pendingArgs: raw.pendingArgs ?? pm?.args ?? null,
                     pendingPreview: raw.pendingPreview ?? pm?.preview ?? null,
+                    pendingPath: raw.pendingPath ?? pm?.path ?? null,
                     pendingCreatedAt: raw.pendingCreatedAt ?? pm?.createdAt ?? null,
+                    pendingMutations: batch,
                 };
             } catch (error) {
                 // 404 means session is gone

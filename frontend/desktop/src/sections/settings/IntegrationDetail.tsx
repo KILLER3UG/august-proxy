@@ -26,6 +26,7 @@ import {
   useConnectAccount,
   useDisconnectAccount,
 } from './useIntegrations';
+import { ConnectionWizard } from './ConnectionWizard';
 
 interface IntegrationDetailProps {
   item: IntegrationItem;
@@ -406,60 +407,13 @@ function AccountAction({ item }: { item: IntegrationItem }) {
 }
 
 function TokenConnectForm({ name }: { name: ServiceName }) {
-  const [value, setValue] = useState('');
-  const [teamId, setTeamId] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const connect = useConnectAccount();
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    try {
-      if (name === 'github') {
-        await connect.mutateAsync({ kind: 'github', token: value.trim() });
-      } else if (name === 'slack') {
-        await connect.mutateAsync({
-          kind: 'slack',
-          botToken: value.trim(),
-          teamId: teamId.trim(),
-        });
-      }
-      setValue('');
-      setTeamId('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to connect');
-    }
-  };
-
-  const placeholder =
-    name === 'github' ? 'ghp_… personal access token' : 'xoxb-… bot user OAuth token';
-
+  if (name === 'github' || name === 'slack') {
+    return <ConnectionWizard provider={name} />;
+  }
   return (
-    <form onSubmit={submit} className="w-72 space-y-2">
-      <input
-        type="password"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30 shadow-none"
-      />
-      {name === 'slack' && (
-        <input
-          type="text"
-          value={teamId}
-          onChange={(e) => setTeamId(e.target.value)}
-          placeholder="Team ID (optional)"
-          className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30 shadow-none"
-        />
-      )}
-      <div className="flex justify-end">
-        <Button type="submit" size="sm" disabled={!value.trim() || connect.isPending}>
-          {connect.isPending ? <Loader2 className="size-3 animate-spin" /> : <Plug className="size-3" />}
-          Connect
-        </Button>
-      </div>
-      {error && <p className="text-right text-[11px] text-destructive">{error}</p>}
-    </form>
+    <p className="text-xs text-muted-foreground">
+      Use Google Sign-in for Workspace accounts, or add a guided connection from the directory.
+    </p>
   );
 }
 

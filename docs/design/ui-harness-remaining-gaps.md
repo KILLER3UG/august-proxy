@@ -10,14 +10,14 @@
 
 | Layer | Rough completeness | Notes |
 |-------|-------------------|--------|
-| Coding loop (modes, plan, queue, stop, tools UI) | **High** | Solid product surface |
-| Trust (Ask grants, pre-apply Accept/Reject) | **High** | Execute-on-accept shipped; not full multi-file patch UX |
+| Coding loop (modes, plan, queue, stop, tools UI) | **High** | Queue reorder / clear-all / edit shipped |
+| Trust (Ask grants, pre-apply Accept/Reject) | **High** | Permission toast + multi-file pre-apply cards |
 | Session power (undo / branch / compact / steer) | **High** | Wired; polish remains |
-| Isolation (checkpoints, worktrees, team strip) | **Medium–high** | Best-effort worktrees; not “never collide by default” |
+| Isolation (checkpoints, worktrees, team strip) | **High** | Default isolate + cleanup for parallel agents |
 | Connectors (Google, GitHub, Slack) | **Medium** | Google BYO + PKCE; no shipped public client id |
 | Stretch (kanban, sandbox cell, wizards) | **Low** | Explicit backlog |
 
-**Not 100%.** Core loop ≈ 85–90% of prioritized gaps; full inventory ≈ 60–70%.
+**Not 100%.** Core loop ≈ 90%+ of prioritized gaps; full inventory ≈ 70–75%.
 
 ---
 
@@ -30,68 +30,14 @@
 
 ---
 
-## 2. Trust & diffs (polish beyond P0)
+## 2–7. Trust / queue / isolation / connectors / context / chrome
 
-| Gap | Current | Target |
-|-----|---------|--------|
-| **Multi-file pre-apply patch UI** | One pending mutation + preview text; Accept runs that tool | Per-file cards with unified/split **diff**, Accept/Reject each path in a batch |
-| **Permission toast** (Claude-style) | Session `ApprovalBanner` + grants | Lightweight toast near tool card: Once / This chat / Always here, same grant store |
-| Path-scoped allowlist UX | “Always” key by tool+path | Settings UI listing always-grants; revoke; explain “why blocked” |
-| Terminal vs workbench permission copy | Separate approve flows | One mental model / shared wording |
+Most polish items shipped — see §10. Remaining thin polish:
 
----
-
-## 3. Queue & mid-run control
-
-| Gap | Current | Target |
-|-----|---------|--------|
-| Queue **reorder** | FIFO pills, cancel, steer prepend | Drag reorder, edit pill text, clear-all polish |
-| Steer discoverability | Works when streaming | Always-visible “Add direction…” while tools run; short empty-state tip |
-| Run in background + task tray | Queue only | Optional background job list / tray |
-
----
-
-## 4. Isolation & multi-agent
-
-| Gap | Current | Target |
-|-----|---------|--------|
-| Worktree **product maturity** | Helper + opt-in isolate for subagents | Default isolate for parallel agents; clear badge “files stay separate”; cleanup when agent ends |
-| Team strip depth | List + cancel hooks | Live status, logs link, cancel-all, cost per agent |
-| Durable **kanban / multi-agent board** | Session todos | Persistent board across agents/jobs (W6) |
-| Checkpoint UX density | Create + restore API/palette | Inline “Save point” chips after every mutating batch; one-click restore confirmation |
-
----
-
-## 5. Connectors & setup
-
-| Gap | Current | Target |
-|-----|---------|--------|
-| GitHub **OAuth** wizard | PAT form | OAuth or guided PAT with scopes checklist |
-| Slack wizard | Bot token | Scopes checklist + test send |
-| Setup checklist **doctor** | Provider + workspace + optional Google | Health: backend up, MCP alive, disk, OAuth redirect reachable |
-| MCP one-click recipes | Directory improving | Install + env form + “works” smoke test per popular server |
-
----
-
-## 6. Project context & tools stretch
-
-| Gap | Current | Target |
-|-----|---------|--------|
-| Project rules badge | AUG.md init exists | “Rules from: path” chip; walk-up CLAUDE/AGENTS/AUG |
-| **Sandbox Python cell** | No dedicated safe exec toolset | Optional “Run Python” cell with strict cwd/network policy |
-| Image paste reliability | Partial attach paths | Paste image → attach always works in composer |
-| Skills hub | `@` picker + Settings skills | Browse/install from hub (optional; not required for CLI parity) |
-
----
-
-## 7. Session / chrome polish
-
-| Gap | Current | Target |
-|-----|---------|--------|
-| Pin / search sessions | List + rename | Pin, search, “Continue last” on home |
-| Cost always visible | Usage elsewhere | Per-session cost estimate next to context ring |
-| Dirty session confirm on New chat | Weak | Confirm if streaming or unsent draft |
-| OS notification on long job complete | Weak | Opt-in toast + OS notify |
+| Gap | Notes |
+|-----|--------|
+| MCP install + env form + smoke | Smoke test button shipped; deeper “works” E2E still optional |
+| Team cost per agent | Elapsed proxy shown; true $ cost needs billing events per agent |
 
 ---
 
@@ -112,13 +58,7 @@ Do **not** restart a full roadmap rewrite. Ship in this order unless product for
 | Priority | Item | Effort signal |
 |----------|------|----------------|
 | **P0** | Register + ship `AUGUST_DEFAULT_GOOGLE_OAUTH_CLIENT_ID` (release only) | Product/legal + config |
-| **P1** | Queue reorder + clear-all polish | Small frontend |
-| **P1** | Permission **toast** on tool cards (reuse grant API) | Medium frontend |
-| **P2** | Multi-file pre-apply **diff cards** | Medium full-stack |
-| **P2** | Setup checklist + backend/MCP **doctor** | Medium |
-| **P3** | Worktree default for parallel agents + cleanup | Medium backend |
-| **P3** | GitHub/Slack connection wizards | Medium |
-| **Backlog** | Kanban board, Python sandbox cell, skills hub, OS notify | Large / optional |
+| **Backlog** | Per-agent $ cost, deeper MCP E2E smoke | Optional |
 
 ---
 
@@ -129,14 +69,38 @@ Use this as a stop-list when triaging:
 - Guard modes Plan / Ask / Do + plan approve/reject/revise  
 - Pre-apply **Accept/Reject** with **execute on accept** (stored args)  
 - Tool grants once / session / always (folder)  
+- **Permission toast** on tool cards (Once / This chat / Always here)  
+- **Multi-file pre-apply diff cards** (per-path Accept/Reject + DiffView)  
 - Undo last turn, branch session, compact now, command palette wiring  
-- Mid-run **steer** (`kind=steer`, priority inject)  
+- Mid-run **steer** (`kind=steer`, priority inject) + always-visible “Add direction…” while streaming  
+- Queue **reorder** (drag), **edit** pill text, **clear-all**  
 - Filesystem **checkpoints** + restore API  
-- Worktree helper + team agents strip (v1)  
+- Worktree helper + **default isolate** for parallel agents + cleanup when agent ends + team strip badge  
 - Real PTY terminal + open external terminal  
 - Google OAuth native callback + **PKCE** (Desktop, no secret required)  
-- First-run **setup checklist** (provider / workspace / optional Google)  
+- First-run **setup checklist** (provider / workspace / doctor / optional Google)  
+- Setup **doctor** (`GET /api/workbench/doctor`: backend, disk, MCP, OAuth)  
 - Skills **`@`** mention picker in composer  
+- **Skills hub** browse/install recipes in Settings → Skills  
+- **GitHub / Slack connection wizards** (scopes checklist + test / test send)  
+- **Path-scoped always-grants** Settings UI (list / revoke / why allowed)  
+- **Agent kanban board** (durable, multi-column)  
+- **Python sandbox** cell (no network, banned imports, timeout)  
+- **OS notify** opt-in (Profile → Job complete notifications)  
+- **Background task tray** in status bar  
+- Frontend modularization + OOP:
+  - **WorkbenchClient** (`api/workbench/WorkbenchClient.ts`) + HTTP primitives
+  - **ChatAttachmentService**, **SessionStreamController**, **SessionRepository**
+  - Hooks: `useSessionStream`, `useChatModels`, `useChatUsage`, `useChatAttachments`
+  - ChatThread split: `MessageBubble`, `ComposerControls`, `ChatCheckpoints`  
+- **Continue last**, dirty New chat confirm, session pin/search (existing + continue)  
+- **Project rules badge** (AUG/CLAUDE/AGENTS)  
+- **Session cost** chip next to context ring  
+- **Save point chip** with one-click restore confirm  
+- Team strip: cancel one / cancel-all / logs link  
+- Image paste → attach in composer  
+- MCP directory **smoke test**  
+- Shared **permission copy** (Once / This chat / Always here)  
 - Post-turn diffs, todos, git panel, integrations directory (BYO)
 
 ---

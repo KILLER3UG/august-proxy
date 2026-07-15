@@ -875,20 +875,45 @@ def get_workbench_session_status(session_id: str) -> dict[str, object] | None:
     has_pending = len(session.pendingMutations) > 0
     pm = session.pendingMutations[-1] if has_pending else None
     pm_dict = as_dict(pm) if pm is not None else {}
+
+    def _path_from_args(args: object) -> str | None:
+        ad = as_dict(args) if args is not None else {}
+        for key in ('path', 'file_path', 'filePath', 'file', 'target', 'target_file'):
+            v = ad.get(key)
+            if isinstance(v, str) and v.strip():
+                return v
+        return None
+
+    # Full batch for multi-file pre-apply cards (newest last = same order as list)
+    pending_list: list[dict[str, object]] = []
+    for raw in session.pendingMutations:
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        args = item.get('args')
+        if 'path' not in item:
+            p = _path_from_args(args)
+            if p:
+                item['path'] = p
+        pending_list.append(item)
+
     return {
         'sessionId': session_id,
         'status': session.status,
         'guardMode': session.guardMode,
-        # Flat fields used by ApprovalBanner / useSessionStatus
+        # Flat fields used by ApprovalBanner / useSessionStatus (last pending)
         'pendingToken': as_str(pm_dict.get('token')) or None,
         'pendingTool': as_str(pm_dict.get('toolName')) or None,
         'pendingArgs': as_dict(pm_dict.get('args')) if pm_dict.get('args') is not None else None,
         'pendingPreview': as_str(pm_dict.get('preview')) or None,
         'pendingCreatedAt': pm_dict.get('createdAt'),
+        'pendingPath': _path_from_args(pm_dict.get('args')),
         'approved': bool(session.planApproved),
         'updatedAt': session.updatedAt,
         # Nested blob kept for older clients
         'pendingMutation': pm if has_pending else None,
+        # Full list for multi-file Accept/Reject cards
+        'pendingMutations': pending_list,
         'plan': session.plan,
         'planApproved': session.planApproved,
         'todos': session.todos,

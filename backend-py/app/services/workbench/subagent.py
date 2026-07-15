@@ -29,6 +29,36 @@ def _toolName(t: dict[str, object]) -> str:
     return as_str(t.get('name')) or as_str(as_dict(t.get('function')).get('name', ''))
 
 
+def _cleanup_agent_worktree(session: object, workspace: str, worktree_path: str) -> None:
+    """Best-effort remove of a sub-agent worktree and session metadata bookkeeping."""
+    if not worktree_path or not workspace:
+        return
+    try:
+        from app.services.workbench.worktree_service import remove_agent_worktree
+
+        remove_agent_worktree(workspace, worktree_path)
+    except Exception:
+        pass
+    try:
+        import os
+
+        if os.environ.get('AUGUST_SUBAGENT_WORKTREE') == worktree_path:
+            os.environ.pop('AUGUST_SUBAGENT_WORKTREE', None)
+    except Exception:
+        pass
+    try:
+        meta2 = as_dict(getattr(session, 'metadata', None)) if getattr(session, 'metadata', None) else {}
+        active = [
+            a
+            for a in list(meta2.get('activeAgentWorktrees') or [])
+            if not (isinstance(a, dict) and str(a.get('path')) == worktree_path)
+        ]
+        meta2['activeAgentWorktrees'] = active
+        session.metadata = meta2  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+
 def _agentOrGeneral(agentId: str, parentAlias: str) -> dict[str, object]:
     """Return the persisted agent, or a synthetic 'general' fallback."""
     agent = getAgent(agentId)
@@ -87,10 +117,16 @@ async def executeSubAgent(
             emit({'type': 'subagentDone', 'agentId': resolvedAgentId, 'status': 'blocked', 'error': blocked_msg})
         return {'agentId': resolvedAgentId, 'status': 'blocked', 'error': blocked_msg}
 
-    # Optional git worktree isolation (session.metadata.isolateSubagents)
+    # Git worktree isolation for parallel agents.
+    # Default ON when isolateSubagents is unset (parallel agents keep files separate).
+    # Explicit False (via isolateSubagentsExplicit + isolateSubagents=false) opts out.
     worktree_path = ''
-    meta = getattr(session, 'metadata', None)
-    isolate = bool(as_dict(meta).get('isolateSubagents')) if meta is not None else False
+    meta = as_dict(getattr(session, 'metadata', None)) if getattr(session, 'metadata', None) is not None else {}
+    if 'isolateSubagents' in meta:
+        isolate = bool(meta.get('isolateSubagents'))
+    else:
+        # Default: isolate so parallel agents do not collide on the main tree
+        isolate = True
     workspace = as_str(getattr(session, 'workspacePath', ''))
     if isolate and workspace:
         try:
@@ -108,6 +144,21 @@ async def executeSubAgent(
                     import os
 
                     os.environ['AUGUST_SUBAGENT_WORKTREE'] = worktree_path
+                except Exception:
+                    pass
+                # Persist active worktree path for UI badge / cleanup
+                try:
+                    meta = dict(meta)
+                    active = list(meta.get('activeAgentWorktrees') or [])
+                    active.append(
+                        {
+                            'agentId': resolvedAgentId,
+                            'path': worktree_path,
+                        }
+                    )
+                    meta['activeAgentWorktrees'] = active
+                    meta['isolateSubagents'] = True
+                    session.metadata = meta
                 except Exception:
                     pass
         except Exception:
@@ -163,6 +214,7 @@ async def executeSubAgent(
         if emit:
             emit({'type': 'subagentDone', 'agentId': resolvedAgentId, 'jobId': jobId, 'status': 'error', 'error': err})
         updateJob(jobId, {'status': 'failed', 'error': err})
+        _cleanup_agent_worktree(session, workspace, worktree_path)
         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': err}
     resolvedModel = _resolveModel(provider, model)
     agentCtx = renderAgentContext(resolvedAgentId) if not as_bool(agent.get('_synthetic', False)) else ''
@@ -320,4 +372,6 @@ async def executeSubAgent(
             )
         return {'jobId': jobId, 'agentId': resolvedAgentId, 'status': 'error', 'error': str(exc)}
     finally:
+        # Cleanup isolated worktree when the agent ends (files stay separate while running)
+        _cleanup_agent_worktree(session, workspace, worktree_path)
         currentSessionId.reset(token)

@@ -1,14 +1,17 @@
-/* ── TeamAgentsStrip — active sub-agents + isolation toggle ───────── */
+/* ── TeamAgentsStrip — active sub-agents + isolation + cancel-all ──── */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bot, Loader2, GitBranch, Shield } from 'lucide-react';
+import { Bot, Loader2, GitBranch, Shield, X, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   listWorkbenchSessionAgents,
   setIsolateSubagents,
+  cancelAllSessionAgents,
+  terminateSessionAgent,
   type SessionAgentRow,
 } from '@/api/workbench';
 import { toast } from 'sonner';
+import { addRightDrawerSection } from '@/components/shell/RightDrawerState';
 
 export function TeamAgentsStrip({
   workbenchSessionId,
@@ -39,16 +42,31 @@ export function TeamAgentsStrip({
       toast.error(`Could not update isolation: ${e instanceof Error ? e.message : String(e)}`),
   });
 
+  const cancelAll = useMutation({
+    mutationFn: () => cancelAllSessionAgents(workbenchSessionId!),
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: ['session-agents', workbenchSessionId] });
+      toast.message(
+        data.count > 0 ? `Cancelled ${data.count} agent${data.count === 1 ? '' : 's'}` : 'No active agents',
+      );
+    },
+    onError: (e: unknown) =>
+      toast.error(`Cancel all failed: ${e instanceof Error ? e.message : String(e)}`),
+  });
+
   if (!workbenchSessionId) return null;
 
   const agents = (q.data?.agents ?? []).filter(
     (a) => a.status === 'pending' || a.status === 'running',
   );
-  const isolateOn = Boolean(q.data?.meta?.isolateSubagents);
+  const isolateOn = q.data?.meta?.isolateSubagents !== false;
   const lastCk = q.data?.meta?.lastCheckpointLabel;
+  const lastCkId = q.data?.meta?.lastCheckpointId as string | undefined;
 
-  if (agents.length === 0 && !isolateOn && !lastCk) {
-    // Compact idle control: only show isolation chip when user expands? Keep a slim bar.
+  // Rough cost signal: elapsed seconds as proxy when real cost isn't on the row
+  const totalElapsed = agents.reduce((sum, a) => sum + (a.elapsed ?? 0), 0);
+
+  if (agents.length === 0 && !lastCk) {
     return (
       <div
         className={cn(
@@ -65,17 +83,15 @@ export function TeamAgentsStrip({
               ? 'border-primary/40 bg-primary/10 text-primary'
               : 'border-border/60 hover:bg-muted/40',
           )}
-          title="When on, parallel agents try to use separate git worktrees so they do not overwrite each other"
+          title={
+            isolateOn
+              ? 'Files stay separate — parallel agents use git worktrees (cleaned up when done)'
+              : 'Agents share the main workspace'
+          }
         >
           <GitBranch className="size-3" />
-          {isolateOn ? 'Isolated agents' : 'Share workspace'}
+          {isolateOn ? 'Isolated · files stay separate' : 'Share workspace'}
         </button>
-        {lastCk && (
-          <span className="inline-flex items-center gap-1 text-muted-foreground/80">
-            <Shield className="size-3" />
-            Last save point: {lastCk}
-          </span>
-        )}
       </div>
     );
   }
@@ -97,19 +113,27 @@ export function TeamAgentsStrip({
             ? 'border-primary/40 bg-primary/10 text-primary'
             : 'border-border/60 hover:bg-muted/40 text-muted-foreground',
         )}
+        title={
+          isolateOn
+            ? 'Files stay separate — each agent uses its own worktree (cleaned up when done)'
+            : 'Agents share the main workspace'
+        }
       >
         <GitBranch className="size-3" />
-        {isolateOn ? 'Isolated agents' : 'Share workspace'}
+        {isolateOn ? 'Isolated · files stay separate' : 'Share workspace'}
       </button>
 
       {agents.length > 0 && (
         <>
-          <span className="text-muted-foreground font-medium">Team</span>
+          <span className="text-muted-foreground font-medium">
+            Team · {agents.length}
+            {totalElapsed > 0 ? ` · ~${Math.round(totalElapsed)}s` : ''}
+          </span>
           {agents.map((a: SessionAgentRow) => (
             <span
               key={a.taskId}
-              className="inline-flex max-w-[14rem] items-center gap-1 rounded-md border border-border/50 bg-card px-2 py-0.5"
-              title={a.goal}
+              className="inline-flex max-w-[16rem] items-center gap-1 rounded-md border border-border/50 bg-card px-2 py-0.5"
+              title={[a.goal, a.error].filter(Boolean).join('\n')}
             >
               {a.status === 'running' || a.status === 'pending' ? (
                 <Loader2 className="size-3 animate-spin text-primary" />
@@ -120,13 +144,63 @@ export function TeamAgentsStrip({
               <span className="text-muted-foreground tabular-nums">
                 {a.elapsed != null ? `${Math.round(a.elapsed)}s` : a.status}
               </span>
+              <button
+                type="button"
+                className="rounded p-0.5 text-muted-foreground hover:text-destructive"
+                title="Cancel agent"
+                onClick={() => {
+                  void terminateSessionAgent(a.taskId)
+                    .then(() => {
+                      void qc.invalidateQueries({
+                        queryKey: ['session-agents', workbenchSessionId],
+                      });
+                      toast.message('Agent cancelled');
+                    })
+                    .catch((e: unknown) =>
+                      toast.error(
+                        `Cancel failed: ${e instanceof Error ? e.message : String(e)}`,
+                      ),
+                    );
+                }}
+              >
+                <X className="size-3" />
+              </button>
             </span>
           ))}
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-md border border-destructive/30 px-2 py-0.5 text-destructive hover:bg-destructive/10"
+            disabled={cancelAll.isPending}
+            onClick={() => cancelAll.mutate()}
+            title="Cancel all running agents"
+          >
+            {cancelAll.isPending ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <X className="size-3" />
+            )}
+            Cancel all
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-0.5 text-muted-foreground hover:bg-muted/40"
+            title="Open activity / logs drawer"
+            onClick={() => {
+              addRightDrawerSection('tasks');
+              window.dispatchEvent(new CustomEvent('august-open-right-sidebar'));
+            }}
+          >
+            <ScrollText className="size-3" />
+            Logs
+          </button>
         </>
       )}
 
       {lastCk && (
-        <span className="ml-auto inline-flex items-center gap-1 text-muted-foreground">
+        <span
+          className="ml-auto inline-flex items-center gap-1 text-muted-foreground"
+          title={lastCkId ? `Checkpoint ${lastCkId}` : lastCk}
+        >
           <Shield className="size-3" />
           {lastCk}
         </span>

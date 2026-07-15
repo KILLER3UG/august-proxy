@@ -290,6 +290,20 @@ export function SessionList({
               ctrl N
             </kbd>
           </button>
+          {workspaceFiltered[0] && (
+            <button
+              type="button"
+              onClick={() => onSelect(workspaceFiltered[0])}
+              className="w-full text-left rounded-md px-2.5 py-1.5 text-sidebar-foreground/80 hover:bg-white/5 hover:text-foreground transition flex items-center gap-2"
+              title={workspaceFiltered[0].title}
+              data-testid="continue-last-session"
+            >
+              <MessageSquare className="size-3.5" /> Continue last
+              <span className="ml-auto truncate max-w-[7rem] text-[10px] text-muted-foreground">
+                {workspaceFiltered[0].title}
+              </span>
+            </button>
+          )}
           <button
             onClick={() => onNavigate("/settings?tab=mcp")}
             className="w-full text-left rounded-md px-2.5 py-1.5 text-sidebar-foreground/80 hover:bg-white/5 hover:text-foreground transition flex items-center gap-2"

@@ -12,6 +12,7 @@ import { formatToolContext, formatToolResult, formatToolError, type FormattedCon
 import type { ProviderSetupResult } from '@/types/chat';
 import { ProviderSetupWidget } from '@/components/chat/ProviderSetupWidget';
 import { useLiveBackendAction } from '@/hooks/useLiveBackendAction';
+import { PermissionToast } from '@/components/overlays/PermissionToast';
 
 /**
  * Extract a filename hint from a tool's JSON context (best-effort).
@@ -532,45 +533,53 @@ export function ToolCallItemBody({
         <FormattedErrorSection toolName={tool.name} raw={tool.error} />
       )}
 
-      {tool.pendingApproval && (
-        <div className="mt-2 flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/10 p-2">
-          <div className="text-xs text-foreground/90">
-            {tool.pendingApproval.message || 'This change needs approval before it can run.'}
-          </div>
-          {tool.pendingApproval.detail && (
-            <div className="text-[11px] font-mono text-muted-foreground wrap-anywhere">
-              {tool.pendingApproval.detail}
+      {tool.pendingApproval && approvalStatus !== 'confirmed' && (
+        <div className="mt-2">
+          {tool.pendingApproval.confirmationToken ? (
+            /* Claude-style grant toast on the tool card (Once / This chat / Always). */
+            <PermissionToast
+              sessionId={(tool as { sessionId?: string }).sessionId || ''}
+              token={tool.pendingApproval.confirmationToken}
+              toolName={tool.name}
+              path={extractFilename(tool.context) ?? undefined}
+              summary={
+                tool.pendingApproval.message ||
+                tool.pendingApproval.detail ||
+                `Allow ${tool.name}?`
+              }
+              onDecided={() => setApprovalStatus('confirmed')}
+            />
+          ) : (
+            <div className="flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/10 p-2">
+              <div className="text-xs text-foreground/90">
+                {tool.pendingApproval.message ||
+                  'This change needs approval before it can run.'}
+              </div>
+              {tool.pendingApproval.detail && (
+                <div className="text-[11px] font-mono text-muted-foreground wrap-anywhere">
+                  {tool.pendingApproval.detail}
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={approvalStatus !== 'idle'}
+                className="h-7 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-60"
+                onClick={() => {
+                  const token = tool.pendingApproval?.confirmationToken;
+                  if (!token) return;
+                  setApprovalStatus('confirming');
+                  void confirmWorkbenchMutation(token, {
+                    onDone: () => setApprovalStatus('confirmed'),
+                    onError: ({ message }) => {
+                      tool.error = message;
+                    },
+                  });
+                }}
+              >
+                {approvalStatus === 'confirming' ? 'Approving…' : 'Approve'}
+              </button>
             </div>
           )}
-          <button
-            type="button"
-            disabled={approvalStatus !== 'idle'}
-            className="h-7 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-60"
-            onClick={() => {
-              const token = tool.pendingApproval?.confirmationToken;
-              if (!token) return;
-              setApprovalStatus('confirming');
-              void confirmWorkbenchMutation(token, {
-                onText: ({ content }) => {
-                  tool.summary = `${tool.summary || ''}\n${typeof content === 'string' ? content : JSON.stringify(content ?? '')}`.trim();
-                },
-                onToolUse: ({ id: _id, name, input }) => {
-                  tool.summary = `${tool.summary || ''}\nStarted ${name}: ${JSON.stringify(input || {})}`.trim();
-                },
-                onToolResult: ({ content }) => {
-                  tool.summary = `${tool.summary || ''}\n${typeof content === 'string' ? content : JSON.stringify(content ?? '')}`.trim();
-                },
-                onError: ({ message }) => {
-                  tool.error = message;
-                },
-                onDone: () => {
-                  setApprovalStatus('confirmed');
-                },
-              });
-            }}
-          >
-            {approvalStatus === 'confirming' ? 'Approving…' : 'Approve'}
-          </button>
         </div>
       )}
     </div>

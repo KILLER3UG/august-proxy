@@ -11,6 +11,7 @@ import {
   Cloud,
   FolderOpen,
   Mail,
+  Activity,
   Upload,
   X,
 } from 'lucide-react';
@@ -24,6 +25,7 @@ const ICONS = {
   provider: Cloud,
   workspace: FolderOpen,
   google: Mail,
+  doctor: Activity,
 } as const;
 
 export function ProviderOnboardingModal() {

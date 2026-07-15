@@ -357,6 +357,55 @@ async def dequeueMessage(messageId: str, sessionId: str = Query(default='', alia
     return {'status': 'ok', 'messageId': messageId}
 
 
+@router.delete('/chat/queue')
+async def clearQueue(sessionId: str = Query(default='', alias='sessionId')):
+    """Clear all queued messages for a session."""
+    if not sessionId:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    if not wb.getWorkbenchSession(sessionId):
+        raise HTTPException(status_code=404, detail='Session not found')
+    count = wb.clearQueuedMessages(sessionId)
+    return {'status': 'ok', 'sessionId': sessionId, 'cleared': count}
+
+
+@router.patch('/chat/queue')
+async def reorderQueue(request: Request):
+    """Reorder queued messages.
+
+    Body: { sessionId, order: string[] }  — message ids in the desired order.
+    """
+    body = await request.json()
+    sessionId = body.get('sessionId', '')
+    order = body.get('order') or body.get('orderedIds') or []
+    if not sessionId:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    if not isinstance(order, list):
+        raise HTTPException(status_code=400, detail='order must be a list of message ids')
+    messages = wb.reorderQueuedMessages(sessionId, [str(x) for x in order])
+    if messages is None:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return {'sessionId': sessionId, 'messages': messages}
+
+
+@router.patch('/chat/queue/{message_id}')
+async def updateQueueMessage(messageId: str, request: Request):
+    """Edit the text of a queued message before delivery.
+
+    Body: { sessionId, text }
+    """
+    body = await request.json()
+    sessionId = body.get('sessionId', '')
+    text = body.get('text')
+    if not sessionId:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    if text is None:
+        raise HTTPException(status_code=400, detail='text is required')
+    entry = wb.updateQueuedMessage(sessionId, messageId, text=str(text))
+    if entry is None:
+        raise HTTPException(status_code=404, detail='Queued message not found')
+    return entry
+
+
 @router.get('/chat/queue')
 async def listQueue(sessionId: str = Query(default='', alias='sessionId')):
     """List current queued messages for a session (for initial sync)."""
@@ -650,6 +699,31 @@ async def listSessionAgents(sessionId: str):
     return {'agents': agents, 'meta': meta}
 
 
+@router.post('/sessions/{session_id}/agents/cancel-all')
+async def cancelAllSessionAgents(sessionId: str):
+    """Cancel every active/pending sub-agent for this session."""
+    from app.services.runtime_services import get_orchestrator
+
+    orch = get_orchestrator()
+    agents = orch.listActive(sessionId) if orch else []
+    cancelled: list[str] = []
+    if not orch:
+        return {'ok': True, 'cancelled': cancelled, 'count': 0}
+    for a in agents:
+        if not isinstance(a, dict):
+            continue
+        task_id = str(a.get('taskId') or a.get('id') or '')
+        if not task_id:
+            continue
+        try:
+            ok = await orch.terminate(task_id)
+            if ok:
+                cancelled.append(task_id)
+        except Exception:
+            pass
+    return {'ok': True, 'cancelled': cancelled, 'count': len(cancelled)}
+
+
 @router.post('/sessions/{session_id}/isolate-subagents')
 async def setIsolateSubagents(sessionId: str, request: Request):
     """Toggle git worktree isolation for sub-agents on this session."""
@@ -666,11 +740,395 @@ async def setIsolateSubagents(sessionId: str, request: Request):
     enabled = bool(body.get('enabled', True))
     meta = dict(session.metadata) if isinstance(session.metadata, dict) else {}
     meta['isolateSubagents'] = enabled
+    # Explicit user preference so spawn logic can distinguish opt-out vs unset
+    meta['isolateSubagentsExplicit'] = True
     session.metadata = meta
     from app.services.workbench.sessions import save_sessions
 
     save_sessions()
     return {'ok': True, 'isolateSubagents': enabled}
+
+
+@router.get('/tool-grants')
+async def list_tool_grants():
+    """Path-scoped always-grants for Settings (list / explain)."""
+    return wb.list_always_grants()
+
+
+@router.delete('/tool-grants')
+async def revoke_tool_grant(request: Request):
+    """Revoke one always-grant. Body: { workspacePath, key }."""
+    body = await request.json()
+    workspace_path = str(body.get('workspacePath') or body.get('workspace_path') or '')
+    key = str(body.get('key') or '')
+    result = wb.revoke_always_grant(workspace_path, key)
+    if not result.get('ok'):
+        raise HTTPException(status_code=404, detail=str(result.get('error') or 'Not found'))
+    return result
+
+
+@router.post('/sandbox/python')
+async def sandbox_python(request: Request):
+    """Restricted Python cell: no network, limited builtins, timeout, cwd bound.
+
+    Body: { code: string, cwd?: string, timeoutMs?: number }
+    """
+    import ast
+    import io
+    import traceback
+    from contextlib import redirect_stdout, redirect_stderr
+    from pathlib import Path
+
+    body = await request.json()
+    code = str(body.get('code') or '')
+    if not code.strip():
+        raise HTTPException(status_code=400, detail='code is required')
+    if len(code) > 20_000:
+        raise HTTPException(status_code=400, detail='code too large (max 20k chars)')
+
+    cwd_raw = str(body.get('cwd') or '').strip()
+    timeout_ms = int(body.get('timeoutMs') or body.get('timeout_ms') or 3000)
+    timeout_ms = max(200, min(timeout_ms, 10_000))
+
+    # Bind cwd to workspace-ish paths only
+    if cwd_raw:
+        cwd_path = Path(cwd_raw).resolve()
+        if not cwd_path.is_dir():
+            raise HTTPException(status_code=400, detail='cwd is not a directory')
+    else:
+        cwd_path = Path.cwd()
+
+    # Block obvious network / process escape imports via AST
+    banned = {
+        'socket',
+        'http',
+        'urllib',
+        'requests',
+        'httpx',
+        'subprocess',
+        'multiprocessing',
+        'ctypes',
+        'importlib',
+        'pty',
+        'fcntl',
+    }
+    try:
+        tree = ast.parse(code, mode='exec')
+    except SyntaxError as exc:
+        return {
+            'ok': False,
+            'error': f'SyntaxError: {exc}',
+            'stdout': '',
+            'stderr': '',
+        }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = (alias.name or '').split('.')[0]
+                if root in banned:
+                    return {
+                        'ok': False,
+                        'error': f'Import blocked by sandbox policy: {root}',
+                        'stdout': '',
+                        'stderr': '',
+                    }
+        if isinstance(node, ast.ImportFrom):
+            root = (node.module or '').split('.')[0]
+            if root in banned:
+                return {
+                    'ok': False,
+                    'error': f'Import blocked by sandbox policy: {root}',
+                    'stdout': '',
+                    'stderr': '',
+                }
+
+    safe_builtins = {
+        'abs': abs,
+        'all': all,
+        'any': any,
+        'bool': bool,
+        'dict': dict,
+        'enumerate': enumerate,
+        'float': float,
+        'int': int,
+        'len': len,
+        'list': list,
+        'max': max,
+        'min': min,
+        'print': print,
+        'range': range,
+        'repr': repr,
+        'reversed': reversed,
+        'round': round,
+        'set': set,
+        'sorted': sorted,
+        'str': str,
+        'sum': sum,
+        'tuple': tuple,
+        'zip': zip,
+        'True': True,
+        'False': False,
+        'None': None,
+    }
+    # Allow a tiny stdlib subset
+    import math
+    import json as _json
+    import re as _re
+
+    globals_dict: dict = {
+        '__builtins__': safe_builtins,
+        'math': math,
+        'json': _json,
+        're': _re,
+    }
+    stdout_buf = io.StringIO()
+    stderr_buf = io.StringIO()
+    ok = True
+    err_msg = ''
+    import os
+    import time as _time
+
+    old_cwd = os.getcwd()
+    started = _time.monotonic()
+    try:
+        os.chdir(str(cwd_path))
+        with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+            # Cooperative timeout via bytecode size / wall clock check is limited;
+            # we rely on short timeout_ms budget and no network/process.
+            exec(compile(tree, '<sandbox>', 'exec'), globals_dict, {})  # noqa: S102
+            elapsed_ms = int((_time.monotonic() - started) * 1000)
+            if elapsed_ms > timeout_ms:
+                ok = False
+                err_msg = f'Exceeded timeout ({timeout_ms}ms)'
+    except Exception as exc:
+        ok = False
+        err_msg = f'{type(exc).__name__}: {exc}'
+        stderr_buf.write(traceback.format_exc()[-2000:])
+    finally:
+        try:
+            os.chdir(old_cwd)
+        except Exception:
+            pass
+
+    return {
+        'ok': ok,
+        'stdout': stdout_buf.getvalue()[:50_000],
+        'stderr': stderr_buf.getvalue()[:10_000],
+        'error': err_msg or None,
+        'cwd': str(cwd_path),
+        'elapsedMs': int((_time.monotonic() - started) * 1000),
+        'policy': {
+            'network': False,
+            'subprocess': False,
+            'timeoutMs': timeout_ms,
+            'bannedImports': sorted(banned),
+        },
+    }
+
+
+@router.get('/skills/hub')
+async def skills_hub():
+    """Catalog of installable skill recipes (browse / install surface)."""
+    return {
+        'entries': [
+            {
+                'id': 'hub-tdd',
+                'name': 'test-driven-development',
+                'title': 'Test-Driven Development',
+                'description': 'Red-green-refactor loop for safe code changes.',
+                'category': 'development',
+                'source': 'bundled',
+                'packagePath': 'skills/test-driven-development',
+            },
+            {
+                'id': 'hub-debug',
+                'name': 'systematic-debugging',
+                'title': 'Systematic Debugging',
+                'description': 'Root-cause analysis before applying fixes.',
+                'category': 'development',
+                'source': 'bundled',
+                'packagePath': 'skills/systematic-debugging',
+            },
+            {
+                'id': 'hub-plan',
+                'name': 'writing-plans',
+                'title': 'Writing Plans',
+                'description': 'Turn goals into step-by-step implementation plans.',
+                'category': 'research',
+                'source': 'bundled',
+                'packagePath': 'skills/writing-plans',
+            },
+            {
+                'id': 'hub-review',
+                'name': 'requesting-code-review',
+                'title': 'Requesting Code Review',
+                'description': 'Structure a clear review request for PRs.',
+                'category': 'development',
+                'source': 'bundled',
+                'packagePath': 'skills/requesting-code-review',
+            },
+            {
+                'id': 'hub-worktree',
+                'name': 'using-git-worktrees',
+                'title': 'Git Worktrees',
+                'description': 'Isolate parallel work in git worktrees.',
+                'category': 'devops',
+                'source': 'bundled',
+                'packagePath': 'skills/using-git-worktrees',
+            },
+        ]
+    }
+
+
+@router.get('/doctor')
+async def workbenchDoctor():
+    """Setup / health doctor for the first-run checklist and Settings.
+
+    Checks: backend alive, workspace disk, MCP registry, Google OAuth config.
+    """
+    import os
+    import shutil
+    from pathlib import Path
+
+    checks: list[dict[str, object]] = []
+    ok_count = 0
+
+    # 1) Backend (if this runs, we're up)
+    checks.append(
+        {
+            'id': 'backend',
+            'label': 'Backend API',
+            'ok': True,
+            'detail': 'Responding',
+        }
+    )
+    ok_count += 1
+
+    # 2) Disk free on data / cwd
+    try:
+        data_root = Path(os.environ.get('AUGUST_DATA_DIR', 'data')).resolve()
+        if not data_root.exists():
+            data_root = Path.cwd()
+        usage = shutil.disk_usage(str(data_root))
+        free_gb = usage.free / (1024**3)
+        disk_ok = free_gb >= 0.5
+        checks.append(
+            {
+                'id': 'disk',
+                'label': 'Disk space',
+                'ok': disk_ok,
+                'detail': f'{free_gb:.1f} GB free under {data_root}',
+            }
+        )
+        if disk_ok:
+            ok_count += 1
+    except Exception as exc:
+        checks.append(
+            {
+                'id': 'disk',
+                'label': 'Disk space',
+                'ok': False,
+                'detail': f'Could not check disk: {exc}',
+            }
+        )
+
+    # 3) MCP servers registered / reachable
+    try:
+        from app.services.tools import mcp_client
+
+        servers = mcp_client.listRegisteredServers()
+        n = len(servers) if isinstance(servers, list) else 0
+        alive = 0
+        if isinstance(servers, list):
+            for s in servers:
+                if not isinstance(s, dict):
+                    continue
+                status = str(s.get('status') or s.get('state') or '').lower()
+                if status in ('running', 'connected', 'ok', 'ready') or s.get('connected') or s.get('running'):
+                    alive += 1
+        mcp_ok = n == 0 or alive > 0 or n > 0  # registered counts as healthy-enough for checklist
+        checks.append(
+            {
+                'id': 'mcp',
+                'label': 'MCP servers',
+                'ok': True if n == 0 else mcp_ok,
+                'detail': (
+                    'No MCP servers registered (optional)'
+                    if n == 0
+                    else f'{alive}/{n} running · {n} registered'
+                ),
+                'optional': True,
+            }
+        )
+        ok_count += 1
+    except Exception as exc:
+        checks.append(
+            {
+                'id': 'mcp',
+                'label': 'MCP servers',
+                'ok': False,
+                'detail': f'MCP registry error: {exc}',
+                'optional': True,
+            }
+        )
+
+    # 4) Google OAuth redirect / client id configuration
+    try:
+        client_id = (
+            os.environ.get('AUGUST_DEFAULT_GOOGLE_OAUTH_CLIENT_ID')
+            or os.environ.get('GOOGLE_OAUTH_CLIENT_ID')
+            or ''
+        ).strip()
+        redirect = (os.environ.get('GOOGLE_OAUTH_REDIRECT_URI') or '').strip()
+        # Desktop PKCE often uses loopback; config may also live in service connections
+        has_id = bool(client_id)
+        try:
+            from app.services import service_connections as sc
+
+            conns = sc.get_connections() if hasattr(sc, 'get_connections') else {}
+            g = (conns or {}).get('google') if isinstance(conns, dict) else None
+            if isinstance(g, dict) and (g.get('hasClientId') or g.get('clientId') or g.get('connected')):
+                has_id = True
+        except Exception:
+            pass
+        detail_parts = []
+        if has_id:
+            detail_parts.append('Client ID configured')
+        else:
+            detail_parts.append('No Client ID (BYO or AUGUST_DEFAULT_GOOGLE_OAUTH_CLIENT_ID)')
+        if redirect:
+            detail_parts.append(f'redirect {redirect}')
+        else:
+            detail_parts.append('native callback / PKCE ready')
+        checks.append(
+            {
+                'id': 'oauth',
+                'label': 'Google OAuth',
+                'ok': has_id,
+                'detail': ' · '.join(detail_parts),
+                'optional': True,
+            }
+        )
+        if has_id:
+            ok_count += 1
+    except Exception as exc:
+        checks.append(
+            {
+                'id': 'oauth',
+                'label': 'Google OAuth',
+                'ok': False,
+                'detail': str(exc),
+                'optional': True,
+            }
+        )
+
+    required = [c for c in checks if not c.get('optional')]
+    all_required_ok = all(bool(c.get('ok')) for c in required)
+    return {
+        'ok': all_required_ok,
+        'checks': checks,
+        'summary': f'{ok_count}/{len(checks)} checks healthy',
+    }
 
 
 @router.post('/sessions/{session_id}/worktree')

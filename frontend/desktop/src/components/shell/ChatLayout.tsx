@@ -223,6 +223,27 @@ export function ChatLayout() {
   }, [location.pathname, sessionId, sessions, navigate, currentWorkspacePath]);
 
   const handleNewSession = (folderId?: string | null) => {
+    // Dirty confirm: streaming or unsent composer draft.
+    try {
+      const sid = active?.id;
+      if (sid) {
+        const draftKey = `august_composer_draft_${sid}`;
+        const draft = (localStorage.getItem(draftKey) || '').trim();
+        const status =
+          useSessionsStore.getState().sessionStates[sid] ||
+          useSessionsStore.getState().sessionStates[active?.workbenchSessionId || ''];
+        const streaming =
+          status === 'streaming' || status === 'working' || status === 'awaiting';
+        if (streaming || draft) {
+          const msg = streaming
+            ? 'August is still working. Start a new chat anyway? The current run continues in the background until you stop it.'
+            : 'You have an unsent draft. Discard it and start a new chat?';
+          if (!window.confirm(msg)) return;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
     // Reuse an existing empty chat instead of stacking blanks in the sidebar.
     const newSess = getOrCreateEmptySession(
       folderId ?? null,

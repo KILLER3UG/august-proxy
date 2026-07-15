@@ -87,3 +87,37 @@ export function setQueuedMessages(sessionId: string, entries: QueuedUserMessage[
 export function clearQueuedMessages(sessionId: string): void {
   setQueuedMessages(sessionId, []);
 }
+
+/** Reorder a session's local queue to match `orderedIds` (unknown ids ignored). */
+export function reorderQueuedMessagesLocal(sessionId: string, orderedIds: string[]): void {
+  const prev = useQueuedMessagesStore.getState().bySession;
+  const list = prev[sessionId] ?? [];
+  if (list.length === 0) return;
+  const byId = new Map(list.map((e) => [e.id, e]));
+  const seen = new Set<string>();
+  const next: QueuedUserMessage[] = [];
+  for (const id of orderedIds) {
+    const e = byId.get(id);
+    if (e && !seen.has(id)) {
+      next.push(e);
+      seen.add(id);
+    }
+  }
+  for (const e of list) {
+    if (!seen.has(e.id)) next.push(e);
+  }
+  setQueuedMessages(sessionId, next);
+}
+
+/** Patch text on a local queue entry (optimistic edit). */
+export function updateQueuedMessageLocal(
+  sessionId: string,
+  messageId: string,
+  text: string,
+): void {
+  const prev = useQueuedMessagesStore.getState().bySession;
+  const list = prev[sessionId];
+  if (!list) return;
+  const next = list.map((e) => (e.id === messageId ? { ...e, text } : e));
+  setQueuedMessages(sessionId, next);
+}

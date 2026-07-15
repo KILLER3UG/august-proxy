@@ -755,6 +755,114 @@ def listQueuedMessages(sessionId: str) -> list[dict[str, object]]:
     return list(getattr(session, 'queuedUserMessages', None) or [])
 
 
+def reorderQueuedMessages(sessionId: str, orderedIds: list[str]) -> list[dict[str, object]] | None:
+    """Reorder the session queue to match ``orderedIds`` (unknown ids ignored).
+
+    Ids not present in ``orderedIds`` are appended in their previous relative order.
+    Returns the new list, or None if the session is missing.
+    """
+    session = _sessions.get(sessionId)
+    if not session:
+        return None
+    entries = list(getattr(session, 'queuedUserMessages', None) or [])
+    if not entries:
+        return []
+    by_id = {str(e.get('id')): e for e in entries if e.get('id')}
+    seen: set[str] = set()
+    reordered: list[dict[str, object]] = []
+    for mid in orderedIds or []:
+        key = str(mid)
+        if key in by_id and key not in seen:
+            reordered.append(by_id[key])
+            seen.add(key)
+    for e in entries:
+        key = str(e.get('id') or '')
+        if key and key not in seen:
+            reordered.append(e)
+            seen.add(key)
+    session.queuedUserMessages = reordered
+    session.updatedAt = _now()
+    saveSessions()
+    try:
+        from app.services import event_log
+
+        event_log.event_log.append(
+            sessionId,
+            'user_message_queue_reordered',
+            {
+                'sessionId': sessionId,
+                'order': [str(e.get('id')) for e in reordered],
+            },
+        )
+    except Exception:
+        pass
+    return reordered
+
+
+def updateQueuedMessage(
+    sessionId: str, messageId: str, text: str | None = None
+) -> dict[str, object] | None:
+    """Edit the text of a queued message before delivery. Returns the entry or None."""
+    session = _sessions.get(sessionId)
+    if not session:
+        return None
+    entries = list(getattr(session, 'queuedUserMessages', None) or [])
+    for entry in entries:
+        if entry.get('id') == messageId:
+            if text is not None:
+                entry['text'] = text
+            session.queuedUserMessages = entries
+            session.updatedAt = _now()
+            saveSessions()
+            try:
+                from app.services import event_log
+
+                event_log.event_log.append(
+                    sessionId,
+                    'user_message_queue_updated',
+                    {
+                        'sessionId': sessionId,
+                        'messageId': messageId,
+                        'text': entry.get('text', ''),
+                    },
+                )
+            except Exception:
+                pass
+            return entry
+    return None
+
+
+def clearQueuedMessages(sessionId: str) -> int:
+    """Remove all queued messages for a session. Returns count removed."""
+    session = _sessions.get(sessionId)
+    if not session:
+        return 0
+    entries = list(getattr(session, 'queuedUserMessages', None) or [])
+    if not entries:
+        return 0
+    n = len(entries)
+    session.queuedUserMessages = []
+    session.updatedAt = _now()
+    saveSessions()
+    try:
+        from app.services import event_log
+
+        for entry in entries:
+            event_log.event_log.append(
+                sessionId,
+                'user_message_dequeued',
+                {'sessionId': sessionId, 'messageId': entry.get('id')},
+            )
+        event_log.event_log.append(
+            sessionId,
+            'user_message_queue_cleared',
+            {'sessionId': sessionId, 'count': n},
+        )
+    except Exception:
+        pass
+    return n
+
+
 def drainQueuedMessages(
     sessionId: str, emit: Callable[[dict[str, object]], None] | None = None
 ) -> list[dict[str, object]]:
@@ -1656,6 +1764,61 @@ def _save_always_grant(workspace_path: str, key: str) -> None:
         saveConfig(cfg)
     except Exception:
         logger.debug('failed to persist always grant', exc_info=True)
+
+
+def list_always_grants() -> dict[str, object]:
+    """List path-scoped always-grants for Settings UI (why blocked / revoke)."""
+    try:
+        from app.services.config_service import getConfig
+
+        cfg = getConfig()
+        store = as_dict(cfg.get('toolAlwaysGrants')) if cfg.get('toolAlwaysGrants') is not None else {}
+    except Exception:
+        store = {}
+    workspaces: list[dict[str, object]] = []
+    for ws, vals in store.items():
+        grants: list[dict[str, str]] = []
+        for raw in as_list(vals):
+            key = str(raw)
+            if ':' in key:
+                tool, path = key.split(':', 1)
+            else:
+                tool, path = key, '*'
+            grants.append({'key': key, 'tool': tool, 'path': path})
+        workspaces.append({'workspacePath': str(ws), 'grants': grants})
+    return {'workspaces': workspaces}
+
+
+def revoke_always_grant(workspace_path: str, key: str) -> dict[str, object]:
+    """Remove one always-grant key for a workspace folder."""
+    if not workspace_path or not key:
+        return {'ok': False, 'error': 'workspacePath and key required'}
+    try:
+        from app.services.config_service import getConfig, saveConfig
+
+        cfg = getConfig()
+        store = as_dict(cfg.get('toolAlwaysGrants')) if cfg.get('toolAlwaysGrants') is not None else {}
+        # Loose path match
+        matched_key = None
+        for k in list(store.keys()):
+            if str(k).replace('\\', '/').rstrip('/').lower() == workspace_path.replace('\\', '/').rstrip('/').lower():
+                matched_key = k
+                break
+        if matched_key is None:
+            matched_key = workspace_path
+        existing = [str(v) for v in as_list(store.get(matched_key))]
+        if key not in existing:
+            return {'ok': False, 'error': 'grant not found', 'workspaces': list_always_grants()['workspaces']}
+        existing = [v for v in existing if v != key]
+        if existing:
+            store[matched_key] = existing
+        else:
+            store.pop(matched_key, None)
+        cfg['toolAlwaysGrants'] = store
+        saveConfig(cfg)
+        return {'ok': True, 'revoked': key, 'workspaces': list_always_grants()['workspaces']}
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc)}
 
 
 def has_tool_grant(session: WorkbenchSession, toolName: str, args: dict[str, object] | None) -> bool:

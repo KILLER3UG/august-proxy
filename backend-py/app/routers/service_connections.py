@@ -58,6 +58,59 @@ async def post_slack(body: SlackBody):
     return sc.connect_slack(body.bot_token, body.team_id)
 
 
+class GithubTestBody(CamelModel):
+    token: str = ''
+
+
+class SlackTestBody(CamelModel):
+    bot_token: str = ''
+    channel: str = ''
+
+
+@router.post('/api/service-connections/github/test')
+async def test_github(body: GithubTestBody):
+    """Validate PAT (or stored token) against api.github.com/user."""
+    return await sc.test_github(body.token or None)
+
+
+@router.post('/api/service-connections/slack/test')
+async def test_slack(body: SlackTestBody):
+    """Validate bot token via auth.test; optional channel for test send."""
+    return await sc.test_slack(body.bot_token or None, channel=body.channel or '')
+
+
+@router.get('/api/service-connections/github/scopes')
+async def github_scopes():
+    meta = sc.SERVICE_META.get('github') or {}
+    return {
+        'provider': 'github',
+        'scopes': meta.get('scopes') or [],
+        'helpUrl': 'https://github.com/settings/tokens',
+        'guide': [
+            'Open GitHub → Settings → Developer settings → Personal access tokens',
+            'Create a classic or fine-grained token',
+            'Enable the scopes below (repo for private code, read:user for identity)',
+            'Paste the token and run Test connection',
+        ],
+    }
+
+
+@router.get('/api/service-connections/slack/scopes')
+async def slack_scopes():
+    meta = sc.SERVICE_META.get('slack') or {}
+    return {
+        'provider': 'slack',
+        'scopes': meta.get('scopes') or [],
+        'helpUrl': 'https://api.slack.com/apps',
+        'guide': [
+            'Create or open a Slack app at api.slack.com/apps',
+            'OAuth & Permissions → Bot Token Scopes — add the checklist below',
+            'Install to workspace and copy the Bot User OAuth Token (xoxb-…)',
+            'Paste token, optional team id, then Test (and optional test send channel)',
+        ],
+    }
+
+
 @router.post('/api/service-connections/google')
 async def post_google(body: GoogleBody):
     return sc.connect_google(body.email)

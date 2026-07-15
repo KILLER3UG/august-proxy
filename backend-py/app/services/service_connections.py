@@ -57,7 +57,17 @@ SERVICE_META: dict[str, dict[str, Any]] = {
         'label': 'Slack',
         'description': 'Channels, messages, threads, and reactions.',
         'services': ['Channels', 'Messages', 'Files', 'Workspace'],
-        'scopes': [],
+        # Bot token scopes checklist (OAuth / app config)
+        'scopes': [
+            'channels:history',
+            'channels:read',
+            'chat:write',
+            'users:read',
+            'files:read',
+            'groups:history',
+            'im:history',
+            'mpim:history',
+        ],
     },
 }
 
@@ -194,6 +204,102 @@ def connect_slack(bot_token: str, team_id: str = '') -> dict[str, Any]:
         os.environ.pop('SLACK_BOT_TOKEN', None)
     _save_sc(sc)
     return {'status': 'ok', 'connection': _slack_card(as_dict(sc.get('slack')) if sc.get('slack') else None)}
+
+
+async def test_github(token: str | None = None) -> dict[str, Any]:
+    """Validate a GitHub PAT via GET /user. Uses stored token when token is empty."""
+    tok = (token or '').strip()
+    if not tok:
+        sc = _sc()
+        raw = as_dict(sc.get('github')) if sc.get('github') else {}
+        tok = as_str(raw.get('token') or os.environ.get('GITHUB_TOKEN', ''))
+    if not tok:
+        return {'ok': False, 'error': 'No GitHub token configured'}
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            res = await client.get(
+                'https://api.github.com/user',
+                headers={
+                    'Authorization': f'Bearer {tok}',
+                    'Accept': 'application/vnd.github+json',
+                    'X-GitHub-Api-Version': '2022-11-28',
+                },
+            )
+            if res.status_code >= 400:
+                return {
+                    'ok': False,
+                    'error': f'GitHub API {res.status_code}: {res.text[:200]}',
+                }
+            data = res.json()
+            login = as_str(data.get('login'))
+            # Persist login when testing stored connection
+            if login and not (token or '').strip():
+                sc = _sc()
+                gh = as_dict(sc.get('github')) if sc.get('github') else {}
+                gh['account'] = login
+                gh['updatedAt'] = _now()
+                sc['github'] = gh
+                _save_sc(sc)
+            scopes = res.headers.get('x-oauth-scopes') or res.headers.get('X-OAuth-Scopes') or ''
+            return {
+                'ok': True,
+                'login': login,
+                'name': as_str(data.get('name')),
+                'scopes': [s.strip() for s in scopes.split(',') if s.strip()],
+                'detail': f'Authenticated as @{login}' if login else 'Token valid',
+            }
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc)}
+
+
+async def test_slack(bot_token: str | None = None, channel: str = '') -> dict[str, Any]:
+    """Validate Slack bot token via auth.test; optional chat.postMessage test send."""
+    tok = (bot_token or '').strip()
+    if not tok:
+        sc = _sc()
+        raw = as_dict(sc.get('slack')) if sc.get('slack') else {}
+        tok = as_str(raw.get('botToken') or os.environ.get('SLACK_BOT_TOKEN', ''))
+    if not tok:
+        return {'ok': False, 'error': 'No Slack bot token configured'}
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            res = await client.post(
+                'https://slack.com/api/auth.test',
+                headers={'Authorization': f'Bearer {tok}'},
+            )
+            data = res.json() if res.status_code < 500 else {}
+            if not data.get('ok'):
+                return {
+                    'ok': False,
+                    'error': as_str(data.get('error') or f'HTTP {res.status_code}'),
+                }
+            result: dict[str, Any] = {
+                'ok': True,
+                'team': as_str(data.get('team')),
+                'user': as_str(data.get('user')),
+                'teamId': as_str(data.get('team_id')),
+                'detail': f"Connected as {data.get('user')} on {data.get('team')}",
+            }
+            ch = (channel or '').strip()
+            if ch:
+                send = await client.post(
+                    'https://slack.com/api/chat.postMessage',
+                    headers={'Authorization': f'Bearer {tok}'},
+                    json={
+                        'channel': ch,
+                        'text': 'August connectivity test — you can ignore this message.',
+                    },
+                )
+                sdata = send.json() if send.status_code < 500 else {}
+                if sdata.get('ok'):
+                    result['testSend'] = True
+                    result['detail'] = f"{result['detail']} · test message sent to {ch}"
+                else:
+                    result['testSend'] = False
+                    result['testSendError'] = as_str(sdata.get('error') or 'send failed')
+            return result
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc)}
 
 
 def connect_google(email: str = '') -> dict[str, Any]:

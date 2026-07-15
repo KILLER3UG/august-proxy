@@ -1,17 +1,18 @@
 /* ── Setup checklist / first-run onboarding state ───────────────────── */
 /* Shows when the user has not completed or skipped the checklist.        */
-/* Tracks provider, workspace, and optional Google connection.            */
+/* Tracks provider, workspace, Google, plus doctor (backend/MCP/disk).    */
 
 import { useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { providersApi, type Provider } from '@/api/providers';
+import { getWorkbenchDoctor, type DoctorReport } from '@/api/workbench';
 import { useSessionsStore } from '@/store/sessions';
 
 const SKIP_KEY = 'august-onboarding-skipped';
 const DONE_KEY = 'august-setup-checklist-done';
 
 export type SetupCheckItem = {
-  id: 'provider' | 'workspace' | 'google';
+  id: 'provider' | 'workspace' | 'google' | 'doctor';
   label: string;
   description: string;
   done: boolean;
@@ -40,6 +41,13 @@ export function useProviderOnboardingState() {
     retry: false,
   });
 
+  const doctorQ = useQuery<DoctorReport>({
+    queryKey: ['workbench-doctor'],
+    queryFn: () => getWorkbenchDoctor(),
+    staleTime: 15_000,
+    retry: false,
+  });
+
   const sessions = useSessionsStore((s) => s.sessions);
   const hasWorkspace = sessions.some((s) => Boolean(s.workspacePath));
 
@@ -50,6 +58,12 @@ export function useProviderOnboardingState() {
     googleQ.data?.connections?.google?.connected ||
       googleQ.data?.connections?.google?.hasClientId,
   );
+
+  const doctor = doctorQ.data;
+  const doctorOk = Boolean(doctor?.ok);
+  const doctorDetail =
+    doctor?.summary ||
+    (doctorQ.isError ? 'Could not reach doctor endpoint' : 'Checking health…');
 
   const dismissed =
     typeof localStorage !== 'undefined' &&
@@ -72,6 +86,14 @@ export function useProviderOnboardingState() {
         href: '/',
       },
       {
+        id: 'doctor',
+        label: 'System health',
+        description: doctorDetail,
+        done: doctorOk,
+        optional: true,
+        href: '/settings/system-health',
+      },
+      {
         id: 'google',
         label: 'Sign in with Google (optional)',
         description: 'Gmail, Calendar, and Drive in one click when ready',
@@ -80,7 +102,7 @@ export function useProviderOnboardingState() {
         href: '/settings/integrations',
       },
     ],
-    [hasProvider, hasWorkspace, googleConnected],
+    [hasProvider, hasWorkspace, googleConnected, doctorOk, doctorDetail],
   );
 
   const requiredDone = hasProvider; // workspace is strongly recommended but provider is the hard gate
@@ -120,6 +142,8 @@ export function useProviderOnboardingState() {
     hasWorkspace,
     googleConnected,
     googleReady,
+    doctor,
+    doctorOk,
     allCoreDone,
     requiredDone,
     dismissed,

@@ -39,6 +39,9 @@ import { ComputerUseSection } from './ComputerUseSection';
 import { ExternalAccessSection } from './ExternalAccessSection';
 import { PlansSection } from './PlansSection';
 import { UiDesignerSection } from './UiDesignerSection';
+import { ToolGrantsSection } from './ToolGrantsSection';
+import { KanbanSection } from './KanbanSection';
+import { PythonSandboxSection } from './PythonSandboxSection';
 
 /** The default section when no :section param is present. The user
  *  said clicking Settings should land on Model settings. */
@@ -131,6 +134,9 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'computer-use': ComputerUseWrapper,
   'api-access': ExternalAccessWrapper,
   plans: PlansWrapper,
+  'tool-grants': ToolGrantsWrapper,
+  'agent-board': KanbanWrapper,
+  'python-sandbox': PythonSandboxWrapper,
 };
 
 function ComputerAccessSettingsWrapper() { return <ComputerAccessSettings />; }
@@ -154,6 +160,9 @@ function DeveloperConsoleWrapper() { return <DeveloperConsoleSection />; }
 function SkillsWrapper() { return <SkillsSection />; }
 function ComputerUseWrapper() { return <ComputerUseSection />; }
 function PlansWrapper() { return <PlansSection />; }
+function ToolGrantsWrapper() { return <ToolGrantsSection />; }
+function KanbanWrapper() { return <KanbanSection />; }
+function PythonSandboxWrapper() { return <PythonSandboxSection />; }
 
 /** Placeholder for sections not yet wired. With all 10 entries now
  *  mapped, this only renders for genuinely-unknown :section params. */

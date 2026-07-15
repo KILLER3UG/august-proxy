@@ -8,6 +8,10 @@ import { api } from '@/api/client';
 import { subscribeActiveSessions } from '@/sections/chat/chat-runtime';
 import { useLiveBackendAction } from '@/hooks/useLiveBackendAction';
 import { MarqueeTitle } from '@/components/ui/MarqueeTitle';
+import {
+  BackgroundTaskTrayButton,
+  BackgroundTaskTrayPanel,
+} from '@/components/shell/BackgroundTaskTray';
 
 interface LearningStatus {
   status: 'idle' | 'learning' | 'evolved' | 'skipped' | 'failed';
@@ -84,8 +88,11 @@ export function Statusbar() {
   const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(activeSession?.startedAt || new Date().toISOString())) / 1000));
 
   return (
-    <div className="flex items-center justify-end mt-1 px-1">
+    <div className="relative flex items-center justify-end mt-1 px-1">
+      <BackgroundTaskTrayPanel />
       <div className="flex items-center gap-3 text-[12px] text-muted-foreground font-mono max-w-full min-w-0">
+        <BackgroundTaskTrayButton />
+        <span className="text-muted-foreground/30 shrink-0">·</span>
         <span className="inline-flex items-center gap-1.5 shrink-0">
           <StatusDot tone={gatewayTone} className="size-1.5" />
           {gatewayLabel}

@@ -97,7 +97,12 @@ describe('workbench API client: queue endpoints', () => {
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: 'wb_sess', text: 'use postgres', attachments: [] }),
+        body: JSON.stringify({
+          sessionId: 'wb_sess',
+          text: 'use postgres',
+          attachments: [],
+          kind: 'queue',
+        }),
       }),
     );
     expect(entry.id).toBe('qm_abc');
@@ -133,25 +138,56 @@ describe('workbench API client: queue endpoints', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/workbench/chat/queue?sessionId=wb_sess');
     expect(list).toHaveLength(2);
   });
+
+  it('clearQueuedWorkbenchMessages DELETEs /chat/queue', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => ({ cleared: 2 }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { clearQueuedWorkbenchMessages } = await import('../api/workbench');
+    const res = await clearQueuedWorkbenchMessages('wb_sess');
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/workbench/chat/queue?sessionId=wb_sess');
+    expect(fetchMock.mock.calls[0][1].method).toBe('DELETE');
+    expect(res.cleared).toBe(2);
+  });
+
+  it('reorderQueuedWorkbenchMessages PATCHes order', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => ({ messages: [{ id: 'b' }, { id: 'a' }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { reorderQueuedWorkbenchMessages } = await import('../api/workbench');
+    const list = await reorderQueuedWorkbenchMessages('wb_sess', ['b', 'a']);
+    expect(fetchMock.mock.calls[0][1].method).toBe('PATCH');
+    expect(list.map((m) => m.id)).toEqual(['b', 'a']);
+  });
 });
 
 describe('ChatThread: queue pill rendering and queue badge', () => {
-  it('renders an array of pills (one per queued entry) with a cancel button each', () => {
-    const src = readFileSync(
+  it('renders QueuePills for queued entries with clear-all / reorder support', () => {
+    const threadSrc = readFileSync(
       resolve(__dirname, '../sections/chat/ChatThread.tsx'),
       'utf8',
     );
-    // Array iteration (multiple pills possible), not a single conditional.
-    expect(src).toMatch(/queuedMessages\.map\(\(q,\s*i\)\s*=>/);
-    // Each pill has its own cancel button wired to dequeueWorkbenchMessage.
-    expect(src).toMatch(/dequeueWorkbenchMessage\(sessionId,\s*q\.id\)/);
-    // Multi-pill numbering ("Queued (1/3)" etc.).
-    expect(src).toMatch(/queuedMessages\.length\s*>\s*1\s*\?/);
+    expect(threadSrc).toMatch(/QueuePills/);
+    const pillsSrc = readFileSync(
+      resolve(__dirname, '../sections/chat/QueuePills.tsx'),
+      'utf8',
+    );
+    expect(pillsSrc).toMatch(/dequeueWorkbenchMessage/);
+    expect(pillsSrc).toMatch(/Clear all|clearAll/);
+    expect(pillsSrc).toMatch(/reorderQueuedWorkbenchMessages|Drag to reorder/);
+    expect(pillsSrc).toMatch(/i \+ 1.*items\.length/);
   });
 
   it('injected user bubbles get a "Queued" badge', () => {
+    // Queued badge lives on MessageBubble (extracted from ChatThread).
     const src = readFileSync(
-      resolve(__dirname, '../sections/chat/ChatThread.tsx'),
+      resolve(__dirname, '../sections/chat/MessageBubble.tsx'),
       'utf8',
     );
     expect(src).toMatch(/message\.queued\s*&&/);
@@ -165,8 +201,8 @@ describe('ChatThread: queue pill rendering and queue badge', () => {
       'utf8',
     );
     // When streaming, the queue branch must call the backend queue API
-    // and not just hold the message locally.
-    expect(src).toMatch(/streaming\s*&&\s*sessionId[\s\S]{0,200}queueWorkbenchMessage/);
+    // and not just hold the message locally (steer mid-run).
+    expect(src).toMatch(/streaming\s*&&\s*sessionId[\s\S]{0,800}queueWorkbenchMessage/);
     // The old single-slot state should be gone.
     expect(src).not.toMatch(/setQueuedMessage\b/);
     expect(src).not.toMatch(/useState<\{\s*text:\s*string;\s*attachments/);

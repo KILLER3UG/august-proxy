@@ -4,7 +4,7 @@
  * reference, and an onboarding toggle placeholder. Everything uses the
  * shared primitives so it reads like the rest of the redesigned settings. */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   Sun,
@@ -14,6 +14,7 @@ import {
   Sparkles,
   GraduationCap,
   Check,
+  Bell,
 } from 'lucide-react';
 import { useThemeStore, setThemeMode, setTextSize } from '@/lib/theme';
 import type { ThemeMode, TextSize } from '@/lib/theme';
@@ -22,6 +23,7 @@ import { SettingsToggle } from '@/components/settings/SettingsToggle';
 import { SettingsTooltip } from '@/components/settings/SettingsTooltip';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { OsNotifyService } from '@/lib/os-notify';
 
 const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ['⌘', ','],  label: 'Open Settings' },
@@ -53,6 +55,11 @@ export function ProfilePreferencesSection() {
   const textSize = useThemeStore((s) => s.textSize);
   const [activePreset, setActivePreset] = useState<string>('default');
   const [tour, setTour] = useState(true);
+  const [osNotify, setOsNotify] = useState(false);
+
+  useEffect(() => {
+    setOsNotify(OsNotifyService.isEnabled());
+  }, []);
 
   const themeModeIcon =
     themeMode === 'light' ? Sun : themeMode === 'dark' ? Moon : Monitor;
@@ -85,6 +92,35 @@ export function ProfilePreferencesSection() {
             <ThemeModeButton mode="dark" currentMode={themeMode} onSelect={setThemeMode} Icon={Moon} />
             <ThemeModeButton mode="system" currentMode={themeMode} onSelect={setThemeMode} Icon={Monitor} />
           </div>
+        </SettingsCard>
+
+        {/* OS notifications */}
+        <SettingsCard
+          icon={Bell}
+          title="Job complete notifications"
+          description={
+            <span>
+              Opt-in OS / browser toast when long jobs finish (sandbox, background tasks).{' '}
+              <SettingsTooltip content="Requires notification permission from the browser or desktop shell." />
+            </span>
+          }
+          actions={
+            <Badge variant="outline" className="font-mono">
+              {OsNotifyService.permission()}
+            </Badge>
+          }
+          inert
+        >
+          <SettingsToggle
+            checked={osNotify}
+            onCheckedChange={(on) => {
+              setOsNotify(on);
+              OsNotifyService.setEnabled(on);
+              if (on) void OsNotifyService.ensurePermission();
+            }}
+            label="Notify when jobs complete"
+            description="Also available from the background task tray in the status bar."
+          />
         </SettingsCard>
 
         {/* Text size */}

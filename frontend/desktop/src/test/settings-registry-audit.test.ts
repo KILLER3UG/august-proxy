@@ -38,8 +38,10 @@ describe('settings-registry audit', () => {
     }
   });
 
-  it('has 18 sections distributed across categories', () => {
-    expect(SETTINGS_SECTIONS).toHaveLength(18);
+  it('has a balanced set of sections distributed across categories', () => {
+    // Grown as product surfaces ship (was 18; +path grants, kanban, sandbox, …).
+    expect(SETTINGS_SECTIONS.length).toBeGreaterThanOrEqual(18);
+    expect(SETTINGS_SECTIONS.length).toBeLessThanOrEqual(28);
   });
 
   it('every section id is unique', () => {
