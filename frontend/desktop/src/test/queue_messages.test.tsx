@@ -240,7 +240,7 @@ describe('SSE dispatch: queue events route to the new handlers', () => {
 describe('chat-stream-manager subscriber wires queue events to the queue-store', () => {
   it('forwards SSE queue events to upsert / remove / set on the queue-store', () => {
     const src = readFileSync(
-      resolve(__dirname, '../sections/chat/chat-stream-manager.ts'),
+      resolve(__dirname, '../sections/chat/stream/session-subscriber.ts'),
       'utf8',
     );
     // The per-session subscriber should wire all three callbacks.

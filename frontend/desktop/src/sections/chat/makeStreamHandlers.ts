@@ -33,7 +33,10 @@ import type { GitDiffResult } from '@/api/git';
 import type { ToolProgressEvent, ToolProgressMap } from '@/lib/tool-progress';
 import { applyToolProgress } from '@/lib/tool-progress';
 import { pushBrowserAction } from '@/lib/browser-store';
-import { applySubagentEvent } from './chat-stream-manager';
+import {
+  applySubagentEvent,
+  makeSubagentEventHandlers,
+} from './stream/apply-subagent-event';
 import {
   streamPerfContent,
   streamPerfEnd,
@@ -210,6 +213,8 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
 
   };
 
+  const subagentHandlers = makeSubagentEventHandlers(sessionId);
+
   const handlers: WorkbenchEventHandlers = {
     onPrompt: ({ content, systemPrompt, userMessage, tokens, toolUseId, subagentId, jobId }) => {
       const key = toolUseId || (jobId ? `subagent-${jobId}` : `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
@@ -238,58 +243,7 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
         });
       }
     },
-    onSubagentStart: (data) => {
-      if (!data?.jobId) return;
-      applySubagentEvent(sessionId, {
-        type: 'subagentStart',
-        jobId: data.jobId,
-        agentId: data.agentId,
-        parentToolUseId: data.parentToolUseId,
-        scope: data.scope,
-        task: data.task,
-        depth: data.depth,
-      });
-    },
-    onSubagentDone: (data) => {
-      if (!data?.jobId) return;
-      applySubagentEvent(sessionId, {
-        type: 'subagentDone',
-        jobId: data.jobId,
-        status: data.status,
-        message: data.message,
-        result: data.result,
-      });
-    },
-    onSubagentText: (data) => {
-      if (!data?.jobId) return;
-      applySubagentEvent(sessionId, {
-        type: 'subagentText',
-        jobId: data.jobId,
-        content: data.content || '',
-      });
-    },
-    onSubagentToolCall: (data) => {
-      if (!data?.jobId) return;
-      applySubagentEvent(sessionId, {
-        type: 'subagentToolCall',
-        jobId: data.jobId,
-        id: data.id,
-        name: data.name,
-        input: data.input,
-        status: data.status || 'running',
-      });
-    },
-    onSubagentToolResult: (data) => {
-      if (!data?.jobId) return;
-      applySubagentEvent(sessionId, {
-        type: 'subagentToolResult',
-        jobId: data.jobId,
-        id: data.id,
-        content: data.content,
-        isError: data.isError,
-        status: data.status || (data.isError ? 'error' : 'done'),
-      });
-    },
+    ...subagentHandlers,
     onStarted: ({ sinceSeq }) => {
       // The backend reports the seq of the 'started' event so callers
       // can attach an SSE subscriber that doesn't replay already-seen

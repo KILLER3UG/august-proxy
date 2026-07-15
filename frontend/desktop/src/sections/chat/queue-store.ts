@@ -1,7 +1,7 @@
 /**
  * Per-session store for user messages queued during a streaming response.
  *
- * The SSE event subscriber (chat-stream-manager.ts → ensureSessionSubscriber)
+ * The durable SSE subscriber (stream/session-subscriber → ensureSessionSubscriber)
  * writes to this store whenever the backend emits
  * `userMessageQueued` / `userMessageDequeued` / `userMessageInjected`.
  * ChatThread subscribes via the Zustand hook and renders the pills +
