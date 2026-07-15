@@ -115,7 +115,7 @@ export async function streamWorkbenchChat(
   params: StreamWorkbenchChatParams,
   handlers: WorkbenchEventHandlers,
   signal?: AbortSignal
-): Promise<{ sinceSeq?: number; consumedViaPost?: boolean }> {
+): Promise<{ sinceSeq?: number; consumedViaPost?: boolean; queued?: boolean; status?: string }> {
   const res = await fetch('/api/workbench/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -134,8 +134,10 @@ export async function streamWorkbenchChat(
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    handlers.onError?.({ message: `Workbench chat failed: ${res.status} ${errText}` });
-    return {};
+    const msg = `Workbench chat failed: ${res.status} ${errText}`;
+    handlers.onError?.({ message: msg });
+    // Throw so callers do NOT open an SSE subscriber for a turn that never started.
+    throw new Error(msg);
   }
 
   // New contract: the POST returns a JSON body with the `sinceSeq` cursor
@@ -144,10 +146,25 @@ export async function streamWorkbenchChat(
   const contentType = res.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
     try {
-      const body = (await res.json()) as { sinceSeq?: number };
+      const body = (await res.json()) as {
+        sinceSeq?: number;
+        status?: string;
+        queuedMessageId?: string;
+        message?: string;
+      };
+      // Backend queues when another turn is already in flight — do not open
+      // a second SSE wait that looks like a hung empty response.
+      if (body?.status === 'queued') {
+        handlers.onError?.({
+          message:
+            body.message ||
+            'A response is already in progress — your message was queued and will run next.',
+        });
+        return { queued: true, status: 'queued' };
+      }
       if (Number.isFinite(body?.sinceSeq)) {
         handlers.onStarted?.({ sinceSeq: body.sinceSeq });
-        return { sinceSeq: body.sinceSeq };
+        return { sinceSeq: body.sinceSeq, status: body.status };
       }
     } catch (_) {
       // Fall through to legacy SSE parsing.

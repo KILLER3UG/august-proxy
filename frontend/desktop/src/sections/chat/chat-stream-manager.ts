@@ -214,14 +214,20 @@ export async function startChatStream(
     model: string | undefined;
     modelProvider: string | undefined;
     provider?: string;
+    agentId?: string;
+    guardMode?: string;
     ensureWorkbenchSession: () => Promise<WorkbenchSession | null>;
   }
-) {
-  if (activeStreamControllers.has(sessionId)) {
-    if (chatRuntime.isSessionStreaming(sessionId)) {
-      return;
-    }
+): Promise<'started' | 'queued' | 'error' | 'aborted'> {
+  // Stale controller left after a crashed turn — clear it so we can start again.
+  if (activeStreamControllers.has(sessionId) && !chatRuntime.isSessionStreaming(sessionId)) {
     activeStreamControllers.delete(sessionId);
+  }
+  // A turn is genuinely in flight: do not open a second stream (silent drop).
+  // Caller should queue via the backend queue path instead.
+  if (activeStreamControllers.has(sessionId) && chatRuntime.isSessionStreaming(sessionId)) {
+    console.warn('[startChatStream] session already streaming — refusing duplicate turn', sessionId);
+    return 'queued';
   }
 
   setSessionStatus(sessionId, 'working');
@@ -283,12 +289,15 @@ export async function startChatStream(
     if (!session) {
       updateSessionStreamState(sessionId, prev => ({
         messages: prev.messages.map(msg =>
-          msg.id === assistantMsgId ? { ...msg, content: '⚠️ Could not initialize Workbench session.' } : msg
+          msg.id === assistantMsgId
+            ? { ...msg, content: '⚠️ Could not initialize Workbench session. Check that the backend is running.' }
+            : msg
         )
       }));
+      try { handlers.onError?.({ message: 'Could not initialize Workbench session' }); } catch { /* silent */ }
       finalize('error');
       activeStreamControllers.delete(sessionId);
-      return;
+      return 'error';
     }
 
     chatRuntime.setTransport(turn.turnId, 'http');
@@ -297,25 +306,41 @@ export async function startChatStream(
       sessionId: session.id,
       message: params.message,
       provider: params.provider,
+      agentId: params.agentId,
+      guardMode: params.guardMode as WorkbenchMode | undefined,
       effort: params.effort,
       model: params.model,
       modelProvider: params.modelProvider,
     }, handlers, abortController.signal);
 
+    // Backend queued because another turn is active — finalize the empty
+    // assistant placeholder without hanging on SSE.
+    if (startResult?.queued) {
+      updateSessionStreamState(sessionId, prev => ({
+        messages: prev.messages
+          .map(msg =>
+            msg.id === assistantMsgId
+              ? {
+                  ...msg,
+                  content:
+                    '⏳ A response is already in progress. Your message was queued and will run when it finishes.',
+                }
+              : msg
+          )
+          // Drop empty placeholder assistants if we added one
+          .filter(msg => !(msg.id === assistantMsgId && !msg.content)),
+      }));
+      finalize('done');
+      activeStreamControllers.delete(sessionId);
+      clearSessionStatus(sessionId);
+      return 'queued';
+    }
+
     // The POST handler returns { sinceSeq } JSON immediately and runs the
     // generation in the background. Live events are delivered via the
-    // separate /api/workbench/chat/stream SSE channel — attach it now using
-    // the same per-turn handlers so streamed text / thinking / toolUse /
-    // toolResult events reach the chat UI. Without this, events accumulate
-    // in the chat-event-log unread and the assistant bubble stays empty.
-    //
-    // Always attach the SSE subscriber when the POST didn't already consume
-    // the event stream (legacy SSE POST body path sets consumedViaPost=true).
-    // The backend handles missing/undefined sinceSeq by starting from the
-    // current event log position.
+    // separate /api/workbench/chat/stream SSE channel — attach it now.
     if (startResult?.consumedViaPost) {
-      // Events were already delivered through the POST response body
-      // (older backend / proxy without the JSON sinceSeq contract).
+      // Events were already delivered through the POST response body.
     } else {
       const reconnectSinceSeq = Number.isFinite(startResult?.sinceSeq)
         ? startResult.sinceSeq
@@ -332,11 +357,12 @@ export async function startChatStream(
     }
 
     finalize(abortController.signal.aborted ? 'aborted' : 'done');
+    return abortController.signal.aborted ? 'aborted' : 'started';
   } catch (e) {
     if (e instanceof Error && e.name === 'AbortError') {
       clearSessionStatus(sessionId);
       finalize('aborted');
-      return;
+      return 'aborted';
     }
     console.error('[startChatStream] error:', e);
     const errorMsg = e instanceof Error
@@ -351,10 +377,9 @@ export async function startChatStream(
           : msg
       )
     }));
-    // Also emit an error event through the handler so the onError path
-    // in makeStreamHandlers can write the ⚠️ block into streamBlocks.
     try { handlers.onError?.({ message: errorMsg }); } catch { /* silent */ }
     finalize('error');
+    return 'error';
   } finally {
     activeStreamControllers.delete(sessionId);
   }

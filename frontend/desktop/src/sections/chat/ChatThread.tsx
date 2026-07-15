@@ -1345,29 +1345,58 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const turnSessionId = sessionId;
     if (!turnSessionId) return;
     if (!chatRuntime.canStartTurn(turnSessionId)) {
+      // Stale runtime turn with no live controller — clear and proceed.
       if (!activeStreamControllers.has(turnSessionId)) {
         chatRuntime.abortSession(turnSessionId);
       } else {
-        setMessages(prev => prev.map((msg, index) =>
-          index === prev.length - 1 && msg.role === 'user'
-            ? { ...msg, content: `${msg.content}\n\n[Could not start a new response because a previous response is still running.]` }
-            : msg
-        ));
-        setSessionStatus(turnSessionId, 'error');
+        // Real in-flight stream: queue on backend instead of dropping.
+        const lastUser = [...chatHistory].reverse().find((m) => m.role === 'user');
+        const text = lastUser?.content?.trim() || '';
+        if (text) {
+          try {
+            const wbId =
+              workbenchSession?.id ||
+              activeSession?.workbenchSessionId ||
+              turnSessionId;
+            const entry = await queueWorkbenchMessage(wbId, text);
+            setQueuedMessages(turnSessionId, [
+              ...($queuedMessagesBySession.get()[turnSessionId] ?? []),
+              entry,
+            ]);
+            toast.message('Queued — will send when the current response finishes');
+          } catch {
+            toast.error('Could not start a new response — one is already running');
+          }
+        }
         return;
       }
     }
 
-    await startChatStream(turnSessionId, {
-      message: applyWorkbenchGuardMode(workbenchMode, chatHistory.map(m => `${m.role}: ${m.content}`).join('\n\n') || ' '),
+    // Backend session already holds history — only send the new user turn.
+    // Sending the full transcript as one blob every time bloated context and
+    // could make the model/provider look "stuck" or fail silently on large chats.
+    const lastUser = [...chatHistory].reverse().find((m) => m.role === 'user');
+    const latestText = (lastUser?.content ?? '').trim();
+    if (!latestText) {
+      toast.error('Nothing to send');
+      return;
+    }
+
+    const result = await startChatStream(turnSessionId, {
+      message: applyWorkbenchGuardMode(workbenchMode, latestText),
       chatHistory,
       workbenchMode,
       effort,
       model: modelForRequest?.id,
       modelProvider: modelForRequest?.provider,
       provider: modelForRequest?.provider,
+      agentId: WORKBENCH_GUARD_MODES[workbenchMode].agentId,
+      guardMode: workbenchMode,
       ensureWorkbenchSession,
     });
+    if (result === 'error') {
+      toast.error('Chat failed — check backend and model provider');
+    }
   };
 
   // Fallback drain: if the model never picked up the queued messages
@@ -1409,7 +1438,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   async function send(textOverride?: string) {
-    if (!sessionId || loadedSessionId !== sessionId) return;
+    if (!sessionId) {
+      toast.error('No active session');
+      return;
+    }
+    if (loadedSessionId !== sessionId) {
+      toast.error('Session is still loading — try again in a moment');
+      return;
+    }
 
     let text = (textOverride ?? input).trim();
     if (!text && attachments.length === 0) return;
@@ -1494,7 +1530,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     if (streaming && sessionId) {
       try {
         const savedAttachments = attachments.length > 0 ? [...attachments] : undefined;
-        const entry = await queueWorkbenchMessage(sessionId, text, savedAttachments);
+        // Backend queue is keyed by workbench session id, not the sidebar id.
+        const wbId =
+          workbenchSession?.id ||
+          activeSession?.workbenchSessionId ||
+          sessionId;
+        const entry = await queueWorkbenchMessage(wbId, text, savedAttachments);
         // Optimistic local update: the SSE event will also arrive and
         // upsert the same entry (idempotent), but write immediately so
         // the pill is visible without a round-trip.
@@ -1515,9 +1556,16 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     const currentMessages = sessionId === loadedSessionId ? messages : loadMessagesForSession(sessionId);
 
     // Auto-generate title from the first user request. Skip slash commands
-    // (e.g. "/debug …", "/model …") so the session isn't named after a
-    // command, and collapse whitespace/newlines for a clean single-line title.
-    if (currentMessages.length === 0 && sessionId) {
+    // and collapse whitespace for a clean single-line title. Also retitle
+    // default "New chat" sessions so the sidebar updates even if a prior
+    // empty/failed turn left a phantom message in localStorage.
+    const activeSess = useSessionsStore.getState().sessions.find((s) => s.id === sessionId);
+    const isDefaultTitle =
+      !activeSess?.title ||
+      /^new chat$/i.test(activeSess.title.trim()) ||
+      /^untitled/i.test(activeSess.title.trim());
+    const userTurns = currentMessages.filter((m) => m.role === 'user').length;
+    if (sessionId && (userTurns === 0 || isDefaultTitle)) {
       const isCommand = /^\s*\/[a-zA-Z][\w-]*\b/.test(text);
       if (!isCommand) {
         const cleaned = text.replace(/\s+/g, ' ').trim();
