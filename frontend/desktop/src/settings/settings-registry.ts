@@ -42,6 +42,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   TerminalSquare,
+  Palette,
 } from 'lucide-react';
 
 /** Visibility tier for the rail. `basic` items are always shown; the
@@ -148,6 +149,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     tier: 'basic',
     keywords: ['profile', 'theme', 'appearance', 'shortcuts', 'hotkeys', 'presets', 'onboarding', 'tour', 'language'],
     legacyAliases: ['appearance', 'theme', 'shortcuts', 'hotkeys'],
+  },
+  {
+    id: 'ui-designer',
+    label: 'UI Designer',
+    description: 'Customize colors for background, chat input, sidebar, settings, and brand — live preview + Apply.',
+    icon: Palette,
+    category: 'general',
+    tier: 'basic',
+    keywords: ['ui designer', 'customize', 'colors', 'paint', 'branding', 'sidebar color', 'chat input color', 'preview'],
+    legacyAliases: ['ui-customization', 'theme-editor', 'design-ui'],
   },
   {
     id: 'conversations-history',

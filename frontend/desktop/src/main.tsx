@@ -7,6 +7,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { hydrateTheme } from './lib/theme';
+import { hydrateUiCustomization } from './lib/ui-customization';
 import { queryClient } from './query-client';
 import { startRealtimeBridge } from './realtime/bridge';
 import App from './App';
@@ -17,6 +18,8 @@ import './styles.css';
 // hydrateTheme also wires the OS-preference listener so 'system' mode
 // follows live OS flips.
 hydrateTheme();
+// Restore user color overrides (UI Designer) after base theme classes land.
+hydrateUiCustomization();
 
 // Instant backend→frontend push (sessions, chat active, plans, catalog, …)
 startRealtimeBridge();

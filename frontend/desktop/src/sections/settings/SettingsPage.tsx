@@ -38,6 +38,7 @@ import { SkillsSection } from './SkillsSection';
 import { ComputerUseSection } from './ComputerUseSection';
 import { ExternalAccessSection } from './ExternalAccessSection';
 import { PlansSection } from './PlansSection';
+import { UiDesignerSection } from './UiDesignerSection';
 
 /** The default section when no :section param is present. The user
  *  said clicking Settings should land on Model settings. */
@@ -112,6 +113,7 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType<SectionProps>> = {
   'model-providers': ModelsWrapper,
   'brain-orchestrator': BrainWrapper,
   'profile-preferences': GeneralWrapper,
+  'ui-designer': UiDesignerWrapper,
   'system-health': SystemHealthWrapper,
   'tools-connections': ToolsConnectionsWrapper,
   'conversations-history': ConversationsHistoryWrapper,
@@ -143,6 +145,7 @@ function InspectorWrapper() { return <WorkspaceInspectorSection />; }
 function ModelsWrapper() { return <WorkspaceModelsSection />; }
 function BrainWrapper() { return <BrainSettings />; }
 function GeneralWrapper() { return <WorkspaceGeneralSection />; }
+function UiDesignerWrapper() { return <UiDesignerSection />; }
 function SystemHealthWrapper() { return <SystemHealthSection />; }
 function ToolsConnectionsWrapper() { return <IntegrationsSection />; }
 function ConversationsHistoryWrapper() { return <ConversationsHistorySection />; }
