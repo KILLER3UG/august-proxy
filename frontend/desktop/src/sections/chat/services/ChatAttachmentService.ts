@@ -1,5 +1,5 @@
 /* ── ChatAttachmentService ────────────────────────────────────────────── */
-/* OOP service for reading files / clipboard into FileAttachment[].       */
+/* Reads files and clipboard images into FileAttachment[] for the composer. */
 
 import { readFileContent, type FileReadResult } from '@/lib/file-reader';
 import type { FileAttachment } from '@/types/chat';

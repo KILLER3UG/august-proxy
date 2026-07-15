@@ -1,7 +1,7 @@
-/* ── WorkbenchClient (OOP facade) ─────────────────────────────────────── */
-/* Domain-oriented client for /api/workbench/* — sessions, chat, queue,   */
-/* grants, agents, sandbox, doctor. Existing workbench.ts re-exports thin */
-/* functions that delegate here for backward compatibility.               */
+/* ── WorkbenchClient ──────────────────────────────────────────────────── */
+/* Domain client for /api/workbench/* — sessions, chat, queue, grants,    */
+/* agents, sandbox, and doctor. Free functions in workbench.ts delegate   */
+/* here so call sites can keep stable import names.                       */
 
 import type {
   WorkbenchSession,
@@ -58,7 +58,7 @@ export type WorkbenchCheckpoint = {
 
 /**
  * Single entry-point for workbench backend operations.
- * Prefer this class in new code; free functions remain for legacy imports.
+ * Prefer this class (or the `workbenchClient` singleton) at call sites.
  */
 export class WorkbenchClient {
   /* ── Sessions ──────────────────────────────────────────────────── */

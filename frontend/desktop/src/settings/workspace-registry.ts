@@ -1,13 +1,7 @@
-/* ── workspace-registry — thin filter over settings-registry ───────── */
-/* v3 IA (2026-07): the chat-side workspace panel used to maintain its
- * own parallel IA (`memory`, `traffic`, `inspector`, `models`,
- * `general`) that collided with `settings-registry.ts`. We now source
- * sections from the unified registry and only re-categorise those
- * sections the chat-side workspace exposes in its sidebar.
- *
- * If you need to surface a section in the workspace panel, add its id
- * to WORKSPACE_VISIBLE_IDS — define the actual section metadata
- * (icon, label, description, keywords) in settings-registry.ts.
+/* ── workspace-registry ────────────────────────────────────────────── */
+/* Sections the chat-side workspace panel shows in its sidebar. Metadata
+ * (icon, label, description, keywords) lives in settings-registry.ts;
+ * add an id to WORKSPACE_VISIBLE_IDS to surface a section here.
  */
 import type { LucideIcon } from 'lucide-react';
 import {

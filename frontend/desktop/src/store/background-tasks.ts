@@ -1,6 +1,5 @@
 /* ── Background task tray store ───────────────────────────────────────── */
-/* OOP-style task registry for optional background jobs (queue overflow,  */
-/* long runs, subagents).                                                 */
+/* Tracks optional background jobs (queue overflow, long runs, subagents). */
 
 import { create } from 'zustand';
 
@@ -79,7 +78,7 @@ export const useBackgroundTasksStore = create<BackgroundTaskState>((set, get) =>
     get().tasks.filter((t) => t.status === 'queued' || t.status === 'running').length,
 }));
 
-/** Facade for non-React callers (stream handlers, API layers). */
+/** Imperative registry for stream handlers and other non-React callers. */
 export class BackgroundTaskRegistry {
   static enqueue(partial: {
     id: string;

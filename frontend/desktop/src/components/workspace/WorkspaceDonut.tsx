@@ -1,9 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 
 /* ── WorkspaceDonut — SVG donut chart for the Model-usage view ──────── */
-/* Pure SVG. Slices are computed from cumulative offsets so the chart
- * scales gracefully for any number of segments. Palette lifted from the
- * legacy Usage.tsx for visual parity with the screenshot. */
+/* Pure SVG. Slices use cumulative offsets so the chart scales for any
+ * number of segments. */
 
 import { cn } from '@/lib/utils';
 

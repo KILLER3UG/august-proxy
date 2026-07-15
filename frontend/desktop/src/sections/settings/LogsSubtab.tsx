@@ -1,7 +1,6 @@
 /* ── LogsSubtab — merged activity + request log feed ───────────────── */
-/* Extracted from the old Traffic & Activity section. Renders the period +
- * level filter chips and a chronological log feed. No token or summary
- * stats — those live in ObservabilityOverview.
+/* Period and level filter chips plus a chronological log feed.
+ * Token and summary stats live in ObservabilityOverview.
  */
 
 import { useState } from 'react';

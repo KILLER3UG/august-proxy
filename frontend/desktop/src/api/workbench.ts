@@ -1,5 +1,7 @@
 /* Workbench API client — talks to backend /api/workbench/* endpoints */
 /* Uses named SSE events (event: text, event: toolUse, etc.) per backend. */
+/* CRUD/queue/plan helpers below delegate to WorkbenchClient; streaming    */
+/* and SSE dispatch stay in this module.                                   */
 
 import type {
   WorkbenchSession,
@@ -11,6 +13,7 @@ import type {
 } from '@/types/workbench';
 import type { FileAttachment } from '@/types/chat';
 import { WorkbenchEventSchema } from './schemas/workbench';
+import { workbenchClient } from './workbench/WorkbenchClient';
 
 export interface CreateWorkbenchSessionParams {
   provider?: string;
@@ -22,13 +25,7 @@ export async function setWorkbenchGuardMode(
   sessionId: string,
   guardMode: WorkbenchGuardMode
 ): Promise<WorkbenchSession> {
-  const res = await fetch('/api/workbench/guard-mode', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, guardMode }),
-  });
-  if (!res.ok) throw new Error(`setWorkbenchGuardMode failed: ${res.status}`);
-  return res.json() as Promise<WorkbenchSession>;
+  return workbenchClient.setGuardMode(sessionId, guardMode);
 }
 
 export async function confirmWorkbenchMutation(
@@ -59,30 +56,15 @@ export async function confirmWorkbenchMutation(
 export async function createWorkbenchSession(
   params: CreateWorkbenchSessionParams = {}
 ): Promise<WorkbenchSession> {
-  const res = await fetch('/api/workbench/session', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      provider: params.provider || '',
-      agentId: params.agentId || 'build',
-      guardMode: params.guardMode,
-    }),
-  });
-  if (!res.ok) throw new Error(`createWorkbenchSession failed: ${res.status}`);
-  return res.json() as Promise<WorkbenchSession>;
+  return workbenchClient.createSession(params);
 }
 
 export async function getWorkbenchSessions(): Promise<WorkbenchSession[]> {
-  const res = await fetch('/api/workbench/sessions');
-  if (!res.ok) throw new Error(`getWorkbenchSessions failed: ${res.status}`);
-  const data = (await res.json()) as { sessions?: WorkbenchSession[] } | WorkbenchSession[];
-  return (Array.isArray(data) ? data : data.sessions) || [];
+  return workbenchClient.listSessions();
 }
 
 export async function getWorkbenchSession(sessionId: string): Promise<WorkbenchSession> {
-  const res = await fetch(`/api/workbench/session?sessionId=${encodeURIComponent(sessionId)}`);
-  if (!res.ok) throw new Error(`getWorkbenchSession failed: ${res.status}`);
-  return res.json() as Promise<WorkbenchSession>;
+  return workbenchClient.getSession(sessionId);
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -398,12 +380,7 @@ export async function streamWorkbenchReconnect(
 }
 
 export async function stopWorkbenchChat(sessionId: string): Promise<void> {
-  const res = await fetch('/api/workbench/chat/stop', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId }),
-  });
-  if (!res.ok) throw new Error(`stopWorkbenchChat failed: ${res.status}`);
+  return workbenchClient.stopChat(sessionId);
 }
 
 /* ── Mid-response queued messages ─────────────────────────────────────── */
@@ -436,18 +413,7 @@ export async function queueWorkbenchMessage(
   attachments?: FileAttachment[],
   kind: 'queue' | 'steer' = 'queue',
 ): Promise<QueuedUserMessage> {
-  const res = await fetch('/api/workbench/chat/queue', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      sessionId,
-      text,
-      attachments: attachments ?? [],
-      kind,
-    }),
-  });
-  if (!res.ok) throw new Error(`queueWorkbenchMessage failed: ${res.status}`);
-  return res.json() as Promise<QueuedUserMessage>;
+  return workbenchClient.queueMessage(sessionId, text, attachments, kind);
 }
 
 /** Mid-run steer — redirect August without stopping the current turn. */
@@ -456,7 +422,7 @@ export async function steerWorkbenchMessage(
   text: string,
   attachments?: FileAttachment[],
 ): Promise<QueuedUserMessage> {
-  return queueWorkbenchMessage(sessionId, text, attachments, 'steer');
+  return workbenchClient.steerMessage(sessionId, text, attachments);
 }
 
 /** Cancel a single queued message before the model receives it. */
@@ -464,23 +430,14 @@ export async function dequeueWorkbenchMessage(
   sessionId: string,
   messageId: string,
 ): Promise<void> {
-  const res = await fetch(
-    `/api/workbench/chat/queue/${encodeURIComponent(messageId)}?sessionId=${encodeURIComponent(sessionId)}`,
-    { method: 'DELETE' },
-  );
-  if (!res.ok) throw new Error(`dequeueWorkbenchMessage failed: ${res.status}`);
+  return workbenchClient.dequeueMessage(sessionId, messageId);
 }
 
 /** Clear the entire mid-response queue for a session. */
 export async function clearQueuedWorkbenchMessages(
   sessionId: string,
 ): Promise<{ cleared: number }> {
-  const res = await fetch(
-    `/api/workbench/chat/queue?sessionId=${encodeURIComponent(sessionId)}`,
-    { method: 'DELETE' },
-  );
-  if (!res.ok) throw new Error(`clearQueuedWorkbenchMessages failed: ${res.status}`);
-  return res.json() as Promise<{ cleared: number }>;
+  return workbenchClient.clearQueue(sessionId);
 }
 
 /** Reorder queued messages (drag reorder). `order` is message ids in desired order. */
@@ -488,14 +445,7 @@ export async function reorderQueuedWorkbenchMessages(
   sessionId: string,
   order: string[],
 ): Promise<QueuedUserMessage[]> {
-  const res = await fetch('/api/workbench/chat/queue', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, order }),
-  });
-  if (!res.ok) throw new Error(`reorderQueuedWorkbenchMessages failed: ${res.status}`);
-  const data = (await res.json()) as { messages?: QueuedUserMessage[] };
-  return Array.isArray(data?.messages) ? data.messages : [];
+  return workbenchClient.reorderQueue(sessionId, order);
 }
 
 /** Edit the text of a queued message before the model receives it. */
@@ -504,16 +454,7 @@ export async function updateQueuedWorkbenchMessage(
   messageId: string,
   text: string,
 ): Promise<QueuedUserMessage> {
-  const res = await fetch(
-    `/api/workbench/chat/queue/${encodeURIComponent(messageId)}`,
-    {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, text }),
-    },
-  );
-  if (!res.ok) throw new Error(`updateQueuedWorkbenchMessage failed: ${res.status}`);
-  return res.json() as Promise<QueuedUserMessage>;
+  return workbenchClient.updateQueuedMessage(sessionId, messageId, text);
 }
 
 /** Hydrate the local queue state from the server (used on mount and
@@ -521,12 +462,7 @@ export async function updateQueuedWorkbenchMessage(
 export async function getQueuedWorkbenchMessages(
   sessionId: string,
 ): Promise<QueuedUserMessage[]> {
-  const res = await fetch(
-    `/api/workbench/chat/queue?sessionId=${encodeURIComponent(sessionId)}`,
-  );
-  if (!res.ok) throw new Error(`getQueuedWorkbenchMessages failed: ${res.status}`);
-  const data = (await res.json()) as { messages?: QueuedUserMessage[] };
-  return Array.isArray(data?.messages) ? data.messages : [];
+  return workbenchClient.listQueue(sessionId);
 }
 
 export type DoctorCheck = {
@@ -545,9 +481,7 @@ export type DoctorReport = {
 
 /** Setup doctor: backend, disk, MCP, OAuth readiness. */
 export async function getWorkbenchDoctor(): Promise<DoctorReport> {
-  const res = await fetch('/api/workbench/doctor');
-  if (!res.ok) throw new Error(`getWorkbenchDoctor failed: ${res.status}`);
-  return res.json() as Promise<DoctorReport>;
+  return workbenchClient.doctor();
 }
 
 /** Validate an incoming SSE frame against the WorkbenchEvent Zod schema.
@@ -784,23 +718,11 @@ function dispatchWorkbenchEvent(
 }
 
 export async function approveWorkbenchPlan(sessionId: string): Promise<WorkbenchSession> {
-  const res = await fetch('/api/workbench/plan/approve', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId }),
-  });
-  if (!res.ok) throw new Error(`approveWorkbenchPlan failed: ${res.status}`);
-  return res.json() as Promise<WorkbenchSession>;
+  return workbenchClient.approvePlan(sessionId);
 }
 
 export async function rejectWorkbenchPlan(sessionId: string): Promise<WorkbenchSession> {
-  const res = await fetch('/api/workbench/plan/reject', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId }),
-  });
-  if (!res.ok) throw new Error(`rejectWorkbenchPlan failed: ${res.status}`);
-  return res.json() as Promise<WorkbenchSession>;
+  return workbenchClient.rejectPlan(sessionId);
 }
 
 export async function streamWorkbenchRevision(
@@ -898,13 +820,7 @@ export async function resetWorkbenchSession(
 
 /** Delete a workbench session (cascades messages / timeline / usage in SQLite). */
 export async function deleteWorkbenchSession(sessionId: string): Promise<void> {
-  const res = await fetch(`/api/workbench/sessions/${encodeURIComponent(sessionId)}`, {
-    method: 'DELETE',
-  });
-  // 404 = already gone (local-only session or prior purge) — treat as success
-  if (!res.ok && res.status !== 404) {
-    throw new Error(`deleteWorkbenchSession failed: ${res.status}`);
-  }
+  return workbenchClient.deleteSession(sessionId);
 }
 
 /** Rename a workbench session (sidebar title). */
@@ -912,16 +828,7 @@ export async function renameWorkbenchSession(
   sessionId: string,
   title: string,
 ): Promise<WorkbenchSession> {
-  const res = await fetch(
-    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/title`,
-    {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
-    },
-  );
-  if (!res.ok) throw new Error(`renameWorkbenchSession failed: ${res.status}`);
-  return res.json() as Promise<WorkbenchSession>;
+  return workbenchClient.renameSession(sessionId, title);
 }
 
 /** Remove the last user turn (and following assistant/tool messages) on the server. */
@@ -930,12 +837,7 @@ export async function undoWorkbenchLastTurn(sessionId: string): Promise<{
   removed: number;
   message?: string;
 }> {
-  const res = await fetch(
-    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/undo-last-turn`,
-    { method: 'POST' },
-  );
-  if (!res.ok) throw new Error(`undo last turn failed: ${res.status}`);
-  return res.json() as Promise<{ session: WorkbenchSession; removed: number; message?: string }>;
+  return workbenchClient.undoLastTurn(sessionId);
 }
 
 /** Fork a workbench session (optional upToIndex = last source message to keep). */
@@ -943,18 +845,7 @@ export async function branchWorkbenchSession(
   sessionId: string,
   upToIndex?: number | null,
 ): Promise<WorkbenchSession> {
-  const res = await fetch(
-    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/branch`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(
-        upToIndex == null ? {} : { upToIndex },
-      ),
-    },
-  );
-  if (!res.ok) throw new Error(`branch session failed: ${res.status}`);
-  return res.json() as Promise<WorkbenchSession>;
+  return workbenchClient.branchSession(sessionId, upToIndex);
 }
 
 /** Force context compression (“Free up chat memory”). */
@@ -968,21 +859,7 @@ export async function compactWorkbenchSession(sessionId: string): Promise<{
   tailCount?: number;
   message?: string;
 }> {
-  const res = await fetch(
-    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/compact`,
-    { method: 'POST' },
-  );
-  if (!res.ok) throw new Error(`compact failed: ${res.status}`);
-  return res.json() as Promise<{
-    session: WorkbenchSession;
-    underThreshold?: boolean;
-    originalTokens?: number;
-    compressedTokens?: number;
-    compressedCount?: number;
-    headCount?: number;
-    tailCount?: number;
-    message?: string;
-  }>;
+  return workbenchClient.compactSession(sessionId);
 }
 
 export interface WorkbenchCheckpoint {
@@ -997,24 +874,14 @@ export interface WorkbenchCheckpoint {
 export async function listWorkbenchCheckpoints(
   sessionId: string,
 ): Promise<WorkbenchCheckpoint[]> {
-  const res = await fetch(
-    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/checkpoints`,
-  );
-  if (!res.ok) throw new Error(`list checkpoints failed: ${res.status}`);
-  const data = (await res.json()) as { checkpoints?: WorkbenchCheckpoint[] };
-  return data.checkpoints ?? [];
+  return workbenchClient.listCheckpoints(sessionId);
 }
 
 export async function restoreWorkbenchCheckpoint(
   sessionId: string,
   checkpointId: string,
 ): Promise<{ ok: boolean; message?: string; restored?: number; deleted?: number }> {
-  const res = await fetch(
-    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/checkpoints/${encodeURIComponent(checkpointId)}/restore`,
-    { method: 'POST' },
-  );
-  if (!res.ok) throw new Error(`restore checkpoint failed: ${res.status}`);
-  return res.json() as Promise<{
+  return workbenchClient.restoreCheckpoint(sessionId, checkpointId) as Promise<{
     ok: boolean;
     message?: string;
     restored?: number;
@@ -1039,68 +906,34 @@ export async function listWorkbenchSessionAgents(sessionId: string): Promise<{
     lastCheckpointLabel?: string;
   };
 }> {
-  const res = await fetch(
-    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/agents`,
-  );
-  if (!res.ok) throw new Error(`list session agents failed: ${res.status}`);
-  return res.json() as Promise<{
-    agents: SessionAgentRow[];
-    meta: {
-      isolateSubagents?: boolean;
-      lastCheckpointId?: string;
-      lastCheckpointLabel?: string;
-    };
-  }>;
+  return workbenchClient.listSessionAgents(sessionId);
 }
 
 export async function setIsolateSubagents(
   sessionId: string,
   enabled: boolean,
 ): Promise<{ ok: boolean; isolateSubagents: boolean }> {
-  const res = await fetch(
-    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/isolate-subagents`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled }),
-    },
-  );
-  if (!res.ok) throw new Error(`set isolate failed: ${res.status}`);
-  return res.json() as Promise<{ ok: boolean; isolateSubagents: boolean }>;
+  return workbenchClient.setIsolateSubagents(sessionId, enabled);
 }
 
 export async function cancelAllSessionAgents(
   sessionId: string,
 ): Promise<{ ok: boolean; count: number; cancelled: string[] }> {
-  const res = await fetch(
-    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/agents/cancel-all`,
-    { method: 'POST' },
-  );
-  if (!res.ok) throw new Error(`cancel-all agents failed: ${res.status}`);
-  return res.json() as Promise<{ ok: boolean; count: number; cancelled: string[] }>;
+  return workbenchClient.cancelAllAgents(sessionId);
 }
 
 export async function terminateSessionAgent(
   taskId: string,
 ): Promise<{ status: string; taskId: string }> {
-  const res = await fetch(
-    `/api/subagents/${encodeURIComponent(taskId)}/terminate`,
-    { method: 'POST' },
-  );
-  if (!res.ok) throw new Error(`terminate agent failed: ${res.status}`);
-  return res.json() as Promise<{ status: string; taskId: string }>;
+  return workbenchClient.terminateAgent(taskId);
 }
 
 export async function listWorkbenchAgents(activeAgentId = 'build'): Promise<WorkbenchAgentRegistry> {
-  const res = await fetch(`/api/workbench/agents?active=${encodeURIComponent(activeAgentId)}`);
-  if (!res.ok) throw new Error(`listWorkbenchAgents failed: ${res.status}`);
-  return res.json() as Promise<WorkbenchAgentRegistry>;
+  return workbenchClient.listAgents(activeAgentId);
 }
 
 export async function listWorkbenchCapabilities(): Promise<WorkbenchCapabilities> {
-  const res = await fetch('/api/workbench/capabilities');
-  if (!res.ok) throw new Error(`listWorkbenchCapabilities failed: ${res.status}`);
-  return res.json() as Promise<WorkbenchCapabilities>;
+  return workbenchClient.listCapabilities();
 }
 
 export interface AnswerWorkbenchBtwParams {
@@ -1187,7 +1020,7 @@ export async function getBrainConfigFromSession(sessionId: string): Promise<Brai
   return res.json() as Promise<BrainConfigResponse>;
 }
 
-/* ── OOP client re-export ─────────────────────────────────────────────── */
-/* Prefer `workbenchClient` in new code; free functions above stay for BC. */
+/* ── Client re-export ─────────────────────────────────────────────────── */
+/* Prefer `workbenchClient` at call sites; free functions keep stable names. */
 export { WorkbenchClient, workbenchClient } from './workbench/WorkbenchClient';
 export { WorkbenchHttpError } from './workbench/http';

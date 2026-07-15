@@ -1,7 +1,5 @@
 /* ── WorkspaceStatCard — stat tile for the workspace data sections ──── */
-/* The `rounded-xl border bg-card/60 p-4` card with icon, label, value,
- * and an optional sub-line. 4 accent colors lifted from Usage.tsx so
- * the visual style is identical to the screenshot. */
+/* Card with icon, label, value, optional sub-line, and accent colors. */
 
 import { type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';

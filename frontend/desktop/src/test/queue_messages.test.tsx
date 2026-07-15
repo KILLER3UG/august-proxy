@@ -178,14 +178,14 @@ describe('ChatThread: queue pill rendering and queue badge', () => {
       resolve(__dirname, '../sections/chat/QueuePills.tsx'),
       'utf8',
     );
-    expect(pillsSrc).toMatch(/dequeueWorkbenchMessage/);
+    expect(pillsSrc).toMatch(/workbenchClient\.dequeueMessage|dequeueWorkbenchMessage/);
     expect(pillsSrc).toMatch(/Clear all|clearAll/);
-    expect(pillsSrc).toMatch(/reorderQueuedWorkbenchMessages|Drag to reorder/);
+    expect(pillsSrc).toMatch(/workbenchClient\.reorderQueue|reorderQueuedWorkbenchMessages|Drag to reorder/);
     expect(pillsSrc).toMatch(/i \+ 1.*items\.length/);
   });
 
   it('injected user bubbles get a "Queued" badge', () => {
-    // Queued badge lives on MessageBubble (extracted from ChatThread).
+    // Queued badge lives on MessageBubble.
     const src = readFileSync(
       resolve(__dirname, '../sections/chat/MessageBubble.tsx'),
       'utf8',

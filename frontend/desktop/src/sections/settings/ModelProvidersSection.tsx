@@ -1,15 +1,7 @@
-/* ── Model Providers — deeply consolidated section ─────────────────── */
-/* Replaces the 2 old top-level sections (Models, Providers) with one
- * section that:
- *   • fetches /api/config/activeProvider + aggregated models once via
- *     useModelProviders — Providers.tsx and Models.tsx still keep their
- *     own fetches inside (we don't rewrite their internals here), but
- *     the section's overview reads the shared data
- *   • renders Overview / Models / Providers / Quotas as subtabs using
- *     the new shared SettingsCard / SettingsTabs / SettingsEmptyState
- *   • keeps the existing <Models /> and <Providers /> components as the
- *     heavy edit/list UIs, and uses the extracted <QuotasPanel /> as a
- *     first-class subtab (was buried as Models' 6th internal tab) */
+/* ── Model Providers ───────────────────────────────────────────────── */
+/* Overview of active provider and models, plus Models / Providers /
+ * Quotas subtabs. Overview data comes from useModelProviders; heavy
+ * edit UIs stay in <Models /> and <Providers />; quotas use <QuotasPanel />. */
 
 import { useState } from 'react';
 import {

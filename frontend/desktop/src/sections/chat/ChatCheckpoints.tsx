@@ -1,4 +1,5 @@
-/* ── Chat scroll checkpoints (extracted from ChatThread) ─────────────── */
+/* ── Chat scroll checkpoints ─────────────────────────────────────────── */
+/* Side-rail pills that jump the transcript to prior user messages.       */
 
 import { useState, useEffect, useCallback, useMemo, type RefObject } from 'react';
 import { cn } from '@/lib/utils';

@@ -1,4 +1,5 @@
-/* ── Message bubble + tool cards (extracted from ChatThread) ─────────── */
+/* ── Message bubble + tool cards ─────────────────────────────────────── */
+/* Renders a single chat message: text, thinking, tool calls, and badges. */
 
 import { useState, useEffect, useMemo } from 'react';
 import {

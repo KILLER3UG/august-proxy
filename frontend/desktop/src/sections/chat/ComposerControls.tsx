@@ -1,5 +1,5 @@
-/* ── Composer controls (extracted from ChatThread) ───────────────────── */
-/* Model picker, effort dropdown, tool icon button.                       */
+/* ── Composer controls ───────────────────────────────────────────────── */
+/* Model picker, reasoning-effort dropdown, and tool icon buttons.        */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { LucideIcon } from 'lucide-react';

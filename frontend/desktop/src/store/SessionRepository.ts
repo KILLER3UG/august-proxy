@@ -1,5 +1,5 @@
 /* ── SessionRepository ────────────────────────────────────────────────── */
-/* OOP facade over the sessions Zustand store for non-React / service use. */
+/* Loads and mutates chat session records outside React components.       */
 
 import {
   useSessionsStore,

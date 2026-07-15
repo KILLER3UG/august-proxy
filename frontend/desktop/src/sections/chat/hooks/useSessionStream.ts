@@ -1,5 +1,5 @@
 /* ── useSessionStream ──────────────────────────────────────────────────── */
-/* React hook facade over the per-session stream store (OOP controller).  */
+/* Subscribes to one session's live stream state and exposes mutators.    */
 
 import { useCallback, useEffect, useState } from 'react';
 import type { ChatMessage, ToolProgressEntry } from '@/types/chat';
@@ -25,8 +25,8 @@ export type SubagentPromptMap = Map<
 >;
 
 /**
- * Controller-style access to one session's live stream state.
- * Keeps ChatThread free of store subscription boilerplate.
+ * Imperative access to one session's live stream state (messages, tools,
+ * workbench session snapshot). Use from hooks or non-React services.
  */
 export class SessionStreamController {
   constructor(private readonly sessionId: string | null) {}
@@ -80,6 +80,17 @@ export class SessionStreamController {
     updateSessionStreamState(this.sessionId, (prev) => ({
       workbenchSession:
         typeof session === 'function' ? session(prev.workbenchSession) : session,
+    }));
+  }
+
+  setWorkbenchBtw(
+    btw:
+      | SessionStreamState['workbenchBtw']
+      | ((prev: SessionStreamState['workbenchBtw']) => SessionStreamState['workbenchBtw']),
+  ): void {
+    if (!this.sessionId) return;
+    updateSessionStreamState(this.sessionId, (prev) => ({
+      workbenchBtw: typeof btw === 'function' ? btw(prev.workbenchBtw) : btw,
     }));
   }
 
@@ -151,6 +162,17 @@ export function useSessionStream(sessionId: string | null) {
     [sessionId],
   );
 
+  const setWorkbenchBtw = useCallback(
+    (
+      btw:
+        | SessionStreamState['workbenchBtw']
+        | ((prev: SessionStreamState['workbenchBtw']) => SessionStreamState['workbenchBtw']),
+    ) => {
+      new SessionStreamController(sessionId).setWorkbenchBtw(btw);
+    },
+    [sessionId],
+  );
+
   return {
     streamState,
     messages: streamState.messages,
@@ -163,6 +185,7 @@ export function useSessionStream(sessionId: string | null) {
     setSubagentPrompts,
     setToolProgress,
     setWorkbenchSession,
+    setWorkbenchBtw,
     controller,
   };
 }

@@ -1,8 +1,6 @@
 /* ── QuotasPanel — per-model daily quota bars ──────────────────────── */
-/* Extracted from the old Models.tsx so it's reachable as a top-level
- * subtab in the new Model Providers section. Same shape, same behavior;
- * kept as a separate file so both the consolidated section and any
- * other consumer can render it without bringing in the rest of Models. */
+/* Renders daily token quota usage bars for each model. Usable as a
+ * Model Providers subtab or embedded elsewhere without the full models UI. */
 
 import { useQuery } from '@tanstack/react-query';
 import { quotaApi, type ModelQuota } from '@/api/quota';

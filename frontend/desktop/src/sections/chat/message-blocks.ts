@@ -1,5 +1,5 @@
 /* ── Message block parsing (thinking / tools / content) ───────────────── */
-/* Pure functions extracted from ChatThread.                              */
+/* Pure helpers that split assistant text into thinking and output blocks. */
 
 import type { ChatMessage, MessageBlock } from '@/types/chat';
 

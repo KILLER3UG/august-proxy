@@ -1,6 +1,5 @@
 /* ── WorkspaceHeatmap — GitHub-style activity heatmap ────────────────── */
-/* Pure CSS. 5-row layout so the calendar reads like a week column. Lifted
- * from the legacy Usage.tsx so visual parity is preserved. */
+/* Pure CSS. 5-row layout so the calendar reads like a week column. */
 
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';

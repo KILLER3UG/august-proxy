@@ -1,7 +1,5 @@
-/* ── Agents & Automation — merges Agents/Automations/Terminal ──────── */
-/* Migrated to the workspace-style chrome (big h1, WorkspaceTabs,
- * larger padding). Body components (Agents/Automations/Terminal) are
- * reused verbatim from the legacy sections. */
+/* ── Agents & Automation ───────────────────────────────────────────── */
+/* Workspace-style section hosting Agents, Automations, and Terminal tabs. */
 
 import { useState } from 'react';
 import { Bot, CalendarClock, TerminalSquare } from 'lucide-react';

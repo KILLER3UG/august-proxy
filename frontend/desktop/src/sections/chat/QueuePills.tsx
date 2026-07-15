@@ -5,12 +5,7 @@ import { useState } from 'react';
 import { GripVertical, Pencil, Trash2, X, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import {
-  dequeueWorkbenchMessage,
-  clearQueuedWorkbenchMessages,
-  reorderQueuedWorkbenchMessages,
-  updateQueuedWorkbenchMessage,
-} from '@/api/workbench';
+import { workbenchClient } from '@/api/workbench';
 import {
   setQueuedMessages,
   reorderQueuedMessagesLocal,
@@ -35,7 +30,7 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
   const wbId = workbenchSessionId || sessionId;
 
   const cancelOne = (id: string) => {
-    void dequeueWorkbenchMessage(wbId, id).catch((err) => {
+    void workbenchClient.dequeueMessage(wbId, id).catch((err) => {
       console.error('[dequeue] failed', err);
       toast.error('Could not cancel queued message');
     });
@@ -46,7 +41,7 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
   };
 
   const clearAll = () => {
-    void clearQueuedWorkbenchMessages(wbId).catch((err) => {
+    void workbenchClient.clearQueue(wbId).catch((err) => {
       console.error('[clear queue] failed', err);
       toast.error('Could not clear queue');
     });
@@ -67,7 +62,7 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
     }
     updateQueuedMessageLocal(sessionId, id, text);
     setEditingId(null);
-    void updateQueuedWorkbenchMessage(wbId, id, text).catch((err) => {
+    void workbenchClient.updateQueuedMessage(wbId, id, text).catch((err) => {
       console.error('[update queue] failed', err);
       toast.error('Could not update queued message');
     });
@@ -91,7 +86,7 @@ export function QueuePills({ sessionId, workbenchSessionId, items }: Props) {
     next.splice(from, 1);
     next.splice(to, 0, dragId);
     reorderQueuedMessagesLocal(sessionId, next);
-    void reorderQueuedWorkbenchMessages(wbId, next).catch((err) => {
+    void workbenchClient.reorderQueue(wbId, next).catch((err) => {
       console.error('[reorder queue] failed', err);
       toast.error('Could not reorder queue');
     });

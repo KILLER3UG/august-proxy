@@ -1,6 +1,5 @@
 /* ── First-run setup checklist ────────────────────────────────────────── */
 /* Multi-step checklist: provider → workspace → optional Google.           */
-/* Replaces the old provider-only onboarding modal.                        */
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';

@@ -1,5 +1,5 @@
 /* ── Model display helpers (pure) ─────────────────────────────────────── */
-/* Extracted from ChatThread to keep orchestration thin.                  */
+/* Pretty names, context-window labels, and variant tags for model UIs.   */
 
 export interface ModelItem {
   id: string;

@@ -1,7 +1,6 @@
 /* ── TrafficSubtab — per-request log + in-flight requests ───────────── */
-/* Extracted from the old Traffic & Activity section. Renders the period +
- * status filter chips and the virtualized requests table. No token or
- * summary stats — those live in ObservabilityOverview.
+/* Period and status filter chips plus a virtualized requests table.
+ * Token and summary stats live in ObservabilityOverview.
  */
 
 import { useState } from 'react';

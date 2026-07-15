@@ -3,7 +3,7 @@ import type { ChatMessage, MessageBlock, ProviderSetupResult } from '@/types/cha
 import type { WorkbenchMode, EffortLevel } from '@/types/chat';
 import type { WorkbenchSession } from '@/types/workbench';
 import { api } from '@/api/client';
-import { streamWorkbenchChat, streamWorkbenchReconnect, stopWorkbenchChat } from '@/api/workbench';
+import { streamWorkbenchChat, streamWorkbenchReconnect, workbenchClient } from '@/api/workbench';
 import { setSessionStatus, clearSessionStatus, useSessionsStore } from '@/store/sessions';
 import { makeStreamHandlers } from './makeStreamHandlers';
 import { gitApi } from '@/api/git';
@@ -405,7 +405,7 @@ export async function stopChatStream(sessionId: string) {
   try {
     const state = getOrInitSessionStreamState(sessionId);
     const wbSessionId = state.workbenchSession?.id || sessionId;
-    await stopWorkbenchChat(wbSessionId);
+    await workbenchClient.stopChat(wbSessionId);
   } catch (err) {
     console.warn('Failed to notify backend of stop:', err);
   }

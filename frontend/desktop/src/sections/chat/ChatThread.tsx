@@ -52,7 +52,6 @@ import { voiceCommandEvents, type VoiceCommandEvent } from '@/api/voice/registry
 import {
   $sessionStreamStates,
   getOrInitSessionStreamState,
-  updateSessionStreamState,
   stopChatStream,
   syncActiveStreams,
   appendBlockEvent,
@@ -187,7 +186,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     [sessions, sessionId],
   );
 
-  /* ── OOP facades / hooks (stream, models, usage, attachments) ─────── */
+  /* ── Stream state, models, usage, attachments ─────────────────────── */
   const {
     messages,
     setMessages,
@@ -199,15 +198,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     workbenchSession,
     workbenchBtw,
     setWorkbenchSession,
+    setWorkbenchBtw,
   } = useSessionStream(sessionId);
-
-  const setWorkbenchBtw = useCallback(
-    (btw: WorkbenchBtwState | null) => {
-      if (!sessionId) return;
-      updateSessionStreamState(sessionId, () => ({ workbenchBtw: btw }));
-    },
-    [sessionId],
-  );
 
   const {
     models,

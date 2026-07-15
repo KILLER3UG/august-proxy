@@ -1,9 +1,8 @@
-/* ── useConversationInspector — shared data layer for the merged
- *   Conversation Inspector section ──────────────────────────────────
- * Fetches /api/details + /api/conversations once for the chosen period,
- * exposes the unified row list, the selected request, a normalized
- * transcript for the Readable tab, and an extracted thinking-traces list
- * for the Thinking tab. Subtabs share one poll cycle and selected state. */
+/* ── useConversationInspector ────────────────────────────────────────
+ * Fetches /api/details + /api/conversations for the chosen period and
+ * exposes the unified row list, selected request, normalized transcript
+ * (Readable tab), and thinking traces (Thinking tab). Subtabs share one
+ * poll cycle and selection state. */
 
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';

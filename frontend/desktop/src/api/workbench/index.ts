@@ -1,4 +1,4 @@
-/** Public barrel for the workbench OOP package. */
+/** Public barrel for WorkbenchClient and HTTP helpers. */
 export {
   WorkbenchClient,
   workbenchClient,
