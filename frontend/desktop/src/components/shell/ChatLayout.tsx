@@ -11,6 +11,7 @@ import { useSessionsStore, createSession, getOrCreateEmptySession, defaultSessio
 import { startRealtimeBridge } from "@/realtime/bridge";
 import { useWorkspacesStore } from "@/store/workspaces";
 import { ChatTitlebar } from "./ChatTitlebar";
+import { TeamAgentsStrip } from "./TeamAgentsStrip";
 import { SessionSidebar } from "./SessionSidebar";
 import { RightDrawer } from "./RightDrawer";
 import { addRightDrawerSection, closeRightDrawer, setActiveRightDrawerSection, useRightDrawer } from "./RightDrawerState";
@@ -120,7 +121,7 @@ export function ChatLayout() {
           break;
         case 'set_drawer_section': {
           const section = e.target as RightDrawerSectionId;
-          if (['preview', 'diff', 'terminal', 'tasks', 'plan'].includes(section)) {
+          if (['preview', 'diff', 'terminal', 'tasks', 'plan', 'browser'].includes(section)) {
             addRightDrawerSection(section);
             setActiveRightDrawerSection(section);
             setShowRightSidebar(true);
@@ -128,12 +129,18 @@ export function ChatLayout() {
           break;
         }
         case 'set_guard_mode':
+          // ChatThread also handles this for local mode state; here we ensure backend is updated
+          // when a workbench id is already known at the layout layer.
           if (workbenchSessionId) {
             const mode = e.target as 'plan' | 'ask' | 'full';
-            setWorkbenchGuardMode(workbenchSessionId, mode)
-              .catch(err => toast.error(`Failed to update guard mode: ${err?.message || err}`));
+            setWorkbenchGuardMode(workbenchSessionId, mode).catch((err: unknown) =>
+              toast.error(
+                `Failed to update mode: ${err instanceof Error ? err.message : String(err)}`,
+              ),
+            );
           }
           break;
+        // undo / compact / branch: handled in ChatThread (needs message state)
         case 'refresh':
           void queryClient.invalidateQueries();
           break;
@@ -314,6 +321,9 @@ export function ChatLayout() {
             }}
             onSelectRightDrawerSection={openWorkbenchSidebar}
           />
+          {!isSettings && (
+            <TeamAgentsStrip workbenchSessionId={active?.workbenchSessionId} />
+          )}
           <div className="flex-1 min-h-0 overflow-hidden relative flex">
             {/* Settings takes the full width (its own internal layout).
                 Do NOT key Outlet on location.pathname here — that remounted

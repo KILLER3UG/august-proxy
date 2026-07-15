@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import os
 import secrets
 import time
@@ -91,7 +93,8 @@ def _mask(token: str) -> str:
 def _google_card(raw: dict[str, Any] | None) -> dict[str, Any]:
     meta = SERVICE_META['google']
     email = as_str((raw or {}).get('email') or (raw or {}).get('account'))
-    has_oauth = bool(os.environ.get('GOOGLE_OAUTH_CLIENT_ID')) or bool(
+    has_client = bool(_google_client_id())
+    has_oauth = has_client or bool(
         (raw or {}).get('refreshToken') or (raw or {}).get('tokens')
     )
     connected = bool(email) or bool((raw or {}).get('status') == 'connected')
@@ -107,6 +110,9 @@ def _google_card(raw: dict[str, Any] | None) -> dict[str, Any]:
         'connected': connected,
         'account': email or None,
         'missingConfig': missing and not connected,
+        'hasClientId': has_client,
+        'pkceReady': has_client,  # one-click browser sign-in when client id is set
+        'redirectUri': _google_redirect_uri() if has_client or missing else None,
         'updatedAt': (raw or {}).get('updatedAt'),
     }
 
@@ -215,11 +221,15 @@ def _mcp_global_env_map() -> dict[str, str]:
 
 
 def _google_client_id() -> str:
+    """Resolve OAuth client id: user env → MCP env → optional product default."""
     return (
         os.environ.get('GOOGLE_OAUTH_CLIENT_ID')
         or os.environ.get('GOOGLE_CLIENT_ID')
         or _mcp_global_env_map().get('GOOGLE_OAUTH_CLIENT_ID')
         or _mcp_global_env_map().get('GOOGLE_CLIENT_ID')
+        # Optional ship-time public Desktop client (PKCE, no secret).
+        or os.environ.get('AUGUST_DEFAULT_GOOGLE_OAUTH_CLIENT_ID')
+        or _mcp_global_env_map().get('AUGUST_DEFAULT_GOOGLE_OAUTH_CLIENT_ID')
         or ''
     ).strip()
 
@@ -232,6 +242,15 @@ def _google_client_secret() -> str:
         or _mcp_global_env_map().get('GOOGLE_CLIENT_SECRET')
         or ''
     ).strip()
+
+
+def _pkce_pair() -> tuple[str, str]:
+    """Return (code_verifier, code_challenge) for OAuth PKCE S256."""
+    # 64 url-safe bytes → ~86 chars (within 43–128)
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode('ascii')).digest()
+    challenge = base64.urlsafe_b64encode(digest).decode('ascii').rstrip('=')
+    return verifier, challenge
 
 
 def _google_redirect_uri() -> str:
@@ -259,17 +278,25 @@ def _purge_stale_oauth_states() -> None:
 
 
 def _native_google_auth_url(user_email: str = '') -> dict[str, Any] | None:
-    """Build browser OAuth URL with CSRF state. Returns None if client id missing."""
+    """Build browser OAuth URL with CSRF state + PKCE.
+
+    Works with:
+    - **Desktop / public clients** (client id only + PKCE, no secret)
+    - **Web / confidential clients** (client id + secret; PKCE still sent)
+    """
     client_id = _google_client_id()
     if not client_id:
         return None
     _purge_stale_oauth_states()
     redirect = _google_redirect_uri()
     state = secrets.token_urlsafe(24)
+    verifier, challenge = _pkce_pair()
     _oauth_pending[state] = {
         'created': time.time(),
         'email': user_email,
         'redirect_uri': redirect,
+        'code_verifier': verifier,
+        'pkce': True,
     }
     scopes = [
         'openid',
@@ -288,13 +315,21 @@ def _native_google_auth_url(user_email: str = '') -> dict[str, Any] | None:
         'prompt': 'consent',
         'include_granted_scopes': 'true',
         'state': state,
+        'code_challenge': challenge,
+        'code_challenge_method': 'S256',
     }
     if user_email and user_email != 'me':
         params['login_hint'] = user_email
     auth_url = 'https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode(params)
+    has_secret = bool(_google_client_secret())
     return {
         'authUrl': auth_url,
-        'message': 'Open Google sign-in in your browser to connect Gmail / Calendar / Drive.',
+        'message': (
+            'Open Google sign-in in your browser to connect Gmail / Calendar / Drive.'
+            + ('' if has_secret else ' Using secure one-click PKCE (no client secret required).')
+        ),
+        'pkce': True,
+        'needsSecret': not has_secret,
     }
 
 
@@ -386,16 +421,19 @@ async def google_auth_url(email: str = '') -> dict[str, Any]:
 
     return {
         'authUrl': '',
+        'needsClientId': True,
         'message': (
-            'Google sign-in is not configured. Install “Google Workspace MCP” from '
-            'Settings → Integrations → Add (paste Client ID + Secret), or set '
-            'GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in MCP env.'
+            'Add a Google OAuth Client ID to sign in with one click. '
+            'Create a Desktop app in Google Cloud Console (PKCE — secret optional), '
+            'set GOOGLE_OAUTH_CLIENT_ID in Settings → Integrations, then try again. '
+            'Redirect URI: '
+            + _google_redirect_uri()
         ),
     }
 
 
 async def google_oauth_callback(code: str = '', state: str = '', error: str = '') -> dict[str, Any]:
-    """Handle Google OAuth redirect: exchange code, store tokens, mark connected."""
+    """Handle Google OAuth redirect: exchange code (PKCE and/or secret), store tokens."""
     if error:
         return {
             'ok': False,
@@ -420,28 +458,44 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
 
     client_id = _google_client_id()
     client_secret = _google_client_secret()
-    if not client_id or not client_secret:
+    code_verifier = as_str((pending or {}).get('code_verifier'))
+    if not client_id:
         return {
             'ok': False,
             'error': 'missing_client',
             'html': _oauth_result_html(
                 False,
-                'GOOGLE_OAUTH_CLIENT_ID / SECRET not configured on the August server.',
+                'GOOGLE_OAUTH_CLIENT_ID is not configured on the August server.',
+            ),
+        }
+    if not client_secret and not code_verifier:
+        return {
+            'ok': False,
+            'error': 'missing_pkce_or_secret',
+            'html': _oauth_result_html(
+                False,
+                'OAuth session expired or missing PKCE verifier. Click Sign in with Google again. '
+                'For Web clients, also set GOOGLE_OAUTH_CLIENT_SECRET.',
             ),
         }
 
     redirect_uri = as_str((pending or {}).get('redirect_uri')) or _google_redirect_uri()
+    token_body: dict[str, str] = {
+        'code': code.strip(),
+        'client_id': client_id,
+        'redirect_uri': redirect_uri,
+        'grant_type': 'authorization_code',
+    }
+    if client_secret:
+        token_body['client_secret'] = client_secret
+    if code_verifier:
+        token_body['code_verifier'] = code_verifier
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             token_res = await client.post(
                 'https://oauth2.googleapis.com/token',
-                data={
-                    'code': code.strip(),
-                    'client_id': client_id,
-                    'client_secret': client_secret,
-                    'redirect_uri': redirect_uri,
-                    'grant_type': 'authorization_code',
-                },
+                data=token_body,
                 headers={'Content-Type': 'application/x-www-form-urlencoded'},
             )
             if token_res.status_code >= 400:
@@ -452,7 +506,8 @@ async def google_oauth_callback(code: str = '', state: str = '', error: str = ''
                     'html': _oauth_result_html(
                         False,
                         f'Token exchange failed ({token_res.status_code}). '
-                        f'Check redirect URI matches Google Cloud: {redirect_uri}. {detail}',
+                        f'Use a Desktop OAuth client with PKCE, or a Web client with secret. '
+                        f'Redirect URI must be exactly: {redirect_uri}. {detail}',
                     ),
                 }
             tokens = token_res.json()

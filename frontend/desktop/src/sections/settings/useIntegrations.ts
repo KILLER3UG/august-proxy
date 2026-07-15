@@ -29,6 +29,9 @@ export interface ServiceConnection {
   maskedToken?: string;
   teamId?: string;
   missingConfig?: boolean;
+  hasClientId?: boolean;
+  pkceReady?: boolean;
+  redirectUri?: string | null;
   updatedAt?: string;
 }
 

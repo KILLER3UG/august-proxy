@@ -689,6 +689,157 @@ def reset_workbench_session(
     return create_workbench_session(provider=provider, agentId=agentId)
 
 
+def undo_last_turn(session_id: str) -> dict[str, object] | None:
+    """Remove the last user turn and everything after it (assistant/tools).
+
+    Mirrors the chat UI \"revert\" action so workbench history stays in sync.
+    """
+    session = get_workbench_session(session_id)
+    if not session:
+        return None
+    msgs = list(session.messages)
+    last_user = -1
+    for i in range(len(msgs) - 1, -1, -1):
+        if as_str(msgs[i].get('role')) == 'user':
+            last_user = i
+            break
+    if last_user < 0:
+        return {
+            'session': session.toDict(),
+            'removed': 0,
+            'message': 'Nothing to undo — no user messages yet.',
+        }
+    removed = len(msgs) - last_user
+    session.messages = msgs[:last_user]
+    session.messageCount = len(session.messages)
+    session.updatedAt = _now()
+    # Clear in-flight plan/clarify that belonged to the undone turn.
+    session.plan = None
+    session.planApproved = False
+    session.clarify = None
+    session.queuedUserMessages = []
+    save_sessions()
+    _emit_session_status(session_id)
+    try:
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
+
+        emit_realtime('session.updated', sessionId=session_id, action='undo_last_turn')
+        emit_invalidate('workbench-session', 'session-status', session_id=session_id)
+    except Exception:
+        pass
+    return {
+        'session': session.toDict(),
+        'removed': removed,
+        'message': f'Removed {removed} message(s) from the end of the conversation.',
+    }
+
+
+def branch_workbench_session(
+    session_id: str,
+    *,
+    up_to_index: int | None = None,
+) -> WorkbenchSession | None:
+    """Clone a session (optionally only messages through ``up_to_index`` inclusive)."""
+    src = get_workbench_session(session_id)
+    if not src:
+        return None
+    msgs = list(src.messages)
+    if up_to_index is not None:
+        if up_to_index < 0:
+            msgs = []
+        else:
+            msgs = msgs[: up_to_index + 1]
+    new = create_workbench_session(
+        provider=src.provider,
+        agentId=src.agentId,
+        guardMode=src.guardMode,
+        goal=src.goal,
+    )
+    new.messages = [dict(m) for m in msgs if isinstance(m, dict)]
+    new.messageCount = len(new.messages)
+    new.model = src.model
+    new.workspacePath = src.workspacePath
+    base_title = (src.title or 'Chat').strip() or 'Chat'
+    if base_title.endswith(' (branch)'):
+        new.title = base_title
+    else:
+        new.title = f'{base_title} (branch)'[:120]
+    # Do not copy pending plan/mutations — branch is a clean fork of history.
+    new.plan = None
+    new.planApproved = False
+    new.todos = list(src.todos) if src.todos else None
+    new.updatedAt = _now()
+    _sessions[new.id] = new
+    save_sessions()
+    notify_session_created(new)
+    _emit_session_status(new.id)
+    return new
+
+
+def compact_workbench_session_now(session_id: str) -> dict[str, object] | None:
+    """Force context compression on a session (user-triggered \"Free up memory\")."""
+    session = get_workbench_session(session_id)
+    if not session:
+        return None
+    from app.providers.clients.base import estimateTokens
+    from app.services.memory.context_compressor import compressMessages
+
+    original = list(session.messages)
+    original_tokens = estimateTokens(original)
+    if len(original) < 6:
+        return {
+            'session': session.toDict(),
+            'underThreshold': True,
+            'originalTokens': original_tokens,
+            'compressedTokens': original_tokens,
+            'compressedCount': 0,
+            'headCount': 4,
+            'tailCount': 6,
+            'message': 'Not enough messages to compress yet.',
+        }
+    # threshold=0 forces compression whenever head+tail leave a middle section
+    compressed = compressMessages(original, threshold=0, head_count=4, tail_count=6)
+    compressed_tokens = estimateTokens(compressed)
+    compressed_count = max(0, len(original) - len(compressed))
+    if compressed_count <= 0 or compressed_tokens >= original_tokens:
+        return {
+            'session': session.toDict(),
+            'underThreshold': True,
+            'originalTokens': original_tokens,
+            'compressedTokens': compressed_tokens,
+            'compressedCount': 0,
+            'headCount': 4,
+            'tailCount': 6,
+            'message': 'Context is already compact enough.',
+        }
+    session.messages = compressed
+    session.messageCount = len(session.messages)
+    session.updatedAt = _now()
+    session._last_compaction_turn = getattr(session, 'turn_count', 0) or 0
+    save_sessions()
+    _emit_session_status(session_id)
+    try:
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
+
+        emit_realtime('session.updated', sessionId=session_id, action='compact')
+        emit_invalidate('workbench-session', 'session-status', session_id=session_id)
+    except Exception:
+        pass
+    return {
+        'session': session.toDict(),
+        'underThreshold': False,
+        'originalTokens': original_tokens,
+        'compressedTokens': compressed_tokens,
+        'compressedCount': compressed_count,
+        'headCount': 4,
+        'tailCount': 6,
+        'message': (
+            f'Freed chat memory — summarized {compressed_count} middle messages '
+            f'(~{original_tokens} → ~{compressed_tokens} tokens).'
+        ),
+    }
+
+
 def summarize_session(session: WorkbenchSession) -> dict[str, object]:
     """Return a lightweight summary of a session."""
     return {
@@ -715,13 +866,29 @@ def get_workbench_session_status(session_id: str) -> dict[str, object] | None:
     """Return flat status for the UI's approval banner."""
     session = _sessions.get(session_id)
     if not session:
+        # Lazy-load from disk so status works after restart
+        if not _sessions:
+            _load_sessions()
+        session = _sessions.get(session_id)
+    if not session:
         return None
     has_pending = len(session.pendingMutations) > 0
+    pm = session.pendingMutations[-1] if has_pending else None
+    pm_dict = as_dict(pm) if pm is not None else {}
     return {
         'sessionId': session_id,
         'status': session.status,
         'guardMode': session.guardMode,
-        'pendingMutation': session.pendingMutations[-1] if has_pending else None,
+        # Flat fields used by ApprovalBanner / useSessionStatus
+        'pendingToken': as_str(pm_dict.get('token')) or None,
+        'pendingTool': as_str(pm_dict.get('toolName')) or None,
+        'pendingArgs': as_dict(pm_dict.get('args')) if pm_dict.get('args') is not None else None,
+        'pendingPreview': as_str(pm_dict.get('preview')) or None,
+        'pendingCreatedAt': pm_dict.get('createdAt'),
+        'approved': bool(session.planApproved),
+        'updatedAt': session.updatedAt,
+        # Nested blob kept for older clients
+        'pendingMutation': pm if has_pending else None,
         'plan': session.plan,
         'planApproved': session.planApproved,
         'todos': session.todos,
@@ -752,6 +919,9 @@ setWorkbenchSessionAgent = set_workbench_session_agent
 listWorkbenchSessions = list_workbench_sessions
 deleteWorkbenchSession = delete_workbench_session
 resetWorkbenchSession = reset_workbench_session
+undoLastTurn = undo_last_turn
+branchWorkbenchSession = branch_workbench_session
+compactWorkbenchSessionNow = compact_workbench_session_now
 summarizeSession = summarize_session
 getWorkbenchSessionStatus = get_workbench_session_status
 subscribeSessionStatus = subscribe_session_status

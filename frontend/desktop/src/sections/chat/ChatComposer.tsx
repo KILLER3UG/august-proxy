@@ -226,7 +226,13 @@ export function ChatComposer({
               value={input}
               onChange={(e) => onInputChange(e.target.value)}
               onKeyDown={onKey}
-              placeholder={streaming ? 'Type to queue your next message…' : (currentModel ? `Message ${currentModel.name}…` : 'Message August…')}
+              placeholder={
+                streaming
+                  ? 'Add a direction while August works…'
+                  : currentModel
+                    ? `Message ${currentModel.name}…`
+                    : 'Message August…'
+              }
               rows={1}
               className="w-full resize-none bg-transparent px-4 pt-3 pb-1.5 bubble-body outline-none placeholder:text-muted-foreground"
               style={{ minHeight: '64px', maxHeight: '360px' }}
@@ -259,9 +265,21 @@ export function ChatComposer({
             )}
 
             {streaming ? (
-              <Button onClick={onStop} size="sm" variant="outline">
-                <StopCircle className="size-3" /> Stop
-              </Button>
+              <>
+                <Button
+                  onClick={onSend}
+                  disabled={!input.trim() && attachments.length === 0}
+                  size="sm"
+                  variant="secondary"
+                  title="Steer August mid-run — applies after the current tool step"
+                >
+                  <Send className="size-3" />
+                  Add direction
+                </Button>
+                <Button onClick={onStop} size="sm" variant="outline">
+                  <StopCircle className="size-3" /> Stop
+                </Button>
+              </>
             ) : (
               <Button onClick={onSend} disabled={!input.trim() && attachments.length === 0} size="sm">
                 <Send className="size-3" />

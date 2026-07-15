@@ -462,6 +462,13 @@ export function makeStreamHandlers(opts: MakeStreamHandlersOptions): StreamHandl
       streamBlocks = appendBlockEvent(streamBlocks, { type: 'finalOutput', content: notice });
       scheduleUpdate();
     },
+    onCheckpoint: (info) => {
+      const n = info.fileCount ?? 0;
+      const notice = `\n\n💾 Save point created${info.label ? ` — ${info.label}` : ''}${n ? ` (${n} file${n === 1 ? '' : 's'})` : ''}. Ctrl+K → “Restore last save point” to undo file changes.`;
+      assistantContent += notice;
+      streamBlocks = appendBlockEvent(streamBlocks, { type: 'finalOutput', content: notice });
+      scheduleUpdate();
+    },
     onWarning: ({ message }) => {
       const warning = `\n\n⚠️ ${message || 'Warning'}`;
       assistantContent += warning;

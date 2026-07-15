@@ -11,7 +11,11 @@ export type UiAction =
   | 'set_guard_mode'
   | 'refresh'
   | 'focus_composer'
-  | 'insert_composer_text';
+  | 'insert_composer_text'
+  | 'undo_last_turn'
+  | 'compact_now'
+  | 'branch_session'
+  | 'restore_checkpoint';
 
 export interface UiActionEvent {
   id?: string;

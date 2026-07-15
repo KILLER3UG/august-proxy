@@ -299,11 +299,38 @@ async def activeChats():
 async def queueMessage(request: Request):
     """Enqueue a user message for delivery to the model mid-response.
 
+    Body: { sessionId, text, attachments?, kind?: 'queue'|'steer' }
+
+    - ``queue`` (default): follow-up at the next loop boundary
+    - ``steer``: mid-run course correction (priority, stronger prompt)
+
     The message is stored on the session and surfaced to the model's
-    chat loop at the next iteration boundary. If no turn is running,
-    the next turn will pick the message up automatically.
+    chat loop at the next tool/LLM boundary without cancelling the turn.
     """
     body = await request.json()
+    sessionId = body.get('sessionId', '')
+    text = body.get('text', '')
+    attachments = body.get('attachments') or []
+    kind = str(body.get('kind') or 'queue')
+    if not sessionId:
+        raise HTTPException(status_code=400, detail='sessionId is required')
+    if not text and (not attachments):
+        raise HTTPException(status_code=400, detail='text or attachments required')
+    entry = wb.enqueueUserMessage(
+        sessionId=sessionId, text=text, attachments=attachments, kind=kind
+    )
+    if entry is None:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return entry
+
+
+@router.post('/chat/steer')
+async def steerMessage(request: Request):
+    """Mid-run steer — same as queue with kind=steer (course correction)."""
+    body = await request.json()
+    body = dict(body) if isinstance(body, dict) else {}
+    body['kind'] = 'steer'
+    # Reuse queue handler logic
     sessionId = body.get('sessionId', '')
     text = body.get('text', '')
     attachments = body.get('attachments') or []
@@ -311,7 +338,9 @@ async def queueMessage(request: Request):
         raise HTTPException(status_code=400, detail='sessionId is required')
     if not text and (not attachments):
         raise HTTPException(status_code=400, detail='text or attachments required')
-    entry = wb.enqueueUserMessage(sessionId=sessionId, text=text, attachments=attachments)
+    entry = wb.enqueueUserMessage(
+        sessionId=sessionId, text=text, attachments=attachments, kind='steer'
+    )
     if entry is None:
         raise HTTPException(status_code=404, detail='Session not found')
     return entry
@@ -428,25 +457,291 @@ async def updateTodosRoute(request: Request):
 
 @router.post('/mutations/respond')
 async def respondMutation(request: Request):
-    """Respond to a pending mutation (approve/reject)."""
-    body = await request.json()
-    token = body.get('token', '')
-    reject = body.get('reject', False)
-    if not wb.consumePendingMutation(token, reject=reject):
-        raise HTTPException(status_code=404, detail='Mutation token not found')
-    try:
-        from app.services.realtime_bus import emit_invalidate
+    """Respond to a pending mutation (accept/reject — pre-apply).
 
-        emit_invalidate('session-status', 'workbench-session')
+    Body: { token, reject?, scope?: 'once'|'session'|'always', continue?: bool }
+
+    On **accept**: records a grant, **executes the tool with the stored args**,
+    then optionally starts a continuation turn that feeds the real tool result
+    to the model (no blind retry).
+
+    On **reject**: discards the pending change without running the tool.
+    """
+    body = await request.json()
+    token = str(body.get('token') or '')
+    reject = bool(body.get('reject', False))
+    scope = str(body.get('scope') or 'once')
+    do_continue = body.get('continue', True) is not False
+    result = wb.consumePendingMutation(token, reject=reject, scope=scope)
+    if result is None:
+        raise HTTPException(status_code=404, detail='Mutation token not found')
+    session_id = str(result.get('sessionId') or '')
+    tool_name = str(result.get('toolName') or '')
+    args = result.get('args') if isinstance(result.get('args'), dict) else {}
+
+    # Pre-apply: run the approved tool immediately with stored arguments.
+    exec_result: str | None = None
+    if not reject and session_id and tool_name:
+        session = wb.getWorkbenchSession(session_id)
+        if session is not None:
+            try:
+                exec_result = await wb.execute_approved_mutation(session, tool_name, args)
+                result['executed'] = True
+                result['toolResult'] = (exec_result or '')[:8000]
+            except Exception as exc:
+                exec_result = f'Tool {tool_name} failed after approval: {exc}'
+                result['executed'] = False
+                result['toolResult'] = exec_result
+                result['executeError'] = str(exc)
+            try:
+                wb.saveSessions()
+            except Exception:
+                pass
+
+    try:
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
+
+        emit_realtime(
+            'session.updated',
+            sessionId=session_id,
+            status='idle',
+            mutation=result.get('status'),
+            executed=bool(result.get('executed')),
+        )
+        emit_invalidate('session-status', 'workbench-session', session_id=session_id)
     except Exception:
         pass
-    return {'status': 'consumed'}
+
+    # After accept (+ execute), continue so the model sees the real result.
+    # On reject, optionally notify so the model does not assume the change landed.
+    if do_continue and session_id:
+        existing = _activeStreams.get(session_id)
+        if existing and not existing.done():
+            # Stream still running — grant/result will apply on next iteration if any.
+            pass
+        else:
+            if existing and existing.done():
+                _activeStreams.pop(session_id, None)
+            session = wb.getWorkbenchSession(session_id)
+            if reject:
+                msg = (
+                    f'The user **rejected** the pending tool `{tool_name}`. '
+                    'Do not run that change. Acknowledge briefly and ask how they want to proceed.'
+                )
+            else:
+                result_snip = (exec_result or result.get('toolResult') or '')[:6000]
+                msg = (
+                    f'The user **accepted** the pending tool `{tool_name}` '
+                    f'(scope={result.get("scope")}). '
+                    'It was executed with the approved arguments — do **not** re-run it '
+                    'unless further changes are needed.\n\n'
+                    f'Tool result:\n```\n{result_snip}\n```\n\n'
+                    'Continue the task with this result.'
+                )
+            cancel_event = asyncio.Event()
+            _cancelled[session_id] = cancel_event
+            seq = event_log.event_log.append(
+                session_id,
+                'started',
+                {
+                    'sinceSeq': 0,
+                    'reason': 'mutation_rejected' if reject else 'mutation_accepted_executed',
+                },
+            )
+            provider = str(getattr(session, 'provider', '') or '') if session else ''
+            agent_id = str(getattr(session, 'agentId', '') or '') if session else ''
+            model = str(getattr(session, 'model', '') or '') if session else ''
+            guard = str(getattr(session, 'guardMode', '') or '') if session else ''
+
+            async def _continue_after_decision() -> None:
+                try:
+                    await wb.sendWorkbenchMessageStream(
+                        sessionId=session_id,
+                        message=msg,
+                        provider=provider,
+                        agentId=agent_id,
+                        model=model,
+                        guardMode=guard,
+                        emit=lambda event: event_log.event_log.append(
+                            session_id, event.get('type', 'message'), event
+                        ),
+                        signal=cancel_event,
+                    )
+                except Exception:
+                    try:
+                        event_log.event_log.append(
+                            session_id,
+                            'error',
+                            {
+                                'type': 'error',
+                                'message': 'Failed to continue after mutation decision',
+                            },
+                        )
+                        event_log.event_log.append(
+                            session_id, 'done', {'type': 'done', 'sessionId': session_id}
+                        )
+                    except Exception:
+                        pass
+                finally:
+                    _cancelled.pop(session_id, None)
+                    if _activeStreams.get(session_id) is cont_task:
+                        _activeStreams.pop(session_id, None)
+
+            cont_task = asyncio.create_task(_continue_after_decision())
+            _activeStreams[session_id] = cont_task
+            _chatTasks.add(cont_task)
+            cont_task.add_done_callback(_chatTasks.discard)
+            result['continued'] = True
+            result['sinceSeq'] = seq
+
+    return result
 
 
 @router.post('/confirm-mutation')
 async def confirmMutationAlias(request: Request):
     """Alias for POST /mutations/respond (legacy frontend path)."""
     return await respondMutation(request)
+
+
+@router.get('/sessions/{session_id}/checkpoints')
+async def listCheckpoints(sessionId: str):
+    """List filesystem save points for a session."""
+    from app.services.workbench.checkpoint_service import list_checkpoints
+
+    return {'checkpoints': list_checkpoints(sessionId)}
+
+
+@router.post('/sessions/{session_id}/checkpoints/{checkpoint_id}/restore')
+async def restoreCheckpointRoute(sessionId: str, checkpointId: str):
+    """Restore files from a save point."""
+    from app.services.workbench.checkpoint_service import restore_checkpoint
+
+    result = restore_checkpoint(sessionId, checkpointId)
+    if not result.get('ok'):
+        raise HTTPException(status_code=404, detail=str(result.get('error') or 'Restore failed'))
+    try:
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
+
+        emit_realtime('session.updated', sessionId=sessionId, action='checkpoint_restored')
+        emit_invalidate('workbench-session', 'session-status', session_id=sessionId)
+    except Exception:
+        pass
+    return result
+
+
+@router.get('/sessions/{session_id}/agents')
+async def listSessionAgents(sessionId: str):
+    """Active/recent sub-agents for the team strip."""
+    try:
+        from app.services.runtime_services import get_orchestrator
+
+        orch = get_orchestrator()
+        agents = orch.listActive(sessionId) if orch else []
+    except Exception:
+        agents = []
+    session = wb.getWorkbenchSession(sessionId)
+    meta = {}
+    if session and isinstance(session.metadata, dict):
+        meta = {
+            'isolateSubagents': bool(session.metadata.get('isolateSubagents')),
+            'lastCheckpointId': session.metadata.get('lastCheckpointId'),
+            'lastCheckpointLabel': session.metadata.get('lastCheckpointLabel'),
+        }
+    return {'agents': agents, 'meta': meta}
+
+
+@router.post('/sessions/{session_id}/isolate-subagents')
+async def setIsolateSubagents(sessionId: str, request: Request):
+    """Toggle git worktree isolation for sub-agents on this session."""
+    body: dict = {}
+    try:
+        raw = await request.json()
+        if isinstance(raw, dict):
+            body = raw
+    except Exception:
+        body = {}
+    session = wb.getWorkbenchSession(sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    enabled = bool(body.get('enabled', True))
+    meta = dict(session.metadata) if isinstance(session.metadata, dict) else {}
+    meta['isolateSubagents'] = enabled
+    session.metadata = meta
+    from app.services.workbench.sessions import save_sessions
+
+    save_sessions()
+    return {'ok': True, 'isolateSubagents': enabled}
+
+
+@router.post('/sessions/{session_id}/worktree')
+async def createSessionWorktree(sessionId: str):
+    """Create an isolated git worktree for this session (manual / demo)."""
+    from app.services.workbench.worktree_service import create_agent_worktree
+
+    session = wb.getWorkbenchSession(sessionId)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    ws = session.workspacePath or ''
+    result = create_agent_worktree(ws, session_id=sessionId, agent_label='session')
+    if result.get('ok') and result.get('path'):
+        meta = dict(session.metadata) if isinstance(session.metadata, dict) else {}
+        meta['activeWorktree'] = result['path']
+        meta['isolateSubagents'] = True
+        session.metadata = meta
+        from app.services.workbench.sessions import save_sessions
+
+        save_sessions()
+    return result
+
+
+@router.post('/sessions/{session_id}/undo-last-turn')
+async def undoLastTurn(sessionId: str):
+    """Remove the last user turn and all following messages from the session."""
+    from app.services.workbench.sessions import undo_last_turn
+
+    result = undo_last_turn(sessionId)
+    if result is None:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return result
+
+
+@router.post('/sessions/{session_id}/branch')
+async def branchSession(sessionId: str, request: Request):
+    """Fork a session into a new branch (optional upToIndex of source messages)."""
+    from app.services.workbench.sessions import branch_workbench_session
+
+    body: dict = {}
+    try:
+        if request.headers.get('content-type', '').startswith('application/json'):
+            raw = await request.json()
+            if isinstance(raw, dict):
+                body = raw
+    except Exception:
+        body = {}
+    up_to = body.get('upToIndex', body.get('up_to_index'))
+    up_to_index: int | None
+    if up_to is None or up_to == '':
+        up_to_index = None
+    else:
+        try:
+            up_to_index = int(up_to)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail='upToIndex must be an integer') from exc
+    session = branch_workbench_session(sessionId, up_to_index=up_to_index)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return session.toDict()
+
+
+@router.post('/sessions/{session_id}/compact')
+async def compactSession(sessionId: str):
+    """Force context compression (\"Free up chat memory\")."""
+    from app.services.workbench.sessions import compact_workbench_session_now
+
+    result = compact_workbench_session_now(sessionId)
+    if result is None:
+        raise HTTPException(status_code=404, detail='Session not found')
+    return result
 
 
 @router.post('/guard-mode')

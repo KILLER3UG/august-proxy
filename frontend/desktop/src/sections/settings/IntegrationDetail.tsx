@@ -158,6 +158,8 @@ function AccountAction({ item }: { item: IntegrationItem }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [waiting, setWaiting] = useState(false);
+  const [clientIdDraft, setClientIdDraft] = useState('');
+  const [savingClientId, setSavingClientId] = useState(false);
   const qc = useQueryClient();
   const connect = useConnectAccount();
   const disconnect = useDisconnectAccount();
@@ -171,6 +173,14 @@ function AccountAction({ item }: { item: IntegrationItem }) {
 
   if (!provider) return null;
 
+  // Sign-in is always primary when a Client ID is already configured
+  // (user env, MCP env, or AUGUST_DEFAULT_GOOGLE_OAUTH_CLIENT_ID).
+  // Only show the paste form when we know there is no client id.
+  const hasClientId =
+    provider === 'google' && Boolean(conn?.hasClientId || conn?.pkceReady);
+  const needsClientId =
+    provider === 'google' && !conn?.connected && !hasClientId;
+
   const startBrowserOAuth = async () => {
     if (provider !== 'google') return;
     setError(null);
@@ -180,6 +190,7 @@ function AccountAction({ item }: { item: IntegrationItem }) {
       const authUrl = (res as { authUrl?: string }).authUrl || '';
       const message = (res as { message?: string }).message || '';
       const alreadyConnected = Boolean((res as { connected?: boolean }).connected);
+      const needsId = Boolean((res as { needsClientId?: boolean }).needsClientId);
       if (alreadyConnected) {
         void qc.invalidateQueries({ queryKey: ['integrations-connections'] });
         return;
@@ -187,7 +198,9 @@ function AccountAction({ item }: { item: IntegrationItem }) {
       if (!authUrl) {
         setError(
           message ||
-            'Google sign-in is not configured. Install “Google Workspace MCP” from Add integrations (paste Client ID + Secret), or set GOOGLE_OAUTH_CLIENT_ID / SECRET in MCP env.',
+            (needsId
+              ? 'Paste a Google OAuth Client ID below (Desktop app — no secret needed), then Sign in.'
+              : 'Google sign-in is not configured.'),
         );
         return;
       }
@@ -225,11 +238,40 @@ function AccountAction({ item }: { item: IntegrationItem }) {
       const msg = e instanceof Error ? e.message : 'Failed to start Google sign-in';
       setError(
         msg.includes("MCP server 'mcp'")
-          ? 'Google sign-in could not reach workspace-mcp. Install Google Workspace MCP from Add integrations, or set GOOGLE_OAUTH_CLIENT_ID / SECRET.'
+          ? 'Google sign-in could not reach workspace-mcp. Set GOOGLE_OAUTH_CLIENT_ID and try native Sign in, or install Google Workspace MCP.'
           : msg,
       );
     } finally {
       setPending(false);
+    }
+  };
+
+  const saveClientIdAndContinue = async () => {
+    const id = clientIdDraft.trim();
+    if (!id) {
+      setError('Paste your Google OAuth Client ID (Desktop app recommended).');
+      return;
+    }
+    setSavingClientId(true);
+    setError(null);
+    try {
+      await fetch('/api/mcp-env', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merge: true,
+          env: {
+            GOOGLE_OAUTH_CLIENT_ID: id,
+            OAUTHLIB_INSECURE_TRANSPORT: '1',
+          },
+        }),
+      });
+      void qc.invalidateQueries({ queryKey: ['integrations-connections'] });
+      await startBrowserOAuth();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save Client ID');
+    } finally {
+      setSavingClientId(false);
     }
   };
 
@@ -264,14 +306,86 @@ function AccountAction({ item }: { item: IntegrationItem }) {
     <div className="flex flex-col items-end gap-2">
       {provider === 'google' ? (
         <>
-          <Button onClick={startBrowserOAuth} disabled={pending || waiting}>
-            {pending || waiting ? (
-              <Loader2 className="size-3 animate-spin" />
-            ) : (
-              <ExternalLink className="size-3" />
-            )}
-            {waiting ? 'Waiting for sign-in…' : 'Sign in with Google'}
-          </Button>
+          {needsClientId && (
+            <div className="w-72 space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3 text-left">
+              <p className="text-[11px] font-medium text-foreground">One-time Google setup</p>
+              <p className="text-[10px] leading-relaxed text-muted-foreground">
+                Create an OAuth <span className="text-foreground/80">Desktop app</span> in Google
+                Cloud Console. Copy the Client ID only — no secret needed (secure PKCE). Enable
+                Gmail/Calendar/Drive APIs and add yourself as a test user if the app is in Testing.
+              </p>
+              <input
+                type="text"
+                autoComplete="off"
+                value={clientIdDraft}
+                onChange={(e) => setClientIdDraft(e.target.value)}
+                placeholder="….apps.googleusercontent.com"
+                className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
+              />
+              {conn?.redirectUri && (
+                <p className="break-all font-mono text-[9px] text-muted-foreground">
+                  Redirect: {conn.redirectUri}
+                </p>
+              )}
+              <Button
+                size="sm"
+                className="w-full"
+                disabled={savingClientId || pending || !clientIdDraft.trim()}
+                onClick={() => void saveClientIdAndContinue()}
+              >
+                {savingClientId || pending ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <ExternalLink className="size-3" />
+                )}
+                Save &amp; Sign in with Google
+              </Button>
+            </div>
+          )}
+          {!needsClientId && (
+            <div className="flex flex-col items-end gap-1.5">
+              <Button onClick={() => void startBrowserOAuth()} disabled={pending || waiting}>
+                {pending || waiting ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <ExternalLink className="size-3" />
+                )}
+                {waiting ? 'Waiting for sign-in…' : 'Sign in with Google'}
+              </Button>
+              <p className="max-w-[14rem] text-right text-[10px] text-muted-foreground">
+                One-click browser sign-in (Desktop OAuth + PKCE). Gmail, Calendar, and Drive
+                share this account.
+              </p>
+              <details className="max-w-[18rem] text-right text-[10px] text-muted-foreground">
+                <summary className="cursor-pointer hover:text-foreground">
+                  Use a different Client ID
+                </summary>
+                <div className="mt-2 space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3 text-left">
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    value={clientIdDraft}
+                    onChange={(e) => setClientIdDraft(e.target.value)}
+                    placeholder="….apps.googleusercontent.com"
+                    className="w-full rounded-md border border-white/[0.08] bg-white/[0.06] px-2.5 py-1.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  />
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    disabled={savingClientId || pending || !clientIdDraft.trim()}
+                    onClick={() => void saveClientIdAndContinue()}
+                  >
+                    {savingClientId || pending ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <ExternalLink className="size-3" />
+                    )}
+                    Save &amp; Sign in
+                  </Button>
+                </div>
+              </details>
+            </div>
+          )}
           {waiting && (
             <p className="max-w-xs text-right text-[10px] text-muted-foreground">
               Complete Google consent in your browser. This screen updates automatically when

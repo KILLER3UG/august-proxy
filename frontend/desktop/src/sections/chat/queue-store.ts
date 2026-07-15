@@ -20,6 +20,8 @@ export interface QueuedUserMessage {
   text: string;
   attachments?: FileAttachment[];
   queuedAt: string;
+  /** queue = follow-up; steer = mid-run course correction */
+  kind?: 'queue' | 'steer';
 }
 
 interface QueueState {

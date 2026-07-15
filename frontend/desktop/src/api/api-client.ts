@@ -204,6 +204,9 @@ export interface TerminalSession {
   cols?: number;
   rows?: number;
   pty?: boolean;
+  error?: string | null;
+  approvedInteractive?: boolean;
+  shell?: string;
 }
 
 export interface TerminalApproval {
@@ -336,8 +339,22 @@ export function getTerminalBuffer(sessionId: string): Promise<{ buffer: string }
   return api.get<{ buffer: string } & TerminalSession>(`/api/terminal/buffer?id=${encodeURIComponent(sessionId)}`);
 }
 
-export function createTerminalSession(params?: { cwd?: string; title?: string }): Promise<TerminalSession> {
-  return api.post<TerminalSession>('/api/terminal/sessions', params || {});
+export function createTerminalSession(params?: {
+  cwd?: string;
+  title?: string;
+  approvedInteractive?: boolean;
+  cols?: number;
+  rows?: number;
+}): Promise<TerminalSession & { error?: string | null }> {
+  return api.post<TerminalSession & { error?: string | null }>('/api/terminal/sessions', {
+    approvedInteractive: true,
+    ...(params || {}),
+  });
+}
+
+/** Open a real OS terminal window (Windows Terminal / PowerShell / Terminal.app). */
+export function openExternalTerminal(cwd?: string): Promise<{ ok: boolean; via?: string; cwd?: string }> {
+  return api.post('/api/terminal/open-external', { cwd: cwd || '' });
 }
 
 export function submitTerminalCommand(sessionId: string, command: string): Promise<unknown> {

@@ -86,6 +86,33 @@ async def executeSubAgent(
         if emit:
             emit({'type': 'subagentDone', 'agentId': resolvedAgentId, 'status': 'blocked', 'error': blocked_msg})
         return {'agentId': resolvedAgentId, 'status': 'blocked', 'error': blocked_msg}
+
+    # Optional git worktree isolation (session.metadata.isolateSubagents)
+    worktree_path = ''
+    meta = getattr(session, 'metadata', None)
+    isolate = bool(as_dict(meta).get('isolateSubagents')) if meta is not None else False
+    workspace = as_str(getattr(session, 'workspacePath', ''))
+    if isolate and workspace:
+        try:
+            from app.services.workbench.worktree_service import create_agent_worktree
+
+            wt = create_agent_worktree(
+                workspace,
+                session_id=as_str(getattr(session, 'id', '')),
+                agent_label=resolvedAgentId or 'agent',
+            )
+            if wt.get('ok') and wt.get('path'):
+                worktree_path = str(wt['path'])
+                # Prefer isolated cwd for tools that honor AUGUST_WORKTREE / session path
+                try:
+                    import os
+
+                    os.environ['AUGUST_SUBAGENT_WORKTREE'] = worktree_path
+                except Exception:
+                    pass
+        except Exception:
+            worktree_path = ''
+
     job = createJob(resolvedAgentId, goal, context)
     jobId = as_str(job['id'])
     updateJob(jobId, {'status': 'running'})
@@ -98,6 +125,8 @@ async def executeSubAgent(
                 'name': as_str(agent.get('name'), 'General'),
                 'role': as_str(agent.get('role'), ''),
                 'goal': goal,
+                'worktreePath': worktree_path or None,
+                'isolated': bool(worktree_path),
             }
         )
     aliasHint = as_str(agent.get('modelAlias')) or parentAlias or ''

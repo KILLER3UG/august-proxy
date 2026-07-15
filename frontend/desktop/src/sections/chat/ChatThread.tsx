@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
 import { createPortal } from 'react-dom';
-import { useSessionsStore, setSessionStatus, clearSessionStatus, renameSession, deriveSessionTitleFromMessage, isPlaceholderTitle, updateSessionModel, updateSessionWorkbenchMetadata, type Session } from '@/store/sessions';
+import { useSessionsStore, setSessionStatus, clearSessionStatus, renameSession, deriveSessionTitleFromMessage, isPlaceholderTitle, updateSessionModel, updateSessionWorkbenchMetadata, createSession, type Session } from '@/store/sessions';
 import { useActiveChatStreamsStore } from '@/store/chat-active-streams';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThinkingDisclosure } from '@/components/chat/ThinkingDisclosure';
@@ -86,6 +86,11 @@ import {
   queueWorkbenchMessage,
   dequeueWorkbenchMessage,
   getQueuedWorkbenchMessages,
+  undoWorkbenchLastTurn,
+  compactWorkbenchSession,
+  branchWorkbenchSession,
+  listWorkbenchCheckpoints,
+  restoreWorkbenchCheckpoint,
 } from '@/api/workbench';
 import type { WorkbenchSession } from '@/types/workbench';
 import { WorkbenchBtwDrawer } from '@/components/chat/WorkbenchBtwDrawer';
@@ -100,6 +105,7 @@ import { usageApi } from '@/api/usage';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import { ModelPickerCard } from './ModelPickerCard';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
+import { onUiAction } from '@/api/ui-events';
 // Chat domain types live in `@/types/chat` (Phase 2 refactor). Re-export
 // from the canonical location so existing `from './ChatThread'` imports
 // keep working without churn, and import for local use in this file.
@@ -296,6 +302,25 @@ const TOOLS = [
   { name: '@run_command', desc: 'Propose shell command execution' },
   { name: '@fetch_url', desc: 'Fetch web content' },
 ];
+
+type MentionItem = {
+  kind: 'skill' | 'tool';
+  name: string;
+  desc: string;
+  /** Inserted into the composer when picked. */
+  insert: string;
+};
+
+function parseAtMention(value: string, cursor?: number): { query: string; start: number } | null {
+  const pos = cursor ?? value.length;
+  const before = value.slice(0, pos);
+  // Match @token at start or after whitespace; allow skill names with hyphens.
+  const match = before.match(/(^|[\s])@([\w./-]*)$/);
+  if (!match) return null;
+  const token = match[2] ?? '';
+  const start = before.length - token.length - 1; // index of '@'
+  return { query: token, start };
+}
 
 const MESSAGES_STORAGE_PREFIX = 'chat_messages_';
 const COMPOSER_DRAFT_PREFIX = 'august_composer_draft_';
@@ -544,6 +569,12 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   const [showToolsDropdown, setShowToolsDropdown] = useState(false);
   const [showCommandsDropdown, setShowCommandsDropdown] = useState(false);
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  // Skills / tools @ mention picker
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionStart, setMentionStart] = useState(0);
+  const [skillMentions, setSkillMentions] = useState<MentionItem[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [highlightedMentionIndex, setHighlightedMentionIndex] = useState(0);
   // Live markdown preview lives below the textarea but is opt-in: most
   // users want a plain textarea while typing, and the rendered preview
   // visually reads like a second input box. Toggle via the "Preview"
@@ -604,7 +635,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
   }, [showComposerActionsDropdown]);
 
   useEffect(() => {
-    if (!showToolsDropdown) {
+    const open = showToolsDropdown || mentionQuery !== null;
+    if (!open) {
       setToolsPos(null);
       return;
     }
@@ -621,7 +653,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       window.removeEventListener('scroll', compute, true);
       window.removeEventListener('resize', compute);
     };
-  }, [showToolsDropdown]);
+  }, [showToolsDropdown, mentionQuery]);
 
   useEffect(() => {
     if (!showCommandsDropdown) {
@@ -643,9 +675,61 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     };
   }, [showCommandsDropdown]);
 
-  // Outside-click + Escape handlers for the three composer dropdowns.
+  const showMentionsDropdown = mentionQuery !== null;
+
+  // Fetch skills when @ mention picker opens or query changes.
   useEffect(() => {
-    const anyOpen = showComposerActionsDropdown || showToolsDropdown || showCommandsDropdown;
+    if (mentionQuery === null) return;
+    let cancelled = false;
+    setSkillsLoading(true);
+    const q = mentionQuery.trim();
+    const url = '/api/skills' + (q ? `?q=${encodeURIComponent(q)}` : '');
+    api
+      .get<{ total: number; skills: Array<{ name: string; description?: string; category?: string }> }>(url)
+      .then((data) => {
+        if (cancelled) return;
+        const items: MentionItem[] = (data.skills ?? []).slice(0, 30).map((s) => ({
+          kind: 'skill' as const,
+          name: s.name,
+          desc: s.description || s.category || 'Skill',
+          insert: `@skill:${s.name} `,
+        }));
+        setSkillMentions(items);
+      })
+      .catch(() => {
+        if (!cancelled) setSkillMentions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSkillsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mentionQuery]);
+
+  const mentionItems: MentionItem[] = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.toLowerCase();
+    const tools: MentionItem[] = TOOLS.filter((t) => {
+      if (!q) return true;
+      return t.name.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q);
+    }).map((t) => ({
+      kind: 'tool' as const,
+      name: t.name,
+      desc: t.desc,
+      insert: t.name.startsWith('@') ? `${t.name} ` : `@${t.name} `,
+    }));
+    const skills = skillMentions.filter((s) => {
+      if (!q) return true;
+      return s.name.toLowerCase().includes(q) || s.desc.toLowerCase().includes(q);
+    });
+    return [...skills, ...tools];
+  }, [mentionQuery, skillMentions]);
+
+  // Outside-click + Escape handlers for the composer dropdowns.
+  useEffect(() => {
+    const anyOpen =
+      showComposerActionsDropdown || showToolsDropdown || showCommandsDropdown || showMentionsDropdown;
     if (!anyOpen) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
@@ -657,12 +741,14 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       setShowComposerActionsDropdown(false);
       setShowToolsDropdown(false);
       setShowCommandsDropdown(false);
+      setMentionQuery(null);
     };
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') {
         setShowComposerActionsDropdown(false);
         setShowToolsDropdown(false);
         setShowCommandsDropdown(false);
+        setMentionQuery(null);
       }
     };
     document.addEventListener('mousedown', onDown);
@@ -671,7 +757,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [showComposerActionsDropdown, showToolsDropdown, showCommandsDropdown]);
+  }, [showComposerActionsDropdown, showToolsDropdown, showCommandsDropdown, showMentionsDropdown]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -1593,11 +1679,8 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       // Unrecognized slash command — let the backend handle it (or no-op).
     }
 
-    // Queue when streaming instead of dropping the message. The model will
-    // pick the queued message up at the next iteration boundary (between
-    // toolResults or after a text-only response) without interrupting
-    // the current response — the model then decides whether to act on
-    // it, defer it, or acknowledge it.
+    // While streaming: mid-run STEER (course correction) — applies at the
+    // next tool/LLM boundary without cancelling the turn (Hermes-style /steer).
     if (streaming && sessionId) {
       try {
         const savedAttachments = attachments.length > 0 ? [...attachments] : undefined;
@@ -1606,7 +1689,7 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
           workbenchSession?.id ||
           activeSession?.workbenchSessionId ||
           sessionId;
-        const entry = await queueWorkbenchMessage(wbId, text, savedAttachments);
+        const entry = await queueWorkbenchMessage(wbId, text, savedAttachments, 'steer');
         // Optimistic local update: the SSE event will also arrive and
         // upsert the same entry (idempotent), but write immediately so
         // the pill is visible without a round-trip.
@@ -1616,10 +1699,13 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
         setShowToolsDropdown(false);
         setShowCommandsDropdown(false);
         clearComposerDraft(sessionId);
+        toast.message('Direction queued', {
+          description: 'August will apply this after the current tool step.',
+        });
       } catch (err) {
          
-        console.error('[send] queueWorkbenchMessage failed', err);
-        toast.error('Could not queue message');
+        console.error('[send] steer failed', err);
+        toast.error('Could not add direction');
       }
       return;
     }
@@ -1773,7 +1859,68 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
     ));
   }, [sessionId, setMessages]);
 
+  const insertMention = (item: MentionItem) => {
+    setMentionQuery(null);
+    setShowToolsDropdown(false);
+    // Skills: load full skill card into composer (same as /load <name>).
+    if (item.kind === 'skill') {
+      // Drop the partial @query token before the load handler rewrites input.
+      const ta = taRef.current;
+      const value = ta?.value ?? input;
+      const cursor = ta?.selectionStart ?? value.length;
+      const parsed = parseAtMention(value, cursor);
+      if (parsed) {
+        setInput(value.slice(0, parsed.start) + value.slice(cursor));
+      }
+      voiceCommandEvents.emit({ type: 'load-skill', skillName: item.name });
+      return;
+    }
+    const ta = taRef.current;
+    const value = ta?.value ?? input;
+    const cursor = ta?.selectionStart ?? value.length;
+    const parsed = parseAtMention(value, cursor);
+    const start = parsed?.start ?? mentionStart;
+    const end = cursor;
+    const next = value.slice(0, start) + item.insert + value.slice(end);
+    setInput(next);
+    setTimeout(() => {
+      if (!ta) return;
+      ta.focus();
+      const pos = start + item.insert.length;
+      ta.selectionStart = ta.selectionEnd = pos;
+    }, 50);
+  };
+
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showMentionsDropdown && mentionItems.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setHighlightedMentionIndex((i) => (i + 1) % mentionItems.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHighlightedMentionIndex((i) => (i - 1 + mentionItems.length) % mentionItems.length);
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const item = mentionItems[highlightedMentionIndex] ?? mentionItems[0];
+        if (item) insertMention(item);
+        return;
+      }
+      if (e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault();
+        const item = mentionItems[highlightedMentionIndex] ?? mentionItems[0];
+        if (item) insertMention(item);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMentionQuery(null);
+        return;
+      }
+    }
     if (showCommandsDropdown) {
       const allCommands = getDisplayCommands();
       const visible = allCommands.filter(c => {
@@ -1790,16 +1937,31 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
 	    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); }
   };
 
-  // Detect slash commands as user types
+  // Detect slash commands and @ skill/tool mentions as user types
   const handleInputChange = (value: string) => {
     setInput(value);
     setHighlightedCommandIndex(0);
+    setHighlightedMentionIndex(0);
     // Show commands dropdown when text starts with /
     if (value.startsWith('/')) {
       setShowCommandsDropdown(true);
       setShowToolsDropdown(false);
-    } else if (showCommandsDropdown && !value.startsWith('/')) {
+      setMentionQuery(null);
+      return;
+    }
+    if (showCommandsDropdown && !value.startsWith('/')) {
       setShowCommandsDropdown(false);
+    }
+    const ta = taRef.current;
+    const cursor = ta?.selectionStart ?? value.length;
+    const at = parseAtMention(value, cursor);
+    if (at) {
+      setMentionQuery(at.query);
+      setMentionStart(at.start);
+      setShowToolsDropdown(false);
+      setShowCommandsDropdown(false);
+    } else if (mentionQuery !== null) {
+      setMentionQuery(null);
     }
   };
 
@@ -1988,30 +2150,222 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
       window.removeEventListener('august:model-selected', handleModelSelected);
     };
   }, [models, sessionId]);
+
+  // Command palette / ui-action: undo, compact, branch, guard mode
+  useEffect(() => {
+    const resolveWbId = () =>
+      workbenchSession?.id ||
+      activeSession?.workbenchSessionId ||
+      (sessionId?.startsWith('wb_') ? sessionId : null);
+
+    const unsub = onUiAction((e) => {
+      if (e.action === 'set_guard_mode') {
+        const mode = e.target as WorkbenchGuardMode;
+        if (!WORKBENCH_GUARD_MODES[mode]) return;
+        setWorkbenchMode(mode);
+        localStorage.setItem('august_last_workbench_guard_mode', mode);
+        const wbId = resolveWbId();
+        if (mode === 'full' && workbenchSession) {
+          setWorkbenchSession({
+            ...workbenchSession,
+            plan: null,
+            approved: false,
+            approvedAt: null,
+            guardMode: 'full',
+            agentId: 'build',
+          });
+        }
+        if (wbId) {
+          void setWorkbenchGuardMode(wbId, mode)
+            .then((updated) => {
+              if (updated) setWorkbenchSession(updated as typeof workbenchSession);
+              toast.success(`Mode: ${WORKBENCH_GUARD_MODES[mode].label}`);
+            })
+            .catch((err: unknown) => {
+              toast.error(
+                `Could not set mode: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            });
+        }
+        return;
+      }
+
+      if (e.action === 'undo_last_turn') {
+        if (streaming) {
+          toast.message('Stop August first, then undo.');
+          return;
+        }
+        const lastUserIdx = [...messages].map((m) => m.role).lastIndexOf('user');
+        if (lastUserIdx < 0) {
+          toast.message('Nothing to undo yet.');
+          return;
+        }
+        const wbId = resolveWbId();
+        const next = messages.slice(0, lastUserIdx);
+        setMessages(next);
+        persistMessages(sessionId, next);
+        if (wbId) {
+          void undoWorkbenchLastTurn(wbId)
+            .then((res) => {
+              if (res.session) setWorkbenchSession(res.session as typeof workbenchSession);
+              toast.success(res.message || 'Undid last turn');
+            })
+            .catch((err: unknown) => {
+              toast.error(
+                `Undo failed on server (local chat was updated): ${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              );
+            });
+        } else {
+          toast.success('Undid last turn');
+        }
+        return;
+      }
+
+      if (e.action === 'compact_now') {
+        const wbId = resolveWbId();
+        if (!wbId) {
+          toast.message('Start a chat first, then free up memory.');
+          return;
+        }
+        void compactWorkbenchSession(wbId)
+          .then((res) => {
+            if (res.session) setWorkbenchSession(res.session as typeof workbenchSession);
+            toast.success(res.message || 'Chat memory updated');
+          })
+          .catch((err: unknown) => {
+            toast.error(
+              `Could not free memory: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          });
+        return;
+      }
+
+      if (e.action === 'branch_session') {
+        const wbId = resolveWbId();
+        if (!wbId) {
+          toast.message('Start a chat first, then branch it.');
+          return;
+        }
+        void branchWorkbenchSession(wbId)
+          .then((branched) => {
+            const ui = createSession(
+              null,
+              branched.title || 'Chat (branch)',
+              activeSession?.workspacePath || null,
+            );
+            updateSessionWorkbenchMetadata(ui.id, {
+              workbenchSessionId: branched.id,
+              workbenchAgentId: branched.agentId,
+              workbenchProvider: branched.provider,
+            });
+            // Copy current UI messages into the new session storage
+            persistMessages(ui.id, messages);
+            toast.success('Branched chat — opening copy…');
+            window.location.href = `/c/${ui.id}`;
+          })
+          .catch((err: unknown) => {
+            toast.error(
+              `Could not branch: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          });
+        return;
+      }
+
+      if (e.action === 'restore_checkpoint') {
+        const wbId = resolveWbId();
+        if (!wbId) {
+          toast.message('Start a chat first.');
+          return;
+        }
+        void (async () => {
+          try {
+            const list = await listWorkbenchCheckpoints(wbId);
+            const latest = list[0];
+            if (!latest?.id) {
+              toast.message('No save points yet — they appear before file changes.');
+              return;
+            }
+            const res = await restoreWorkbenchCheckpoint(wbId, latest.id);
+            toast.success(res.message || 'Save point restored');
+          } catch (err: unknown) {
+            toast.error(
+              `Could not restore: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        })();
+      }
+    });
+    return unsub;
+  }, [
+    sessionId,
+    messages,
+    streaming,
+    workbenchSession,
+    activeSession?.workbenchSessionId,
+    activeSession?.workspacePath,
+  ]);
   const renderComposerContent = () => {
     return (
       <div className="relative" ref={composerRootRef}>
-        {/* Tools Dropdown — portaled to body to escape overflow:hidden chain */}
-        {showToolsDropdown && toolsPos && createPortal(
+        {/* Tools / Skills @ mention dropdown — button open or typing @ */}
+        {(showToolsDropdown || showMentionsDropdown) && toolsPos && createPortal(
           <div
             data-composer-popover
+            data-testid="mention-picker"
             style={{ position: 'fixed', top: toolsPos.top, left: toolsPos.left, transform: 'translateY(-100%)' }}
-            className="z-50 w-64 bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
+            className="z-50 w-80 max-h-72 overflow-auto bg-card border border-border shadow-2xl rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
           >
-            <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-semibold">Mention Tool</div>
-            {TOOLS.map((t) => (
+            <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase font-semibold flex items-center justify-between">
+              <span>Skills &amp; tools</span>
+              {skillsLoading && <Loader2 className="size-3 animate-spin" />}
+            </div>
+            {mentionQuery !== null && mentionItems.length === 0 && !skillsLoading && (
+              <div className="px-2.5 py-2 text-[11px] text-muted-foreground">
+                No skills match “{mentionQuery}”. Try another name or pick a tool.
+              </div>
+            )}
+            {(mentionQuery !== null ? mentionItems : [
+              ...skillMentions.slice(0, 12),
+              ...TOOLS.map((t) => ({
+                kind: 'tool' as const,
+                name: t.name,
+                desc: t.desc,
+                insert: `${t.name} `,
+              })),
+            ]).map((item, idx) => (
               <button
-                key={t.name}
+                key={`${item.kind}-${item.name}`}
+                type="button"
                 onClick={() => {
-                  insertText(t.name);
-                  setShowToolsDropdown(false);
+                  if (mentionQuery !== null) {
+                    insertMention(item);
+                  } else if (item.kind === 'skill') {
+                    insertMention(item);
+                  } else {
+                    insertText(item.insert.trimEnd());
+                    setShowToolsDropdown(false);
+                  }
                 }}
-                className="w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between"
+                className={cn(
+                  'w-full text-left rounded-md px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-muted hover:text-foreground transition flex items-center justify-between gap-2',
+                  mentionQuery !== null && idx === highlightedMentionIndex && 'bg-muted',
+                )}
               >
-                <span className="font-mono font-medium text-primary">{t.name}</span>
-                <span className="text-[10px] text-muted-foreground">{t.desc}</span>
+                <span className="font-mono font-medium text-primary truncate">
+                  {item.kind === 'skill' ? `@${item.name}` : item.name}
+                </span>
+                <span className="text-[10px] text-muted-foreground truncate max-w-[50%]">
+                  {item.kind === 'skill' ? `skill · ${item.desc}` : item.desc}
+                </span>
               </button>
             ))}
+            {mentionQuery === null && skillMentions.length === 0 && !skillsLoading && (
+              <div className="px-2.5 py-1.5 text-[11px] text-muted-foreground">
+                Type <span className="font-mono text-foreground/80">@</span> to search skills, or pick a tool below.
+              </div>
+            )}
           </div>,
           document.body,
         )}
@@ -2063,10 +2417,21 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
             {queuedMessages.map((q, i) => (
               <div
                 key={q.id}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-warning/30 bg-warning/5 text-[11px]"
+                className={cn(
+                  'flex items-center gap-2 px-3 py-1.5 rounded-xl border text-[11px]',
+                  q.kind === 'steer'
+                    ? 'border-primary/35 bg-primary/10'
+                    : 'border-warning/30 bg-warning/5',
+                )}
               >
-                <span className="text-warning font-semibold uppercase tracking-wider">
-                  Queued {queuedMessages.length > 1 ? `(${i + 1}/${queuedMessages.length})` : ''}
+                <span
+                  className={cn(
+                    'font-semibold uppercase tracking-wider',
+                    q.kind === 'steer' ? 'text-primary' : 'text-warning',
+                  )}
+                >
+                  {q.kind === 'steer' ? 'Direction' : 'Queued'}
+                  {queuedMessages.length > 1 ? ` (${i + 1}/${queuedMessages.length})` : ''}
                 </span>
                 <span className="truncate text-muted-foreground flex-1 min-w-0">
                   {q.text.length > 120 ? q.text.slice(0, 120).trim() + '…' : q.text}
@@ -2168,7 +2533,11 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                   e.target.style.height = Math.min(e.target.scrollHeight, 360) + 'px';
                 }}
                 onKeyDown={onKey}
-                placeholder={streaming ? 'Type to queue your next message…' : 'Enter message… (use / for commands)'}
+                placeholder={
+                  streaming
+                    ? 'Add a direction while August works… (applied after the next tool step)'
+                    : 'Enter message… (use / for commands)'
+                }
                 rows={1}
                 className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-xs outline-none placeholder:text-muted-foreground"
                 style={{ minHeight: '64px', maxHeight: '360px' }}
@@ -2226,12 +2595,30 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                       type="button"
                       onClick={() => {
                         setShowToolsDropdown(true);
+                        setMentionQuery('');
+                        setMentionStart(input.length);
                         setShowCommandsDropdown(false);
                         setShowComposerActionsDropdown(false);
+                        // Prefetch skills list for the open picker
+                        if (skillMentions.length === 0) {
+                          api
+                            .get<{ skills: Array<{ name: string; description?: string; category?: string }> }>('/api/skills')
+                            .then((data) => {
+                              setSkillMentions(
+                                (data.skills ?? []).slice(0, 30).map((s) => ({
+                                  kind: 'skill' as const,
+                                  name: s.name,
+                                  desc: s.description || s.category || 'Skill',
+                                  insert: `@skill:${s.name} `,
+                                })),
+                              );
+                            })
+                            .catch(() => undefined);
+                        }
                       }}
                       className="w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-muted transition flex items-center justify-between"
                     >
-                      <span>Mention tool</span>
+                      <span>Mention skill / tool</span>
                       <AtSign className="size-3.5 text-muted-foreground" />
                     </button>
                     <button
@@ -2313,9 +2700,21 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
               />
 
               {streaming ? (
-                <Button onClick={stop} size="sm" variant="outline">
-                  <StopCircle className="size-3" /> Stop
-                </Button>
+                <>
+                  <Button
+                    onClick={() => { void send(); }}
+                    disabled={!sessionId || loadedSessionId !== sessionId || (!input.trim() && attachments.length === 0)}
+                    size="sm"
+                    variant="secondary"
+                    title="Steer mid-run — applies after the current tool step without stopping"
+                  >
+                    <Send className="size-3" />
+                    Add direction
+                  </Button>
+                  <Button onClick={stop} size="sm" variant="outline">
+                    <StopCircle className="size-3" /> Stop
+                  </Button>
+                </>
               ) : (
                 <Button onClick={() => { void send(); }} disabled={!sessionId || loadedSessionId !== sessionId || (!input.trim() && attachments.length === 0)} size="sm">
                   <Send className="size-3" />
@@ -2419,6 +2818,35 @@ export function ChatThread({ sessionId }: { sessionId: string | null }) {
                     </span>
                     ?
                   </h1>
+
+                  <div className="w-full max-w-lg rounded-xl border border-border/60 bg-muted/20 px-4 py-3 text-left text-xs text-muted-foreground space-y-2">
+                    <p className="font-semibold text-foreground/80 text-[11px] uppercase tracking-wide">
+                      How August works
+                    </p>
+                    <ol className="list-decimal list-inside space-y-1.5 leading-relaxed">
+                      <li>
+                        Pick a mode next to the box:{' '}
+                        <span className="text-foreground/80">Plan only</span>,{' '}
+                        <span className="text-foreground/80">Ask before changes</span>, or{' '}
+                        <span className="text-foreground/80">Make changes</span>.
+                      </li>
+                      <li>
+                        In Plan only, August proposes a plan — Accept or revise before it edits files.
+                      </li>
+                      <li>
+                        Open the right panel for <span className="text-foreground/80">Plan</span>,{' '}
+                        <span className="text-foreground/80">Tasks</span>, and{' '}
+                        <span className="text-foreground/80">Diffs</span>.
+                      </li>
+                      <li>
+                        Press{' '}
+                        <kbd className="rounded border border-border bg-background px-1 font-mono text-[10px]">
+                          Ctrl+K
+                        </kbd>{' '}
+                        for undo, branch chat, free memory, and more.
+                      </li>
+                    </ol>
+                  </div>
 
                   {/* Composer or plan banner */}
                   <div className="w-full">

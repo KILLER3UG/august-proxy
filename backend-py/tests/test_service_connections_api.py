@@ -112,7 +112,9 @@ async def test_google_auth_requires_config(client):
     assert r.status_code == 200
     body = r.json()
     assert not body.get('authUrl')
-    assert 'not configured' in (body.get('message') or '').lower()
+    assert body.get('needsClientId') is True
+    msg = (body.get('message') or '').lower()
+    assert 'client id' in msg or 'oauth' in msg
 
 
 @pytest.mark.asyncio
@@ -131,6 +133,24 @@ async def test_google_native_auth_url_when_client_id_set(client, monkeypatch):
     q = parse_qs(urlparse(url).query)
     redirect = unquote(q.get('redirect_uri', [''])[0])
     assert redirect.endswith('/api/service-connections/google/callback')
+    assert q.get('code_challenge_method') == ['S256']
+    assert q.get('code_challenge')
+
+
+@pytest.mark.asyncio
+async def test_google_pkce_auth_url_without_secret(client, monkeypatch):
+    """Desktop / public clients need only Client ID + PKCE."""
+    monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_ID', 'desktop-client.apps.googleusercontent.com')
+    monkeypatch.delenv('GOOGLE_OAUTH_CLIENT_SECRET', raising=False)
+    r = await client.post('/api/service-connections/google/auth', json={})
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get('authUrl')
+    assert body.get('pkce') is True
+    from urllib.parse import parse_qs, urlparse
+
+    q = parse_qs(urlparse(body['authUrl']).query)
+    assert 'code_challenge' in q
 
 
 @pytest.mark.asyncio
@@ -169,6 +189,7 @@ async def test_google_callback_exchanges_code(client, monkeypatch):
             assert 'oauth2.googleapis.com/token' in url
             assert data['code'] == 'auth-code-xyz'
             assert data['client_secret'] == 'test-secret'
+            assert data.get('code_verifier')  # PKCE always sent when auth started via August
             return FakeResponse(
                 200,
                 {
@@ -197,6 +218,66 @@ async def test_google_callback_exchanges_code(client, monkeypatch):
     google = listed.json()['connections']['google']
     assert google['connected'] is True
     assert google.get('account') == 'user@gmail.com'
+
+
+@pytest.mark.asyncio
+async def test_google_callback_pkce_without_secret(client, monkeypatch):
+    monkeypatch.setenv('GOOGLE_OAUTH_CLIENT_ID', 'desktop.apps.googleusercontent.com')
+    monkeypatch.delenv('GOOGLE_OAUTH_CLIENT_SECRET', raising=False)
+
+    auth = await client.post('/api/service-connections/google/auth', json={})
+    url = auth.json()['authUrl']
+    from urllib.parse import parse_qs, urlparse
+
+    state = parse_qs(urlparse(url).query)['state'][0]
+    seen: dict = {}
+
+    class FakeResponse:
+        def __init__(self, status_code: int, payload: dict | str):
+            self.status_code = status_code
+            self._payload = payload
+            self.text = payload if isinstance(payload, str) else str(payload)
+
+        def json(self):
+            assert isinstance(self._payload, dict)
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def post(self, url, data=None, headers=None):
+            seen['data'] = dict(data or {})
+            assert 'client_secret' not in data
+            assert data.get('code_verifier')
+            return FakeResponse(
+                200,
+                {
+                    'access_token': 'ya29.pkce',
+                    'refresh_token': '1//pkce',
+                    'token_type': 'Bearer',
+                    'expires_in': 3600,
+                },
+            )
+
+        async def get(self, url, headers=None):
+            return FakeResponse(200, {'email': 'pkce@gmail.com'})
+
+    monkeypatch.setattr('app.services.service_connections.httpx.AsyncClient', FakeClient)
+    r = await client.get(
+        '/api/service-connections/google/callback',
+        params={'code': 'pkce-code', 'state': state},
+    )
+    assert r.status_code == 200
+    assert 'Connected' in r.text or 'connected' in r.text.lower()
+    listed = await client.get('/api/service-connections')
+    assert listed.json()['connections']['google']['account'] == 'pkce@gmail.com'
 
 
 @pytest.mark.asyncio

@@ -83,7 +83,11 @@ class TestPlanAndApproval:
         assert mutation is not None
         assert 'token' in mutation
         assert session.status == 'awaiting_approval'
-        assert consumePendingMutation(mutation['token']) is True
+        result = consumePendingMutation(mutation['token'])
+        assert result is not None
+        assert result['status'] == 'approved'
+        assert result['toolName'] == 'write_file'
+        assert result['args']['path'] == '/tmp/test'
         assert session.status == 'idle'
 
 

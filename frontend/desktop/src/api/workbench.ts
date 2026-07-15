@@ -417,25 +417,46 @@ export interface QueuedUserMessage {
   text: string;
   attachments?: FileAttachment[];
   queuedAt: string;
+  kind?: 'queue' | 'steer';
 }
 
 /** Submit a follow-up message that will be delivered to the model mid-
  *  response. The next time the chat loop's iteration boundary fires
  *  (after toolResults or after the model emits a text-only turn), the
  *  queued entries are drained and the model decides whether to act on
- *  them. */
+ *  them.
+ *
+ *  kind:
+ *  - ``queue`` — ordinary follow-up
+ *  - ``steer`` — mid-run course correction (priority + stronger prompt)
+ */
 export async function queueWorkbenchMessage(
   sessionId: string,
   text: string,
   attachments?: FileAttachment[],
+  kind: 'queue' | 'steer' = 'queue',
 ): Promise<QueuedUserMessage> {
   const res = await fetch('/api/workbench/chat/queue', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, text, attachments: attachments ?? [] }),
+    body: JSON.stringify({
+      sessionId,
+      text,
+      attachments: attachments ?? [],
+      kind,
+    }),
   });
   if (!res.ok) throw new Error(`queueWorkbenchMessage failed: ${res.status}`);
   return res.json() as Promise<QueuedUserMessage>;
+}
+
+/** Mid-run steer — redirect August without stopping the current turn. */
+export async function steerWorkbenchMessage(
+  sessionId: string,
+  text: string,
+  attachments?: FileAttachment[],
+): Promise<QueuedUserMessage> {
+  return queueWorkbenchMessage(sessionId, text, attachments, 'steer');
 }
 
 /** Cancel a single queued message before the model receives it. */
@@ -552,6 +573,14 @@ function dispatchWorkbenchEvent(
         compressedTokens: Number(p?.compressedTokens) || 0,
         underThreshold: p?.underThreshold === true,
         threshold: Number(p?.threshold) || undefined,
+      });
+      break;
+    case 'checkpoint':
+      handlers.onCheckpoint?.({
+        id: typeof p?.id === 'string' ? p.id : undefined,
+        label: typeof p?.label === 'string' ? p.label : undefined,
+        fileCount: Number(p?.fileCount) || undefined,
+        toolName: typeof p?.toolName === 'string' ? p.toolName : undefined,
       });
       break;
     case 'prompt':
@@ -827,6 +856,151 @@ export async function renameWorkbenchSession(
   );
   if (!res.ok) throw new Error(`renameWorkbenchSession failed: ${res.status}`);
   return res.json() as Promise<WorkbenchSession>;
+}
+
+/** Remove the last user turn (and following assistant/tool messages) on the server. */
+export async function undoWorkbenchLastTurn(sessionId: string): Promise<{
+  session: WorkbenchSession;
+  removed: number;
+  message?: string;
+}> {
+  const res = await fetch(
+    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/undo-last-turn`,
+    { method: 'POST' },
+  );
+  if (!res.ok) throw new Error(`undo last turn failed: ${res.status}`);
+  return res.json() as Promise<{ session: WorkbenchSession; removed: number; message?: string }>;
+}
+
+/** Fork a workbench session (optional upToIndex = last source message to keep). */
+export async function branchWorkbenchSession(
+  sessionId: string,
+  upToIndex?: number | null,
+): Promise<WorkbenchSession> {
+  const res = await fetch(
+    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/branch`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(
+        upToIndex == null ? {} : { upToIndex },
+      ),
+    },
+  );
+  if (!res.ok) throw new Error(`branch session failed: ${res.status}`);
+  return res.json() as Promise<WorkbenchSession>;
+}
+
+/** Force context compression (“Free up chat memory”). */
+export async function compactWorkbenchSession(sessionId: string): Promise<{
+  session: WorkbenchSession;
+  underThreshold?: boolean;
+  originalTokens?: number;
+  compressedTokens?: number;
+  compressedCount?: number;
+  headCount?: number;
+  tailCount?: number;
+  message?: string;
+}> {
+  const res = await fetch(
+    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/compact`,
+    { method: 'POST' },
+  );
+  if (!res.ok) throw new Error(`compact failed: ${res.status}`);
+  return res.json() as Promise<{
+    session: WorkbenchSession;
+    underThreshold?: boolean;
+    originalTokens?: number;
+    compressedTokens?: number;
+    compressedCount?: number;
+    headCount?: number;
+    tailCount?: number;
+    message?: string;
+  }>;
+}
+
+export interface WorkbenchCheckpoint {
+  id: string;
+  sessionId?: string;
+  createdAt?: string;
+  label?: string;
+  fileCount?: number;
+  toolName?: string;
+}
+
+export async function listWorkbenchCheckpoints(
+  sessionId: string,
+): Promise<WorkbenchCheckpoint[]> {
+  const res = await fetch(
+    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/checkpoints`,
+  );
+  if (!res.ok) throw new Error(`list checkpoints failed: ${res.status}`);
+  const data = (await res.json()) as { checkpoints?: WorkbenchCheckpoint[] };
+  return data.checkpoints ?? [];
+}
+
+export async function restoreWorkbenchCheckpoint(
+  sessionId: string,
+  checkpointId: string,
+): Promise<{ ok: boolean; message?: string; restored?: number; deleted?: number }> {
+  const res = await fetch(
+    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/checkpoints/${encodeURIComponent(checkpointId)}/restore`,
+    { method: 'POST' },
+  );
+  if (!res.ok) throw new Error(`restore checkpoint failed: ${res.status}`);
+  return res.json() as Promise<{
+    ok: boolean;
+    message?: string;
+    restored?: number;
+    deleted?: number;
+  }>;
+}
+
+export interface SessionAgentRow {
+  taskId: string;
+  agentId: string;
+  goal: string;
+  status: string;
+  elapsed?: number;
+  error?: string;
+}
+
+export async function listWorkbenchSessionAgents(sessionId: string): Promise<{
+  agents: SessionAgentRow[];
+  meta: {
+    isolateSubagents?: boolean;
+    lastCheckpointId?: string;
+    lastCheckpointLabel?: string;
+  };
+}> {
+  const res = await fetch(
+    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/agents`,
+  );
+  if (!res.ok) throw new Error(`list session agents failed: ${res.status}`);
+  return res.json() as Promise<{
+    agents: SessionAgentRow[];
+    meta: {
+      isolateSubagents?: boolean;
+      lastCheckpointId?: string;
+      lastCheckpointLabel?: string;
+    };
+  }>;
+}
+
+export async function setIsolateSubagents(
+  sessionId: string,
+  enabled: boolean,
+): Promise<{ ok: boolean; isolateSubagents: boolean }> {
+  const res = await fetch(
+    `/api/workbench/sessions/${encodeURIComponent(sessionId)}/isolate-subagents`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    },
+  );
+  if (!res.ok) throw new Error(`set isolate failed: ${res.status}`);
+  return res.json() as Promise<{ ok: boolean; isolateSubagents: boolean }>;
 }
 
 export async function listWorkbenchAgents(activeAgentId = 'build'): Promise<WorkbenchAgentRegistry> {

@@ -1,10 +1,10 @@
-/* ── RightDrawerTerminalSection ─ real xterm.js PTY panel ────────── */
+/* ── RightDrawerTerminalSection ─ real shell (PTY) + open external ── */
 
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Loader2, Plus, ShieldAlert, X, Inbox } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Check, ExternalLink, Loader2, Plus, ShieldAlert, Trash2, X, Inbox, AlertCircle } from 'lucide-react';import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
@@ -13,14 +13,24 @@ import {
   createTerminalSession,
   deleteTerminalSession,
   getTerminalSessions,
+  openExternalTerminal,
   resizeTerminalSession,
   type TerminalApproval,
 } from '@/api/api-client';
+import { useSessionsStore } from '@/store/sessions';
+import { useParams } from 'react-router-dom';
 
 export function RightDrawerTerminalSection() {
   const qc = useQueryClient();
+  const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
+  const workspacePath = useSessionsStore((s) => {
+    const id = routeSessionId;
+    const sess = s.sessions.find((x) => x.id === id || x.workbenchSessionId === id);
+    return sess?.workspacePath || null;
+  });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [socketReady, setSocketReady] = useState(false);
+  const [spawnError, setSpawnError] = useState<string | null>(null);
   const terminalRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -46,11 +56,38 @@ export function RightDrawerTerminalSection() {
   });
 
   const createSession = useMutation({
-    mutationFn: () => createTerminalSession(),
+    mutationFn: () =>
+      createTerminalSession({
+        cwd: workspacePath || undefined,
+        title: 'Shell',
+        approvedInteractive: true,
+      }),
     onSuccess: (session) => {
       setSelectedId(session.id);
+      setSpawnError(session.error || null);
+      if (session.error || session.status === 'error') {
+        toast.error(session.error || 'Terminal failed to start');
+      }
       void qc.invalidateQueries({ queryKey: ['terminal-sessions'] });
     },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      setSpawnError(msg);
+      toast.error(`Terminal failed: ${msg}`);
+    },
+  });
+
+  const openExternal = useMutation({
+    mutationFn: () => openExternalTerminal(workspacePath || undefined),
+    onSuccess: (res) => {
+      toast.success(
+        res.via === 'windows-terminal'
+          ? 'Opened Windows Terminal'
+          : 'Opened system terminal',
+      );
+    },
+    onError: (e: unknown) =>
+      toast.error(`Could not open external terminal: ${e instanceof Error ? e.message : String(e)}`),
   });
 
   const approve = useMutation({
@@ -190,20 +227,34 @@ export function RightDrawerTerminalSection() {
         <Button
           variant="ghost"
           size="icon-sm"
+          onClick={() => openExternal.mutate()}
+          disabled={openExternal.isPending}
+          aria-label="Open external OS terminal"
+          title="Open Windows Terminal / system terminal"
+        >
+          {openExternal.isPending ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : (
+            <ExternalLink className="size-3" />
+          )}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
           onClick={() => terminalRef.current?.clear()}
           disabled={!active}
           aria-label="Clear terminal"
           title="Clear"
         >
-          <Check className="size-3" />
+          <Trash2 className="size-3" />
         </Button>
         <Button
           variant="ghost"
           size="icon-sm"
           onClick={() => createSession.mutate()}
           disabled={createSession.isPending}
-          aria-label="New terminal session"
-          title="New"
+          aria-label="New embedded shell"
+          title="New embedded shell (real PowerShell/bash)"
         >
           {createSession.isPending ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
         </Button>
@@ -220,6 +271,23 @@ export function RightDrawerTerminalSection() {
           </Button>
         )}
       </div>
+
+      {spawnError && (
+        <div className="absolute left-1 right-12 top-9 z-10 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-[10px] text-destructive">
+          <AlertCircle className="size-3.5 shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <p className="font-medium">Shell failed to start</p>
+            <p className="mt-0.5 whitespace-pre-wrap break-words opacity-90">{spawnError}</p>
+            <button
+              type="button"
+              className="mt-1 underline"
+              onClick={() => openExternal.mutate()}
+            >
+              Open external terminal instead
+            </button>
+          </div>
+        </div>
+      )}
 
       {approvals.length > 0 && (
         <div className="absolute left-1 right-12 top-9 z-10">

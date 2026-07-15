@@ -59,6 +59,85 @@ def _getShell() -> str:
     return os.environ.get('SHELL', '/bin/bash')
 
 
+def _defaultShellArgs(shell: str) -> list[str]:
+    """Shell-appropriate interactive flags (``-i`` breaks PowerShell)."""
+    base = os.path.basename(shell).lower()
+    if base in ('pwsh.exe', 'pwsh', 'powershell.exe', 'powershell'):
+        # Interactive login shell; do not pass -i (bash-only).
+        return ['-NoLogo']
+    if base in ('cmd.exe', 'cmd'):
+        return []
+    # bash, zsh, fish, etc.
+    return ['-i']
+
+
+def openExternalTerminal(cwd: str = '', shell: str = '') -> dict[str, object]:
+    """Launch a real OS terminal window (Windows Terminal / PowerShell / Terminal.app)."""
+    import shutil
+    import subprocess
+
+    workdir = cwd.strip() if cwd else os.getcwd()
+    if not os.path.isdir(workdir):
+        workdir = os.getcwd()
+    shell_cmd = shell.strip() or _getShell()
+    system = platform.system()
+    try:
+        if system == 'Windows':
+            wt = shutil.which('wt.exe') or shutil.which('wt')
+            if wt:
+                # Windows Terminal — real tab/window
+                subprocess.Popen(
+                    [wt, '-d', workdir],
+                    cwd=workdir,
+                    creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0),
+                )
+                return {'ok': True, 'via': 'windows-terminal', 'cwd': workdir}
+            # Fallback: new console PowerShell / cmd
+            base = os.path.basename(shell_cmd).lower()
+            creation = getattr(subprocess, 'CREATE_NEW_CONSOLE', 0x00000010)
+            if base in ('pwsh.exe', 'pwsh', 'powershell.exe', 'powershell'):
+                subprocess.Popen(
+                    [shell_cmd, '-NoLogo', '-NoExit', '-Command', f"Set-Location -LiteralPath '{workdir}'"],
+                    cwd=workdir,
+                    creationflags=creation,
+                )
+            else:
+                subprocess.Popen(
+                    [shell_cmd],
+                    cwd=workdir,
+                    creationflags=creation,
+                )
+            return {'ok': True, 'via': 'console', 'cwd': workdir, 'shell': shell_cmd}
+        if system == 'Darwin':
+            # Open Terminal.app in the workspace folder
+            script = f'tell application "Terminal" to do script "cd {workdir.replace(chr(34), chr(92)+chr(34))}"'
+            subprocess.Popen(['osascript', '-e', script])
+            return {'ok': True, 'via': 'terminal-app', 'cwd': workdir}
+        # Linux: try common terminal emulators
+        for term in (
+            'gnome-terminal',
+            'konsole',
+            'xfce4-terminal',
+            'x-terminal-emulator',
+            'xterm',
+        ):
+            path = shutil.which(term)
+            if not path:
+                continue
+            if 'gnome' in term or term == 'x-terminal-emulator':
+                subprocess.Popen([path, '--working-directory', workdir])
+            elif term == 'konsole':
+                subprocess.Popen([path, '--workdir', workdir])
+            elif 'xfce' in term:
+                subprocess.Popen([path, f'--working-directory={workdir}'])
+            else:
+                subprocess.Popen([path], cwd=workdir)
+            return {'ok': True, 'via': term, 'cwd': workdir}
+        return {'ok': False, 'error': 'No terminal emulator found on PATH'}
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc)}
+
+
 _sessions: dict[str, dict[str, object]] = {}
 _pendingApprovals: dict[str, dict[str, object]] = {}
 _wsSockets: dict[str, set[object]] = {}
@@ -86,6 +165,8 @@ def _summarize(session: dict[str, object]) -> dict[str, object]:
         'cols': as_int(session.get('cols'), 80),
         'rows': as_int(session.get('rows'), 24),
         'pty': as_bool(session.get('pty', False)),
+        'error': as_str(session.get('error'), '') or None,
+        'shell': as_str(session.get('command'), ''),
     }
 
 
@@ -98,21 +179,36 @@ def listTerminalApprovals() -> list[dict[str, object]]:
 
 
 async def createTerminalSession(params: dict[str, object] | None = None) -> dict[str, object]:
-    """Create a terminal session with a running shell process (PTY)."""
+    """Create a terminal session with a running shell process (PTY).
+
+    Interactive drawer terminals default to ``approvedInteractive=True`` so
+    keystrokes go straight to a real shell (PowerShell/bash) without a
+    permission gate on every character.
+    """
     params = params or {}
     sessionId = f'term_{uuid.uuid4().hex[:8]}'
-    shell = _getShell()
+    shell = as_str(params.get('command')) or _getShell()
+    cwd = as_str(params.get('cwd')) or os.getcwd()
+    if not os.path.isdir(cwd):
+        cwd = os.getcwd()
+    # Drawer / interactive sessions: real shell without per-keystroke approval
+    if 'approvedInteractive' in params or 'approved_interactive' in params:
+        approved = as_bool(
+            params.get('approvedInteractive', params.get('approved_interactive', True))
+        )
+    else:
+        approved = True
     pty = PtyIO()
     session = {
         'id': sessionId,
         'title': as_str(params.get('title'), 'Terminal'),
-        'cwd': as_str(params.get('cwd')) or os.getcwd(),
-        'command': as_str(params.get('command'), shell),
+        'cwd': cwd,
+        'command': shell,
         'status': 'starting',
         'createdAt': _now(),
         'updatedAt': _now(),
         'buffer': '',
-        'approvedInteractive': as_bool(params.get('approvedInteractive', False)),
+        'approvedInteractive': approved,
         'cols': as_int(params.get('cols'), 80),
         'rows': as_int(params.get('rows'), 24),
         'pty': True,
@@ -120,28 +216,73 @@ async def createTerminalSession(params: dict[str, object] | None = None) -> dict
         'process': None,
         'stdin': None,
         'stdout': None,
+        'error': None,
     }
+    explicit_args = [as_str(a) for a in as_list(params.get('args'))]
+    args = explicit_args if explicit_args else _defaultShellArgs(shell)
+    env = {**os.environ, 'TERM': 'xterm-256color', 'COLORTERM': 'truecolor'}
     try:
-        args = [as_str(a) for a in as_list(params.get('args'))] or ['-i']
         await pty.spawn(
             shell=shell,
             args=args,
             cwd=str(session['cwd']),
-            env={**os.environ, 'TERM': 'xterm-256color'},
+            env=env,
             cols=as_int(session.get('cols'), 80),
             rows=as_int(session.get('rows'), 24),
         )
         session['status'] = 'running'
+        session['pty'] = True
         _sessions[sessionId] = session
         _wsSockets[sessionId] = set()
         task = asyncio.create_task(_pipePtyStdout(sessionId))
         session['reader_task'] = task
-    except (FileNotFoundError, PermissionError, ImportError) as exc:
-        session['status'] = 'error'
-        session['error'] = str(exc)
-        session['pty'] = False
-        _sessions[sessionId] = session
-    return _summarize(session)
+    except (FileNotFoundError, PermissionError, ImportError, OSError) as exc:
+        # Fall back to a real subprocess shell (no full PTY) so the drawer still works
+        # when pywinpty is missing on Windows.
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                shell,
+                *args,
+                cwd=str(session['cwd']),
+                env=env,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            session['process'] = proc
+            session['stdin'] = proc.stdin
+            session['stdout'] = proc.stdout
+            session['pty'] = False
+            session['pty_io'] = None
+            session['status'] = 'running'
+            session['error'] = None
+            # Soft notice in buffer so user knows this is a real shell without TTY features
+            notice = (
+                f'[August] Real shell: {shell} (cwd={session["cwd"]})\r\n'
+                f'[August] PTY unavailable ({exc}); using pipe mode. '
+                f'For full TTY: pip install pywinpty — or click Open external terminal.\r\n\r\n'
+            )
+            session['buffer'] = notice
+            _sessions[sessionId] = session
+            _wsSockets[sessionId] = set()
+            task = asyncio.create_task(_pipeStdout(sessionId))
+            session['reader_task'] = task
+            # Broadcast notice to any early subscribers
+            for ws in list(_wsSockets.get(sessionId, set())):
+                try:
+                    cast(Callable[[object], None], ws)(notice)
+                except Exception:
+                    pass
+        except Exception as exc2:
+            session['status'] = 'error'
+            session['error'] = (
+                f'Could not start shell: {exc2}. '
+                'Use “Open external terminal” for a full OS window, '
+                'or install pywinpty: pip install pywinpty'
+            )
+            session['pty'] = False
+            _sessions[sessionId] = session
+    return {**_summarize(session), 'error': session.get('error')}
 
 
 async def _pipeStdout(sessionId: str) -> None:
@@ -185,9 +326,16 @@ async def _pipePtyStdout(sessionId: str) -> None:
         return
     try:
         while pty.isOpen:
-            chunk = await pty.read(4096)
+            try:
+                chunk = await asyncio.wait_for(pty.read(4096), timeout=5.0)
+            except asyncio.TimeoutError:
+                continue
             if not chunk:
-                break
+                # Soft EOF from PtyIO — confirm process still open before exit
+                if not pty.isOpen:
+                    break
+                await asyncio.sleep(0.05)
+                continue
             text = chunk.decode('utf-8', errors='replace')
             session['buffer'] = (as_str(session.get('buffer'), '') + text)[-BUFFER_LIMIT:]
             session['updatedAt'] = _now()

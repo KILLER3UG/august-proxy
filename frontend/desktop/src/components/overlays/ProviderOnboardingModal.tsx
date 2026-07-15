@@ -1,21 +1,41 @@
-/* ── Provider Onboarding Modal ────────────────────────────────────────── */
-/* First-launch modal shown when the providers list is empty and the user
-   has not previously skipped onboarding. Offers three paths:
-   1) "Set Up a Provider" — navigates to /settings/providers
-   2) "Import Config" — paste JSON blob → POST /api/providers/import-config
-   3) "Skip for now" — sets localStorage flag, modal won't show again. */
+/* ── First-run setup checklist ────────────────────────────────────────── */
+/* Multi-step checklist: provider → workspace → optional Google.           */
+/* Replaces the old provider-only onboarding modal.                        */
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Cloud, Upload, X } from 'lucide-react';
+import {
+  CheckCircle2,
+  Circle,
+  Cloud,
+  FolderOpen,
+  Mail,
+  Upload,
+  X,
+} from 'lucide-react';
 import { useProviderOnboardingState } from '@/hooks/useProviderOnboardingState';
 import { providersApi } from '@/api/providers';
 import { refreshProviderCatalog } from '@/lib/provider-catalog';
 import { Backdrop } from '@/components/overlays/Backdrop';
+import { cn } from '@/lib/utils';
+
+const ICONS = {
+  provider: Cloud,
+  workspace: FolderOpen,
+  google: Mail,
+} as const;
 
 export function ProviderOnboardingModal() {
-  const { shouldShow, skip, isLoading } = useProviderOnboardingState();
+  const {
+    shouldShow,
+    skip,
+    markDone,
+    isLoading,
+    checks,
+    allCoreDone,
+    hasProvider,
+  } = useProviderOnboardingState();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [showImport, setShowImport] = useState(false);
@@ -24,10 +44,6 @@ export function ProviderOnboardingModal() {
   const [importing, setImporting] = useState(false);
 
   if (!shouldShow || isLoading) return null;
-
-  const handleSetUpProvider = () => {
-    void navigate('/settings/providers');
-  };
 
   const handleImport = async () => {
     setImportError('');
@@ -47,13 +63,19 @@ export function ProviderOnboardingModal() {
     }
   };
 
+  const go = (href?: string) => {
+    if (!href) return;
+    void navigate(href);
+  };
+
   return (
     <Backdrop onClose={skip}>
       <div
         className="relative w-full max-w-md rounded-2xl border border-white/[0.06] bg-card p-6 shadow-2xl"
         role="dialog"
         aria-modal="true"
-        aria-label="Provider setup"
+        aria-label="August setup checklist"
+        data-testid="setup-checklist-modal"
       >
         <button
           type="button"
@@ -64,14 +86,13 @@ export function ProviderOnboardingModal() {
           <X className="size-4" />
         </button>
 
-        <div className="mb-6 text-center">
+        <div className="mb-5 text-center">
           <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-primary/10">
             <Cloud className="size-6 text-primary" />
           </div>
-          <h2 className="text-lg font-semibold">Welcome to August</h2>
+          <h2 className="text-lg font-semibold">Set up August</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Connect an AI provider to start chatting. You can add multiple
-            providers and switch between them at any time.
+            A short checklist so chat, files, and integrations work on first run.
           </p>
         </div>
 
@@ -100,7 +121,9 @@ export function ProviderOnboardingModal() {
               </button>
               <button
                 type="button"
-                onClick={() => { void handleImport(); }}
+                onClick={() => {
+                  void handleImport();
+                }}
                 disabled={!importJson.trim() || importing}
                 className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
               >
@@ -110,41 +133,88 @@ export function ProviderOnboardingModal() {
           </div>
         ) : (
           <div className="space-y-3">
-            <button
-              type="button"
-              onClick={handleSetUpProvider}
-              className="flex w-full items-center gap-3 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3 text-left hover:bg-white/[0.06] transition-colors"
-            >
-              <Cloud className="size-5 text-primary shrink-0" />
-              <div>
-                <p className="text-sm font-medium">Set Up a Provider</p>
-                <p className="text-xs text-muted-foreground">
-                  Configure Anthropic, OpenAI, or any OpenAI-compatible endpoint
-                </p>
-              </div>
-            </button>
+            <ul className="space-y-2">
+              {checks.map((item) => {
+                const Icon = ICONS[item.id];
+                return (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => go(item.href)}
+                      className={cn(
+                        'flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition-colors',
+                        item.done
+                          ? 'border-emerald-500/25 bg-emerald-500/5'
+                          : 'border-white/[0.06] bg-black/20 hover:bg-white/[0.06]',
+                      )}
+                    >
+                      {item.done ? (
+                        <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-400" />
+                      ) : (
+                        <Circle className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <Icon className="size-3.5 text-primary shrink-0" />
+                          <p className="text-sm font-medium">
+                            {item.label}
+                            {item.optional && (
+                              <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
+                                optional
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {item.description}
+                        </p>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
 
-            <button
-              type="button"
-              onClick={() => setShowImport(true)}
-              className="flex w-full items-center gap-3 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3 text-left hover:bg-white/[0.06] transition-colors"
-            >
-              <Upload className="size-5 text-primary shrink-0" />
-              <div>
-                <p className="text-sm font-medium">Import Config</p>
-                <p className="text-xs text-muted-foreground">
-                  Paste a JSON configuration from clipboard or export
-                </p>
-              </div>
-            </button>
+            {!hasProvider && (
+              <button
+                type="button"
+                onClick={() => setShowImport(true)}
+                className="flex w-full items-center gap-3 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3 text-left hover:bg-white/[0.06] transition-colors"
+              >
+                <Upload className="size-5 text-primary shrink-0" />
+                <div>
+                  <p className="text-sm font-medium">Import provider config</p>
+                  <p className="text-xs text-muted-foreground">
+                    Paste a JSON configuration from clipboard or export
+                  </p>
+                </div>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={skip}
-              className="flex w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Skip for now
-            </button>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={skip}
+                className="flex-1 rounded-xl px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Skip for now
+              </button>
+              <button
+                type="button"
+                onClick={markDone}
+                disabled={!allCoreDone && !hasProvider}
+                className="flex-1 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-40"
+                title={
+                  allCoreDone
+                    ? 'Mark setup complete'
+                    : hasProvider
+                      ? 'Continue with provider only'
+                      : 'Connect a provider first'
+                }
+              >
+                {allCoreDone ? 'Done' : hasProvider ? 'Continue' : 'Need a provider'}
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -27,20 +27,20 @@ export interface WorkbenchGuardModeConfig {
 export const WORKBENCH_GUARD_MODES = {
   plan: {
     id: 'plan',
-    label: 'Plan Mode',
-    description: 'System barrier: investigate first, then submit a plan for approval.',
+    label: 'Plan only',
+    description: 'Don’t change files yet — August investigates, then shows a plan for you to approve.',
     agentId: 'plan' as const,
-  },
-  full: {
-    id: 'full',
-    label: 'Full Access',
-    description: 'System barrier: execute tools directly. No plan approval UI.',
-    agentId: 'build' as const,
   },
   ask: {
     id: 'ask',
-    label: 'Ask Before Changes',
-    description: 'System barrier: every mutation needs your confirmation.',
+    label: 'Ask before changes',
+    description: 'August asks you before changing files or running risky commands.',
+    agentId: 'build' as const,
+  },
+  full: {
+    id: 'full',
+    label: 'Make changes',
+    description: 'August can edit files and run tools as it works. You can still Stop anytime.',
     agentId: 'build' as const,
   },
 } as const satisfies Record<WorkbenchGuardMode, WorkbenchGuardModeConfig>;

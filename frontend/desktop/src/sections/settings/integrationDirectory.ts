@@ -329,15 +329,15 @@ export const INTEGRATION_DIRECTORY: readonly IntegrationCatalogEntry[] = [
         label: 'Google OAuth client ID',
         required: true,
         placeholder: '….apps.googleusercontent.com',
-        help: 'Google Cloud Console → APIs & Services → Credentials → OAuth client ID',
+        help: 'Prefer a Desktop app client. Secret not required when using August Sign in (PKCE).',
       },
       {
         key: 'GOOGLE_OAUTH_CLIENT_SECRET',
-        label: 'Google OAuth client secret',
+        label: 'Google OAuth client secret (optional for Desktop)',
         secret: true,
-        required: true,
-        placeholder: 'GOCSPX-…',
-        help: 'From the same OAuth client. Required for confidential clients.',
+        required: false,
+        placeholder: 'GOCSPX-… (only for Web/confidential clients)',
+        help: 'Leave empty for Desktop + PKCE. Required only for Web application clients.',
       },
       {
         key: 'OAUTHLIB_INSECURE_TRANSPORT',
@@ -348,9 +348,8 @@ export const INTEGRATION_DIRECTORY: readonly IntegrationCatalogEntry[] = [
       },
     ],
     requirements:
-      'Python 3.10+ and uv/uvx on PATH (https://github.com/astral-sh/uv). ' +
-      'Google Cloud project with Gmail/Calendar/Drive APIs enabled and an OAuth client. ' +
-      'For August’s built-in Sign in button, also add redirect URI: ' +
+      'Python 3.10+ and uv/uvx on PATH. Google Cloud Desktop OAuth client recommended (PKCE — Client ID only). ' +
+      'Enable Gmail/Calendar/Drive APIs. Redirect for August Sign in: ' +
       'http://127.0.0.1:8085/api/service-connections/google/callback',
     helpUrl: 'https://github.com/taylorwilsdon/google_workspace_mcp',
   },

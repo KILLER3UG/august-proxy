@@ -8,6 +8,13 @@ import {
   Moon,
   Settings,
   Copy,
+  Undo2,
+  GitBranch,
+  Shrink,
+  Shield,
+  ListTodo,
+  FileDiff,
+  History,
 } from "lucide-react";
 import {
   useCommandPaletteStore,
@@ -17,6 +24,7 @@ import { useResolvedThemeStore, toggleTheme } from "@/store/theme";
 import { SECTION_NAV_ITEMS, SETTINGS_TABS } from '@/routes';
 import { Backdrop } from "./Backdrop";
 import { useQueryClient } from "@tanstack/react-query";
+import { dispatchUiAction } from "@/api/ui-events";
 
 export function CommandPalette() {
   const open = useCommandPaletteStore((s) => s.open);
@@ -59,7 +67,7 @@ export function CommandPalette() {
           </Command.Empty>
 
           <Command.Group
-            heading="Actions"
+            heading="Chat"
             className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground"
           >
             <Command.Item
@@ -69,6 +77,113 @@ export function CommandPalette() {
             >
               <Plus className="size-3.5" /> New chat
             </Command.Item>
+            <Command.Item
+              value="action undo last turn"
+              onSelect={run(() =>
+                dispatchUiAction({ action: 'undo_last_turn', target: 'active' }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Undo2 className="size-3.5" /> Undo last turn
+            </Command.Item>
+            <Command.Item
+              value="action branch chat fork"
+              onSelect={run(() =>
+                dispatchUiAction({ action: 'branch_session', target: 'active' }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <GitBranch className="size-3.5" /> Branch this chat
+            </Command.Item>
+            <Command.Item
+              value="action free up chat memory compact"
+              onSelect={run(() =>
+                dispatchUiAction({ action: 'compact_now', target: 'active' }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Shrink className="size-3.5" /> Free up chat memory
+            </Command.Item>
+            <Command.Item
+              value="action restore save point checkpoint undo files"
+              onSelect={run(() =>
+                dispatchUiAction({ action: 'restore_checkpoint', target: 'latest' }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <History className="size-3.5" /> Restore last save point
+            </Command.Item>
+            <Command.Item
+              value="mode plan only"
+              onSelect={run(() =>
+                dispatchUiAction({ action: 'set_guard_mode', target: 'plan' }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Shield className="size-3.5" /> Mode: Plan only
+            </Command.Item>
+            <Command.Item
+              value="mode ask before changes"
+              onSelect={run(() =>
+                dispatchUiAction({ action: 'set_guard_mode', target: 'ask' }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Shield className="size-3.5" /> Mode: Ask before changes
+            </Command.Item>
+            <Command.Item
+              value="mode make changes full access"
+              onSelect={run(() =>
+                dispatchUiAction({ action: 'set_guard_mode', target: 'full' }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <Shield className="size-3.5" /> Mode: Make changes
+            </Command.Item>
+            <Command.Item
+              value="open plan panel drawer"
+              onSelect={run(() =>
+                dispatchUiAction({
+                  action: 'set_drawer_section',
+                  target: 'plan',
+                }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <ListTodo className="size-3.5" /> Open plan panel
+            </Command.Item>
+            <Command.Item
+              value="open tasks todos panel drawer"
+              onSelect={run(() =>
+                dispatchUiAction({
+                  action: 'set_drawer_section',
+                  target: 'tasks',
+                }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <ListTodo className="size-3.5" /> Open tasks panel
+            </Command.Item>
+            <Command.Item
+              value="open diff changed files panel drawer"
+              onSelect={run(() =>
+                dispatchUiAction({
+                  action: 'set_drawer_section',
+                  target: 'diff',
+                }),
+              )}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded cursor-pointer aria-selected:bg-accent"
+            >
+              <FileDiff className="size-3.5" /> Open diffs panel
+            </Command.Item>
+          </Command.Group>
+
+          <Command.Separator className="my-2 border-t border-border" />
+
+          <Command.Group
+            heading="App"
+            className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground"
+          >
             <Command.Item
               value="action open settings"
               onSelect={run(() => { void navigate("/settings"); })}

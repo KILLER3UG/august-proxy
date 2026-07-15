@@ -24,9 +24,16 @@ class CreateSessionBody(CamelModel):
     title: str = 'Terminal'
     cwd: str = ''
     command: str = ''
-    approved_interactive: bool = False
+    # True = real interactive shell (default). False = gate every keystroke.
+    approved_interactive: bool = True
     cols: int = 80
     rows: int = 24
+
+
+class OpenExternalBody(CamelModel):
+    """Open a real OS terminal window in the given working directory."""
+
+    cwd: str = ''
 
 
 class InputBody(CamelModel):
@@ -76,6 +83,16 @@ async def createSession(body: CreateSessionBody | None = None):
         # Service expects camelCase keys (approvedInteractive, etc.)
         params = body.model_dump(by_alias=True, exclude_none=True)
     return await terminal_service.createTerminalSession(params)
+
+
+@router.post('/open-external')
+async def openExternal(body: OpenExternalBody | None = None):
+    """Open Windows Terminal / system terminal in a real OS window."""
+    cwd = body.cwd if body else ''
+    result = terminal_service.openExternalTerminal(cwd=cwd or '')
+    if not result.get('ok'):
+        raise HTTPException(status_code=500, detail=str(result.get('error') or 'Failed to open terminal'))
+    return result
 
 
 @router.get('/buffer')

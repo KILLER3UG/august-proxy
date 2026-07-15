@@ -16,29 +16,38 @@ import {
 } from 'lucide-react';
 import { useRightDrawer, type RightDrawerSectionId } from './RightDrawerState';
 
-const SECTION_META: Record<RightDrawerSectionId, { label: string; Icon: typeof FileDiff }> = {
+const SECTION_META: Record<
+  RightDrawerSectionId,
+  { label: string; hint?: string; Icon: typeof FileDiff }
+> = {
   preview: {
     label: 'Preview',
+    hint: 'Live preview of what August is building',
     Icon: Play,
   },
   diff: {
-    label: 'Diff',
+    label: 'Diffs',
+    hint: 'Files August changed this session',
     Icon: FileDiff,
   },
   terminal: {
     label: 'Terminal',
+    hint: 'Real PowerShell/bash shell (or open Windows Terminal)',
     Icon: TerminalSquare,
   },
   tasks: {
     label: 'Tasks',
+    hint: 'Step-by-step todos for the current plan',
     Icon: ListTodo,
   },
   plan: {
     label: 'Plan',
+    hint: 'Proposed steps — accept or revise before edits',
     Icon: ClipboardList,
   },
   browser: {
     label: 'Browser',
+    hint: 'Pages August opened for research',
     Icon: Globe,
   },
 };
@@ -86,9 +95,9 @@ export function RightDrawerDropdown({ drawerOpen, onSelect }: {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.97 }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute top-full mt-1.5 right-0 z-50 min-w-[180px] max-w-[220px] bg-popover rounded-lg shadow-2xl overflow-hidden origin-top-right"
+            className="absolute top-full mt-1.5 right-0 z-50 min-w-[220px] max-w-[280px] bg-popover rounded-lg shadow-2xl overflow-hidden origin-top-right"
           >
-            <div className="max-h-[260px] overflow-y-auto py-0.5">
+            <div className="max-h-[300px] overflow-y-auto py-0.5">
               {OPTIONS.map((sectionId) => {
                 const meta = SECTION_META[sectionId];
                 const isOpen = showCheck && state.sections.includes(sectionId);
@@ -96,21 +105,29 @@ export function RightDrawerDropdown({ drawerOpen, onSelect }: {
                   <button
                     key={sectionId}
                     type="button"
+                    title={meta.hint}
                     onClick={() => {
                       onSelect(sectionId);
                       setOpen(false);
                     }}
                     className={cn(
-                      'w-full text-left px-3 py-2 text-sm transition-all duration-150 flex items-center gap-2 rounded-md mx-1',
+                      'w-full text-left px-3 py-2 text-sm transition-all duration-150 flex items-start gap-2 rounded-md mx-1',
                       isOpen
                         ? 'bg-primary/10 text-primary'
                         : 'hover:bg-white/5 hover:text-foreground'
                     )}
                   >
-                    <meta.Icon className="size-4 text-muted-foreground/70 shrink-0" />
-                    <span className="truncate font-sans font-semibold">{meta.label}</span>
+                    <meta.Icon className="size-4 text-muted-foreground/70 shrink-0 mt-0.5" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-sans font-semibold">{meta.label}</span>
+                      {meta.hint && (
+                        <span className="block text-[10px] leading-snug text-muted-foreground font-normal mt-0.5">
+                          {meta.hint}
+                        </span>
+                      )}
+                    </span>
                     {isOpen && (
-                      <Check className="size-3.5 ml-auto text-primary shrink-0" />
+                      <Check className="size-3.5 ml-auto text-primary shrink-0 mt-0.5" />
                     )}
                   </button>
                 );

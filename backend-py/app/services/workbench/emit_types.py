@@ -26,6 +26,7 @@ WORKBENCH_EMIT_TYPES: frozenset[str] = frozenset(
         'subagentToolCall',
         'subagentToolResult',
         'subagentDone',
+        'checkpoint',
         'warning',
         'session_status',
     }

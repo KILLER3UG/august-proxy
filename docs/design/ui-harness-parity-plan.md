@@ -7,6 +7,81 @@
 
 ---
 
+## 0. Reality check (audit vs codebase)
+
+Many items in early gap analysis were **already implemented** in August — often as backend + UI that is **buried** rather than missing. This section is the source of truth for prioritization.
+
+### ✅ Already implemented (use / polish, do not rebuild)
+
+| Capability | Where it lives today |
+|------------|----------------------|
+| Guard modes Plan / Ask / Do | `WorkbenchMode` + composer mode selector; backend `normalizeGuardMode` / plan gate |
+| Plan propose → Accept / Accept+implement / Reject / Revise | `PlanProposalBanner.tsx` + workbench approve/reject APIs |
+| Plan detail in sidebar | `RightDrawerPlanSection.tsx` |
+| Live todos / tasks | Backend `submitTodos` / `updateTodos`; `RightDrawerTasksSection.tsx` |
+| File diffs after turn | `ChangedFilesCard.tsx`, `DiffView.tsx`, `RightDrawerDiffSection.tsx`, tool-call diffs in `ToolCallItem.tsx` |
+| Git branch + changes panel | `GitPanel.tsx`, titlebar branch, `/api/git/*` |
+| Mid-stream **message queue** + dequeue | `queue-store.ts`, composer “Type to queue…”, backend `enqueueUserMessage` |
+| Stop generation | Composer/thread Stop button |
+| Context usage ring | `ChatComposer` context ring |
+| Auto compaction + notice | Workbench auto-compact; stream notice in `makeStreamHandlers.ts` |
+| Command palette (basic) | `CommandPalette.tsx` — New chat, Settings, theme, navigate |
+| Sessions list / new chat | Session sidebar + store |
+| Terminal in workbench drawer | `RightDrawerTerminalSection` + terminal service approvals |
+| Browser drawer | `RightDrawerBrowserSection` |
+| Preview drawer | `RightDrawerPreviewSection` |
+| Clarify questions | `ClarifyTool.tsx` + queue answer back |
+| Subagent approval | `SubagentApprovalCard.tsx` |
+| Rollback history (settings) | `RollbackHistory.tsx` + rollback APIs |
+| Provider first-run onboarding | `ProviderOnboardingModal.tsx` |
+| AUG.md init with side-by-side diff | `InitAugCard.tsx` |
+| Skills UI | Settings Skills section |
+| Automations section | `Automations.tsx` |
+| Integrations + Google OAuth (BYO) | Integrations + `/google/callback` |
+| Memory / brain / live voice / model fleet | Existing product surfaces |
+| Advanced settings tier | Settings registry `basic` vs `advanced` |
+
+### ⚠️ Partial (exists but incomplete vs harness bar)
+
+| Capability | What’s there | What’s missing |
+|------------|--------------|----------------|
+| Command palette | Nav + a few actions | Undo, compact, mode switch, checkpoint restore, skills, integrations |
+| Permissions | Guard modes + agent permissions + terminal approve | Tool toast: **Once / This chat / Always for folder** |
+| Diffs | **Post-turn** git/tool diffs | **Pre-apply** accept/reject per file before write |
+| Queue | Solid FIFO queue | Reorder; true **steer** (inject mid-tool-loop without waiting for turn boundary) |
+| Compaction | Automatic + banner | Explicit **Compact now** control |
+| Sessions | List, resume, titles | **Branch/fork** from message; **Undo last turn** |
+| Rollback | Settings history | Chat-native **Restore save point** after mutations |
+| Setup | Provider onboarding | Full checklist (workspace, integrations, health) |
+| Subagents | Spawn + approval | Team grid, cancel-all, worktree isolation |
+| Google sign-in | Works with BYO client | One-click public OAuth (product decision) |
+
+### ❌ Not really implemented (true gaps)
+
+| Capability | Notes |
+|------------|--------|
+| Filesystem **checkpoints** before mutating batches | No checkpoint service; “checkpoint-pill” in chat is scroll/UI, not FS restore |
+| **Git worktrees** for isolated parallel agents | Not present |
+| Session **branch/fork** | No clone-from-message API/UI |
+| **Undo last turn** | No truncate last exchange API/UI |
+| Mid-run **steer** as first-class | Queue is adjacent, not the same |
+| Permission grants Once/Session/Always | Not the Claude-style toast model |
+| Pre-write patch gate | Diffs are after-the-fact |
+| Sandbox code execution toolset | No dedicated safe Python cell |
+| Multi-agent **kanban/tasks board** | Todos exist; durable multi-agent board does not |
+| Skills `@` picker in composer | `@` icon exists; hub/browse/install not CLI-parity |
+
+### Implication for the plan
+
+**Phases 0–1 in the original draft over-scoped “build coding loop.”**  
+August already has plan/todos/diffs/queue/modes. Next work should be:
+
+1. **Discoverability & beginner polish** of what exists  
+2. **True gaps only** (checkpoints, worktrees, fork/undo, permission toasts, pre-apply, steer, one-click OAuth)  
+3. **Palette / chrome wiring** so power features aren’t only in drawers/settings  
+
+---
+
 ## 1. Product principle
 
 | CLI mental model | August UI equivalent |
@@ -212,175 +287,181 @@ Map slash verbs to palette actions (same discoverability, no terminal):
 
 ---
 
-## 5. Phased delivery plan
+## 5. Gaps-only roadmap (active plan)
 
-### Phase 0 — Foundations & reliability (1–2 weeks)
+> **Do not rebuild** plan mode, todos, post-turn diffs, queue, stop, git panel, drawers, provider onboarding.  
+> **Do:** surface what exists, then fill true gaps only.
 
-**Why:** Nothing else matters if the app is flaky for beginners.
-
-| # | Work | Outcome |
-|---|------|---------|
-| 0.1 | Single-backend ownership in desktop/dev (clear port, no zombie fights) | `npm run dev` reliable |
-| 0.2 | First-run **Setup checklist** (API key, workspace, Google optional) | Zero “where do I start?” |
-| 0.3 | Session reliability: resume, pin, rename, delete, empty states | Sessions feel solid |
-| 0.4 | Global **Stop** + clear streaming states | User always in control |
-| 0.5 | Error humanization (MCP not running, OAuth, port busy) | Plain-language fixes |
-
-**DoD:** New user can open August, set a key, pick a folder, chat, stop, resume — without docs.
-
----
-
-### Phase 1 — Coding loop in the chat UI (2–3 weeks)
-
-**Why:** This is what CLI harnesses are *for*.
-
-| # | Work | Outcome |
-|---|------|---------|
-| 1.1 | Composer **Mode** control: Plan / Ask / Do (maps guard modes) | Visible, not buried |
-| 1.2 | Plan cards: steps, Approve / Edit / Reject | Plan mode complete in UI |
-| 1.3 | Live **To-do** panel driven by plan + agent tool updates | Progress visibility |
-| 1.4 | File change **diff cards** (before apply in Ask; after in Do) | Trust for edits |
-| 1.5 | Accept / Reject per file | Surgical control |
-| 1.6 | Permission toast: Once / This chat / Always for this folder | Claude-like approvals |
-| 1.7 | Project rules badge + `AUG.md` wizard polish | Project context obvious |
-
-**DoD:** User can plan a feature, approve, watch todos, review diffs, accept files — all in chat.
-
-**Key surfaces**
-
-- Frontend: `ChatComposer.tsx`, `ChatThread.tsx`, new `PlanCard`, `DiffCard`, `PermissionToast`, `TodoPanel`  
-- Backend: workbench plan APIs, tool_executor emit richer file-diff events, permissions API
-
----
-
-### Phase 2 — Session power tools (CLI parity without CLI) (2 weeks)
-
-| # | Work | Outcome |
-|---|------|---------|
-| 2.1 | **Undo last turn** | Fix mistakes safely |
-| 2.2 | **Branch chat** from any message | Explore alternatives |
-| 2.3 | **Compact now** + compaction banner | Context control |
-| 2.4 | Polish **queue** (edit/remove/reorder) | Already half-built |
-| 2.5 | **Steer**: inject guidance mid-stream | Don’t cancel the run |
-| 2.6 | Command palette `Ctrl+K` + `/` menu | Slash parity |
-| 2.7 | Session usage strip (tokens, cost, model) | Always-on status |
-
-**DoD:** Power-user session ops available as buttons/palette; beginners never blocked.
-
----
-
-### Phase 3 — Isolation, checkpoints, parallel agents (2–3 weeks)
-
-| # | Work | Outcome |
-|---|------|---------|
-| 3.1 | Filesystem **checkpoints** before mutating batches | Rollback files |
-| 3.2 | Chat **Restore checkpoint** chip + Settings history link | Undo changes without git expertise |
-| 3.3 | Subagent **isolation** via git worktree (optional toggle) | Parallel without collisions |
-| 3.4 | **Team / workers** panel (status, cancel, open log) | Multi-agent visible |
-| 3.5 | Simple **Tasks** board for multi-agent jobs | Durable coordination |
-| 3.6 | Git strip: branch name, dirty files, suggest commit | Coding workflow |
-
-**DoD:** User can run 2 agents on one repo safely and restore if something goes wrong.
-
-**Key surfaces**
-
-- Backend: checkpoint service, worktree manager, subagent_orchestrator hooks  
-- Frontend: `WorkspacePanel`, agents section, chat chips
-
----
-
-### Phase 4 — Connectors & “just works” integrations (2 weeks + ongoing)
-
-| # | Work | Outcome |
-|---|------|---------|
-| 4.1 | Integrations empty-state wizards (GitHub/Slack) | Fewer dead ends |
-| 4.2 | MCP install recipes + required env forms | Already started |
-| 4.3 | Google **one-click OAuth** (public client + PKCE) | No BYO secrets for most users |
-| 4.4 | Connection health + re-auth buttons | Self-serve fix |
-| 4.5 | Skills picker `@` in composer | Skills as easy as attachments |
-
-**DoD:** Connect Google/GitHub without reading docs; tools appear after connect.
-
----
-
-### Phase 5 — Automations, notifications, polish (1–2 weeks)
-
-| # | Work | Outcome |
-|---|------|---------|
-| 5.1 | Automations UI: “Every morning, summarize inbox” templates | Cron without cron syntax |
-| 5.2 | Background job tray + complete notifications | Long tasks |
-| 5.3 | Safe shell profile for beginners | Less foot-guns |
-| 5.4 | Accessibility, onboarding tips, empty states pass | Beginner-ready |
-| 5.5 | Hide advanced observability behind Advanced | Less overwhelm |
-
----
-
-### Phase 6 — Optional stretch (post-parity)
-
-| Item | Note |
-|------|------|
-| Sandbox Python run cell | Hermes `code_execution` parity |
-| Extra gateways (WhatsApp, etc.) | Only if messaging is a product goal |
-| Skills hub (URL install) | Ecosystem, not core loop |
-| Mobile parity for plan/diff/permissions | After desktop solid |
-
----
-
-## 6. Suggested PR / workstream DAG
+### Six workstreams
 
 ```text
-Phase 0 ──► Phase 1 ──► Phase 2 ──► Phase 3
-                │                      │
-                └──────► Phase 4 ◄─────┘
-                              │
+W1 Discoverability ──► W2 Session ops ──► W3 Trust gates
+         │                    │                  │
+         └────────────────────┼──────────────────┘
                               ▼
-                          Phase 5
+                    W4 Isolation (checkpoints + worktrees)
+                              │
+              ┌───────────────┴───────────────┐
+              ▼                               ▼
+     W5 Connectors (later)            W6 Polish / stretch
 ```
 
-| PR stream | Depends on | Can parallelize with |
-|-----------|------------|----------------------|
-| P0 reliability + setup checklist | — | — |
-| P1 mode + plan + diffs + permissions | P0 | — |
-| P2 session ops + palette + steer | P0 | late P1 |
-| P3 checkpoints + worktrees + team UI | P1 | P4 |
-| P4 connectors / OAuth one-click | P0 | P2–P3 |
-| P5 automations + polish | P1–P2 | — |
+| ID | Name | Effort | Depends |
+|----|------|--------|---------|
+| **W1** | Discoverability polish | ~1 week | — |
+| **W2** | Session power (undo / branch / compact / steer / palette) | ~1.5 weeks | W1 helpful |
+| **W3** | Trust gates (permission toasts + pre-apply diffs) | ~1.5–2 weeks | W1 |
+| **W4** | Isolation (FS checkpoints + worktrees + team strip) | ~2 weeks | W3 ideal |
+| **W5** | Connectors one-click | ~1–2 weeks | independent; can wait |
+| **W6** | Stretch | backlog | after W2–W4 |
 
 ---
 
-## 7. Backend capabilities to add (UI-blocking)
+### W1 — Discoverability polish (~1 week)
 
-| Service | New / extend | Used by UI |
-|---------|--------------|------------|
-| `workbench` | Force compact; undo turn; branch session; steer inject | Phase 2 |
-| `tool_executor` | Structured `file_diff` events; pre-apply preview | Phase 1 |
-| `permissions` | once / session / always grants | Phase 1 |
-| **checkpoint_service** (new) | snapshot/restore workspace paths | Phase 3 |
-| **worktree_service** (new) | create/remove agent worktrees | Phase 3 |
-| `subagent_orchestrator` | isolation flag, team status API | Phase 3 |
-| `service_connections` | public OAuth / PKCE | Phase 4 |
-| `automations_store` | templates + human schedules | Phase 5 |
+**Problem:** Features exist but beginners don’t find them.
 
----
+| # | Work | Touch |
+|---|------|--------|
+| W1.1 | Plain-language labels for Plan / Ask / Do (tooltips, one line each) | Composer mode selector |
+| W1.2 | Empty chat: “How August works” — Plan → Approve → Do, open Tasks/Diff drawers | Chat empty state |
+| W1.3 | After first plan: pulse/hint on right-drawer Plan + Tasks | `RightDrawerLauncher` |
+| W1.4 | After file edits: ensure `ChangedFilesCard` always shows; “Open all diffs” → drawer | `makeStreamHandlers` / card |
+| W1.5 | Extend setup beyond provider keys: workspace folder + optional Connect Google | Onboarding / checklist |
+| W1.6 | Humanize top errors (port busy, MCP dead, OAuth) | Toasts / error map |
 
-## 8. Frontend surfaces to own
-
-| Area | Files / modules (likely) |
-|------|---------------------------|
-| Chat core | `sections/chat/*`, `chat-runtime.ts`, `chat-stream-manager.ts` |
-| Composer / palette | `ChatComposer.tsx`, new `CommandPalette.tsx` |
-| Plans / todos | new cards + `PlansSection` reuse |
-| Diffs | new `DiffCard.tsx`, Workspace panel |
-| Permissions | toast host in chat shell |
-| Sessions | session store + list UI |
-| Agents team | `Agents.tsx`, `SubagentApprovalCard.tsx` |
-| Integrations | `settings/Integrations*` (extend) |
-| Checkpoints | chat chip + link `RollbackHistory` |
-| Settings IA | Essential vs Advanced split |
+**DoD:** New user finds Mode, Plan banner, Todos, Diffs, Stop, Queue without reading docs.  
+**Not in scope:** New plan/diff engines.
 
 ---
 
-## 9. Beginner-friendly copy (examples)
+### W2 — Session power tools (~1.5 weeks)
+
+**Problem:** CLI users expect undo / branch / compact / steer; August has queue + auto-compact only.
+
+| # | Work | Backend | Frontend |
+|---|------|---------|----------|
+| W2.1 | **Undo last turn** | Truncate last user+assistant (+ tool trail) | Thread menu + palette |
+| W2.2 | **Branch from here** | Clone session from message id | Message overflow “Branch chat” |
+| W2.3 | **Compact now** | Force compaction API (reuse auto path) | Context ring click / palette |
+| W2.4 | **Steer** mid-run | Inject instruction at next tool boundary (distinct from queue-as-user-turn if needed) | Streaming: “Add direction…” |
+| W2.5 | Queue polish | — | Clear-all; optional reorder |
+| W2.6 | **Palette actions** | Wire to W2.1–2.3 + existing mode/stop/new | Extend `CommandPalette.tsx` |
+
+**DoD:** Palette can: New chat, Stop, Undo turn, Branch, Compact now, set Plan/Ask/Do.  
+**Reuse:** `queue-store`, auto-compact, existing sessions API.
+
+---
+
+### W3 — Trust gates (~1.5–2 weeks)
+
+**Problem:** Guard modes are coarse; diffs are post-hoc; no Once/Session/Always.
+
+| # | Work | Backend | Frontend |
+|---|------|---------|----------|
+| W3.1 | Permission grant store: once / session / always(path) | Extend `permissions.py` + workbench guard | **Permission toast** on blocked/mutating tool |
+| W3.2 | Pre-apply file preview in **Ask** mode | Tool executor holds write until approved; emit pending patch | Accept / Reject per file card |
+| W3.3 | Link “Always for this folder” to workspace roots | Allowlist update | Toast + Settings sync |
+| W3.4 | Terminal keep existing approve; align copy with toast model | — | Consistency only |
+
+**DoD:** In Ask mode, user can reject a file write before disk change; allow-once doesn’t re-prompt same tool same turn.  
+**Reuse:** `DiffView`, guard modes, terminal approve patterns.
+
+---
+
+### W4 — Isolation (~2 weeks)
+
+**Problem:** Parallel agents can collide; Settings rollback isn’t a chat “save point.”
+
+| # | Work | Backend | Frontend |
+|---|------|---------|----------|
+| W4.1 | **Checkpoint service** — snapshot touched files before mutating batch | New service under `services/` | Chat chip “Save point created” |
+| W4.2 | **Restore checkpoint** | Restore API | Chat + palette “Restore save point”; link Settings `RollbackHistory` |
+| W4.3 | **Worktree** per subagent (opt-in toggle) | `worktree_service` + orchestrator cwd | Spawn UI: “Keep files separate” |
+| W4.4 | **Team strip** — list active subagents, status, cancel | Status API on orchestrator | Compact strip under titlebar / drawer |
+| W4.5 | Git strip already exists — polish only | — | Dirty count + open `GitPanel` |
+
+**DoD:** User restores files after a bad turn; two agents can run isolated with worktree on.  
+**Not in scope:** Full Hermes kanban board (W6).
+
+---
+
+### W5 — Connectors later (~1–2 weeks, can defer)
+
+| # | Work | Notes |
+|---|------|--------|
+| W5.1 | One-click Google (public OAuth client + PKCE) | Product/legal: ship public client id only |
+| W5.2 | GitHub/Slack connection wizards | PAT/bot already work; reduce friction |
+| W5.3 | Skills `@` browse in composer | Wire existing skills list; no hub required |
+
+**DoD:** Optional; BYO Google already works for power users.
+
+---
+
+### W6 — Stretch (backlog)
+
+| Item | When |
+|------|------|
+| Durable multi-agent task board | After W4 team strip |
+| Sandbox Python run cell | If users need notebook-like exec |
+| Automations templates (“every morning…”) | Polish `Automations.tsx` |
+| Skills hub (URL install) | Ecosystem phase |
+| Extra messaging platforms | Only if product goal |
+| Safe-shell beginner profile | If terminal scares users |
+
+---
+
+## 6. PR DAG (gaps only)
+
+```text
+W1 ──┬──► W2 ──► (optional W5)
+     └──► W3 ──► W4 ──► W6
+```
+
+| Stream | Can ship alone? |
+|--------|-----------------|
+| W1 polish | Yes — pure UX |
+| W2 session ops | Yes — high user value |
+| W3 trust | Yes — safety story |
+| W4 isolation | Best after W3 |
+| W5 OAuth | Anytime; no dep on W2–W4 |
+
+**Suggested first ship:** **W1 + W2.1/W2.6** (discoverability + undo + palette) — maximum “feels finished” with least new infrastructure.
+
+---
+
+## 7. Backend only where required
+
+| Gap | New vs extend |
+|-----|----------------|
+| Undo / branch / compact now / steer | **Extend** `workbench` sessions + stream |
+| Permission once/session/always | **Extend** `permissions` + tool guard |
+| Pre-apply patches | **Extend** `tool_executor` / file tools |
+| Checkpoints | **New** `checkpoint_service` |
+| Worktrees | **New** `worktree_service` + subagent cwd |
+| Public Google OAuth | **Extend** `service_connections` (later) |
+
+No new plan engine, todo engine, git panel, or queue system.
+
+---
+
+## 8. Frontend only where required
+
+| Gap | Primary files |
+|-----|----------------|
+| Polish / empty states | `ChatThread`, `ChatComposer`, empty states |
+| Palette | **Extend** `CommandPalette.tsx` (already exists) |
+| Permission toast | New small host in `ChatLayout` / shell |
+| Pre-apply cards | Reuse `DiffView` / `ChangedFilesCard` patterns |
+| Checkpoint chip | Chat thread + palette |
+| Team strip | Titlebar or right drawer Agents |
+| Steer UI | Composer while `streaming` |
+
+Do **not** create parallel Plan/Todo/Diff UIs — extend drawers + banners.
+
+---
+
+## 9. Beginner copy (keep)
 
 | Power term | UI label |
 |------------|----------|
@@ -389,66 +470,117 @@ Phase 0 ──► Phase 1 ──► Phase 2 ──► Phase 3
 | guardMode=full | **Make changes for me** |
 | compaction | **Free up chat memory** |
 | worktree | **Keep this agent’s files separate** |
-| YOLO | **Skip safety checks (not recommended)** |
 | checkpoint | **Save point** / **Restore save point** |
+| steer | **Add a direction** (while August is working) |
 
 ---
 
-## 10. Success metrics
+## 10. Success metrics (gaps-focused)
 
 | Metric | Target |
 |--------|--------|
-| Time-to-first-successful coding task (new user) | &lt; 10 minutes with checklist |
-| % of plan-mode sessions that reach Approve | Track; improve with clearer plan cards |
-| Permission denials that become “Always allow” | Low confusion / re-prompt rate |
-| Checkpoint restores used successfully | &gt; 0 in real usage (feature discovered) |
-| Support issues: “how do I undo?” | Near zero after Phase 2–3 |
-| Users who never open Advanced still complete tasks | Primary success |
+| User finds Plan/Tasks/Diff without help | W1 done |
+| “How do I undo?” support noise | Near zero after W2.1 |
+| Pre-apply reject used | &gt; 0 after W3 |
+| Checkpoint restore used | &gt; 0 after W4 |
+| Two agents, no collision (worktree on) | Demo script passes |
 
 ---
 
-## 11. Explicit non-goals
+## 11. Non-goals (unchanged)
 
-- Building a coding **CLI/TUI** product  
-- Matching Hermes’s 15+ messaging platforms day one  
-- Replacing Claude Code as a terminal IDE agent  
-- Shipping your personal Google OAuth secret in the binary  
-- Exposing every backend debug surface on the home screen  
-
----
-
-## 12. Immediate next step (when you say “execute”)
-
-Start **Phase 0 + Phase 1 skeleton** in one thin vertical:
-
-1. Composer Mode toggle (Plan / Ask / Do) wired to existing `guardMode`  
-2. Plan card polish in the thread  
-3. Setup checklist empty state  
-4. Diff event plumbing design (even if UI is stub)
-
-That proves “coding harness in the UI” without waiting for worktrees or one-click Google.
+- Coding **CLI/TUI** product  
+- Rebuilding plan/todo/diff/queue  
+- Shipping personal OAuth secrets in the binary  
+- Hermes-scale messaging day one  
 
 ---
 
-## 13. Summary map of “everything suggested earlier”
+## 12. Execute when ready
 
-| Earlier recommendation | Phase |
-|------------------------|-------|
-| Stable dev / reliability | 0 |
-| Permissions + safe defaults | 1 |
-| Project rules discovery | 1 |
-| Session resume / branch | 0–2 |
-| Git worktree isolation | 3 |
-| Filesystem checkpoints | 3 |
-| Steer / queue mid-turn | 2 (queue polish + steer) |
-| Public Google OAuth one-click | 4 |
-| CLI features **in UI** (palette, not TUI) | 2 |
-| Skills hub / extra platforms | 6 stretch |
-| Multi-agent team UX | 3 |
-| Automations / cron UX | 5 |
-| Observability keep + hide advanced | 5 |
-| Memory / brain (already strong) | polish only |
+**Recommended first PR batch (W1 + thin W2):**
+
+1. Empty-state + mode tooltips (W1.1–W1.3)  
+2. Palette: Undo last turn + Compact now + mode shortcuts (W2.1, W2.3, W2.6)  
+3. Message menu: Branch chat (W2.2) if API is small  
+
+Then W3 (trust), then W4 (isolation). W5 only when you want consumer Google.
+
+### Shipped: W1 + thin W2 (2026-07-15)
+
+| Item | Status |
+|------|--------|
+| Beginner mode labels (Plan only / Ask before changes / Make changes) | Done |
+| Empty chat “How August works” | Done |
+| Drawer section hints (Plan / Tasks / Diffs…) | Done |
+| Palette: undo, branch, compact, modes, open panels | Done |
+| Backend `POST …/undo-last-turn` | Done |
+| Backend `POST …/branch` | Done |
+| Backend `POST …/compact` | Done |
+| ChatThread handlers for palette actions | Done |
+| Unit tests `test_workbench_session_ops.py` | Done |
+
+### Shipped: W3 trust gates (2026-07-15)
+
+| Item | Status |
+|------|--------|
+| Ask mode creates `pendingMutations` + preview | Done |
+| Grants: once / session / always (workspace durable) | Done |
+| Status API flat fields for ApprovalBanner | Done |
+| Banner: Deny · Approve once · This chat · Always here | Done |
+| Approve continues the agent turn automatically | Done |
+| Preserve `awaiting_approval` at end of turn | Done |
+| Tests `test_workbench_ask_grants.py` | Done |
+
+### Shipped: W4 isolation (2026-07-15)
+
+| Item | Status |
+|------|--------|
+| Checkpoint service (snapshot/restore under `data/checkpoints/`) | Done |
+| Auto save point before mutating tools | Done |
+| SSE `checkpoint` + inline chat notice | Done |
+| API list/restore checkpoints | Done |
+| Palette “Restore last save point” | Done |
+| Team strip + isolate-subagents toggle | Done |
+| Git worktree helper for sub-agents (best-effort) | Done |
+| Tests `test_checkpoint_service.py` | Done |
+
+### Shipped: W5 Google one-click / PKCE (2026-07-15)
+
+| Item | Status |
+|------|--------|
+| PKCE S256 on native Google auth URL | Done |
+| Token exchange without client secret (Desktop public client) | Done |
+| UI: paste Client ID → Save & Sign in | Done |
+| Secret optional on Workspace MCP install form | Done |
+| `AUGUST_DEFAULT_GOOGLE_OAUTH_CLIENT_ID` hook for ship-time public id | Done |
+| Tests: PKCE URL + callback without secret | Done |
+
+### Shipped: Mid-run steer (2026-07-15)
+
+| Item | Status |
+|------|--------|
+| Queue `kind=steer` with priority prepend | Done |
+| Stronger STEER prompt wrapper for the model | Done |
+| `POST /api/workbench/chat/steer` | Done |
+| UI: “Add direction” while streaming + Direction pills | Done |
+| Tests `test_workbench_steer.py` | Done |
+
+**Still open:** queue reorder UI, true pre-apply hold-before-write (execute-in-place); product registration of a public Desktop OAuth client for zero-paste one-click.
 
 ---
 
-*Document status: plan only — no implementation until you approve execution order.*
+## 13. Map: old phases → workstreams
+
+| Old phase (retired) | Now |
+|---------------------|-----|
+| Phase 0 reliability/setup | W1.5–W1.6 (+ keep dev hygiene) |
+| Phase 1 “build coding loop” | **Mostly done** → W1 polish + W3 pre-apply only |
+| Phase 2 session power | **W2** |
+| Phase 3 isolation | **W4** |
+| Phase 4 connectors | **W5** |
+| Phase 5–6 polish/stretch | **W6** |
+
+---
+
+*Document status: gaps-only roadmap. Inventory §§2–4 kept as reference; execute via §5 workstreams.*

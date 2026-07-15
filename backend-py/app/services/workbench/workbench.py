@@ -69,6 +69,12 @@ summarize_session = _sessions_mod.summarize_session
 get_workbench_session_status = _sessions_mod.get_workbench_session_status
 subscribe_session_status = _sessions_mod.subscribe_session_status
 set_workbench_session_agent = _sessions_mod.set_workbench_session_agent
+undo_last_turn = _sessions_mod.undo_last_turn
+branch_workbench_session = _sessions_mod.branch_workbench_session
+compact_workbench_session_now = _sessions_mod.compact_workbench_session_now
+undoLastTurn = _sessions_mod.undoLastTurn
+branchWorkbenchSession = _sessions_mod.branchWorkbenchSession
+compactWorkbenchSessionNow = _sessions_mod.compactWorkbenchSessionNow
 
 # Provider / LLM-call re-exports (tests monkeypatch these names on workbench)
 resolve_workbench_provider = _providers_mod.resolve_workbench_provider
@@ -593,42 +599,74 @@ def _mcpToolDefinitionsOpenai(seen: set[str]) -> list[dict[str, object]]:
 
 
 def _formatQueuedMessagesAsUserTurn(entries: list[dict[str, object]]) -> dict[str, object]:
-    """Build a single user-role message that wraps one or more queued entries.
+    """Build a single user-role message that wraps one or more queued/steer entries.
 
-    The wrapping is explicit so the model can distinguish a queued
-    follow-up from a fresh top-of-conversation prompt: each entry is
-    enclosed in <queued_message> tags with the original timestamp, and
-    a brief preamble tells the model what these messages are and how to
-    treat them (continue, redirect, or acknowledge-and-defer).
+    Steers (``kind=steer``) are mid-run course corrections and take priority
+    in the preamble. Ordinary queue entries are follow-ups for later.
     """
     if not entries:
         return {'role': 'user', 'content': ''}
-    parts: list[str] = []
-    parts.append(
-        '[The following message(s) were queued by the user while you were responding. They did NOT interrupt your current work — they were added as follow-up(s). Consider whether each one changes your current approach, supersedes the original request, or should simply be acknowledged for later. Continue with whatever is most helpful given this new context.]'
+    # Steers first so the model sees direction before softer follow-ups
+    ordered = sorted(
+        entries,
+        key=lambda e: 0 if as_str(e.get('kind'), 'queue') == 'steer' else 1,
     )
-    parts.append('')
-    for entry in entries:
-        queuedAt = entry.get('queuedAt') or ''
-        text = as_str(entry.get('text'), '')
-        attachmentCount = len(as_list(entry.get('attachments'), []))
-        attrParts = []
-        if queuedAt:
-            attrParts.append(f'timestamp="{queuedAt}"')
-        if attachmentCount:
-            attrParts.append(f'attachments="{attachmentCount}"')
-        attrStr = ' ' + ' '.join(attrParts) if attrParts else ''
-        parts.append(f'<queued_message{attrStr}>')
-        parts.append(text)
-        parts.append('</queued_message>')
+    steers = [e for e in ordered if as_str(e.get('kind'), 'queue') == 'steer']
+    queues = [e for e in ordered if as_str(e.get('kind'), 'queue') != 'steer']
+    parts: list[str] = []
+    if steers:
+        parts.append(
+            '[STEER — The user is redirecting your current work mid-run. '
+            'These instructions apply immediately after your current tool step. '
+            'Adjust your plan, cancel outdated steps if needed, and prioritize this guidance. '
+            'Do not ignore it.]'
+        )
         parts.append('')
+        for entry in steers:
+            text = as_str(entry.get('text'), '')
+            queuedAt = entry.get('queuedAt') or ''
+            attr = f' timestamp="{queuedAt}"' if queuedAt else ''
+            parts.append(f'<steer{attr}>')
+            parts.append(text)
+            parts.append('</steer>')
+            parts.append('')
+    if queues:
+        parts.append(
+            '[The following message(s) were queued by the user while you were responding. '
+            'They did NOT interrupt your current work — they were added as follow-up(s). '
+            'Consider whether each one changes your approach, supersedes the original request, '
+            'or should simply be acknowledged for later.]'
+        )
+        parts.append('')
+        for entry in queues:
+            queuedAt = entry.get('queuedAt') or ''
+            text = as_str(entry.get('text'), '')
+            attachmentCount = len(as_list(entry.get('attachments'), []))
+            attrParts = []
+            if queuedAt:
+                attrParts.append(f'timestamp="{queuedAt}"')
+            if attachmentCount:
+                attrParts.append(f'attachments="{attachmentCount}"')
+            attrStr = ' ' + ' '.join(attrParts) if attrParts else ''
+            parts.append(f'<queued_message{attrStr}>')
+            parts.append(text)
+            parts.append('</queued_message>')
+            parts.append('')
     return {'role': 'user', 'content': '\n'.join(parts).strip()}
 
 
 def enqueueUserMessage(
-    sessionId: str, text: str, attachments: list[dict[str, object]] | None = None
+    sessionId: str,
+    text: str,
+    attachments: list[dict[str, object]] | None = None,
+    *,
+    kind: str = 'queue',
 ) -> dict[str, object] | None:
     """Append a user message to the session's pending queue.
+
+    ``kind``:
+      - ``queue`` — follow-up for the next loop boundary (default)
+      - ``steer`` — mid-run course correction; formatted with higher priority
 
     Returns the queued entry on success, or None if the session does not
     exist. Emits a ``user_message_queued`` SSE event so open tabs can
@@ -639,13 +677,21 @@ def enqueueUserMessage(
         return None
     if not hasattr(session, 'queuedUserMessages') or session.queuedUserMessages is None:
         session.queuedUserMessages = []
+    kind_n = (kind or 'queue').strip().lower()
+    if kind_n not in ('queue', 'steer'):
+        kind_n = 'queue'
     entry: dict[str, object] = {
         'id': f'qm_{uuid.uuid4().hex[:12]}',
         'text': text,
         'attachments': list(attachments or []),
         'queuedAt': _now(),
+        'kind': kind_n,
     }
-    session.queuedUserMessages.append(entry)
+    # Steers jump to the front so they apply at the next tool boundary first
+    if kind_n == 'steer':
+        session.queuedUserMessages.insert(0, entry)
+    else:
+        session.queuedUserMessages.append(entry)
     session.updatedAt = _now()
     saveSessions()
     try:
@@ -654,11 +700,24 @@ def enqueueUserMessage(
         event_log.event_log.append(
             sessionId,
             'user_message_queued',
-            {'sessionId': sessionId, 'messageId': entry['id'], 'text': text, 'queuedAt': entry['queuedAt']},
+            {
+                'sessionId': sessionId,
+                'messageId': entry['id'],
+                'text': text,
+                'queuedAt': entry['queuedAt'],
+                'kind': kind_n,
+            },
         )
     except Exception:
         pass
     return entry
+
+
+def enqueueSteerMessage(
+    sessionId: str, text: str, attachments: list[dict[str, object]] | None = None
+) -> dict[str, object] | None:
+    """Convenience: enqueue a mid-run steer (course correction)."""
+    return enqueueUserMessage(sessionId, text, attachments, kind='steer')
 
 
 def dequeueUserMessage(sessionId: str, messageId: str) -> bool:
@@ -1205,6 +1264,35 @@ async def _sendWorkbenchMessageStreamImpl(
         async def _run_regular(toolName: str, toolInput: dict[str, object], toolUseId: str) -> dict[str, object]:
             if emit:
                 emit({'type': 'toolCall', 'id': toolUseId, 'name': toolName, 'input': toolInput, 'status': 'running'})
+            # Filesystem save point before mutating tools (W4 isolation)
+            try:
+                if isPlanModeBlocked(toolName, toolInput):
+                    from app.services.workbench.checkpoint_service import create_checkpoint_for_tool
+
+                    ck = create_checkpoint_for_tool(
+                        session.id,
+                        session.workspacePath or '',
+                        toolName,
+                        toolInput,
+                    )
+                    if ck:
+                        meta = dict(as_dict(session.metadata) if session.metadata else {})
+                        meta['lastCheckpointId'] = ck.get('id')
+                        meta['lastCheckpointAt'] = ck.get('createdAt')
+                        meta['lastCheckpointLabel'] = ck.get('label')
+                        session.metadata = meta
+                        if emit:
+                            emit(
+                                {
+                                    'type': 'checkpoint',
+                                    'id': ck.get('id'),
+                                    'label': ck.get('label'),
+                                    'fileCount': ck.get('fileCount'),
+                                    'toolName': toolName,
+                                }
+                            )
+            except Exception:
+                logger.debug('checkpoint before tool failed', exc_info=True)
             try:
                 from app.services.workbench.tool_guardrails import ToolCallTracker
 
@@ -1306,7 +1394,11 @@ async def _sendWorkbenchMessageStreamImpl(
     try:
         logger.debug('workbench turn complete: %d rounds, in=%d out=%d', toolRound, totalInputTokens, totalOutputTokens)
         session.messages = list(currentMessages)
-        session.status = 'idle'
+        # Keep awaiting_approval if ask-mode left a pending mutation (ApprovalBanner).
+        if session.pendingMutations:
+            session.status = 'awaiting_approval'
+        else:
+            session.status = 'idle'
         session.updatedAt = _now()
         with _trace.span('persist'):
             # Persist session to SQLite (primary); JSON export is best-effort.
@@ -1465,15 +1557,192 @@ async def _executeTool(toolName: str, args: dict[str, object], session: Workbenc
         currentSessionId.reset(token)
 
 
+def _mutation_grant_key(toolName: str, args: dict[str, object] | None) -> str:
+    """Stable key for once/session/always grants (tool + primary path)."""
+    args = args or {}
+    path = (
+        as_str(args.get('path'))
+        or as_str(args.get('file_path'))
+        or as_str(args.get('filePath'))
+        or as_str(args.get('file'))
+        or as_str(args.get('target'))
+        or '*'
+    )
+    return f'{toolName}:{path}'
+
+
+def _mutation_preview(toolName: str, args: dict[str, object] | None) -> str:
+    """Short human preview for the approval UI (file content snippet, command, …)."""
+    args = args or {}
+    name = toolName.lower()
+    path = (
+        as_str(args.get('path'))
+        or as_str(args.get('file_path'))
+        or as_str(args.get('filePath'))
+        or as_str(args.get('file'))
+    )
+    if any(m in name for m in ('write', 'edit', 'create', 'patch', 'str_replace')):
+        content = (
+            as_str(args.get('content'))
+            or as_str(args.get('new_str'))
+            or as_str(args.get('new_string'))
+            or as_str(args.get('text'))
+        )
+        head = content[:1200] if content else ''
+        if path and head:
+            return f'Write {path}\n\n{head}{"…" if len(content) > 1200 else ""}'
+        if path:
+            return f'Modify {path}'
+        return f'{toolName} (file change)'
+    if any(m in name for m in ('bash', 'shell', 'command', 'exec', 'terminal')):
+        cmd = as_str(args.get('command')) or as_str(args.get('cmd')) or as_str(args.get('input'))
+        return f'Run: {cmd[:500]}' if cmd else f'Run {toolName}'
+    if path:
+        return f'{toolName} → {path}'
+    return toolName
+
+
+def _get_tool_grants(session: WorkbenchSession) -> dict[str, list[str]]:
+    meta = as_dict(session.metadata) if session.metadata else {}
+    raw = as_dict(meta.get('toolGrants')) if meta.get('toolGrants') is not None else {}
+    return {
+        'once': [str(x) for x in as_list(raw.get('once'))],
+        'session': [str(x) for x in as_list(raw.get('session'))],
+        'always': [str(x) for x in as_list(raw.get('always'))],
+    }
+
+
+def _set_tool_grants(session: WorkbenchSession, grants: dict[str, list[str]]) -> None:
+    meta = dict(as_dict(session.metadata) if session.metadata else {})
+    meta['toolGrants'] = {
+        'once': list(grants.get('once') or []),
+        'session': list(grants.get('session') or []),
+        'always': list(grants.get('always') or []),
+    }
+    session.metadata = meta
+
+
+def _load_always_grants_for_workspace(workspace_path: str) -> list[str]:
+    if not workspace_path:
+        return []
+    try:
+        from app.services.config_service import getConfig
+
+        cfg = getConfig()
+        store = as_dict(cfg.get('toolAlwaysGrants')) if cfg.get('toolAlwaysGrants') is not None else {}
+        # Normalize path keys loosely
+        for key, vals in store.items():
+            if str(key).replace('\\', '/').rstrip('/').lower() == workspace_path.replace('\\', '/').rstrip('/').lower():
+                return [str(v) for v in as_list(vals)]
+        return [str(v) for v in as_list(store.get(workspace_path))]
+    except Exception:
+        return []
+
+
+def _save_always_grant(workspace_path: str, key: str) -> None:
+    if not workspace_path or not key:
+        return
+    try:
+        from app.services.config_service import getConfig, saveConfig
+
+        cfg = getConfig()
+        store = as_dict(cfg.get('toolAlwaysGrants')) if cfg.get('toolAlwaysGrants') is not None else {}
+        existing = [str(v) for v in as_list(store.get(workspace_path))]
+        if key not in existing:
+            existing.append(key)
+        store[workspace_path] = existing
+        # Also store tool:* wildcard companion if user chose path-specific
+        cfg['toolAlwaysGrants'] = store
+        saveConfig(cfg)
+    except Exception:
+        logger.debug('failed to persist always grant', exc_info=True)
+
+
+def has_tool_grant(session: WorkbenchSession, toolName: str, args: dict[str, object] | None) -> bool:
+    """True if once/session/always grant covers this tool call (consumes once grants)."""
+    key = _mutation_grant_key(toolName, args)
+    tool_star = f'{toolName}:*'
+    grants = _get_tool_grants(session)
+    # once — consume on match
+    once = list(grants.get('once') or [])
+    if key in once or tool_star in once:
+        if key in once:
+            once.remove(key)
+        elif tool_star in once:
+            once.remove(tool_star)
+        grants['once'] = once
+        _set_tool_grants(session, grants)
+        return True
+    session_g = grants.get('session') or []
+    if key in session_g or tool_star in session_g:
+        return True
+    always = list(grants.get('always') or []) + _load_always_grants_for_workspace(session.workspacePath or '')
+    if key in always or tool_star in always:
+        return True
+    return False
+
+
+def add_tool_grant(
+    session: WorkbenchSession,
+    toolName: str,
+    args: dict[str, object] | None,
+    scope: str = 'once',
+) -> None:
+    """Record a user grant. scope: once | session | always."""
+    key = _mutation_grant_key(toolName, args)
+    scope_n = (scope or 'once').strip().lower()
+    if scope_n not in ('once', 'session', 'always'):
+        scope_n = 'once'
+    grants = _get_tool_grants(session)
+    bucket = list(grants.get(scope_n) or [])
+    if key not in bucket:
+        bucket.append(key)
+    grants[scope_n] = bucket
+    _set_tool_grants(session, grants)
+    if scope_n == 'always' and session.workspacePath:
+        _save_always_grant(session.workspacePath, key)
+
+
 def _checkToolGuard(session: WorkbenchSession, toolName: str, args: dict[str, object]) -> str | None:
     """Check if a tool execution is blocked by guard mode or permissions.
 
     Returns None if allowed, or a string reason if blocked.
+    In ask mode, creates a pending mutation for the ApprovalBanner UI.
     """
     if session.guardMode == 'plan' and (not session.planApproved) and isPlanModeBlocked(toolName, args):
-        return f"Tool '{toolName}' is destructive and cannot run in plan mode. You cannot execute destructive tools here. Finish investigating with the non-destructive tools, then call `submit_plan` with your proposed steps and ask the user to approve it before executing."
+        return (
+            f"Tool '{toolName}' is destructive and cannot run in plan mode. "
+            'Finish investigating with non-destructive tools, then call `submit_plan` '
+            'and wait for the user to approve before executing.'
+        )
     if session.guardMode == 'ask' and isPlanModeBlocked(toolName, args):
-        return f"Tool '{toolName}' requires your approval. Present the intended change to the user and wait for them to approve it before calling this tool again."
+        if has_tool_grant(session, toolName, args):
+            return None
+        # Avoid stacking duplicate pending mutations for the same tool+path
+        key = _mutation_grant_key(toolName, args)
+        for pm in session.pendingMutations:
+            if not isinstance(pm, dict):
+                continue
+            if as_str(pm.get('toolName')) == toolName and _mutation_grant_key(
+                toolName, as_dict(pm.get('args'))
+            ) == key:
+                return (
+                    f"Tool '{toolName}' is waiting for the user's approval in the app. "
+                    'Do not retry until the user approves or rejects it.'
+                )
+        mutation = createPendingMutation(session, toolName, args)
+        preview = _mutation_preview(toolName, args)
+        if mutation is not None:
+            mutation['preview'] = preview
+            mutation['grantKey'] = key
+            saveSessions()
+            _emitSessionStatus(session.id)
+        return (
+            f"Tool '{toolName}' requires your approval before it can run. "
+            'A permission prompt was shown to the user (Accept / Reject, with once / this chat / always). '
+            'Do not retry. When the user accepts, the tool will be executed with the proposed arguments '
+            'and you will receive the result automatically.'
+        )
     return None
 
 
@@ -1604,29 +1873,119 @@ def createPendingMutation(
 ) -> dict[str, object] | None:
     """Create a pending mutation token requiring approval."""
     token = f'mt_{uuid.uuid4().hex[:16]}'
-    mutation = {'token': token, 'toolName': toolName, 'args': args, 'createdAt': _now(), 'ttl': 300}
+    mutation: dict[str, object] = {
+        'token': token,
+        'toolName': toolName,
+        'args': args,
+        'createdAt': _now(),
+        'ttl': 300,
+        'preview': _mutation_preview(toolName, args),
+        'grantKey': _mutation_grant_key(toolName, args),
+    }
     session.pendingMutations.append(mutation)
     session.status = 'awaiting_approval'
     saveSessions()
     _emitSessionStatus(session.id)
+    try:
+        from app.services.realtime_bus import emit_invalidate, emit_realtime
+
+        emit_realtime(
+            'session.updated',
+            sessionId=session.id,
+            status='awaiting_approval',
+            pendingToken=token,
+            pendingTool=toolName,
+        )
+        emit_invalidate('session-status', 'workbench-session', session_id=session.id)
+    except Exception:
+        pass
     return mutation
 
 
-def consumePendingMutation(token: str, reject: bool = False) -> bool:
-    """Approve or reject a pending mutation."""
+def consumePendingMutation(
+    token: str,
+    reject: bool = False,
+    scope: str = 'once',
+) -> dict[str, object] | None:
+    """Approve or reject a pending mutation.
+
+    On approve, records a grant (once|session|always) and returns tool args so the
+    caller can **execute immediately** (pre-apply). On reject, discards the pending
+    change without running the tool.
+    Returns a small result dict or None if token not found.
+    """
     for session in _sessions.values():
         for i, pm in enumerate(session.pendingMutations):
-            if pm.get('token') == token:
-                if reject:
-                    session.pendingMutations.pop(i)
-                    session.status = 'idle'
-                    saveSessions()
-                    return True
-                session.pendingMutations.pop(i)
+            if not isinstance(pm, dict) or pm.get('token') != token:
+                continue
+            tool_name = as_str(pm.get('toolName'))
+            args = as_dict(pm.get('args')) if pm.get('args') is not None else {}
+            preview = as_str(pm.get('preview'))
+            session.pendingMutations.pop(i)
+            if reject:
                 session.status = 'idle'
                 saveSessions()
-                return True
-    return False
+                _emitSessionStatus(session.id)
+                return {
+                    'status': 'rejected',
+                    'sessionId': session.id,
+                    'toolName': tool_name,
+                    'args': args,
+                    'preview': preview,
+                }
+            add_tool_grant(session, tool_name, args, scope=scope)
+            session.status = 'idle'
+            saveSessions()
+            _emitSessionStatus(session.id)
+            return {
+                'status': 'approved',
+                'sessionId': session.id,
+                'toolName': tool_name,
+                'args': args,
+                'preview': preview,
+                'scope': (scope or 'once').strip().lower(),
+                'grantKey': _mutation_grant_key(tool_name, args),
+            }
+    return None
+
+
+async def execute_approved_mutation(
+    session: WorkbenchSession,
+    tool_name: str,
+    args: dict[str, object] | None,
+) -> str:
+    """Run a user-accepted mutating tool with stored args (pre-apply Accept).
+
+    Creates a filesystem checkpoint when possible, then dispatches the tool.
+    """
+    tool_name = (tool_name or '').strip()
+    args = dict(args or {})
+    if not tool_name:
+        return 'Error: no tool name on approved mutation'
+    try:
+        if isPlanModeBlocked(tool_name, args):
+            from app.services.workbench.checkpoint_service import create_checkpoint_for_tool
+
+            ck = create_checkpoint_for_tool(
+                session.id,
+                session.workspacePath or '',
+                tool_name,
+                args,
+            )
+            if ck:
+                meta = dict(as_dict(session.metadata) if session.metadata else {})
+                meta['lastCheckpointId'] = ck.get('id')
+                meta['lastCheckpointAt'] = ck.get('createdAt')
+                meta['lastCheckpointLabel'] = ck.get('label')
+                session.metadata = meta
+    except Exception:
+        logger.debug('checkpoint before approved mutation failed', exc_info=True)
+    result = await _executeTool(tool_name, args, session)
+    try:
+        recordMutation(session, tool_name, args, result)
+    except Exception:
+        pass
+    return str(result)
 
 
 def setWorkbenchGoal(session: WorkbenchSession, condition: str) -> None:
